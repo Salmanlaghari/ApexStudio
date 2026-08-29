@@ -242,7 +242,7 @@ private fun WaveformTrackRow(
     name: String,
     seed: Long,
     color: Color,
-    state: com.apexstudio.app.presentation.state.AudioState
+    state: com.apexstudio.app.presentation.state.AudioStudioState
 ) {
     val isMuted = state.tracks.firstOrNull()?.isMuted == true && seed == 7L
     val isSolo = state.tracks.firstOrNull()?.isSolo == true

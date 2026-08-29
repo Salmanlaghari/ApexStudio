@@ -404,7 +404,7 @@ private fun VideoTrackRow(
     pxPerMs: Float,
     clips: List<com.apexstudio.app.domain.model.MediaClip>,
     selectedClipId: String?,
-    onSelectClip: (String?)
+    onSelectClip: (String?) -> Unit
 ) {
     val density = LocalDensity.current
     val trackHeightDp = 44.dp

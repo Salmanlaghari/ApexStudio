@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -106,7 +106,7 @@ private fun DashboardHeader(onOpenSettings: () -> Unit) {
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(ApexPalette.BgGlass)
-                .border()
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
                 .clickable(onClick = onOpenSettings),
             contentAlignment = Alignment.Center
         ) {
@@ -274,11 +274,3 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
         }
     }
 }
-
-private fun Modifier.border(
-    width: androidx.compose.ui.unit.Dp = 1.dp,
-    color: Color = ApexPalette.BorderGlass,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(0.dp)
-): Modifier = this.then(
-    androidx.compose.foundation.border(width, color, shape)
-)

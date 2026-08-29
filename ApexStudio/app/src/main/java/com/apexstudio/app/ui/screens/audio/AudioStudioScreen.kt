@@ -29,15 +29,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
-import com.apexstudio.app.util.WaveformGenerator
-import kotlin.math.abs
 
 @Composable
 fun AudioStudioScreen(
@@ -47,6 +44,7 @@ fun AudioStudioScreen(
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
+    val audioState by vm.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -96,10 +94,30 @@ fun AudioStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        MixerChannel("Main", 0.8f, -0.2f, ApexPalette.NeonCyan)
-                        MixerChannel("Vocal", 0.7f, 0.3f, ApexPalette.NeonPurple)
-                        MixerChannel("Beat", 0.65f, 0f, ApexPalette.NeonEmerald)
-                        MixerChannel("SFX", 0.5f, -0.4f, ApexPalette.NeonPink)
+                        MixerChannel("Main", state.volume, 0f, ApexPalette.NeonCyan,
+                            onVolumeChange = { vm.setVolume(it) },
+                            onMute = { vm.toggleMuteEngine() },
+                            onSolo = { vm.toggleSoloEngine() },
+                            isMuted = state.isMuted, isSolo = state.isSolo
+                        )
+                        MixerChannel("Vocal", state.volume * 0.8f, 0.3f, ApexPalette.NeonPurple,
+                            onVolumeChange = { vm.setVolume(it) },
+                            onMute = { vm.toggleMuteEngine() },
+                            onSolo = { vm.toggleSoloEngine() },
+                            isMuted = state.isMuted, isSolo = state.isSolo
+                        )
+                        MixerChannel("Beat", state.volume * 0.6f, 0f, ApexPalette.NeonEmerald,
+                            onVolumeChange = { vm.setVolume(it) },
+                            onMute = { vm.toggleMuteEngine() },
+                            onSolo = { vm.toggleSoloEngine() },
+                            isMuted = state.isMuted, isSolo = state.isSolo
+                        )
+                        MixerChannel("SFX", state.volume * 0.5f, -0.4f, ApexPalette.NeonPink,
+                            onVolumeChange = { vm.setVolume(it) },
+                            onMute = { vm.toggleMuteEngine() },
+                            onSolo = { vm.toggleSoloEngine() },
+                            isMuted = state.isMuted, isSolo = state.isSolo
+                        )
                     }
                 }
             }
@@ -120,9 +138,9 @@ fun AudioStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        EqKnob("Low", "80Hz", 0.3f)
-                        EqKnob("Mid", "1kHz", 0.6f)
-                        EqKnob("High", "5kHz", 0.75f)
+                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f) { vm.setLowEQ(it.toShort()) }
+                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f) { vm.setMidEQ(it.toShort()) }
+                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f) { vm.setHighEQ(it.toShort()) }
                     }
                 }
             }
@@ -249,8 +267,8 @@ private fun WaveformTrackRow(
     color: Color,
     state: com.apexstudio.app.presentation.state.AudioStudioState
 ) {
-    val isMuted = state.tracks.firstOrNull()?.isMuted == true && seed == 7L
-    val isSolo = state.tracks.firstOrNull()?.isSolo == true
+    val isMuted = state.isMuted && seed == 7L
+    val isSolo = state.isSolo
     val width = 600
     val density = androidx.compose.ui.platform.LocalDensity.current
     Row(
@@ -314,7 +332,7 @@ private fun WaveformTrackRow(
                         if (isMuted) ApexPalette.NeonPink else ApexPalette.BorderGlass,
                         RoundedCornerShape(3.dp)
                     )
-                    .clickable { }
+                    .clickable { onMute() }
                     .padding(horizontal = 5.dp, vertical = 2.dp)
             ) {
                 Text(
@@ -336,7 +354,7 @@ private fun WaveformTrackRow(
                         if (isSolo) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                         RoundedCornerShape(3.dp)
                     )
-                    .clickable { }
+                    .clickable { onSolo() }
                     .padding(horizontal = 5.dp, vertical = 2.dp)
             ) {
                 Text(
@@ -355,7 +373,12 @@ private fun MixerChannel(
     name: String,
     volume: Float,
     pan: Float,
-    accent: Color
+    accent: Color,
+    onVolumeChange: (Float) -> Unit,
+    onMute: () -> Unit,
+    onSolo: () -> Unit,
+    isMuted: Boolean,
+    isSolo: Boolean
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -489,7 +512,7 @@ private fun EqVisualizer(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EqKnob(name: String, freq: String, value: Float) {
+private fun EqKnob(name: String, freq: String, value: Float, onValueChange: (Float) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier

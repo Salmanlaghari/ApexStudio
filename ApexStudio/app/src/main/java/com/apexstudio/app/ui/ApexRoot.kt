@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
 import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
@@ -23,6 +25,7 @@ import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
 @Composable
 fun ApexRoot() {
+    val context = LocalContext.current
     var currentTab by remember { mutableStateOf("home") }
     var projectId by remember { mutableStateOf<String?>(null) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
@@ -85,7 +88,6 @@ fun ApexRoot() {
                 onExport = { showExportSettings = false }
             )
         } else {
-            // Bottom nav only on the 4 main tabs
             if (overlay == null && currentTab != "export") {
                 BottomNavBar(
                     current = currentTab,

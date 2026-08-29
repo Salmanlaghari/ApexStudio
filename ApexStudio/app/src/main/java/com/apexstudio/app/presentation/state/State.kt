@@ -12,7 +12,12 @@ data class EditorState(
     val selectedClipId: String? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
-    val bpm: Int = 128
+    val bpm: Int = 128,
+    val pickedMedia: List<com.apexstudio.app.data.picker.MediaMetadata> = emptyList(),
+    val isMediaPickerOpen: Boolean = false,
+    val playerPositionMs: Long = 0L,
+    val playerDurationMs: Long = 0L,
+    val isPlayerReady: Boolean = false
 )
 
 enum class EditorTool(val label: String) {
@@ -24,16 +29,24 @@ enum class EditorTool(val label: String) {
 data class ExportState(
     val isExporting: Boolean = false,
     val progress: Float = 0f,
-    val settings: ExportSettings = ExportSettings()
+    val settings: ExportSettings = ExportSettings(),
+    val outputUri: String? = null,
+    val error: String? = null,
+    val isExportEngineReady: Boolean = false
 )
 
 data class ColorToolState(
+    val brightness: Float = 0f,
+    val contrast: Float = 1f,
+    val saturation: Float = 1f,
+    val temperature: Float = 0f,
+    val tint: Float = 0f,
     val shadows: Float = 0.17f,
     val midtones: Float = -0.05f,
     val highlights: Float = 0.23f,
     val activeChannel: Channel = Channel.R,
     val curvePoints: List<Pair<Float, Float>> = defaultCurve(),
-    val selectedLut: String = "cinematic"
+    val selectedLut: String = "none"
 ) {
     enum class Channel { R, G, B, Luma }
     companion object {
@@ -49,5 +62,16 @@ data class AudioStudioState(
     val tracks: List<AudioTrack> = emptyList(),
     val aiVoiceEnhance: Boolean = true,
     val clarity: Float = 0.6f,
-    val reduceNoise: Float = 0.4f
+    val reduceNoise: Float = 0.4f,
+    val lowEQ: Short = 0,
+    val midEQ: Short = 0,
+    val highEQ: Short = 0,
+    val volume: Float = 0.75f,
+    val isMuted: Boolean = false,
+    val isSolo: Boolean = false,
+    val noiseReduction: Float = 0f,
+    val echoCancellation: Boolean = false,
+    val noiseSuppression: Boolean = false,
+    val waveformSamples: FloatArray = FloatArray(0),
+    val isRecording: Boolean = false
 )

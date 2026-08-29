@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.home
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,9 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.components.AppTopBar
@@ -36,6 +39,8 @@ fun HomeScreen(
 ) {
     val repo = remember { MediaRepository() }
     val projects = repo.loadProjects()
+    val context = LocalContext.current
+    val mediaPicker = remember { MediaPickerHelper(context) }
 
     Column(
         modifier = Modifier
@@ -58,7 +63,8 @@ fun HomeScreen(
             onCreate = {
                 val id = projects.firstOrNull()?.id
                 if (id != null) onProjectOpen(id)
-            }
+            },
+            onAddMedia = { /* media picker handled via editor */ }
         )
         SectionLabel("Your Projects")
         LazyColumn(
@@ -158,7 +164,7 @@ private fun HomeTopBar(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
+private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()

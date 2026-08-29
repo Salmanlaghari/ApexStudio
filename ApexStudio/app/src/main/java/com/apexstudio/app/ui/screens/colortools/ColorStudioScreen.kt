@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +46,7 @@ fun ColorStudioScreen(
     val luts by vm.luts.collectAsStateWithLifecycle()
     var splitX by remember { mutableStateOf(0.5f) }
     var selectedChannel by remember { mutableStateOf("R") }
+    val colorState by vm.color.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -87,11 +90,48 @@ fun ColorStudioScreen(
                     .height(110.dp)
             )
 
+            Slider(
+                value = colorState.brightness,
+                onValueChange = { vm.updateColorBrightness(it) },
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonCyan,
+                    activeTrackColor = ApexPalette.NeonCyan,
+                    inactiveTrackColor = ApexPalette.BgElevated
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Brightness", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+
+            Slider(
+                value = colorState.contrast,
+                onValueChange = { vm.updateColorContrast(it) },
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonPurple,
+                    activeTrackColor = ApexPalette.NeonPurple,
+                    inactiveTrackColor = ApexPalette.BgElevated
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Contrast", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+
+            Slider(
+                value = colorState.saturation,
+                onValueChange = { vm.updateColorSaturation(it) },
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonPink,
+                    activeTrackColor = ApexPalette.NeonPink,
+                    inactiveTrackColor = ApexPalette.BgElevated
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Saturation", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(luts) { lut ->
                     LutPresetCard(
                         name = lut.name,
-                        selected = lut.id == "cinematic",
+                        selected = lut.id == colorState.selectedLut,
+                        onClick = { vm.selectLut(lut.id) },
                         modifier = Modifier.width(82.dp)
                     )
                 }
@@ -414,6 +454,7 @@ private fun RgbCurvesCanvas(
 private fun LutPresetCard(
     name: String,
     selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val borderColor = if (selected) ApexPalette.NeonCyan else Color.Transparent
@@ -427,7 +468,7 @@ private fun LutPresetCard(
                 )
             )
             .border(1.5.dp, borderColor, RoundedCornerShape(10.dp))
-            .clickable { }
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -190,7 +191,7 @@ fun PulsingPlayButton(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                if (isPlaying) Icons.Default.PlayArrow else Icons.Default.PlayArrow,
+                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 null, tint = ApexPalette.BgDeep,
                 modifier = Modifier.size(32.dp)
             )

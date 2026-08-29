@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,26 +43,47 @@ fun HomeScreen(
     val projects = repo.loadProjects()
     var selectedFilter by remember { mutableStateOf("All") }
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
     ) {
-        AppTopBar(
-            title = "ApexStudio",
-            subtitle = "PRO EDITOR • v1.0",
-            onUndo = {}, onRedo = {},
-            onExport = {},
-            canUndo = false, canRedo = false,
-            extraRight = {
-                NeonIconButton(
-                    icon = Icons.Default.Settings,
-                    onClick = onOpenSettings,
-                    size = 40.dp,
-                    iconSize = 20.dp
-                )
-            }
-        )
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .fillMaxHeight()
+                .background(Color.Transparent),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "APEX STUDIO",
+                color = ApexPalette.TextPrimary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                modifier = Modifier.rotate(-90f)
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(Color.Transparent)
+        ) {
+            AppTopBar(
+                title = "ApexStudio",
+                subtitle = "PRO EDITOR • v1.0",
+                canUndo = false, canRedo = false,
+                extraRight = {
+                    NeonIconButton(
+                        icon = Icons.Default.Settings,
+                        onClick = onOpenSettings,
+                        size = 40.dp,
+                        iconSize = 20.dp
+                    )
+                }
+            )
 
         Spacer(Modifier.height(8.dp))
 
@@ -158,6 +180,7 @@ fun HomeScreen(
             items(projects) { p ->
                 ProjectRow(p, onOpen = { onProjectOpen(p.id) })
             }
+        }
         }
     }
 }

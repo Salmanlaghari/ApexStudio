@@ -1,6 +1,5 @@
 package com.apexstudio.app.ui.screens.editor
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,12 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,24 +51,15 @@ fun EditorScreen(
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val previewHeight = (screenWidthDp * 9f / 16f).dp
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
     ) {
-        AppTopBar(
-            title = state.project?.name ?: "ApexStudio",
-            subtitle = "4K • 60fps • HDR",
-            onBack = onBack,
-            onUndo = { vm.undo() },
-            onRedo = { vm.redo() },
-            onExport = onExport,
-            canUndo = state.canUndo,
-            canRedo = state.canRedo
-        )
-
-        // Player
         PlayerSurface(
             isPlaying = state.isPlaying,
             currentTimeMs = state.currentTimeMs,
@@ -81,15 +69,14 @@ fun EditorScreen(
             onStepBack = { vm.stepFrame(false) },
             onStepFwd = { vm.stepFrame(true) },
             onTap = { vm.togglePlay() },
+            onBack = onBack,
             modifier = Modifier
-                .padding(horizontal = 16.dp)
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(previewHeight)
         )
 
         Spacer(Modifier.height(10.dp))
 
-        // Tool bar
         EditorToolBar(
             current = state.selectedTool,
             onSelect = { vm.selectTool(it) },
@@ -100,7 +87,6 @@ fun EditorScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Timeline
         Timeline(
             state = state,
             onScrub = { vm.seekTo(it) },
@@ -136,17 +122,15 @@ private fun PlayerSurface(
     onStepBack: () -> Unit,
     onStepFwd: () -> Unit,
     onTap: () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(22.dp))
             .background(Brush.linearGradient(
                 listOf(Color(0xFF0F1A2D), Color(0xFF1B0F2D))
             ))
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(22.dp))
     ) {
-        // Mock preview gradient
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -160,7 +144,6 @@ private fun PlayerSurface(
                     )
                 )
         )
-        // Mock landscape scene
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -172,7 +155,6 @@ private fun PlayerSurface(
                     )
                 )
         )
-        // Sun/moon
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -186,7 +168,6 @@ private fun PlayerSurface(
                 )
         )
 
-        // Timecode top-left
         GlassCard(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -202,7 +183,6 @@ private fun PlayerSurface(
             )
         }
 
-        // 4K badge top-right
         GlassCard(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -217,7 +197,13 @@ private fun PlayerSurface(
             )
         }
 
-        // Center controls
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxSize()
+                .clickable(onClick = onTap)
+        )
+
         Row(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -340,7 +326,6 @@ private fun Timeline(
     var dragMode by remember { mutableStateOf<DragMode?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // Ruler
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -385,7 +370,6 @@ private fun Timeline(
             }
         }
 
-        // Tracks
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -402,7 +386,6 @@ private fun Timeline(
                     .fillMaxSize()
                     .horizontalScroll(scroll)
             ) {
-                // Video track
                 TrackRow(
                     label = "V1",
                     color = ApexPalette.TrackVideo,
@@ -443,7 +426,6 @@ private fun Timeline(
                         }
                 }
 
-                // Overlay track
                 TrackRow(
                     label = "V2",
                     color = ApexPalette.TrackOverlay,
@@ -460,7 +442,6 @@ private fun Timeline(
                         }
                 }
 
-                // Audio track
                 AudioTrackRow(
                     label = "A1",
                     width = totalWidth,
@@ -470,7 +451,6 @@ private fun Timeline(
                         state.durationMs.coerceAtLeast(1).toFloat()
                 )
 
-                // SFX
                 AudioTrackRow(
                     label = "FX",
                     width = totalWidth,
@@ -482,7 +462,6 @@ private fun Timeline(
                 )
             }
 
-            // Playhead
             val playheadX = (state.currentTimeMs * pxPerMs).toFloat() - scroll.value
             Column(
                 modifier = Modifier
@@ -500,7 +479,6 @@ private fun Timeline(
                 )
             }
 
-            // Tap to scrub
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -595,7 +573,6 @@ private fun ClipBlock(
                 )
             }
     ) {
-        // thumbnails row
         Row(modifier = Modifier.fillMaxSize().padding(4.dp)) {
             repeat(6) {
                 Box(
@@ -608,7 +585,6 @@ private fun ClipBlock(
                 )
             }
         }
-        // Title
         Text(
             clip.name,
             color = Color.White,
@@ -618,7 +594,6 @@ private fun ClipBlock(
                 .align(Alignment.TopStart)
                 .padding(4.dp)
         )
-        // Left handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -632,7 +607,6 @@ private fun ClipBlock(
                     )
                 }
         )
-        // Right handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)

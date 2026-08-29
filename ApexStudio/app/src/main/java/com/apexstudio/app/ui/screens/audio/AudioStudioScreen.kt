@@ -80,8 +80,7 @@ fun AudioStudioScreen(
         AppTopBar(
             title = "Shot 4",
             subtitle = "Audio Studio",
-            onBack = onBack,
-            onExport = {}
+            onBack = onBack
         )
 
         Spacer(Modifier.height(4.dp))

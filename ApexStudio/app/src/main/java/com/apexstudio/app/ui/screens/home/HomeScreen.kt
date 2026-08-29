@@ -1,6 +1,8 @@
 package com.apexstudio.app.ui.screens.home
 
 import android.content.Context
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,12 +26,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.repository.MediaRepository
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import java.util.UUID
 
 @Composable
 fun HomeScreen(
@@ -41,6 +47,35 @@ fun HomeScreen(
     val projects = repo.loadProjects()
     val context = LocalContext.current
     val mediaPicker = remember { MediaPickerHelper(context) }
+    var pickedMedia by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }
+
+    mediaPicker.registerLaunchers()
+
+    LaunchedEffect(Unit) {
+        mediaPicker.pickedMedia.collect { metadataList ->
+            if (metadataList.isNotEmpty()) {
+                pickedMedia = metadataList
+                val clips = metadataList.map { meta ->
+                    MediaClip(
+                        id = UUID.randomUUID().toString(),
+                        name = meta.name,
+                        uri = meta.uri,
+                        durationMs = meta.durationMs,
+                        trimStartMs = 0L,
+                        trimEndMs = meta.durationMs,
+                        thumbnail = null,
+                        trackIndex = if (meta.type == ClipType.VIDEO) 0 else 1,
+                        type = meta.type
+                    )
+                }
+                val newProject = repo.createProject(
+                    name = metadataList.first().name.substringBeforeLast('.'),
+                    clips = clips
+                )
+                onProjectOpen(newProject.id)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -59,12 +94,13 @@ fun HomeScreen(
         )
         Spacer(Modifier.height(4.dp))
         NewProjectHero(
-            enabled = projects.isNotEmpty(),
+            enabled = true,
             onCreate = {
-                val id = projects.firstOrNull()?.id
-                if (id != null) onProjectOpen(id)
+                mediaPicker.pickMultipleMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                )
             },
-            onAddMedia = { /* media picker handled via editor */ }
+            onAddMedia = { /* handled via onCreate */ }
         )
         SectionLabel("Your Projects")
         LazyColumn(

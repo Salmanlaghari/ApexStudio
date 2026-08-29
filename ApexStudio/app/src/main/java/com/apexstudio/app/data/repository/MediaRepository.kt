@@ -13,6 +13,8 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.ui.theme.ApexPalette
 
 class MediaRepository {
+    private val dynamicProjects = mutableListOf<Project>()
+    private var projectCounter = 4
 
     fun loadProjects(): List<Project> = listOf(
         Project(
@@ -39,7 +41,23 @@ class MediaRepository {
         Project(
             id = "p3", name = "Travel Vlog – Tokyo", durationMs = 480_000L
         )
-    )
+    ) + dynamicProjects
+
+    fun createProject(name: String, clips: List<MediaClip>): Project {
+        val id = "p$projectCounter++"
+        val durationMs = clips.maxOfOrNull { it.durationMs } ?: 0L
+        val project = Project(
+            id = id,
+            name = name,
+            durationMs = durationMs,
+            resolution = "4K",
+            fps = 60,
+            clips = clips,
+            audioTracks = emptyList()
+        )
+        dynamicProjects.add(project)
+        return project
+    }
 
     fun loadLutPresets(): List<LutPreset> = listOf(
         LutPreset("cinematic", "CINEMATIC", "asset://lut_cine"),

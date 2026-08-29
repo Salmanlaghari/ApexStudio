@@ -2,11 +2,12 @@ package com.apexstudio.app.ui.screens.editor
 
 import android.content.Context
 import android.view.ViewGroup
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -38,14 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
-import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.NeonIconButton
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -63,11 +62,22 @@ fun EditorScreen(
     val context = LocalContext.current
     val mediaPicker = remember { MediaPickerHelper(context) }
 
+    mediaPicker.registerLaunchers()
+
     LaunchedEffect(Unit) {
         mediaPicker.pickedMedia.collect { metadataList ->
             if (metadataList.isNotEmpty()) {
                 vm.onMediaPicked(metadataList)
             }
+        }
+    }
+
+    LaunchedEffect(state.isMediaPickerOpen) {
+        if (state.isMediaPickerOpen) {
+            mediaPicker.pickMultipleMedia.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+            )
+            vm.closeMediaPicker()
         }
     }
 
@@ -78,6 +88,12 @@ fun EditorScreen(
             .navigationBarsPadding()
             .background(ApexPalette.BgBase)
     ) {
+        EditorTopBar(
+            currentTimeMs = state.currentTimeMs,
+            onBack = onBack,
+            onExport = onExport
+        )
+
         VideoPreviewSection(
             isPlaying = state.isPlaying,
             currentTimeMs = state.currentTimeMs,
@@ -90,7 +106,7 @@ fun EditorScreen(
             onAddMedia = { vm.openMediaPicker() },
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.38f)
+                .weight(0.40f)
         )
 
         TimelineSection(
@@ -100,7 +116,7 @@ fun EditorScreen(
             onSelectClip = { vm.selectClip(it) },
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.42f)
+                .weight(0.45f)
         )
 
         HorizontalToolBar(
@@ -112,11 +128,77 @@ fun EditorScreen(
             onAudio = onAudio,
             onText = { /* placeholder */ },
             onFx = { /* placeholder */ },
-            onExport = onExport,
+            onExport = {},
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.20f)
+                .weight(0.15f)
         )
+    }
+}
+
+@Composable
+private fun EditorTopBar(
+    currentTimeMs: Long,
+    onBack: () -> Unit,
+    onExport: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NeonIconButton(
+            icon = Icons.Default.ChevronLeft,
+            onClick = onBack,
+            size = 40.dp,
+            iconSize = 22.dp
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(ApexPalette.BgGlass)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                    color = ApexPalette.NeonCyan,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            ApexPalette.NeonCyan.copy(alpha = 0.6f),
+                            ApexPalette.NeonPurple.copy(alpha = 0.4f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), CircleShape)
+                .clickable(onClick = onExport),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.IosShare,
+                null,
+                tint = ApexPalette.NeonCyan,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -661,36 +743,6 @@ private fun HorizontalToolBar(
         ) {
             items(items) { tool ->
                 ToolbarIcon(tool.label, tool.icon, tool.onClick)
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                    )
-                )
-                .clickable(onClick = onExport),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.IosShare,
-                    null,
-                    tint = ApexPalette.BgDeep,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "Export",
-                    color = ApexPalette.BgDeep,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 12.sp
-                )
             }
         }
     }

@@ -8,10 +8,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -48,42 +46,22 @@ fun ColorStudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = 12.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        // === Before / After split preview ===
-        Text(
-            "CINEMATIC PREVIEW",
-            color = ApexPalette.TextTertiary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
+        SectionLabel("BEFORE / AFTER")
+        Spacer(Modifier.height(4.dp))
         BeforeAfterPreview(
             splitFraction = splitX,
             onSplitChange = { splitX = it },
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
+            modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(18.dp))
-
-        // === Color Wheels ===
-        Text(
-            "COLOR WHEELS",
-            color = ApexPalette.TextTertiary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
         Spacer(Modifier.height(8.dp))
+
+        SectionLabel("COLOR WHEELS")
+        Spacer(Modifier.height(4.dp))
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             ColorWheelCard("Shadows", 0.65f, 0.3f, ApexPalette.NeonCyan)
@@ -91,52 +69,44 @@ fun ColorStudioScreen(
             ColorWheelCard("Highlights", 0.7f, 0.5f, ApexPalette.NeonPink)
         }
 
-        Spacer(Modifier.height(18.dp))
-
-        // === RGB Curves ===
-        Text(
-            "RGB CURVES",
-            color = ApexPalette.TextTertiary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
         Spacer(Modifier.height(8.dp))
+
+        SectionLabel("RGB CURVES")
+        Spacer(Modifier.height(4.dp))
         RgbCurvesCanvas(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
                 .fillMaxWidth()
-                .height(180.dp)
+                .height(120.dp)
         )
 
-        Spacer(Modifier.height(18.dp))
-
-        // === LUT Presets ===
-        Text(
-            "LUT PRESETS",
-            color = ApexPalette.TextTertiary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
         Spacer(Modifier.height(8.dp))
+
+        SectionLabel("LUT PRESETS")
+        Spacer(Modifier.height(4.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(luts) { lut ->
                 LutPresetCard(
                     name = lut.name,
                     selected = lut.id == "cinematic",
-                    modifier = Modifier.width(100.dp)
+                    modifier = Modifier.width(86.dp)
                 )
             }
         }
-
-        Spacer(Modifier.height(28.dp))
     }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        color = ApexPalette.TextTertiary,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.2.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+    )
 }
 
 @Composable
@@ -261,9 +231,9 @@ private fun ColorWheelCard(
 ) {
     GlassCard(
         modifier = Modifier
-            .width(108.dp)
-            .height(140.dp),
-        cornerRadius = 18.dp
+            .width(96.dp)
+            .height(110.dp),
+        cornerRadius = 14.dp
     ) {
         Column(
             modifier = Modifier
@@ -295,7 +265,7 @@ private fun ColorWheelCard(
 private fun ColorWheel(liftX: Float, liftY: Float, accent: Color) {
     Box(
         modifier = Modifier
-            .size(74.dp),
+            .size(56.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -458,14 +428,14 @@ private fun LutPresetCard(
     val borderColor = if (selected) ApexPalette.NeonCyan else Color.Transparent
     Box(
         modifier = modifier
-            .height(120.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .height(86.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 Brush.linearGradient(
                     listOf(Color(0xFF1A0F2E), Color(0xFF0F1B2D))
                 )
             )
-            .border(2.dp, borderColor, RoundedCornerShape(14.dp))
+            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
             .clickable { }
     ) {
         Box(

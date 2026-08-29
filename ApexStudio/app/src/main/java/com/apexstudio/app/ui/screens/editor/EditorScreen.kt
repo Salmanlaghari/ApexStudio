@@ -33,7 +33,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.components.*
+import com.apexstudio.app.ui.components.AudioWaveform
+import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.components.NeonIconButton
+import com.apexstudio.app.ui.components.PulsingPlayButton
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
@@ -47,201 +50,191 @@ fun EditorScreen(
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp
-    val previewHeight = (screenWidthDp * 9f / 16f).dp
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
     ) {
-        VideoPreviewCanvas(
+        VideoPreviewSection(
             isPlaying = state.isPlaying,
             currentTimeMs = state.currentTimeMs,
-            durationMs = state.durationMs,
             onTogglePlay = { vm.togglePlay() },
             onSeek = { vm.seekTo(it) },
             onPrev = { vm.seekTo((state.currentTimeMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.currentTimeMs + 5000).coerceAtMost(state.durationMs)) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(previewHeight)
+                .weight(0.40f)
         )
 
-        MultiTrackTimeline(
+        TimelineSection(
             state = state,
             onScrub = { vm.seekTo(it) },
             onZoom = { vm.setZoom(it) },
             onSelectClip = { vm.selectClip(it) },
             modifier = Modifier
-                .weight(1f)
                 .fillMaxWidth()
+                .weight(0.45f)
         )
 
-        EditorBottomToolbar(
+        BottomToolBar(
             onSplit = { vm.selectClip(state.selectedClipId) },
             onCut = { vm.selectClip(state.selectedClipId) },
-            onFilters = onColor,
             onSpeed = { /* placeholder */ },
+            onFilters = onColor,
+            onAudio = onAudio,
             onText = { /* placeholder */ },
-            onFx = onAudio,
+            onFx = { /* placeholder */ },
             onExport = onExport,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .weight(0.15f)
         )
     }
 }
 
 @Composable
-private fun VideoPreviewCanvas(
+private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
-    durationMs: Long,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val previewHeight = (screenWidthDp * 9f / 16f).dp
     Box(
         modifier = modifier
-            .background(
-                Brush.linearGradient(
-                    listOf(Color(0xFF0B0E14), Color(0xFF121824))
-                )
-            )
-            .border(
-                width = 1.dp,
-                color = ApexPalette.BorderGlass,
-                shape = RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp)
-            )
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.TopCenter
     ) {
-        // Mock cinematic gradient scene
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
+                .fillMaxWidth()
+                .height(previewHeight)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
+                .clickable(onClick = onTogglePlay),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                // Cinematic gradient
+                drawRect(
+                    brush = Brush.linearGradient(
                         listOf(
+                            Color(0xFF0F1A2D),
                             Color(0xFF1B2A4E),
                             Color(0xFF3A1B5E),
                             Color(0xFF0E2B3F)
                         )
-                    )
+                    ),
+                    topLeft = Offset(0f, 0f),
+                    size = androidx.compose.ui.geometry.Size(w, h)
                 )
-        )
-        // Ground gradient
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(80.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, Color(0xFF0B0E14))
-                    )
+                // Sun
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                            Color.Transparent
+                        )
+                    ),
+                    radius = 60f,
+                    center = Offset(w - 80f, 80f)
                 )
-        )
-        // Sun/moon
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        listOf(ApexPalette.NeonCyan.copy(alpha = 0.9f), Color.Transparent)
-                    )
+                // Ground
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color(0xFF05080F))
+                    ),
+                    topLeft = Offset(0f, h * 0.6f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.4f)
                 )
-        )
+                // Center "play" icon hint when paused
+                if (!isPlaying) {
+                    val cx = w / 2f
+                    val cy = h / 2f
+                    val r = 28f
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(cx - r * 0.6f, cy - r)
+                        lineTo(cx + r, cy)
+                        lineTo(cx - r * 0.6f, cy + r)
+                        close()
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+            }
 
-        // 8K badge top-left
-        GlassBadge(
-            label = "8K • 60fps • HDR",
-            accent = ApexPalette.NeonCyan,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(10.dp)
-        )
+            // Top-right timestamp badge
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(ApexPalette.BgGlass)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                    color = ApexPalette.NeonCyan,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp
+                )
+            }
 
-        // Timecode top-right
-        GlassBadge(
-            label = TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
-            accent = ApexPalette.NeonPurple,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(10.dp)
-        )
-
-        // Tap to toggle play (covers whole surface but center row draws on top)
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxSize()
-                .clickable(onClick = onTogglePlay)
-        )
-
-        // Center playback controls
-        Row(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            NeonIconButton(
-                icon = Icons.Default.SkipPrevious,
-                onClick = onPrev,
-                size = 42.dp,
-                iconSize = 22.dp
-            )
-            NeonIconButton(
-                icon = Icons.Default.FastRewind,
-                onClick = { onSeek((currentTimeMs - 5000).coerceAtLeast(0)) },
-                size = 42.dp,
-                iconSize = 20.dp
-            )
-            PulsingPlayButton(isPlaying = isPlaying, onToggle = onTogglePlay)
-            NeonIconButton(
-                icon = Icons.Default.FastForward,
-                onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(durationMs)) },
-                size = 42.dp,
-                iconSize = 20.dp
-            )
-            NeonIconButton(
-                icon = Icons.Default.SkipNext,
-                onClick = onNext,
-                size = 42.dp,
-                iconSize = 22.dp
-            )
+            // Center playback controls overlay
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NeonIconButton(
+                    icon = Icons.Default.SkipPrevious,
+                    onClick = onPrev,
+                    size = 36.dp,
+                    iconSize = 18.dp
+                )
+                NeonIconButton(
+                    icon = Icons.Default.FastRewind,
+                    onClick = { onSeek((currentTimeMs - 5000).coerceAtLeast(0)) },
+                    size = 36.dp,
+                    iconSize = 16.dp
+                )
+                PulsingPlayButton(isPlaying = isPlaying, onToggle = onTogglePlay)
+                NeonIconButton(
+                    icon = Icons.Default.FastForward,
+                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(currentTimeMs + 5000)) },
+                    size = 36.dp,
+                    iconSize = 16.dp
+                )
+                NeonIconButton(
+                    icon = Icons.Default.SkipNext,
+                    onClick = onNext,
+                    size = 36.dp,
+                    iconSize = 18.dp
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun GlassBadge(label: String, accent: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(ApexPalette.BgGlass)
-            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    ) {
-        Text(
-            text = label,
-            color = accent,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun MultiTrackTimeline(
+private fun TimelineSection(
     state: com.apexstudio.app.presentation.state.EditorState,
     onScrub: (Long) -> Unit,
     onZoom: (Float) -> Unit,
@@ -257,17 +250,17 @@ private fun MultiTrackTimeline(
 
     Column(
         modifier = modifier
-            .background(ApexPalette.BgBase)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
         // Ruler
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(26.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .height(22.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgSurface)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
@@ -277,8 +270,8 @@ private fun MultiTrackTimeline(
                     val x = (t * pxPerMs).toFloat() - scroll.value
                     if (x in 0f..w) {
                         drawLine(
-                            color = Color.White.copy(alpha = 0.18f),
-                            start = Offset(x, size.height * 0.5f),
+                            color = Color.White.copy(alpha = 0.15f),
+                            start = Offset(x, size.height * 0.4f),
                             end = Offset(x, size.height),
                             strokeWidth = 1f
                         )
@@ -295,7 +288,7 @@ private fun MultiTrackTimeline(
                 Spacer(Modifier.width(scroll.value.pxToDp()))
                 listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
                     180_000L, 210_000L).forEach { t ->
-                    val labelLeft = (t * pxPerMs - scroll.value - 18).coerceAtLeast(0f)
+                    val labelLeft = (t * pxPerMs - scroll.value - 16).coerceAtLeast(0f)
                     Spacer(Modifier.width(labelLeft.toDp()))
                     Text(
                         TimeFormat.msToShort(t),
@@ -306,9 +299,9 @@ private fun MultiTrackTimeline(
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
 
-        // Tracks
+        // Tracks container
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -322,6 +315,7 @@ private fun MultiTrackTimeline(
                     }
                 }
         ) {
+            // Tracks
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -336,12 +330,14 @@ private fun MultiTrackTimeline(
                     selectedClipId = state.selectedClipId,
                     onSelectClip = onSelectClip
                 )
-                OverlayTrackRow(
+                VideoTrackRow(
                     label = "V2",
                     color = ApexPalette.TrackOverlay,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY },
+                    selectedClipId = state.selectedClipId,
+                    onSelectClip = onSelectClip
                 )
                 WaveformTrackRow(
                     label = "A1",
@@ -351,38 +347,41 @@ private fun MultiTrackTimeline(
                     progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
                     seed = 17L
                 )
-                WaveformTrackRow(
-                    label = "FX",
-                    color = ApexPalette.TrackSfx,
-                    width = totalWidth,
-                    pxPerMs = pxPerMs,
-                    progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
-                    seed = 33L
-                )
             }
 
-            // Playhead
+            // Playhead line (glowing)
             val playheadX = (state.currentTimeMs * pxPerMs).toFloat() - scroll.value
-            Column(
+            Canvas(
                 modifier = Modifier
-                    .offset(x = playheadX.toDp())
-                    .fillMaxHeight()
-                    .width(2.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                        )
-                    )
+                    .fillMaxSize()
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .offset(x = (-5).dp)
-                        .clip(CircleShape)
-                        .background(ApexPalette.NeonCyan)
-                )
+                val x = playheadX
+                if (x in 0f..size.width) {
+                    // Glow
+                    drawLine(
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                ApexPalette.NeonCyan.copy(alpha = 0.0f),
+                                ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                                ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                                ApexPalette.NeonCyan.copy(alpha = 0.0f)
+                            )
+                        ),
+                        start = Offset(x, 0f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 6f
+                    )
+                    // Sharp center line
+                    drawLine(
+                        color = ApexPalette.NeonCyan,
+                        start = Offset(x, 0f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 2f
+                    )
+                }
             }
 
+            // Tap to scrub
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -405,35 +404,34 @@ private fun VideoTrackRow(
     pxPerMs: Float,
     clips: List<com.apexstudio.app.domain.model.MediaClip>,
     selectedClipId: String?,
-    onSelectClip: (String?) -> Unit
+    onSelectClip: (String?)
 ) {
     val density = LocalDensity.current
-    val trackHeightDp = 64.dp
+    val trackHeightDp = 44.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(trackHeightDp + 8.dp)
-            .padding(vertical = 4.dp),
+            .height(trackHeightDp + 4.dp)
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .width(32.dp)
+                .width(28.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(6.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp)),
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgElevated),
             contentAlignment = Alignment.Center
         ) {
-            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
         }
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(3.dp))
         Box(
             modifier = Modifier
                 .height(trackHeightDp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
         ) {
             val widthDp = with(density) { width.toDp() }
             Box(modifier = Modifier.width(widthDp)) {
@@ -459,161 +457,56 @@ private fun VideoClipBlock(
 ) {
     val w = ((clip.trimEndMs - clip.trimStartMs) * pxPerMs).toInt().coerceAtLeast(40)
     val x = (clip.trimStartMs * pxPerMs).toInt()
-    val borderColor = if (selected) ApexPalette.NeonCyan else Color.Transparent
     val density = LocalDensity.current
     Box(
         modifier = Modifier
             .offset { androidx.compose.ui.unit.IntOffset(x, 0) }
             .width(with(density) { w.toDp() })
             .fillMaxHeight()
-            .padding(2.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .padding(1.dp)
+            .clip(RoundedCornerShape(5.dp))
             .background(
-                Brush.linearGradient(
-                    listOf(ApexPalette.TrackVideo, ApexPalette.NeonPurple.copy(alpha = 0.7f))
+                Brush.horizontalGradient(
+                    listOf(
+                        ApexPalette.NeonPurple.copy(alpha = 0.85f),
+                        ApexPalette.TrackVideo.copy(alpha = 0.85f)
+                    )
                 )
             )
-            .border(2.dp, borderColor, RoundedCornerShape(8.dp))
+            .border(
+                if (selected) 1.5.dp else 0.5.dp,
+                if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
+                RoundedCornerShape(5.dp)
+            )
             .clickable(onClick = onSelect)
     ) {
-        // Thumbnails
-        Row(modifier = Modifier.fillMaxSize().padding(3.dp)) {
-            repeat(6) {
+        // Thumbnail strip
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            repeat(5) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(horizontal = 1.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(Color.Black.copy(alpha = 0.3f))
                 )
             }
         }
-        // Keyframe dots row
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            repeat(4) {
-                Box(
-                    modifier = Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(ApexPalette.NeonCyan)
-                )
-            }
-        }
-        // Title
         Text(
             clip.name,
             color = Color.White,
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(4.dp)
+                .padding(3.dp)
         )
-        // Left trim handle
-        TrimHandle(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(8.dp)
-                .fillMaxHeight()
-        )
-        // Right trim handle
-        TrimHandle(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .width(8.dp)
-                .fillMaxHeight()
-        )
-    }
-}
-
-@Composable
-private fun TrimHandle(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(ApexPalette.NeonCyan.copy(alpha = 0.4f))
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(vertical = 4.dp)
-                .width(2.dp)
-                .height(20.dp)
-                .background(ApexPalette.NeonCyan)
-        )
-    }
-}
-
-@Composable
-private fun OverlayTrackRow(
-    label: String,
-    color: Color,
-    width: Int,
-    pxPerMs: Float,
-    clips: List<com.apexstudio.app.domain.model.MediaClip>
-) {
-    val density = LocalDensity.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .width(32.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(6.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
-        }
-        Spacer(Modifier.width(4.dp))
-        Box(
-            modifier = Modifier
-                .height(40.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(ApexPalette.BgBase)
-                .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-        ) {
-            val widthDp = with(density) { width.toDp() }
-            Box(modifier = Modifier.width(widthDp)) {
-                clips.forEach { clip ->
-                    val w = ((clip.trimEndMs - clip.trimStartMs) * pxPerMs).toInt().coerceAtLeast(40)
-                    val x = (clip.trimStartMs * pxPerMs).toInt()
-                    Box(
-                        modifier = Modifier
-                            .offset { androidx.compose.ui.unit.IntOffset(x, 0) }
-                            .width(with(density) { w.toDp() })
-                            .fillMaxHeight()
-                            .padding(2.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(ApexPalette.TrackOverlay, ApexPalette.NeonPurple.copy(alpha = 0.5f))
-                                )
-                            )
-                            .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                    ) {
-                        Text(
-                            clip.name,
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            modifier = Modifier.padding(3.dp)
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -630,28 +523,27 @@ private fun WaveformTrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .padding(vertical = 4.dp),
+            .height(40.dp)
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .width(32.dp)
+                .width(28.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(6.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp)),
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgElevated),
             contentAlignment = Alignment.Center
         ) {
-            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
         }
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(3.dp))
         Box(
             modifier = Modifier
-                .height(44.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .height(34.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
                 .padding(2.dp)
         ) {
             val widthDp = with(density) { width.toDp() }
@@ -668,54 +560,48 @@ private fun WaveformTrackRow(
 }
 
 @Composable
-private fun EditorBottomToolbar(
+private fun BottomToolBar(
     onSplit: () -> Unit,
     onCut: () -> Unit,
-    onFilters: () -> Unit,
     onSpeed: () -> Unit,
+    onFilters: () -> Unit,
+    onAudio: () -> Unit,
     onText: () -> Unit,
     onFx: () -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val items = listOf(
-        ToolItem("Split", Icons.Default.ContentCut),
-        ToolItem("Cut", Icons.Default.ContentCut),
-        ToolItem("Filters", Icons.Default.FilterAlt),
-        ToolItem("Speed", Icons.Default.Speed),
-        ToolItem("Text", Icons.Default.TextFields),
-        ToolItem("FX", Icons.Default.AutoAwesome)
-    )
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        // Tools row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(ApexPalette.BgGlass)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(20.dp))
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            items.forEach { ti ->
-                ToolbarButton(
-                    label = ti.label,
-                    icon = ti.icon,
-                    onClick = when (ti.label) {
-                        "Filters" -> onFilters
-                        "FX" -> onFx
-                        else -> onSplit
-                    }
-                )
-            }
+            ToolbarIcon("Split", Icons.Default.ContentCut, onSplit)
+            ToolbarIcon("Cut", Icons.Default.ContentCut, onCut)
+            ToolbarIcon("Speed", Icons.Default.Speed, onSpeed)
+            ToolbarIcon("Filters", Icons.Default.FilterAlt, onFilters)
+            ToolbarIcon("Audio", Icons.Default.GraphicEq, onAudio)
+            ToolbarIcon("Text", Icons.Default.TextFields, onText)
+            ToolbarIcon("FX", Icons.Default.AutoAwesome, onFx)
         }
-        Spacer(Modifier.height(8.dp))
-        // Primary export CTA
+        Spacer(Modifier.height(6.dp))
+        // Export CTA
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .height(40.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(
                     Brush.horizontalGradient(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
@@ -729,24 +615,22 @@ private fun EditorBottomToolbar(
                     Icons.Default.IosShare,
                     null,
                     tint = ApexPalette.BgDeep,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "Export",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp
+                    fontSize = 13.sp
                 )
             }
         }
     }
 }
 
-private data class ToolItem(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
-
 @Composable
-private fun ToolbarButton(
+private fun ToolbarIcon(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
@@ -754,29 +638,24 @@ private fun ToolbarButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
         Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, CircleShape),
+            modifier = Modifier.size(28.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon, null,
                 tint = ApexPalette.NeonCyan,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
-        Spacer(Modifier.height(4.dp))
         Text(
             label,
             color = ApexPalette.TextSecondary,
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

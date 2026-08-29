@@ -7,10 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -55,55 +53,50 @@ fun ExportScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = 12.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         // === Motion Graphics & Transitions ===
         SectionLabel("MOTION GRAPHICS")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(fxList) { fx ->
                 MotionGraphicsCard(
                     label = fx.label,
                     icon = fx.icon,
                     selected = fx.id == "chrom",
-                    modifier = Modifier.width(110.dp)
+                    modifier = Modifier.width(94.dp)
                 )
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(8.dp))
 
         SectionLabel("TRANSITIONS")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(transitionsList) { t ->
                 TransitionCard(
                     label = t.label,
                     icon = t.icon,
-                    modifier = Modifier.width(86.dp)
+                    modifier = Modifier.width(72.dp)
                 )
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(8.dp))
 
         // === Resolution Pills ===
         SectionLabel("RESOLUTION")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 14.dp
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -125,23 +118,21 @@ fun ExportScreen(
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(8.dp))
 
         // === Frame Rate Slider ===
         SectionLabel("FRAME RATE")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 14.dp
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "30",
                         color = ApexPalette.TextTertiary,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Slider(
@@ -161,11 +152,11 @@ fun ExportScreen(
                     Text(
                         "120",
                         color = ApexPalette.TextTertiary,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
@@ -185,13 +176,13 @@ fun ExportScreen(
                                     RoundedCornerShape(8.dp)
                                 )
                                 .clickable { selectedFps = f }
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 "${f.toInt()} fps",
                                 color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -200,84 +191,79 @@ fun ExportScreen(
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(8.dp))
 
         // === Bitrate Quality Gauge ===
         SectionLabel("BITRATE & QUALITY")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 14.dp
         ) {
             Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 GaugeArc(
                     progress = 0.78f,
-                    modifier = Modifier.size(72.dp)
+                    modifier = Modifier.size(56.dp)
                 )
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "Estimated File Size",
                         color = ApexPalette.TextTertiary,
-                        fontSize = 10.sp
+                        fontSize = 9.sp
                     )
                     Text(
                         "1.8 GB",
                         color = ApexPalette.TextPrimary,
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    Spacer(Modifier.height(4.dp))
                     Text(
                         "120 Mbps • H.265",
                         color = ApexPalette.NeonCyan,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(10.dp))
 
         // === Export button ===
-        Box(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
-                    .clickable { vm.startExport() },
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (export.isExporting) Icons.Default.Refresh
-                        else Icons.Default.IosShare,
-                        null,
-                        tint = ApexPalette.BgDeep,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (export.isExporting)
-                            "Exporting… ${(export.progress * 100).toInt()}%"
-                        else "Export $selectedResolution @ ${selectedFps.toInt()}fps",
-                        color = ApexPalette.BgDeep,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp
-                    )
-                }
+                )
+                .clickable { vm.startExport() },
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (export.isExporting) Icons.Default.Refresh
+                    else Icons.Default.IosShare,
+                    null,
+                    tint = ApexPalette.BgDeep,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (export.isExporting)
+                        "Exporting… ${(export.progress * 100).toInt()}%"
+                    else "Export $selectedResolution @ ${selectedFps.toInt()}fps",
+                    color = ApexPalette.BgDeep,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp
+                )
             }
         }
         if (export.isExporting) {
@@ -288,7 +274,6 @@ fun ExportScreen(
                 }
             }
         }
-        Spacer(Modifier.height(28.dp))
     }
 }
 
@@ -299,8 +284,8 @@ private fun SectionLabel(text: String) {
         color = ApexPalette.TextTertiary,
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = 1.5.sp,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+        letterSpacing = 1.2.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
     )
 }
 
@@ -314,8 +299,8 @@ private fun MotionGraphicsCard(
     val border = if (selected) ApexPalette.NeonCyan else Color.Transparent
     Box(
         modifier = modifier
-            .height(96.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .height(78.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 Brush.linearGradient(
                     listOf(Color(0xFF1A0F2E), Color(0xFF0F1B2D))
@@ -379,8 +364,8 @@ private fun TransitionCard(
 ) {
     Box(
         modifier = modifier
-            .height(80.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .height(68.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 Brush.linearGradient(
                     listOf(Color(0xFF1A2440), Color(0xFF0F1B33))

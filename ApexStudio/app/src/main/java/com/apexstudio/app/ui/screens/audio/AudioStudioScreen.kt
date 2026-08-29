@@ -5,12 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -51,19 +47,15 @@ fun AudioStudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = 12.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        // === Mixer Console ===
         SectionLabel("MIXER CONSOLE")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 16.dp
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -72,17 +64,17 @@ fun AudioStudioScreen(
                     Text(
                         "Main Output",
                         color = ApexPalette.TextPrimary,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         "128 BPM",
                         color = ApexPalette.NeonCyan,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -96,24 +88,21 @@ fun AudioStudioScreen(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // === EQ Visualizer ===
-        SectionLabel("REAL-TIME EQ VISUALIZER")
         Spacer(Modifier.height(8.dp))
+
+        SectionLabel("REAL-TIME EQ")
+        Spacer(Modifier.height(6.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 16.dp
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
                 EqVisualizer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp)
+                        .height(80.dp)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -125,22 +114,19 @@ fun AudioStudioScreen(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // === AI Voice Enhancement ===
-        SectionLabel("AI VOICE ENHANCE")
         Spacer(Modifier.height(8.dp))
+
+        SectionLabel("AI VOICE ENHANCE")
+        Spacer(Modifier.height(6.dp))
         GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 16.dp
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
@@ -153,21 +139,21 @@ fun AudioStudioScreen(
                             Icons.Default.GraphicEq,
                             null,
                             tint = ApexPalette.BgDeep,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Neural Voice Isolation",
                             color = ApexPalette.TextPrimary,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             "Reduce noise & enhance clarity",
                             color = ApexPalette.TextSecondary,
-                            fontSize = 10.sp
+                            fontSize = 9.sp
                         )
                     }
                     Switch(
@@ -179,11 +165,11 @@ fun AudioStudioScreen(
                         )
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     "Clarity",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 10.sp
+                    fontSize = 9.sp
                 )
                 Slider(
                     value = state.clarity,
@@ -197,7 +183,7 @@ fun AudioStudioScreen(
                 Text(
                     "Reduce Noise",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 10.sp
+                    fontSize = 9.sp
                 )
                 Slider(
                     value = state.reduceNoise,
@@ -208,12 +194,12 @@ fun AudioStudioScreen(
                         inactiveTrackColor = ApexPalette.BgElevated
                     )
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(
                             Brush.horizontalGradient(
                                 listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
@@ -226,32 +212,23 @@ fun AudioStudioScreen(
                         "Enhance Voice",
                         color = ApexPalette.BgDeep,
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
         // === SFX Library ===
-        SectionLabel("SOUND FX LIBRARY")
-        Spacer(Modifier.height(8.dp))
-        GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 20.dp
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                state.tracks.forEach { track ->
-                    SfxLibraryRow(track)
-                    Spacer(Modifier.height(8.dp))
-                }
+        SectionLabel("SFX LIBRARY")
+        Spacer(Modifier.height(6.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            state.tracks.forEach { track ->
+                SfxLibraryRow(track)
+                Spacer(Modifier.height(6.dp))
             }
         }
-
-        Spacer(Modifier.height(28.dp))
     }
 }
 
@@ -338,6 +315,7 @@ private fun PanKnob(pan: Float, accent: Color) {
 @Composable
 private fun VerticalFader(volume: Float, accent: Color) {
     val trackHeight = 96.dp
+    val capOffset = -(trackHeight * (1f - volume))
     Box(
         modifier = Modifier
             .width(28.dp)
@@ -358,19 +336,20 @@ private fun VerticalFader(volume: Float, accent: Color) {
                     )
                 )
         )
-        // Cap
+        // Cap positioned at the top of the fill
         Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = -(trackHeight * volume - 8.dp))
-                .size(width = 30.dp, height = 18.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .align(Alignment.BottomStart)
+                .offset(y = capOffset)
+                .fillMaxWidth()
+                .height(14.dp)
+                .clip(RoundedCornerShape(3.dp))
                 .background(
                     Brush.horizontalGradient(
                         listOf(ApexPalette.BgElevated, ApexPalette.BgSurface)
                     )
                 )
-                .border(1.dp, accent, RoundedCornerShape(4.dp))
+                .border(1.dp, accent, RoundedCornerShape(3.dp))
         )
     }
 }

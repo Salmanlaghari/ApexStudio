@@ -8,7 +8,7 @@ object ApexPalette {
     val BgBase = Color(0xFF0B0E14)
     val BgSurface = Color(0xFF121824)
     val BgElevated = Color(0xFF1A2236)
-    val BgGlass = Color(0xB3121824)
+    val BgGlass = Color(0xCC121824)
     val BgGlassSoft = Color(0x80121824)
 
     val NeonCyan = Color(0xFF00E5FF)
@@ -27,7 +27,7 @@ object ApexPalette {
     val Danger = Color(0xFFEF4444)
 
     val Divider = Color(0xFF1F2937)
-    val BorderGlass = Color(0x33FFFFFF)
+    val BorderGlass = Color(0xFF1E293B)
 
     val TrackVideo = Color(0xFF7C4DFF)
     val TrackAudio = Color(0xFF00E5FF)

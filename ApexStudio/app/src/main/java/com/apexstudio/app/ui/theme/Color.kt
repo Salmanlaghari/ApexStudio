@@ -5,11 +5,11 @@ import androidx.compose.ui.graphics.Color
 
 object ApexPalette {
     val BgDeep = Color(0xFF05080F)
-    val BgBase = Color(0xFF0A0E1A)
-    val BgSurface = Color(0xFF111827)
+    val BgBase = Color(0xFF0B0E14)
+    val BgSurface = Color(0xFF121824)
     val BgElevated = Color(0xFF1A2236)
-    val BgGlass = Color(0xCC0F1626)
-    val BgGlassSoft = Color(0x801A2236)
+    val BgGlass = Color(0xB3121824)
+    val BgGlassSoft = Color(0x80121824)
 
     val NeonCyan = Color(0xFF00E5FF)
     val NeonCyanGlow = Color(0xFF00B8D4)
@@ -38,7 +38,7 @@ object ApexPalette {
         listOf(NeonCyan, NeonPurple)
     )
     val GradientSurface = Brush.verticalGradient(
-        listOf(Color(0xFF0F1626), Color(0xFF0A0E1A))
+        listOf(Color(0xFF121824), Color(0xFF0B0E14))
     )
     val GradientGlass = Brush.verticalGradient(
         listOf(Color(0x55FFFFFF), Color(0x11FFFFFF))

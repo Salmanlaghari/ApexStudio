@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -25,7 +24,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -33,18 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.apexstudio.app.domain.model.ExportQuality
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.components.AppTopBar
-import com.apexstudio.app.ui.components.BottomNavBar
-import com.apexstudio.app.ui.components.BottomNavItem
 import com.apexstudio.app.ui.components.GlassCard
-import com.apexstudio.app.ui.components.NeonPrimaryButton
 import com.apexstudio.app.ui.theme.ApexPalette
-import com.apexstudio.app.util.Fps
-import com.apexstudio.app.util.TimeFormat
-import com.apexstudio.app.util.WaveformGenerator
 import kotlinx.coroutines.delay
 
 @Composable
@@ -54,233 +44,240 @@ fun ExportScreen(
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
+    val fxList = vm.fx.collectAsStateWithLifecycle().value
+    val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
     val s = export.settings
+    var selectedResolution by remember { mutableStateOf("4K") }
+    var selectedFps by remember { mutableStateOf(60f) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(ApexPalette.BgBase)
             .verticalScroll(rememberScrollState())
+            .padding(vertical = 12.dp)
     ) {
-        AppTopBar(
-            title = "VideoFX & Export",
-            subtitle = "Finalize & share",
-            onBack = onBack
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        // Preview
-        GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 22.dp
-        ) {
-            Column {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(170.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Brush.verticalGradient(
-                            listOf(Color(0xFFFF9A8B), Color(0xFFFF6A88),
-                                Color(0xFF6A5BE2))
-                        ))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Brush.verticalGradient(
-                                listOf(Color(0x88000000), Color.Transparent)
-                            ))
-                    )
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(10.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.PlayArrow, null,
-                            tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("01:24 / 04:15", color = Color.White, fontSize = 11.sp)
-                        Spacer(Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.18f))
-                        ) {
-                            Icon(Icons.Default.Fullscreen, null,
-                                tint = Color.White,
-                                modifier = Modifier.align(Alignment.Center).size(16.dp))
-                        }
-                    }
-                    // mini waveform
-                    val samples = 80
-                    val data = remember { WaveformGenerator.generate(42L, samples) }
-                    Canvas(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(24.dp)
-                            .padding(start = 32.dp, end = 40.dp, bottom = 32.dp)
-                    ) {
-                        val w = size.width
-                        val h = size.height
-                        val mid = h / 2
-                        val step = w / samples
-                        for (i in 0 until samples) {
-                            val v = data[i]
-                            drawLine(
-                                color = Color.White.copy(alpha = 0.5f),
-                                start = Offset(i * step, mid - v * h / 2),
-                                end = Offset(i * step, mid + v * h / 2),
-                                strokeWidth = 2f
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // progress
-                Slider(
-                    value = 0.32f,
-                    onValueChange = {},
-                    colors = SliderDefaults.colors(
-                        thumbColor = ApexPalette.NeonCyan,
-                        activeTrackColor = ApexPalette.NeonCyan,
-                        inactiveTrackColor = ApexPalette.BgElevated
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        val fxList = vm.fx.collectAsStateWithLifecycle().value
-        val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
-
-        SectionTitle("Aesthetic FX & Transitions")
+        // === Motion Graphics & Transitions ===
+        SectionLabel("MOTION GRAPHICS")
+        Spacer(Modifier.height(8.dp))
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(fxList) { fx ->
-                FxCard(fx.label, fx.id == "chrom", fx.icon)
+                MotionGraphicsCard(
+                    label = fx.label,
+                    icon = fx.icon,
+                    selected = fx.id == "chrom",
+                    modifier = Modifier.width(110.dp)
+                )
             }
         }
 
         Spacer(Modifier.height(18.dp))
 
-        SectionTitle("Transition Selector")
+        SectionLabel("TRANSITIONS")
+        Spacer(Modifier.height(8.dp))
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(transitionsList) { t ->
-                TransitionCard(t.label, t.icon)
+                TransitionCard(
+                    label = t.label,
+                    icon = t.icon,
+                    modifier = Modifier.width(86.dp)
+                )
             }
         }
 
         Spacer(Modifier.height(18.dp))
 
-        // Export Settings
+        // === Resolution Pills ===
+        SectionLabel("RESOLUTION")
+        Spacer(Modifier.height(8.dp))
         GlassCard(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .fillMaxWidth(),
             cornerRadius = 20.dp
         ) {
-            Column {
-                Text("Export Settings",
-                    color = ApexPalette.TextPrimary,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(14.dp))
-
-                SettingsRow("Resolution") {
-                    listOf("8K Ultra HD", "4K", "1080p").forEach { r ->
-                        PillButton(
-                            text = r,
-                            selected = s.resolution == r,
-                            sub = if (r == "8K Ultra HD") "7680x4320" else null,
-                            onClick = { vm.updateExport { it.copy(resolution = r) } }
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "1080p" to "1920×1080",
+                        "4K" to "3840×2160",
+                        "8K" to "7680×4320"
+                    ).forEach { (label, sub) ->
+                        ResolutionPill(
+                            label = label,
+                            sub = sub,
+                            selected = selectedResolution == label,
+                            onClick = { selectedResolution = label },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
+            }
+        }
 
-                Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
 
-                Text("Frame Rate", color = ApexPalette.TextPrimary,
-                    style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(8.dp))
+        // === Frame Rate Slider ===
+        SectionLabel("FRAME RATE")
+        Spacer(Modifier.height(8.dp))
+        GlassCard(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            cornerRadius = 20.dp
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("24", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+                    Text(
+                        "30",
+                        color = ApexPalette.TextTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Slider(
-                        value = s.frameRate.toFloat(),
-                        onValueChange = { vm.updateExport { e -> e.copy(frameRate = it.toInt()) } },
-                        valueRange = Fps.MIN.toFloat()..Fps.MAX.toFloat(),
-                        steps = ((Fps.MAX - Fps.MIN) / Fps.STEP) - 1,
+                        value = selectedFps,
+                        onValueChange = { selectedFps = it },
+                        valueRange = 30f..120f,
+                        steps = 2,
                         colors = SliderDefaults.colors(
                             thumbColor = ApexPalette.NeonCyan,
                             activeTrackColor = ApexPalette.NeonCyan,
                             inactiveTrackColor = ApexPalette.BgElevated
                         ),
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
                     )
-                    Text("60", color = ApexPalette.TextTertiary, fontSize = 10.sp)
-                }
-                Text("${s.frameRate} fps",
-                    color = ApexPalette.NeonCyan,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.align(Alignment.End))
-
-                Spacer(Modifier.height(16.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Bitrate & Quality",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f))
-                    QualityPicker(
-                        current = s.quality,
-                        onChange = { q -> vm.updateExport { it.copy(quality = q) } }
+                    Text(
+                        "120",
+                        color = ApexPalette.TextTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Gauge
-                    GaugeArc(progress = 0.78f)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text("Estimated Size",
-                            color = ApexPalette.TextTertiary,
-                            style = MaterialTheme.typography.labelSmall)
-                        Text("1.8 GB / 120 Mbps",
-                            color = ApexPalette.TextPrimary,
-                            style = MaterialTheme.typography.bodyMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    listOf(30f, 60f, 90f, 120f).forEach { f ->
+                        val sel = selectedFps == f
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (sel) ApexPalette.NeonCyan.copy(alpha = 0.18f)
+                                    else ApexPalette.BgElevated
+                                )
+                                .border(
+                                    if (sel) 1.dp else 0.dp,
+                                    ApexPalette.NeonCyan,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable { selectedFps = f }
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${f.toInt()} fps",
+                                color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        // === Bitrate Quality Gauge ===
+        SectionLabel("BITRATE & QUALITY")
+        Spacer(Modifier.height(8.dp))
+        GlassCard(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            cornerRadius = 20.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GaugeArc(
+                    progress = 0.78f,
+                    modifier = Modifier.size(72.dp)
+                )
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Estimated File Size",
+                        color = ApexPalette.TextTertiary,
+                        fontSize = 10.sp
+                    )
+                    Text(
+                        "1.8 GB",
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "120 Mbps • H.265",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
 
         Spacer(Modifier.height(20.dp))
 
-        // Export button
+        // === Export button ===
         Box(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-            NeonPrimaryButton(
-                text = if (export.isExporting)
-                    "Exporting… ${(export.progress * 100).toInt()}%"
-                else "Export Project",
-                icon = Icons.Default.IosShare,
-                onClick = { vm.startExport() },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                        )
+                    )
+                    .clickable { vm.startExport() },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (export.isExporting) Icons.Default.Refresh
+                        else Icons.Default.IosShare,
+                        null,
+                        tint = ApexPalette.BgDeep,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (export.isExporting)
+                            "Exporting… ${(export.progress * 100).toInt()}%"
+                        else "Export $selectedResolution @ ${selectedFps.toInt()}fps",
+                        color = ApexPalette.BgDeep,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
         }
         if (export.isExporting) {
             LaunchedEffect(Unit) {
@@ -291,92 +288,111 @@ fun ExportScreen(
             }
         }
         Spacer(Modifier.height(28.dp))
-        BottomNavBar(
-            current = "Export",
-            items = listOf(
-                BottomNavItem("Home", Icons.Default.Home, false),
-                BottomNavItem("Export", Icons.Default.IosShare, true)
-            ),
-            onSelect = { /* TODO */ }
-        )
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+private fun SectionLabel(text: String) {
     Text(
         text,
-        color = ApexPalette.TextPrimary,
-        style = MaterialTheme.typography.titleMedium,
+        color = ApexPalette.TextTertiary,
+        fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
+        letterSpacing = 1.5.sp,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
     )
 }
 
 @Composable
-private fun FxCard(label: String, selected: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun MotionGraphicsCard(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    modifier: Modifier = Modifier
+) {
     val border = if (selected) ApexPalette.NeonCyan else Color.Transparent
     Box(
-        modifier = Modifier
-            .width(110.dp)
-            .height(86.dp)
+        modifier = modifier
+            .height(96.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(Brush.linearGradient(
-                listOf(Color(0xFF1A0F2E), Color(0xFF0F1B2D))
-            ))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF1A0F2E), Color(0xFF0F1B2D))
+                )
+            )
+            .border(2.dp, border, RoundedCornerShape(14.dp))
             .clickable { }
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.radialGradient(
-                    listOf(ApexPalette.NeonPurple.copy(alpha = 0.45f), Color.Transparent)
-                ))
+                .background(
+                    Brush.radialGradient(
+                        listOf(ApexPalette.NeonPurple.copy(alpha = 0.5f), Color.Transparent)
+                    )
+                )
         )
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .size(34.dp)
+                .size(40.dp)
                 .clip(CircleShape)
-                .background(ApexPalette.NeonCyan.copy(alpha = 0.18f)),
+                .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
+                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = if (selected) ApexPalette.NeonCyan else Color.White,
-                modifier = Modifier.size(20.dp))
+            Icon(
+                icon, null,
+                tint = if (selected) ApexPalette.NeonCyan else Color.White,
+                modifier = Modifier.size(20.dp)
+            )
         }
         Text(
             label,
             color = if (selected) ApexPalette.NeonCyan else Color.White,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp)
         )
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(3.dp)
-                .align(Alignment.BottomCenter)
-                .background(Brush.horizontalGradient(
-                    listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                ))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                    )
+                )
         )
     }
 }
 
 @Composable
-private fun TransitionCard(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun TransitionCard(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
     Box(
-        modifier = Modifier
-            .width(86.dp)
+        modifier = modifier
             .height(80.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(Brush.linearGradient(
-                listOf(Color(0xFF1A2440), Color(0xFF0F1B33))
-            ))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF1A2440), Color(0xFF0F1B33))
+                )
+            )
             .clickable { },
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(28.dp))
+        Icon(
+            icon, null,
+            tint = ApexPalette.NeonCyan,
+            modifier = Modifier.size(28.dp)
+        )
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -385,86 +401,65 @@ private fun TransitionCard(label: String, icon: androidx.compose.ui.graphics.vec
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(label, color = ApexPalette.TextPrimary, fontSize = 9.sp)
+            Text(label, color = ApexPalette.TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-private fun SettingsRow(label: String, content: @Composable () -> Unit) {
-    Column {
-        Text(label, color = ApexPalette.TextPrimary,
-            style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
-    }
-}
-
-@Composable
-private fun PillButton(
-    text: String,
+private fun ResolutionPill(
+    label: String,
+    sub: String,
     selected: Boolean,
-    sub: String? = null,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
+        modifier = modifier
+            .height(64.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(
-                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated
+                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.15f)
+                else ApexPalette.BgElevated
             )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                RoundedCornerShape(14.dp)
+            )
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text,
+            Text(
+                label,
                 color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold)
-            if (sub != null) {
-                Text(sub, color = ApexPalette.TextTertiary, fontSize = 8.sp)
-            }
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                sub,
+                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+                fontSize = 9.sp
+            )
         }
     }
 }
 
 @Composable
-private fun QualityPicker(current: ExportQuality, onChange: (ExportQuality) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        ExportQuality.values().forEach { q ->
-            val sel = current == q
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (sel) ApexPalette.NeonCyan else ApexPalette.BgElevated
-                    )
-                    .clickable { onChange(q) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Text(q.label,
-                    color = if (sel) ApexPalette.BgDeep else ApexPalette.TextPrimary,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun GaugeArc(progress: Float) {
+private fun GaugeArc(progress: Float, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier.size(54.dp),
+        modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = 6f
+            val stroke = 8f
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
                 color = ApexPalette.BgElevated,
-                startAngle = 135f, sweepAngle = 270f, useCenter = false,
+                startAngle = 135f,
+                sweepAngle = 270f,
+                useCenter = false,
                 topLeft = Offset(stroke / 2, stroke / 2),
                 size = arcSize,
                 style = Stroke(stroke, cap = StrokeCap.Round)
@@ -473,11 +468,19 @@ private fun GaugeArc(progress: Float) {
                 brush = Brush.sweepGradient(
                     listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple, ApexPalette.NeonCyan)
                 ),
-                startAngle = 135f, sweepAngle = 270f * progress, useCenter = false,
+                startAngle = 135f,
+                sweepAngle = 270f * progress,
+                useCenter = false,
                 topLeft = Offset(stroke / 2, stroke / 2),
                 size = arcSize,
                 style = Stroke(stroke, cap = StrokeCap.Round)
             )
         }
+        Text(
+            "${(progress * 100).toInt()}%",
+            color = ApexPalette.NeonCyan,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -141,13 +140,6 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.weight(1f))
                     ActionPill(
-                        icon = Icons.Default.Refresh,
-                        label = "Refresh",
-                        color = ApexPalette.NeonCyan,
-                        onClick = { refresh() }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    ActionPill(
                         icon = Icons.Default.Delete,
                         label = "Clear",
                         color = ApexPalette.Danger,
@@ -182,24 +174,11 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                             modifier = Modifier.align(Alignment.Center),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(ApexPalette.BgElevated),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.SdStorage,
-                                    null, tint = ApexPalette.TextTertiary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
                             Text(
-                                "No crash log to display",
-                                color = ApexPalette.TextSecondary,
-                                style = MaterialTheme.typography.bodySmall
+                                "No crash log available.",
+                                color = ApexPalette.Danger,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -224,10 +203,10 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                     fontWeight = FontWeight.ExtraBold
                 )
                 Spacer(Modifier.height(8.dp))
-                HelpItem("1.", "If ApexStudio crashes, reopen the app and come back here.")
-                HelpItem("2.", "The most recent stack trace is saved automatically.")
-                HelpItem("3.", "Tap \"Copy\" to share the trace for debugging.")
-                HelpItem("4.", "Use \"Clear\" to remove the log after fixing the issue.")
+                HelpItem("1.", "Reproduce the crash in the app (e.g. import music).")
+                HelpItem("2.", "Open Settings → View Crash Log.")
+                HelpItem("3.", "Screenshot or copy the red diagnostic text.")
+                HelpItem("4.", "Share the screenshot for an evidence-based fix.")
             }
         }
 

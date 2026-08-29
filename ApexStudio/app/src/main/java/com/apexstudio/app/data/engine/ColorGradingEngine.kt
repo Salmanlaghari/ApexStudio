@@ -6,6 +6,7 @@ import android.opengl.Matrix
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 data class ColorGradingState(
     val brightness: Float = 0f,
@@ -26,7 +27,6 @@ class ColorGradingEngine {
 
     private var glProgram: Int = 0
     private var vbo: Int = 0
-    private var vao: Int = 0
     private var initialized = false
 
     private val vertexShaderCode = """
@@ -92,7 +92,6 @@ class ColorGradingEngine {
             }
 
             GLES20.glGenBuffers(1, intArrayOf(vbo), 0)
-            GLES20.glGenVertexArrays(1, intArrayOf(vao), 0)
             initialized = true
         } catch (e: Exception) {
             Log.e("ColorGradingEngine", "GL init error", e)
@@ -149,10 +148,6 @@ class ColorGradingEngine {
         if (vbo != 0) {
             GLES20.glDeleteBuffers(1, intArrayOf(vbo), 0)
             vbo = 0
-        }
-        if (vao != 0) {
-            GLES20.glDeleteVertexArrays(1, intArrayOf(vao), 0)
-            vao = 0
         }
         initialized = false
     }

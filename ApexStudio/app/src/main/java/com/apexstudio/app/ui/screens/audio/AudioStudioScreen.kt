@@ -35,6 +35,8 @@ import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.util.WaveformGenerator
+import kotlin.math.abs
 
 @Composable
 fun AudioStudioScreen(
@@ -78,7 +80,14 @@ fun AudioStudioScreen(
                         Triple("SFX", 23L, ApexPalette.NeonPurple),
                         Triple("Music", 31L, ApexPalette.NeonPink)
                     ).forEachIndexed { idx, (name, seed, color) ->
-                        WaveformTrackRow(name = name, seed = seed, color = color, state = state)
+                        WaveformTrackRow(
+                            name = name,
+                            seed = seed,
+                            color = color,
+                            state = state,
+                            onMute = { vm.toggleMuteEngine() },
+                            onSolo = { vm.toggleSoloEngine() }
+                        )
                         if (idx < 3) Spacer(Modifier.height(6.dp))
                     }
                 }
@@ -138,9 +147,9 @@ fun AudioStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f) { vm.setLowEQ(it.toShort()) }
-                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f) { vm.setMidEQ(it.toShort()) }
-                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f) { vm.setHighEQ(it.toShort()) }
+                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f) { vm.setLowEQ(it.toInt().toShort()) }
+                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f) { vm.setMidEQ(it.toInt().toShort()) }
+                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f) { vm.setMidEQ(it.toInt().toShort()) }
                     }
                 }
             }
@@ -265,7 +274,9 @@ private fun WaveformTrackRow(
     name: String,
     seed: Long,
     color: Color,
-    state: com.apexstudio.app.presentation.state.AudioStudioState
+    state: com.apexstudio.app.presentation.state.AudioStudioState,
+    onMute: () -> Unit,
+    onSolo: () -> Unit
 ) {
     val isMuted = state.isMuted && seed == 7L
     val isSolo = state.isSolo

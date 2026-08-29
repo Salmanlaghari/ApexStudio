@@ -19,30 +19,32 @@ class MediaAnalyzer {
         withContext(Dispatchers.IO) {
             val extractor = MediaExtractor()
             try {
-                extractor.setDataSource(context, android.net.Uri.parse(uri), null)
+                extractor.setDataSource(context, android.net.Uri.parse(uri))
                 val trackIndex = findAudioTrack(extractor)
                 if (trackIndex < 0) {
                     return@withContext AudioWaveformData(FloatArray(sampleCount), 0L, 0f)
                 }
                 extractor.selectTrack(trackIndex)
-                val format = extractor.trackFormat
+                val format = extractor.getTrackFormat(trackIndex)
                 val durationUs = format.getLong(MediaFormat.KEY_DURATION) ?: 0L
                 val durationMs = durationUs / 1000
 
                 val samples = FloatArray(sampleCount)
                 val bufferSize = 4096
-                val buffer = ByteArray(bufferSize)
+                val byteBuffer = java.nio.ByteBuffer.allocate(bufferSize)
                 var totalSamples = 0
                 var sampleIndex = 0
 
                 while (extractor.sampleSize > 0 && sampleIndex < sampleCount) {
-                    val readSize = extractor.readSampleData(buffer, 0)
-                    if (readSize < 0) break
-                    for (i in 0 until readSize step 2) {
-                        val sample = java.nio.ByteBuffer.wrap(buffer, i, 2).short.toFloat() / 32768f
+                    byteBuffer.clear()
+                    val readSize = extractor.readSampleData(byteBuffer, 0)
+                    if (readSize <= 0) break
+                    var i = 0
+                    while (i + 1 < readSize && sampleIndex < sampleCount) {
+                        val sample = byteBuffer.short.toFloat() / 32768f
                         samples[sampleIndex] = kotlin.math.abs(sample)
                         sampleIndex++
-                        if (sampleIndex >= sampleCount) break
+                        i += 2
                     }
                     extractor.advance()
                 }
@@ -65,7 +67,7 @@ class MediaAnalyzer {
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(context, android.net.Uri.parse(uri), null)
+                retriever.setDataSource(context, android.net.Uri.parse(uri))
                 val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 val duration = durationStr?.toLongOrNull() ?: 0L
                 retriever.release()
@@ -76,8 +78,8 @@ class MediaAnalyzer {
         }
 
     private fun findAudioTrack(extractor: MediaExtractor): Int {
-        for (i in 0 until extractor.trackCount) {
-            val format = extractor.trackFormat
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
             if (mime.startsWith("audio/")) return i
         }

@@ -49,7 +49,8 @@ fun ExportScreen(
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
     var selectedResolution by remember { mutableStateOf("4K") }
     var selectedFps by remember { mutableStateOf(60f) }
-    val exportEngine = remember { ExportEngine(androidx.compose.ui.platform.LocalContext.current) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val exportEngine = remember { ExportEngine(context) }
 
     Column(
         modifier = Modifier

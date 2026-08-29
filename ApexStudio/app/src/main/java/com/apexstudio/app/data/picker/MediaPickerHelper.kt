@@ -5,14 +5,15 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableStateFlow
-import androidx.compose.runtime.StateFlow
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,27 +34,31 @@ class MediaPickerHelper(private val context: Context) {
     private val _pickedMedia = MutableStateFlow<List<MediaMetadata>>(emptyList())
     val pickedMedia: StateFlow<List<MediaMetadata>> = _pickedMedia
 
-    val pickMultipleMedia = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (uris != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val metadataList = uris.mapNotNull { uri ->
-                    extractMetadata(uri)
+    lateinit var pickMultipleMedia: ActivityResultLauncher<Array<String>?>
+    lateinit var pickSingleMedia: ActivityResultLauncher<String?>
+
+    @Composable
+    fun registerLaunchers() {
+        pickMultipleMedia = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris ->
+            if (uris != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
+                    _pickedMedia.emit(metadataList)
                 }
-                _pickedMedia.emit(metadataList)
             }
         }
-    }
 
-    val pickSingleMedia = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val meta = extractMetadata(uri)
-                if (meta != null) {
-                    _pickedMedia.emit(listOf(meta))
+        pickSingleMedia = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri ->
+            if (uri != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val meta = extractMetadata(uri)
+                    if (meta != null) {
+                        _pickedMedia.emit(listOf(meta))
+                    }
                 }
             }
         }

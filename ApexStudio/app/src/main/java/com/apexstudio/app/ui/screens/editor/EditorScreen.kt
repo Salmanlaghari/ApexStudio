@@ -282,7 +282,7 @@ private fun VideoPreviewSection(
                 )
                 NeonIconButton(
                     icon = Icons.Default.FastForward,
-                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(state.durationMs)) },
+                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(playerDurationMs)) },
                     size = 36.dp,
                     iconSize = 16.dp
                 )

@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 
 data class AudioEQState(
     val lowGain: Short = 0,
@@ -52,9 +53,9 @@ class AudioEngine(private val context: Context) {
                 enabled = true
                 val bands = numberOfBands
                 if (bands >= 3) {
-                    setBandGain(0, lowGain)
-                    setBandGain(1, midGain)
-                    setBandGain(2, highGain)
+                    setBandLevel(0, _eqState.value.lowGain)
+                    setBandLevel(1, _eqState.value.midGain)
+                    setBandLevel(2, _eqState.value.highGain)
                 }
             }
         } catch (e: Exception) {
@@ -64,17 +65,17 @@ class AudioEngine(private val context: Context) {
 
     fun setLowGain(gain: Short) {
         _eqState.update { it.copy(lowGain = gain) }
-        equalizer?.setBandGain(0, gain)
+        equalizer?.setBandLevel(0, gain)
     }
 
     fun setMidGain(gain: Short) {
         _eqState.update { it.copy(midGain = gain) }
-        equalizer?.setBandGain(1, gain)
+        equalizer?.setBandLevel(1, gain)
     }
 
     fun setHighGain(gain: Short) {
         _eqState.update { it.copy(highGain = gain) }
-        equalizer?.setBandGain(2, gain)
+        equalizer?.setBandLevel(2, gain)
     }
 
     fun setVolume(volume: Float) {
@@ -146,13 +147,14 @@ class AudioEngine(private val context: Context) {
         audioRecord = null
     }
 
-    fun getSupportedEQBands(): Int = equalizer?.numberOfBands ?: 0
+    fun getSupportedEQBands(): Int = equalizer?.numberOfBands?.toInt() ?: 0
 
-    fun getEQFrequencyCenter(bandIndex: Int): Int = equalizer?.getBandCenterFrequency(bandIndex)?.toInt() ?: 0
+    fun getEQFrequencyCenter(bandIndex: Int): Int = equalizer?.getCenterFreq(bandIndex.toShort()) ?: 0
 
     fun getEQFrequencyRange(): Pair<Int, Int> {
         val eq = equalizer ?: return Pair(20, 20000)
-        return Pair(eq.bandFreqRange.first.toInt(), eq.bandFreqRange.second.toInt())
+        val range = eq.getBandFreqRange(0.toShort())
+        return Pair(range[0], range[1])
     }
 
     fun release() {

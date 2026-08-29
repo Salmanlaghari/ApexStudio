@@ -9,7 +9,7 @@ on:
 
 env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
-  ANDROID_HOME: ${{ secrets.ANDROID_HOME || '/usr/lib/android-sdk' }}
+  PROJECT_DIR: ApexStudio
 
 jobs:
   build:
@@ -29,18 +29,12 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
-
-      - name: Validate Gradle wrapper
-        uses: gradle/wrapper-validation-action@v3
-        with:
-        # The validation action will pass even if the wrapper jar is missing,
-        # it just confirms the properties file is well-formed.
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
+          gradle-home-directory-cleanup: on-success
 
       - name: Cache Gradle and Android dependencies
         uses: actions/cache@v4
@@ -49,7 +43,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.android/build-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/*.gradle', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('ApexStudio/**/*.gradle.kts', 'ApexStudio/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -58,7 +52,6 @@ jobs:
         with:
           api-level: 35
           build-tools-version: '35.0.0'
-          ndk-version: '26.1.10909125'
 
       - name: Accept SDK licenses
         run: |
@@ -70,27 +63,31 @@ jobs:
           EOF
           yes | sdkmanager --licenses || true
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
-
-      - name: Generate Gradle wrapper (fallback)
-        if: hashFiles('gradlew') == ''
-        run: gradle wrapper --gradle-version 8.7 --distribution-type bin
+      - name: Generate Gradle wrapper (if missing)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.7 --distribution-type bin
+          fi
+          chmod +x gradlew
 
       - name: Run Lint
-        run: ./gradlew lintDebug || true
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew lintDebug --no-daemon || true
 
       - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Build release APK (unsigned)
+        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleRelease --stacktrace --no-daemon || true
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: apexstudio-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -99,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apexstudio-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
           if-no-files-found: ignore
           retention-days: 14
 
@@ -108,6 +105,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: app/build/reports/lint-results-*.html
+          path: ${{ env.PROJECT_DIR }}/app/build/reports/lint-results-*.html
           if-no-files-found: ignore
           retention-days: 7

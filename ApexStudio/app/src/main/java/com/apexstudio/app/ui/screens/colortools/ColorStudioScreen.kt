@@ -128,7 +128,7 @@ fun ColorStudioScreen(
         ) {
             items(luts) { lut ->
                 LutPresetCard(
-                    name = lut.label,
+                    name = lut.name,
                     selected = lut.id == "cinematic",
                     modifier = Modifier.width(100.dp)
                 )

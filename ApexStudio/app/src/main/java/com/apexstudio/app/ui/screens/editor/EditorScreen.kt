@@ -785,3 +785,9 @@ private fun ToolbarButton(
 @Composable
 private fun Float.toDp() = androidx.compose.ui.unit.Dp(this /
     androidx.compose.ui.platform.LocalDensity.current.density)
+
+@Composable
+private fun Int.pxToDp(): androidx.compose.ui.unit.Dp {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return androidx.compose.ui.unit.Dp(this / density.density)
+}

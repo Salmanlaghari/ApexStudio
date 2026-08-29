@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.domain.model.ExportQuality
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.NeonPrimaryButton
@@ -48,7 +49,7 @@ import kotlinx.coroutines.delay
 fun ExportScreen(
     projectId: String,
     onBack: () -> Unit,
-    vm: EditorViewModel = viewModel()
+    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val s = export.settings

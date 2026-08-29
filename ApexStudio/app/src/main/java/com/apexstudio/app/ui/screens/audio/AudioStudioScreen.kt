@@ -54,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.GlassCard
@@ -65,7 +66,7 @@ import kotlin.math.abs
 fun AudioStudioScreen(
     projectId: String,
     onBack: () -> Unit,
-    vm: EditorViewModel = viewModel()
+    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
     val editor by vm.state.collectAsStateWithLifecycle()

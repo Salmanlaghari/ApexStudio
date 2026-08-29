@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.state.ColorToolState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.WaveformCurve
@@ -51,7 +52,7 @@ import kotlin.math.sqrt
 fun ColorStudioScreen(
     projectId: String,
     onBack: () -> Unit,
-    vm: EditorViewModel = viewModel()
+    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val color by vm.color.collectAsStateWithLifecycle()
     val luts by vm.luts.collectAsStateWithLifecycle()

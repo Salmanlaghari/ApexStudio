@@ -2,8 +2,8 @@ package com.apexstudio.app.ui.screens.audio
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -14,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -27,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,457 +33,524 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
-import com.apexstudio.app.ui.components.AppTopBar
+import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.components.ScreenTopBar
 import com.apexstudio.app.ui.theme.ApexPalette
-import com.apexstudio.app.util.TimeFormat
 import com.apexstudio.app.util.WaveformGenerator
+import kotlin.math.abs
 
 @Composable
 fun AudioStudioScreen(
     projectId: String,
     onBack: () -> Unit,
-    vm: EditorViewModel = viewModel()
+    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
-    val editor by vm.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
-            .verticalScroll(rememberScrollState())
+            .background(ApexPalette.BgBase)
     ) {
-        AppTopBar(
-            title = "Shot 4",
-            subtitle = "Audio Studio",
-            onBack = onBack,
-            onExport = {}
+        ScreenTopBar(
+            title = "AUDIOLAB MIXER",
+            onBack = onBack
         )
 
-        Spacer(Modifier.height(4.dp))
-
-        // BPM & transport
-        GlassCard(
-            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-            cornerRadius = 22.dp
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column {
-                // Transport row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("01:24:18", color = ApexPalette.NeonCyan,
-                        fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.weight(1f))
-                    IconButton(Icons.Default.SkipPrevious)
-                    IconButton(Icons.Default.FastRewind)
+            // Multi-track Waveform Timeline (horizontal cards)
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    listOf(
+                        Triple("1. VOCALS", 7L to "03:12", ApexPalette.NeonEmerald),
+                        Triple("2. MUSIC", 13L to "04:30", ApexPalette.NeonEmerald),
+                        Triple("3. BEAT", 23L to "01:58", ApexPalette.NeonEmerald)
+                    ).forEachIndexed { idx, (name, info, color) ->
+                        MultiTrackRow(
+                            name = name,
+                            duration = info.second,
+                            seed = info.first,
+                            color = color,
+                            isActive = idx == 0
+                        )
+                        if (idx < 2) Spacer(Modifier.height(4.dp))
+                    }
+                }
+            }
+
+            // Mixer Console (horizontal faders)
+            SectionLabel("MIXER CONSOLE")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        MixerChannel("1. VOCALS", 0.8f, 0f, -12, ApexPalette.NeonEmerald)
+                        MixerChannel("2. MUSIC", 0.7f, 0f, -18, ApexPalette.NeonEmerald)
+                        MixerChannel("3. BEAT", 0.65f, 0f, -6, ApexPalette.NeonEmerald)
+                        MixerChannel("4. SYNTH", 0.5f, 0f, -20, ApexPalette.NeonEmerald)
+                        MixerChannel("5. DRUMS", 0.5f, 0f, -45, ApexPalette.NeonEmerald)
+                        MixerChannel("MASTER", 0.9f, 0f, 0, ApexPalette.NeonEmerald)
+                    }
+                }
+            }
+
+            // Real-Time EQ Visualizer
+            SectionLabel("SPECTRUM ANALYZER")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    EqVisualizer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        EqKnob("Low", "80Hz", 0.3f)
+                        EqKnob("Mid", "1kHz", 0.6f)
+                        EqKnob("High", "5kHz", 0.75f)
+                    }
+                }
+            }
+
+            // AI Voice Enhancement
+            SectionLabel("AI VOICE ENHANCEMENT")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(Brush.linearGradient(
-                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                            ))
-                            .clickable { vm.togglePlay() },
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                                )
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            if (editor.isPlaying) Icons.Default.Pause
-                            else Icons.Default.PlayArrow,
-                            null, tint = ApexPalette.BgDeep, modifier = Modifier.size(24.dp))
+                            Icons.Default.GraphicEq,
+                            null,
+                            tint = ApexPalette.BgDeep,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                    IconButton(Icons.Default.FastForward)
                     Spacer(Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(ApexPalette.BgElevated)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Column {
-                            Text("Beat Sync", color = ApexPalette.TextSecondary, fontSize = 9.sp)
-                            Text("Active: ${state.bpm} BPM", color = ApexPalette.NeonCyan, fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                // Mini timeline scrubber
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(ApexPalette.BgElevated)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(0.4f)
-                            .background(Brush.horizontalGradient(
-                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                            ))
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Tracks
-        state.tracks.forEachIndexed { idx, track ->
-            TrackCard(track, idx + 1, vm)
-            Spacer(Modifier.height(10.dp))
-        }
-
-        // Mixer + EQ
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // Mixer
-            GlassCard(
-                modifier = Modifier.weight(1f),
-                cornerRadius = 18.dp
-            ) {
-                Column {
-                    Text("Audio Mixer Console",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MixerChannel("Main", 0.75f, 0.5f, ApexPalette.NeonCyan)
-                        MixerChannel("Vocal", 0.75f, 0.5f, ApexPalette.NeonPurple)
-                        MixerChannel("Beat", 0.6f, 0.5f, ApexPalette.NeonPink)
-                        MixerChannel("SFX", 0.5f, 0.4f, ApexPalette.NeonCyan)
-                    }
-                }
-            }
-            // EQ
-            GlassCard(
-                modifier = Modifier.weight(1f),
-                cornerRadius = 18.dp
-            ) {
-                Column {
-                    Text("Real-time EQ Visualizer",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                    ) {
-                        EqVisualizer()
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()) {
-                        EqKnob("Low", "80Hz")
-                        EqKnob("Mid", "1kHz")
-                        EqKnob("High", "5kHz")
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Sound FX Library + AI Enhance
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            GlassCard(
-                modifier = Modifier.weight(1.4f),
-                cornerRadius = 18.dp
-            ) {
-                Column {
-                    Text("Sound FX Library",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(listOf("Impact 01", "Riser 04", "Transition", "Ambience", "Whoosh")) { name ->
-                            FxChip(name)
-                        }
-                    }
-                }
-            }
-            GlassCard(
-                modifier = Modifier.weight(1f),
-                cornerRadius = 18.dp
-            ) {
-                Column {
-                    Text("AI Voice Enhance",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Toggle", color = ApexPalette.TextSecondary, fontSize = 11.sp)
-                        Spacer(Modifier.weight(1f))
-                        Switch(
-                            checked = state.aiVoiceEnhance,
-                            onCheckedChange = { vm.toggleAiVoice() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = ApexPalette.NeonCyan,
-                                checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("Clarity", color = ApexPalette.TextSecondary, fontSize = 10.sp)
-                    Slider(
-                        value = state.clarity,
-                        onValueChange = { vm.setClarity(it) },
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan
-                        )
-                    )
-                    Text("Reduce Noise", color = ApexPalette.TextSecondary, fontSize = 10.sp)
-                    Slider(
-                        value = state.reduceNoise,
-                        onValueChange = { vm.setReduceNoise(it) },
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonPurple,
-                            activeTrackColor = ApexPalette.NeonPurple
-                        )
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Brush.linearGradient(
-                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                            ))
-                            .clickable { vm.toggleAiVoice() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Enhance", color = ApexPalette.BgDeep,
-                            fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(28.dp))
-    }
-}
-
-@Composable
-private fun IconButton(icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(ApexPalette.BgElevated)
-            .clickable { },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, null, tint = ApexPalette.TextPrimary, modifier = Modifier.size(20.dp))
-    }
-}
-
-@Composable
-private fun TrackCard(track: AudioTrack, idx: Int, vm: EditorViewModel) {
-    GlassCard(
-        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-        cornerRadius = 18.dp
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(ApexPalette.BgElevated),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Track $idx", color = ApexPalette.TextTertiary, fontSize = 8.sp)
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            track.id.take(1).uppercase() +
-                                track.id.drop(1).take(2),
-                            color = ApexPalette.NeonCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp
+                            "AI Noise Reduction",
+                            color = ApexPalette.TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Reduce noise & enhance clarity",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 9.sp
                         )
                     }
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(track.name,
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Text("${(track.volume * 100).toInt()}%",
-                        color = ApexPalette.NeonCyan, fontSize = 10.sp)
-                }
-                Icon(Icons.Default.VolumeOff, null,
-                    tint = if (track.isMuted) ApexPalette.Danger else ApexPalette.TextSecondary,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clickable { vm.toggleMute(track.id) })
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (track.isSolo) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                            else ApexPalette.BgElevated
+                    Switch(
+                        checked = state.aiVoiceEnhance,
+                        onCheckedChange = { vm.toggleAiVoice() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = ApexPalette.NeonCyan,
+                            checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.3f)
                         )
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Solo", color = if (track.isSolo) ApexPalette.NeonCyan
-                        else ApexPalette.TextSecondary, fontSize = 10.sp)
+                    )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            // Waveform region
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.BgBase)
-            ) {
-                AudioWaveform(
-                    seed = track.id.hashCode().toLong(),
-                    modifier = Modifier.fillMaxSize().padding(4.dp),
-                    color = if (track.id == "a1") ApexPalette.NeonCyan
-                    else if (track.id == "a2") ApexPalette.NeonPurple
-                    else ApexPalette.NeonPink,
-                    secondaryColor = Color.Gray,
-                    progress = 0.4f
+
+            // SFX Library (horizontal scrollable)
+            SectionLabel("SOUND FX LIBRARY")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("Riser", "Transition", "Ambience", "Whoosh", "Impact", "Drop")) { name ->
+                    FxCard(name)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        color = ApexPalette.TextTertiary,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.2.sp,
+        modifier = Modifier.padding(start = 4.dp)
+    )
+}
+
+@Composable
+private fun MultiTrackRow(
+    name: String,
+    duration: String,
+    seed: Long,
+    color: Color,
+    isActive: Boolean
+) {
+    val border = if (isActive) color else ApexPalette.BorderGlass
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, border, RoundedCornerShape(8.dp))
+            .padding(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.width(72.dp)) {
+                Text(
+                    name,
+                    color = color,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.sp
+                )
+                Text(
+                    if (isActive) "Active" else "Muted",
+                    color = if (isActive) color else ApexPalette.TextTertiary,
+                    fontSize = 8.sp
+                )
+                Text(
+                    duration,
+                    color = ApexPalette.TextTertiary,
+                    fontSize = 8.sp
                 )
             }
+            Spacer(Modifier.width(6.dp))
+            AudioWaveform(
+                seed = seed,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(28.dp),
+                color = color,
+                secondaryColor = color.copy(alpha = 0.3f),
+                progress = 0.5f,
+                samples = 120
+            )
+            Spacer(Modifier.width(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(3.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("R", color = ApexPalette.TextSecondary, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(3.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("S", color = ApexPalette.TextSecondary, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(3.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("M", color = ApexPalette.TextSecondary, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun MixerChannel(name: String, vol: Float, pan: Float, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(name, color = ApexPalette.TextPrimary, fontSize = 9.sp,
-            fontWeight = FontWeight.Bold)
-        Text("Panning", color = ApexPalette.TextTertiary, fontSize = 7.sp)
-        Spacer(Modifier.height(4.dp))
+private fun MixerChannel(
+    name: String,
+    volume: Float,
+    pan: Float,
+    db: Int,
+    accent: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(46.dp)
+    ) {
+        Text(
+            name,
+            color = ApexPalette.TextPrimary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(3.dp))
+        // Volume meter
         Box(
             modifier = Modifier
-                .width(14.dp)
-                .height(60.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(2.dp))
                 .background(ApexPalette.BgBase)
         ) {
-            val barH = 60 * vol
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(volume)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(accent, accent.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+        // Pan knob
+        PanKnob(pan = pan, accent = accent)
+        Spacer(Modifier.height(3.dp))
+        Text("L < > R", color = ApexPalette.TextTertiary, fontSize = 6.sp)
+        Spacer(Modifier.height(3.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("M", color = ApexPalette.TextSecondary, fontSize = 6.sp, fontWeight = FontWeight.Bold)
+            }
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("S", color = ApexPalette.TextSecondary, fontSize = 6.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        // Fader
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgBase)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+        ) {
+            // dB scale
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .padding(vertical = 2.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                listOf("0", "-10", "-20", "-30", "-40", "-60").forEach {
+                    Text(it, color = ApexPalette.TextTertiary, fontSize = 5.sp)
+                }
+            }
+            // Fader fill
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(barH.dp)
-                    .background(Brush.verticalGradient(
-                        listOf(color, color.copy(alpha = 0.3f))
-                    ))
+                    .height((80 * volume).dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(accent, accent.copy(alpha = 0.3f))
+                        )
+                    )
             )
         }
         Spacer(Modifier.height(2.dp))
-        Text("${(vol * 100).toInt()}%", color = color, fontSize = 9.sp)
+        Text(
+            "${if (db > 0) "+" else ""}${db}dB",
+            color = accent,
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
 @Composable
-private fun EqKnob(name: String, freq: String) {
+private fun PanKnob(pan: Float, accent: Color) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, accent.copy(alpha = 0.5f), CircleShape)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val r = size.minDimension / 2f * 0.6f
+            val angle = (pan * 135f) - 90f
+            val rad = Math.toRadians(angle.toDouble())
+            val x = cx + (r * kotlin.math.cos(rad)).toFloat()
+            val y = cy + (r * kotlin.math.sin(rad)).toFloat()
+            drawLine(
+                color = accent,
+                start = Offset(cx, cy),
+                end = Offset(x, y),
+                strokeWidth = 1.5f
+            )
+        }
+    }
+}
+
+@Composable
+private fun EqVisualizer(modifier: Modifier = Modifier) {
+    val samples = 64
+    val data = remember { WaveformGenerator.generate(99L, samples, 1.2f) }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val barW = w / samples * 0.6f
+            val step = w / samples
+            val mid = h / 2
+            // Grid
+            for (i in 1..3) {
+                val x = w * i / 4
+                drawLine(
+                    color = Color.White.copy(alpha = 0.05f),
+                    start = Offset(x, 0f),
+                    end = Offset(x, h),
+                    strokeWidth = 1f
+                )
+            }
+            for (i in 0 until samples) {
+                val v = data[i]
+                val barH = abs(v) * h * 0.9f
+                val x = i * step
+                drawLine(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            ApexPalette.NeonEmerald.copy(alpha = 0.5f),
+                            ApexPalette.NeonEmerald,
+                            ApexPalette.NeonCyan
+                        )
+                    ),
+                    start = Offset(x, mid - barH / 2),
+                    end = Offset(x, mid + barH / 2),
+                    strokeWidth = barW
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EqKnob(name: String, freq: String, value: Float) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(34.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.linearGradient(listOf(ApexPalette.BgElevated, ApexPalette.BgBase))
                 )
-                .border(2.dp, ApexPalette.NeonCyan, CircleShape)
+                .border(2.dp, ApexPalette.NeonEmerald, CircleShape)
         ) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 4.dp)
-                    .size(3.dp, 8.dp)
-                    .background(ApexPalette.NeonCyan)
-            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val r = size.minDimension / 2f * 0.7f
+                val angle = (value * 270f) - 135f
+                val rad = Math.toRadians(angle.toDouble())
+                val x = cx + (r * kotlin.math.cos(rad)).toFloat()
+                val y = cy + (r * kotlin.math.sin(rad)).toFloat()
+                drawLine(
+                    color = ApexPalette.NeonEmerald,
+                    start = Offset(cx, cy),
+                    end = Offset(x, y),
+                    strokeWidth = 3f
+                )
+            }
         }
-        Spacer(Modifier.height(2.dp))
-        Text(name, color = ApexPalette.TextPrimary, fontSize = 9.sp)
+        Spacer(Modifier.height(3.dp))
+        Text(name, color = ApexPalette.TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Text(freq, color = ApexPalette.TextTertiary, fontSize = 8.sp)
     }
 }
 
 @Composable
-private fun EqVisualizer() {
-    val samples = 64
-    val data = remember { WaveformGenerator.generate(99L, samples, 1.2f) }
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        val barW = w / samples * 0.7f
-        val step = w / samples
-        val mid = h / 2
-        for (i in 0 until samples) {
-            val v = data[i]
-            val barH = abs(v) * h * 0.9f
-            val x = i * step
-            drawLine(
-                brush = Brush.verticalGradient(
-                    listOf(ApexPalette.NeonCyan.copy(alpha = 0.4f),
-                        ApexPalette.NeonCyan, ApexPalette.NeonPurple,
-                        ApexPalette.NeonCyan,
-                        ApexPalette.NeonCyan.copy(alpha = 0.4f))
-                ),
-                start = Offset(x, mid - barH / 2),
-                end = Offset(x, mid + barH / 2),
-                strokeWidth = barW
-            )
-        }
-    }
-}
-
-@Composable
-private fun FxChip(name: String) {
+private fun FxCard(name: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(70.dp)
+            .width(76.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(ApexPalette.BgBase)
-            .padding(6.dp)
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+            .padding(8.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(32.dp)
                 .clip(CircleShape)
-                .background(Brush.radialGradient(
-                    listOf(ApexPalette.NeonCyan.copy(alpha = 0.5f), Color.Transparent)
-                )),
+                .background(
+                    Brush.radialGradient(
+                        listOf(ApexPalette.NeonEmerald.copy(alpha = 0.4f), Color.Transparent)
+                    )
+                )
+                .border(1.dp, ApexPalette.NeonEmerald.copy(alpha = 0.5f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.GraphicEq, null,
-                tint = ApexPalette.NeonCyan, modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.MusicNote,
+                null,
+                tint = ApexPalette.NeonEmerald,
+                modifier = Modifier.size(16.dp)
+            )
         }
         Spacer(Modifier.height(4.dp))
-        Text(name, color = ApexPalette.TextPrimary, fontSize = 8.sp)
+        Text(
+            name,
+            color = ApexPalette.TextPrimary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
     }
 }
-
-private fun androidx.compose.ui.Modifier.border(
-    width: androidx.compose.ui.unit.Dp,
-    color: Color,
-    shape: androidx.compose.ui.graphics.Shape
-): androidx.compose.ui.Modifier = this.then(
-    androidx.compose.foundation.border(width, color, shape)
-)

@@ -9,6 +9,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -83,6 +87,7 @@ fun EditorScreen(
             onCut = { vm.selectClip(state.selectedClipId) },
             onSpeed = { /* placeholder */ },
             onFilters = onColor,
+            onColor = onColor,
             onAudio = onAudio,
             onText = { /* placeholder */ },
             onFx = { /* placeholder */ },
@@ -110,7 +115,7 @@ private fun VideoPreviewSection(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.TopCenter
     ) {
         Box(
@@ -126,7 +131,6 @@ private fun VideoPreviewSection(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
-                // Cinematic gradient
                 drawRect(
                     brush = Brush.linearGradient(
                         listOf(
@@ -137,9 +141,8 @@ private fun VideoPreviewSection(
                         )
                     ),
                     topLeft = Offset(0f, 0f),
-                    size = androidx.compose.ui.geometry.Size(w, h)
+                    size = Size(w, h)
                 )
-                // Sun
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -150,15 +153,13 @@ private fun VideoPreviewSection(
                     radius = 60f,
                     center = Offset(w - 80f, 80f)
                 )
-                // Ground
                 drawRect(
                     brush = Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color(0xFF05080F))
+                        colors = listOf(Color.Transparent, Color(0xFF080A0F))
                     ),
                     topLeft = Offset(0f, h * 0.6f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.4f)
+                    size = Size(w, h * 0.4f)
                 )
-                // Center "play" icon hint when paused
                 if (!isPlaying) {
                     val cx = w / 2f
                     val cy = h / 2f
@@ -169,14 +170,10 @@ private fun VideoPreviewSection(
                         lineTo(cx - r * 0.6f, cy + r)
                         close()
                     }
-                    drawPath(
-                        path = path,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
+                    drawPath(path = path, color = Color.White.copy(alpha = 0.7f))
                 }
             }
 
-            // Top-right timestamp badge
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -194,12 +191,11 @@ private fun VideoPreviewSection(
                 )
             }
 
-            // Center playback controls overlay
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -257,7 +253,7 @@ private fun TimelineSection(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(22.dp)
+                .height(20.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgSurface)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
@@ -301,7 +297,7 @@ private fun TimelineSection(
 
         Spacer(Modifier.height(4.dp))
 
-        // Tracks container
+        // Tracks
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -315,7 +311,6 @@ private fun TimelineSection(
                     }
                 }
         ) {
-            // Tracks
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -341,37 +336,42 @@ private fun TimelineSection(
                 )
                 WaveformTrackRow(
                     label = "A1",
-                    color = ApexPalette.TrackAudio,
+                    color = ApexPalette.NeonEmerald,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
                     progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
                     seed = 17L
                 )
+                WaveformTrackRow(
+                    label = "FX",
+                    color = ApexPalette.TrackAudio,
+                    width = totalWidth,
+                    pxPerMs = pxPerMs,
+                    progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
+                    seed = 33L
+                )
             }
 
-            // Playhead line (glowing)
+            // Glowing playhead
             val playheadX = (state.currentTimeMs * pxPerMs).toFloat() - scroll.value
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-            ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val x = playheadX
                 if (x in 0f..size.width) {
-                    // Glow
+                    // Outer glow
                     drawLine(
                         brush = Brush.verticalGradient(
                             listOf(
                                 ApexPalette.NeonCyan.copy(alpha = 0.0f),
-                                ApexPalette.NeonCyan.copy(alpha = 0.4f),
-                                ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                                ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                ApexPalette.NeonCyan.copy(alpha = 0.5f),
                                 ApexPalette.NeonCyan.copy(alpha = 0.0f)
                             )
                         ),
                         start = Offset(x, 0f),
                         end = Offset(x, size.height),
-                        strokeWidth = 6f
+                        strokeWidth = 8f
                     )
-                    // Sharp center line
+                    // Sharp line
                     drawLine(
                         color = ApexPalette.NeonCyan,
                         start = Offset(x, 0f),
@@ -381,7 +381,6 @@ private fun TimelineSection(
                 }
             }
 
-            // Tap to scrub
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -407,7 +406,7 @@ private fun VideoTrackRow(
     onSelectClip: (String?) -> Unit
 ) {
     val density = LocalDensity.current
-    val trackHeightDp = 44.dp
+    val trackHeightDp = 42.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -420,7 +419,8 @@ private fun VideoTrackRow(
                 .width(28.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(4.dp))
-                .background(ApexPalette.BgElevated),
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
@@ -480,7 +480,6 @@ private fun VideoClipBlock(
             )
             .clickable(onClick = onSelect)
     ) {
-        // Thumbnail strip
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -523,7 +522,7 @@ private fun WaveformTrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(38.dp)
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -532,7 +531,8 @@ private fun WaveformTrackRow(
                 .width(28.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(4.dp))
-                .background(ApexPalette.BgElevated),
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
@@ -540,7 +540,7 @@ private fun WaveformTrackRow(
         Spacer(Modifier.width(3.dp))
         Box(
             modifier = Modifier
-                .height(34.dp)
+                .height(32.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgBase)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
@@ -565,6 +565,7 @@ private fun BottomToolBar(
     onCut: () -> Unit,
     onSpeed: () -> Unit,
     onFilters: () -> Unit,
+    onColor: () -> Unit,
     onAudio: () -> Unit,
     onText: () -> Unit,
     onFx: () -> Unit,
@@ -574,33 +575,38 @@ private fun BottomToolBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        // Tools row
-        Row(
+        // Scrollable tool icons
+        val items = listOf(
+            ToolDef("Split", Icons.Default.ContentCut, onSplit),
+            ToolDef("Cut", Icons.Default.ContentCut, onCut),
+            ToolDef("Speed", Icons.Default.Speed, onSpeed),
+            ToolDef("Filters", Icons.Default.FilterAlt, onFilters),
+            ToolDef("Color", Icons.Default.Palette, onColor),
+            ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
+            ToolDef("Text", Icons.Default.TextFields, onText),
+            ToolDef("FX", Icons.Default.AutoAwesome, onFx)
+        )
+        LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(ApexPalette.BgGlass)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
-                .padding(horizontal = 6.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            ToolbarIcon("Split", Icons.Default.ContentCut, onSplit)
-            ToolbarIcon("Cut", Icons.Default.ContentCut, onCut)
-            ToolbarIcon("Speed", Icons.Default.Speed, onSpeed)
-            ToolbarIcon("Filters", Icons.Default.FilterAlt, onFilters)
-            ToolbarIcon("Audio", Icons.Default.GraphicEq, onAudio)
-            ToolbarIcon("Text", Icons.Default.TextFields, onText)
-            ToolbarIcon("FX", Icons.Default.AutoAwesome, onFx)
+            items(items) { tool ->
+                ToolbarIcon(tool.label, tool.icon, tool.onClick)
+            }
         }
         Spacer(Modifier.height(6.dp))
         // Export CTA
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(36.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(
                     Brush.horizontalGradient(
@@ -622,36 +628,48 @@ private fun BottomToolBar(
                     "Export",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp
+                    fontSize = 12.sp
                 )
             }
         }
     }
 }
 
+private data class ToolDef(
+    val label: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit
+)
+
 @Composable
 private fun ToolbarIcon(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
+            .width(60.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(vertical = 4.dp)
     ) {
         Box(
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon, null,
                 tint = ApexPalette.NeonCyan,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(16.dp)
             )
         }
+        Spacer(Modifier.height(2.dp))
         Text(
             label,
             color = ApexPalette.TextSecondary,

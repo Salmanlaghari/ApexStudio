@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -38,10 +39,10 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        DashboardHeader(onOpenSettings = onOpenSettings)
+        HomeTopBar(onOpenSettings = onOpenSettings)
         NewProjectHero(
             enabled = projects.isNotEmpty(),
             onCreate = {
@@ -49,11 +50,9 @@ fun HomeScreen(
                 if (id != null) onProjectOpen(id)
             }
         )
-        SectionTitle("Recent Projects")
+        SectionLabel("Your Projects")
         LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(projects) { p ->
@@ -64,15 +63,15 @@ fun HomeScreen(
 }
 
 @Composable
-private fun DashboardHeader(onOpenSettings: () -> Unit) {
+private fun HomeTopBar(onOpenSettings: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(
                     Brush.linearGradient(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
@@ -84,29 +83,57 @@ private fun DashboardHeader(onOpenSettings: () -> Unit) {
                 "A",
                 color = ApexPalette.BgDeep,
                 fontWeight = FontWeight.Black,
-                fontSize = 18.sp
+                fontSize = 20.sp
             )
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "ApexStudio",
+                    color = ApexPalette.TextPrimary,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp
+                )
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    ApexPalette.NeonCyan.copy(alpha = 0.18f),
+                                    ApexPalette.NeonPurple.copy(alpha = 0.18f)
+                                )
+                            )
+                        )
+                        .border(
+                            1.dp,
+                            ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                            RoundedCornerShape(6.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "PRO",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
             Text(
-                "ApexStudio",
-                color = ApexPalette.TextPrimary,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp
-            )
-            Text(
-                "Pro Editor",
+                "Cinematic Editor • 8K HDR",
                 color = ApexPalette.TextTertiary,
                 fontSize = 10.sp
             )
         }
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(ApexPalette.BgGlass)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
                 .clickable(onClick = onOpenSettings),
             contentAlignment = Alignment.Center
         ) {
@@ -125,41 +152,60 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(108.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFF0F2A3D), Color(0xFF2A0F3D))
+                    listOf(
+                        Color(0xFF0F1F2E),
+                        Color(0xFF1A0F2E),
+                        Color(0xFF0F2A22)
+                    )
                 )
             )
             .border(
                 width = 1.dp,
-                color = ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                color = ApexPalette.NeonCyan.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable(enabled = enabled, onClick = onCreate)
-            .padding(16.dp)
+            .padding(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(54.dp)
+                    .clip(CircleShape)
                     .background(
-                        Brush.linearGradient(
-                            listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                        Brush.radialGradient(
+                            colors = listOf(
+                                ApexPalette.NeonCyan.copy(alpha = 0.3f),
+                                Color.Transparent
+                            )
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.Add,
-                    null,
-                    tint = ApexPalette.BgDeep,
-                    modifier = Modifier.size(28.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        null,
+                        tint = ApexPalette.BgDeep,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "New Project",
@@ -174,6 +220,12 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Start a cinematic timeline",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
             }
             Icon(
                 Icons.Default.ChevronRight,
@@ -186,12 +238,12 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+private fun SectionLabel(text: String) {
     Text(
         text,
         color = ApexPalette.TextSecondary,
         fontWeight = FontWeight.Bold,
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         modifier = Modifier.padding(start = 4.dp, top = 2.dp)
     )
 }
@@ -208,7 +260,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(58.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.linearGradient(
@@ -255,6 +307,11 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(ApexPalette.BgElevated)
+                        .border(
+                            1.dp,
+                            ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                            RoundedCornerShape(6.dp)
+                        )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
@@ -266,9 +323,10 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "${p.fps} fps",
-                    color = ApexPalette.TextTertiary,
-                    fontSize = 9.sp
+                    "${p.fps}fps",
+                    color = ApexPalette.NeonEmerald,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

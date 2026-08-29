@@ -41,56 +41,48 @@ fun ColorStudioScreen(
 ) {
     val luts by vm.luts.collectAsStateWithLifecycle()
     var splitX by remember { mutableStateOf(0.5f) }
+    var selectedChannel by remember { mutableStateOf("R") }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SectionLabel("BEFORE / AFTER")
-        Spacer(Modifier.height(4.dp))
+        // Before / After
         BeforeAfterPreview(
             splitFraction = splitX,
             onSplitChange = { splitX = it },
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        SectionLabel("COLOR WHEELS")
-        Spacer(Modifier.height(4.dp))
+        // Color Wheels
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            ColorWheelCard("Shadows", 0.65f, 0.3f, ApexPalette.NeonCyan)
-            ColorWheelCard("Midtones", 0.5f, -0.4f, ApexPalette.NeonPurple)
-            ColorWheelCard("Highlights", 0.7f, 0.5f, ApexPalette.NeonPink)
+            ColorWheelCard("Shadows", 0.65f, 0.3f, ApexPalette.NeonCyan, 12)
+            ColorWheelCard("Midtones", 0.5f, -0.4f, ApexPalette.NeonPurple, -8)
+            ColorWheelCard("Highlights", 0.7f, 0.5f, ApexPalette.NeonPink, 18)
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        SectionLabel("RGB CURVES")
-        Spacer(Modifier.height(4.dp))
+        // RGB Curves
         RgbCurvesCanvas(
+            selectedChannel = selectedChannel,
+            onChannelSelect = { selectedChannel = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
+                .height(110.dp)
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        SectionLabel("LUT PRESETS")
-        Spacer(Modifier.height(4.dp))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        // LUT Presets
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(luts) { lut ->
                 LutPresetCard(
                     name = lut.name,
                     selected = lut.id == "cinematic",
-                    modifier = Modifier.width(86.dp)
+                    modifier = Modifier.width(82.dp)
                 )
             }
         }
@@ -105,7 +97,7 @@ private fun SectionLabel(text: String) {
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.2.sp,
-        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+        modifier = Modifier.padding(start = 4.dp)
     )
 }
 
@@ -120,21 +112,21 @@ private fun BeforeAfterPreview(
     BoxWithConstraints(
         modifier = modifier
             .aspectRatio(aspect)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(18.dp))
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
     ) {
-        // BEFORE (cool/ungraded)
+        // BEFORE (flat, desaturated)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.linearGradient(
-                        listOf(Color(0xFF1F2937), Color(0xFF374151), Color(0xFF1B2A4E))
+                        listOf(Color(0xFF2C3E50), Color(0xFF34495E), Color(0xFF1B2631))
                     )
                 )
         )
-        // AFTER (cinematic graded) - overlay clipped by split
+        // AFTER (graded, vibrant)
         val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val splitPx = (splitFraction.coerceIn(0f, 1f)) * widthPx
         Box(
@@ -157,38 +149,38 @@ private fun BeforeAfterPreview(
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)),
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)),
                         radius = with(density) { 320.dp.toPx() }
                     )
                 )
         )
-        // BEFORE / AFTER labels
+        // BEFORE / AFTER badges
         Text(
             "BEFORE",
             color = ApexPalette.TextPrimary,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .padding(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(ApexPalette.BgGlass)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         )
         Text(
             "AFTER",
             color = ApexPalette.NeonCyan,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .padding(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(ApexPalette.BgGlass)
-                .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(4.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         )
-        // Divider + handle
+        // Divider line
         Box(
             modifier = Modifier
                 .fillMaxHeight()
@@ -196,11 +188,12 @@ private fun BeforeAfterPreview(
                 .offset(x = with(density) { splitPx.toDp() } - 1.dp)
                 .background(ApexPalette.NeonCyan)
         )
+        // Handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .offset(x = with(density) { splitPx.toDp() } - 14.dp)
-                .size(28.dp)
+                .offset(x = with(density) { splitPx.toDp() } - 12.dp)
+                .size(24.dp)
                 .clip(CircleShape)
                 .background(ApexPalette.NeonCyan)
                 .border(2.dp, Color.White, CircleShape)
@@ -216,7 +209,7 @@ private fun BeforeAfterPreview(
                 Icons.Default.CompareArrows,
                 null,
                 tint = ApexPalette.BgDeep,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
     }
@@ -227,35 +220,36 @@ private fun ColorWheelCard(
     label: String,
     liftX: Float,
     liftY: Float,
-    accent: Color
+    accent: Color,
+    percent: Int
 ) {
     GlassCard(
         modifier = Modifier
             .width(96.dp)
-            .height(110.dp),
+            .height(120.dp),
         cornerRadius = 14.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 label.uppercase(),
                 color = ApexPalette.TextTertiary,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(2.dp))
             ColorWheel(liftX = liftX, liftY = liftY, accent = accent)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
-                "Lift",
+                "${if (percent > 0) "+" else ""}$percent%",
                 color = accent,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold
             )
         }
     }
@@ -264,20 +258,18 @@ private fun ColorWheelCard(
 @Composable
 private fun ColorWheel(liftX: Float, liftY: Float, accent: Color) {
     Box(
-        modifier = Modifier
-            .size(56.dp),
+        modifier = Modifier.size(56.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2f
             val center = Offset(size.width / 2f, size.height / 2f)
-            // Outer ring
             drawCircle(
                 brush = Brush.sweepGradient(
                     listOf(
                         Color(0xFFFF1744),
                         Color(0xFFFFC400),
-                        Color(0xFF00E676),
+                        Color(0xFF10B981),
                         Color(0xFF00E5FF),
                         Color(0xFF7C4DFF),
                         Color(0xFFFF1744)
@@ -286,42 +278,36 @@ private fun ColorWheel(liftX: Float, liftY: Float, accent: Color) {
                 radius = radius,
                 center = center
             )
-            // Inner mask
             drawCircle(
-                color = Color(0xFF121824),
+                color = Color(0xFF10141E),
                 radius = radius * 0.55f,
                 center = center
             )
-            // Indicator dot at offset
             val maxOffset = radius * 0.45f
             val ix = center.x + liftX * maxOffset
             val iy = center.y + liftY * maxOffset
-            drawCircle(
-                color = Color.White,
-                radius = 5f,
-                center = Offset(ix, iy)
-            )
-            drawCircle(
-                color = accent,
-                radius = 3f,
-                center = Offset(ix, iy)
-            )
+            drawCircle(color = Color.White, radius = 5f, center = Offset(ix, iy))
+            drawCircle(color = accent, radius = 3f, center = Offset(ix, iy))
         }
     }
 }
 
 @Composable
-private fun RgbCurvesCanvas(modifier: Modifier = Modifier) {
+private fun RgbCurvesCanvas(
+    selectedChannel: String,
+    onChannelSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val rPoints = remember { mutableStateListOf(Offset(0.1f, 0.4f), Offset(0.4f, 0.55f), Offset(0.7f, 0.7f), Offset(0.9f, 0.85f)) }
     val gPoints = remember { mutableStateListOf(Offset(0.1f, 0.3f), Offset(0.5f, 0.5f), Offset(0.85f, 0.7f)) }
     val bPoints = remember { mutableStateListOf(Offset(0.1f, 0.5f), Offset(0.35f, 0.45f), Offset(0.7f, 0.4f), Offset(0.9f, 0.6f)) }
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(18.dp))
-            .padding(12.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+            .padding(8.dp)
     ) {
         Column {
             Row(
@@ -329,39 +315,49 @@ private fun RgbCurvesCanvas(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(
-                    "R" to ApexPalette.TrackOverlay,
-                    "G" to ApexPalette.TrackAudio,
-                    "B" to ApexPalette.NeonPurple
-                ).forEach { (ch, color) ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    listOf(
+                        "R" to ApexPalette.TrackOverlay,
+                        "G" to ApexPalette.NeonEmerald,
+                        "B" to ApexPalette.NeonPurple,
+                        "L" to ApexPalette.NeonCyan
+                    ).forEach { (ch, color) ->
+                        val sel = ch == selectedChannel
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                        )
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    if (sel) color.copy(alpha = 0.2f) else ApexPalette.BgElevated
+                                )
+                                .border(
+                                    if (sel) 1.dp else 0.dp,
+                                    color,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .clickable { onChannelSelect(ch) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                ch,
+                                color = if (sel) color else ApexPalette.TextSecondary,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         Spacer(Modifier.width(4.dp))
-                        Text(
-                            ch,
-                            color = ApexPalette.TextSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .height(76.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(ApexPalette.BgBase)
             ) {
                 val w = size.width
                 val h = size.height
-                // Grid
                 for (i in 1..3) {
                     val x = w * i / 4
                     drawLine(
@@ -378,18 +374,16 @@ private fun RgbCurvesCanvas(modifier: Modifier = Modifier) {
                         strokeWidth = 1f
                     )
                 }
-                // Diagonal reference
                 drawLine(
                     color = Color.White.copy(alpha = 0.15f),
                     start = Offset(0f, h),
                     end = Offset(w, 0f),
                     strokeWidth = 1f
                 )
-                // Curves
                 listOf(rPoints, gPoints, bPoints).forEachIndexed { idx, pts ->
                     val color = when (idx) {
                         0 -> ApexPalette.TrackOverlay
-                        1 -> ApexPalette.TrackAudio
+                        1 -> ApexPalette.NeonEmerald
                         else -> ApexPalette.NeonPurple
                     }
                     val mapped = pts.map { Offset(it.x * w, (1f - it.y) * h) }
@@ -398,20 +392,12 @@ private fun RgbCurvesCanvas(modifier: Modifier = Modifier) {
                             brush = SolidColor(color),
                             start = mapped[i],
                             end = mapped[i + 1],
-                            strokeWidth = 2.5f
+                            strokeWidth = 2f
                         )
                     }
                     mapped.forEach { p ->
-                        drawCircle(
-                            color = Color.White,
-                            radius = 4f,
-                            center = p
-                        )
-                        drawCircle(
-                            color = color,
-                            radius = 2.5f,
-                            center = p
-                        )
+                        drawCircle(color = Color.White, radius = 3f, center = p)
+                        drawCircle(color = color, radius = 1.8f, center = p)
                     }
                 }
             }
@@ -428,14 +414,14 @@ private fun LutPresetCard(
     val borderColor = if (selected) ApexPalette.NeonCyan else Color.Transparent
     Box(
         modifier = modifier
-            .height(86.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(80.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(
                 Brush.linearGradient(
                     listOf(Color(0xFF1A0F2E), Color(0xFF0F1B2D))
                 )
             )
-            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
+            .border(1.5.dp, borderColor, RoundedCornerShape(10.dp))
             .clickable { }
     ) {
         Box(
@@ -450,33 +436,34 @@ private fun LutPresetCard(
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .size(36.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
-                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), CircleShape),
+                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Palette,
                 null,
                 tint = if (selected) ApexPalette.NeonCyan else Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
         Text(
             name,
             color = if (selected) ApexPalette.NeonCyan else Color.White,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp)
+                .padding(bottom = 6.dp)
         )
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(3.dp)
+                .height(2.dp)
                 .background(
                     Brush.horizontalGradient(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)

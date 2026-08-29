@@ -9,7 +9,6 @@ on:
 
 env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
-  PROJECT_DIR: ApexStudio
 
 jobs:
   build:
@@ -43,7 +42,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.android/build-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('ApexStudio/**/*.gradle.kts', 'ApexStudio/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -64,7 +63,6 @@ jobs:
           yes | sdkmanager --licenses || true
 
       - name: Generate Gradle wrapper (if missing)
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -f gradlew ]; then
             gradle wrapper --gradle-version 8.7 --distribution-type bin
@@ -72,22 +70,19 @@ jobs:
           chmod +x gradlew
 
       - name: Run Lint
-        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew lintDebug --no-daemon || true
 
       - name: Build debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Build release APK (unsigned)
-        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew :app:assembleRelease --stacktrace --no-daemon || true
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: apexstudio-debug-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -96,7 +91,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apexstudio-release-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: ignore
           retention-days: 14
 
@@ -105,6 +100,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: ${{ env.PROJECT_DIR }}/app/build/reports/lint-results-*.html
+          path: app/build/reports/lint-results-*.html
           if-no-files-found: ignore
           retention-days: 7

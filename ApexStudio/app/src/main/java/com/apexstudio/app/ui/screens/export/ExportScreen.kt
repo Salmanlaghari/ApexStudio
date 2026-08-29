@@ -30,12 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
-import kotlinx.coroutines.delay
 
 @Composable
 fun ExportScreen(
@@ -49,6 +49,8 @@ fun ExportScreen(
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
     var selectedResolution by remember { mutableStateOf("4K") }
     var selectedFps by remember { mutableStateOf(60f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val exportEngine = remember { ExportEngine(context) }
 
     Column(
         modifier = Modifier
@@ -223,9 +225,22 @@ fun ExportScreen(
                     }
                 }
             }
+
+            if (export.error != null) {
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 14.dp
+                ) {
+                    Text(
+                        "Error: ${export.error}",
+                        color = ApexPalette.Danger,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
-        // Export CTA + bottom nav
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -237,7 +252,17 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable { vm.startExport() },
+                .clickable {
+                    vm.startExport()
+                    exportEngine.startExport(
+                        vm.state.value.project?.clips?.firstOrNull()?.uri ?: return@clickable,
+                        ExportEngine.ExportConfig(
+                            resolution = selectedResolution,
+                            fps = selectedFps.toInt(),
+                            quality = "high"
+                        )
+                    )
+                },
             contentAlignment = Alignment.Center
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -257,14 +282,6 @@ fun ExportScreen(
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp
                 )
-            }
-        }
-        if (export.isExporting) {
-            LaunchedEffect(Unit) {
-                while (export.progress < 1f) {
-                    delay(80)
-                    vm.setExportProgress((export.progress + 0.01f).coerceAtMost(1f))
-                }
             }
         }
     }

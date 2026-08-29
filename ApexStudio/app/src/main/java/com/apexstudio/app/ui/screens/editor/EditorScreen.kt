@@ -1,5 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.content.Context
+import android.view.ViewGroup
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,17 +32,21 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.NeonIconButton
-import com.apexstudio.app.ui.components.PulsingPlayButton
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
@@ -54,6 +60,16 @@ fun EditorScreen(
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val mediaPicker = remember { MediaPickerHelper(context) }
+
+    LaunchedEffect(Unit) {
+        mediaPicker.pickedMedia.collect { metadataList ->
+            if (metadataList.isNotEmpty()) {
+                vm.onMediaPicked(metadataList)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -65,10 +81,13 @@ fun EditorScreen(
         VideoPreviewSection(
             isPlaying = state.isPlaying,
             currentTimeMs = state.currentTimeMs,
+            playerPositionMs = state.playerPositionMs,
+            playerDurationMs = state.playerDurationMs,
             onTogglePlay = { vm.togglePlay() },
             onSeek = { vm.seekTo(it) },
             onPrev = { vm.seekTo((state.currentTimeMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.currentTimeMs + 5000).coerceAtMost(state.durationMs)) },
+            onAddMedia = { vm.openMediaPicker() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.38f)
@@ -105,15 +124,35 @@ fun EditorScreen(
 private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
+    playerPositionMs: Long,
+    playerDurationMs: Long,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onAddMedia: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val previewHeight = (screenWidthDp * 9f / 16f).dp
+    val context = LocalContext.current
+    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+
+    LaunchedEffect(Unit) {
+        val player = ExoPlayer.Builder(context).build()
+        exoPlayer = player
+        playerView?.player = player
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer?.release()
+            exoPlayer = null
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -126,53 +165,68 @@ private fun VideoPreviewSection(
                 .height(previewHeight)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
-                .clickable(onClick = onTogglePlay),
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                drawRect(
-                    brush = Brush.linearGradient(
-                        listOf(
-                            Color(0xFF0F1A2D),
-                            Color(0xFF1B2A4E),
-                            Color(0xFF3A1B5E),
-                            Color(0xFF0E2B3F)
+            playerView?.let { pv ->
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        pv.layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                    ),
-                    topLeft = Offset(0f, 0f),
-                    size = Size(w, h)
+                        pv
+                    },
+                    update = { it.player = exoPlayer }
                 )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            ApexPalette.NeonCyan.copy(alpha = 0.5f),
-                            Color.Transparent
-                        )
-                    ),
-                    radius = 60f,
-                    center = Offset(w - 80f, 80f)
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color(0xFF080A0F))
-                    ),
-                    topLeft = Offset(0f, h * 0.6f),
-                    size = Size(w, h * 0.4f)
-                )
-                if (!isPlaying) {
-                    val cx = w / 2f
-                    val cy = h / 2f
-                    val r = 28f
-                    val path = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(cx - r * 0.6f, cy - r)
-                        lineTo(cx + r, cy)
-                        lineTo(cx - r * 0.6f, cy + r)
-                        close()
+            }
+
+            if (exoPlayer == null) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                Color(0xFF0F1A2D),
+                                Color(0xFF1B2A4E),
+                                Color(0xFF3A1B5E),
+                                Color(0xFF0E2B3F)
+                            )
+                        ),
+                        topLeft = Offset(0f, 0f),
+                        size = Size(w, h)
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                Color.Transparent
+                            )
+                        ),
+                        radius = 60f,
+                        center = Offset(w - 80f, 80f)
+                    )
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color(0xFF080A0F))
+                        ),
+                        topLeft = Offset(0f, h * 0.6f),
+                        size = Size(w, h * 0.4f)
+                    )
+                    if (!isPlaying) {
+                        val cx = w / 2f
+                        val cy = h / 2f
+                        val r = 28f
+                        val path = androidx.compose.ui.graphics.Path().apply {
+                            moveTo(cx - r * 0.6f, cy - r)
+                            lineTo(cx + r, cy)
+                            lineTo(cx - r * 0.6f, cy + r)
+                            close()
+                        }
+                        drawPath(path = path, color = Color.White.copy(alpha = 0.7f))
                     }
-                    drawPath(path = path, color = Color.White.copy(alpha = 0.7f))
                 }
             }
 
@@ -186,7 +240,7 @@ private fun VideoPreviewSection(
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
-                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                    TimeFormat.msToTimecode(playerPositionMs, includeFrames = true),
                     color = ApexPalette.NeonCyan,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
@@ -202,6 +256,13 @@ private fun VideoPreviewSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 NeonIconButton(
+                    icon = Icons.Default.Add,
+                    onClick = onAddMedia,
+                    size = 36.dp,
+                    iconSize = 18.dp,
+                    tint = ApexPalette.NeonEmerald
+                )
+                NeonIconButton(
                     icon = Icons.Default.SkipPrevious,
                     onClick = onPrev,
                     size = 36.dp,
@@ -213,10 +274,15 @@ private fun VideoPreviewSection(
                     size = 36.dp,
                     iconSize = 16.dp
                 )
-                PulsingPlayButton(isPlaying = isPlaying, onToggle = onTogglePlay)
+                NeonIconButton(
+                    icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    onClick = onTogglePlay,
+                    size = 44.dp,
+                    iconSize = 22.dp
+                )
                 NeonIconButton(
                     icon = Icons.Default.FastForward,
-                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(currentTimeMs + 5000)) },
+                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(playerDurationMs)) },
                     size = 36.dp,
                     iconSize = 16.dp
                 )
@@ -251,7 +317,6 @@ private fun TimelineSection(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        // Ruler
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -299,7 +364,6 @@ private fun TimelineSection(
 
         Spacer(Modifier.height(4.dp))
 
-        // Tracks
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -354,7 +418,6 @@ private fun TimelineSection(
                 )
             }
 
-            // Glowing playhead
             val playheadX = (state.currentTimeMs * pxPerMs).toFloat() - scroll.value
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val x = playheadX
@@ -464,7 +527,7 @@ private fun VideoClipBlock(
             .width(with(density) { w.toDp() })
             .fillMaxHeight()
             .padding(1.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(3.dp))
             .background(
                 Brush.horizontalGradient(
                     listOf(
@@ -476,7 +539,7 @@ private fun VideoClipBlock(
             .border(
                 if (selected) 1.5.dp else 0.5.dp,
                 if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
-                RoundedCornerShape(4.dp)
+                RoundedCornerShape(3.dp)
             )
             .clickable(onClick = onSelect)
     ) {
@@ -577,7 +640,6 @@ private fun HorizontalToolBar(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        // Scrollable horizontal tool icons
         val items = listOf(
             ToolDef("Split", Icons.Default.ContentCut, onSplit),
             ToolDef("Cut", Icons.Default.ContentCut, onCut),
@@ -602,7 +664,6 @@ private fun HorizontalToolBar(
             }
         }
         Spacer(Modifier.height(6.dp))
-        // Glowing Export icon button
         Box(
             modifier = Modifier
                 .fillMaxWidth()

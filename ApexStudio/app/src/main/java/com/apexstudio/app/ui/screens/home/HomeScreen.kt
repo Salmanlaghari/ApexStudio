@@ -90,7 +90,11 @@ fun HomeScreen(onProjectOpen: (String) -> Unit) {
                 NeonPrimaryButton(
                     text = "New",
                     icon = Icons.Default.Add,
-                    onClick = { onProjectOpen(projects.first().id) }
+                    onClick = {
+                        val id = projects.firstOrNull()?.id
+                        if (id != null) onProjectOpen(id)
+                    },
+                    enabled = projects.isNotEmpty()
                 )
             }
         }

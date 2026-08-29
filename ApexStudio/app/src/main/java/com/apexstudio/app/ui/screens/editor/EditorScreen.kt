@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.state.EditorTool
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.*
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -50,7 +51,7 @@ fun EditorScreen(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
-    vm: EditorViewModel = viewModel()
+    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 

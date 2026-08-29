@@ -17,7 +17,8 @@ data class EditorState(
     val isMediaPickerOpen: Boolean = false,
     val playerPositionMs: Long = 0L,
     val playerDurationMs: Long = 0L,
-    val isPlayerReady: Boolean = false
+    val isPlayerReady: Boolean = false,
+    val audioWaveform: FloatArray = FloatArray(0)
 )
 
 enum class EditorTool(val label: String) {

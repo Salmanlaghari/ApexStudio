@@ -88,7 +88,7 @@ fun ApexRoot() {
                 onExport = { showExportSettings = false }
             )
         } else {
-            if (overlay == null && currentTab != "export") {
+            if (overlay == null && currentTab != "export" && currentTab != "edit") {
                 BottomNavBar(
                     current = currentTab,
                     onSelect = { tab ->

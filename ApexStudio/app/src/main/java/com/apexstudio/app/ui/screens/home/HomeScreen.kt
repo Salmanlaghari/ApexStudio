@@ -97,7 +97,7 @@ fun HomeScreen(
             enabled = true,
             onCreate = {
                 mediaPicker.pickMultipleMedia.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                 )
             },
             onAddMedia = { /* handled via onCreate */ }

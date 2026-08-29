@@ -51,6 +51,35 @@ fun AudioWaveform(
 }
 
 @Composable
+fun RealAudioWaveform(
+    samples: FloatArray,
+    modifier: Modifier = Modifier,
+    color: Color = ApexPalette.NeonCyan,
+    progress: Float = 0f
+) {
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val mid = h / 2
+        if (samples.isEmpty()) return@Canvas
+        val barWidth = (w / samples.size).coerceAtLeast(1f)
+        samples.forEachIndexed { i, v ->
+            val x = i * barWidth
+            val barH = (kotlin.math.abs(v) * mid * 0.92f).coerceAtLeast(2f)
+            val played = (i.toFloat() / samples.size) < progress
+            val c = if (played) color else color.copy(alpha = 0.25f)
+            drawLine(
+                color = c,
+                start = Offset(x, mid - barH / 2),
+                end = Offset(x, mid + barH / 2),
+                strokeWidth = barWidth * 0.8f,
+                cap = StrokeCap.Butt
+            )
+        }
+    }
+}
+
+@Composable
 fun WaveformCurve(
     points: List<Pair<Float, Float>>,
     modifier: Modifier = Modifier,

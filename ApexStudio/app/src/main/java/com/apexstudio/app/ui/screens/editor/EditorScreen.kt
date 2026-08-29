@@ -1,6 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
-import android.content.Context
+import android.net.Uri
 import android.view.ViewGroup
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,8 +8,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,15 +39,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.NeonIconButton
+import com.apexstudio.app.ui.components.RealAudioWaveform
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 @Composable
 fun EditorScreen(
@@ -61,6 +66,8 @@ fun EditorScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val mediaPicker = remember { MediaPickerHelper(context) }
+    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var playbackSpeed by remember { mutableStateOf(1f) }
 
     mediaPicker.registerLaunchers()
 
@@ -75,9 +82,58 @@ fun EditorScreen(
     LaunchedEffect(state.isMediaPickerOpen) {
         if (state.isMediaPickerOpen) {
             mediaPicker.pickMultipleMedia.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
             )
             vm.closeMediaPicker()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        exoPlayer = ExoPlayer.Builder(context).build()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer?.release()
+            exoPlayer = null
+        }
+    }
+
+    LaunchedEffect(exoPlayer, state.project?.clips, state.selectedClipId) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        val clips = state.project?.clips ?: emptyList()
+        val clip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
+        if (clip != null) {
+            val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
+            if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                vm.setPlayerDuration(clip.durationMs)
+            }
+        }
+    }
+
+    LaunchedEffect(exoPlayer, state.isPlaying) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (state.isPlaying) {
+            player.play()
+        } else {
+            player.pause()
+        }
+    }
+
+    LaunchedEffect(playbackSpeed) {
+        exoPlayer?.playbackParameters = PlaybackParameters(playbackSpeed)
+    }
+
+    LaunchedEffect(exoPlayer) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        while (isActive) {
+            val pos = player.currentPosition
+            if (pos != state.playerPositionMs) {
+                vm.setPlayerPosition(pos)
+            }
+            delay(100)
         }
     }
 
@@ -89,21 +145,21 @@ fun EditorScreen(
             .background(ApexPalette.BgBase)
     ) {
         EditorTopBar(
-            currentTimeMs = state.currentTimeMs,
+            currentTimeMs = state.playerPositionMs,
             onBack = onBack,
             onExport = onExport
         )
 
         VideoPreviewSection(
             isPlaying = state.isPlaying,
-            currentTimeMs = state.currentTimeMs,
-            playerPositionMs = state.playerPositionMs,
+            currentTimeMs = state.playerPositionMs,
             playerDurationMs = state.playerDurationMs,
             onTogglePlay = { vm.togglePlay() },
             onSeek = { vm.seekTo(it) },
-            onPrev = { vm.seekTo((state.currentTimeMs - 5000).coerceAtLeast(0)) },
-            onNext = { vm.seekTo((state.currentTimeMs + 5000).coerceAtMost(state.durationMs)) },
+            onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
+            onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
+            exoPlayer = exoPlayer,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -120,9 +176,17 @@ fun EditorScreen(
         )
 
         HorizontalToolBar(
-            onSplit = { vm.selectClip(state.selectedClipId) },
-            onCut = { vm.selectClip(state.selectedClipId) },
-            onSpeed = { /* placeholder */ },
+            onSplit = {
+                state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
+            },
+            onCut = { vm.cutClipAtPlayhead() },
+            onSpeed = {
+                playbackSpeed = when (playbackSpeed) {
+                    1f -> 1.5f
+                    1.5f -> 2f
+                    else -> 1f
+                }
+            },
             onFilters = onColor,
             onColor = onColor,
             onAudio = onAudio,
@@ -206,34 +270,19 @@ private fun EditorTopBar(
 private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
-    playerPositionMs: Long,
     playerDurationMs: Long,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onAddMedia: () -> Unit,
+    exoPlayer: ExoPlayer?,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val previewHeight = (screenWidthDp * 9f / 16f).dp
     val context = LocalContext.current
-    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
-    var playerView by remember { mutableStateOf<PlayerView?>(null) }
-
-    LaunchedEffect(Unit) {
-        val player = ExoPlayer.Builder(context).build()
-        exoPlayer = player
-        playerView?.player = player
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer?.release()
-            exoPlayer = null
-        }
-    }
 
     Box(
         modifier = modifier
@@ -250,21 +299,24 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            playerView?.let { pv ->
+            if (exoPlayer != null) {
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        pv.layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        pv
+                    factory = { ctx ->
+                        PlayerView(ctx).also { pv ->
+                            pv.layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            pv.player = exoPlayer
+                            pv.useController = false
+                        }
                     },
-                    update = { it.player = exoPlayer }
+                    update = { pv ->
+                        pv.player = exoPlayer
+                    }
                 )
-            }
-
-            if (exoPlayer == null) {
+            } else {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -322,7 +374,7 @@ private fun VideoPreviewSection(
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
-                    TimeFormat.msToTimecode(playerPositionMs, includeFrames = true),
+                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
                     color = ApexPalette.NeonCyan,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
@@ -421,7 +473,6 @@ private fun TimelineSection(
                             strokeWidth = 1f
                         )
                     }
-                    t += tickEvery
                 }
             }
             Row(
@@ -482,25 +533,25 @@ private fun TimelineSection(
                     selectedClipId = state.selectedClipId,
                     onSelectClip = onSelectClip
                 )
-                WaveformTrackRow(
+                RealWaveformTrackRow(
                     label = "A1",
                     color = ApexPalette.NeonEmerald,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
-                    seed = 17L
+                    progress = state.playerPositionMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
+                    samples = state.audioWaveform
                 )
-                WaveformTrackRow(
+                RealWaveformTrackRow(
                     label = "FX",
                     color = ApexPalette.TrackAudio,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    progress = state.currentTimeMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
-                    seed = 33L
+                    progress = state.playerPositionMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
+                    samples = FloatArray(0)
                 )
             }
 
-            val playheadX = (state.currentTimeMs * pxPerMs).toFloat() - scroll.value
+            val playheadX = (state.playerPositionMs * pxPerMs).toFloat() - scroll.value
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val x = playheadX
                 if (x in 0f..size.width) {
@@ -532,7 +583,7 @@ private fun TimelineSection(
                     .pointerInput(state.durationMs, pxPerMs) {
                         detectTapGestures { off ->
                             val t = ((off.x + scroll.value) / pxPerMs).toLong()
-                            onScrub(t)
+                            onScrub(t.coerceIn(0, state.durationMs))
                         }
                     }
             )
@@ -546,7 +597,7 @@ private fun VideoTrackRow(
     color: Color,
     width: Int,
     pxPerMs: Float,
-    clips: List<com.apexstudio.app.domain.model.MediaClip>,
+    clips: List<MediaClip>,
     selectedClipId: String?,
     onSelectClip: (String?) -> Unit
 ) {
@@ -595,7 +646,7 @@ private fun VideoTrackRow(
 
 @Composable
 private fun VideoClipBlock(
-    clip: com.apexstudio.app.domain.model.MediaClip,
+    clip: MediaClip,
     pxPerMs: Float,
     selected: Boolean,
     onSelect: () -> Unit
@@ -655,13 +706,13 @@ private fun VideoClipBlock(
 }
 
 @Composable
-private fun WaveformTrackRow(
+private fun RealWaveformTrackRow(
     label: String,
     color: Color,
     width: Int,
     pxPerMs: Float,
     progress: Float,
-    seed: Long
+    samples: FloatArray
 ) {
     val density = LocalDensity.current
     Row(
@@ -692,13 +743,11 @@ private fun WaveformTrackRow(
                 .padding(2.dp)
         ) {
             val widthDp = with(density) { width.toDp() }
-            AudioWaveform(
-                seed = seed,
+            RealAudioWaveform(
+                samples = samples,
                 modifier = Modifier.width(widthDp).fillMaxHeight(),
                 color = color,
-                secondaryColor = color.copy(alpha = 0.3f),
-                progress = progress,
-                samples = (width / 4).coerceIn(80, 400)
+                progress = progress
             )
         }
     }

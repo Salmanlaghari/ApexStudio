@@ -292,26 +292,6 @@ private fun VideoPreviewSection(
     val previewHeight = (screenWidthDp * 9f / 16f).dp
     val context = LocalContext.current
 
-    LaunchedEffect(exoPlayer, state.isPlaying) {
-        val player = exoPlayer ?: return@LaunchedEffect
-        if (!state.isPlaying) return@LaunchedEffect
-        while (isActive) {
-            val pos = player.currentPosition
-            if (kotlin.math.abs(pos - state.playerPositionMs) > 200) {
-                vm.setPlayerPosition(pos)
-            }
-            delay(100)
-        }
-    }
-
-    LaunchedEffect(currentTimeMs) {
-        exoPlayer?.let { player ->
-            if (kotlin.math.abs(player.currentPosition - currentTimeMs) > 200) {
-                player.seekTo(currentTimeMs)
-            }
-        }
-    }
-
     Box(
         modifier = modifier
             .fillMaxWidth()

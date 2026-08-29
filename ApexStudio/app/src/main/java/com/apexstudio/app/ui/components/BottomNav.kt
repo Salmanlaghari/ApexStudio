@@ -123,6 +123,5 @@ fun defaultNavItems(current: String): List<BottomNavItem> = listOf(
     BottomNavItem("home", "Home", Icons.Default.Home, current == "home"),
     BottomNavItem("edit", "Edit", Icons.Default.Tune, current == "edit"),
     BottomNavItem("color", "Color", Icons.Default.Palette, current == "color"),
-    BottomNavItem("audio", "Audio", Icons.Default.GraphicEq, current == "audio"),
-    BottomNavItem("export", "Export", Icons.Default.IosShare, current == "export")
+    BottomNavItem("audio", "Audio", Icons.Default.GraphicEq, current == "audio")
 )

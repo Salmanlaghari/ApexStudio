@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -30,7 +31,8 @@ import com.apexstudio.app.util.TimeFormat
 @Composable
 fun HomeScreen(
     onProjectOpen: (String) -> Unit,
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onExport: () -> Unit = {}
 ) {
     val repo = remember { MediaRepository() }
     val projects = repo.loadProjects()
@@ -39,10 +41,18 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HomeTopBar(onOpenSettings = onOpenSettings)
+        AppTopBar(
+            title = "ApexStudio",
+            subtitle = "Cinematic Editor • 8K HDR",
+            onHome = { /* already on home */ },
+            onExport = onExport
+        )
+        Spacer(Modifier.height(4.dp))
         NewProjectHero(
             enabled = projects.isNotEmpty(),
             onCreate = {

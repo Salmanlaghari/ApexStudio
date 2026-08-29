@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
+import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 
@@ -37,6 +38,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
 fun ColorStudioScreen(
     projectId: String,
     onBack: () -> Unit,
+    onExport: () -> Unit,
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val luts by vm.luts.collectAsStateWithLifecycle()
@@ -47,43 +49,52 @@ fun ColorStudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        // Before / After
-        BeforeAfterPreview(
-            splitFraction = splitX,
-            onSplitChange = { splitX = it },
-            modifier = Modifier.fillMaxWidth()
+        AppTopBar(
+            title = "Color",
+            subtitle = "ApexStudio • Color Grading",
+            onBack = onBack,
+            onExport = onExport
         )
-
-        // Color Wheels
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            ColorWheelCard("Shadows", 0.65f, 0.3f, ApexPalette.NeonCyan, 12)
-            ColorWheelCard("Midtones", 0.5f, -0.4f, ApexPalette.NeonPurple, -8)
-            ColorWheelCard("Highlights", 0.7f, 0.5f, ApexPalette.NeonPink, 18)
-        }
-
-        // RGB Curves
-        RgbCurvesCanvas(
-            selectedChannel = selectedChannel,
-            onChannelSelect = { selectedChannel = it },
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(110.dp)
-        )
+                .weight(1f)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            BeforeAfterPreview(
+                splitFraction = splitX,
+                onSplitChange = { splitX = it },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        // LUT Presets
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(luts) { lut ->
-                LutPresetCard(
-                    name = lut.name,
-                    selected = lut.id == "cinematic",
-                    modifier = Modifier.width(82.dp)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ColorWheelCard("Shadows", 0.65f, 0.3f, ApexPalette.NeonCyan, 12)
+                ColorWheelCard("Midtones", 0.5f, -0.4f, ApexPalette.NeonPurple, -8)
+                ColorWheelCard("Highlights", 0.7f, 0.5f, ApexPalette.NeonPink, 18)
+            }
+
+            RgbCurvesCanvas(
+                selectedChannel = selectedChannel,
+                onChannelSelect = { selectedChannel = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(luts) { lut ->
+                    LutPresetCard(
+                        name = lut.name,
+                        selected = lut.id == "cinematic",
+                        modifier = Modifier.width(82.dp)
+                    )
+                }
             }
         }
     }
@@ -97,7 +108,7 @@ private fun SectionLabel(text: String) {
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.2.sp,
-        modifier = Modifier.padding(start = 4.dp)
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
     )
 }
 
@@ -116,7 +127,6 @@ private fun BeforeAfterPreview(
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
     ) {
-        // BEFORE (flat, desaturated)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -126,7 +136,6 @@ private fun BeforeAfterPreview(
                     )
                 )
         )
-        // AFTER (graded, vibrant)
         val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val splitPx = (splitFraction.coerceIn(0f, 1f)) * widthPx
         Box(
@@ -143,7 +152,6 @@ private fun BeforeAfterPreview(
                     )
                 )
         )
-        // Vignette
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -154,7 +162,6 @@ private fun BeforeAfterPreview(
                     )
                 )
         )
-        // BEFORE / AFTER badges
         Text(
             "BEFORE",
             color = ApexPalette.TextPrimary,
@@ -180,7 +187,6 @@ private fun BeforeAfterPreview(
                 .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(4.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         )
-        // Divider line
         Box(
             modifier = Modifier
                 .fillMaxHeight()
@@ -188,7 +194,6 @@ private fun BeforeAfterPreview(
                 .offset(x = with(density) { splitPx.toDp() } - 1.dp)
                 .background(ApexPalette.NeonCyan)
         )
-        // Handle
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)

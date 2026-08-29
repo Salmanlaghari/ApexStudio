@@ -26,6 +26,7 @@ fun ApexRoot() {
     var currentTab by remember { mutableStateOf("home") }
     var projectId by remember { mutableStateOf<String?>(null) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
+    var showExportSettings by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -53,34 +54,46 @@ fun ApexRoot() {
                         "edit" -> EditorScreen(
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "home" },
-                            onExport = { currentTab = "export" },
+                            onExport = { showExportSettings = true },
                             onColor = { currentTab = "color" },
                             onAudio = { currentTab = "audio" }
                         )
                         "color" -> ColorStudioScreen(
                             projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" }
+                            onBack = { currentTab = "edit" },
+                            onExport = { showExportSettings = true }
                         )
                         "audio" -> AudioStudioScreen(
                             projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" }
+                            onBack = { currentTab = "edit" },
+                            onExport = { showExportSettings = true }
                         )
                         "export" -> ExportScreen(
                             projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" }
+                            onBack = { currentTab = "edit" },
+                            onExport = { showExportSettings = true }
                         )
                     }
                 }
             }
         }
-        // Bottom nav only on the 5 main tabs
-        if (overlay == null) {
-            BottomNavBar(
-                current = currentTab,
-                onSelect = { tab ->
-                    if (currentTab != tab) currentTab = tab
-                }
+
+        if (showExportSettings) {
+            ExportScreen(
+                projectId = projectId ?: "p1",
+                onBack = { showExportSettings = false },
+                onExport = { showExportSettings = false }
             )
+        } else {
+            // Bottom nav only on the 4 main tabs
+            if (overlay == null && currentTab != "export") {
+                BottomNavBar(
+                    current = currentTab,
+                    onSelect = { tab ->
+                        if (currentTab != tab) currentTab = tab
+                    }
+                )
+            }
         }
     }
 }

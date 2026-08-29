@@ -58,6 +58,8 @@ fun EditorScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(ApexPalette.BgBase)
     ) {
         VideoPreviewSection(
@@ -69,7 +71,7 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.currentTimeMs + 5000).coerceAtMost(state.durationMs)) },
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.40f)
+                .weight(0.38f)
         )
 
         TimelineSection(
@@ -79,10 +81,10 @@ fun EditorScreen(
             onSelectClip = { vm.selectClip(it) },
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.45f)
+                .weight(0.42f)
         )
 
-        BottomToolBar(
+        HorizontalToolBar(
             onSplit = { vm.selectClip(state.selectedClipId) },
             onCut = { vm.selectClip(state.selectedClipId) },
             onSpeed = { /* placeholder */ },
@@ -94,7 +96,7 @@ fun EditorScreen(
             onExport = onExport,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.15f)
+                .weight(0.20f)
         )
     }
 }
@@ -115,7 +117,7 @@ private fun VideoPreviewSection(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         contentAlignment = Alignment.TopCenter
     ) {
         Box(
@@ -357,7 +359,6 @@ private fun TimelineSection(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val x = playheadX
                 if (x in 0f..size.width) {
-                    // Outer glow
                     drawLine(
                         brush = Brush.verticalGradient(
                             listOf(
@@ -371,7 +372,6 @@ private fun TimelineSection(
                         end = Offset(x, size.height),
                         strokeWidth = 8f
                     )
-                    // Sharp line
                     drawLine(
                         color = ApexPalette.NeonCyan,
                         start = Offset(x, 0f),
@@ -429,9 +429,9 @@ private fun VideoTrackRow(
         Box(
             modifier = Modifier
                 .height(trackHeightDp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
         ) {
             val widthDp = with(density) { width.toDp() }
             Box(modifier = Modifier.width(widthDp)) {
@@ -464,7 +464,7 @@ private fun VideoClipBlock(
             .width(with(density) { w.toDp() })
             .fillMaxHeight()
             .padding(1.dp)
-            .clip(RoundedCornerShape(5.dp))
+            .clip(RoundedCornerShape(4.dp))
             .background(
                 Brush.horizontalGradient(
                     listOf(
@@ -476,7 +476,7 @@ private fun VideoClipBlock(
             .border(
                 if (selected) 1.5.dp else 0.5.dp,
                 if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
-                RoundedCornerShape(5.dp)
+                RoundedCornerShape(4.dp)
             )
             .clickable(onClick = onSelect)
     ) {
@@ -541,9 +541,9 @@ private fun WaveformTrackRow(
         Box(
             modifier = Modifier
                 .height(32.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
                 .padding(2.dp)
         ) {
             val widthDp = with(density) { width.toDp() }
@@ -560,7 +560,7 @@ private fun WaveformTrackRow(
 }
 
 @Composable
-private fun BottomToolBar(
+private fun HorizontalToolBar(
     onSplit: () -> Unit,
     onCut: () -> Unit,
     onSpeed: () -> Unit,
@@ -575,9 +575,9 @@ private fun BottomToolBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        // Scrollable tool icons
+        // Scrollable horizontal tool icons
         val items = listOf(
             ToolDef("Split", Icons.Default.ContentCut, onSplit),
             ToolDef("Cut", Icons.Default.ContentCut, onCut),
@@ -602,7 +602,7 @@ private fun BottomToolBar(
             }
         }
         Spacer(Modifier.height(6.dp))
-        // Export CTA
+        // Glowing Export icon button
         Box(
             modifier = Modifier
                 .fillMaxWidth()

@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
+import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.delay
@@ -40,6 +41,7 @@ import kotlinx.coroutines.delay
 fun ExportScreen(
     projectId: String,
     onBack: () -> Unit,
+    onExport: () -> Unit,
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
@@ -52,14 +54,21 @@ fun ExportScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
+        AppTopBar(
+            title = "Export",
+            subtitle = "ApexStudio • Export Settings",
+            onBack = onBack,
+            onExport = onExport
+        )
         Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Motion Graphics
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fxList) { fx ->
@@ -72,7 +81,6 @@ fun ExportScreen(
                 }
             }
 
-            // Transitions
             SectionLabel("TRANSITIONS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(transitionsList) { t ->
@@ -84,7 +92,6 @@ fun ExportScreen(
                 }
             }
 
-            // Resolution Pills
             SectionLabel("RESOLUTION")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -112,7 +119,6 @@ fun ExportScreen(
                 }
             }
 
-            // Frame Rate Slider
             SectionLabel("FRAME RATE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -182,7 +188,6 @@ fun ExportScreen(
                 }
             }
 
-            // Bitrate Quality Gauge
             SectionLabel("BITRATE & QUALITY")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),

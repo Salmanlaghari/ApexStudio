@@ -33,6 +33,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
+import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.WaveformGenerator
@@ -42,6 +43,7 @@ import kotlin.math.abs
 fun AudioStudioScreen(
     projectId: String,
     onBack: () -> Unit,
+    onExport: () -> Unit,
     vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
@@ -50,7 +52,15 @@ fun AudioStudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
+        AppTopBar(
+            title = "Audio",
+            subtitle = "ApexStudio • Audio Studio",
+            onBack = onBack,
+            onExport = onExport
+        )
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -58,7 +68,6 @@ fun AudioStudioScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Multi-track Waveform Timeline
             SectionLabel("MULTI-TRACK TIMELINE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -77,7 +86,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            // Mixer Console
             SectionLabel("MIXER CONSOLE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -96,7 +104,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            // Real-Time EQ Visualizer
             SectionLabel("REAL-TIME EQ VISUALIZER")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -120,7 +127,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            // AI Voice Enhancement
             SectionLabel("AI VOICE ENHANCEMENT")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -208,7 +214,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            // Sound FX Library
             SectionLabel("SOUND FX LIBRARY")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -278,9 +283,9 @@ private fun WaveformTrackRow(
             modifier = Modifier
                 .weight(1f)
                 .height(34.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
                 .padding(2.dp)
         ) {
             AudioWaveform(

@@ -1,15 +1,13 @@
 package com.apexstudio.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,9 +27,10 @@ fun AppTopBar(
     title: String,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
+    onHome: (() -> Unit)? = null,
+    onExport: (() -> Unit)? = null,
     onUndo: (() -> Unit)? = null,
     onRedo: (() -> Unit)? = null,
-    onExport: (() -> Unit)? = null,
     canUndo: Boolean = false,
     canRedo: Boolean = false,
     extraRight: @Composable (() -> Unit)? = null
@@ -39,10 +38,17 @@ fun AppTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (onBack != null) {
+        if (onHome != null) {
+            NeonIconButton(
+                icon = Icons.Default.Home,
+                onClick = onHome,
+                size = 40.dp,
+                iconSize = 20.dp
+            )
+        } else if (onBack != null) {
             NeonIconButton(
                 icon = Icons.Default.ChevronLeft,
                 onClick = onBack,
@@ -101,27 +107,27 @@ fun AppTopBar(
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Brush.linearGradient(listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)))
-                    .clickable(onClick = onExport)
-                    .padding(horizontal = 16.dp),
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                ApexPalette.NeonCyan.copy(alpha = 0.6f),
+                                ApexPalette.NeonPurple.copy(alpha = 0.4f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), CircleShape)
+                    .clickable(onClick = onExport),
                 contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        null, tint = ApexPalette.BgDeep,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "Export",
-                        color = ApexPalette.BgDeep,
-                        fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
+                Icon(
+                    Icons.Default.IosShare,
+                    null,
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }

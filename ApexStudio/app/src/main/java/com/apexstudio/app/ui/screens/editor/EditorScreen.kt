@@ -125,23 +125,14 @@ fun EditorScreen(
         exoPlayer?.playbackParameters = PlaybackParameters(playbackSpeed)
     }
 
-    LaunchedEffect(exoPlayer, state.isPlaying) {
+    LaunchedEffect(exoPlayer) {
         val player = exoPlayer ?: return@LaunchedEffect
-        if (!state.isPlaying) return@LaunchedEffect
         while (isActive) {
             val pos = player.currentPosition
-            if (kotlin.math.abs(pos - state.playerPositionMs) > 200) {
+            if (pos != state.playerPositionMs) {
                 vm.setPlayerPosition(pos)
             }
             delay(100)
-        }
-    }
-
-    LaunchedEffect(currentTimeMs) {
-        exoPlayer?.let { player ->
-            if (kotlin.math.abs(player.currentPosition - currentTimeMs) > 200) {
-                player.seekTo(currentTimeMs)
-            }
         }
     }
 

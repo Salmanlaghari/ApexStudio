@@ -1,4 +1,5 @@
 # ApexStudio
+<<<<<<< ours
 
 A modern, high-performance Android video editing application built with Kotlin, Jetpack Compose, and Media3/ExoPlayer.
 
@@ -131,3 +132,6 @@ transformer.addListener(object : Transformer.Listener {
 - `WaveformGenerator` produces deterministic synthetic audio for visuals.
 - All gesture controls (pinch-to-zoom, trim handles, scrub, color-wheel drag) work out of the box.
 - Theme is dark-only by design; tokens are in `ui/theme/Color.kt`.
+=======
+High-end &amp; Powerful
+>>>>>>> theirs

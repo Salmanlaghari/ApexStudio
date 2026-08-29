@@ -27,6 +27,15 @@ class EditorViewModel(
     private val _audio = MutableStateFlow(AudioStudioState())
     val audio: StateFlow<AudioStudioState> = _audio.asStateFlow()
 
+    private val _luts = MutableStateFlow<List<LutPreset>>(emptyList())
+    val luts: StateFlow<List<LutPreset>> = _luts.asStateFlow()
+
+    private val _transitions = MutableStateFlow<List<ToolItem>>(emptyList())
+    val transitions: StateFlow<List<ToolItem>> = _transitions.asStateFlow()
+
+    private val _fx = MutableStateFlow<List<ToolItem>>(emptyList())
+    val fx: StateFlow<List<ToolItem>> = _fx.asStateFlow()
+
     private val undoStack = ArrayDeque<List<MediaClip>>()
     private val redoStack = ArrayDeque<List<MediaClip>>()
 
@@ -48,15 +57,6 @@ class EditorViewModel(
             }
         }
     }
-
-    private val _luts = MutableStateFlow<List<LutPreset>>(emptyList())
-    val luts: StateFlow<List<LutPreset>> = _luts.asStateFlow()
-
-    private val _transitions = MutableStateFlow<List<ToolItem>>(emptyList())
-    val transitions: StateFlow<List<ToolItem>> = _transitions.asStateFlow()
-
-    private val _fx = MutableStateFlow<List<ToolItem>>(emptyList())
-    val fx: StateFlow<List<ToolItem>> = _fx.asStateFlow()
 
     private fun loadLuts() {
         _luts.value = repo.loadLutPresets()

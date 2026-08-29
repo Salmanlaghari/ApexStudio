@@ -1,6 +1,7 @@
 package com.apexstudio.app
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -14,9 +15,9 @@ class ApexApp : Application() {
             throwable.printStackTrace(PrintWriter(sw))
             Log.e("ApexCrash", "Uncaught exception on ${thread.name}", throwable)
             try {
-                openFileOutput("last_crash.txt", MODE_PRIVATE).use { out ->
-                    out.write("Thread: ${thread.name}\n")
-                    out.write(sw.toString())
+                this.openFileOutput("last_crash.txt", Context.MODE_PRIVATE).use { out ->
+                    out.write("Thread: ${thread.name}\n".toByteArray())
+                    out.write(sw.toString().toByteArray())
                 }
             } catch (_: Throwable) { }
             default?.uncaughtException(thread, throwable)

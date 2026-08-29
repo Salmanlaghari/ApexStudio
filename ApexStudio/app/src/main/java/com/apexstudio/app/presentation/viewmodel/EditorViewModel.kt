@@ -100,8 +100,10 @@ class EditorViewModel(
 
             val firstVideo = newClips.firstOrNull { it.type == ClipType.VIDEO }
             val waveform = if (firstVideo != null && context != null) {
-                mediaAnalyzer?.analyzeAudioWaveform(firstVideo.uri, context)?.samples
-            } ?: FloatArray(0)
+                mediaAnalyzer?.analyzeAudioWaveform(firstVideo.uri, context)?.samples ?: FloatArray(0)
+            } else {
+                FloatArray(0)
+            }
 
             val updatedProject = s.project?.copy(clips = existingClips + newClips)
             val maxDuration = updatedProject?.clips?.maxOfOrNull { it.durationMs } ?: s.durationMs

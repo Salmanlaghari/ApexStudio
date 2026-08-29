@@ -46,6 +46,7 @@ class MediaPickerHelper(private val context: Context) {
             if (uris != null) {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
+                        .filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
                     _pickedMedia.emit(metadataList)
                 }
             }

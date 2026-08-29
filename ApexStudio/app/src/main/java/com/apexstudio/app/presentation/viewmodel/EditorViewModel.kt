@@ -91,16 +91,30 @@ class EditorViewModel(
     fun closeMediaPicker() = _state.update { it.copy(isMediaPickerOpen = false) }
 
     fun onMediaPicked(mediaList: List<com.apexstudio.app.data.picker.MediaMetadata>) {
-        _state.update { s ->
-            val newClips = mediaList.map { meta ->
-                mediaPicker?.toMediaClip(meta, s.project?.clips?.size ?: 0) ?: return@update s
+        viewModelScope.launch {
+            val s = _state.value
+            val newClips = mediaList.mapNotNull { meta ->
+                mediaPicker?.toMediaClip(meta, s.project?.clips?.size ?: 0)
             }
             val existingClips = s.project?.clips ?: emptyList()
-            s.copy(
-                pickedMedia = mediaList,
-                project = s.project?.copy(clips = existingClips + newClips),
-                isMediaPickerOpen = false
-            )
+
+            val firstVideo = newClips.firstOrNull { it.type == ClipType.VIDEO }
+            val waveform = if (firstVideo != null && context != null) {
+                mediaAnalyzer?.analyzeAudioWaveform(firstVideo.uri, context)?.samples
+            } ?: FloatArray(0)
+
+            val updatedProject = s.project?.copy(clips = existingClips + newClips)
+            val maxDuration = updatedProject?.clips?.maxOfOrNull { it.durationMs } ?: s.durationMs
+
+            _state.update {
+                it.copy(
+                    project = updatedProject,
+                    durationMs = maxDuration,
+                    pickedMedia = mediaList,
+                    isMediaPickerOpen = false,
+                    audioWaveform = waveform
+                )
+            }
         }
     }
 
@@ -270,12 +284,36 @@ class EditorViewModel(
         pushUndo()
         _state.update { s ->
             val c = s.project?.clips?.firstOrNull { it.id == clipId } ?: return@update s
+            if (atMs <= c.trimStartMs || atMs >= c.trimEndMs) return@update s
+
+            val originalEnd = c.trimEndMs
             val newClip = c.copy(
-                id = c.id + "_b", trimStartMs = atMs,
-                trimEndMs = c.trimEndMs, durationMs = c.trimEndMs
+                id = c.id + "_split",
+                trimStartMs = atMs,
+                trimEndMs = originalEnd,
+                durationMs = originalEnd - atMs
             )
             s.copy(project = s.project.copy(
-                clips = s.project.clips.map { if (it.id == clipId) it.copy(trimEndMs = atMs) else it } + newClip
+                clips = s.project.clips.map {
+                    if (it.id == clipId) it.copy(trimEndMs = atMs, durationMs = atMs - it.trimStartMs)
+                    else it
+                } + newClip
+            ))
+        }
+    }
+
+    fun cutClipAtPlayhead() {
+        val clipId = _state.value.selectedClipId ?: return
+        val atMs = _state.value.currentTimeMs
+        pushUndo()
+        _state.update { s ->
+            s.copy(project = s.project?.copy(
+                clips = s.project.clips.map {
+                    if (it.id == clipId) {
+                        val end = atMs.coerceIn(it.trimStartMs, it.trimEndMs)
+                        it.copy(trimEndMs = end, durationMs = end - it.trimStartMs)
+                    } else it
+                }
             ))
         }
     }

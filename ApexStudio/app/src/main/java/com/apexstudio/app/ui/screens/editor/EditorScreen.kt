@@ -374,11 +374,12 @@ private fun Timeline(
                 Spacer(Modifier.width(scroll.value.pxToDp()))
                 listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
                     180_000L, 210_000L).forEach { t ->
+                    val labelLeft = (t * pxPerMs - scroll.value - 20).coerceAtLeast(0f)
+                    Spacer(Modifier.width(labelLeft.toDp()))
                     Text(
                         TimeFormat.msToShort(t),
                         color = ApexPalette.TextTertiary,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(start = (t * pxPerMs - scroll.value - 20).toDp())
+                        fontSize = 10.sp
                     )
                 }
             }

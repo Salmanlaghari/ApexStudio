@@ -71,7 +71,6 @@ class ExportEngine(private val context: Context) {
 
                         override fun onTransformationError(
                             mediaItem: MediaItem,
-                            transformationResult: TransformationResult,
                             exception: Exception
                         ) {
                             mainHandler.post {

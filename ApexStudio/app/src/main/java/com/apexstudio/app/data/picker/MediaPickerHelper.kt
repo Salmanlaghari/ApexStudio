@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import com.apexstudio.app.domain.model.ClipType
@@ -34,8 +35,8 @@ class MediaPickerHelper(private val context: Context) {
     private val _pickedMedia = MutableStateFlow<List<MediaMetadata>>(emptyList())
     val pickedMedia: StateFlow<List<MediaMetadata>> = _pickedMedia
 
-    lateinit var pickMultipleMedia: ActivityResultLauncher<Array<String>?>
-    lateinit var pickSingleMedia: ActivityResultLauncher<String?>
+    lateinit var pickMultipleMedia: ActivityResultLauncher<PickVisualMediaRequest>
+    lateinit var pickSingleMedia: ActivityResultLauncher<String>
 
     @Composable
     fun registerLaunchers() {

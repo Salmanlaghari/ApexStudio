@@ -18,8 +18,14 @@ class MediaAnalyzer {
     suspend fun analyzeAudioWaveform(uri: String, context: Context, sampleCount: Int = 200): AudioWaveformData =
         withContext(Dispatchers.IO) {
             val extractor = MediaExtractor()
+            var pfd: android.os.ParcelFileDescriptor? = null
             try {
-                extractor.setDataSource(context, android.net.Uri.parse(uri))
+                val parsedUri = android.net.Uri.parse(uri)
+                pfd = context.contentResolver.openFileDescriptor(parsedUri, "r")
+                if (pfd == null) {
+                    return@withContext AudioWaveformData(FloatArray(sampleCount), 0L, 0f)
+                }
+                extractor.setDataSource(pfd.fileDescriptor)
                 val trackIndex = findAudioTrack(extractor)
                 if (trackIndex < 0) {
                     return@withContext AudioWaveformData(FloatArray(sampleCount), 0L, 0f)
@@ -60,6 +66,7 @@ class MediaAnalyzer {
                 AudioWaveformData(FloatArray(sampleCount), 0L, 0f)
             } finally {
                 try { extractor.release() } catch (_: Exception) { }
+                try { pfd?.close() } catch (_: Exception) { }
             }
         }
 

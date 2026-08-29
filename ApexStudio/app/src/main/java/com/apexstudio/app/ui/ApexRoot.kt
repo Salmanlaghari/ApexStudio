@@ -21,6 +21,8 @@ import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
 import com.apexstudio.app.ui.screens.colortools.ColorStudioScreen
+import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
+import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
@@ -28,6 +30,8 @@ object Routes {
     const val EXPORT = "export/{projectId}"
     const val AUDIO = "audio/{projectId}"
     const val COLOR = "color/{projectId}"
+    const val SETTINGS = "settings"
+    const val CRASH_DIAGNOSTICS = "crash-diagnostics"
     fun editor(id: String) = "editor/$id"
     fun export(id: String) = "export/$id"
     fun audio(id: String) = "audio/$id"
@@ -45,7 +49,8 @@ fun ApexRoot() {
             ) {
                 composable(Routes.HOME) {
                     HomeScreen(
-                        onProjectOpen = { id -> navController.navigate(Routes.editor(id)) }
+                        onProjectOpen = { id -> navController.navigate(Routes.editor(id)) },
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) }
                     )
                 }
                 composable(
@@ -88,6 +93,17 @@ fun ApexRoot() {
                     val id = entry.arguments?.getString("projectId") ?: ""
                     ColorStudioScreen(
                         projectId = id,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Routes.SETTINGS) {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenDiagnostics = { navController.navigate(Routes.CRASH_DIAGNOSTICS) }
+                    )
+                }
+                composable(Routes.CRASH_DIAGNOSTICS) {
+                    CrashDiagnosticsScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,7 +34,10 @@ import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 @Composable
-fun HomeScreen(onProjectOpen: (String) -> Unit) {
+fun HomeScreen(
+    onProjectOpen: (String) -> Unit,
+    onOpenSettings: () -> Unit = {}
+) {
     val repo = remember { MediaRepository() }
     val projects = repo.loadProjects()
     var selectedFilter by remember { mutableStateOf("All") }
@@ -48,7 +52,15 @@ fun HomeScreen(onProjectOpen: (String) -> Unit) {
             subtitle = "PRO EDITOR • v1.0",
             onUndo = {}, onRedo = {},
             onExport = {},
-            canUndo = false, canRedo = false
+            canUndo = false, canRedo = false,
+            extraRight = {
+                NeonIconButton(
+                    icon = Icons.Default.Settings,
+                    onClick = onOpenSettings,
+                    size = 40.dp,
+                    iconSize = 20.dp
+                )
+            }
         )
 
         Spacer(Modifier.height(8.dp))

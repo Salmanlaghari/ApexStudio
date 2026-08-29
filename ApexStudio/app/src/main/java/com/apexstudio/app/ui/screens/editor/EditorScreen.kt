@@ -115,6 +115,12 @@ fun EditorScreen(
 
         BottomNavBar(
             current = "Edit",
+            items = listOf(
+                BottomNavItem("Project", Icons.Default.Folder, false),
+                BottomNavItem("Media", Icons.Default.Movie, false),
+                BottomNavItem("Edit", Icons.Default.Tune, true),
+                BottomNavItem("Export", Icons.Default.IosShare, false)
+            ),
             onSelect = { /* TODO */ }
         )
     }

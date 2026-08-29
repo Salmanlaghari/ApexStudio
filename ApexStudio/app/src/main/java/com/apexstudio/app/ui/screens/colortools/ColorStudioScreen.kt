@@ -38,6 +38,8 @@ import com.apexstudio.app.presentation.state.ColorToolState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
+import com.apexstudio.app.ui.components.BottomNavBar
+import com.apexstudio.app.ui.components.BottomNavItem
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.WaveformCurve
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -290,6 +292,17 @@ fun ColorStudioScreen(
             }
         }
         Spacer(Modifier.height(20.dp))
+        BottomNavBar(
+            current = "Color Grading",
+            items = listOf(
+                BottomNavItem("Home", Icons.Default.Home, false),
+                BottomNavItem("Edit", Icons.Default.Tune, false),
+                BottomNavItem("Media", Icons.Default.Movie, false),
+                BottomNavItem("Color Grading", Icons.Default.Palette, true),
+                BottomNavItem("Export", Icons.Default.IosShare, false)
+            ),
+            onSelect = { /* TODO */ }
+        )
     }
 }
 

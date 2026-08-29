@@ -37,6 +37,8 @@ import com.apexstudio.app.domain.model.ExportQuality
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
+import com.apexstudio.app.ui.components.BottomNavBar
+import com.apexstudio.app.ui.components.BottomNavItem
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.components.NeonPrimaryButton
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -289,6 +291,14 @@ fun ExportScreen(
             }
         }
         Spacer(Modifier.height(28.dp))
+        BottomNavBar(
+            current = "Export",
+            items = listOf(
+                BottomNavItem("Home", Icons.Default.Home, false),
+                BottomNavItem("Export", Icons.Default.IosShare, true)
+            ),
+            onSelect = { /* TODO */ }
+        )
     }
 }
 

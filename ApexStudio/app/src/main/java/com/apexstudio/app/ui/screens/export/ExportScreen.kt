@@ -159,12 +159,15 @@ fun ExportScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        val fxList = vm.fx.collectAsStateWithLifecycle().value
+        val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
+
         SectionTitle("Aesthetic FX & Transitions")
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(vm.fx.collectAsStateWithLifecycle().value) { fx ->
+            items(fxList) { fx ->
                 FxCard(fx.label, fx.id == "chrom", fx.icon)
             }
         }
@@ -176,7 +179,7 @@ fun ExportScreen(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(vm.transitions.collectAsStateWithLifecycle().value) { t ->
+            items(transitionsList) { t ->
                 TransitionCard(t.label, t.icon)
             }
         }

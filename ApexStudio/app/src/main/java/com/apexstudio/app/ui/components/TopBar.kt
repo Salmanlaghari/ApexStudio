@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -125,13 +126,3 @@ fun AppTopBar(
         }
     }
 }
-
-@Composable
-private fun Modifier.clickable(onClick: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(
-        interactionSource = androidx.compose.runtime.remember {
-            androidx.compose.foundation.interaction.MutableInteractionSource()
-        },
-        indication = null,
-        onClick = onClick
-    ))

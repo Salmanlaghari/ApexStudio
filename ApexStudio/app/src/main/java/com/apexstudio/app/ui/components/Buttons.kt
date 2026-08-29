@@ -38,7 +38,8 @@ fun NeonIconButton(
     background: Color = ApexPalette.BgElevated,
     size: Dp = 44.dp,
     iconSize: Dp = 22.dp,
-    selected: Boolean = false
+    selected: Boolean = false,
+    enabled: Boolean = true
 ) {
     val bg by animateColorAsState(
         if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else background,
@@ -61,6 +62,7 @@ fun NeonIconButton(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    enabled = enabled,
                     onClick = onClick
                 ),
             contentAlignment = Alignment.Center

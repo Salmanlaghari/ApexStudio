@@ -38,6 +38,7 @@ import com.apexstudio.app.presentation.state.ColorToolState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.components.WaveformCurve
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -161,7 +162,7 @@ fun ColorStudioScreen(
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 detectDragGestures { change, _ ->
-                                    splitX = (change.x / size.width).coerceIn(0f, 1f)
+                                    splitX = (change.position.x / size.width).coerceIn(0f, 1f)
                                 }
                             }
                     )
@@ -322,8 +323,8 @@ private fun ColorWheel(
                             onChange(v.coerceIn(-1f, 1f))
                         },
                         onDrag = { change, _ ->
-                            val dx = change.x - center.x
-                            val dy = change.y - center.y
+                            val dx = change.position.x - center.x
+                            val dy = change.position.y - center.y
                             val a = atan2(dy.toDouble(), dx.toDouble()).toFloat()
                             onChange((a / Math.PI).toFloat().coerceIn(-1f, 1f))
                         }

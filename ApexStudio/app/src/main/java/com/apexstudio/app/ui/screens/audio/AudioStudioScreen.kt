@@ -2,9 +2,20 @@ package com.apexstudio.app.ui.screens.audio
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -12,7 +23,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -20,14 +38,15 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,8 +58,8 @@ import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
-import com.apexstudio.app.util.TimeFormat
 import com.apexstudio.app.util.WaveformGenerator
+import kotlin.math.abs
 
 @Composable
 fun AudioStudioScreen(
@@ -66,13 +85,11 @@ fun AudioStudioScreen(
 
         Spacer(Modifier.height(4.dp))
 
-        // BPM & transport
         GlassCard(
             modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
             cornerRadius = 22.dp
         ) {
             Column {
-                // Transport row
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("01:24:18", color = ApexPalette.NeonCyan,
                         fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -110,7 +127,6 @@ fun AudioStudioScreen(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                // Mini timeline scrubber
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -132,20 +148,17 @@ fun AudioStudioScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Tracks
         state.tracks.forEachIndexed { idx, track ->
             TrackCard(track, idx + 1, vm)
             Spacer(Modifier.height(10.dp))
         }
 
-        // Mixer + EQ
         Row(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Mixer
             GlassCard(
                 modifier = Modifier.weight(1f),
                 cornerRadius = 18.dp
@@ -157,14 +170,13 @@ fun AudioStudioScreen(
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MixerChannel("Main", 0.75f, 0.5f, ApexPalette.NeonCyan)
-                        MixerChannel("Vocal", 0.75f, 0.5f, ApexPalette.NeonPurple)
-                        MixerChannel("Beat", 0.6f, 0.5f, ApexPalette.NeonPink)
-                        MixerChannel("SFX", 0.5f, 0.4f, ApexPalette.NeonCyan)
+                        MixerChannel("Main", 0.75f, ApexPalette.NeonCyan)
+                        MixerChannel("Vocal", 0.75f, ApexPalette.NeonPurple)
+                        MixerChannel("Beat", 0.6f, ApexPalette.NeonPink)
+                        MixerChannel("SFX", 0.5f, ApexPalette.NeonCyan)
                     }
                 }
             }
-            // EQ
             GlassCard(
                 modifier = Modifier.weight(1f),
                 cornerRadius = 18.dp
@@ -195,7 +207,6 @@ fun AudioStudioScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Sound FX Library + AI Enhance
         Row(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
@@ -313,8 +324,7 @@ private fun TrackCard(track: AudioTrack, idx: Int, vm: EditorViewModel) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Track $idx", color = ApexPalette.TextTertiary, fontSize = 8.sp)
                         Text(
-                            track.id.take(1).uppercase() +
-                                track.id.drop(1).take(2),
+                            track.id.take(1).uppercase() + track.id.drop(1).take(2),
                             color = ApexPalette.NeonCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp
                         )
                     }
@@ -348,7 +358,6 @@ private fun TrackCard(track: AudioTrack, idx: Int, vm: EditorViewModel) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            // Waveform region
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -359,9 +368,11 @@ private fun TrackCard(track: AudioTrack, idx: Int, vm: EditorViewModel) {
                 AudioWaveform(
                     seed = track.id.hashCode().toLong(),
                     modifier = Modifier.fillMaxSize().padding(4.dp),
-                    color = if (track.id == "a1") ApexPalette.NeonCyan
-                    else if (track.id == "a2") ApexPalette.NeonPurple
-                    else ApexPalette.NeonPink,
+                    color = when (track.id) {
+                        "a1" -> ApexPalette.NeonCyan
+                        "a2" -> ApexPalette.NeonPurple
+                        else -> ApexPalette.NeonPink
+                    },
                     secondaryColor = Color.Gray,
                     progress = 0.4f
                 )
@@ -371,7 +382,7 @@ private fun TrackCard(track: AudioTrack, idx: Int, vm: EditorViewModel) {
 }
 
 @Composable
-private fun MixerChannel(name: String, vol: Float, pan: Float, color: Color) {
+private fun MixerChannel(name: String, vol: Float, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(name, color = ApexPalette.TextPrimary, fontSize = 9.sp,
             fontWeight = FontWeight.Bold)
@@ -416,7 +427,7 @@ private fun EqKnob(name: String, freq: String) {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 4.dp)
-                    .size(3.dp, 8.dp)
+                    .size(width = 3.dp, height = 8.dp)
                     .background(ApexPalette.NeonCyan)
             )
         }
@@ -442,10 +453,12 @@ private fun EqVisualizer() {
             val x = i * step
             drawLine(
                 brush = Brush.verticalGradient(
-                    listOf(ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                    listOf(
+                        ApexPalette.NeonCyan.copy(alpha = 0.4f),
                         ApexPalette.NeonCyan, ApexPalette.NeonPurple,
                         ApexPalette.NeonCyan,
-                        ApexPalette.NeonCyan.copy(alpha = 0.4f))
+                        ApexPalette.NeonCyan.copy(alpha = 0.4f)
+                    )
                 ),
                 start = Offset(x, mid - barH / 2),
                 end = Offset(x, mid + barH / 2),
@@ -481,11 +494,3 @@ private fun FxChip(name: String) {
         Text(name, color = ApexPalette.TextPrimary, fontSize = 8.sp)
     }
 }
-
-private fun androidx.compose.ui.Modifier.border(
-    width: androidx.compose.ui.unit.Dp,
-    color: Color,
-    shape: androidx.compose.ui.graphics.Shape
-): androidx.compose.ui.Modifier = this.then(
-    androidx.compose.foundation.border(width, color, shape)
-)

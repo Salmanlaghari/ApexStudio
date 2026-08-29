@@ -1,6 +1,16 @@
 package com.apexstudio.app.data.repository
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.BlurOn
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.ViewInAr
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.ZoomIn
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.ui.theme.ApexPalette
 
 class MediaRepository {
 
@@ -41,16 +51,16 @@ class MediaRepository {
     )
 
     fun loadTransitionPresets(): List<ToolItem> = listOf(
-        ToolItem("cross", "Cross Dissolve", androidx.compose.material.icons.Icons.Default.Layers, com.apexstudio.app.ui.theme.ApexPalette.NeonCyan),
-        ToolItem("wipe", "Wipe", androidx.compose.material.icons.Icons.Default.SwapHoriz, com.apexstudio.app.ui.theme.ApexPalette.NeonPurple),
-        ToolItem("zoom", "Zoom", androidx.compose.material.icons.Icons.Default.ZoomIn, com.apexstudio.app.ui.theme.ApexPalette.NeonPink),
-        ToolItem("cube", "Cube Spin", androidx.compose.material.icons.Icons.Default.ViewInAr, com.apexstudio.app.ui.theme.ApexPalette.NeonCyan)
+        ToolItem("cross", "Cross Dissolve", Icons.Default.Layers, ApexPalette.NeonCyan),
+        ToolItem("wipe", "Wipe", Icons.Default.SwapHoriz, ApexPalette.NeonPurple),
+        ToolItem("zoom", "Zoom", Icons.Default.ZoomIn, ApexPalette.NeonPink),
+        ToolItem("cube", "Cube Spin", Icons.Default.ViewInAr, ApexPalette.NeonCyan)
     )
 
     fun loadFxPresets(): List<ToolItem> = listOf(
-        ToolItem("chrom", "Chromatic Glitch", androidx.compose.material.icons.Icons.Default.Bolt, com.apexstudio.app.ui.theme.ApexPalette.NeonPurple),
-        ToolItem("grain", "Film Grain", androidx.compose.material.icons.Icons.Default.BlurOn, com.apexstudio.app.ui.theme.ApexPalette.TextSecondary),
-        ToolItem("vhs", "VHS Retro", androidx.compose.material.icons.Icons.Default.Videocam, com.apexstudio.app.ui.theme.ApexPalette.NeonPink),
-        ToolItem("leak", "Light Leak", androidx.compose.material.icons.Icons.Default.WbSunny, com.apexstudio.app.ui.theme.ApexPalette.NeonCyan)
+        ToolItem("chrom", "Chromatic Glitch", Icons.Default.Bolt, ApexPalette.NeonPurple),
+        ToolItem("grain", "Film Grain", Icons.Default.BlurOn, ApexPalette.TextSecondary),
+        ToolItem("vhs", "VHS Retro", Icons.Default.Videocam, ApexPalette.NeonPink),
+        ToolItem("leak", "Light Leak", Icons.Default.WbSunny, ApexPalette.NeonCyan)
     )
 }

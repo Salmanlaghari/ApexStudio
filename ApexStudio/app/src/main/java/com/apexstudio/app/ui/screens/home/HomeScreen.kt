@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -223,11 +224,3 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
     }
 }
 
-private fun Modifier.clickable(onClick: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(
-        interactionSource = androidx.compose.runtime.remember {
-            androidx.compose.foundation.interaction.MutableInteractionSource()
-        },
-        indication = null,
-        onClick = onClick
-    ))

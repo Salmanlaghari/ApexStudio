@@ -364,7 +364,7 @@ private fun Timeline(
                     .horizontalScroll(scroll),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Spacer(Modifier.width(((scroll.value).toDp())))
+                Spacer(Modifier.width(scroll.value.pxToDp()))
                 listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
                     180_000L, 210_000L).forEach { t ->
                     Text(

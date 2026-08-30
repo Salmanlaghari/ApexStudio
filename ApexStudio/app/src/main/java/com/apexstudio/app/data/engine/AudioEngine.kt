@@ -9,6 +9,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,11 +44,18 @@ class AudioEngine(private val context: Context) {
     private val _waveformData = MutableStateFlow(FloatArray(0))
     val waveformData: StateFlow<FloatArray> = _waveformData
 
-    init {
-        setupEqualizer()
-    }
-
-    private fun setupEqualizer() {
+    private fun ensureEqualizer() {
+        if (equalizer != null) return
+        if (ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.MODIFY_AUDIO_SETTINGS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            // The Equalizer AudioEffect requires MODIFY_AUDIO_SETTINGS. Constructing
+            // an Equalizer without it can hard-crash the native audio-effect layer
+            // on some devices (uncatchable SIGSEGV), so we skip init when absent.
+            return
+        }
         try {
             equalizer = Equalizer(0, AudioManager.STREAM_MUSIC).apply {
                 enabled = true
@@ -60,21 +68,25 @@ class AudioEngine(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e("AudioEngine", "Failed to initialize Equalizer", e)
+            equalizer = null
         }
     }
 
     fun setLowGain(gain: Short) {
         _eqState.update { it.copy(lowGain = gain) }
+        ensureEqualizer()
         equalizer?.setBandLevel(0, gain)
     }
 
     fun setMidGain(gain: Short) {
         _eqState.update { it.copy(midGain = gain) }
+        ensureEqualizer()
         equalizer?.setBandLevel(1, gain)
     }
 
     fun setHighGain(gain: Short) {
         _eqState.update { it.copy(highGain = gain) }
+        ensureEqualizer()
         equalizer?.setBandLevel(2, gain)
     }
 
@@ -104,12 +116,24 @@ class AudioEngine(private val context: Context) {
 
     fun startRecording(sampleRate: Int = 44100) {
         if (isRecording) return
+        if (ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w("AudioEngine", "RECORD_AUDIO permission not granted; skipping microphone recording")
+            return
+        }
         try {
             val minBufferSize = AudioRecord.getMinBufferSize(
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
+            if (minBufferSize <= 0) {
+                Log.e("AudioEngine", "Invalid AudioRecord buffer size: $minBufferSize")
+                return
+            }
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,

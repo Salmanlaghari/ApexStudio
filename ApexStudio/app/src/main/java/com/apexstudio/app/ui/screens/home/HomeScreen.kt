@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.domain.model.ClipType
@@ -72,6 +73,7 @@ fun HomeScreen(
                     name = metadataList.first().name.substringBeforeLast('.'),
                     clips = clips
                 )
+                CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
                 onProjectOpen(newProject.id)
             }
         }

@@ -57,7 +57,6 @@ class EditorViewModel(
         loadProject()
         loadLuts()
         loadAudioState()
-        audioEngine?.startRecording()
     }
 
     fun setContext(ctx: android.content.Context) {

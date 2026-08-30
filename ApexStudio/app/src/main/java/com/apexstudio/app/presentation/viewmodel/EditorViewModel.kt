@@ -54,11 +54,6 @@ class EditorViewModel(
     private val colorGradingEngine = ColorGradingEngine()
 
     init {
-        try {
-            colorGradingEngine.initGL()
-        } catch (_: Throwable) {
-            // GL not ready yet; defer until a real surface/context exists.
-        }
         loadProject()
         loadLuts()
         loadAudioState()

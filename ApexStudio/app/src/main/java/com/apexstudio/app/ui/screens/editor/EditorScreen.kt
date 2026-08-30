@@ -374,7 +374,6 @@ private fun VideoPreviewSection(
                         drawPath(path = path, color = Color.White.copy(alpha = 0.7f))
                     }
                 }
-            }
 
             Box(
                 modifier = Modifier

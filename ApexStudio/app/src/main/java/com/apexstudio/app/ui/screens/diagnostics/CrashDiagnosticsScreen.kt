@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.BuildConfig
 import com.apexstudio.app.data.crashlog.CrashLog
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
@@ -156,7 +155,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
             }
         }
 
-        if (BuildConfig.DEBUG) {
+        if (com.apexstudio.app.BuildConfig.DEBUG) {
             Spacer(Modifier.height(14.dp))
             GlassCard(
                 modifier = Modifier

@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.engine
 
 import android.content.Context
+import android.opengl.EGL14
 import android.opengl.GLES20
 import android.opengl.Matrix
 import android.util.Log
@@ -76,6 +77,11 @@ class ColorGradingEngine {
 
     fun initGL() {
         try {
+            val eglContext = EGL14.eglGetCurrentContext()
+            if (eglContext == null || eglContext == EGL14.EGL_NO_CONTEXT) {
+                Log.w("ColorGradingEngine", "initGL() called without current EGL context; deferring GL init")
+                return
+            }
             val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode)
             val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode)
 

@@ -72,6 +72,10 @@ fun EditorScreen(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
 
+    // Gate the native GL media surface (ExoPlayer / PlayerView) so it is only
+    // created AFTER the screen has fully composed and laid out its first frame.
+    var screenReady by remember { mutableStateOf(false) }
+
     mediaPicker.registerLaunchers()
 
     LaunchedEffect(Unit) {
@@ -91,17 +95,24 @@ fun EditorScreen(
         }
     }
 
+    // Defer native player/renderer init until the composition has settled.
+    // This keeps the GL/EGL surface from being created mid-first-frame, which
+    // is the most common cause of an instant (uncatchable) native death here.
     LaunchedEffect(Unit) {
         try {
             Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer.Builder.build()")
-            exoPlayer = ExoPlayer.Builder(context).build()
+            val player = ExoPlayer.Builder(context).build()
             Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
+            exoPlayer = player
         } catch (e: Exception) {
             Log.e("EditorScreen", "ExoPlayer build failed", e)
             CrashMarker.clear(context)
             exoPlayer = null
+        } finally {
+            // Surface is safe to attach only after the first frame is committed.
+            screenReady = true
         }
     }
 
@@ -323,7 +334,10 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (exoPlayer != null) {
+            // Only attach the GL/EGL media surface once the player exists AND the
+            // screen has finished its first composition (screenReady). This avoids
+            // touching native rendering from a partially-initialized frame.
+            if (exoPlayer != null && screenReady) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: creating PlayerView (GL surface)")
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -338,7 +352,7 @@ private fun VideoPreviewSection(
                         }
                     },
                     update = { pv ->
-                        pv.player = exoPlayer
+                        runCatching { pv.player = exoPlayer }.also { /* null -> detach */ }
                     }
                 )
             } else {

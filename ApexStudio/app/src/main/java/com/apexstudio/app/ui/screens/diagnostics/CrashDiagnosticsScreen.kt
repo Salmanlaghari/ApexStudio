@@ -155,7 +155,8 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
             }
         }
 
-        if (com.apexstudio.app.BuildConfig.DEBUG) {
+        val apexApp = context.applicationContext as com.apexstudio.app.ApexApp
+        if (apexApp.isDebug) {
             Spacer(Modifier.height(14.dp))
             GlassCard(
                 modifier = Modifier

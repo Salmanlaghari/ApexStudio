@@ -12,6 +12,8 @@ import java.util.Date
 import java.util.Locale
 
 class ApexApp : Application() {
+    val isDebug: Boolean = true
+
     override fun onCreate() {
         super.onCreate()
         val default = Thread.getDefaultUncaughtExceptionHandler()

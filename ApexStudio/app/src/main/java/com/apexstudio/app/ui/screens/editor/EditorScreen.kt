@@ -193,6 +193,7 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
             exoPlayer = exoPlayer,
+            screenReady = screenReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -311,6 +312,7 @@ private fun VideoPreviewSection(
     onNext: () -> Unit,
     onAddMedia: () -> Unit,
     exoPlayer: ExoPlayer?,
+    screenReady: Boolean,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current

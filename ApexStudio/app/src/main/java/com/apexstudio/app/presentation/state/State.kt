@@ -18,6 +18,8 @@ data class EditorState(
     val playerPositionMs: Long = 0L,
     val playerDurationMs: Long = 0L,
     val isPlayerReady: Boolean = false,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
     val audioWaveform: FloatArray = FloatArray(0)
 )
 

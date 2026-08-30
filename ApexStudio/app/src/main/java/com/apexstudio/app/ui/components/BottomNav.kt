@@ -61,7 +61,7 @@ fun BottomNavBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            items.forEach { item ->
+            for (item in items) {
                 BottomNavCell(item, item.id == current, onSelect = { onSelect(item.id) })
             }
         }

@@ -104,11 +104,11 @@ fun ExportScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(
+                        for ((label, sub) in listOf(
                             "1080p" to "1920×1080",
                             "4K" to "3840×2160",
                             "8K" to "7680×4320"
-                        ).forEach { (label, sub) ->
+                        )) {
                             ResolutionPill(
                                 label = label,
                                 sub = sub,
@@ -160,7 +160,7 @@ fun ExportScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        listOf(30f, 60f, 90f, 120f).forEach { f ->
+                        for (f in listOf(30f, 60f, 90f, 120f)) {
                             val sel = selectedFps == f
                             Box(
                                 modifier = Modifier

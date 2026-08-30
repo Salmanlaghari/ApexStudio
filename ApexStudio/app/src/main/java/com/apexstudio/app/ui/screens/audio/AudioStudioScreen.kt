@@ -247,7 +247,7 @@ fun AudioStudioScreen(
                 cornerRadius = 14.dp
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
-                    listOf("Riser", "Transition", "Ambience", "Whoosh", "Impact").forEach { name ->
+                    for (name in listOf("Riser", "Transition", "Ambience", "Whoosh", "Impact")) {
                         FxLibraryRow(name)
                         Spacer(Modifier.height(6.dp))
                     }

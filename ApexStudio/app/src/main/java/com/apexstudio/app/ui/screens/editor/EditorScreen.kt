@@ -72,6 +72,10 @@ fun EditorScreen(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
 
+    // Gate the native GL media surface (ExoPlayer / PlayerView) so it is only
+    // created AFTER the screen has fully composed and laid out its first frame.
+    var screenReady by remember { mutableStateOf(false) }
+
     mediaPicker.registerLaunchers()
 
     LaunchedEffect(Unit) {
@@ -91,17 +95,24 @@ fun EditorScreen(
         }
     }
 
+    // Defer native player/renderer init until the composition has settled.
+    // This keeps the GL/EGL surface from being created mid-first-frame, which
+    // is the most common cause of an instant (uncatchable) native death here.
     LaunchedEffect(Unit) {
         try {
             Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer.Builder.build()")
-            exoPlayer = ExoPlayer.Builder(context).build()
+            val player = ExoPlayer.Builder(context).build()
             Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
+            exoPlayer = player
         } catch (e: Exception) {
             Log.e("EditorScreen", "ExoPlayer build failed", e)
             CrashMarker.clear(context)
             exoPlayer = null
+        } finally {
+            // Surface is safe to attach only after the first frame is committed.
+            screenReady = true
         }
     }
 
@@ -182,6 +193,7 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
             exoPlayer = exoPlayer,
+            screenReady = screenReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -300,6 +312,7 @@ private fun VideoPreviewSection(
     onNext: () -> Unit,
     onAddMedia: () -> Unit,
     exoPlayer: ExoPlayer?,
+    screenReady: Boolean,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -323,7 +336,10 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (exoPlayer != null) {
+            // Only attach the GL/EGL media surface once the player exists AND the
+            // screen has finished its first composition (screenReady). This avoids
+            // touching native rendering from a partially-initialized frame.
+            if (exoPlayer != null && screenReady) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: creating PlayerView (GL surface)")
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -338,7 +354,7 @@ private fun VideoPreviewSection(
                         }
                     },
                     update = { pv ->
-                        pv.player = exoPlayer
+                        runCatching { pv.player = exoPlayer }.also { /* null -> detach */ }
                     }
                 )
             } else {
@@ -508,8 +524,8 @@ private fun TimelineSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Spacer(Modifier.width(scroll.value.pxToDp()))
-                listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
-                    180_000L, 210_000L).forEach { t ->
+                for (t in listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
+                    180_000L, 210_000L)) {
                     val labelLeft = (t * pxPerMs - scroll.value - 16).coerceAtLeast(0f)
                     Spacer(Modifier.width(labelLeft.toDp()))
                     Text(
@@ -657,7 +673,7 @@ private fun VideoTrackRow(
         ) {
             val widthDp = with(density) { width.toDp() }
             Box(modifier = Modifier.width(widthDp)) {
-                clips.forEach { clip ->
+                for (clip in clips) {
                     VideoClipBlock(
                         clip = clip,
                         pxPerMs = pxPerMs,
@@ -708,7 +724,7 @@ private fun VideoClipBlock(
                 .padding(2.dp),
             horizontalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            repeat(5) {
+            for (i in 0 until 5) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

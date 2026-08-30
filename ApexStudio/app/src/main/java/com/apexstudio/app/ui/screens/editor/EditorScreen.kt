@@ -92,11 +92,17 @@ fun EditorScreen(
     }
 
     LaunchedEffect(Unit) {
-        Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
-        CrashMarker.mark(context, "EditorScreen: ExoPlayer.Builder.build()")
-        exoPlayer = ExoPlayer.Builder(context).build()
-        Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
-        CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
+        try {
+            Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
+            CrashMarker.mark(context, "EditorScreen: ExoPlayer.Builder.build()")
+            exoPlayer = ExoPlayer.Builder(context).build()
+            Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
+            CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "ExoPlayer build failed", e)
+            CrashMarker.clear(context)
+            exoPlayer = null
+        }
     }
 
     DisposableEffect(Unit) {
@@ -113,12 +119,17 @@ fun EditorScreen(
         if (clip != null) {
             val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
             if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
-                Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
-                CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                Log.d("ApexTrace", "EditorScreen: player prepared")
-                CrashMarker.clear(context)
+                try {
+                    Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
+                    CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    Log.d("ApexTrace", "EditorScreen: player prepared")
+                } catch (e: Exception) {
+                    Log.e("EditorScreen", "player.prepare() failed", e)
+                } finally {
+                    CrashMarker.clear(context)
+                }
                 vm.setPlayerDuration(clip.durationMs)
             }
         }
@@ -217,6 +228,7 @@ private fun EditorTopBar(
     onBack: () -> Unit,
     onExport: () -> Unit
 ) {
+    CrashMarker.mark(LocalContext.current, "EditorScreen: EditorTopBar")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -291,6 +303,7 @@ private fun VideoPreviewSection(
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
+    CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
     val screenWidthDp = configuration.screenWidthDp
     val previewHeight = (screenWidthDp * 9f / 16f).dp
     val context = LocalContext.current
@@ -311,6 +324,7 @@ private fun VideoPreviewSection(
             contentAlignment = Alignment.Center
         ) {
             if (exoPlayer != null) {
+                CrashMarker.mark(LocalContext.current, "EditorScreen: creating PlayerView (GL surface)")
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
@@ -450,6 +464,7 @@ private fun TimelineSection(
     onSelectClip: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
     val clips = state.project?.clips ?: emptyList()
     val density = LocalDensity.current
     val basePxPerMs = with(density) { 0.16f.dp.toPx() }
@@ -777,6 +792,7 @@ private fun HorizontalToolBar(
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    CrashMarker.mark(LocalContext.current, "EditorScreen: HorizontalToolBar")
     Column(
         modifier = modifier
             .fillMaxWidth()

@@ -361,12 +361,12 @@ private fun RgbCurvesCanvas(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    listOf(
+                    for ((ch, color) in listOf(
                         "R" to ApexPalette.TrackOverlay,
                         "G" to ApexPalette.NeonEmerald,
                         "B" to ApexPalette.NeonPurple,
                         "L" to ApexPalette.NeonCyan
-                    ).forEach { (ch, color) ->
+                    )) {
                         val sel = ch == selectedChannel
                         Box(
                             modifier = Modifier

@@ -522,8 +522,8 @@ private fun TimelineSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Spacer(Modifier.width(scroll.value.pxToDp()))
-                listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
-                    180_000L, 210_000L).forEach { t ->
+                for (t in listOf(0, 30_000L, 60_000L, 90_000L, 120_000L, 150_000L,
+                    180_000L, 210_000L)) {
                     val labelLeft = (t * pxPerMs - scroll.value - 16).coerceAtLeast(0f)
                     Spacer(Modifier.width(labelLeft.toDp()))
                     Text(
@@ -671,7 +671,7 @@ private fun VideoTrackRow(
         ) {
             val widthDp = with(density) { width.toDp() }
             Box(modifier = Modifier.width(widthDp)) {
-                clips.forEach { clip ->
+                for (clip in clips) {
                     VideoClipBlock(
                         clip = clip,
                         pxPerMs = pxPerMs,
@@ -722,7 +722,7 @@ private fun VideoClipBlock(
                 .padding(2.dp),
             horizontalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            repeat(5) {
+            for (i in 0 until 5) {
                 Box(
                     modifier = Modifier
                         .weight(1f)

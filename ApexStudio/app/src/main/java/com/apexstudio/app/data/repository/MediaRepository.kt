@@ -12,7 +12,7 @@ import androidx.compose.material.icons.filled.ZoomIn
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.ui.theme.ApexPalette
 
-class MediaRepository {
+object MediaRepository {
     private val dynamicProjects = mutableListOf<Project>()
     private var projectCounter = 4
 
@@ -44,7 +44,7 @@ class MediaRepository {
     ) + dynamicProjects
 
     fun createProject(name: String, clips: List<MediaClip>): Project {
-        val id = "p$projectCounter++"
+        val id = "p${projectCounter++}"
         val durationMs = clips.maxOfOrNull { it.durationMs } ?: 0L
         val project = Project(
             id = id,

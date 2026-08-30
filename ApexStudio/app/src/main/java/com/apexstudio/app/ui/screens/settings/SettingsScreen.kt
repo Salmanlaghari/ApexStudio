@@ -71,8 +71,8 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 SettingsRow(
                     icon = Icons.Default.BugReport,
-                    title = "Crash Diagnostics",
-                    subtitle = "View last crash stack trace",
+                    title = "View Crash Log",
+                    subtitle = "Open crash diagnostics",
                     tint = ApexPalette.Danger,
                     onClick = onOpenDiagnostics
                 )

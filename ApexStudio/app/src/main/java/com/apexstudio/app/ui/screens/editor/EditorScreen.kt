@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
@@ -89,7 +90,9 @@ fun EditorScreen(
     }
 
     LaunchedEffect(Unit) {
+        Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
         exoPlayer = ExoPlayer.Builder(context).build()
+        Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
     }
 
     DisposableEffect(Unit) {
@@ -106,8 +109,10 @@ fun EditorScreen(
         if (clip != null) {
             val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
             if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
+                Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                Log.d("ApexTrace", "EditorScreen: player prepared")
                 vm.setPlayerDuration(clip.durationMs)
             }
         }

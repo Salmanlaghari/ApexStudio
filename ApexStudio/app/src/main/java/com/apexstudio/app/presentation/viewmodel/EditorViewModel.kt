@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.engine.AudioEngine
@@ -54,9 +55,11 @@ class EditorViewModel(
     private val colorGradingEngine = ColorGradingEngine()
 
     init {
+        Log.d("ApexTrace", "EditorViewModel.init start")
         loadProject()
         loadLuts()
         loadAudioState()
+        Log.d("ApexTrace", "EditorViewModel.init end")
     }
 
     fun setContext(ctx: android.content.Context) {

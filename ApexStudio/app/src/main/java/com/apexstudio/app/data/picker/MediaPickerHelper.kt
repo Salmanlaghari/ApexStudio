@@ -33,8 +33,18 @@ data class MediaMetadata(
 
 class MediaPickerHelper(private val context: Context) {
 
+    // Bump a counter on every successful pick so subscribers see a fresh
+    // emission even when the user picks the same file twice in a row
+    // (StateFlow conflates equal values, which would otherwise make
+    // the editor "ignore" a re-pick of the same URI).
     private val _pickedMedia = MutableStateFlow<List<MediaMetadata>>(emptyList())
     val pickedMedia: StateFlow<List<MediaMetadata>> = _pickedMedia
+
+    // Monotonic counter incremented on every emit. The composable
+    // collects this together with the metadata so equal payloads still
+    // trigger a refresh.
+    private val _pickGeneration = MutableStateFlow(0L)
+    val pickGeneration: StateFlow<Long> = _pickGeneration
 
     lateinit var pickMultipleMedia: ActivityResultLauncher<PickVisualMediaRequest>
     lateinit var pickSingleMedia: ActivityResultLauncher<String>
@@ -49,6 +59,7 @@ class MediaPickerHelper(private val context: Context) {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
                         .filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
                     _pickedMedia.emit(metadataList)
+                    _pickGeneration.emit(_pickGeneration.value + 1)
                 }
             }
         }
@@ -61,6 +72,7 @@ class MediaPickerHelper(private val context: Context) {
                     val meta = extractMetadata(uri)
                     if (meta != null) {
                         _pickedMedia.emit(listOf(meta))
+                        _pickGeneration.emit(_pickGeneration.value + 1)
                     }
                 }
             }

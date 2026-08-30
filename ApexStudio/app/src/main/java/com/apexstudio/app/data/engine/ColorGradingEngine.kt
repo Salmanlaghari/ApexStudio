@@ -1,9 +1,7 @@
 package com.apexstudio.app.data.engine
 
-import android.content.Context
 import android.opengl.EGL14
 import android.opengl.GLES20
-import android.opengl.Matrix
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,13 +73,38 @@ class ColorGradingEngine {
         }
     """.trimIndent()
 
-    fun initGL() {
-        try {
+    private fun isGlContextAvailable(): Boolean {
+        return try {
             val eglContext = EGL14.eglGetCurrentContext()
-            if (eglContext == null || eglContext == EGL14.EGL_NO_CONTEXT) {
-                Log.w("ColorGradingEngine", "initGL() called without current EGL context; deferring GL init")
-                return
-            }
+            eglContext != null && eglContext != EGL14.EGL_NO_CONTEXT
+        } catch (e: Exception) {
+            Log.w("ColorGradingEngine", "Failed to query current EGL context", e)
+            false
+        }
+    }
+
+    /**
+     * Initializes the GL color-grading program.
+     *
+     * MUST only be called from a GL rendering thread while a valid EGL context is
+     * current (e.g. GLSurfaceView.Renderer.onSurfaceCreated(), or the equivalent
+     * Compose/GL bridge callback). Calling raw GLES functions without a current
+     * EGL context is undefined behavior at the native driver level and can crash
+     * the whole process with a SIGSEGV/SIGABRT that bypasses the JVM
+     * UncaughtExceptionHandler.
+     *
+     * There is currently no GL preview surface wired into this app (ExoPlayer
+     * renders the preview on its own threads), so this is intentionally NOT
+     * invoked from EditorViewModel construction — it should only be called once a
+     * real GL surface reports a current context.
+     */
+    fun initGL() {
+        if (initialized) return
+        if (!isGlContextAvailable()) {
+            Log.w("ColorGradingEngine", "initGL() called without current EGL context; deferring GL init")
+            return
+        }
+        try {
             val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode)
             val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode)
 
@@ -94,6 +117,7 @@ class ColorGradingEngine {
             GLES20.glGetProgramiv(glProgram, GLES20.GL_LINK_STATUS, linkStatus, 0)
             if (linkStatus[0] != GLES20.GL_TRUE) {
                 Log.e("ColorGradingEngine", "Failed to link GL program")
+                glProgram = 0
                 return
             }
 
@@ -101,6 +125,9 @@ class ColorGradingEngine {
             initialized = true
         } catch (e: Exception) {
             Log.e("ColorGradingEngine", "GL init error", e)
+            glProgram = 0
+            vbo = 0
+            initialized = false
         }
     }
 
@@ -147,14 +174,32 @@ class ColorGradingEngine {
     }
 
     fun release() {
-        if (glProgram != 0) {
-            GLES20.glDeleteProgram(glProgram)
+        if (!initialized && glProgram == 0 && vbo == 0) return
+        if (!isGlContextAvailable()) {
+            // No current EGL context (e.g. onCleared() running on the main thread,
+            // or the surface was already torn down). Issuing raw glDelete* calls
+            // without a context is undefined behavior and can crash natively, so
+            // we just drop our references — the driver frees the GL objects when
+            // the context is destroyed.
+            Log.w("ColorGradingEngine", "release() called without current EGL context; skipping GL delete")
             glProgram = 0
-        }
-        if (vbo != 0) {
-            GLES20.glDeleteBuffers(1, intArrayOf(vbo), 0)
             vbo = 0
+            initialized = false
+            return
         }
-        initialized = false
+        try {
+            if (glProgram != 0) {
+                GLES20.glDeleteProgram(glProgram)
+                glProgram = 0
+            }
+            if (vbo != 0) {
+                GLES20.glDeleteBuffers(1, intArrayOf(vbo), 0)
+                vbo = 0
+            }
+        } catch (e: Exception) {
+            Log.e("ColorGradingEngine", "GL release error", e)
+        } finally {
+            initialized = false
+        }
     }
 }

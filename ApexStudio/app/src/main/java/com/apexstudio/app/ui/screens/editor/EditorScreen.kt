@@ -1,7 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
 import android.net.Uri
-import android.view.ViewGroup
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -44,7 +43,6 @@ import com.apexstudio.app.data.crashlog.CrashMarker
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -72,10 +70,6 @@ fun EditorScreen(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
 
-    // Gate the native GL media surface (ExoPlayer / PlayerView) so it is only
-    // created AFTER the screen has fully composed and laid out its first frame.
-    var screenReady by remember { mutableStateOf(false) }
-
     mediaPicker.registerLaunchers()
 
     LaunchedEffect(Unit) {
@@ -95,9 +89,9 @@ fun EditorScreen(
         }
     }
 
-    // Defer native player/renderer init until the composition has settled.
-    // This keeps the GL/EGL surface from being created mid-first-frame, which
-    // is the most common cause of an instant (uncatchable) native death here.
+    // Build the player for audio/playback state. Wrapped in try/catch so a
+    // codec/init failure degrades gracefully instead of taking down the process.
+    // (The GL/EGL video surface was removed; see VideoPreviewSection.)
     LaunchedEffect(Unit) {
         try {
             Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
@@ -111,8 +105,7 @@ fun EditorScreen(
             CrashMarker.clear(context)
             exoPlayer = null
         } finally {
-            // Surface is safe to attach only after the first frame is committed.
-            screenReady = true
+            CrashMarker.clear(context)
         }
     }
 
@@ -192,8 +185,6 @@ fun EditorScreen(
             onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
-            exoPlayer = exoPlayer,
-            screenReady = screenReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -311,8 +302,6 @@ private fun VideoPreviewSection(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onAddMedia: () -> Unit,
-    exoPlayer: ExoPlayer?,
-    screenReady: Boolean,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -336,29 +325,11 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            // Only attach the GL/EGL media surface once the player exists AND the
-            // screen has finished its first composition (screenReady). This avoids
-            // touching native rendering from a partially-initialized frame.
-            if (exoPlayer != null && screenReady) {
-                CrashMarker.mark(LocalContext.current, "EditorScreen: creating PlayerView (GL surface)")
-                androidx.compose.ui.viewinterop.AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        PlayerView(ctx).also { pv ->
-                            pv.layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            pv.player = exoPlayer
-                            pv.useController = false
-                        }
-                    },
-                    update = { pv ->
-                        runCatching { pv.player = exoPlayer }.also { /* null -> detach */ }
-                    }
-                )
-            } else {
-                Canvas(modifier = Modifier.fillMaxSize()) {
+            // The ExoPlayer GL/EGL PlayerView was the only native (NDK) surface on
+            // this screen and could crash the process on some devices, so it has
+            // been removed. The preview uses this safe Compose Canvas placeholder;
+            // audio/playback state is still driven by exoPlayer (built below).
+            Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
                     drawRect(
@@ -515,6 +486,7 @@ private fun TimelineSection(
                             strokeWidth = 1f
                         )
                     }
+                    t += tickEvery
                 }
             }
             Row(
@@ -808,15 +780,36 @@ private fun HorizontalToolBar(
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // =========================================================================
-    // TEMP DEBUG — user bisect steps 3-4: toolbar internals removed.
-    // Build & run. If the screen STILL crashes, the crash is NOT here: this
-    // composable makes zero native/FFmpeg/GL calls. The fact that the last
-    // Kotlin CrashMarker lands on HorizontalToolBar only means it is the final
-    // composable executed before Compose's NATIVE render phase (Skia/GL). The
-    // real native surface is ExoPlayer's PlayerView in VideoPreviewSection.
-    // =========================================================================
     CrashMarker.mark(LocalContext.current, "EditorScreen: HorizontalToolBar")
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        val items = listOf(
+            ToolDef("Split", Icons.Default.ContentCut, onSplit),
+            ToolDef("Cut", Icons.Default.ContentCut, onCut),
+            ToolDef("Speed", Icons.Default.Speed, onSpeed),
+            ToolDef("Filters", Icons.Default.FilterAlt, onFilters),
+            ToolDef("Color", Icons.Default.Palette, onColor),
+            ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
+            ToolDef("Text", Icons.Default.TextFields, onText),
+            ToolDef("FX", Icons.Default.AutoAwesome, onFx)
+        )
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(ApexPalette.BgGlass)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(items) { tool ->
+                ToolbarIcon(tool.label, tool.icon, tool.onClick)
+            }
+        }
+    }
 }
 
 private data class ToolDef(

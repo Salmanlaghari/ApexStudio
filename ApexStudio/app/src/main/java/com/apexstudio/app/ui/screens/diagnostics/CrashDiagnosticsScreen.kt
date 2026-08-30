@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,7 +120,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                         )
                     } else {
                         Text(
-                            "No crash log available.",
+                            "No crash log available.\n\nNote: Native/NDK crashes are not captured by this handler.",
                             color = ApexPalette.Danger,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -150,6 +152,46 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                 HelpItem("2.", "Open Settings → View Crash Log.")
                 HelpItem("3.", "Screenshot or copy the red diagnostic text.")
                 HelpItem("4.", "Share the screenshot for an evidence-based fix.")
+            }
+        }
+
+        val apexApp = context.applicationContext as com.apexstudio.app.ApexApp
+        if (apexApp.isDebug) {
+            Spacer(Modifier.height(14.dp))
+            GlassCard(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                cornerRadius = 22.dp
+            ) {
+                Column {
+                    Text(
+                        "Debug",
+                        color = ApexPalette.TextPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Force a test crash to verify the capture pipeline.",
+                        color = ApexPalette.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { throw RuntimeException("Test crash for diagnostics") },
+                        colors = ButtonDefaults.buttonColors(containerColor = ApexPalette.Danger),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Force Test Crash")
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "After the app restarts, reopen this screen to verify the log.",
+                        color = ApexPalette.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         }
 

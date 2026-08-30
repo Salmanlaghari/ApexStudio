@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.engine.AudioEngine
 import com.apexstudio.app.data.engine.ColorGradingEngine
 import com.apexstudio.app.data.export.ExportEngine
@@ -56,10 +57,12 @@ class EditorViewModel(
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
+        context?.let { CrashMarker.mark(it, "EditorViewModel.init start") }
         loadProject()
         loadLuts()
         loadAudioState()
         Log.d("ApexTrace", "EditorViewModel.init end")
+        context?.let { CrashMarker.mark(it, "EditorViewModel.init completed") }
     }
 
     fun setContext(ctx: android.content.Context) {

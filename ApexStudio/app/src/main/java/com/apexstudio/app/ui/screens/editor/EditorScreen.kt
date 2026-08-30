@@ -854,6 +854,8 @@ private fun ToolbarIcon(
             fontWeight = FontWeight.SemiBold
         )
     }
+}
+
 @Composable
 private fun Float.toDp() = androidx.compose.ui.unit.Dp(this /
     androidx.compose.ui.platform.LocalDensity.current.density)

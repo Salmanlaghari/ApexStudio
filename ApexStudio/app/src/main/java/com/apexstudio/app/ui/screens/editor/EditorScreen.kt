@@ -808,36 +808,15 @@ private fun HorizontalToolBar(
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // =========================================================================
+    // TEMP DEBUG — user bisect steps 3-4: toolbar internals removed.
+    // Build & run. If the screen STILL crashes, the crash is NOT here: this
+    // composable makes zero native/FFmpeg/GL calls. The fact that the last
+    // Kotlin CrashMarker lands on HorizontalToolBar only means it is the final
+    // composable executed before Compose's NATIVE render phase (Skia/GL). The
+    // real native surface is ExoPlayer's PlayerView in VideoPreviewSection.
+    // =========================================================================
     CrashMarker.mark(LocalContext.current, "EditorScreen: HorizontalToolBar")
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-    ) {
-        val items = listOf(
-            ToolDef("Split", Icons.Default.ContentCut, onSplit),
-            ToolDef("Cut", Icons.Default.ContentCut, onCut),
-            ToolDef("Speed", Icons.Default.Speed, onSpeed),
-            ToolDef("Filters", Icons.Default.FilterAlt, onFilters),
-            ToolDef("Color", Icons.Default.Palette, onColor),
-            ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
-            ToolDef("Text", Icons.Default.TextFields, onText),
-            ToolDef("FX", Icons.Default.AutoAwesome, onFx)
-        )
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(ApexPalette.BgGlass)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            items(items) { tool ->
-                ToolbarIcon(tool.label, tool.icon, tool.onClick)
-            }
-        }
-    }
 }
 
 private data class ToolDef(

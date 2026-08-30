@@ -73,7 +73,6 @@ fun EditorScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
-    var playerReady by remember { mutableStateOf(false) }
 
     mediaPicker.registerLaunchers()
 
@@ -94,8 +93,11 @@ fun EditorScreen(
         }
     }
 
-    // Build the player for audio/playback state. Wrapped in try/catch so a
-    // codec/init failure degrades gracefully instead of taking down the process.
+    // Build the player for audio/playback + video preview. Wrapped in try/catch
+    // so a codec/init failure degrades gracefully instead of taking down the
+    // process. The PlayerView is shown as soon as the player exists — ExoPlayer
+    // handles its own surface lifecycle internally, so we don't need to gate
+    // on STATE_READY (which made the previous attempt never reach the preview).
     LaunchedEffect(Unit) {
         try {
             Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
@@ -103,19 +105,23 @@ fun EditorScreen(
             val player = ExoPlayer.Builder(context).build()
             Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
-            // Track when the player is actually ready to render so the
-            // PlayerView (GL surface) is only attached then. This avoids
-            // touching the native renderer mid-prepare, which has caused
-            // instant (uncatchable) native crashes on some devices.
+            // Track readiness in the ViewModel so the UI can react.
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    playerReady = playbackState == Player.STATE_READY
+                    val ready = playbackState == Player.STATE_READY
+                    Log.d("ApexTrace", "EditorScreen: onPlaybackStateChanged=$playbackState ready=$ready")
+                    vm.setPlayerReady(ready)
                 }
                 override fun onPlayerError(error: PlaybackException) {
-                    Log.e("EditorScreen", "Player error", error)
-                    playerReady = false
+                    Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
+                    vm.setPlayerReady(false)
                 }
             })
+            // If the player is already in a terminal state (unlikely but safe),
+            // sync the flag immediately.
+            if (player.playbackState == Player.STATE_READY) {
+                vm.setPlayerReady(true)
+            }
             exoPlayer = player
         } catch (e: Exception) {
             Log.e("EditorScreen", "ExoPlayer build failed", e)
@@ -133,6 +139,20 @@ fun EditorScreen(
         }
     }
 
+    // Safety net: if STATE_READY never fires (e.g. listener not installed in
+    // time, or the player is already in a terminal state we don't catch),
+    // still flip isPlayerReady true once a clip is loaded so the preview
+    // surface is mounted. ExoPlayer will simply show whatever it has.
+    LaunchedEffect(exoPlayer, state.isPlayerReady) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (state.isPlayerReady) return@LaunchedEffect
+        kotlinx.coroutines.delay(1500)
+        if (player.playbackState != Player.STATE_IDLE) {
+            Log.w("ApexTrace", "EditorScreen: forcing playerReady after timeout (state=${player.playbackState})")
+            vm.setPlayerReady(true)
+        }
+    }
+
     LaunchedEffect(exoPlayer, state.project?.clips, state.selectedClipId) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clips = state.project?.clips ?: emptyList()
@@ -143,8 +163,8 @@ fun EditorScreen(
                 try {
                     Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
                     CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
-                    // Reset ready flag — the new media item is not yet ready.
-                    playerReady = false
+                    // New media item — mark not ready until STATE_READY fires.
+                    vm.setPlayerReady(false)
                     player.setMediaItem(mediaItem)
                     player.prepare()
                     Log.d("ApexTrace", "EditorScreen: player prepared")
@@ -205,7 +225,7 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
             exoPlayer = exoPlayer,
-            playerReady = playerReady,
+            playerReady = state.isPlayerReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)

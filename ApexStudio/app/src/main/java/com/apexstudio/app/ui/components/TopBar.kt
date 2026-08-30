@@ -33,6 +33,7 @@ fun AppTopBar(
     onRedo: (() -> Unit)? = null,
     canUndo: Boolean = false,
     canRedo: Boolean = false,
+    onSettings: (() -> Unit)? = null,
     extraRight: @Composable (() -> Unit)? = null
 ) {
     Row(
@@ -99,6 +100,14 @@ fun AppTopBar(
                 onClick = onRedo,
                 enabled = canRedo,
                 tint = if (canRedo) ApexPalette.TextPrimary else ApexPalette.TextMuted
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        if (onSettings != null) {
+            NeonIconButton(
+                icon = Icons.Default.Settings,
+                onClick = onSettings,
+                tint = ApexPalette.TextPrimary
             )
             Spacer(Modifier.width(4.dp))
         }

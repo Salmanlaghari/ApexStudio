@@ -90,7 +90,8 @@ fun HomeScreen(
             title = "ApexStudio",
             subtitle = "Cinematic Editor • 8K HDR",
             onHome = { /* already on home */ },
-            onExport = onExport
+            onExport = onExport,
+            onSettings = onOpenSettings
         )
         Spacer(Modifier.height(4.dp))
         NewProjectHero(

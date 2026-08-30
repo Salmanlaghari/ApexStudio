@@ -3,7 +3,6 @@ package com.apexstudio.app.ui.screens.diagnostics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,21 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.SdStorage
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,7 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,9 +39,6 @@ import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun CrashDiagnosticsScreen(onBack: () -> Unit) {
@@ -63,7 +53,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Color.Transparent)
+            .background(Color.Transparent)
             .verticalScroll(rememberScrollState())
     ) {
         AppTopBar(
@@ -74,55 +64,6 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(4.dp))
 
-        // Status card
-        GlassCard(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            cornerRadius = 22.dp
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            if (log.exists) Brush.linearGradient(
-                                listOf(ApexPalette.Danger, ApexPalette.NeonPurple)
-                            ) else Brush.linearGradient(
-                                listOf(ApexPalette.Success, ApexPalette.NeonCyan)
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (log.exists) Icons.Default.BugReport else Icons.Default.SdStorage,
-                        null, tint = ApexPalette.BgDeep,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        if (log.exists) "Crash detected" else "No crashes recorded",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Text(
-                        if (log.exists) "${log.sizeBytes} bytes • " +
-                            SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault())
-                                .format(Date(log.lastModified))
-                        else "ApexStudio has not crashed since install",
-                        color = ApexPalette.TextSecondary,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
         // Crash log card
         GlassCard(
             modifier = Modifier
@@ -132,13 +73,19 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Crash Log",
-                        color = ApexPalette.TextPrimary,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Spacer(Modifier.weight(1f))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Crash Log",
+                            color = ApexPalette.TextPrimary,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "Last recorded crash diagnostics",
+                            color = ApexPalette.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     ActionPill(
                         icon = Icons.Default.Delete,
                         label = "Clear",
@@ -165,22 +112,18 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                     if (log.exists && log.content.isNotBlank()) {
                         Text(
                             log.content,
-                            color = ApexPalette.TextPrimary,
+                            color = ApexPalette.Danger,
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     } else {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "No crash log available.",
-                                color = ApexPalette.Danger,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Text(
+                            "No crash log available.",
+                            color = ApexPalette.Danger,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
                     }
                 }
             }
@@ -237,9 +180,6 @@ private fun ActionPill(
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = if (enabled) color else ApexPalette.TextTertiary,
-            modifier = Modifier.size(14.dp))
-        Spacer(Modifier.width(6.dp))
         Text(
             label,
             color = if (enabled) color else ApexPalette.TextTertiary,

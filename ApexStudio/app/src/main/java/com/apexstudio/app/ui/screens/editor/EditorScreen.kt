@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,8 +42,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -69,6 +73,7 @@ fun EditorScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
+    var playerReady by remember { mutableStateOf(false) }
 
     mediaPicker.registerLaunchers()
 
@@ -91,7 +96,6 @@ fun EditorScreen(
 
     // Build the player for audio/playback state. Wrapped in try/catch so a
     // codec/init failure degrades gracefully instead of taking down the process.
-    // (The GL/EGL video surface was removed; see VideoPreviewSection.)
     LaunchedEffect(Unit) {
         try {
             Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
@@ -99,6 +103,19 @@ fun EditorScreen(
             val player = ExoPlayer.Builder(context).build()
             Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
+            // Track when the player is actually ready to render so the
+            // PlayerView (GL surface) is only attached then. This avoids
+            // touching the native renderer mid-prepare, which has caused
+            // instant (uncatchable) native crashes on some devices.
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    playerReady = playbackState == Player.STATE_READY
+                }
+                override fun onPlayerError(error: PlaybackException) {
+                    Log.e("EditorScreen", "Player error", error)
+                    playerReady = false
+                }
+            })
             exoPlayer = player
         } catch (e: Exception) {
             Log.e("EditorScreen", "ExoPlayer build failed", e)
@@ -126,6 +143,8 @@ fun EditorScreen(
                 try {
                     Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
                     CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
+                    // Reset ready flag — the new media item is not yet ready.
+                    playerReady = false
                     player.setMediaItem(mediaItem)
                     player.prepare()
                     Log.d("ApexTrace", "EditorScreen: player prepared")
@@ -185,6 +204,8 @@ fun EditorScreen(
             onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             onAddMedia = { vm.openMediaPicker() },
+            exoPlayer = exoPlayer,
+            playerReady = playerReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -302,6 +323,8 @@ private fun VideoPreviewSection(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onAddMedia: () -> Unit,
+    exoPlayer: ExoPlayer?,
+    playerReady: Boolean,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -325,10 +348,8 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            // The ExoPlayer GL/EGL PlayerView was the only native (NDK) surface on
-            // this screen and could crash the process on some devices, so it has
-            // been removed. The preview uses this safe Compose Canvas placeholder;
-            // audio/playback state is still driven by exoPlayer (built below).
+            // Background placeholder: gradient + play-icon overlay while the
+            // player is not yet ready.
             Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -374,6 +395,37 @@ private fun VideoPreviewSection(
                         drawPath(path = path, color = Color.White.copy(alpha = 0.7f))
                     }
                 }
+
+            // The actual video surface. Only attached once the player is
+            // built AND has reached STATE_READY. Gating on playerReady is
+            // what avoids the native GL/EGL crash that previously forced
+            // the PlayerView to be removed entirely.
+            if (exoPlayer != null && playerReady) {
+                CrashMarker.mark(LocalContext.current, "EditorScreen: attaching PlayerView")
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        try {
+                            PlayerView(ctx).apply {
+                                layoutParams = android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                useController = false
+                                player = exoPlayer
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("EditorScreen", "PlayerView factory failed", e)
+                            android.view.View(ctx)
+                        }
+                    },
+                    update = { view ->
+                        runCatching {
+                            (view as? PlayerView)?.player = exoPlayer
+                        }
+                    }
+                )
+            }
 
             Box(
                 modifier = Modifier

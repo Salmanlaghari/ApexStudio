@@ -101,13 +101,13 @@ class EditorViewModel(
     fun openMediaPicker() = _state.update { it.copy(isMediaPickerOpen = true) }
     fun closeMediaPicker() = _state.update { it.copy(isMediaPickerOpen = false) }
 
-    fun onMediaPicked(mediaList: List<com.apexstudio.app.data.picker.MediaMetadata>) {
+    fun onMediaPicked(mediaList: List<com.apexstudio.app.data.picker.MediaMetadata>, replace: Boolean = false) {
         viewModelScope.launch {
             val s = _state.value
             val newClips = mediaList.mapNotNull { meta ->
                 mediaPicker?.toMediaClip(meta, s.project?.clips?.size ?: 0)
             }
-            val existingClips = s.project?.clips ?: emptyList()
+            val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
             val firstVideo = newClips.firstOrNull { it.type == ClipType.VIDEO }
             val waveform = if (firstVideo != null && context != null) {
@@ -116,8 +116,9 @@ class EditorViewModel(
                 FloatArray(0)
             }
 
-            val updatedProject = s.project?.copy(clips = existingClips + newClips)
-            val maxDuration = updatedProject?.clips?.maxOfOrNull { it.durationMs } ?: s.durationMs
+            val updatedClips = existingClips + newClips
+            val updatedProject = s.project?.copy(clips = updatedClips)
+            val maxDuration = updatedClips.maxOfOrNull { it.durationMs } ?: s.durationMs
 
             _state.update {
                 it.copy(
@@ -125,7 +126,10 @@ class EditorViewModel(
                     durationMs = maxDuration,
                     pickedMedia = mediaList,
                     isMediaPickerOpen = false,
-                    audioWaveform = waveform
+                    audioWaveform = waveform,
+                    // When replacing, jump straight to the first new clip so the
+                    // preview actually switches to the new media.
+                    selectedClipId = if (replace) newClips.firstOrNull()?.id else it.selectedClipId
                 )
             }
         }
@@ -148,6 +152,7 @@ class EditorViewModel(
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
+    fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun updateExport(upd: (ExportSettings) -> ExportSettings) {
         _export.update { it.copy(settings = upd(it.settings)) }

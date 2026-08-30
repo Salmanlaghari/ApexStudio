@@ -79,7 +79,11 @@ fun EditorScreen(
     LaunchedEffect(Unit) {
         mediaPicker.pickedMedia.collect { metadataList ->
             if (metadataList.isNotEmpty()) {
-                vm.onMediaPicked(metadataList)
+                // The + button on the preview always replaces the current
+                // project with the freshly picked media — users expect
+                // "add a new video" to switch to it, not append a second
+                // clip behind the first.
+                vm.onMediaPicked(metadataList, replace = true)
             }
         }
     }
@@ -105,7 +109,10 @@ fun EditorScreen(
             val player = ExoPlayer.Builder(context).build()
             Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
             CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
-            // Track readiness in the ViewModel so the UI can react.
+            // Track readiness + video size in the ViewModel so the UI can
+            // react. The video size is what lets the preview container pick
+            // the right aspect ratio (16:9 vs 9:16 vs 1:1) instead of
+            // letterboxing every clip into a 16:9 frame.
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     val ready = playbackState == Player.STATE_READY
@@ -115,6 +122,10 @@ fun EditorScreen(
                 override fun onPlayerError(error: PlaybackException) {
                     Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
                     vm.setPlayerReady(false)
+                }
+                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                    Log.d("ApexTrace", "EditorScreen: onVideoSizeChanged=${videoSize.width}x${videoSize.height}")
+                    vm.setVideoSize(videoSize.width, videoSize.height)
                 }
             })
             // If the player is already in a terminal state (unlikely but safe),
@@ -226,6 +237,8 @@ fun EditorScreen(
             onAddMedia = { vm.openMediaPicker() },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
+            videoWidth = state.videoWidth,
+            videoHeight = state.videoHeight,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.40f)
@@ -345,13 +358,28 @@ private fun VideoPreviewSection(
     onAddMedia: () -> Unit,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
+    videoWidth: Int,
+    videoHeight: Int,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
     val screenWidthDp = configuration.screenWidthDp
-    val previewHeight = (screenWidthDp * 9f / 16f).dp
     val context = LocalContext.current
+
+    // Pick the preview container's aspect ratio from the actual video size so
+    // a 9:16 vertical clip doesn't get letterboxed into a 16:9 frame, and a
+    // 1:1 square clip gets a square preview. Fall back to 16:9 while the
+    // size is still unknown (e.g. before onVideoSizeChanged fires).
+    val aspectRatio: Float = if (videoWidth > 0 && videoHeight > 0) {
+        videoWidth.toFloat() / videoHeight.toFloat()
+    } else {
+        16f / 9f
+    }
+    // The container is always constrained to the screen width; the height
+    // is derived from the aspect ratio so vertical videos are tall, square
+    // ones are square, etc.
+    val previewHeight = (screenWidthDp / aspectRatio).dp
 
     Box(
         modifier = modifier
@@ -432,6 +460,12 @@ private fun VideoPreviewSection(
                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT
                                 )
                                 useController = false
+                                // FIT preserves the video's aspect ratio inside
+                                // the container; the container itself is sized
+                                // to the video's ratio above, so together they
+                                // give us a full-bleed preview at the right
+                                // shape (16:9, 9:16, 1:1, …).
+                                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 player = exoPlayer
                             }
                         } catch (e: Throwable) {
@@ -441,7 +475,10 @@ private fun VideoPreviewSection(
                     },
                     update = { view ->
                         runCatching {
-                            (view as? PlayerView)?.player = exoPlayer
+                            (view as? PlayerView)?.let { pv ->
+                                pv.player = exoPlayer
+                                pv.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
                         }
                     }
                 )

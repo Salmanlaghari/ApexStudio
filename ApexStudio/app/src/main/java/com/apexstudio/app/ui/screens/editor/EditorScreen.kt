@@ -67,6 +67,7 @@ fun EditorScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }

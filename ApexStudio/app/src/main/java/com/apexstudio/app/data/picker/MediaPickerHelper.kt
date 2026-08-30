@@ -9,6 +9,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.CoroutineScope
@@ -68,40 +69,60 @@ class MediaPickerHelper(private val context: Context) {
 
     private fun extractMetadata(uri: Uri): MediaMetadata? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            CrashMarker.mark(context, "MediaPickerHelper.extractMetadata: $uri")
+            // Prefer MediaStore (pure Java, no native codec path). MediaMetadataRetriever
+            // (stagefright) is a known native-crash source on some devices/videos and its
+            // crash bypasses try/catch, killing the whole process at "confirm" time.
+            val fromStore = queryMediaStore(uri)
+            if (fromStore != null) {
+                CrashMarker.clear(context)
+                return fromStore
+            }
+            // Fallback only when MediaStore has no data (rare). Still wrapped.
             val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(context, uri)
-
-            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val durationMs = durationStr?.toLongOrNull() ?: 0L
-
-            val widthStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            val heightStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            val width = widthStr?.toIntOrNull() ?: 0
-            val height = heightStr?.toIntOrNull() ?: 0
-
-            val fpsStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
-            val fps = fpsStr?.toFloatOrNull()?.toInt() ?: 30
-
+            val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()?.toInt() ?: 30
             val name = getFileName(uri)
             val mimeType = context.contentResolver.getType(uri) ?: ""
-
             retriever.release()
-            inputStream.close()
-
             val type = if (mimeType.startsWith("video/")) ClipType.VIDEO
             else if (mimeType.startsWith("audio/")) ClipType.AUDIO
             else ClipType.VIDEO
+            CrashMarker.clear(context)
+            MediaMetadata(uri = uri.toString(), name = name, durationMs = durationMs, width = width, height = height, fps = fps, type = type)
+        } catch (e: Exception) {
+            CrashMarker.clear(context)
+            null
+        }
+    }
 
-            MediaMetadata(
-                uri = uri.toString(),
-                name = name,
-                durationMs = durationMs,
-                width = width,
-                height = height,
-                fps = fps,
-                type = type
+    private fun queryMediaStore(uri: Uri): MediaMetadata? {
+        return try {
+            val proj = arrayOf(
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.MediaColumns.DURATION,
+                MediaStore.MediaColumns.WIDTH,
+                MediaStore.MediaColumns.HEIGHT
             )
+            context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val name = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: "media"
+                    val mime = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)) ?: ""
+                    val dur = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION))
+                    val w = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH))
+                    val h = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT))
+                    val type = if (mime.startsWith("video/")) ClipType.VIDEO
+                    else if (mime.startsWith("audio/")) ClipType.AUDIO
+                    else ClipType.VIDEO
+                    MediaMetadata(uri = uri.toString(), name = name, durationMs = dur, width = w, height = h, fps = 30, type = type)
+                } else {
+                    null
+                }
+            }
         } catch (e: Exception) {
             null
         }

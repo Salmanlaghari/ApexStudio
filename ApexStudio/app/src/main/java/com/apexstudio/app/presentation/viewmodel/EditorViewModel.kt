@@ -18,8 +18,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class EditorViewModel(
-    private val repo: MediaRepository = MediaRepository(),
-    private val context: android.content.Context? = null
+    private val repo: MediaRepository = MediaRepository,
+    private val context: android.content.Context? = null,
+    private val projectId: String? = null
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(EditorState())
@@ -53,7 +54,11 @@ class EditorViewModel(
     private val colorGradingEngine = ColorGradingEngine()
 
     init {
-        colorGradingEngine.initGL()
+        try {
+            colorGradingEngine.initGL()
+        } catch (_: Throwable) {
+            // GL not ready yet; defer until a real surface/context exists.
+        }
         loadProject()
         loadLuts()
         loadAudioState()
@@ -66,7 +71,13 @@ class EditorViewModel(
 
     private fun loadProject() {
         viewModelScope.launch {
-            val p = repo.loadProjects().first()
+            val projects = repo.loadProjects()
+            val p = projectId?.let { id -> projects.firstOrNull { it.id == id } }
+                ?: projects.firstOrNull()
+            if (p == null) {
+                _state.update { it.copy(project = null, durationMs = 0L) }
+                return@launch
+            }
             _state.update {
                 it.copy(
                     project = p,

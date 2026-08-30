@@ -43,7 +43,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
-    val repo = remember { MediaRepository() }
+    val repo = remember { MediaRepository }
     val projects = repo.loadProjects()
     val context = LocalContext.current
     val mediaPicker = remember { MediaPickerHelper(context) }

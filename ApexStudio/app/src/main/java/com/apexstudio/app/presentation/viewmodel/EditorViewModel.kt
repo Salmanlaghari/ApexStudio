@@ -160,6 +160,40 @@ class EditorViewModel(
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
+    // ---- Crop ----
+    fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }
+    fun setCropRect(rect: CropRect) = _state.update { it.copy(cropRect = rect) }
+    /**
+     * Apply one of the preset aspect ratios. Anchors the crop to the
+     * current centre of the existing rectangle, expanding/contracting
+     * evenly so the user doesn't lose the framing they already had.
+     */
+    fun applyCropAspect(aspect: CropAspect) {
+        _state.update { s ->
+            val target = aspect.ratio ?: return@update s.copy(cropAspect = aspect)
+            val current = s.cropRect
+            val currentAspect = current.width / current.height
+            val (newW, newH) = if (currentAspect > target) {
+                // Current is wider than target — narrow the width.
+                val w = (current.height * target).coerceAtMost(1f)
+                w to current.height
+            } else {
+                // Current is taller than target — shrink the height.
+                val h = (current.width / target).coerceAtMost(1f)
+                current.width to h
+            }
+            val cx = (current.left + current.right) / 2f
+            val cy = (current.top + current.bottom) / 2f
+            val l = (cx - newW / 2f).coerceIn(0f, 1f - newW)
+            val t = (cy - newH / 2f).coerceIn(0f, 1f - newH)
+            s.copy(
+                cropAspect = aspect,
+                cropRect = CropRect(l, t, l + newW, t + newH)
+            )
+        }
+    }
+    fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
+
     fun updateExport(upd: (ExportSettings) -> ExportSettings) {
         _export.update { it.copy(settings = upd(it.settings)) }
     }

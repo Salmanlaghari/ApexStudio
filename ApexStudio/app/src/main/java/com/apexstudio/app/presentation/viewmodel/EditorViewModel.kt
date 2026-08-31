@@ -127,9 +127,15 @@ class EditorViewModel(
                     pickedMedia = mediaList,
                     isMediaPickerOpen = false,
                     audioWaveform = waveform,
-                    // When replacing, jump straight to the first new clip so the
-                    // preview actually switches to the new media.
-                    selectedClipId = if (replace) newClips.firstOrNull()?.id else it.selectedClipId
+                    // Replace: switch the preview to the first new clip.
+                    // Append: keep the current selection if there is one,
+                    // otherwise jump to the first new clip so the preview
+                    // isn't stuck on an empty timeline.
+                    selectedClipId = when {
+                        replace -> newClips.firstOrNull()?.id
+                        it.selectedClipId != null -> it.selectedClipId
+                        else -> newClips.firstOrNull()?.id
+                    }
                 )
             }
         }

@@ -76,25 +76,23 @@ fun EditorScreen(
 
     mediaPicker.registerLaunchers()
 
+    // Collect picks. We combine the metadata list with a monotonic
+    // generation counter so re-picking the SAME file still triggers
+    // a re-emit (StateFlow conflates equal List values otherwise).
     LaunchedEffect(Unit) {
-        mediaPicker.pickedMedia.collect { metadataList ->
-            if (metadataList.isNotEmpty()) {
-                // The + button on the preview always replaces the current
-                // project with the freshly picked media — users expect
-                // "add a new video" to switch to it, not append a second
-                // clip behind the first.
-                vm.onMediaPicked(metadataList, replace = true)
+        kotlinx.coroutines.flow.combine(
+            mediaPicker.pickedMedia,
+            mediaPicker.pickGeneration
+        ) { meta, gen -> meta to gen }
+            .collect { (metadataList, _) ->
+                if (metadataList.isNotEmpty()) {
+                    // The + button always APPENDS the freshly picked media
+                    // to the V1 timeline, so users can stack multiple clips
+                    // sequentially. The mockup shows V1 with several
+                    // thumbnail strips back-to-back.
+                    vm.onMediaPicked(metadataList, replace = false)
+                }
             }
-        }
-    }
-
-    LaunchedEffect(state.isMediaPickerOpen) {
-        if (state.isMediaPickerOpen) {
-            mediaPicker.pickMultipleMedia.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-            )
-            vm.closeMediaPicker()
-        }
     }
 
     // Build the player for audio/playback + video preview. Wrapped in try/catch
@@ -234,14 +232,24 @@ fun EditorScreen(
             onSeek = { vm.seekTo(it) },
             onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
-            onAddMedia = { vm.openMediaPicker() },
+            onAddMedia = {
+                // Launch the multi-video gallery directly. Going through
+                // the ViewModel's isMediaPickerOpen flag caused the
+                // launcher to be cancelled mid-flight (the effect would
+                // re-key before the system picker returned), which made
+                // subsequent + clicks silently no-op and the editor
+                // kept "playing" the same clip.
+                mediaPicker.pickMultipleMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.40f)
+                .weight(0.35f)
         )
 
         TimelineSection(
@@ -274,7 +282,7 @@ fun EditorScreen(
             onExport = {},
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.15f)
+                .weight(0.20f)
         )
     }
 }

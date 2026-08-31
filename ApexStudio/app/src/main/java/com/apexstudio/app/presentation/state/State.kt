@@ -20,8 +20,48 @@ data class EditorState(
     val isPlayerReady: Boolean = false,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
-    val audioWaveform: FloatArray = FloatArray(0)
-)
+    val audioWaveform: FloatArray = FloatArray(0),
+    // Crop: normalized (0..1) rectangle inside the source video frame.
+    // Defaults to the full frame. When cropMode is true, the overlay is
+    // drawn and the user can drag the handles / pick an aspect preset.
+    val cropMode: Boolean = false,
+    val cropAspect: CropAspect = CropAspect.FREE,
+    val cropRect: CropRect = CropRect.Full
+) {
+    companion object {
+        // Equality on data classes with FloatArray doesn't compare the
+        // array contents; EditorViewModel never updates audioWaveform
+        // after init, so this is safe to leave to the default.
+    }
+}
+
+data class CropRect(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+) {
+    val width: Float get() = (right - left).coerceAtLeast(0.01f)
+    val height: Float get() = (bottom - top).coerceAtLeast(0.01f)
+    val aspect: Float get() = width / height
+
+    fun isFullFrame(): Boolean =
+        left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
+
+    companion object {
+        val Full = CropRect(0f, 0f, 1f, 1f)
+    }
+}
+
+enum class CropAspect(val label: String, val ratio: Float?) {
+    FREE("Free", null),
+    RATIO_16_9("16:9", 16f / 9f),
+    RATIO_9_16("9:16", 9f / 16f),
+    RATIO_1_1("1:1", 1f),
+    RATIO_4_3("4:3", 4f / 3f),
+    RATIO_3_4("3:4", 3f / 4f),
+    RATIO_21_9("21:9", 21f / 9f)
+}
 
 enum class EditorTool(val label: String) {
     SPLIT("Split"), TRIM("Trim"), KEYFRAME("Keyframe"),

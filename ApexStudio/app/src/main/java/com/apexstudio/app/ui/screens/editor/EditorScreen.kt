@@ -253,6 +253,11 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
+            cropMode = state.cropMode,
+            cropRect = state.cropRect,
+            cropAspect = state.cropAspect,
+            onCropRectChange = { vm.setCropRect(it) },
+            onResetCrop = { vm.resetCrop() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -289,6 +294,10 @@ fun EditorScreen(
                     else -> 1f
                 }
             },
+            onCrop = { vm.setCropMode(!state.cropMode) },
+            cropActive = state.cropMode,
+            cropAspect = state.cropAspect,
+            onCropAspect = { vm.applyCropAspect(it) },
             onFilters = onColor,
             onColor = onColor,
             onAudio = onAudio,
@@ -378,6 +387,11 @@ private fun VideoPreviewSection(
     onNext: () -> Unit,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
+    cropMode: Boolean,
+    cropRect: com.apexstudio.app.presentation.state.CropRect,
+    cropAspect: com.apexstudio.app.presentation.state.CropAspect,
+    onCropRectChange: (com.apexstudio.app.presentation.state.CropRect) -> Unit,
+    onResetCrop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -505,6 +519,20 @@ private fun VideoPreviewSection(
                 )
             }
 
+            // Crop overlay: only mounted when cropMode is on. Darkens
+            // the area outside the crop rectangle and renders draggable
+            // handles on the four edges + four corners. The
+            // normalised rect (0..1) is mapped to the actual container
+            // size in pixels for the drag math.
+            if (cropMode) {
+                CropOverlay(
+                    rect = cropRect,
+                    aspect = cropAspect,
+                    onRectChange = onCropRectChange,
+                    onReset = onResetCrop
+                )
+            }
+
             // Timecode chip (top-end). The previous bottom control row
             // (add / prev / rewind / play / forward / next) has been
             // removed entirely — the user now toggles play/pause by
@@ -560,6 +588,287 @@ private fun VideoPreviewSection(
                     }
             )
         }
+    }
+}
+
+@Composable
+private fun CropOverlay(
+    rect: com.apexstudio.app.presentation.state.CropRect,
+    aspect: com.apexstudio.app.presentation.state.CropAspect,
+    onRectChange: (com.apexstudio.app.presentation.state.CropRect) -> Unit,
+    onReset: () -> Unit
+) {
+    val handleSize = 18.dp
+    val edgeThickness = 4.dp
+    val darkenColor = Color.Black.copy(alpha = 0.55f)
+    val edgeColor = ApexPalette.NeonCyan
+    val handleColor = ApexPalette.NeonEmerald
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val w = maxWidth
+        val h = maxHeight
+        val widthPx = with(LocalDensity.current) { w.toPx() }
+        val heightPx = with(LocalDensity.current) { h.toPx() }
+
+        // Helper to convert a normalised rect to pixel offsets/sizes.
+        fun toPixel(r: com.apexstudio.app.presentation.state.CropRect): androidx.compose.ui.geometry.Rect {
+            return androidx.compose.ui.geometry.Rect(
+                left = r.left * widthPx,
+                top = r.top * heightPx,
+                right = r.right * widthPx,
+                bottom = r.bottom * heightPx
+            )
+        }
+        val pix = toPixel(rect)
+
+        // Darken the four regions OUTSIDE the crop rect. Drawn as four
+        // semi-transparent black rectangles around the crop.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Top
+            drawRect(darkenColor, topLeft = Offset(0f, 0f), size = Size(size.width, pix.top))
+            // Bottom
+            drawRect(
+                darkenColor,
+                topLeft = Offset(0f, pix.bottom),
+                size = Size(size.width, size.height - pix.bottom)
+            )
+            // Left
+            drawRect(
+                darkenColor,
+                topLeft = Offset(0f, pix.top),
+                size = Size(pix.left, pix.height)
+            )
+            // Right
+            drawRect(
+                darkenColor,
+                topLeft = Offset(pix.right, pix.top),
+                size = Size(size.width - pix.right, pix.height)
+            )
+            // Crop border
+            drawRect(
+                color = edgeColor,
+                topLeft = Offset(pix.left, pix.top),
+                size = Size(pix.width, pix.height),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+            )
+            // Rule-of-thirds grid inside the crop
+            val x1 = pix.left + pix.width / 3f
+            val x2 = pix.left + pix.width * 2f / 3f
+            val y1 = pix.top + pix.height / 3f
+            val y2 = pix.top + pix.height * 2f / 3f
+            val gridColor = Color.White.copy(alpha = 0.25f)
+            listOf(x1, x2).forEach { gx ->
+                drawLine(gridColor, Offset(gx, pix.top), Offset(gx, pix.bottom), strokeWidth = 1f)
+            }
+            listOf(y1, y2).forEach { gy ->
+                drawLine(gridColor, Offset(pix.left, gy), Offset(pix.right, gy), strokeWidth = 1f)
+            }
+        }
+
+        // Edge handles (top/left/right/bottom) — these move one edge at
+        // a time and preserve the aspect ratio if one is locked.
+        // Corner handles (TL/TR/BL/BR) — move two edges simultaneously.
+        fun updateByEdge(
+            current: com.apexstudio.app.presentation.state.CropRect,
+            edge: String,
+            dxNorm: Float,
+            dyNorm: Float
+        ): com.apexstudio.app.presentation.state.CropRect {
+            val target = aspect.ratio
+            var l = current.left
+            var t = current.top
+            var r = current.right
+            var b = current.bottom
+            when (edge) {
+                "L" -> l = (l + dxNorm).coerceIn(0f, r - 0.05f)
+                "R" -> r = (r + dxNorm).coerceIn(l + 0.05f, 1f)
+                "T" -> t = (t + dyNorm).coerceIn(0f, b - 0.05f)
+                "B" -> b = (b + dyNorm).coerceIn(t + 0.05f, 1f)
+            }
+            // Apply aspect lock by deriving the opposite axis from the
+            // primary one (use the larger axis movement as the driver).
+            if (target != null) {
+                val cx = (l + r) / 2f
+                val cy = (t + b) / 2f
+                when (edge) {
+                    "L", "R" -> {
+                        val newW = r - l
+                        val newH = (newW / target).coerceAtMost(1f)
+                        t = (cy - newH / 2f).coerceIn(0f, 1f - newH)
+                        b = t + newH
+                    }
+                    "T", "B" -> {
+                        val newH = b - t
+                        val newW = (newH * target).coerceAtMost(1f)
+                        l = (cx - newW / 2f).coerceIn(0f, 1f - newW)
+                        r = l + newW
+                    }
+                }
+            }
+            return com.apexstudio.app.presentation.state.CropRect(l, t, r, b)
+        }
+
+        fun updateByCorner(
+            current: com.apexstudio.app.presentation.state.CropRect,
+            corner: String,
+            dxNorm: Float,
+            dyNorm: Float
+        ): com.apexstudio.app.presentation.state.CropRect {
+            var l = current.left
+            var t = current.top
+            var r = current.right
+            var b = current.bottom
+            when (corner) {
+                "TL" -> { l = (l + dxNorm); t = (t + dyNorm) }
+                "TR" -> { r = (r + dxNorm); t = (t + dyNorm) }
+                "BL" -> { l = (l + dxNorm); b = (b + dyNorm) }
+                "BR" -> { r = (r + dxNorm); b = (b + dyNorm) }
+            }
+            l = l.coerceIn(0f, r - 0.05f)
+            t = t.coerceIn(0f, b - 0.05f)
+            r = r.coerceIn(l + 0.05f, 1f)
+            b = b.coerceIn(t + 0.05f, 1f)
+            // Aspect lock: derive the perpendicular axis from the one
+            // the user moved. For TL/TR/BL/BR we treat horizontal as
+            // primary and derive height.
+            val target = aspect.ratio
+            if (target != null) {
+                val newW = r - l
+                val newH = (newW / target).coerceAtMost(1f)
+                val cy = (t + b) / 2f
+                t = (cy - newH / 2f).coerceIn(0f, 1f - newH)
+                b = t + newH
+            }
+            return com.apexstudio.app.presentation.state.CropRect(l, t, r, b)
+        }
+
+        // Corner handles
+        HandleDot(
+            x = pix.left,
+            y = pix.top,
+            size = handleSize,
+            color = handleColor
+        ) { dx, dy ->
+            val nw = widthPx.coerceAtLeast(1f)
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByCorner(rect, "TL", dx / nw, dy / nh))
+        }
+        HandleDot(
+            x = pix.right,
+            y = pix.top,
+            size = handleSize,
+            color = handleColor
+        ) { dx, dy ->
+            val nw = widthPx.coerceAtLeast(1f)
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByCorner(rect, "TR", dx / nw, dy / nh))
+        }
+        HandleDot(
+            x = pix.left,
+            y = pix.bottom,
+            size = handleSize,
+            color = handleColor
+        ) { dx, dy ->
+            val nw = widthPx.coerceAtLeast(1f)
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByCorner(rect, "BL", dx / nw, dy / nh))
+        }
+        HandleDot(
+            x = pix.right,
+            y = pix.bottom,
+            size = handleSize,
+            color = handleColor
+        ) { dx, dy ->
+            val nw = widthPx.coerceAtLeast(1f)
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByCorner(rect, "BR", dx / nw, dy / nh))
+        }
+
+        // Edge handles (thinner, mid-edge)
+        HandleDot(
+            x = (pix.left + pix.right) / 2f,
+            y = pix.top,
+            size = edgeThickness,
+            color = edgeColor
+        ) { _, dy ->
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByEdge(rect, "T", 0f, dy / nh))
+        }
+        HandleDot(
+            x = (pix.left + pix.right) / 2f,
+            y = pix.bottom,
+            size = edgeThickness,
+            color = edgeColor
+        ) { _, dy ->
+            val nh = heightPx.coerceAtLeast(1f)
+            onRectChange(updateByEdge(rect, "B", 0f, dy / nh))
+        }
+        HandleDot(
+            x = pix.left,
+            y = (pix.top + pix.bottom) / 2f,
+            size = edgeThickness,
+            color = edgeColor
+        ) { dx, _ ->
+            val nw = widthPx.coerceAtLeast(1f)
+            onRectChange(updateByEdge(rect, "L", dx / nw, 0f))
+        }
+        HandleDot(
+            x = pix.right,
+            y = (pix.top + pix.bottom) / 2f,
+            size = edgeThickness,
+            color = edgeColor
+        ) { dx, _ ->
+            val nw = widthPx.coerceAtLeast(1f)
+            onRectChange(updateByEdge(rect, "R", dx / nw, 0f))
+        }
+
+        // Small "Reset" pill at the top-start while crop mode is on.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(ApexPalette.BgGlass)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                .clickable { onReset() }
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+        ) {
+            Text(
+                "Reset",
+                color = ApexPalette.NeonCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun HandleDot(
+    x: Float,
+    y: Float,
+    size: androidx.compose.ui.unit.Dp,
+    color: Color,
+    onDrag: (dx: Float, dy: Float) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset((x - size.toPx() / 2f).toInt(), (y - size.toPx() / 2f).toInt()) }
+            .size(size + 8.dp)
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    onDrag(dragAmount.x, dragAmount.y)
+                }
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.9f))
+                .border(1.5f.dp, Color.White, CircleShape)
+        )
     }
 }
 
@@ -991,6 +1300,10 @@ private fun HorizontalToolBar(
     onSplit: () -> Unit,
     onCut: () -> Unit,
     onSpeed: () -> Unit,
+    onCrop: () -> Unit,
+    cropActive: Boolean,
+    cropAspect: com.apexstudio.app.presentation.state.CropAspect,
+    onCropAspect: (com.apexstudio.app.presentation.state.CropAspect) -> Unit,
     onFilters: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
@@ -1005,10 +1318,55 @@ private fun HorizontalToolBar(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
+        // When Crop mode is active, the toolbar shows an extra row of
+        // aspect-ratio presets right above the main icon row. Tapping a
+        // preset calls vm.applyCropAspect(...) which keeps the crop
+        // centred and just adjusts width/height to match the new ratio.
+        if (cropActive) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgGlass)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(com.apexstudio.app.presentation.state.CropAspect.values().toList()) { aspect ->
+                    val selected = aspect == cropAspect
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                else Color.Transparent
+                            )
+                            .border(
+                                1.dp,
+                                if (selected) ApexPalette.NeonCyan
+                                else ApexPalette.BorderGlass,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable { onCropAspect(aspect) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            aspect.label,
+                            color = if (selected) ApexPalette.NeonCyan
+                                    else ApexPalette.TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
         val items = listOf(
             ToolDef("Split", Icons.Default.ContentCut, onSplit),
             ToolDef("Cut", Icons.Default.ContentCut, onCut),
             ToolDef("Speed", Icons.Default.Speed, onSpeed),
+            ToolDef("Crop", Icons.Default.Crop, onCrop, highlight = cropActive),
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters),
             ToolDef("Color", Icons.Default.Palette, onColor),
             ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
@@ -1025,7 +1383,7 @@ private fun HorizontalToolBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(items) { tool ->
-                ToolbarIcon(tool.label, tool.icon, tool.onClick)
+                ToolbarIcon(tool.label, tool.icon, tool.onClick, highlight = tool.highlight)
             }
         }
     }
@@ -1034,14 +1392,16 @@ private fun HorizontalToolBar(
 private data class ToolDef(
     val label: String,
     val icon: ImageVector,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    val highlight: Boolean = false
 )
 
 @Composable
 private fun ToolbarIcon(
     label: String,
     icon: ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    highlight: Boolean = false
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1055,20 +1415,28 @@ private fun ToolbarIcon(
             modifier = Modifier
                 .size(30.dp)
                 .clip(CircleShape)
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, CircleShape),
+                .background(
+                    if (highlight) ApexPalette.NeonCyan.copy(alpha = 0.25f)
+                    else ApexPalette.BgElevated
+                )
+                .border(
+                    1.dp,
+                    if (highlight) ApexPalette.NeonCyan
+                    else ApexPalette.BorderGlass,
+                    CircleShape
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon, null,
-                tint = ApexPalette.NeonCyan,
+                tint = if (highlight) ApexPalette.NeonCyan else ApexPalette.NeonCyan.copy(alpha = 0.85f),
                 modifier = Modifier.size(16.dp)
             )
         }
         Spacer(Modifier.height(2.dp))
         Text(
             label,
-            color = ApexPalette.TextSecondary,
+            color = if (highlight) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
             fontSize = 8.sp,
             fontWeight = FontWeight.SemiBold
         )

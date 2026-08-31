@@ -119,6 +119,17 @@ fun EditorScreen(
                     val ready = playbackState == Player.STATE_READY
                     Log.d("ApexTrace", "EditorScreen: onPlaybackStateChanged=$playbackState ready=$ready")
                     vm.setPlayerReady(ready)
+                    // When the video finishes playing, ExoPlayer parks at
+                    // STATE_ENDED. The app's own isPlaying flag never
+                    // flipped, so the play button kept showing a "Pause"
+                    // icon and tapping it called play() on a player that
+                    // was already at the end — which is a no-op. Flip
+                    // isPlaying off here so the UI shows a fresh "Play"
+                    // icon, and the play effect below will seekTo(0)
+                    // before play() to actually restart from frame zero.
+                    if (playbackState == Player.STATE_ENDED) {
+                        vm.setPlaying(false)
+                    }
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
@@ -193,6 +204,13 @@ fun EditorScreen(
     LaunchedEffect(exoPlayer, state.isPlaying) {
         val player = exoPlayer ?: return@LaunchedEffect
         if (state.isPlaying) {
+            // If the previous play reached the end of the clip,
+            // ExoPlayer is sitting at STATE_ENDED and play() alone is a
+            // no-op. Rewind to 0 first so the next press actually
+            // restarts playback from the beginning.
+            if (player.playbackState == Player.STATE_ENDED) {
+                player.seekTo(0)
+            }
             player.play()
         } else {
             player.pause()
@@ -230,26 +248,11 @@ fun EditorScreen(
         VideoPreviewSection(
             isPlaying = state.isPlaying,
             currentTimeMs = state.playerPositionMs,
-            playerDurationMs = state.playerDurationMs,
             onTogglePlay = { vm.togglePlay() },
-            onSeek = { vm.seekTo(it) },
             onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
-            onAddMedia = {
-                // Launch the multi-video gallery directly. Going through
-                // the ViewModel's isMediaPickerOpen flag caused the
-                // launcher to be cancelled mid-flight (the effect would
-                // re-key before the system picker returned), which made
-                // subsequent + clicks silently no-op and the editor
-                // kept "playing" the same clip.
-                mediaPicker.pickMultipleMedia.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                )
-            },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
-            videoWidth = state.videoWidth,
-            videoHeight = state.videoHeight,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -260,6 +263,15 @@ fun EditorScreen(
             onScrub = { vm.seekTo(it) },
             onZoom = { vm.setZoom(it) },
             onSelectClip = { vm.selectClip(it) },
+            onAddMedia = {
+                // The + button lives on the empty timeline now (see
+                // TimelineSection). It launches the multi-video gallery
+                // directly — going through isMediaPickerOpen caused the
+                // launcher to be cancelled mid-flight.
+                mediaPicker.pickMultipleMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.45f)
@@ -361,50 +373,48 @@ private fun EditorTopBar(
 private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
-    playerDurationMs: Long,
     onTogglePlay: () -> Unit,
-    onSeek: (Long) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onAddMedia: () -> Unit,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
-    videoWidth: Int,
-    videoHeight: Int,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
-    val screenWidthDp = configuration.screenWidthDp
     val context = LocalContext.current
 
-    // Pick the preview container's aspect ratio from the actual video size so
-    // a 9:16 vertical clip doesn't get letterboxed into a 16:9 frame, and a
-    // 1:1 square clip gets a square preview. Fall back to 16:9 while the
-    // size is still unknown (e.g. before onVideoSizeChanged fires).
-    val aspectRatio: Float = if (videoWidth > 0 && videoHeight > 0) {
-        videoWidth.toFloat() / videoHeight.toFloat()
-    } else {
-        16f / 9f
-    }
-    // The container is always constrained to the screen width; the height
-    // is derived from the aspect ratio so vertical videos are tall, square
-    // ones are square, etc.
-    val previewHeight = (screenWidthDp / aspectRatio).dp
-
+    // The outer Box no longer adds vertical padding around the video
+    // surface. A previous 4.dp vertical padding combined with the
+    // weight(0.35f) slot produced a thin strip of background bleeding
+    // through above the rounded preview corners. Padding is now 0;
+    // the weight slot controls the height and the inner Box fills it
+    // edge-to-edge.
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .fillMaxWidth(),
         contentAlignment = Alignment.TopCenter
     ) {
+        // Tap-to-toggle: split the surface into three zones so the user
+        // can also seek ±5s by tapping the left/right thirds, while
+        // tapping the centre toggles play/pause.
+        //
+        // Sizing: we fill the full weight-slot width and height
+        // (fillMaxSize) and let the PlayerView's RESIZE_MODE_FIT
+        // letterbox the actual video frames inside. Previously the
+        // inner box was .height(previewHeight) where previewHeight was
+        // the aspect-ratio-derived height — for 16:9 that came out
+        // noticeably shorter than the 0.35f weight slot, leaving a
+        // visible strip of background between the top bar and the
+        // rounded video corners. fillMaxSize + a top-aligned outer
+        // Box closes that gap.
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(previewHeight)
+                .fillMaxSize()
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp)),
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
+                .clickable { onTogglePlay() },
             contentAlignment = Alignment.Center
         ) {
             // Background placeholder: gradient + play-icon overlay while the
@@ -495,6 +505,12 @@ private fun VideoPreviewSection(
                 )
             }
 
+            // Timecode chip (top-end). The previous bottom control row
+            // (add / prev / rewind / play / forward / next) has been
+            // removed entirely — the user now toggles play/pause by
+            // tapping anywhere on the video surface, and the + add
+            // media button lives on the empty timeline (see
+            // TimelineSection).
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -511,53 +527,38 @@ private fun VideoPreviewSection(
                     fontSize = 10.sp
                 )
             }
+        }
 
-            Row(
+        // Left/right seek-5s zones overlaid on the video. The main
+        // clickable on the video Box still toggles play/pause, but
+        // these pointer-input handlers sit on top and consume taps in
+        // the outer thirds so the user can scrub ±5s without hunting
+        // for on-screen buttons.
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+        ) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                NeonIconButton(
-                    icon = Icons.Default.Add,
-                    onClick = onAddMedia,
-                    size = 36.dp,
-                    iconSize = 18.dp,
-                    tint = ApexPalette.NeonEmerald
-                )
-                NeonIconButton(
-                    icon = Icons.Default.SkipPrevious,
-                    onClick = onPrev,
-                    size = 36.dp,
-                    iconSize = 18.dp
-                )
-                NeonIconButton(
-                    icon = Icons.Default.FastRewind,
-                    onClick = { onSeek((currentTimeMs - 5000).coerceAtLeast(0)) },
-                    size = 36.dp,
-                    iconSize = 16.dp
-                )
-                NeonIconButton(
-                    icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    onClick = onTogglePlay,
-                    size = 44.dp,
-                    iconSize = 22.dp
-                )
-                NeonIconButton(
-                    icon = Icons.Default.FastForward,
-                    onClick = { onSeek((currentTimeMs + 5000).coerceAtMost(playerDurationMs)) },
-                    size = 36.dp,
-                    iconSize = 16.dp
-                )
-                NeonIconButton(
-                    icon = Icons.Default.SkipNext,
-                    onClick = onNext,
-                    size = 36.dp,
-                    iconSize = 18.dp
-                )
-            }
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .pointerInput(Unit) {
+                        detectTapGestures { onPrev() }
+                    }
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .pointerInput(Unit) {
+                        detectTapGestures { onNext() }
+                    }
+            )
         }
     }
 }
@@ -568,6 +569,7 @@ private fun TimelineSection(
     onScrub: (Long) -> Unit,
     onZoom: (Float) -> Unit,
     onSelectClip: (String?) -> Unit,
+    onAddMedia: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
@@ -583,6 +585,83 @@ private fun TimelineSection(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
+        // Empty-state: when the project has no clips yet, show a
+        // prominent "+ Add media" call-to-action inside the timeline
+        // slot. The preview still plays its placeholder gradient, and
+        // the user gets one obvious path to start.
+        if (clips.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ApexPalette.BgGlass)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onAddMedia)
+                    .padding(vertical = 18.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = ApexPalette.NeonEmerald,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        "Add your first video",
+                        color = ApexPalette.NeonCyan,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+
+        // Compact + button shown above the timecode ruler when clips
+        // already exist. The big "Add your first video" CTA above
+        // covers the empty-state case; this is the always-available
+        // "append another clip" affordance.
+        if (clips.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgGlass)
+                        .border(1.dp, ApexPalette.NeonEmerald.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onAddMedia)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Add media",
+                            tint = ApexPalette.NeonEmerald,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            "Add",
+                            color = ApexPalette.NeonEmerald,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -794,37 +873,58 @@ private fun VideoClipBlock(
             .fillMaxHeight()
             .padding(1.dp)
             .clip(RoundedCornerShape(3.dp))
-            .background(
-                Brush.horizontalGradient(
-                    listOf(
-                        ApexPalette.NeonPurple.copy(alpha = 0.85f),
-                        ApexPalette.TrackVideo.copy(alpha = 0.85f)
-                    )
-                )
-            )
-            .border(
-                if (selected) 1.5.dp else 0.5.dp,
-                if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
-                RoundedCornerShape(3.dp)
-            )
             .clickable(onClick = onSelect)
     ) {
-        Row(
+        // Faux-frame-thumbnail background. Without an actual thumbnail
+        // extraction pipeline we paint a repeating gradient + tile lines
+        // that read as "video frames tiled across the clip" instead of
+        // a flat purple block. The tile width is tuned to feel like a
+        // ~0.5s filmstrip cell.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val tileW = (size.width / 8f).coerceAtLeast(8f)
+            val grad = Brush.horizontalGradient(
+                listOf(
+                    ApexPalette.NeonPurple.copy(alpha = 0.85f),
+                    ApexPalette.TrackVideo.copy(alpha = 0.85f),
+                    ApexPalette.NeonCyan.copy(alpha = 0.4f)
+                )
+            )
+            drawRect(brush = grad, size = size)
+            var i = 0f
+            while (i < size.width) {
+                drawLine(
+                    color = Color.Black.copy(alpha = 0.35f),
+                    start = Offset(i, 0f),
+                    end = Offset(i, size.height),
+                    strokeWidth = 1.2f
+                )
+                i += tileW
+            }
+            // subtle vignette at the top + bottom
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent)
+                ),
+                size = Size(size.width, size.height * 0.3f)
+            )
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))
+                ),
+                topLeft = Offset(0f, size.height * 0.7f),
+                size = Size(size.width, size.height * 0.3f)
+            )
+        }
+        // Border drawn on top of the canvas so it stays crisp.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(2.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            for (i in 0 until 5) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.Black.copy(alpha = 0.3f))
+                .border(
+                    if (selected) 1.5.dp else 0.5.dp,
+                    if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
+                    RoundedCornerShape(3.dp)
                 )
-            }
-        }
+        )
         Text(
             clip.name,
             color = Color.White,

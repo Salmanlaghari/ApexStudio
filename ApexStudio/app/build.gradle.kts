@@ -81,4 +81,9 @@ dependencies {
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // GPUImage — lookup-table (3D LUT) filter engine for the CapCut-style
+    // color presets. Used to bake the .cube LUTs onto frames in real time
+    // and during hardware-accelerated export.
+    implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
 }

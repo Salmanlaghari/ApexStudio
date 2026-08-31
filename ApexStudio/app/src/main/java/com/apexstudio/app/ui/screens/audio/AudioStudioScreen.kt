@@ -43,7 +43,10 @@ fun AudioStudioScreen(
     projectId: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
-    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
+    vm: EditorViewModel = viewModel(
+        key = projectId,
+        factory = EditorViewModelFactory(projectId = projectId)
+    )
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
     val audioState by vm.state.collectAsStateWithLifecycle()

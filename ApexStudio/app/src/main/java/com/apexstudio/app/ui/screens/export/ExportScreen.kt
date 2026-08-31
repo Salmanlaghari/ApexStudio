@@ -42,7 +42,10 @@ fun ExportScreen(
     projectId: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
-    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
+    vm: EditorViewModel = viewModel(
+        key = projectId,
+        factory = EditorViewModelFactory(projectId = projectId)
+    )
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val fxList = vm.fx.collectAsStateWithLifecycle().value

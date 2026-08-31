@@ -253,8 +253,6 @@ fun EditorScreen(
             onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
-            videoWidth = state.videoWidth,
-            videoHeight = state.videoHeight,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -380,30 +378,11 @@ private fun VideoPreviewSection(
     onNext: () -> Unit,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
-    videoWidth: Int,
-    videoHeight: Int,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
-    val screenWidthDp = configuration.screenWidthDp
     val context = LocalContext.current
-
-    // Pick the preview container's aspect ratio from the actual video size so
-    // a 9:16 vertical clip doesn't get letterboxed into a 16:9 frame, and a
-    // 1:1 square clip gets a square preview. Fall back to 16:9 while the
-    // size is still unknown (e.g. before onVideoSizeChanged fires).
-    val aspectRatio: Float = if (videoWidth > 0 && videoHeight > 0) {
-        videoWidth.toFloat() / videoHeight.toFloat()
-    } else {
-        16f / 9f
-    }
-    // The container is always constrained to the screen width; the height
-    // is derived from the aspect ratio so vertical videos are tall, square
-    // ones are square, etc. This is the minimum height we want — the box
-    // will still fill its allocated Column weight slot if that gives it
-    // more space.
-    val previewHeight = (screenWidthDp / aspectRatio).dp
 
     // The outer Box no longer adds vertical padding around the video
     // surface. A previous 4.dp vertical padding combined with the
@@ -423,8 +402,8 @@ private fun VideoPreviewSection(
         // Sizing: we fill the full weight-slot width and height
         // (fillMaxSize) and let the PlayerView's RESIZE_MODE_FIT
         // letterbox the actual video frames inside. Previously the
-        // inner box was .height(previewHeight) which was only the
-        // aspect-ratio-derived height — for 16:9 that came out
+        // inner box was .height(previewHeight) where previewHeight was
+        // the aspect-ratio-derived height — for 16:9 that came out
         // noticeably shorter than the 0.35f weight slot, leaving a
         // visible strip of background between the top bar and the
         // rounded video corners. fillMaxSize + a top-aligned outer

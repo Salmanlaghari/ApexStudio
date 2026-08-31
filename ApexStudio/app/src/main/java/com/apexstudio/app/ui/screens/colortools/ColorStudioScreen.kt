@@ -41,7 +41,10 @@ fun ColorStudioScreen(
     projectId: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
-    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory())
+    vm: EditorViewModel = viewModel(
+        key = projectId,
+        factory = EditorViewModelFactory(projectId = projectId)
+    )
 ) {
     val luts by vm.luts.collectAsStateWithLifecycle()
     var splitX by remember { mutableStateOf(0.5f) }

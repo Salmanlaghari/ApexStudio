@@ -65,7 +65,10 @@ fun EditorScreen(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
-    vm: EditorViewModel = viewModel(factory = EditorViewModelFactory(projectId = projectId))
+    vm: EditorViewModel = viewModel(
+        key = projectId,
+        factory = EditorViewModelFactory(projectId = projectId)
+    )
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current

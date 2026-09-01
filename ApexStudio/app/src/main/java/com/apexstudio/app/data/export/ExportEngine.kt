@@ -82,10 +82,10 @@ class ExportEngine(private val context: Context) {
                         override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
                             androidx.media3.common.C.TIME_UNSET
                     }
-                    val (audioProc, videoEffect) =
+                    val speedPair =
                         androidx.media3.transformer.Effects.createExperimentalSpeedChangingEffect(constantProvider)
-                    audioProcessors.add(audioProc)
-                    videoEffects.add(videoEffect)
+                    audioProcessors.add(speedPair.first)
+                    videoEffects.add(speedPair.second)
                 }
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
                     .setEffects(Effects(audioProcessors, videoEffects))

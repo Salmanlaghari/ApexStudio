@@ -34,7 +34,15 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "cinematic"
+    val filterCategory: String = "cinematic",
+    // Global playback speed applied to the ExoPlayer preview. Mirrors
+    // the speed of the currently selected clip; the speed panel also
+    // lets the user set it independently for quick time-lapse previews.
+    val playbackSpeed: Float = 1f,
+    // Set to true while the Audio Mixer bottom sheet is open.
+    val audioMixerOpen: Boolean = false,
+    // Set to true while the Speed Ramping bottom sheet is open.
+    val speedPanelOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

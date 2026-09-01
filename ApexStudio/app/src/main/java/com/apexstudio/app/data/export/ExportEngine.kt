@@ -43,7 +43,11 @@ class ExportEngine(private val context: Context) {
         val fps: Int = 60,
         val quality: String = "high",
         val filterPreset: FilterPreset? = null,
-        val filterIntensity: Float = 1f
+        val filterIntensity: Float = 1f,
+        // Speed ramping: when set, applied to the exported clip via
+        // EditedMediaItem.setSpeed so the time-lapse / slow-mo is
+        // baked into the hardware-encoded output.
+        val clipSpeed: Float = 1f
     )
 
     fun startExport(
@@ -61,13 +65,30 @@ class ExportEngine(private val context: Context) {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val videoEffects = buildList {
-                    if (config.filterPreset != null && config.filterIntensity > 0f) {
-                        add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+                if (config.filterPreset != null && config.filterIntensity > 0f) {
+                    videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                }
+                if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
+                    // Media3 1.4's setSpeed() is mutually exclusive
+                    // with custom video effects, so we use the
+                    // interlinked speed-change effect instead — it
+                    // lives inside the same Effects list as the LUT
+                    // filter, maintaining A/V sync without
+                    // sacrificing the colour grade.
+                    val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
+                        override fun getSpeed(timeUs: Long): Float = config.clipSpeed
+                        override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
+                            androidx.media3.common.C.TIME_UNSET
                     }
+                    val speedPair =
+                        androidx.media3.transformer.Effects.createExperimentalSpeedChangingEffect(constantProvider)
+                    audioProcessors.add(speedPair.first)
+                    videoEffects.add(speedPair.second)
                 }
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setEffects(Effects(emptyList(), videoEffects))
+                    .setEffects(Effects(audioProcessors, videoEffects))
                     .build()
 
                 val transformer = Transformer.Builder(context)

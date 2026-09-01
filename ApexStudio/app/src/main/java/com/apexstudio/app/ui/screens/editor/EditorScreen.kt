@@ -476,10 +476,13 @@ private fun VideoPreviewSection(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    if (filterColorMatrix != null) renderEffect = android.graphics.RenderEffect
-                        .createColorFilterEffect(
-                            android.graphics.ColorMatrixColorFilter(filterColorMatrix)
+                    if (filterColorMatrix != null) {
+                        val src = FloatArray(20)
+                        filterColorMatrix.get(src)
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                            androidx.compose.ui.graphics.ColorMatrix(src)
                         )
+                    }
                 }
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)

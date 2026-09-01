@@ -42,7 +42,9 @@ data class EditorState(
     // Set to true while the Audio Mixer bottom sheet is open.
     val audioMixerOpen: Boolean = false,
     // Set to true while the Speed Ramping bottom sheet is open.
-    val speedPanelOpen: Boolean = false
+    val speedPanelOpen: Boolean = false,
+    // Set to true while the Keyframe Animation bottom sheet is open.
+    val keyframePanelOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

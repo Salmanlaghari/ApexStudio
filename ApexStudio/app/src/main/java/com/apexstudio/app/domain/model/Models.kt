@@ -2,7 +2,9 @@ package com.apexstudio.app.domain.model
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class MediaClip(
     val id: String,
     val name: String,
@@ -22,11 +24,17 @@ data class MediaClip(
     val speedMultiplier: Float = 1f,
     val speedCurve: SpeedCurve = SpeedCurve.LINEAR,
     val rampStartSpeed: Float = 1f,
-    val rampEndSpeed: Float = 1f
+    val rampEndSpeed: Float = 1f,
+    // Animated transform track — empty by default. When populated
+    // by the Keyframe panel, the GL effect applies the interpolated
+    // translate / scale / rotation / opacity on every preview
+    // frame and bakes the same into the exported video.
+    val keyframes: KeyframeTrack = KeyframeTrack()
 )
 
 enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX }
 
+@Serializable
 enum class SpeedCurve {
     LINEAR,        // constant speed across the clip
     EASE_IN,       // accelerate from start speed → end speed
@@ -49,6 +57,7 @@ enum class SpeedPreset(val label: String, val multiplier: Float) {
     }
 }
 
+@Serializable
 data class Project(
     val id: String,
     val name: String,
@@ -59,6 +68,7 @@ data class Project(
     val audioTracks: List<AudioTrack> = emptyList()
 )
 
+@Serializable
 data class AudioTrack(
     val id: String,
     val name: String,
@@ -85,6 +95,129 @@ data class AudioTrack(
 
     /** Per-track volume multiplier in 0..1, with mute applied. */
     fun effectiveVolume(): Float = if (isMuted) 0f else volume.coerceIn(0f, 1f)
+}
+
+/**
+ * One keyframe on a clip. Holds the four animated transform
+ * properties every editor supports (translateX, translateY, scale,
+ * rotation, opacity) at a single point on the clip's local timeline.
+ *
+ * `timeMs` is the absolute timeline position (in ms) at which the
+ * keyframe's value is "pinned". The [KeyframeTrack] interpolates
+ * between adjacent keyframes using the curve shape declared on the
+ * later of the two.
+ */
+@Serializable
+data class Keyframe(
+    val id: String,
+    val timeMs: Long,
+    val translateX: Float = 0f,
+    val translateY: Float = 0f,
+    val scale: Float = 1f,
+    val rotationDeg: Float = 0f,
+    val opacity: Float = 1f,
+    val curve: KeyframeCurve = KeyframeCurve.LINEAR
+) {
+    companion object {
+        fun identity(timeMs: Long, id: String = java.util.UUID.randomUUID().toString()) =
+            Keyframe(id = id, timeMs = timeMs)
+    }
+}
+
+@Serializable
+enum class KeyframeCurve {
+    /**
+     * LINEAR is a straight line; the others are cheap analytic
+     * approximations good enough for editor previews — a real CapCut
+     * implementation would back these with an ML spline, but the math
+     * here is the same `easeOutCubic` / `easeInOutQuad` family every
+     * editor uses.
+     */
+    LINEAR,
+    EASE_IN,
+    EASE_OUT,
+    EASE_IN_OUT,
+    HOLD
+}
+
+/**
+ * Full animated-transform track attached to a single clip. The
+ * track stores the keyframes sorted by time and exposes
+ * [interpolateAt] which returns the (translate, scale, rotation,
+ * opacity) tuple to render at the given ms.
+ */
+@Serializable
+data class KeyframeTrack(
+    val keyframes: List<Keyframe> = emptyList()
+) {
+    fun isEmpty(): Boolean = keyframes.isEmpty()
+
+    fun sorted(): KeyframeTrack = copy(keyframes = keyframes.sortedBy { it.timeMs })
+
+    /**
+     * Return the animated transform at [timeMs] (interpolated from
+     * the surrounding keyframes). When no keyframes exist, returns
+     * the identity transform (translate 0, scale 1, rotation 0,
+     * opacity 1). When [timeMs] is before the first or after the
+     * last keyframe, clamps to that endpoint.
+     */
+    fun interpolateAt(timeMs: Long): AnimatedTransform {
+        if (keyframes.isEmpty()) return AnimatedTransform.Identity
+        val sorted = keyframes.sortedBy { it.timeMs }
+        if (timeMs <= sorted.first().timeMs) {
+            val k = sorted.first()
+            return AnimatedTransform(k.translateX, k.translateY, k.scale, k.rotationDeg, k.opacity)
+        }
+        if (timeMs >= sorted.last().timeMs) {
+            val k = sorted.last()
+            return AnimatedTransform(k.translateX, k.translateY, k.scale, k.rotationDeg, k.opacity)
+        }
+        for (i in 0 until sorted.size - 1) {
+            val a = sorted[i]
+            val b = sorted[i + 1]
+            if (timeMs in a.timeMs..b.timeMs) {
+                return interpolatePair(a, b, timeMs)
+            }
+        }
+        return AnimatedTransform.Identity
+    }
+
+    private fun interpolatePair(a: Keyframe, b: Keyframe, t: Long): AnimatedTransform {
+        val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
+        val raw = ((t - a.timeMs).toDouble() / span.toDouble()).coerceIn(0.0, 1.0)
+        val eased = ease(raw, b.curve)
+        return AnimatedTransform(
+            translateX = lerp(a.translateX, b.translateX, eased),
+            translateY = lerp(a.translateY, b.translateY, eased),
+            scale = lerp(a.scale, b.scale, eased),
+            rotationDeg = lerp(a.rotationDeg, b.rotationDeg, eased),
+            opacity = lerp(a.opacity, b.opacity, eased)
+        )
+    }
+
+    private fun ease(t: Double, curve: KeyframeCurve): Double = when (curve) {
+        KeyframeCurve.LINEAR -> t
+        KeyframeCurve.EASE_IN -> t * t
+        KeyframeCurve.EASE_OUT -> 1.0 - (1.0 - t) * (1.0 - t)
+        KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t)
+        KeyframeCurve.HOLD -> 0.0 // first keyframe value until the next one
+    }
+
+    private fun lerp(a: Float, b: Float, t: Double): Float =
+        (a + (b - a) * t.toFloat())
+}
+
+/** Snapshot of a keyframe track evaluated at a single time point. */
+data class AnimatedTransform(
+    val translateX: Float,
+    val translateY: Float,
+    val scale: Float,
+    val rotationDeg: Float,
+    val opacity: Float
+) {
+    companion object {
+        val Identity = AnimatedTransform(0f, 0f, 1f, 0f, 1f)
+    }
 }
 
 data class ToolItem(

@@ -84,14 +84,12 @@ class EditorViewModel(
                 _state.update { it.copy(project = null, durationMs = 0L) }
                 return@launch
             }
-            // Auto-select the first video clip in the project so the
-            // preview is mounted immediately. The previous behaviour
-            // left selectedClipId = null on load, which meant the
-            // ExoPlayer-prep LaunchedEffect never ran and the
-            // PlayerView sat empty until the user pressed play. The
-            // play() side of the same effect then fired with no
-            // mediaItem loaded, so the play icon went to "Pause"
-            // but the screen stayed black.
+            // Auto-select the first video clip in the project AND
+            // flip isPlaying = true so the play/pause effect drives
+            // ExoPlayer into STATE_READY + playback as soon as the
+            // media-prep effect has queued the media item. The
+            // previous behaviour left both null/false on load, so
+            // the preview sat black until the user pressed play.
             val firstClipId = p.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
                 ?: p.clips.firstOrNull()?.id
             _state.update {
@@ -99,7 +97,8 @@ class EditorViewModel(
                     project = p,
                     durationMs = p.durationMs,
                     canUndo = false, canRedo = false,
-                    selectedClipId = it.selectedClipId ?: firstClipId
+                    selectedClipId = it.selectedClipId ?: firstClipId,
+                    isPlaying = firstClipId != null
                 )
             }
         }

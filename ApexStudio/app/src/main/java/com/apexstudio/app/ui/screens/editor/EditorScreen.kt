@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -31,7 +32,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -477,11 +477,19 @@ private fun VideoPreviewSection(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    colorFilter = filterColorMatrix?.let { cfm ->
-                        ColorFilter.colorMatrix(ColorMatrix(cfm))
+                .graphicsLayer { }
+                .drawWithContent {
+                    if (filterColorMatrix != null) {
+                        val paint = androidx.compose.ui.graphics.Paint().apply {
+                            this.colorFilter = ColorFilter.colorMatrix(ColorMatrix(filterColorMatrix))
+                        }
+                        drawContext.canvas.saveLayer(size.toRect(), paint)
+                        drawContent()
+                        drawContext.canvas.restore()
+                    } else {
+                        drawContent()
                     }
-                )
+                }
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))

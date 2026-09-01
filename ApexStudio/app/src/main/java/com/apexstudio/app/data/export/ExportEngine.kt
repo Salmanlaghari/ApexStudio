@@ -67,7 +67,7 @@ class ExportEngine(private val context: Context) {
                     }
                 }
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setEffects(Effects(audioProcessors = emptyList(), videoEffects = videoEffects))
+                    .setEffects(Effects(emptyList(), videoEffects))
                     .build()
 
                 val transformer = Transformer.Builder(context)

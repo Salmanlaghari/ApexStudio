@@ -41,7 +41,7 @@ class LutFilterBuilder(private val context: Context) {
         val lookup = buildLookupFromCube(lut) ?: return null
         val lutFilter = GPUImageLookupFilter()
         lutFilter.bitmap = lookup
-        lutFilter.intensity = intensity.coerceIn(0f, 1f)
+        lutFilter.setIntensity(intensity.coerceIn(0f, 1f))
         return lutFilter
     }
 

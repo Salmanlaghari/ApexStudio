@@ -180,6 +180,42 @@ fun EditorScreen(
         }
     }
 
+    // Compute the active LUT preset + selected keyframe track ONCE
+    // so both the filter-effect and the media-prep effects can
+    // share the same values without duplicating the lookup.
+    val activePreset = remember(state.activeFilterId, filterEngine) {
+        val id = state.activeFilterId ?: return@remember null
+        filterEngine.manifest.filters.firstOrNull { it.id == id }
+    }
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val selectedKeyframes = selectedClip?.keyframes
+
+    // The current Effect list, memoised as a stable value (not a
+    // local function — those can't be captured by a LaunchedEffect's
+    // coroutine because the function reference isn't stable across
+    // recompositions). Re-evaluated only when the active filter /
+    // intensity / selected clip's keyframes actually change.
+    val currentEffects = remember(activePreset, state.filterIntensity, selectedKeyframes) {
+        buildList<androidx.media3.common.Effect> {
+            if (activePreset != null && state.filterIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.filter.LutFilterGlEffect(
+                        context, activePreset, state.filterIntensity
+                    )
+                )
+            }
+            val kf = selectedKeyframes
+            if (kf != null && !kf.isEmpty()) {
+                val trackRef = arrayOf(kf)
+                add(
+                    com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                        trackProvider = { trackRef[0] }
+                    ).buildEffects().first()
+                )
+            }
+        }
+    }
+
     LaunchedEffect(exoPlayer, state.selectedClipId) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clipId = state.selectedClipId ?: return@LaunchedEffect
@@ -203,7 +239,7 @@ fun EditorScreen(
                 // the GL pipeline (which is what the user sees as
                 // "filter not applied").
                 try {
-                    player.setVideoEffects(buildEffects())
+                    player.setVideoEffects(currentEffects)
                 } catch (e: Exception) {
                     Log.e("EditorScreen", "setVideoEffects (after setMediaItem) failed", e)
                 }
@@ -250,45 +286,10 @@ fun EditorScreen(
         exoPlayer?.playbackParameters = PlaybackParameters(state.playbackSpeed)
     }
 
-    // Compute the active LUT preset + selected keyframe track ONCE
-    // so both the filter-effect and the media-prep effects can
-    // share the same values without duplicating the lookup.
-    val activePreset = remember(state.activeFilterId, filterEngine) {
-        val id = state.activeFilterId ?: return@remember null
-        filterEngine.manifest.filters.firstOrNull { it.id == id }
-    }
-    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-    val selectedKeyframes = selectedClip?.keyframes
-
-    // Build the current Effect list. Called from the two places
-    // below (the dedicated filter effect, and the media-prep effect
-    // so the filter re-asserts after every setMediaItem — without
-    // this the first setVideoEffects can land on a player that has
-    // no media and silently no-op, so the LUT never reaches the GL
-    // pipeline).
-    fun buildEffects(): List<androidx.media3.common.Effect> = buildList {
-        if (activePreset != null && state.filterIntensity > 0f) {
-            add(
-                com.apexstudio.app.data.filter.LutFilterGlEffect(
-                    context, activePreset, state.filterIntensity
-                )
-            )
-        }
-        val kf = selectedKeyframes
-        if (kf != null && !kf.isEmpty()) {
-            val trackRef = arrayOf(kf)
-            add(
-                com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                    trackProvider = { trackRef[0] }
-                ).buildEffects().first()
-            )
-        }
-    }
-
-    LaunchedEffect(exoPlayer, activePreset?.id, state.filterIntensity, selectedKeyframes) {
+    LaunchedEffect(exoPlayer, currentEffects) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            player.setVideoEffects(buildEffects())
+            player.setVideoEffects(currentEffects)
         } catch (e: Exception) {
             Log.e("EditorScreen", "setVideoEffects (filter) failed", e)
         }

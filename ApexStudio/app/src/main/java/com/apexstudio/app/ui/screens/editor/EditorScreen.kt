@@ -221,29 +221,26 @@ fun EditorScreen(
         val clipId = state.selectedClipId ?: return@LaunchedEffect
         val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
         val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
-        // Compare against the current MediaItem's mediaId. The
-        // MediaItem.mediaId is what we set in the MediaItem itself;
-        // ExoPlayer's currentMediaItem can also be null on a freshly
-        // built player, in which case we still want to load the new
-        // item.
         if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
             try {
                 Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
                 CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
+                // Drop the PlayerView's surface so the new media
+                // item gets a clean EGL surface to draw on. Without
+                // this, the recycled surface occasionally fails to
+                // produce frames for the freshly queued media.
+                vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
-                // Re-assert the current Effect list right after
-                // setMediaItem so the LUT / keyframe GlEffects
-                // attach to a player that actually has media queued.
-                // Without this, the first setVideoEffects call can
-                // land on an empty surface and the LUT never reaches
-                // the GL pipeline (which is what the user sees as
-                // "filter not applied").
+                player.prepare()
+                // Re-assert the current Effect list AFTER prepare()
+                // so the GL pipeline has both the media and the
+                // LUT/keyframes attached when the first frame is
+                // produced.
                 try {
                     player.setVideoEffects(currentEffects)
                 } catch (e: Exception) {
-                    Log.e("EditorScreen", "setVideoEffects (after setMediaItem) failed", e)
+                    Log.e("EditorScreen", "setVideoEffects (after prepare) failed", e)
                 }
-                player.prepare()
                 Log.d("ApexTrace", "EditorScreen: player prepared")
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
@@ -251,17 +248,6 @@ fun EditorScreen(
                 CrashMarker.clear(context)
             }
             vm.setPlayerDuration(clip.durationMs)
-            // Auto-play as soon as the new media item is queued. The
-            // previous flow had two separate LaunchedEffects (one for
-            // setMediaItem, one for play()) and the play() call
-            // occasionally fired before STATE_READY, which ExoPlayer
-            // swallowed silently — leaving the screen black. Calling
-            // play() here, right after setMediaItem/prepare, gives
-            // ExoPlayer the cue to start buffering + rendering in
-            // one atomic step. It will buffer until STATE_READY and
-            // then start the surface output.
-            player.playWhenReady = true
-            vm.setPlaying(true)
         }
     }
 
@@ -295,35 +281,31 @@ fun EditorScreen(
         }
     }
 
-    // Forward seek requests (from the timeline scrubber, the ±5s
-    // buttons, etc.) into ExoPlayer. The VM only updates
-    // state.playerPositionMs; without this LaunchedEffect the player
-    // would never actually seek and the playhead indicator would
-    // drift away from the frame ExoPlayer is rendering.
-    LaunchedEffect(exoPlayer, state.playerPositionMs) {
-        val player = exoPlayer ?: return@LaunchedEffect
-        if (state.selectedClipId == null) return@LaunchedEffect
-        // Suppress the very first composition where state and player
-        // are both at 0 — seeking on an empty player is a no-op
-        // and would log a warning.
-        if (player.currentMediaItem == null) return@LaunchedEffect
-        // Avoid feedback loops: the player position poll (delay
-        // 100ms below) writes back to state.playerPositionMs on
-        // every tick, which would otherwise seek the player
-        // 10x/second. Only seek if the difference is meaningful.
-        val target = state.playerPositionMs
-        val current = player.currentPosition
-        if (kotlin.math.abs(current - target) > 80) {
-            player.seekTo(target)
-        }
-    }
-
     LaunchedEffect(exoPlayer) {
         val player = exoPlayer ?: return@LaunchedEffect
         while (isActive) {
             val pos = player.currentPosition
             if (pos != state.playerPositionMs) {
                 vm.setPlayerPosition(pos)
+            }
+            // Forward seek requests from the timeline scrubber /
+            // ±5s buttons / etc. into ExoPlayer. The VM only updates
+            // state.playerPositionMs; without this hop the player
+            // would never actually seek and the playhead indicator
+            // would drift away from the frame ExoPlayer is rendering.
+            //
+            // We poll instead of a separate LaunchedEffect because
+            // (a) the polling loop already runs every 100ms so we
+            // don't need a redundant effect, and (b) the dead-band
+            // check here naturally folds "user-initiated seek" and
+            // "polling tick" into the same code path without the
+            // risk of two effects fighting each other.
+            val target = state.playerPositionMs
+            val current = player.currentPosition
+            if (player.currentMediaItem != null &&
+                kotlin.math.abs(current - target) > 80
+            ) {
+                player.seekTo(target)
             }
             delay(100)
         }

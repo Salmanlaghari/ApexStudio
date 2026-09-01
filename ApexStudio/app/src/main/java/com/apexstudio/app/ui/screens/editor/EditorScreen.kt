@@ -477,7 +477,6 @@ private fun VideoPreviewSection(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { }
                 .drawWithContent {
                     if (filterColorMatrix != null) {
                         val paint = androidx.compose.ui.graphics.Paint().apply {

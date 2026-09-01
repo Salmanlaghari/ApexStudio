@@ -482,7 +482,8 @@ private fun VideoPreviewSection(
                         val paint = androidx.compose.ui.graphics.Paint().apply {
                             this.colorFilter = ColorFilter.colorMatrix(ColorMatrix(filterColorMatrix))
                         }
-                        drawContext.canvas.saveLayer(size.toRect(), paint)
+                        val layerBounds = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
+                        drawContext.canvas.saveLayer(layerBounds, paint)
                         drawContent()
                         drawContext.canvas.restore()
                     } else {

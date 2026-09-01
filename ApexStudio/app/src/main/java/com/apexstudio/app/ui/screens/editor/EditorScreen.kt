@@ -232,15 +232,32 @@ fun EditorScreen(
         val id = state.activeFilterId ?: return@remember null
         filterEngine.manifest.filters.firstOrNull { it.id == id }
     }
-    LaunchedEffect(exoPlayer, activePreset?.id, state.filterIntensity) {
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val selectedKeyframes = selectedClip?.keyframes
+    LaunchedEffect(exoPlayer, activePreset?.id, state.filterIntensity, selectedKeyframes) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val effects = if (activePreset != null && state.filterIntensity > 0f) {
-            listOf<androidx.media3.common.Effect>(
-                com.apexstudio.app.data.filter.LutFilterGlEffect(
-                    context, activePreset, state.filterIntensity
+        val effects = buildList<androidx.media3.common.Effect> {
+            if (activePreset != null && state.filterIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.filter.LutFilterGlEffect(
+                        context, activePreset, state.filterIntensity
+                    )
                 )
-            )
-        } else emptyList()
+            }
+            // Keyframe animation: the MatrixTransformation re-evaluates
+            // getMatrix() for every frame inside Media3 with the actual
+            // presentation timestamp, so once the effect is in the list
+            // it'll drive the playhead animation by itself.
+            val kf = selectedKeyframes
+            if (kf != null && !kf.isEmpty()) {
+                val trackRef = arrayOf(kf)
+                add(
+                    com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                        trackProvider = { trackRef[0] }
+                    ).buildEffects().first()
+                )
+            }
+        }
         try {
             player.setVideoEffects(effects)
         } catch (e: Exception) {
@@ -323,7 +340,7 @@ fun EditorScreen(
             filtersActive = state.activeFilterId != null || state.filterPanelOpen,
             onColor = onColor,
             onAudio = onAudio,
-            onText = { /* placeholder */ },
+            onText = { vm.setKeyframePanelOpen(true) },
             onFx = { /* placeholder */ },
             onExport = {},
             modifier = Modifier
@@ -421,6 +438,34 @@ fun EditorScreen(
                     onFadeIn = { id, ms -> vm.setAudioTrackFadeIn(id, ms) },
                     onFadeOut = { id, ms -> vm.setAudioTrackFadeOut(id, ms) },
                     onClose = { vm.closeAudioMixer() }
+                )
+            }
+        }
+    }
+
+    if (state.keyframePanelOpen) {
+        val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.setKeyframePanelOpen(false) },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                KeyframePanel(
+                    track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack(),
+                    playheadMs = state.playerPositionMs,
+                    canAdd = selectedClip != null,
+                    onAdd = { ms -> selectedClip?.let { vm.addKeyframe(it.id, ms) } },
+                    onUpdate = { kf -> selectedClip?.let { vm.updateKeyframe(it.id, kf.id) { kf } } },
+                    onRemove = { id -> selectedClip?.let { vm.removeKeyframe(it.id, id) } },
+                    onClear = { selectedClip?.let { vm.clearKeyframes(it.id) } },
+                    onClose = { vm.setKeyframePanelOpen(false) }
                 )
             }
         }

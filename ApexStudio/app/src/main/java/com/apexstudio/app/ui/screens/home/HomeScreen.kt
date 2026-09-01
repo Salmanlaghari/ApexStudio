@@ -29,6 +29,7 @@ import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.repository.MediaRepository
+import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -44,9 +45,20 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
-    val repo = remember { MediaRepository }
-    val projects = repo.loadProjects()
     val context = LocalContext.current
+    val repo = remember { MediaRepository }
+    val projectRepo = remember { ProjectRepository(context) }
+    // The home list reads from the persistent ProjectRepository first
+    // (the DataStore-backed source of truth that auto-save writes to),
+    // and falls back to the in-memory MediaRepository stub for first
+    // launches when nothing has been saved yet. This is what makes
+    // tapping a project card re-load the actual saved state — clips,
+    // trims, LUT, audio tracks and keyframes — into the editor.
+    var projects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val saved = projectRepo.loadAllNow()
+        projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
+    }
     val mediaPicker = remember { MediaPickerHelper(context) }
     var pickedMedia by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }
 
@@ -73,6 +85,11 @@ fun HomeScreen(
                     name = metadataList.first().name.substringBeforeLast('.'),
                     clips = clips
                 )
+                // Mirror the in-memory project into DataStore so the
+                // editor's auto-save has a starting point and the
+                // home screen picks it up on next launch.
+                projectRepo.saveProject(newProject)
+                projects = projectRepo.loadAllNow()
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
                 onProjectOpen(newProject.id)
             }

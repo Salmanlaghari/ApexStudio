@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -86,6 +87,12 @@ dependencies {
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Project auto-save: kotlinx-serialization drives the JSON
+    // codec that stores each Project (clips, trim, LUT, audio tracks,
+    // keyframes) in DataStore<Preferences>. No Room / KSP needed —
+    // we keep the schema versioned by hand inside ProjectSerializer.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // GPUImage — lookup-table (3D LUT) filter engine for the CapCut-style
     // color presets. Used to bake the .cube LUTs onto frames in real time

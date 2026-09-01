@@ -47,7 +47,13 @@ class ExportEngine(private val context: Context) {
         // Speed ramping: when set, applied to the exported clip via
         // EditedMediaItem.setSpeed so the time-lapse / slow-mo is
         // baked into the hardware-encoded output.
-        val clipSpeed: Float = 1f
+        val clipSpeed: Float = 1f,
+        // Keyframe animation track from the selected clip. When
+        // non-empty, the export pipeline drives a MatrixTransformation
+        // for every output frame so the translate / scale / rotation
+        // / opacity bakes into the MP4.
+        val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
+            com.apexstudio.app.domain.model.KeyframeTrack()
     )
 
     fun startExport(
@@ -86,6 +92,16 @@ class ExportEngine(private val context: Context) {
                         androidx.media3.transformer.Effects.createExperimentalSpeedChangingEffect(constantProvider)
                     audioProcessors.add(speedPair.first)
                     videoEffects.add(speedPair.second)
+                }
+                if (!config.keyframes.isEmpty()) {
+                    // Keyframe animation: same MatrixTransformation
+                    // used by the live preview, so the export bakes
+                    // exactly what the user saw.
+                    videoEffects.add(
+                        com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                            trackProvider = { config.keyframes }
+                        ).buildEffects().first()
+                    )
                 }
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
                     .setEffects(Effects(audioProcessors, videoEffects))

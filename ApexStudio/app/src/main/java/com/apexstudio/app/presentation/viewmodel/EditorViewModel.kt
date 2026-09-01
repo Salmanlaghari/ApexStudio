@@ -11,11 +11,13 @@ import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.data.media.MediaAnalyzer
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
+import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -54,6 +56,7 @@ class EditorViewModel(
     private val exportEngine = context?.let { ExportEngine(it) }
     private val audioEngine = context?.let { AudioEngine(it) }
     private val colorGradingEngine = ColorGradingEngine()
+    private val projectRepository: ProjectRepository? = context?.let { ProjectRepository(it) }
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
@@ -71,7 +74,10 @@ class EditorViewModel(
 
     private fun loadProject() {
         viewModelScope.launch {
-            val projects = repo.loadProjects()
+            // Prefer the persistent DataStore copy over the in-memory
+            // MediaRepository stub. The two stay in sync because every
+            // mutation auto-saves back to DataStore.
+            val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
             val p = projectId?.let { id -> projects.firstOrNull { it.id == id } }
                 ?: projects.firstOrNull()
             if (p == null) {
@@ -226,7 +232,8 @@ class EditorViewModel(
                 resolution = _export.value.settings.resolution,
                 fps = _export.value.settings.frameRate,
                 quality = _export.value.settings.quality.label.lowercase(),
-                clipSpeed = speed
+                clipSpeed = speed,
+                keyframes = selected?.keyframes ?: KeyframeTrack()
             )
         )
     }
@@ -396,6 +403,75 @@ class EditorViewModel(
             val proj = s.project ?: return@update s
             val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
             s.copy(project = proj.copy(clips = newClips))
+        }
+        persistProject()
+    }
+
+    // ---- Keyframes ----
+    /**
+     * Add a new keyframe at [timeMs] on [clipId]. If a keyframe
+     * already exists at the same timestamp it's overwritten — that
+     * matches the CapCut behaviour where tapping the playhead
+     * replaces the existing mark rather than creating a duplicate.
+     */
+    fun addKeyframe(clipId: String, timeMs: Long, transform: AnimatedTransform = AnimatedTransform.Identity) {
+        updateClip(clipId) { clip ->
+            val kf = Keyframe(
+                id = java.util.UUID.randomUUID().toString(),
+                timeMs = timeMs,
+                translateX = transform.translateX,
+                translateY = transform.translateY,
+                scale = transform.scale,
+                rotationDeg = transform.rotationDeg,
+                opacity = transform.opacity
+            )
+            val without = clip.keyframes.keyframes.filter { it.timeMs != timeMs }
+            clip.copy(keyframes = KeyframeTrack(without + kf).sorted())
+        }
+    }
+
+    fun updateKeyframe(clipId: String, keyframeId: String, transform: (Keyframe) -> Keyframe) {
+        updateClip(clipId) { clip ->
+            clip.copy(
+                keyframes = KeyframeTrack(
+                    clip.keyframes.keyframes.map { if (it.id == keyframeId) transform(it) else it }
+                ).sorted()
+            )
+        }
+    }
+
+    fun removeKeyframe(clipId: String, keyframeId: String) {
+        updateClip(clipId) { clip ->
+            clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.id != keyframeId }))
+        }
+    }
+
+    fun clearKeyframes(clipId: String) {
+        updateClip(clipId) { it.copy(keyframes = KeyframeTrack()) }
+    }
+
+    fun setKeyframePanelOpen(open: Boolean) =
+        _state.update { it.copy(keyframePanelOpen = open) }
+
+    /**
+     * Persist the current `EditorState.project` to DataStore so a
+     * later `EditorViewModel(projectId = ...)` constructor call (from
+     * the Home screen project card) loads the same clip / LUT /
+     * audio / keyframe state back into the editor.
+     *
+     * Called from every mutation that changes the project. We don't
+     * block the UI thread — the write is queued on viewModelScope
+     * and DataStore serialises concurrent edits for us.
+     */
+    private fun persistProject() {
+        val snapshot = _state.value.project ?: return
+        val repo = projectRepository ?: return
+        viewModelScope.launch {
+            try {
+                repo.saveProject(snapshot)
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "Auto-save failed", e)
+            }
         }
     }
 

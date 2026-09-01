@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,6 +30,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -42,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
+import com.apexstudio.app.data.filter.LutFilterEngine
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -75,6 +79,9 @@ fun EditorScreen(
     val context = LocalContext.current
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
+    // Filter engine: reads the 70+ .cube LUTs and the filter_manifest.json
+    // from assets. Created once per EditorScreen entry.
+    val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
 
@@ -259,6 +266,8 @@ fun EditorScreen(
             cropAspect = state.cropAspect,
             onCropRectChange = { vm.setCropRect(it) },
             onResetCrop = { vm.resetCrop() },
+            activeFilterId = state.activeFilterId,
+            filterIntensity = state.filterIntensity,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -299,7 +308,8 @@ fun EditorScreen(
             cropActive = state.cropMode,
             cropAspect = state.cropAspect,
             onCropAspect = { vm.applyCropAspect(it) },
-            onFilters = onColor,
+            onFilters = { vm.openFilterPanel() },
+            filtersActive = state.activeFilterId != null || state.filterPanelOpen,
             onColor = onColor,
             onAudio = onAudio,
             onText = { /* placeholder */ },
@@ -309,6 +319,36 @@ fun EditorScreen(
                 .fillMaxWidth()
                 .weight(0.20f)
         )
+    }
+
+    // Filter panel — bottom-sheet style overlay. Only mounted while
+    // state.filterPanelOpen is true so it doesn't take up layout space
+    // when hidden.
+    if (state.filterPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeFilterPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { /* eat clicks */ }
+            ) {
+                FilterPanel(
+                    manifest = filterEngine.manifest,
+                    activeFilterId = state.activeFilterId,
+                    intensity = state.filterIntensity,
+                    activeCategory = state.filterCategory,
+                    onCategoryChange = { vm.setFilterCategory(it) },
+                    onFilterSelected = { vm.setActiveFilter(it) },
+                    onIntensityChange = { vm.setFilterIntensity(it) },
+                    onClose = { vm.closeFilterPanel() }
+                )
+            }
+        }
     }
 }
 
@@ -393,11 +433,22 @@ private fun VideoPreviewSection(
     cropAspect: com.apexstudio.app.presentation.state.CropAspect,
     onCropRectChange: (com.apexstudio.app.presentation.state.CropRect) -> Unit,
     onResetCrop: () -> Unit,
+    activeFilterId: String?,
+    filterIntensity: Float,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
     val context = LocalContext.current
+
+    // Active filter → ColorMatrix tint applied as a graphicsLayer over
+    // the preview surface. This is a lightweight approximation of the
+    // full LUT lookup (which runs at export time); it gives the user
+    // a real-time hint of which filter is selected without burning
+    // GPU cycles on every preview frame.
+    val filterColorMatrix = remember(activeFilterId, filterIntensity) {
+        buildFilterColorMatrix(activeFilterId, filterIntensity)
+    }
 
     // The outer Box no longer adds vertical padding around the video
     // surface. A previous 4.dp vertical padding combined with the
@@ -426,6 +477,19 @@ private fun VideoPreviewSection(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .drawWithContent {
+                    if (filterColorMatrix != null) {
+                        val paint = androidx.compose.ui.graphics.Paint().apply {
+                            this.colorFilter = ColorFilter.colorMatrix(ColorMatrix(filterColorMatrix))
+                        }
+                        val layerBounds = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
+                        drawContext.canvas.saveLayer(layerBounds, paint)
+                        drawContent()
+                        drawContext.canvas.restore()
+                    } else {
+                        drawContent()
+                    }
+                }
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
@@ -1306,6 +1370,7 @@ private fun HorizontalToolBar(
     cropAspect: com.apexstudio.app.presentation.state.CropAspect,
     onCropAspect: (com.apexstudio.app.presentation.state.CropAspect) -> Unit,
     onFilters: () -> Unit,
+    filtersActive: Boolean,
     onColor: () -> Unit,
     onAudio: () -> Unit,
     onText: () -> Unit,
@@ -1368,7 +1433,7 @@ private fun HorizontalToolBar(
             ToolDef("Cut", Icons.Default.ContentCut, onCut),
             ToolDef("Speed", Icons.Default.Speed, onSpeed),
             ToolDef("Crop", Icons.Default.Crop, onCrop, highlight = cropActive),
-            ToolDef("Filters", Icons.Default.FilterAlt, onFilters),
+            ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),
             ToolDef("Color", Icons.Default.Palette, onColor),
             ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
             ToolDef("Text", Icons.Default.TextFields, onText),
@@ -1452,4 +1517,172 @@ private fun Float.toDp() = androidx.compose.ui.unit.Dp(this /
 private fun Int.pxToDp(): androidx.compose.ui.unit.Dp {
     val density = androidx.compose.ui.platform.LocalDensity.current
     return androidx.compose.ui.unit.Dp(this / density.density)
+}
+
+/**
+ * Build a ColorMatrix that approximates the active LUT filter for
+ * real-time preview. This is a cheap tint (a single ColorMatrix
+ * multiply per pixel via RenderEffect on API 31+) — it gives the
+ * user a visible hint of which filter is active without paying the
+ * cost of a full 3D LUT lookup on every preview frame. The actual
+ * LUT is applied at export time via GPUImage + Media3 Transformer.
+ */
+private fun buildFilterColorMatrix(filterId: String?, intensity: Float): FloatArray? {
+    if (filterId == null || intensity <= 0f) return null
+    val t = intensity.coerceIn(0f, 1f)
+    // Base identity matrix
+    val m = floatArrayOf(
+        1f, 0f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f, 0f,
+        0f, 0f, 1f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f
+    )
+    // Apply per-filter tinting. These are rough color shifts that
+    // match the LUT's character; the full LUT runs at export.
+    when (filterId) {
+        // Cinematic
+        "teal_orange" -> tint(m, +0.06f * t, +0.04f * t, -0.04f * t, +0.08f * t)
+        "hollywood" -> tint(m, +0.04f * t, -0.01f * t, -0.03f * t, +0.02f * t)
+        "moody_blockbuster" -> tint(m, -0.03f * t, 0f, +0.05f * t, -0.02f * t)
+        "matrix_green" -> tint(m, -0.10f * t, +0.08f * t, -0.10f * t, 0f)
+        "film_noir_cinema" -> desaturate(m, 0.5f * t)
+        "blockbuster_warm" -> tint(m, +0.05f * t, -0.02f * t, -0.05f * t, +0.02f * t)
+        "epic_dawn" -> tint(m, +0.08f * t, 0f, -0.05f * t, +0.02f * t)
+        "cinema_teal" -> tint(m, -0.03f * t, +0.02f * t, +0.04f * t, 0f)
+        "thriller_blue" -> tint(m, -0.06f * t, -0.02f * t, +0.08f * t, 0f)
+        "romance_warm" -> tint(m, +0.04f * t, +0.01f * t, -0.03f * t, +0.02f * t)
+        // Retro & Film
+        "kodak_35mm" -> tint(m, +0.03f * t, 0f, -0.02f * t, +0.02f * t)
+        "fuji_chrome" -> tint(m, -0.02f * t, 0f, +0.04f * t, 0f)
+        "vintage_sepia" -> sepia(m, t)
+        "eighties_grain" -> tint(m, +0.05f * t, -0.02f * t, +0.04f * t, 0f)
+        "polaroid_fade" -> tint(m, +0.04f * t, +0.02f * t, -0.02f * t, +0.04f * t)
+        "super_8" -> tint(m, +0.04f * t, 0f, -0.02f * t, +0.02f * t)
+        "film_warm" -> tint(m, +0.03f * t, -0.01f * t, -0.03f * t, 0f)
+        "film_cool" -> tint(m, -0.03f * t, 0f, +0.04f * t, 0f)
+        "disposable_camera" -> tint(m, +0.02f * t, 0f, -0.02f * t, +0.02f * t)
+        "vhs_warm" -> tint(m, +0.05f * t, -0.02f * t, -0.03f * t, +0.02f * t)
+        // Cyberpunk & Neon
+        "neon_purple" -> tint(m, +0.05f * t, -0.03f * t, +0.06f * t, 0f)
+        "cyan_glow" -> tint(m, -0.05f * t, +0.02f * t, +0.05f * t, 0f)
+        "midnight_dark" -> darken(m, 0.15f * t)
+        "neon_contrast" -> contrast(m, 0.2f * t)
+        "synthwave_pink" -> tint(m, +0.05f * t, -0.02f * t, +0.03f * t, 0f)
+        "synthwave_blue" -> tint(m, -0.02f * t, 0f, +0.06f * t, 0f)
+        "laser_grid" -> saturate(m, 0.3f * t)
+        "chrome_metal" -> contrast(m, 0.25f * t)
+        "neon_green" -> tint(m, -0.05f * t, +0.05f * t, -0.05f * t, 0f)
+        "ultraviolet" -> saturate(m, 0.1f * t)
+        // Portrait & Beauty
+        "soft_skin_glow" -> tint(m, +0.02f * t, +0.01f * t, -0.01f * t, 0f)
+        "natural_warmth" -> tint(m, +0.02f * t, 0f, -0.01f * t, 0f)
+        "pastel_tone" -> tint(m, +0.02f * t, +0.02f * t, +0.02f * t, +0.03f * t)
+        "warm_honey" -> tint(m, +0.04f * t, 0f, -0.02f * t, 0f)
+        "studio_glow" -> tint(m, +0.02f * t, +0.01f * t, +0.02f * t, +0.01f * t)
+        "fresh_face" -> saturate(m, 0.05f * t)
+        "peachy_glow" -> tint(m, +0.04f * t, 0f, -0.02f * t, 0f)
+        "porcelain" -> tint(m, +0.02f * t, +0.01f * t, 0f, +0.02f * t)
+        "rose_gold" -> tint(m, +0.03f * t, 0f, -0.01f * t, 0f)
+        "clean_white" -> contrast(m, 0.05f * t)
+        // B&W
+        "noir_classic" -> desaturate(m, 1f * t)
+        "high_contrast_charcoal" -> desaturate(m, 1f * t)
+        "silver_oxide" -> desaturate(m, 1f * t)
+        "rich_black" -> desaturate(m, 1f * t)
+        "film_bw_warm" -> desaturate(m, 1f * t)
+        "film_bw_cool" -> desaturate(m, 1f * t)
+        "ink_wash" -> desaturate(m, 1f * t)
+        "graphite" -> desaturate(m, 1f * t)
+        "classic_mono" -> desaturate(m, 1f * t)
+        "high_key_mono" -> desaturate(m, 1f * t)
+        // Urban & Moody
+        "cold_city" -> tint(m, -0.03f * t, 0f, +0.05f * t, 0f)
+        "street_blue" -> tint(m, -0.02f * t, 0f, +0.04f * t, 0f)
+        "muted_tones" -> desaturate(m, 0.4f * t)
+        "industrial" -> desaturate(m, 0.5f * t)
+        "rainy_window" -> tint(m, -0.02f * t, 0f, +0.02f * t, 0f)
+        "night_street" -> darken(m, 0.1f * t)
+        "urban_shadow" -> darken(m, 0.12f * t)
+        "concrete_gray" -> desaturate(m, 0.7f * t)
+        "subway_light" -> tint(m, +0.01f * t, 0f, -0.01f * t, 0f)
+        "rooftop_dusk" -> tint(m, -0.02f * t, -0.02f * t, +0.03f * t, 0f)
+        // Food & Landscape
+        "vibrant_punch" -> saturate(m, 0.4f * t)
+        "forest_green" -> tint(m, -0.03f * t, +0.06f * t, -0.03f * t, 0f)
+        "sunset_gold" -> tint(m, +0.05f * t, +0.02f * t, -0.04f * t, 0f)
+        "ocean_blue" -> tint(m, -0.04f * t, 0f, +0.06f * t, 0f)
+        "tropical_punch" -> saturate(m, 0.3f * t)
+        "fresh_garden" -> tint(m, -0.01f * t, +0.04f * t, -0.02f * t, 0f)
+        "golden_hour" -> tint(m, +0.05f * t, +0.02f * t, -0.03f * t, 0f)
+        "blue_hour" -> tint(m, -0.04f * t, 0f, +0.05f * t, 0f)
+        "mountain_air" -> tint(m, -0.01f * t, 0f, +0.02f * t, 0f)
+        "desert_sand" -> tint(m, +0.04f * t, +0.01f * t, -0.02f * t, 0f)
+    }
+    return m
+}
+
+private fun tint(m: FloatArray, dr: Float, dg: Float, db: Float, da: Float) {
+    m[4] += dr * 255f
+    m[9] += dg * 255f
+    m[14] += db * 255f
+    m[19] += da * 255f
+}
+
+private fun darken(m: FloatArray, amount: Float) {
+    val s = 1f - amount
+    m[0] *= s; m[6] *= s; m[12] *= s
+    m[4] -= amount * 30f
+    m[9] -= amount * 30f
+    m[14] -= amount * 30f
+}
+
+private fun saturate(m: FloatArray, amount: Float) {
+    val s = 1f + amount
+    m[0] = m[0] * s + (1f - s) * 0.299f
+    m[1] = m[1] * s + (1f - s) * 0.587f
+    m[2] = m[2] * s + (1f - s) * 0.114f
+    m[5] = m[5] * s + (1f - s) * 0.299f
+    m[6] = m[6] * s + (1f - s) * 0.587f
+    m[7] = m[7] * s + (1f - s) * 0.114f
+    m[10] = m[10] * s + (1f - s) * 0.299f
+    m[11] = m[11] * s + (1f - s) * 0.587f
+    m[12] = m[12] * s + (1f - s) * 0.114f
+}
+
+private fun desaturate(m: FloatArray, amount: Float) {
+    val a = 1f - amount
+    val lumR = 0.299f
+    val lumG = 0.587f
+    val lumB = 0.114f
+    m[0] = m[0] * a + lumR
+    m[1] = m[1] * a + lumG
+    m[2] = m[2] * a + lumB
+    m[5] = m[5] * a + lumR
+    m[6] = m[6] * a + lumG
+    m[7] = m[7] * a + lumB
+    m[10] = m[10] * a + lumR
+    m[11] = m[11] * a + lumG
+    m[12] = m[12] * a + lumB
+}
+
+private fun contrast(m: FloatArray, amount: Float) {
+    val c = 1f + amount
+    val t = (1f - c) * 128f
+    m[0] *= c; m[6] *= c; m[12] *= c
+    m[4] += t
+    m[9] += t
+    m[14] += t
+}
+
+private fun sepia(m: FloatArray, amount: Float) {
+    val a = 1f - amount
+    m[0] = a + amount * 0.393f
+    m[1] = amount * 0.769f
+    m[2] = amount * 0.189f
+    m[5] = amount * 0.349f
+    m[6] = a + amount * 0.686f
+    m[7] = amount * 0.168f
+    m[10] = amount * 0.272f
+    m[11] = amount * 0.534f
+    m[12] = a + amount * 0.131f
 }

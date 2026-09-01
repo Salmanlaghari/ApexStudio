@@ -26,7 +26,15 @@ data class EditorState(
     // drawn and the user can drag the handles / pick an aspect preset.
     val cropMode: Boolean = false,
     val cropAspect: CropAspect = CropAspect.FREE,
-    val cropRect: CropRect = CropRect.Full
+    val cropRect: CropRect = CropRect.Full,
+    // Filter panel state. activeFilterId == null means "no filter"
+    // (i.e. original video). intensity is 0..1 and is exposed as a
+    // slider in the panel so the user can dial the look from
+    // subtle to full.
+    val filterPanelOpen: Boolean = false,
+    val activeFilterId: String? = null,
+    val filterIntensity: Float = 1.0f,
+    val filterCategory: String = "cinematic"
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

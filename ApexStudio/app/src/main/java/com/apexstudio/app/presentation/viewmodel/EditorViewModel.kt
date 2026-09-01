@@ -174,11 +174,9 @@ class EditorViewModel(
             val current = s.cropRect
             val currentAspect = current.width / current.height
             val (newW, newH) = if (currentAspect > target) {
-                // Current is wider than target — narrow the width.
                 val w = (current.height * target).coerceAtMost(1f)
                 w to current.height
             } else {
-                // Current is taller than target — shrink the height.
                 val h = (current.width / target).coerceAtMost(1f)
                 current.width to h
             }
@@ -193,6 +191,14 @@ class EditorViewModel(
         }
     }
     fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
+
+    // ---- Filters ----
+    fun openFilterPanel() = _state.update { it.copy(filterPanelOpen = true) }
+    fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
+    fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
+    /** id == null clears the active filter (back to original video). */
+    fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
+    fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
     fun updateExport(upd: (ExportSettings) -> ExportSettings) {
         _export.update { it.copy(settings = upd(it.settings)) }

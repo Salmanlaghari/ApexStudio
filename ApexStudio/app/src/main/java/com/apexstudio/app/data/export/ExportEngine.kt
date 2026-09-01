@@ -43,7 +43,11 @@ class ExportEngine(private val context: Context) {
         val fps: Int = 60,
         val quality: String = "high",
         val filterPreset: FilterPreset? = null,
-        val filterIntensity: Float = 1f
+        val filterIntensity: Float = 1f,
+        // Speed ramping: when set, applied to the exported clip via
+        // EditedMediaItem.setSpeed so the time-lapse / slow-mo is
+        // baked into the hardware-encoded output.
+        val clipSpeed: Float = 1f
     )
 
     fun startExport(
@@ -66,9 +70,16 @@ class ExportEngine(private val context: Context) {
                         add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                     }
                 }
-                val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
+                val builder = EditedMediaItem.Builder(inputMediaItem)
                     .setEffects(Effects(emptyList(), videoEffects))
-                    .build()
+                if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
+                    // Media3 1.4 exposes setSpeed on the builder; it
+                    // wires an interlinked audio + video speed-change
+                    // effect that maintains A/V sync inside the
+                    // hardware encoder pipeline.
+                    builder.setSpeed(config.clipSpeed.toDouble())
+                }
+                val editedMediaItem = builder.build()
 
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {

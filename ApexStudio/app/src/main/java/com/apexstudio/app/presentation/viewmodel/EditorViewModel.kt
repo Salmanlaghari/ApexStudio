@@ -200,19 +200,33 @@ class EditorViewModel(
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
+    fun openAudioMixer() = _state.update { it.copy(audioMixerOpen = true) }
+    fun closeAudioMixer() = _state.update { it.copy(audioMixerOpen = false) }
+    fun openSpeedPanel() = _state.update { it.copy(speedPanelOpen = true) }
+    fun closeSpeedPanel() = _state.update { it.copy(speedPanelOpen = false) }
+    fun setPlaybackSpeed(speed: Float) = _state.update { it.copy(playbackSpeed = speed.coerceIn(0.25f, 8f)) }
+
     fun updateExport(upd: (ExportSettings) -> ExportSettings) {
         _export.update { it.copy(settings = upd(it.settings)) }
     }
 
     fun startExport() {
         _export.update { it.copy(isExporting = true, progress = 0f) }
-        val inputUri = _state.value.project?.clips?.firstOrNull()?.uri ?: return
+        val selected = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+            ?: _state.value.project?.clips?.firstOrNull()
+        val inputUri = selected?.uri ?: return
+        // Reuse the selected clip's speedMultiplier so the exported
+        // MP4 matches the in-editor preview rate. If no clip is
+        // selected, fall back to the global playback speed slider
+        // (useful for projects that haven't loaded a clip yet).
+        val speed = selected?.speedMultiplier ?: _state.value.playbackSpeed
         exportEngine?.startExport(
             inputUri,
             ExportEngine.ExportConfig(
                 resolution = _export.value.settings.resolution,
                 fps = _export.value.settings.frameRate,
-                quality = _export.value.settings.quality.label.lowercase()
+                quality = _export.value.settings.quality.label.lowercase(),
+                clipSpeed = speed
             )
         )
     }
@@ -299,6 +313,90 @@ class EditorViewModel(
     }
     fun setRecordingState(recording: Boolean) {
         _audio.update { it.copy(isRecording = recording) }
+    }
+
+    // ---- Speed ramping ----
+    /**
+     * Set the playback speed of a single clip. multiplier is clamped
+     * to the supported range (0.25x .. 8x). Pass [updatePlayback] = true
+     * (default) to also push the value to the live ExoPlayer via
+     * `setPlaybackSpeed` — call sites that only persist the value for
+     * later export can pass false to avoid touching the player.
+     */
+    fun setClipSpeed(clipId: String, multiplier: Float) {
+        val clamped = multiplier.coerceIn(SpeedPreset.QUARTER.multiplier, SpeedPreset.FAST.multiplier)
+        updateClip(clipId) { it.copy(speedMultiplier = clamped) }
+        val selectedSpeed = clamped
+        _state.update { it.copy(playbackSpeed = selectedSpeed) }
+    }
+
+    fun setClipSpeedCurve(clipId: String, curve: SpeedCurve) =
+        updateClip(clipId) { it.copy(speedCurve = curve) }
+
+    fun setClipSpeedRamp(clipId: String, start: Float, end: Float) {
+        val s = start.coerceIn(0.25f, 8f)
+        val e = end.coerceIn(0.25f, 8f)
+        updateClip(clipId) { it.copy(rampStartSpeed = s, rampEndSpeed = e, speedCurve = SpeedCurve.RAMP) }
+    }
+
+    fun applySpeedPreset(clipId: String, preset: SpeedPreset) {
+        setClipSpeed(clipId, preset.multiplier)
+    }
+
+    // ---- Audio mixer ----
+    /** Add a new audio track (background music, voiceover, SFX). */
+    fun addAudioTrack(name: String, uri: String, kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC, sourceDurationMs: Long = 0L) {
+        val track = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.75f,
+            trimEndMs = sourceDurationMs
+        )
+        _audio.update { it.copy(tracks = it.tracks + track) }
+    }
+
+    fun removeAudioTrack(trackId: String) = _audio.update { s ->
+        s.copy(tracks = s.tracks.filter { it.id != trackId })
+    }
+
+    fun setAudioTrackVolume(trackId: String, vol: Float) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol.coerceIn(0f, 1f)) else it })
+    }
+
+    fun toggleAudioTrackMute(trackId: String) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
+    }
+
+    fun toggleAudioTrackSolo(trackId: String) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it })
+    }
+
+    fun setAudioTrackTrim(trackId: String, startMs: Long, endMs: Long) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map {
+            if (it.id == trackId) it.copy(trimStartMs = startMs.coerceAtLeast(0), trimEndMs = endMs.coerceAtLeast(startMs)) else it
+        })
+    }
+
+    fun setAudioTrackFadeIn(trackId: String, ms: Long) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it })
+    }
+
+    fun setAudioTrackFadeOut(trackId: String, ms: Long) = _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it })
+    }
+
+    /** Mute / unmute the original video audio on the V1 track. */
+    fun setMuteOriginalVideo(muted: Boolean) {
+        _audio.update { it.copy(isMuted = muted) }
+    }
+
+    private fun updateClip(clipId: String, transform: (MediaClip) -> MediaClip) {
+        _state.update { s ->
+            val proj = s.project ?: return@update s
+            val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
+            s.copy(project = proj.copy(clips = newClips))
+        }
     }
 
     fun analyzeAudio(uri: String) {

@@ -80,7 +80,6 @@ fun EditorScreen(
     // from assets. Created once per EditorScreen entry.
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
-    var playbackSpeed by remember { mutableStateOf(1f) }
 
     mediaPicker.registerLaunchers()
 
@@ -222,8 +221,8 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(playbackSpeed) {
-        exoPlayer?.playbackParameters = PlaybackParameters(playbackSpeed)
+    LaunchedEffect(state.playbackSpeed) {
+        exoPlayer?.playbackParameters = PlaybackParameters(state.playbackSpeed)
     }
 
     // Apply the active LUT filter to the ExoPlayer GL surface. ExoPlayer
@@ -315,13 +314,7 @@ fun EditorScreen(
                 state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
             },
             onCut = { vm.cutClipAtPlayhead() },
-            onSpeed = {
-                playbackSpeed = when (playbackSpeed) {
-                    1f -> 1.5f
-                    1.5f -> 2f
-                    else -> 1f
-                }
-            },
+            onSpeed = { vm.openSpeedPanel() },
             onCrop = { vm.setCropMode(!state.cropMode) },
             cropActive = state.cropMode,
             cropAspect = state.cropAspect,
@@ -364,6 +357,70 @@ fun EditorScreen(
                     onFilterSelected = { vm.setActiveFilter(it) },
                     onIntensityChange = { vm.setFilterIntensity(it) },
                     onClose = { vm.closeFilterPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.speedPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeSpeedPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                SpeedRampPanel(
+                    selectedClipId = state.selectedClipId,
+                    currentSpeed = state.playbackSpeed,
+                    activeClipSpeed = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }?.speedMultiplier ?: 1f,
+                    onSelectPreset = { preset ->
+                        state.selectedClipId?.let { vm.applySpeedPreset(it, preset) }
+                        vm.setPlaybackSpeed(preset.multiplier)
+                    },
+                    onCustomSpeed = { v ->
+                        state.selectedClipId?.let { vm.setClipSpeed(it, v) }
+                        vm.setPlaybackSpeed(v)
+                    },
+                    onClose = { vm.closeSpeedPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.audioMixerOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeAudioMixer() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                AudioMixerPanel(
+                    state = vm.audioState.collectAsStateWithLifecycle().value,
+                    muteOriginalVideo = vm.audioState.collectAsStateWithLifecycle().value.isMuted,
+                    onMuteOriginal = { vm.setMuteOriginalVideo(it) },
+                    onAddTrack = { name, uri, kind ->
+                        vm.addAudioTrack(name, uri, kind)
+                    },
+                    onRemoveTrack = { vm.removeAudioTrack(it) },
+                    onVolume = { id, v -> vm.setAudioTrackVolume(id, v) },
+                    onMute = { vm.toggleAudioTrackMute(it) },
+                    onSolo = { vm.toggleAudioTrackSolo(it) },
+                    onTrim = { id, s, e -> vm.setAudioTrackTrim(id, s, e) },
+                    onFadeIn = { id, ms -> vm.setAudioTrackFadeIn(id, ms) },
+                    onFadeOut = { id, ms -> vm.setAudioTrackFadeOut(id, ms) },
+                    onClose = { vm.closeAudioMixer() }
                 )
             }
         }

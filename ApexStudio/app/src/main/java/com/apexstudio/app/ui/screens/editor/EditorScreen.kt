@@ -477,11 +477,11 @@ private fun VideoPreviewSection(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    if (filterColorMatrix != null) {
-                        colorFilter = ColorFilter.colorMatrix(ColorMatrix(filterColorMatrix))
+                .graphicsLayer(
+                    colorFilter = filterColorMatrix?.let { cfm ->
+                        ColorFilter.colorMatrix(ColorMatrix(cfm))
                     }
-                }
+                )
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))

@@ -45,6 +45,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val repo = remember { MediaRepository }
     val projectRepo = remember { ProjectRepository(context) }
     // The home list reads from the persistent ProjectRepository first
@@ -58,7 +59,6 @@ fun HomeScreen(
         val saved = projectRepo.loadAllNow()
         projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
     }
-    val context = LocalContext.current
     val mediaPicker = remember { MediaPickerHelper(context) }
     var pickedMedia by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }
 

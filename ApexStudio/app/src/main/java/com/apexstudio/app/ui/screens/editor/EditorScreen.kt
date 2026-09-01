@@ -253,8 +253,7 @@ fun EditorScreen(
                 val trackRef = arrayOf(kf)
                 add(
                     com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                        trackProvider = { trackRef[0] },
-                        currentTimeMsProvider = { 0L }
+                        trackProvider = { trackRef[0] }
                     ).buildEffects().first()
                 )
             }

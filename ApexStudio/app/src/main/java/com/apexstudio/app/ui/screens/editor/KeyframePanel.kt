@@ -115,7 +115,7 @@ fun KeyframePanel(
             Slider(
                 value = newTimeMs.toFloat(),
                 onValueChange = { newTimeMs = it.toLong() },
-                valueRange = 0f..(newTimeMs.coerceAtLeast(60_000f)).toFloat(),
+                valueRange = 0f..kotlin.math.max(newTimeMs.toFloat(), 60_000f),
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,

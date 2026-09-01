@@ -407,8 +407,8 @@ fun EditorScreen(
                     .clickable(enabled = false) { }
             ) {
                 AudioMixerPanel(
-                    state = vm.audioState.collectAsStateWithLifecycle().value,
-                    muteOriginalVideo = vm.audioState.collectAsStateWithLifecycle().value.isMuted,
+                    state = vm.audio.collectAsStateWithLifecycle().value,
+                    muteOriginalVideo = vm.audio.collectAsStateWithLifecycle().value.isMuted,
                     onMuteOriginal = { vm.setMuteOriginalVideo(it) },
                     onAddTrack = { name, uri, kind ->
                         vm.addAudioTrack(name, uri, kind)

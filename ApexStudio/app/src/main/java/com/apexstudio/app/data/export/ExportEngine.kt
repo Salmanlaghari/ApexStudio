@@ -65,21 +65,31 @@ class ExportEngine(private val context: Context) {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val videoEffects = buildList {
-                    if (config.filterPreset != null && config.filterIntensity > 0f) {
-                        add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
-                    }
+                val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+                if (config.filterPreset != null && config.filterIntensity > 0f) {
+                    videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }
-                val builder = EditedMediaItem.Builder(inputMediaItem)
-                    .setEffects(Effects(emptyList(), videoEffects))
                 if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
-                    // Media3 1.4 exposes setSpeed on the builder; it
-                    // wires an interlinked audio + video speed-change
-                    // effect that maintains A/V sync inside the
-                    // hardware encoder pipeline.
-                    builder.setSpeed(config.clipSpeed.toDouble())
+                    // Media3 1.4's setSpeed() is mutually exclusive
+                    // with custom video effects, so we use the
+                    // interlinked speed-change effect instead — it
+                    // lives inside the same Effects list as the LUT
+                    // filter, maintaining A/V sync without
+                    // sacrificing the colour grade.
+                    val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
+                        override fun getSpeed(timeUs: Long): Float = config.clipSpeed
+                        override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
+                            androidx.media3.common.C.TIME_UNSET
+                    }
+                    val (audioProc, videoEffect) =
+                        androidx.media3.transformer.Effects.createExperimentalSpeedChangingEffect(constantProvider)
+                    audioProcessors.add(audioProc)
+                    videoEffects.add(videoEffect)
                 }
-                val editedMediaItem = builder.build()
+                val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
+                    .setEffects(Effects(audioProcessors, videoEffects))
+                    .build()
 
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {

@@ -29,6 +29,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -477,11 +479,7 @@ private fun VideoPreviewSection(
                 .fillMaxSize()
                 .graphicsLayer {
                     if (filterColorMatrix != null) {
-                        val src = FloatArray(20)
-                        filterColorMatrix.get(src)
-                        colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(
-                            androidx.compose.ui.graphics.ColorMatrix(src)
-                        )
+                        colorFilter = ColorFilter.colorMatrix(ColorMatrix(filterColorMatrix))
                     }
                 }
                 .clip(RoundedCornerShape(16.dp))
@@ -1521,7 +1519,7 @@ private fun Int.pxToDp(): androidx.compose.ui.unit.Dp {
  * cost of a full 3D LUT lookup on every preview frame. The actual
  * LUT is applied at export time via GPUImage + Media3 Transformer.
  */
-private fun buildFilterColorMatrix(filterId: String?, intensity: Float): android.graphics.ColorMatrix? {
+private fun buildFilterColorMatrix(filterId: String?, intensity: Float): FloatArray? {
     if (filterId == null || intensity <= 0f) return null
     val t = intensity.coerceIn(0f, 1f)
     // Base identity matrix
@@ -1612,7 +1610,7 @@ private fun buildFilterColorMatrix(filterId: String?, intensity: Float): android
         "mountain_air" -> tint(m, -0.01f * t, 0f, +0.02f * t, 0f)
         "desert_sand" -> tint(m, +0.04f * t, +0.01f * t, -0.02f * t, 0f)
     }
-    return android.graphics.ColorMatrix(m)
+    return m
 }
 
 private fun tint(m: FloatArray, dr: Float, dg: Float, db: Float, da: Float) {

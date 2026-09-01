@@ -4,11 +4,17 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
-import androidx.media3.transformer.TransformationRequest
-import androidx.media3.transformer.TransformationResult
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.filter.LutFilterEngine
+import com.apexstudio.app.data.filter.LutFilterGlEffect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +29,7 @@ class ExportEngine(private val context: Context) {
 
     private var transformer: Transformer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val lutEngine = LutFilterEngine(context)
 
     data class ExportProgressState(
         val isExporting: Boolean = false,
@@ -34,7 +41,9 @@ class ExportEngine(private val context: Context) {
     data class ExportConfig(
         val resolution: String = "1080p",
         val fps: Int = 60,
-        val quality: String = "high"
+        val quality: String = "high",
+        val filterPreset: FilterPreset? = null,
+        val filterIntensity: Float = 1f
     )
 
     fun startExport(
@@ -52,14 +61,18 @@ class ExportEngine(private val context: Context) {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val request = buildTransformationRequest(config)
+                val videoEffects = buildList {
+                    if (config.filterPreset != null && config.filterIntensity > 0f) {
+                        add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                    }
+                }
+                val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
+                    .setEffects(Effects(emptyList(), videoEffects))
+                    .build()
 
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {
-                        override fun onTransformationCompleted(
-                            mediaItem: MediaItem,
-                            transformationResult: TransformationResult
-                        ) {
+                        override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                             mainHandler.post {
                                 _exportState.value = ExportProgressState(
                                     isExporting = false,
@@ -69,23 +82,25 @@ class ExportEngine(private val context: Context) {
                             }
                         }
 
-                        override fun onTransformationError(
-                            mediaItem: MediaItem,
-                            exception: Exception
+                        override fun onError(
+                            composition: Composition,
+                            exportResult: ExportResult,
+                            exportException: ExportException
                         ) {
                             mainHandler.post {
                                 _exportState.value = ExportProgressState(
                                     isExporting = false,
                                     progress = 0f,
-                                    error = exception.message ?: "Export failed"
+                                    error = exportException.message ?: "Export failed"
                                 )
                             }
                         }
                     })
                     .build()
                 this@ExportEngine.transformer = transformer
-                transformer.start(inputMediaItem, outputFile.absolutePath)
+                transformer.start(editedMediaItem, outputFile.absolutePath)
             } catch (e: Exception) {
+                Log.e("ExportEngine", "Export failed", e)
                 mainHandler.post {
                     _exportState.value = ExportProgressState(
                         isExporting = false,
@@ -95,17 +110,6 @@ class ExportEngine(private val context: Context) {
                 }
             }
         }
-    }
-
-    private fun buildTransformationRequest(config: ExportConfig): TransformationRequest {
-        val videoMime = when (config.resolution) {
-            "4K", "8K" -> MimeTypes.VIDEO_H265
-            else -> MimeTypes.VIDEO_H264
-        }
-        return TransformationRequest.Builder()
-            .setVideoMimeType(videoMime)
-            .setAudioMimeType(MimeTypes.AUDIO_AAC)
-            .build()
     }
 
     fun cancelExport() {

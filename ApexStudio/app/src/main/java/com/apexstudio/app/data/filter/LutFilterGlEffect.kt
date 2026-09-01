@@ -10,6 +10,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
+import androidx.media3.effect.GlShaderProgram
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -140,9 +141,7 @@ class LutFilterGlEffect(
 
         private fun uploadStrip(pixels: IntArray, width: Int, height: Int, size: Int) {
             val tex = IntArray(1)
-            GlUtil.checkGlError("glGenTextures")
             GLES20.glGenTextures(1, tex, 0)
-            GlUtil.checkGlError("glGenTextures")
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
@@ -155,7 +154,7 @@ class LutFilterGlEffect(
                 GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
                 GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf
             )
-            GlUtil.checkGlError("glTexImage2D")
+            GlUtil.checkGlError()
             lutTexId[0] = tex[0]
             lutSize = size
         }

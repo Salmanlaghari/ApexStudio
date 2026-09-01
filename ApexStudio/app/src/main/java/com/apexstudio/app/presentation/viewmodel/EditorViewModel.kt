@@ -84,11 +84,22 @@ class EditorViewModel(
                 _state.update { it.copy(project = null, durationMs = 0L) }
                 return@launch
             }
+            // Auto-select the first video clip in the project so the
+            // preview is mounted immediately. The previous behaviour
+            // left selectedClipId = null on load, which meant the
+            // ExoPlayer-prep LaunchedEffect never ran and the
+            // PlayerView sat empty until the user pressed play. The
+            // play() side of the same effect then fired with no
+            // mediaItem loaded, so the play icon went to "Pause"
+            // but the screen stayed black.
+            val firstClipId = p.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
+                ?: p.clips.firstOrNull()?.id
             _state.update {
                 it.copy(
                     project = p,
                     durationMs = p.durationMs,
-                    canUndo = false, canRedo = false
+                    canUndo = false, canRedo = false,
+                    selectedClipId = it.selectedClipId ?: firstClipId
                 )
             }
         }
@@ -141,9 +152,21 @@ class EditorViewModel(
                         replace -> newClips.firstOrNull()?.id
                         it.selectedClipId != null -> it.selectedClipId
                         else -> newClips.firstOrNull()?.id
-                    }
+                    },
+                    // Auto-play as soon as the user adds media. The
+                    // previous behaviour waited for the user to press
+                    // the play button, which felt broken when the
+                    // video had clearly loaded onto the timeline.
+                    // The isPlaying flag drives the EditorScreen's
+                    // player.play() LaunchedEffect, so the preview
+                    // starts immediately.
+                    isPlaying = true
                 )
             }
+            // Auto-save so the freshly-added clip survives a process
+            // death / app restart. Without this, the editor's state
+            // would be lost the moment the user backgrounds the app.
+            persistProject()
         }
     }
 

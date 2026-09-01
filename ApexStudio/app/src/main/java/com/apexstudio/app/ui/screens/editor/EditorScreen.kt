@@ -180,38 +180,63 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.project?.clips, state.selectedClipId) {
+    LaunchedEffect(exoPlayer, state.selectedClipId) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val clips = state.project?.clips ?: emptyList()
-        val clip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
-        if (clip != null) {
-            val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
-            if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
+        val clipId = state.selectedClipId ?: return@LaunchedEffect
+        val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
+        val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
+        // Compare against the current MediaItem's mediaId. The
+        // MediaItem.mediaId is what we set in the MediaItem itself;
+        // ExoPlayer's currentMediaItem can also be null on a freshly
+        // built player, in which case we still want to load the new
+        // item.
+        if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
+            try {
+                Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
+                CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
+                player.setMediaItem(mediaItem)
+                // Re-assert the current Effect list right after
+                // setMediaItem so the LUT / keyframe GlEffects
+                // attach to a player that actually has media queued.
+                // Without this, the first setVideoEffects call can
+                // land on an empty surface and the LUT never reaches
+                // the GL pipeline (which is what the user sees as
+                // "filter not applied").
                 try {
-                    Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
-                    CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
-                    // New media item — mark not ready until STATE_READY fires.
-                    vm.setPlayerReady(false)
-                    player.setMediaItem(mediaItem)
-                    player.prepare()
-                    Log.d("ApexTrace", "EditorScreen: player prepared")
+                    player.setVideoEffects(buildEffects())
                 } catch (e: Exception) {
-                    Log.e("EditorScreen", "player.prepare() failed", e)
-                } finally {
-                    CrashMarker.clear(context)
+                    Log.e("EditorScreen", "setVideoEffects (after setMediaItem) failed", e)
                 }
-                vm.setPlayerDuration(clip.durationMs)
+                player.prepare()
+                Log.d("ApexTrace", "EditorScreen: player prepared")
+            } catch (e: Exception) {
+                Log.e("EditorScreen", "player.prepare() failed", e)
+            } finally {
+                CrashMarker.clear(context)
             }
+            vm.setPlayerDuration(clip.durationMs)
+            // Auto-play as soon as the new media item is queued. The
+            // previous flow had two separate LaunchedEffects (one for
+            // setMediaItem, one for play()) and the play() call
+            // occasionally fired before STATE_READY, which ExoPlayer
+            // swallowed silently — leaving the screen black. Calling
+            // play() here, right after setMediaItem/prepare, gives
+            // ExoPlayer the cue to start buffering + rendering in
+            // one atomic step. It will buffer until STATE_READY and
+            // then start the surface output.
+            player.playWhenReady = true
+            vm.setPlaying(true)
         }
     }
 
-    LaunchedEffect(exoPlayer, state.isPlaying) {
+    // External play/pause control (e.g. user tapping the play
+    // button on the timeline). Kept separate from the auto-play path
+    // above so manual toggles don't get clobbered when the selected
+    // clip changes.
+    LaunchedEffect(exoPlayer, state.isPlaying, state.selectedClipId) {
         val player = exoPlayer ?: return@LaunchedEffect
+        if (state.selectedClipId == null) return@LaunchedEffect
         if (state.isPlaying) {
-            // If the previous play reached the end of the clip,
-            // ExoPlayer is sitting at STATE_ENDED and play() alone is a
-            // no-op. Rewind to 0 first so the next press actually
-            // restarts playback from the beginning.
             if (player.playbackState == Player.STATE_ENDED) {
                 player.seekTo(0)
             }
@@ -225,43 +250,70 @@ fun EditorScreen(
         exoPlayer?.playbackParameters = PlaybackParameters(state.playbackSpeed)
     }
 
-    // Apply the active LUT filter to the ExoPlayer GL surface. ExoPlayer
-    // tears down and re-creates the GL pipeline on setVideoEffects, so
-    // we only re-apply when the filter id or intensity actually changes.
+    // Compute the active LUT preset + selected keyframe track ONCE
+    // so both the filter-effect and the media-prep effects can
+    // share the same values without duplicating the lookup.
     val activePreset = remember(state.activeFilterId, filterEngine) {
         val id = state.activeFilterId ?: return@remember null
         filterEngine.manifest.filters.firstOrNull { it.id == id }
     }
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val selectedKeyframes = selectedClip?.keyframes
+
+    // Build the current Effect list. Called from the two places
+    // below (the dedicated filter effect, and the media-prep effect
+    // so the filter re-asserts after every setMediaItem — without
+    // this the first setVideoEffects can land on a player that has
+    // no media and silently no-op, so the LUT never reaches the GL
+    // pipeline).
+    fun buildEffects(): List<androidx.media3.common.Effect> = buildList {
+        if (activePreset != null && state.filterIntensity > 0f) {
+            add(
+                com.apexstudio.app.data.filter.LutFilterGlEffect(
+                    context, activePreset, state.filterIntensity
+                )
+            )
+        }
+        val kf = selectedKeyframes
+        if (kf != null && !kf.isEmpty()) {
+            val trackRef = arrayOf(kf)
+            add(
+                com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                    trackProvider = { trackRef[0] }
+                ).buildEffects().first()
+            )
+        }
+    }
+
     LaunchedEffect(exoPlayer, activePreset?.id, state.filterIntensity, selectedKeyframes) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val effects = buildList<androidx.media3.common.Effect> {
-            if (activePreset != null && state.filterIntensity > 0f) {
-                add(
-                    com.apexstudio.app.data.filter.LutFilterGlEffect(
-                        context, activePreset, state.filterIntensity
-                    )
-                )
-            }
-            // Keyframe animation: the MatrixTransformation re-evaluates
-            // getMatrix() for every frame inside Media3 with the actual
-            // presentation timestamp, so once the effect is in the list
-            // it'll drive the playhead animation by itself.
-            val kf = selectedKeyframes
-            if (kf != null && !kf.isEmpty()) {
-                val trackRef = arrayOf(kf)
-                add(
-                    com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                        trackProvider = { trackRef[0] }
-                    ).buildEffects().first()
-                )
-            }
-        }
         try {
-            player.setVideoEffects(effects)
+            player.setVideoEffects(buildEffects())
         } catch (e: Exception) {
-            Log.e("EditorScreen", "setVideoEffects failed", e)
+            Log.e("EditorScreen", "setVideoEffects (filter) failed", e)
+        }
+    }
+
+    // Forward seek requests (from the timeline scrubber, the ±5s
+    // buttons, etc.) into ExoPlayer. The VM only updates
+    // state.playerPositionMs; without this LaunchedEffect the player
+    // would never actually seek and the playhead indicator would
+    // drift away from the frame ExoPlayer is rendering.
+    LaunchedEffect(exoPlayer, state.playerPositionMs) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (state.selectedClipId == null) return@LaunchedEffect
+        // Suppress the very first composition where state and player
+        // are both at 0 — seeking on an empty player is a no-op
+        // and would log a warning.
+        if (player.currentMediaItem == null) return@LaunchedEffect
+        // Avoid feedback loops: the player position poll (delay
+        // 100ms below) writes back to state.playerPositionMs on
+        // every tick, which would otherwise seek the player
+        // 10x/second. Only seek if the difference is meaningful.
+        val target = state.playerPositionMs
+        val current = player.currentPosition
+        if (kotlin.math.abs(current - target) > 80) {
+            player.seekTo(target)
         }
     }
 
@@ -1047,7 +1099,13 @@ private fun TimelineSection(
     val density = LocalDensity.current
     val basePxPerMs = with(density) { 0.16f.dp.toPx() }
     val pxPerMs = basePxPerMs * state.zoomLevel
-    val totalWidth = (state.durationMs * pxPerMs).toInt().coerceAtLeast(0)
+    // Total on-track width is the SUM of every clip's track length
+    // (sequential timeline), not just the longest single clip. If we
+    // used state.durationMs here the user would see a single-clip
+    // filmstrip that's the same length regardless of how many
+    // clips they actually added.
+    val totalTrackMs = clips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+    val totalWidth = (totalTrackMs * pxPerMs).toInt().coerceAtLeast(0)
     val scroll = rememberScrollState()
 
     Column(
@@ -1312,10 +1370,26 @@ private fun VideoTrackRow(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
         ) {
             val widthDp = with(density) { width.toDp() }
+            // Lay the clips out sequentially on the track. Each
+            // clip's on-track start is the running sum of every
+            // previous clip's duration — that way the user sees a
+            // proper filmstrip, not a stack of zero-offset blocks.
+            // We deliberately ignore clip.trimStartMs here because
+            // trim is a *source* offset (where in the original file
+            // playback starts), not a *track* offset.
+            var runningMs = 0L
+            val blocks = clips.map { clip ->
+                val trackStart = runningMs
+                val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
+                runningMs += trackLen
+                Triple(clip, trackStart, trackLen)
+            }
             Box(modifier = Modifier.width(widthDp)) {
-                for (clip in clips) {
+                for ((clip, trackStart, trackLen) in blocks) {
                     VideoClipBlock(
                         clip = clip,
+                        trackStartMs = trackStart,
+                        trackLengthMs = trackLen,
                         pxPerMs = pxPerMs,
                         selected = selectedClipId == clip.id,
                         onSelect = { onSelectClip(clip.id) }
@@ -1329,12 +1403,14 @@ private fun VideoTrackRow(
 @Composable
 private fun VideoClipBlock(
     clip: MediaClip,
+    trackStartMs: Long,
+    trackLengthMs: Long,
     pxPerMs: Float,
     selected: Boolean,
     onSelect: () -> Unit
 ) {
-    val w = ((clip.trimEndMs - clip.trimStartMs) * pxPerMs).toInt().coerceAtLeast(40)
-    val x = (clip.trimStartMs * pxPerMs).toInt()
+    val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
+    val x = (trackStartMs * pxPerMs).toInt()
     val density = LocalDensity.current
     Box(
         modifier = Modifier

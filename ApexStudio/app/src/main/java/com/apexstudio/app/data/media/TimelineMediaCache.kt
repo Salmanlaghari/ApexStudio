@@ -63,7 +63,7 @@ class TimelineMediaCache(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<Map<String, ClipMedia>>(emptyMap())
-    val state: StateFlow<Map<String, ClipMedia>> = _state.asState()
+    val state: StateFlow<Map<String, ClipMedia>> = _state.asStateFlow()
 
     private val inFlight = HashMap<String, Job>()
 

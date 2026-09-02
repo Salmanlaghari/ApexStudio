@@ -46,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.filter.LutFilterEngine
+import com.apexstudio.app.data.media.ClipMedia
 import com.apexstudio.app.data.media.TimelineMediaCache
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException

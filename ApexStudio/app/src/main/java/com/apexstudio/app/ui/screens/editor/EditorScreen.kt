@@ -678,11 +678,12 @@ private fun VideoPreviewSection(
                     }
                 }
 
-            // The actual video surface. Only attached once the player is
-            // built AND has reached STATE_READY. Gating on playerReady is
-            // what avoids the native GL/EGL crash that previously forced
-            // the PlayerView to be removed entirely.
-            if (exoPlayer != null && playerReady) {
+            // The actual video surface. Attached as soon as ExoPlayer is
+            // created — ExoPlayer handles its own surface lifecycle and
+            // will render frames as they become available. The old gating
+            // on playerReady caused the preview to stay black because
+            // STATE_READY never fired on some devices.
+            if (exoPlayer != null) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: attaching PlayerView")
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),

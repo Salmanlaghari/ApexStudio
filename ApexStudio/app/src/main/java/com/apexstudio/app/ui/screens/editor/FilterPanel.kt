@@ -201,9 +201,9 @@ private fun FilterChip(
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(
-                    if (thumbnail != null) Color.Transparent
-                    else Brush.linearGradient(colors)
+                .then(
+                    if (thumbnail != null) Modifier.background(Color.Transparent)
+                    else Modifier.background(Brush.linearGradient(colors))
                 )
                 .border(
                     1.5.dp,

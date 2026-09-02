@@ -181,6 +181,17 @@ class EditorViewModel(
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
     fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.5f, 4f)) }
+    /**
+     * Multiplicative zoom update driven by the pinch gesture.
+     * [factor] is the per-frame relative zoom (e.g. 1.05 for 5%
+     * zoom-in). The new level is the current level × factor, then
+     * clamped to the 0.5x..4x range.
+     */
+    fun multiplyZoom(factor: Float) = _state.update {
+        val current = it.zoomLevel
+        val next = (current * factor).coerceIn(0.5f, 4f)
+        it.copy(zoomLevel = next)
+    }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }

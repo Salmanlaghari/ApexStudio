@@ -29,7 +29,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -43,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.filter.LutFilterEngine
+import com.apexstudio.app.data.media.TimelineMediaCache
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -345,7 +349,7 @@ fun EditorScreen(
         TimelineSection(
             state = state,
             onScrub = { vm.seekTo(it) },
-            onZoom = { vm.setZoom(it) },
+            onZoom = { vm.multiplyZoom(it) },
             onSelectClip = { vm.selectClip(it) },
             onAddMedia = {
                 // The + button lives on the empty timeline now (see
@@ -1063,7 +1067,32 @@ private fun HandleDot(
                 .fillMaxSize()
                 .clip(CircleShape)
                 .background(color.copy(alpha = 0.9f))
-                .border(1.5f.dp, Color.White, CircleShape)
+                 .border(1.5f.dp, Color.White, CircleShape)
+        )
+    }
+}
+
+/**
+ * Compact +/- button used in the timeline zoom row. Calls [onClick]
+ * with no arguments so the caller decides the step size (the
+ * timeline wires it to `multiplyZoom(1.25f)` / `multiplyZoom(1/1.25f)`).
+ */
+@Composable
+private fun ZoomButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = ApexPalette.TextPrimary,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
         )
     }
 }
@@ -1090,12 +1119,53 @@ private fun TimelineSection(
     val totalTrackMs = clips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
     val totalWidth = (totalTrackMs * pxPerMs).toInt().coerceAtLeast(0)
     val scroll = rememberScrollState()
+    val context = LocalContext.current
+
+    // Per-clip timeline media cache. The key is (uri, trackLengthMs,
+    // rendered frame width) so re-zoom or re-trim invalidates the
+    // cache. Loading is fire-and-forget: the ClipBlock shows a
+    // gradient background immediately, then swaps in the real
+    // frames / waveform once extraction finishes — so the timeline
+    // never blocks on a slow MediaMetadataRetriever.
+    val timelineCache = remember { TimelineMediaCache(context) }
+    val mediaByClipId by timelineCache.state.collectAsStateWithLifecycle()
+    // Kick off (or re-kick on zoom / clip-list change) the
+    // background extraction jobs. observe() is idempotent: it
+    // only spawns a new job for keys that aren't already in
+    // flight or already cached.
+    LaunchedEffect(clips, pxPerMs) {
+        timelineCache.observe(clips, pxPerMs)
+    }
+    // Release the cache's background scope when the editor screen
+    // leaves the composition so we don't leak the IO dispatcher.
+    DisposableEffect(Unit) {
+        onDispose { timelineCache.release() }
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
+        // Zoom readout + buttons. The pinch gesture lives on the
+        // scrollable track area below; these buttons give the same
+        // effect for users on devices / emulators without a
+        // multi-touch screen. Both paths go through
+        // vm.multiplyZoom so the level is accumulated correctly.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Zoom ${"%.1f".format(state.zoomLevel)}x",
+                color = ApexPalette.TextSecondary,
+                fontSize = 10.sp,
+                modifier = Modifier.weight(1f)
+            )
+            ZoomButton(label = "−", onClick = { onZoom(1f / 1.25f) })
+            Spacer(Modifier.width(4.dp))
+            ZoomButton(label = "+", onClick = { onZoom(1.25f) })
+        }
         // Empty-state: when the project has no clips yet, show a
         // prominent "+ Add media" call-to-action inside the timeline
         // slot. The preview still plays its placeholder gradient, and
@@ -1228,6 +1298,14 @@ private fun TimelineSection(
                 .background(ApexPalette.BgSurface)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
                 .pointerInput(Unit) {
+                    // Pinch-to-zoom. The previous version passed
+                    // detectTransformGestures' relative `zoom` factor
+                    // straight to setZoom(absolute) — so each
+                    // gesture frame was setting zoom to 1.0x-ish and
+                    // the level never accumulated past one frame.
+                    // The relative factor (1.0x = no change, 1.05x
+                    // = 5% in) is now multiplied into the current
+                    // level so a sustained pinch actually zooms.
                     detectTransformGestures { _, _, zoom, _ ->
                         onZoom(zoom)
                     }
@@ -1245,7 +1323,8 @@ private fun TimelineSection(
                     pxPerMs = pxPerMs,
                     clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO },
                     selectedClipId = state.selectedClipId,
-                    onSelectClip = onSelectClip
+                    onSelectClip = onSelectClip,
+                    mediaByClipId = mediaByClipId
                 )
                 VideoTrackRow(
                     label = "V2",
@@ -1254,7 +1333,8 @@ private fun TimelineSection(
                     pxPerMs = pxPerMs,
                     clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY },
                     selectedClipId = state.selectedClipId,
-                    onSelectClip = onSelectClip
+                    onSelectClip = onSelectClip,
+                    mediaByClipId = mediaByClipId
                 )
                 RealWaveformTrackRow(
                     label = "A1",
@@ -1322,7 +1402,8 @@ private fun VideoTrackRow(
     pxPerMs: Float,
     clips: List<MediaClip>,
     selectedClipId: String?,
-    onSelectClip: (String?) -> Unit
+    onSelectClip: (String?) -> Unit,
+    mediaByClipId: Map<String, ClipMedia> = emptyMap()
 ) {
     val density = LocalDensity.current
     val trackHeightDp = 42.dp
@@ -1375,7 +1456,8 @@ private fun VideoTrackRow(
                         trackLengthMs = trackLen,
                         pxPerMs = pxPerMs,
                         selected = selectedClipId == clip.id,
-                        onSelect = { onSelectClip(clip.id) }
+                        onSelect = { onSelectClip(clip.id) },
+                        media = mediaByClipId[clip.id]
                     )
                 }
             }
@@ -1390,7 +1472,8 @@ private fun VideoClipBlock(
     trackLengthMs: Long,
     pxPerMs: Float,
     selected: Boolean,
-    onSelect: () -> Unit
+    onSelect: () -> Unit,
+    media: ClipMedia? = null
 ) {
     val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
     val x = (trackStartMs * pxPerMs).toInt()
@@ -1404,11 +1487,10 @@ private fun VideoClipBlock(
             .clip(RoundedCornerShape(3.dp))
             .clickable(onClick = onSelect)
     ) {
-        // Faux-frame-thumbnail background. Without an actual thumbnail
-        // extraction pipeline we paint a repeating gradient + tile lines
-        // that read as "video frames tiled across the clip" instead of
-        // a flat purple block. The tile width is tuned to feel like a
-        // ~0.5s filmstrip cell.
+        // 1) Faux-tile background — drawn first so the real
+        //    thumbnails / waveform can layer on top the moment
+        //    TimelineMediaCache finishes extraction. The tile
+        //    pattern reads as "filmstrip" while the data loads.
         Canvas(modifier = Modifier.fillMaxSize()) {
             val tileW = (size.width / 8f).coerceAtLeast(8f)
             val grad = Brush.horizontalGradient(
@@ -1429,7 +1511,6 @@ private fun VideoClipBlock(
                 )
                 i += tileW
             }
-            // subtle vignette at the top + bottom
             drawRect(
                 brush = Brush.verticalGradient(
                     listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent)
@@ -1444,7 +1525,63 @@ private fun VideoClipBlock(
                 size = Size(size.width, size.height * 0.3f)
             )
         }
-        // Border drawn on top of the canvas so it stays crisp.
+        // 2) Real clip content overlays — drawn on top of the
+        //    faux background. The block is wide enough that we
+        //    only render the frames/waveform that intersect the
+        //    visible region, but for a 17-frame filmstrip we just
+        //    draw all of them since they're cheap Canvas blits.
+        if (media != null) {
+            if (clip.type == com.apexstudio.app.domain.model.ClipType.AUDIO ||
+                clip.type == com.apexstudio.app.domain.model.ClipType.SFX
+            ) {
+                // Audio track: render the downsampled waveform.
+                if (media.waveform.isNotEmpty()) {
+                    Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+                        val mid = size.height / 2f
+                        val step = size.width / media.waveform.size
+                        val barWidth = (step * 0.6f).coerceAtLeast(1f)
+                        for (i in media.waveform.indices) {
+                            val v = media.waveform[i].coerceIn(0f, 1f)
+                            val barH = (v * size.height * 0.85f).coerceAtLeast(2f)
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.85f),
+                                start = Offset(i * step, mid - barH / 2f),
+                                end = Offset(i * step, mid + barH / 2f),
+                                strokeWidth = barWidth,
+                                cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Video / overlay track: render the real thumbnail
+                // filmstrip. Each frame is drawn at its slice of the
+                // block width; empty cells (frames not yet
+                // extracted) fall through to the faux background.
+                val frames = media.frames
+                if (frames.isNotEmpty()) {
+                    val cellW = size.width / frames.size
+                    for (i in frames.indices) {
+                        drawImage(
+                            image = frames[i].asImageBitmap(),
+                            srcOffset = IntOffset(0, 0),
+                            srcSize = IntSize(frames[i].width, frames[i].height),
+                            dstOffset = IntOffset((i * cellW).toInt(), 0),
+                            dstSize = IntSize(cellW.toInt().coerceAtLeast(1), size.height.toInt())
+                        )
+                    }
+                    // Soft dark overlay so the clip label stays
+                    // legible over the (potentially bright) frames.
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                        ),
+                        size = Size(size.width, size.height * 0.35f)
+                    )
+                }
+            }
+        }
+        // 3) Border + label are always on top of the media.
         Box(
             modifier = Modifier
                 .fillMaxSize()

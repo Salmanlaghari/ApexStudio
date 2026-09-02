@@ -31,8 +31,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -1535,7 +1533,8 @@ private fun VideoClipBlock(
             if (clip.type == com.apexstudio.app.domain.model.ClipType.AUDIO ||
                 clip.type == com.apexstudio.app.domain.model.ClipType.SFX
             ) {
-                // Audio track: render the downsampled waveform.
+                // Audio track: render the downsampled waveform
+                // as a vertical bar chart.
                 if (media.waveform.isNotEmpty()) {
                     Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
                         val mid = size.height / 2f
@@ -1559,26 +1558,35 @@ private fun VideoClipBlock(
                 // filmstrip. Each frame is drawn at its slice of the
                 // block width; empty cells (frames not yet
                 // extracted) fall through to the faux background.
-                val frames = media.frames
-                if (frames.isNotEmpty()) {
-                    val cellW = size.width / frames.size
-                    for (i in frames.indices) {
-                        drawImage(
-                            image = frames[i].asImageBitmap(),
-                            srcOffset = IntOffset(0, 0),
-                            srcSize = IntSize(frames[i].width, frames[i].height),
-                            dstOffset = IntOffset((i * cellW).toInt(), 0),
-                            dstSize = IntSize(cellW.toInt().coerceAtLeast(1), size.height.toInt())
+                if (media.frames.isNotEmpty()) {
+                    val frames = media.frames
+                    val cellWidth = (size.width.toInt()) / frames.size
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        for (frame in frames) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = frame.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+                    // Soft dark gradient so the clip label stays
+                    // legible over (potentially bright) frames.
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                            ),
+                            size = Size(size.width, size.height * 0.35f)
                         )
                     }
-                    // Soft dark overlay so the clip label stays
-                    // legible over the (potentially bright) frames.
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
-                        ),
-                        size = Size(size.width, size.height * 0.35f)
-                    )
                 }
             }
         }

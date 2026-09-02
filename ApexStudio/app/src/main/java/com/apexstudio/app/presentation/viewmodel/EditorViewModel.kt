@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.graphics.Bitmap
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.engine.AudioEngine
 import com.apexstudio.app.data.engine.ColorGradingEngine
 import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.data.media.MediaAnalyzer
+import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
@@ -47,6 +49,10 @@ class EditorViewModel(
 
     private val _fx = MutableStateFlow<List<ToolItem>>(emptyList())
     val fx: StateFlow<List<ToolItem>> = _fx.asStateFlow()
+
+    // Thumbnail bitmaps keyed by clip ID → list of (timeMs, bitmap)
+    private val _thumbnails = MutableStateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>>(emptyMap())
+    val thumbnails: StateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>> = _thumbnails.asStateFlow()
 
     private val undoStack = ArrayDeque<List<MediaClip>>()
     private val redoStack = ArrayDeque<List<MediaClip>>()
@@ -166,6 +172,31 @@ class EditorViewModel(
             // death / app restart. Without this, the editor's state
             // would be lost the moment the user backgrounds the app.
             persistProject()
+            // Kick off thumbnail extraction for each new clip
+            for (clip in newClips) {
+                if (clip.type == ClipType.VIDEO && context != null) {
+                    loadClipThumbnails(clip)
+                }
+            }
+        }
+    }
+
+    private fun loadClipThumbnails(clip: MediaClip) {
+        val ctx = context ?: return
+        viewModelScope.launch {
+            try {
+                val thumbs = VideoThumbnailExtractor.extractStrip(
+                    context = ctx,
+                    videoUri = clip.uri,
+                    durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L),
+                    count = 12
+                )
+                _thumbnails.update { current ->
+                    current + (clip.id to thumbs)
+                }
+            } catch (e: Exception) {
+                Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
+            }
         }
     }
 

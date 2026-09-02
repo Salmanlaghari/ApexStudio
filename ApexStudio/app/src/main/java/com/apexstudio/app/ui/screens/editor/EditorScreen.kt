@@ -1486,8 +1486,7 @@ private fun VideoClipBlock(
             .padding(1.dp)
             .clip(RoundedCornerShape(3.dp))
             .clickable(onClick = onSelect)
-    ) {
-        // 1) Faux-tile background — drawn first so the real
+    ) {        // 1) Faux-tile background — drawn first so the real
         //    thumbnails / waveform can layer on top the moment
         //    TimelineMediaCache finishes extraction. The tile
         //    pattern reads as "filmstrip" while the data loads.

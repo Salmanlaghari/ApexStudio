@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.engine.AudioEngine
 import com.apexstudio.app.data.engine.ColorGradingEngine
@@ -269,6 +270,43 @@ class EditorViewModel(
     /** id == null clears the active filter (back to original video). */
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
+
+    /**
+     * Generate 1:1 filter preview thumbnails from the video's first frame.
+     * Called automatically when a clip is loaded and the first frame is
+     * available. Each thumbnail is a 128px center-cropped square with the
+     * corresponding LUT applied at full intensity.
+     */
+    fun generateFilterThumbnails(sourceFrame: android.graphics.Bitmap) {
+        if (context == null) return
+        val manifest = try {
+            com.apexstudio.app.data.filter.LutFilterEngine(context!!).manifest
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "Failed to load filter manifest", e)
+            return
+        }
+        _state.update { it.copy(filterThumbnailsLoading = true) }
+        viewModelScope.launch {
+            try {
+                val thumbMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateAll(context!!, sourceFrame, manifest)
+                // Convert Bitmap → ImageBitmap for Compose
+                val composeMap = thumbMap.mapValues { (_, bmp) ->
+                    bmp.asImageBitmap()
+                }
+                _state.update {
+                    it.copy(
+                        filterThumbnails = composeMap,
+                        filterThumbnailsLoading = false
+                    )
+                }
+                Log.d("EditorViewModel", "Generated ${composeMap.size} filter thumbnails")
+            } catch (e: Exception) {
+                Log.e("EditorViewModel", "Filter thumbnail generation failed", e)
+                _state.update { it.copy(filterThumbnailsLoading = false) }
+            }
+        }
+    }
 
     fun openAudioMixer() = _state.update { it.copy(audioMixerOpen = true) }
     fun closeAudioMixer() = _state.update { it.copy(audioMixerOpen = false) }

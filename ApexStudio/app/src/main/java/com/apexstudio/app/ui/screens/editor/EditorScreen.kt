@@ -183,6 +183,26 @@ fun EditorScreen(
         }
     }
 
+    // Generate filter thumbnails from the video's first frame when a clip
+    // is loaded. Uses MediaMetadataRetriever to extract frame 0, then
+    // passes it to FilterThumbnailGenerator which applies each LUT preset
+    // via GPUImage and produces 1:1 center-cropped 128px thumbnails.
+    LaunchedEffect(state.selectedClipId) {
+        val clipId = state.selectedClipId ?: return@LaunchedEffect
+        val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
+        try {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(context, android.net.Uri.parse(clip.uri))
+            val frame = retriever.getFrameAtTime(0)
+            retriever.release()
+            if (frame != null) {
+                vm.generateFilterThumbnails(frame)
+            }
+        } catch (e: Exception) {
+            Log.w("ApexTrace", "EditorScreen: failed to extract first frame for thumbnails", e)
+        }
+    }
+
     // Compute the active LUT preset + selected keyframe track ONCE
     // so both the filter-effect and the media-prep effects can
     // share the same values without duplicating the lookup.
@@ -408,6 +428,7 @@ fun EditorScreen(
                     activeFilterId = state.activeFilterId,
                     intensity = state.filterIntensity,
                     activeCategory = state.filterCategory,
+                    thumbnails = state.filterThumbnails,
                     onCategoryChange = { vm.setFilterCategory(it) },
                     onFilterSelected = { vm.setActiveFilter(it) },
                     onIntensityChange = { vm.setFilterIntensity(it) },

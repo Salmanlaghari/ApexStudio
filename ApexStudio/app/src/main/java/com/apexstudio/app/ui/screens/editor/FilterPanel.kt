@@ -23,7 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.filter.FilterManifest
@@ -45,6 +48,7 @@ fun FilterPanel(
     activeFilterId: String?,
     intensity: Float,
     activeCategory: String,
+    thumbnails: Map<String?, androidx.compose.ui.graphics.ImageBitmap> = emptyMap(),
     onCategoryChange: (String) -> Unit,
     onFilterSelected: (String?) -> Unit,
     onIntensityChange: (Float) -> Unit,
@@ -130,6 +134,7 @@ fun FilterPanel(
                     label = "Original",
                     filterId = null,
                     selected = activeFilterId == null,
+                    thumbnail = thumbnails[null],
                     onClick = { onFilterSelected(null) }
                 )
             }
@@ -138,6 +143,7 @@ fun FilterPanel(
                     label = preset.name,
                     filterId = preset.id,
                     selected = activeFilterId == preset.id,
+                    thumbnail = thumbnails[preset.id],
                     onClick = { onFilterSelected(preset.id) }
                 )
             }
@@ -179,6 +185,7 @@ private fun FilterChip(
     label: String,
     filterId: String?,
     selected: Boolean,
+    thumbnail: androidx.compose.ui.graphics.ImageBitmap? = null,
     onClick: () -> Unit
 ) {
     val colors = filterPreviewColors(filterId)
@@ -194,8 +201,9 @@ private fun FilterChip(
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.linearGradient(colors)
+                .then(
+                    if (thumbnail != null) Modifier.background(Color.Transparent)
+                    else Modifier.background(Brush.linearGradient(colors))
                 )
                 .border(
                     1.5.dp,
@@ -204,13 +212,32 @@ private fun FilterChip(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            if (selected) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+            // Show real thumbnail if available, otherwise gradient fallback
+            if (thumbnail != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = thumbnail,
+                    contentDescription = label,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(10.dp))
                 )
+            }
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .clip(RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
         Spacer(Modifier.height(4.dp))

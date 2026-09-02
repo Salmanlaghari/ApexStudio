@@ -206,6 +206,13 @@ class LutFilterGlEffect(
         // y=r, x=b*size+g. We split the blue channel into floor/ceil
         // slice indices and bilinearly blend the two slices — the
         // same scheme the cyberagent GPUImage library uses.
+        //
+        // Note: x is divided by (size * size) (the texture width), not
+        // by `size`. A previous version divided by `size`, which put
+        // the sample coordinate at ~2.0 for a 17-size LUT — way past
+        // the texture's right edge — and made the filter read
+        // clamped-edge garbage, which is why the preview looked
+        // untouched even when a filter was "applied".
         private val FRAGMENT_SHADER = """
             precision mediump float;
             varying vec2 vTextureCoord;
@@ -221,8 +228,9 @@ class LutFilterGlEffect(
                 float bT = bIdx - bLow;
                 float gF = color.g * (uLutSize - 1.0);
                 float rF = color.r * (uLutSize - 1.0);
-                float xLow = (bLow + gF) / uLutSize;
-                float xHigh = (bHigh + gF) / uLutSize;
+                float widthF = uLutSize * uLutSize;
+                float xLow = (bLow * uLutSize + gF) / widthF;
+                float xHigh = (bHigh * uLutSize + gF) / widthF;
                 float yCoord = rF / uLutSize;
                 vec3 lo = texture2D(uLutSampler, vec2(xLow, yCoord)).rgb;
                 vec3 hi = texture2D(uLutSampler, vec2(xHigh, yCoord)).rgb;

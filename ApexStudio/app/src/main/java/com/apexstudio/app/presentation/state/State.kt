@@ -35,6 +35,11 @@ data class EditorState(
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
     val filterCategory: String = "cinematic",
+    // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
+    // Populated asynchronously when a clip is loaded; the FilterPanel
+    // shows these instead of gradient color blocks.
+    val filterThumbnails: Map<String?, androidx.compose.ui.graphics.ImageBitmap> = emptyMap(),
+    val filterThumbnailsLoading: Boolean = false,
     // Global playback speed applied to the ExoPlayer preview. Mirrors
     // the speed of the currently selected clip; the speed panel also
     // lets the user set it independently for quick time-lapse previews.

@@ -1560,7 +1560,6 @@ private fun VideoClipBlock(
                 // extracted) fall through to the faux background.
                 if (media.frames.isNotEmpty()) {
                     val frames = media.frames
-                    val cellWidth = (size.width.toInt()) / frames.size
                     Row(modifier = Modifier.fillMaxSize()) {
                         for (frame in frames) {
                             Box(

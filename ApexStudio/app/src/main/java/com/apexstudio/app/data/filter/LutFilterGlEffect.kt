@@ -66,9 +66,22 @@ class LutFilterGlEffect(
                 GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
             )
 
+            // uTransformationMatrix: pass-through NDC positions [-1,1]
             val identity = GlUtil.create4x4IdentityMatrix()
             glProgram.setFloatsUniform("uTransformationMatrix", identity)
-            glProgram.setFloatsUniform("uTexTransformationMatrix", identity)
+
+            // uTexTransformationMatrix: map NDC [-1,1] → UV [0,1]
+            // Without this, vTextureCoord is in [-1,1] which causes
+            // CLAMP_TO_EDGE to repeat edge pixels across 3/4 of the
+            // frame — the exact corruption pattern (colored stripes +
+            // partial video in upper-right) seen in the preview.
+            val texMatrix = floatArrayOf(
+                0.5f, 0f, 0f, 0f,   // col0: x' = 0.5*x
+                0f, 0.5f, 0f, 0f,   // col1: y' = 0.5*y
+                0f, 0f, 1f, 0f,     // col2: z' = z
+                0.5f, 0.5f, 0f, 1f  // col3: +0.5 bias for x,y
+            )
+            glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
             glProgram.setFloatUniform("uIntensity", intensity)
 
             if (preset != null) {
@@ -214,7 +227,7 @@ class LutFilterGlEffect(
         // clamped-edge garbage, which is why the preview looked
         // untouched even when a filter was "applied".
         private val FRAGMENT_SHADER = """
-            precision mediump float;
+            precision highp float;
             varying vec2 vTextureCoord;
             uniform sampler2D uTexSampler;
             uniform sampler2D uLutSampler;
@@ -222,6 +235,9 @@ class LutFilterGlEffect(
             uniform float uIntensity;
             void main() {
                 vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // 3D LUT lookup via 2D strip texture.
+                // Strip layout: width = uLutSize², height = uLutSize.
+                // Blue slice b: columns [b*size .. b*size+size), row r.
                 float bIdx = color.b * (uLutSize - 1.0);
                 float bLow = floor(bIdx);
                 float bHigh = min(bLow + 1.0, uLutSize - 1.0);
@@ -229,9 +245,11 @@ class LutFilterGlEffect(
                 float gF = color.g * (uLutSize - 1.0);
                 float rF = color.r * (uLutSize - 1.0);
                 float widthF = uLutSize * uLutSize;
-                float xLow = (bLow * uLutSize + gF) / widthF;
-                float xHigh = (bHigh * uLutSize + gF) / widthF;
-                float yCoord = rF / uLutSize;
+                // Half-pixel offset (+0.5) so we sample the center
+                // of each LUT texel instead of the edge.
+                float xLow  = (bLow  * uLutSize + gF + 0.5) / widthF;
+                float xHigh = (bHigh * uLutSize + gF + 0.5) / widthF;
+                float yCoord = (rF + 0.5) / uLutSize;
                 vec3 lo = texture2D(uLutSampler, vec2(xLow, yCoord)).rgb;
                 vec3 hi = texture2D(uLutSampler, vec2(xHigh, yCoord)).rgb;
                 vec3 graded = mix(lo, hi, bT);

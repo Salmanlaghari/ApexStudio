@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
@@ -52,8 +51,7 @@ fun ExportScreen(
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
     var selectedResolution by remember { mutableStateOf("4K") }
     var selectedFps by remember { mutableStateOf(60f) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val exportEngine = remember { ExportEngine(context) }
+
 
     Column(
         modifier = Modifier
@@ -256,14 +254,14 @@ fun ExportScreen(
                     )
                 )
                 .clickable {
-                    vm.startExport()
-                    exportEngine.startExport(
-                        vm.state.value.project?.clips?.firstOrNull()?.uri ?: return@clickable,
-                        ExportEngine.ExportConfig(
-                            resolution = selectedResolution,
-                            fps = selectedFps.toInt(),
-                            quality = "high"
-                        )
+                    // Single export path: the ViewModel's engine bakes
+                    // crop + LUT filter + FX + speed + keyframes + text
+                    // overlays into the MP4 and mirrors progress into
+                    // vm.export for the button / gauge below.
+                    vm.startExport(
+                        resolution = selectedResolution,
+                        fps = selectedFps.toInt(),
+                        quality = "high"
                     )
                 },
             contentAlignment = Alignment.Center

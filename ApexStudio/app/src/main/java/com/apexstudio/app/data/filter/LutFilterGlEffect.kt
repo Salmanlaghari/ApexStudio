@@ -1,7 +1,9 @@
 package com.apexstudio.app.data.filter
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.opengl.GLES20
+import android.opengl.GLUtils
 import android.util.Log
 import androidx.media3.common.VideoFrameProcessingException
 import androidx.media3.common.util.GlProgram
@@ -160,13 +162,19 @@ class LutFilterGlEffect(
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-            val buf = java.nio.ByteBuffer.allocateDirect(pixels.size * 4).order(java.nio.ByteOrder.nativeOrder())
-            for (p in pixels) buf.putInt(p)
-            buf.position(0)
-            GLES20.glTexImage2D(
-                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf
-            )
+            // Upload through a Bitmap (via GLUtils) rather than packing
+            // the IntArray into a ByteBuffer manually: putInt on a
+            // little-endian native buffer writes bytes as B,G,R,A, so a
+            // raw glTexImage2D would swap every channel (red↔blue) in
+            // the LUT and silently distort every filter's colours.
+            // Bitmap.createBitmap + GLUtils.texImage2D keeps the ARGB
+            // channel order correct on every platform.
+            val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+            try {
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            } finally {
+                bitmap.recycle()
+            }
             GlUtil.checkGlError()
             lutTexId[0] = tex[0]
             lutSize = size

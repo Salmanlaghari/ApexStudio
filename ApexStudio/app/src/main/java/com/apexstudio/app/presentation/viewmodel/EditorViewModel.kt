@@ -335,7 +335,8 @@ class EditorViewModel(
                 fps = _export.value.settings.frameRate,
                 quality = _export.value.settings.quality.label.lowercase(),
                 clipSpeed = speed,
-                keyframes = selected?.keyframes ?: KeyframeTrack()
+                keyframes = selected?.keyframes ?: KeyframeTrack(),
+                cropRect = _state.value.cropRect.takeIf { !it.isFullFrame() }
             )
         )
     }

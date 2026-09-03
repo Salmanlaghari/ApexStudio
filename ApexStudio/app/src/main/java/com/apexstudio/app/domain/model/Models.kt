@@ -83,7 +83,7 @@ data class TextOverlay(
             colorArgb = colorArgb, bgArgb = bgArgb
         )
     }
-})
+}
 
 enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX }
 

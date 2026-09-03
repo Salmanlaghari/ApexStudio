@@ -71,6 +71,22 @@ class EditorViewModel(
         loadProject()
         loadLuts()
         loadAudioState()
+        // Mirror the engine's real export progress into the VM state
+        // the Export screen renders (progress %, output uri, error).
+        exportEngine?.exportState?.let { engineState ->
+            viewModelScope.launch {
+                engineState.collect { st ->
+                    _export.update {
+                        it.copy(
+                            isExporting = st.isExporting,
+                            progress = st.progress,
+                            outputUri = st.outputUri,
+                            error = st.error
+                        )
+                    }
+                }
+            }
+        }
         Log.d("ApexTrace", "EditorViewModel.init end")
         context?.let { CrashMarker.mark(it, "EditorViewModel.init completed") }
     }
@@ -314,29 +330,136 @@ class EditorViewModel(
     fun closeSpeedPanel() = _state.update { it.copy(speedPanelOpen = false) }
     fun setPlaybackSpeed(speed: Float) = _state.update { it.copy(playbackSpeed = speed.coerceIn(0.25f, 8f)) }
 
+    // ---- Real-time FX ----
+    fun openFxPanel() = _state.update { it.copy(fxPanelOpen = true) }
+    fun closeFxPanel() = _state.update { it.copy(fxPanelOpen = false) }
+    /** id == null clears the active FX (back to clean video). */
+    fun setActiveFx(id: String?) = _state.update { it.copy(activeFxId = id) }
+    fun setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
+
+    // ---- Text overlays ----
+    fun openTextPanel() = _state.update { it.copy(textPanelOpen = true) }
+    fun closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }
+    fun selectTextOverlay(id: String?) = _state.update { it.copy(selectedTextOverlayId = id) }
+
+    /** Add a caption to [clipId], centred by default. */
+    fun addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.5f) {
+        val overlay = com.apexstudio.app.domain.model.TextOverlay.of(
+            text = text, x = x, y = y
+        )
+        updateClip(clipId) { it.copy(textOverlays = it.textOverlays + overlay) }
+        _state.update { it.copy(selectedTextOverlayId = overlay.id) }
+    }
+
+    /** Generic per-overlay update used by the Text panel. */
+    fun updateTextOverlay(clipId: String, overlayId: String, transform: (com.apexstudio.app.domain.model.TextOverlay) -> com.apexstudio.app.domain.model.TextOverlay) {
+        updateClip(clipId) { clip ->
+            clip.copy(
+                textOverlays = clip.textOverlays.map {
+                    if (it.id == overlayId) transform(it) else it
+                }
+            )
+        }
+    }
+
+    /** Move a caption by a normalised (0..1 of the frame) delta. */
+    fun moveTextOverlay(
+        clipId: String,
+        overlayId: String,
+        dx: Float,
+        dy: Float,
+        persist: Boolean = true
+    ) {
+        updateClip(clipId, persist = persist) { clip ->
+            clip.copy(
+                textOverlays = clip.textOverlays.map {
+                    if (it.id == overlayId) {
+                        it.copy(
+                            x = (it.x + dx).coerceIn(0.04f, 0.96f),
+                            y = (it.y + dy).coerceIn(0.06f, 0.94f)
+                        )
+                    } else it
+                }
+            )
+        }
+    }
+
+    /**
+     * Persist the project immediately. Drag gestures suppress the
+     * per-frame DataStore writes of [moveTextOverlay]; call this when
+     * the gesture ends so the final position survives an app restart.
+     */
+    fun flushProject() = persistProject()
+
+    fun setTextOverlayText(clipId: String, overlayId: String, text: String) =
+        updateTextOverlay(clipId, overlayId) { it.copy(text = text) }
+
+    fun setTextOverlayColor(clipId: String, overlayId: String, colorArgb: Long) =
+        updateTextOverlay(clipId, overlayId) { it.copy(colorArgb = colorArgb) }
+
+    fun setTextOverlayBg(clipId: String, overlayId: String, bgArgb: Long?) =
+        updateTextOverlay(clipId, overlayId) { it.copy(bgArgb = bgArgb) }
+
+    fun setTextOverlaySize(clipId: String, overlayId: String, sizeScale: Float) =
+        updateTextOverlay(clipId, overlayId) { it.copy(sizeScale = sizeScale.coerceIn(0.4f, 3f)) }
+
+    fun removeTextOverlay(clipId: String, overlayId: String) {
+        updateClip(clipId) { clip ->
+            clip.copy(textOverlays = clip.textOverlays.filterNot { it.id == overlayId })
+        }
+        if (_state.value.selectedTextOverlayId == overlayId) {
+            _state.update { it.copy(selectedTextOverlayId = null) }
+        }
+    }
+
     fun updateExport(upd: (ExportSettings) -> ExportSettings) {
         _export.update { it.copy(settings = upd(it.settings)) }
     }
 
-    fun startExport() {
-        _export.update { it.copy(isExporting = true, progress = 0f) }
-        val selected = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
-            ?: _state.value.project?.clips?.firstOrNull()
+    /**
+     * Start the hardware-accelerated export of the selected clip with
+     * the *full* edit stack baked in: crop, LUT filter, FX, speed,
+     * keyframe animation and text overlays — every effect that is
+     * live in the editor preview.
+     */
+    fun startExport(
+        resolution: String = _export.value.settings.resolution,
+        fps: Int = _export.value.settings.frameRate,
+        quality: String = _export.value.settings.quality.label.lowercase()
+    ) {
+        val s = _state.value
+        val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
+            ?: s.project?.clips?.firstOrNull()
         val inputUri = selected?.uri ?: return
-        // Reuse the selected clip's speedMultiplier so the exported
-        // MP4 matches the in-editor preview rate. If no clip is
-        // selected, fall back to the global playback speed slider
-        // (useful for projects that haven't loaded a clip yet).
-        val speed = selected?.speedMultiplier ?: _state.value.playbackSpeed
-        exportEngine?.startExport(
+        val engine = exportEngine ?: return
+        _export.update { it.copy(isExporting = true, progress = 0f) }
+
+        // Resolve the active LUT preset (same source the preview uses).
+        var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
+        if (s.activeFilterId != null && context != null) {
+            try {
+                filterPreset = com.apexstudio.app.data.filter.LutFilterEngine(context!!).manifest.filters
+                    .firstOrNull { it.id == s.activeFilterId }
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "Failed to load filter manifest for export", e)
+            }
+        }
+        val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
+        val speed = selected?.speedMultiplier ?: s.playbackSpeed
+        engine.startExport(
             inputUri,
             ExportEngine.ExportConfig(
-                resolution = _export.value.settings.resolution,
-                fps = _export.value.settings.frameRate,
-                quality = _export.value.settings.quality.label.lowercase(),
+                resolution = resolution,
+                fps = fps,
+                quality = quality,
+                filterPreset = filterPreset,
+                filterIntensity = s.filterIntensity,
+                fxPreset = fxPreset,
+                fxIntensity = s.fxIntensity,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
-                cropRect = _state.value.cropRect.takeIf { !it.isFullFrame() }
+                cropRect = s.cropRect.takeIf { !it.isFullFrame() },
+                textOverlays = selected?.textOverlays ?: emptyList()
             )
         )
     }
@@ -501,13 +624,17 @@ class EditorViewModel(
         _audio.update { it.copy(isMuted = muted) }
     }
 
-    private fun updateClip(clipId: String, transform: (MediaClip) -> MediaClip) {
+    private fun updateClip(
+        clipId: String,
+        transform: (MediaClip) -> MediaClip,
+        persist: Boolean = true
+    ) {
         _state.update { s ->
             val proj = s.project ?: return@update s
             val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
             s.copy(project = proj.copy(clips = newClips))
         }
-        persistProject()
+        if (persist) persistProject()
     }
 
     // ---- Keyframes ----

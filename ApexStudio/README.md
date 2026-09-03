@@ -43,7 +43,7 @@ High-end & Powerful Android Video Editor
 | `data/filter/LutFilterEngine.kt` | Loads `.cube` files via `CubeLutParser`, reads `filter_manifest.json` |
 | `data/filter/LutFilterBuilder.kt` | GPUImage-based alternative path (for bitmap processing) |
 | `data/filter/FilterManifest.kt` | `FilterPreset`, `FilterCategory`, `FilterManifest` data models |
-| `data/export/ExportEngine.kt` | Wires `LutFilterGlEffect` into Transformer export pipeline |
+| `data/export/ExportEngine.kt` | Wires crop + LUT + FX + keyframes + text overlays into the Transformer export pipeline |
 | `ui/screens/editor/FilterPanel.kt` | Compose UI — category tabs, filter chips, intensity slider |
 | `assets/shaders/lut_shader.glsl` | Standalone reference GLSL ES 3.0 fragment shader (512×512 PNG LUT) |
 | `assets/shaders/vertex_shader.glsl` | Standalone reference passthrough vertex shader |
@@ -101,7 +101,38 @@ This is the same technique used by GPUImage's `GPUImageLookupFilter` and CapCut/
 6. **Urban & Moody** — Cold City, Street Blue, Muted Tones, Industrial, Rainy Window
 7. **Food & Landscape** — Vibrant Punch, Forest Green, Sunset Gold, Ocean Blue, Golden Hour
 
-### Export Integration
+## FX Pipeline — Real-Time Effects
+
+Companion to the LUT filters, the FX tool runs spatial/temporal looks
+(Vignette, Film Grain, VHS, Glitch, Pixelate, Chromatic Aberration,
+Scanlines, Soft Blur) through a single GLSL ES 2.0 fragment-shader
+pipeline (`FxGlEffect`). Every preset consumes `uIntensity` (the FX
+slider) plus `uTime`/`uTexel` uniforms so grain flickers, glitch
+slices tear, and VHS tracking bars roll with the frame's presentation
+time — live in the ExoPlayer preview and baked into the export.
+
+| File | Purpose |
+|------|---------|
+| `data/fx/FxPreset.kt` | The 8 FX presets (id + label) |
+| `data/fx/FxGlEffect.kt` | Media3 `GlEffect` — per-preset GLSL fragment shaders, intensity/time/texel uniforms |
+| `ui/screens/editor/FxPanel.kt` | Bottom-sheet FX picker — preset tiles + intensity slider |
+
+## Text Overlays / Captions
+
+Captions and titles are stored per-clip as `TextOverlay` models with
+normalised (0..1) coordinates so the on-screen preview and the baked
+MP4 line up 1:1:
+
+- `TextSpriteRenderer` rasterises the caption set (auto-fit font,
+  colour, optional pill background) onto a transparent sprite.
+- The editor preview composites that sprite over the video content
+  rect and lets the user drag captions while the Text panel is open.
+- `TextOverlayGlEffect` uploads the same sprite as a second GL
+texture and alpha-composites it per export frame.
+- `ui/screens/editor/TextPanel.kt` — add / select / edit text, colour,
+  pill and size for every caption on the clip.
+
+## Export Integration
 
 The `ExportEngine` creates `LutFilterGlEffect` instances and attaches them to `EditedMediaItem.Effects`:
 
@@ -149,9 +180,19 @@ ApexStudio/
         │   │   ├── LutFilterEngine.kt   ← .cube loader + manifest parser
         │   │   ├── LutFilterBuilder.kt  ← GPUImage alternative path
         │   │   └── FilterManifest.kt    ← Data models
+        │   ├── data/fx/
+        │   │   ├── FxPreset.kt          ← FX preset catalog
+        │   │   └── FxGlEffect.kt        ← Media3 GlEffect (VHS/Glitch/Grain/…)
+        │   ├── data/text/
+        │   │   └── TextSpriteRenderer.kt ← caption → transparent sprite
+        │   ├── data/effect/
+        │   │   ├── VideoCropGlEffect.kt  ← Media3 GlEffect crop window
+        │   │   └── TextOverlayGlEffect.kt ← caption sprite compositor
         │   ├── data/export/
-        │   │   └── ExportEngine.kt      ← Transformer export with LUT
+        │   │   └── ExportEngine.kt      ← Transformer export with LUT+FX+captions
         │   └── ui/screens/editor/
-        │       └── FilterPanel.kt       ← Compose filter picker UI
+        │       ├── FilterPanel.kt       ← Compose filter picker UI
+        │       ├── FxPanel.kt           ← Compose FX picker UI
+        │       └── TextPanel.kt         ← Compose caption editor UI
         └── res/
 ```

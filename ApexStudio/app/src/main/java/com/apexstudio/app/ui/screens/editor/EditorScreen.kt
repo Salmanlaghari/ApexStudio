@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,7 +55,9 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.text.TextSpriteRenderer
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.NeonIconButton
@@ -211,8 +214,16 @@ fun EditorScreen(
         val id = state.activeFilterId ?: return@remember null
         filterEngine.manifest.filters.firstOrNull { it.id == id }
     }
+    // Real-time FX preset (VHS / Glitch / …) resolved from the FX
+    // panel selection. Rendered by FxGlEffect right after the LUT.
+    val activeFx = remember(state.activeFxId) {
+        com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
+    }
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val selectedKeyframes = selectedClip?.keyframes
+    // Captions attached to the selected clip (for the live preview
+    // overlay + the Text panel).
+    val selectedTextOverlays = selectedClip?.textOverlays ?: emptyList()
 
     // Crop is applied through VideoCropGlEffect (added to the effect
     // chain whenever the crop rect is not the full frame). The overlay
@@ -234,12 +245,14 @@ fun EditorScreen(
     val currentEffects = remember(
         activePreset,
         state.filterIntensity,
+        activeFx,
+        state.fxIntensity,
         selectedKeyframes,
         appliedCropRect
     ) {
         buildList<androidx.media3.common.Effect> {
-            // Crop first: the LUT + keyframes then grade/transform the
-            // already-cropped frame, exactly like the export path.
+            // Crop first: the LUT + FX + keyframes then grade/transform
+            // the already-cropped frame, exactly like the export path.
             VideoCropGlEffect.fromRect(
                 appliedCropRect.left,
                 appliedCropRect.top,
@@ -250,6 +263,13 @@ fun EditorScreen(
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity
+                    )
+                )
+            }
+            if (activeFx != null && state.fxIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.fx.FxGlEffect(
+                        activeFx, state.fxIntensity
                     )
                 )
             }
@@ -388,6 +408,20 @@ fun EditorScreen(
             cropAspect = state.cropAspect,
             onCropRectChange = { vm.setCropRect(it) },
             onResetCrop = { vm.resetCrop() },
+            overlays = selectedTextOverlays.filter { it.isActiveAt(state.playerPositionMs) },
+            selectedTextOverlayId = state.selectedTextOverlayId,
+            textInteractionEnabled = state.textPanelOpen,
+            onTextDrag = { dx, dy ->
+                val clipId = state.selectedClipId
+                val overlayId = state.selectedTextOverlayId
+                if (clipId != null && overlayId != null) {
+                    // Suppress per-frame DataStore saves while the finger
+                    // moves (dozens of events per drag); the drag-end
+                    // callback flushes the final position once.
+                    vm.moveTextOverlay(clipId, overlayId, dx, dy, persist = false)
+                }
+            },
+            onTextDragEnd = { vm.flushProject() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -426,8 +460,8 @@ fun EditorScreen(
             filtersActive = state.activeFilterId != null || state.filterPanelOpen,
             onColor = onColor,
             onAudio = onAudio,
-            onText = { vm.setKeyframePanelOpen(true) },
-            onFx = { /* placeholder */ },
+            onText = { vm.openTextPanel() },
+            onFx = { vm.openFxPanel() },
             onExport = {},
             modifier = Modifier
                 .fillMaxWidth()
@@ -492,6 +526,94 @@ fun EditorScreen(
                         vm.setPlaybackSpeed(v)
                     },
                     onClose = { vm.closeSpeedPanel() }
+                )
+            }
+        }
+    }
+
+    // FX picker — real-time effects (Vignette, Grain, VHS, Glitch, …).
+    // Selecting a preset immediately swaps the FxGlEffect attached to the
+    // live preview; the same preset is baked into the export.
+    if (state.fxPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeFxPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                FxPanel(
+                    activeFxId = state.activeFxId,
+                    intensity = state.fxIntensity,
+                    onFxSelected = { vm.setActiveFx(it) },
+                    onIntensityChange = { vm.setFxIntensity(it) },
+                    // Close the FX sheet when the user jumps to the
+                    // Keyframe animation panel so the two bottom sheets
+                    // never stack on top of each other.
+                    onKeyframesClick = {
+                        vm.setKeyframePanelOpen(true)
+                        vm.closeFxPanel()
+                    },
+                    onClose = { vm.closeFxPanel() }
+                )
+            }
+        }
+    }
+
+    // Text / caption editor. Lists every caption on the selected clip,
+    // edits the selected one, and adds new captions at the playhead.
+    // While open, the preview overlay becomes draggable so captions can
+    // be repositioned directly on the video.
+    if (state.textPanelOpen) {
+        val textClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        val textOverlays = textClip?.textOverlays ?: emptyList()
+        val activeOverlayId = state.selectedTextOverlayId
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeTextPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                TextPanel(
+                    overlays = textOverlays,
+                    selectedId = activeOverlayId,
+                    onAdd = { textClip?.let { vm.addTextOverlay(it.id) } },
+                    onSelect = { vm.selectTextOverlay(it) },
+                    onTextChange = { text ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayText(textClip.id, activeOverlayId, text)
+                        }
+                    },
+                    onColorChange = { argb ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayColor(textClip.id, activeOverlayId, argb)
+                        }
+                    },
+                    onBgChange = { argb ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayBg(textClip.id, activeOverlayId, argb)
+                        }
+                    },
+                    onSizeChange = { scale ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlaySize(textClip.id, activeOverlayId, scale)
+                        }
+                    },
+                    onDelete = { overlayId ->
+                        textClip?.let { vm.removeTextOverlay(it.id, overlayId) }
+                    },
+                    onClose = { vm.closeTextPanel() }
                 )
             }
         }
@@ -642,6 +764,11 @@ private fun VideoPreviewSection(
     cropAspect: com.apexstudio.app.presentation.state.CropAspect,
     onCropRectChange: (com.apexstudio.app.presentation.state.CropRect) -> Unit,
     onResetCrop: () -> Unit,
+    overlays: List<TextOverlay> = emptyList(),
+    selectedTextOverlayId: String? = null,
+    textInteractionEnabled: Boolean = false,
+    onTextDrag: (Float, Float) -> Unit = { _, _ -> },
+    onTextDragEnd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -807,6 +934,81 @@ private fun VideoPreviewSection(
                         aspect = cropAspect,
                         onRectChange = onCropRectChange,
                         onReset = onResetCrop
+                    )
+                }
+            }
+
+            // Caption layer: rasterised with the SAME TextSpriteRenderer
+            // the export GL effect uses, composited over the video
+            // content rect (identical to the crop overlay geometry), so
+            // on-screen captions line up 1:1 with the baked MP4.
+            // Drag-to-position is armed only while the Text panel is
+            // open and a caption is selected.
+            //
+            // Rasterisation is keyed on the caption CONTENT (text /
+            // style / position), not the filtered list identity — the
+            // playhead poll rebuilds the filtered list ~10x/second
+            // while the video plays, and re-rendering a full-frame
+            // bitmap on every poll would jank the preview. Captions
+            // only repaint when they are edited, dragged, or cross a
+            // visibility window boundary.
+            if (!cropMode && overlays.isNotEmpty()) {
+                val contentWpxF = with(density) { contentW.toPx() }.coerceAtLeast(1f)
+                val contentHpxF = with(density) { contentH.toPx() }.coerceAtLeast(1f)
+                val spriteKey = remember(overlays, selectedTextOverlayId) {
+                    buildString {
+                        overlays.forEach { o ->
+                            append(o.id).append(';')
+                                .append(o.text).append(';')
+                                .append(o.x).append(';').append(o.y).append(';')
+                                .append(o.sizeScale).append(';')
+                                .append(o.colorArgb).append(';').append(o.bgArgb).append(';')
+                                .append(o.startMs).append(';').append(o.endMs).append(';')
+                                .append(o.id == selectedTextOverlayId).append('|')
+                        }
+                    }.toString()
+                }
+                val sprite: androidx.compose.ui.graphics.ImageBitmap = remember(
+                    spriteKey, contentWpxF.toInt(), contentHpxF.toInt()
+                ) {
+                    TextSpriteRenderer.render(
+                        overlays = overlays,
+                        width = contentWpxF.toInt(),
+                        height = contentHpxF.toInt(),
+                        highlightId = selectedTextOverlayId
+                    ).asImageBitmap()
+                }
+                // Dragging is disabled while the video plays so the
+                // caption stays glued to the frame it's timed to; tap
+                // pause, reposition, then play again.
+                val dragEnabled = textInteractionEnabled &&
+                    selectedTextOverlayId != null && !isPlaying
+                Box(
+                    modifier = Modifier
+                        .offset(x = contentX, y = contentY)
+                        .width(contentW)
+                        .height(contentH)
+                        .then(
+                            if (dragEnabled) {
+                                Modifier.pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragEnd = { onTextDragEnd() },
+                                        onDragCancel = { onTextDragEnd() }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        onTextDrag(
+                                            dragAmount.x / contentWpxF,
+                                            dragAmount.y / contentHpxF
+                                        )
+                                    }
+                                }
+                            } else Modifier
+                        )
+                ) {
+                    Image(
+                        bitmap = sprite,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }

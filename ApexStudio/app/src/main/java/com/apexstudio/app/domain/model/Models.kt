@@ -29,8 +29,61 @@ data class MediaClip(
     // by the Keyframe panel, the GL effect applies the interpolated
     // translate / scale / rotation / opacity on every preview
     // frame and bakes the same into the exported video.
-    val keyframes: KeyframeTrack = KeyframeTrack()
+    val keyframes: KeyframeTrack = KeyframeTrack(),
+    // Caption / title overlays attached to this clip. Each overlay
+    // carries its own text, style, and a normalised (0..1) anchor
+    // inside the video frame so the preview (Compose layer) and the
+    // export (TextOverlayGlEffect) render the text at exactly the
+    // same relative position and size.
+    val textOverlays: List<TextOverlay> = emptyList()
 )
+
+/**
+ * A text overlay (caption / title) rendered on top of a video clip.
+ *
+ * Position and font scale are *normalised* to the video frame:
+ * [x], [y] are the centre of the text as fractions of the frame
+ * width / height (0..1), and [sizeScale] multiplies a base font
+ * size of ~7% of the frame height. Because both the editor preview
+ * and the export GL effect resolve these against the same frame
+ * geometry, what you drag on screen is exactly what bakes into the
+ * MP4.
+ *
+ * Colours are stored as 0xAARRGGBB longs so the JSON project file
+ * stays readable; null [bgArgb] means no pill behind the text.
+ */
+@Serializable
+data class TextOverlay(
+    val id: String,
+    val text: String = "Text",
+    // Normalised centre (0..1) inside the video frame.
+    val x: Float = 0.5f,
+    val y: Float = 0.5f,
+    val sizeScale: Float = 1f,
+    val colorArgb: Long = 0xFFFFFFFFL,
+    val bgArgb: Long? = null,
+    // Active window on the clip's timeline (ms). Defaults to the
+    // whole clip.
+    val startMs: Long = 0L,
+    val endMs: Long = Long.MAX_VALUE
+) {
+    fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+
+    companion object {
+        fun of(
+            id: String = java.util.UUID.randomUUID().toString(),
+            text: String = "Text",
+            x: Float = 0.5f,
+            y: Float = 0.5f,
+            sizeScale: Float = 1f,
+            colorArgb: Long = 0xFFFFFFFFL,
+            bgArgb: Long? = null
+        ): TextOverlay = TextOverlay(
+            id = id, text = text, x = x, y = y, sizeScale = sizeScale,
+            colorArgb = colorArgb, bgArgb = bgArgb
+        )
+    }
+})
 
 enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX }
 

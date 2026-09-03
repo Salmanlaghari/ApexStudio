@@ -12,10 +12,14 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.filter.LutFilterGlEffect
+import com.apexstudio.app.data.fx.FxGlEffect
+import com.apexstudio.app.data.fx.FxPreset
+import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +30,10 @@ import java.io.File
 class ExportEngine(private val context: Context) {
 
     private val _exportState = MutableStateFlow(ExportProgressState())
+
+    companion object {
+        private const val TAG = "ExportEngine"
+    }
     val exportState: StateFlow<ExportProgressState> = _exportState
 
     private var transformer: Transformer? = null
@@ -58,7 +66,16 @@ class ExportEngine(private val context: Context) {
         // for every output frame so the translate / scale / rotation
         // / opacity bakes into the MP4.
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
-            com.apexstudio.app.domain.model.KeyframeTrack()
+            com.apexstudio.app.domain.model.KeyframeTrack(),
+        // Real-time FX (VHS / Glitch / Grain / …). Applied right after
+        // the LUT filter so colour first, then spatial FX.
+        val fxPreset: FxPreset? = null,
+        val fxIntensity: Float = 1f,
+        // Captions / titles baked into the export. Each overlay gets
+        // its own TextOverlayGlEffect that composites a rasterised
+        // sprite (same geometry as the editor preview) over the
+        // frame after crop / grade / transform.
+        val textOverlays: List<TextOverlay> = emptyList()
     )
 
     fun startExport(
@@ -87,6 +104,9 @@ class ExportEngine(private val context: Context) {
                 if (config.filterPreset != null && config.filterIntensity > 0f) {
                     videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }
+                if (config.fxPreset != null && config.fxIntensity > 0f) {
+                    videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity))
+                }
                 if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
                     // Media3 1.4's setSpeed() is mutually exclusive
                     // with custom video effects, so we use the
@@ -113,6 +133,15 @@ class ExportEngine(private val context: Context) {
                             trackProvider = { config.keyframes }
                         ).buildEffects().first()
                     )
+                }
+                // Captions last, so they sit on top of the colour
+                // grade / FX / transform instead of being re-graded.
+                val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() }
+                if (captionOverlays.isNotEmpty()) {
+                    val aspect = queryAspectRatio(inputUri)
+                    captionOverlays.forEach { overlay ->
+                        videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                    }
                 }
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
                     .setEffects(Effects(audioProcessors, videoEffects))
@@ -158,6 +187,30 @@ class ExportEngine(private val context: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * Best-effort source aspect ratio, used to size caption sprites so
+     * normalised text coordinates map 1:1 onto the exported frame.
+     * Falls back to 16:9 when the metadata can't be read.
+     */
+    private fun queryAspectRatio(inputUri: String): Float = try {
+        val retriever = android.media.MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, Uri.parse(inputUri))
+            val w = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+            )?.toIntOrNull() ?: 0
+            val h = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+            )?.toIntOrNull() ?: 0
+            if (w > 0 && h > 0) w.toFloat() / h.toFloat() else 16f / 9f
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "queryAspectRatio failed for $inputUri", e)
+        16f / 9f
     }
 
     fun cancelExport() {

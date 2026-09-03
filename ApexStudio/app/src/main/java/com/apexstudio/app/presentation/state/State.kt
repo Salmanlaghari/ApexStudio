@@ -49,7 +49,17 @@ data class EditorState(
     // Set to true while the Speed Ramping bottom sheet is open.
     val speedPanelOpen: Boolean = false,
     // Set to true while the Keyframe Animation bottom sheet is open.
-    val keyframePanelOpen: Boolean = false
+    val keyframePanelOpen: Boolean = false,
+    // Real-time FX (VHS, Glitch, Grain, …). activeFxId == null means
+    // no FX; intensity is the 0..1 slider exposed in the FX panel.
+    val fxPanelOpen: Boolean = false,
+    val activeFxId: String? = null,
+    val fxIntensity: Float = 1f,
+    // Text overlay editing. textPanelOpen is true while the bottom
+    // sheet is up; selectedTextOverlayId points at the caption being
+    // edited / dragged on the preview.
+    val textPanelOpen: Boolean = false,
+    val selectedTextOverlayId: String? = null
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

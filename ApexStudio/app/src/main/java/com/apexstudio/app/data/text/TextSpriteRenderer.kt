@@ -72,15 +72,13 @@ object TextSpriteRenderer {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
             color = overlay.colorArgb.toInt()
-            // Auto-fit long captions: start at the requested size and
-            // shrink until the string fits the safe width.
-            var size = height * BASE_FONT_FRACTION * overlay.sizeScale.coerceIn(0.3f, 4f)
-            textSize = size
-            val maxW = width * MAX_TEXT_WIDTH_FRACTION
-            if (paint.measureText(overlay.text) > maxW) {
-                size *= maxW / paint.measureText(overlay.text)
-                textSize = size
-            }
+            textSize = height * BASE_FONT_FRACTION * overlay.sizeScale.coerceIn(0.3f, 4f)
+        }
+        // Auto-fit long captions: start at the requested size and
+        // shrink until the string fits the safe width.
+        val maxW = width * MAX_TEXT_WIDTH_FRACTION
+        if (paint.measureText(overlay.text) > maxW) {
+            paint.textSize *= maxW / paint.measureText(overlay.text)
         }
 
         // Vertical centering: align the text block's middle (between

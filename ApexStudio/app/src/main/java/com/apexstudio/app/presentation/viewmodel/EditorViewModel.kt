@@ -624,10 +624,14 @@ class EditorViewModel(
         _audio.update { it.copy(isMuted = muted) }
     }
 
+    // NOTE: `persist` must be declared BEFORE `transform` so callers
+    // can keep using the trailing-lambda form
+    // `updateClip(clipId) { clip -> ... }` (a trailing lambda always
+    // binds to the LAST parameter).
     private fun updateClip(
         clipId: String,
-        transform: (MediaClip) -> MediaClip,
-        persist: Boolean = true
+        persist: Boolean = true,
+        transform: (MediaClip) -> MediaClip
     ) {
         _state.update { s ->
             val proj = s.project ?: return@update s

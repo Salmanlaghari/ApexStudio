@@ -138,8 +138,13 @@ class FxGlEffect(
             uniform vec2 uTexel;
         """.trimIndent()
 
-        private fun hash2(x: Float, y: Float): Float =
-            "fract(sin(dot(vec2(x, y), vec2(12.9898, 78.233))) * 43758.5453)"
+        /**
+         * GLSL code fragment for a cheap hash of a 2D vector. [x] and
+         * [y] are raw GLSL expressions (e.g. pixel coords derived from
+         * varyings), so they are interpolated into the shader text.
+         */
+        private fun hash2(x: String, y: String): String =
+            "fract(sin(dot(vec2($x, $y), vec2(12.9898, 78.233))) * 43758.5453)"
 
         private fun vignetteShader(): String = """
             $HEADER

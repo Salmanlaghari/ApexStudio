@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
+import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.ClipMedia
 import com.apexstudio.app.data.media.TimelineMediaCache
@@ -213,13 +214,38 @@ fun EditorScreen(
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val selectedKeyframes = selectedClip?.keyframes
 
+    // Crop is applied through VideoCropGlEffect (added to the effect
+    // chain whenever the crop rect is not the full frame). The overlay
+    // updates on every drag frame; the actual effect re-creation is
+    // debounced ~60ms so dragging stays smooth instead of tearing down
+    // the GL pipeline on every pointer event. The export pipeline uses
+    // the final (undebounced) rect from state.
+    var appliedCropRect by remember { mutableStateOf(state.cropRect) }
+    LaunchedEffect(state.cropRect) {
+        delay(60)
+        appliedCropRect = state.cropRect
+    }
+
     // The current Effect list, memoised as a stable value (not a
     // local function — those can't be captured by a LaunchedEffect's
     // coroutine because the function reference isn't stable across
     // recompositions). Re-evaluated only when the active filter /
-    // intensity / selected clip's keyframes actually change.
-    val currentEffects = remember(activePreset, state.filterIntensity, selectedKeyframes) {
+    // intensity / crop / selected clip's keyframes actually change.
+    val currentEffects = remember(
+        activePreset,
+        state.filterIntensity,
+        selectedKeyframes,
+        appliedCropRect
+    ) {
         buildList<androidx.media3.common.Effect> {
+            // Crop first: the LUT + keyframes then grade/transform the
+            // already-cropped frame, exactly like the export path.
+            VideoCropGlEffect.fromRect(
+                appliedCropRect.left,
+                appliedCropRect.top,
+                appliedCropRect.right,
+                appliedCropRect.bottom
+            )?.let { add(it) }
             if (activePreset != null && state.filterIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
@@ -356,6 +382,8 @@ fun EditorScreen(
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
             cropMode = state.cropMode,
+            videoWidth = state.videoWidth,
+            videoHeight = state.videoHeight,
             cropRect = state.cropRect,
             cropAspect = state.cropAspect,
             onCropRectChange = { vm.setCropRect(it) },
@@ -608,6 +636,8 @@ private fun VideoPreviewSection(
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
     cropMode: Boolean,
+    videoWidth: Int,
+    videoHeight: Int,
     cropRect: com.apexstudio.app.presentation.state.CropRect,
     cropAspect: com.apexstudio.app.presentation.state.CropAspect,
     onCropRectChange: (com.apexstudio.app.presentation.state.CropRect) -> Unit,
@@ -624,11 +654,29 @@ private fun VideoPreviewSection(
     // through above the rounded preview corners. Padding is now 0;
     // the weight slot controls the height and the inner Box fills it
     // edge-to-edge.
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth(),
         contentAlignment = Alignment.TopCenter
     ) {
+        // Content-area metrics: the PlayerView letterboxes the video
+        // inside this slot (RESIZE_MODE_FIT), so the actual video only
+        // occupies the inner rect below. The crop overlay is aligned to
+        // that rect — its normalized coordinates are then 1:1 with the
+        // video frame, matching VideoCropGlEffect and the export.
+        val density = LocalDensity.current
+        val containerWpx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+        val containerHpx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+        val containerAspect = containerWpx / containerHpx
+        val videoAspect =
+            if (videoWidth > 0 && videoHeight > 0) videoWidth.toFloat() / videoHeight.toFloat()
+            else containerAspect
+        val contentWFrac = minOf(1f, videoAspect / containerAspect)
+        val contentHFrac = minOf(1f, containerAspect / videoAspect)
+        val contentW = maxWidth * contentWFrac
+        val contentH = maxHeight * contentHFrac
+        val contentX = (maxWidth - contentW) / 2f
+        val contentY = (maxHeight - contentH) / 2f
         // Tap-to-toggle: split the surface into three zones so the user
         // can also seek ±5s by tapping the left/right thirds, while
         // tapping the centre toggles play/pause.
@@ -648,7 +696,10 @@ private fun VideoPreviewSection(
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
-                .clickable { onTogglePlay() },
+                .then(
+                    if (cropMode) Modifier
+                    else Modifier.clickable { onTogglePlay() }
+                ),
             contentAlignment = Alignment.Center
         ) {
             // Background placeholder: gradient + play-icon overlay while the
@@ -740,18 +791,24 @@ private fun VideoPreviewSection(
                 )
             }
 
-            // Crop overlay: only mounted when cropMode is on. Darkens
-            // the area outside the crop rectangle and renders draggable
-            // handles on the four edges + four corners. The
-            // normalised rect (0..1) is mapped to the actual container
-            // size in pixels for the drag math.
+            // Crop overlay: mounted only while cropMode is on. It sits
+            // over the video CONTENT rect (not the letterbox bars), so
+            // the normalised crop rect maps 1:1 onto the video frame
+            // and matches VideoCropGlEffect / the export output.
             if (cropMode) {
-                CropOverlay(
-                    rect = cropRect,
-                    aspect = cropAspect,
-                    onRectChange = onCropRectChange,
-                    onReset = onResetCrop
-                )
+                Box(
+                    modifier = Modifier
+                        .offset(x = contentX, y = contentY)
+                        .width(contentW)
+                        .height(contentH)
+                ) {
+                    CropOverlay(
+                        rect = cropRect,
+                        aspect = cropAspect,
+                        onRectChange = onCropRectChange,
+                        onReset = onResetCrop
+                    )
+                }
             }
 
             // Timecode chip (top-end). The previous bottom control row
@@ -783,31 +840,37 @@ private fun VideoPreviewSection(
         // these pointer-input handlers sit on top and consume taps in
         // the outer thirds so the user can scrub ±5s without hunting
         // for on-screen buttons.
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-        ) {
-            Box(
+        //
+        // While crop mode is on both the zones and the tap-to-play
+        // surface are disabled so the crop handles can never be
+        // shadowed by an invisible tap catcher.
+        if (!cropMode) {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        detectTapGestures { onPrev() }
-                    }
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(Unit) {
-                        detectTapGestures { onNext() }
-                    }
-            )
+                    .fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .pointerInput(Unit) {
+                            detectTapGestures { onPrev() }
+                        }
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .pointerInput(Unit) {
+                            detectTapGestures { onNext() }
+                        }
+                )
+            }
         }
     }
 }

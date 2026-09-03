@@ -12,6 +12,7 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.filter.LutFilterGlEffect
@@ -44,6 +45,10 @@ class ExportEngine(private val context: Context) {
         val quality: String = "high",
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
+        // Normalized (0..1, top-left origin) crop rect applied with the
+        // same VideoCropGlEffect the editor preview uses, so the baked
+        // export matches the crop the user framed on screen.
+        val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         // Speed ramping: when set, applied to the exported clip via
         // EditedMediaItem.setSpeed so the time-lapse / slow-mo is
         // baked into the hardware-encoded output.
@@ -73,6 +78,12 @@ class ExportEngine(private val context: Context) {
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+                // Crop first so the colour grade and speed/keyframe
+                // passes below operate on the cropped frame.
+                config.cropRect?.let { r ->
+                    VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom)
+                        ?.let { videoEffects.add(it) }
+                }
                 if (config.filterPreset != null && config.filterIntensity > 0f) {
                     videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }

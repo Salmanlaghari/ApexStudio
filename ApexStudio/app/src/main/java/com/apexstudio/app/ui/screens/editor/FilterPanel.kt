@@ -192,27 +192,24 @@ private fun FilterChip(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(74.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .width(80.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(4.dp)
+            .padding(vertical = 2.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(76.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .then(
-                    if (thumbnail != null) Modifier.background(Color.Transparent)
-                    else Modifier.background(Brush.linearGradient(colors))
-                )
+                .background(Brush.linearGradient(colors))
                 .border(
-                    1.5.dp,
+                    2.dp,
                     if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                     RoundedCornerShape(10.dp)
-                ),
-            contentAlignment = Alignment.Center
+                )
         ) {
-            // Show real thumbnail if available, otherwise gradient fallback
+            // Real 1:1 filter preview (video frame + this LUT applied) —
+            // drawn over the fallback gradient so the tile is never empty.
             if (thumbnail != null) {
                 androidx.compose.foundation.Image(
                     bitmap = thumbnail,
@@ -223,31 +220,61 @@ private fun FilterChip(
                         .clip(RoundedCornerShape(10.dp))
                 )
             }
+            // Selection ring tint
             if (selected) {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .clip(RoundedCornerShape(10.dp)),
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .clip(RoundedCornerShape(10.dp))
+                )
+            }
+            // Name banner — scrim on the bottom of the tile so the
+            // label stays readable over any thumbnail.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(26.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f))
+                        )
+                    )
+            )
+            Text(
+                label,
+                color = if (selected) ApexPalette.NeonCyan else Color.White,
+                fontSize = 8.sp,
+                lineHeight = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+            // Check badge when selected
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(ApexPalette.NeonCyan),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                        tint = Color.Black,
+                        modifier = Modifier.size(10.dp)
                     )
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1
-        )
     }
 }
 

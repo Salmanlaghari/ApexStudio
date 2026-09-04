@@ -150,7 +150,12 @@ class EditorViewModel(
 
             val firstVideo = newClips.firstOrNull { it.type == ClipType.VIDEO }
             val waveform = if (firstVideo != null && context != null) {
-                mediaAnalyzer?.analyzeAudioWaveform(firstVideo.uri, context)?.samples ?: FloatArray(0)
+                mediaAnalyzer?.analyzeAudioWaveform(
+                    firstVideo.uri, context,
+                    sampleCount = 200,
+                    trimStartMs = firstVideo.trimStartMs,
+                    trimEndMs = firstVideo.trimEndMs
+                )?.samples ?: FloatArray(0)
             } else {
                 FloatArray(0)
             }
@@ -543,6 +548,41 @@ class EditorViewModel(
     }
     fun setWaveformSamples(samples: FloatArray) {
         _audio.update { it.copy(waveformSamples = samples) }
+    }
+
+    /** Waveform strip drawn on the A1 track of the timeline. */
+    fun setTimelineWaveform(samples: FloatArray) = _state.update {
+        it.copy(audioWaveform = samples)
+    }
+
+    /**
+     * Decode the *selected* clip's real audio envelope into the A1
+     * timeline waveform (MediaCodec PCM decode bounded to the clip's
+     * trim window). Called whenever the selected clip changes so the
+     * strip always reflects the clip under the playhead.
+     */
+    fun refreshTimelineWaveform(clipId: String) {
+        val ctx = context ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        if (clip.type != com.apexstudio.app.domain.model.ClipType.VIDEO) {
+            setTimelineWaveform(FloatArray(0))
+            return
+        }
+        val analyzer = mediaAnalyzer ?: return
+        viewModelScope.launch {
+            try {
+                val data = analyzer.analyzeAudioWaveform(
+                    clip.uri, ctx,
+                    sampleCount = 200,
+                    trimStartMs = clip.trimStartMs,
+                    trimEndMs = clip.trimEndMs
+                )
+                setTimelineWaveform(data.samples)
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "Waveform decode failed for ${clip.id}", e)
+                setTimelineWaveform(FloatArray(0))
+            }
+        }
     }
     fun setRecordingState(recording: Boolean) {
         _audio.update { it.copy(isRecording = recording) }

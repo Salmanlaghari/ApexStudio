@@ -1,13 +1,18 @@
 package com.apexstudio.app.ui.screens.editor
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -25,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -33,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -42,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.filter.LutFilterEngine
@@ -66,6 +72,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 fun EditorScreen(
@@ -194,6 +201,9 @@ fun EditorScreen(
     LaunchedEffect(state.selectedClipId) {
         val clipId = state.selectedClipId ?: return@LaunchedEffect
         val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
+        // Keep the A1 timeline waveform in sync with the selected
+        // clip (MediaCodec PCM decode of the clip's audio track).
+        vm.refreshTimelineWaveform(clipId)
         try {
             val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(context, android.net.Uri.parse(clip.uri))
@@ -347,6 +357,20 @@ fun EditorScreen(
             player.setVideoEffects(currentEffects)
         } catch (e: Exception) {
             Log.e("EditorScreen", "setVideoEffects (filter) failed", e)
+        }
+        // Media3 only renders video effects while frames are being
+        // produced. When the player is PAUSED the surface keeps its
+        // pre-change frame, so a freshly tapped filter, a new crop
+        // window, or an intensity-slider move would look "broken"
+        // (nothing changes) until the user hits play. Nudge a
+        // one-frame re-render so the new GL pipeline shows up
+        // instantly on a paused preview too.
+        if (!player.isPlaying && player.playbackState == Player.STATE_READY) {
+            try {
+                player.seekTo(player.currentPosition.coerceAtLeast(0L))
+            } catch (e: Exception) {
+                Log.w("EditorScreen", "paused preview re-render seek failed", e)
+            }
         }
     }
 
@@ -775,6 +799,29 @@ private fun VideoPreviewSection(
     CrashMarker.mark(LocalContext.current, "EditorScreen: VideoPreviewSection")
     val context = LocalContext.current
 
+    // Playback feedback: a big translucent centre icon (play / pause /
+    // ⏪ / ⏩) flashes for ~1s and fades out whenever the user taps the
+    // video surface or a quick-seek button. A monotonically increasing
+    // seq number stops an older flash from clearing a newer one.
+    val feedbackScope = rememberCoroutineScope()
+    val feedbackAlpha = remember { Animatable(0f) }
+    var feedbackIcon by remember { mutableStateOf<ImageVector?>(null) }
+    var feedbackSeq = 0
+    fun flashFeedback(icon: ImageVector) {
+        feedbackSeq++
+        val seq = feedbackSeq
+        feedbackIcon = icon
+        feedbackScope.launch {
+            feedbackAlpha.stop()
+            feedbackAlpha.snapTo(0f)
+            feedbackAlpha.animateTo(1f, tween(130))
+            kotlinx.coroutines.delay(650)
+            if (feedbackSeq != seq) return@launch
+            feedbackAlpha.animateTo(0f, tween(320))
+            if (feedbackSeq == seq) feedbackIcon = null
+        }
+    }
+
     // The outer Box no longer adds vertical padding around the video
     // surface. A previous 4.dp vertical padding combined with the
     // weight(0.35f) slot produced a thin strip of background bleeding
@@ -825,7 +872,12 @@ private fun VideoPreviewSection(
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
                 .then(
                     if (cropMode) Modifier
-                    else Modifier.clickable { onTogglePlay() }
+                    else Modifier.clickable {
+                        flashFeedback(
+                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+                        )
+                        onTogglePlay()
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -1013,6 +1065,33 @@ private fun VideoPreviewSection(
                 }
             }
 
+            // Centre flash feedback: big translucent icon that fades
+            // out ~1s after play/pause/±5s actions.
+            val fbIcon = feedbackIcon
+            if (fbIcon != null && !cropMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(feedbackAlpha.value),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            fbIcon, null,
+                            tint = Color.White.copy(alpha = 0.95f),
+                            modifier = Modifier.size(46.dp)
+                        )
+                    }
+                }
+            }
+
             // Timecode chip (top-end). The previous bottom control row
             // (add / prev / rewind / play / forward / next) has been
             // removed entirely — the user now toggles play/pause by
@@ -1056,7 +1135,10 @@ private fun VideoPreviewSection(
                         .weight(1f)
                         .fillMaxHeight()
                         .pointerInput(Unit) {
-                            detectTapGestures { onPrev() }
+                            detectTapGestures {
+                                flashFeedback(Icons.Default.FastRewind)
+                                onPrev()
+                            }
                         }
                 )
                 Box(
@@ -1069,11 +1151,62 @@ private fun VideoPreviewSection(
                         .weight(1f)
                         .fillMaxHeight()
                         .pointerInput(Unit) {
-                            detectTapGestures { onNext() }
+                            detectTapGestures {
+                                flashFeedback(Icons.Default.FastForward)
+                                onNext()
+                            }
                         }
                 )
             }
+            // Visible ⏪ / ⏩ quick-seek buttons layered over the tap
+            // zones, centre-left / centre-right of the video. Hidden in
+            // crop mode so they never shadow the crop handles.
+            Row(
+                modifier = Modifier
+                    .fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                QuickSeekButton(
+                    icon = Icons.Default.FastRewind,
+                    contentDescription = "Seek back 5s"
+                ) {
+                    flashFeedback(Icons.Default.FastRewind)
+                    onPrev()
+                }
+                QuickSeekButton(
+                    icon = Icons.Default.FastForward,
+                    contentDescription = "Seek forward 5s"
+                ) {
+                    flashFeedback(Icons.Default.FastForward)
+                    onNext()
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun QuickSeekButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 14.dp)
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.32f))
+            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon, contentDescription,
+            tint = Color.White.copy(alpha = 0.95f),
+            modifier = Modifier.size(22.dp)
+        )
     }
 }
 
@@ -1407,6 +1540,41 @@ private fun TimelineSection(
     val scroll = rememberScrollState()
     val context = LocalContext.current
 
+    // Viewport width of the track area (used by the auto-follow effect
+    // to keep the playhead inside the visible band while playing).
+    var timelineViewportPx by remember { mutableStateOf(0) }
+
+    /** x-pixel on the timeline → timeline ms (ruler + track seekers). */
+    fun timelineMsAt(xPx: Float): Long {
+        if (pxPerMs <= 0f) return 0L
+        val t = ((xPx + scroll.value) / pxPerMs).toLong()
+        return t.coerceIn(0L, state.durationMs)
+    }
+
+    // Playhead auto-scroll: while the video plays, nudge the scroll
+    // offset whenever the playhead leaves the middle band of the
+    // viewport, so the strip follows the video instead of running
+    // out of frame. Tap/drag scrubs pause via the playhead anyway;
+    // pinch zoom changes pxPerMs and restarts the effect.
+    LaunchedEffect(state.isPlaying, state.playerPositionMs, pxPerMs, timelineViewportPx) {
+        if (!state.isPlaying || timelineViewportPx <= 0 || scroll.isScrollInProgress) {
+            return@LaunchedEffect
+        }
+        if (totalWidth <= timelineViewportPx) return@LaunchedEffect
+        val headPx = state.playerPositionMs * pxPerMs
+        val band = timelineViewportPx * 0.35f
+        val cur = scroll.value
+        val target = when {
+            headPx < cur + band -> (headPx - band).coerceAtLeast(0f)
+            headPx > cur + timelineViewportPx - band ->
+                (headPx - (timelineViewportPx - band)).coerceAtMost(totalWidth.toFloat() - timelineViewportPx)
+            else -> return@LaunchedEffect
+        }
+        if (kotlin.math.abs(cur - target) > 4f) {
+            scroll.scrollTo(target.toInt().coerceAtLeast(0))
+        }
+    }
+
     // Per-clip timeline media cache. The key is (uri, trackLengthMs,
     // rendered frame width) so re-zoom or re-trim invalidates the
     // cache. Loading is fire-and-forget: the ClipBlock shows a
@@ -1572,6 +1740,40 @@ private fun TimelineSection(
                     )
                 }
             }
+            // Ruler scrubber: tap or single-finger drag on the ruler
+            // seeks the player instantly. Multi-touch is left
+            // unconsumed so pinch-zoom on the tracks below still works.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(state.durationMs, pxPerMs) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val startX = down.position.x
+                            var dragging = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) break
+                                if (event.changes.size > 1) break // pinch -> zoom
+                                if (!change.pressed) {
+                                    if (!dragging) onScrub(timelineMsAt(change.position.x))
+                                    break
+                                }
+                                if (!dragging &&
+                                    kotlin.math.abs(change.position.x - startX) >
+                                    viewConfiguration.touchSlop
+                                ) {
+                                    dragging = true
+                                }
+                                if (dragging) {
+                                    change.consume()
+                                    onScrub(timelineMsAt(change.position.x))
+                                }
+                            }
+                        }
+                    }
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -1583,6 +1785,7 @@ private fun TimelineSection(
                 .clip(RoundedCornerShape(10.dp))
                 .background(ApexPalette.BgSurface)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .onSizeChanged { timelineViewportPx = it.width }
                 .pointerInput(Unit) {
                     // Pinch-to-zoom. The previous version passed
                     // detectTransformGestures' relative `zoom` factor
@@ -1666,13 +1869,37 @@ private fun TimelineSection(
                 }
             }
 
+            // Tap / single-finger-drag anywhere on the timeline (V1,
+            // V2, A1, FX tracks) seeks the player instantly. Horizontal
+            // drags scrub instead of scrolling; pinch still zooms.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(state.durationMs, pxPerMs) {
-                        detectTapGestures { off ->
-                            val t = ((off.x + scroll.value) / pxPerMs).toLong()
-                            onScrub(t.coerceIn(0, state.durationMs))
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val startX = down.position.x
+                            var dragging = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) break
+                                if (event.changes.size > 1) break // pinch -> zoom
+                                if (!change.pressed) {
+                                    if (!dragging) onScrub(timelineMsAt(change.position.x))
+                                    break
+                                }
+                                if (!dragging &&
+                                    kotlin.math.abs(change.position.x - startX) >
+                                    viewConfiguration.touchSlop
+                                ) {
+                                    dragging = true
+                                }
+                                if (dragging) {
+                                    change.consume()
+                                    onScrub(timelineMsAt(change.position.x))
+                                }
+                            }
                         }
                     }
             )

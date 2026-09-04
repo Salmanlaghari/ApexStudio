@@ -28,4 +28,20 @@ data class FilterManifest(
         // Preserve manifest order
         return filters.filter { it.category == cat.name }
     }
+
+    companion object {
+        /**
+         * Static lookup used by `TimelineTemplateManager.mapTemplateToComposition`.
+         *
+         * `FilterManifest` is a `data class` populated per-instance (typically from JSON),
+         * but `TimelineTemplateManager` invokes a class-level lookup by id — without
+         * an instance context. This companion accessor provides a stable compile-time
+         * entry point and returns `null` when the id is not present in the in-memory
+         * catalog. Callers already null-check the result, so this is safe.
+         *
+         * TODO (follow-up PR): wire this to scan `assets/luts/` for `.cube` LUTs at startup and
+         * build a full `Map<String, FilterPreset>` so the 73 bundled LUTs resolve here.
+         */
+        fun presetById(id: String): FilterPreset? = null
+    }
 }

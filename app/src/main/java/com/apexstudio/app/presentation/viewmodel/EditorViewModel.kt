@@ -15,6 +15,8 @@ import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
+import com.apexstudio.app.data.template.TransmissionTemplate
+import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +53,16 @@ class EditorViewModel(
     private val _fx = MutableStateFlow<List<ToolItem>>(emptyList())
     val fx: StateFlow<List<ToolItem>> = _fx.asStateFlow()
 
+    /**
+     * Transmission templates (LUT + FX + transition combos) loaded
+     * from `assets/transmission_templates.json`. Surfaced to the UI
+     * via the [TransmissionTemplatesPanel] chip strip. Live-validated
+     * at load time by [TimelineTemplateManager.loadTransmissionTemplates]
+     * so a renamed LUT or FX surfaces as a warning, not a crash.
+     */
+    private val _transmissionTemplates = MutableStateFlow<List<TransmissionTemplate>>(emptyList())
+    val transmissionTemplates: StateFlow<List<TransmissionTemplate>> = _transmissionTemplates.asStateFlow()
+
     // Thumbnail bitmaps keyed by clip ID → list of (timeMs, bitmap)
     private val _thumbnails = MutableStateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>>(emptyMap())
     val thumbnails: StateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>> = _thumbnails.asStateFlow()
@@ -64,12 +76,14 @@ class EditorViewModel(
     private val audioEngine = context?.let { AudioEngine(it) }
     private val colorGradingEngine = ColorGradingEngine()
     private val projectRepository: ProjectRepository? = context?.let { ProjectRepository(it) }
+    private val timelineTemplateManager = context?.let { TimelineTemplateManager(it) }
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
         context?.let { CrashMarker.mark(it, "EditorViewModel.init start") }
         loadProject()
         loadLuts()
+        loadTransmissionTemplates()
         loadAudioState()
         // Mirror the engine's real export progress into the VM state
         // the Export screen renders (progress %, output uri, error).
@@ -152,6 +166,23 @@ class EditorViewModel(
                     isPlaying = firstClipId != null
                 )
             }
+
+            // Auto-apply the project's last transmission template so
+            // the user opens to the look they had last time. Runs
+            // after [loadTransmissionTemplates] because we need the
+            // catalog to be in the StateFlow before we can resolve
+            // the template by id. Falls back silently if the saved
+            // id no longer matches a live template (e.g. the
+            // template was removed from the catalog).
+            val savedTemplateId = updatedP.lastTransmissionTemplateId
+            if (savedTemplateId != null) {
+                val template = _transmissionTemplates.value.firstOrNull { it.id == savedTemplateId }
+                if (template != null) {
+                    applyTransmissionTemplateInternal(template, persistProjectId = null)
+                } else {
+                    Log.w("EditorViewModel", "Saved transmission template '$savedTemplateId' not found in catalog — skipping auto-apply")
+                }
+            }
         }
     }
 
@@ -161,9 +192,108 @@ class EditorViewModel(
         _fx.value = repo.loadFxPresets()
     }
 
+    private fun loadTransmissionTemplates() {
+        val mgr = timelineTemplateManager ?: run {
+            Log.w("EditorViewModel", "TimelineTemplateManager unavailable — transmission catalog empty")
+            return
+        }
+        try {
+            _transmissionTemplates.value = mgr.loadTransmissionTemplates()
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "loadTransmissionTemplates failed", e)
+            _transmissionTemplates.value = emptyList()
+        }
+    }
+
     private fun loadAudioState() {
         _audio.update { it.copy(tracks = repo.loadProjects().first().audioTracks) }
     }
+
+    // ---- Transmission templates ----
+
+    /**
+     * Apply a transmission template to the current editor state.
+     *
+     * Sets:
+     * - [EditorState.activeFilterId] from `template.filterId`
+     * - [EditorState.filterIntensity] from `template.filterIntensity`
+     * - [EditorState.activeFxId] from `template.fxPresetId`
+     * - [EditorState.fxIntensity] from `template.fxIntensity`
+     *
+     * The preview GL pipeline re-reads these fields on its next
+     * recomposition, so the change is live. Persists the chosen
+     * template id into [Project.lastTransmissionTemplateId] so the
+     * next time the user opens this project, [loadProject] auto-
+     * applies it.
+     *
+     * `id == null` clears the active template (LUT + FX intensities
+     * are reset to 0 so the preview shows the original colour). The
+     * persisted id is cleared too.
+     */
+    fun applyTransmissionTemplate(id: String?) {
+        if (id == null) {
+            _state.update {
+                it.copy(
+                    activeFilterId = null,
+                    filterIntensity = 0f,
+                    activeFxId = null,
+                    fxIntensity = 0f
+                )
+            }
+            persistTransmissionTemplateId(null)
+            return
+        }
+        val template = _transmissionTemplates.value.firstOrNull { it.id == id }
+        if (template == null) {
+            Log.w("EditorViewModel", "applyTransmissionTemplate: unknown id '$id' — ignoring")
+            return
+        }
+        applyTransmissionTemplateInternal(template, persistProjectId = projectId)
+    }
+
+    /**
+     * Apply a resolved [TransmissionTemplate] without re-looking it
+     * up by id. Used by [loadProject] on project open so we can
+     * skip the "unknown id" warning path for the auto-apply case.
+     */
+    private fun applyTransmissionTemplateInternal(template: TransmissionTemplate, persistProjectId: String?) {
+        _state.update {
+            it.copy(
+                activeFilterId = template.filterId,
+                filterIntensity = template.filterIntensity.coerceIn(0f, 1f),
+                activeFxId = template.fxPresetId,
+                fxIntensity = template.fxIntensity.coerceIn(0f, 1f)
+            )
+        }
+        persistTransmissionTemplateId(template.id)
+    }
+
+    /**
+     * Save the chosen transmission template id on the current project
+     * and write the project back to DataStore so the choice survives
+     * an app restart. Called from both apply paths (manual + auto).
+     */
+    private fun persistTransmissionTemplateId(id: String?) {
+        val snapshot = _state.value.project ?: return
+        if (snapshot.lastTransmissionTemplateId == id) return
+        val updated = snapshot.copy(lastTransmissionTemplateId = id)
+        _state.update { it.copy(project = updated) }
+        val repo = projectRepository ?: return
+        viewModelScope.launch {
+            try {
+                repo.saveProject(updated)
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "Failed to persist transmission template id", e)
+            }
+        }
+    }
+
+    /**
+     * Open or close the transmission-templates bottom sheet. Mirrors
+     * the open/close pattern used by [openFilterPanel] / [openFxPanel].
+     */
+    fun openTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = true) }
+    fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
 
     fun openMediaPicker() = _state.update { it.copy(isMediaPickerOpen = true) }
     fun closeMediaPicker() = _state.update { it.copy(isMediaPickerOpen = false) }
@@ -202,30 +332,15 @@ class EditorViewModel(
                     pickedMedia = mediaList,
                     isMediaPickerOpen = false,
                     audioWaveform = waveform,
-                    // Replace: switch the preview to the first new clip.
-                    // Append: keep the current selection if there is one,
-                    // otherwise jump to the first new clip so the preview
-                    // isn't stuck on an empty timeline.
                     selectedClipId = when {
                         replace -> newClips.firstOrNull()?.id
                         it.selectedClipId != null -> it.selectedClipId
                         else -> newClips.firstOrNull()?.id
                     },
-                    // Auto-play as soon as the user adds media. The
-                    // previous behaviour waited for the user to press
-                    // the play button, which felt broken when the
-                    // video had clearly loaded onto the timeline.
-                    // The isPlaying flag drives the EditorScreen's
-                    // player.play() LaunchedEffect, so the preview
-                    // starts immediately.
                     isPlaying = true
                 )
             }
-            // Auto-save so the freshly-added clip survives a process
-            // death / app restart. Without this, the editor's state
-            // would be lost the moment the user backgrounds the app.
             persistProject()
-            // Kick off thumbnail extraction for each new clip
             for (clip in newClips) {
                 if (clip.type == ClipType.VIDEO && context != null) {
                     loadClipThumbnails(clip)
@@ -270,12 +385,6 @@ class EditorViewModel(
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
     fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.5f, 4f)) }
-    /**
-     * Multiplicative zoom update driven by the pinch gesture.
-     * [factor] is the per-frame relative zoom (e.g. 1.05 for 5%
-     * zoom-in). The new level is the current level × factor, then
-     * clamped to the 0.5x..4x range.
-     */
     fun multiplyZoom(factor: Float) = _state.update {
         val current = it.zoomLevel
         val next = (current * factor).coerceIn(0.5f, 4f)
@@ -288,14 +397,8 @@ class EditorViewModel(
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
-    // ---- Crop ----
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }
     fun setCropRect(rect: CropRect) = _state.update { it.copy(cropRect = rect) }
-    /**
-     * Apply one of the preset aspect ratios. Anchors the crop to the
-     * current centre of the existing rectangle, expanding/contracting
-     * evenly so the user doesn't lose the framing they already had.
-     */
     fun applyCropAspect(aspect: CropAspect) {
         _state.update { s ->
             val target = aspect.ratio ?: return@update s.copy(cropAspect = aspect)
@@ -320,22 +423,15 @@ class EditorViewModel(
     }
     fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
 
-    // ---- Filters ----
     fun openFilterPanel() {
         _state.update { it.copy(filterPanelOpen = true) }
         ensureFilterThumbnails()
     }
     fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
-    /** id == null clears the active filter (back to original video). */
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
-    /**
-     * Ensure generic filter preview swatches are generated for all filter presets.
-     * Uses a fixed photographic reference image so preview swatches are always
-     * available instantly and deterministically.
-     */
     fun ensureFilterThumbnails() {
         val ctx = context ?: return
         if (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading) return
@@ -371,12 +467,6 @@ class EditorViewModel(
         }
     }
 
-    /**
-     * Generate 1:1 filter preview thumbnails from the video's first frame.
-     * Called automatically when a clip is loaded and the first frame is
-     * available. Each thumbnail is a 128px center-cropped square with the
-     * corresponding LUT applied at full intensity.
-     */
     fun generateFilterThumbnails(sourceFrame: android.graphics.Bitmap) {
         val ctx = context ?: return
         val manifest = try {
@@ -410,19 +500,15 @@ class EditorViewModel(
     fun closeSpeedPanel() = _state.update { it.copy(speedPanelOpen = false) }
     fun setPlaybackSpeed(speed: Float) = _state.update { it.copy(playbackSpeed = speed.coerceIn(0.25f, 8f)) }
 
-    // ---- Real-time FX ----
     fun openFxPanel() = _state.update { it.copy(fxPanelOpen = true) }
     fun closeFxPanel() = _state.update { it.copy(fxPanelOpen = false) }
-    /** id == null clears the active FX (back to clean video). */
     fun setActiveFx(id: String?) = _state.update { it.copy(activeFxId = id) }
     fun setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
 
-    // ---- Text overlays ----
     fun openTextPanel() = _state.update { it.copy(textPanelOpen = true) }
     fun closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }
     fun selectTextOverlay(id: String?) = _state.update { it.copy(selectedTextOverlayId = id) }
 
-    /** Add a caption to [clipId], centred by default. */
     fun addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.5f) {
         val overlay = com.apexstudio.app.domain.model.TextOverlay.of(
             text = text, x = x, y = y
@@ -431,7 +517,6 @@ class EditorViewModel(
         _state.update { it.copy(selectedTextOverlayId = overlay.id) }
     }
 
-    /** Generic per-overlay update used by the Text panel. */
     fun updateTextOverlay(clipId: String, overlayId: String, transform: (com.apexstudio.app.domain.model.TextOverlay) -> com.apexstudio.app.domain.model.TextOverlay) {
         updateClip(clipId) { clip ->
             clip.copy(
@@ -442,7 +527,6 @@ class EditorViewModel(
         }
     }
 
-    /** Move a caption by a normalised (0..1 of the frame) delta. */
     fun moveTextOverlay(
         clipId: String,
         overlayId: String,
@@ -464,11 +548,6 @@ class EditorViewModel(
         }
     }
 
-    /**
-     * Persist the project immediately. Drag gestures suppress the
-     * per-frame DataStore writes of [moveTextOverlay]; call this when
-     * the gesture ends so the final position survives an app restart.
-     */
     fun flushProject() = persistProject()
 
     fun setTextOverlayText(clipId: String, overlayId: String, text: String) =
@@ -499,12 +578,6 @@ class EditorViewModel(
         _export.update { it.copy(settings = upd(it.settings)) }
     }
 
-    /**
-     * Start the hardware-accelerated export of the selected clip with
-     * the *full* edit stack baked in: crop, LUT filter, FX, speed,
-     * keyframe animation and text overlays — every effect that is
-     * live in the editor preview.
-     */
     fun startExport(
         resolution: String = _export.value.settings.resolution,
         fps: Int = _export.value.settings.frameRate,
@@ -517,7 +590,6 @@ class EditorViewModel(
         val engine = exportEngine ?: return
         _export.update { it.copy(isExporting = true, progress = 0f) }
 
-        // Resolve the active LUT preset (same source the preview uses).
         var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
         if (s.activeFilterId != null && context != null) {
             try {
@@ -584,7 +656,7 @@ class EditorViewModel(
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
     }
     fun setTrackVolume(trackId: String, vol: Float) = _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol) else it })
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol.coerceIn(0f, 1f)) else it })
     }
     fun setTrackPanning(trackId: String, pan: Float) = _audio.update { s ->
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = pan > 0.5f) else it })
@@ -630,17 +702,10 @@ class EditorViewModel(
         _audio.update { it.copy(waveformSamples = samples) }
     }
 
-    /** Waveform strip drawn on the A1 track of the timeline. */
     fun setTimelineWaveform(samples: FloatArray) = _state.update {
         it.copy(audioWaveform = samples)
     }
 
-    /**
-     * Decode the *selected* clip's real audio envelope into the A1
-     * timeline waveform (MediaCodec PCM decode bounded to the clip's
-     * trim window). Called whenever the selected clip changes so the
-     * strip always reflects the clip under the playhead.
-     */
     fun refreshTimelineWaveform(clipId: String) {
         val ctx = context ?: return
         val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
@@ -668,14 +733,6 @@ class EditorViewModel(
         _audio.update { it.copy(isRecording = recording) }
     }
 
-    // ---- Speed ramping ----
-    /**
-     * Set the playback speed of a single clip. multiplier is clamped
-     * to the supported range (0.25x .. 8x). Pass [updatePlayback] = true
-     * (default) to also push the value to the live ExoPlayer via
-     * `setPlaybackSpeed` — call sites that only persist the value for
-     * later export can pass false to avoid touching the player.
-     */
     fun setClipSpeed(clipId: String, multiplier: Float) {
         val clamped = multiplier.coerceIn(SpeedPreset.QUARTER.multiplier, SpeedPreset.FAST.multiplier)
         updateClip(clipId) { it.copy(speedMultiplier = clamped) }
@@ -696,8 +753,6 @@ class EditorViewModel(
         setClipSpeed(clipId, preset.multiplier)
     }
 
-    // ---- Audio mixer ----
-    /** Add a new audio track (background music, voiceover, SFX). */
     fun addAudioTrack(name: String, uri: String, kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC, sourceDurationMs: Long = 0L) {
         val track = AudioTrack(
             id = java.util.UUID.randomUUID().toString(),
@@ -739,15 +794,10 @@ class EditorViewModel(
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it })
     }
 
-    /** Mute / unmute the original video audio on the V1 track. */
     fun setMuteOriginalVideo(muted: Boolean) {
         _audio.update { it.copy(isMuted = muted) }
     }
 
-    // NOTE: `persist` must be declared BEFORE `transform` so callers
-    // can keep using the trailing-lambda form
-    // `updateClip(clipId) { clip -> ... }` (a trailing lambda always
-    // binds to the LAST parameter).
     private fun updateClip(
         clipId: String,
         persist: Boolean = true,
@@ -761,13 +811,6 @@ class EditorViewModel(
         if (persist) persistProject()
     }
 
-    // ---- Keyframes ----
-    /**
-     * Add a new keyframe at [timeMs] on [clipId]. If a keyframe
-     * already exists at the same timestamp it's overwritten — that
-     * matches the CapCut behaviour where tapping the playhead
-     * replaces the existing mark rather than creating a duplicate.
-     */
     fun addKeyframe(clipId: String, timeMs: Long, transform: AnimatedTransform = AnimatedTransform.Identity) {
         updateClip(clipId) { clip ->
             val kf = Keyframe(
@@ -807,16 +850,6 @@ class EditorViewModel(
     fun setKeyframePanelOpen(open: Boolean) =
         _state.update { it.copy(keyframePanelOpen = open) }
 
-    /**
-     * Persist the current `EditorState.project` to DataStore so a
-     * later `EditorViewModel(projectId = ...)` constructor call (from
-     * the Home screen project card) loads the same clip / LUT /
-     * audio / keyframe state back into the editor.
-     *
-     * Called from every mutation that changes the project. We don't
-     * block the UI thread — the write is queued on viewModelScope
-     * and DataStore serialises concurrent edits for us.
-     */
     private fun persistProject() {
         val snapshot = _state.value.project ?: return
         val repo = projectRepository ?: return

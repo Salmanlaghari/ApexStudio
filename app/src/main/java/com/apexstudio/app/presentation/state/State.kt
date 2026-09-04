@@ -61,7 +61,12 @@ data class EditorState(
     val textPanelOpen: Boolean = false,
     val selectedTextOverlayId: String? = null,
     // Set to true while the Trim & Set Points bottom sheet is open.
-    val trimPanelOpen: Boolean = false
+    val trimPanelOpen: Boolean = false,
+    // Set to true while the Transmission Templates bottom sheet is open.
+    // Selecting a template from the chip strip drives the LUT + FX +
+    // intensity state, which the preview GL pipeline re-reads on the
+    // next recomposition.
+    val transmissionPanelOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

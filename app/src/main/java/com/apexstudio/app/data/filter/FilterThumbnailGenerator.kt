@@ -32,6 +32,87 @@ object FilterThumbnailGenerator {
     private const val TAG = "FilterThumbGen"
     private const val THUMB_SIZE = 128
 
+    @Volatile
+    private var cachedGenericThumbnails: Map<String?, Bitmap>? = null
+
+    /**
+     * Create a fixed, generic, high-contrast photographic reference image
+     * featuring skin tones, cinematic sky gradients, highlights and shadows.
+     * Guarantees that every filter preset can be previewed deterministically
+     * without needing video frame extraction.
+     */
+    fun createGenericPreviewBitmap(): Bitmap {
+        val size = THUMB_SIZE
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        // Base gradient: cinematic twilight sky to warm horizon
+        val skyShader = android.graphics.LinearGradient(
+            0f, 0f, size.toFloat(), size.toFloat(),
+            intArrayOf(
+                android.graphics.Color.rgb(24, 32, 54),   // deep slate twilight
+                android.graphics.Color.rgb(217, 70, 119), // vibrant magenta / sunset
+                android.graphics.Color.rgb(245, 158, 11), // warm golden amber
+                android.graphics.Color.rgb(14, 165, 233)  // cyan electric rim
+            ),
+            floatArrayOf(0.0f, 0.38f, 0.72f, 1.0f),
+            android.graphics.Shader.TileMode.CLAMP
+        )
+        paint.shader = skyShader
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        paint.shader = null
+
+        // Portrait face circle with natural warm skin tone
+        paint.color = android.graphics.Color.rgb(234, 179, 140)
+        canvas.drawCircle(size * 0.50f, size * 0.42f, size * 0.22f, paint)
+
+        // Facial details (eyes and nose highlight)
+        paint.color = android.graphics.Color.rgb(30, 41, 59)
+        canvas.drawCircle(size * 0.43f, size * 0.40f, size * 0.035f, paint)
+        canvas.drawCircle(size * 0.57f, size * 0.40f, size * 0.035f, paint)
+
+        // Hair arc silhouette
+        paint.color = android.graphics.Color.rgb(15, 23, 42)
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = 6f
+        canvas.drawArc(
+            size * 0.28f, size * 0.20f, size * 0.72f, size * 0.64f,
+            180f, 180f, false, paint
+        )
+        paint.style = android.graphics.Paint.Style.FILL
+
+        // Landscape silhouette in lower third
+        paint.color = android.graphics.Color.rgb(10, 15, 29)
+        val path = android.graphics.Path().apply {
+            moveTo(0f, size * 0.72f)
+            lineTo(size * 0.35f, size * 0.65f)
+            lineTo(size * 0.65f, size * 0.76f)
+            lineTo(size.toFloat(), size * 0.68f)
+            lineTo(size.toFloat(), size.toFloat())
+            lineTo(0f, size.toFloat())
+            close()
+        }
+        canvas.drawPath(path, paint)
+
+        return bmp
+    }
+
+    /**
+     * Generate filter preview swatches using the fixed generic reference image.
+     * Caches the output so the swatch set is computed once and instantly available.
+     */
+    suspend fun generateWithGenericImage(
+        context: Context,
+        manifest: FilterManifest
+    ): Map<String?, Bitmap> = withContext(Dispatchers.Default) {
+        cachedGenericThumbnails?.let { return@withContext it }
+        val sample = createGenericPreviewBitmap()
+        val res = generateAll(context, sample, manifest)
+        cachedGenericThumbnails = res
+        res
+    }
+
     /**
      * Generate 1:1 thumbnails for every preset in [manifest].
      *

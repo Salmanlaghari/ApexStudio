@@ -1,20 +1,25 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +27,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -37,8 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AnimatedTransform
@@ -46,33 +59,48 @@ import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeCurve
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.util.TimeFormat
+
+enum class KeyframePropertyFilter(val label: String, val color: Color) {
+    ALL("All", ApexPalette.NeonCyan),
+    POSITION("Position", ApexPalette.NeonCyan),
+    SCALE("Scale", ApexPalette.TrackVideo),
+    ROTATION("Rotation", ApexPalette.NeonPurple),
+    OPACITY("Opacity", ApexPalette.NeonEmerald)
+}
 
 /**
- * Bottom-sheet style keyframe animation editor. Renders:
+ * Interactive Keyframe Editor for Apex Studio.
  *
- * 1. A "Add at playhead" button that pins a new keyframe on the
- *    selected clip at the current playhead position.
- * 2. A scrubber so the user can pick a non-playhead time before
- *    adding a keyframe.
- * 3. A list of every existing keyframe on the clip, with per-key
- *    sliders for translate X / Y, scale, rotation and opacity.
- * 4. A curve selector (LINEAR / EASE_IN / EASE_OUT / EASE_IN_OUT /
- *    HOLD) on each keyframe.
- * 5. A delete button per keyframe and a "Clear all" at the bottom.
+ * Features:
+ * 1. Timeline ruler with interactive diamond markers for all keyframes.
+ * 2. Draggable keyframes along ruler to dynamically adjust timeMs.
+ * 3. Property filter tabs: Position, Scale, Rotation, Opacity, All.
+ * 4. Add keyframe at playhead with current interpolated values.
+ * 5. Value sliders and easing curve selectors for the active keyframe.
+ * 6. Visual playhead indicator synchronized with player.
  */
 @Composable
 fun KeyframePanel(
     track: KeyframeTrack,
     playheadMs: Long,
-    canAdd: Boolean,
+    clipDurationMs: Long = 10_000L,
+    canAdd: Boolean = true,
     onAdd: (Long) -> Unit,
     onUpdate: (Keyframe) -> Unit,
     onRemove: (String) -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit
 ) {
-    var newTimeMs by remember(playheadMs) { mutableLongStateOf(playheadMs) }
-    val sorted = track.sorted().keyframes
+    val sorted = remember(track) { track.sorted().keyframes }
+    var selectedKeyframeId by remember(sorted) {
+        mutableStateOf(sorted.minByOrNull { kotlin.math.abs(it.timeMs - playheadMs) }?.id)
+    }
+    var propertyFilter by remember { mutableStateOf(KeyframePropertyFilter.ALL) }
+    val effectiveDuration = clipDurationMs.coerceAtLeast(1000L)
+
+    val activeKeyframe = sorted.firstOrNull { it.id == selectedKeyframeId }
+        ?: sorted.firstOrNull()
 
     Column(
         modifier = Modifier
@@ -80,9 +108,13 @@ fun KeyframePanel(
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgElevated)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .padding(14.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // --- Header Row ---
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Icon(
                 imageVector = Icons.Default.Animation,
                 contentDescription = null,
@@ -91,206 +123,348 @@ fun KeyframePanel(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Keyframe Animation",
+                text = "Keyframe Studio",
                 color = ApexPalette.TextPrimary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
                 modifier = Modifier.weight(1f)
             )
+
+            // Jump to Prev / Next Keyframe
+            IconButton(
+                onClick = {
+                    val prev = sorted.filter { it.timeMs < playheadMs }.maxByOrNull { it.timeMs }
+                    if (prev != null) selectedKeyframeId = prev.id
+                },
+                enabled = sorted.any { it.timeMs < playheadMs }
+            ) {
+                Icon(Icons.Default.FastRewind, contentDescription = "Prev keyframe", tint = ApexPalette.TextSecondary, modifier = Modifier.size(18.dp))
+            }
+            IconButton(
+                onClick = {
+                    val next = sorted.filter { it.timeMs > playheadMs }.minByOrNull { it.timeMs }
+                    if (next != null) selectedKeyframeId = next.id
+                },
+                enabled = sorted.any { it.timeMs > playheadMs }
+            ) {
+                Icon(Icons.Default.FastForward, contentDescription = "Next keyframe", tint = ApexPalette.TextSecondary, modifier = Modifier.size(18.dp))
+            }
+
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary)
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Add translate / scale / rotation / opacity markers on the clip. The values interpolate between keyframes.",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(12.dp))
-
-        // --- Add row ---
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("at", color = ApexPalette.TextSecondary, fontSize = 12.sp, modifier = Modifier.width(28.dp))
-            Slider(
-                value = newTimeMs.toFloat(),
-                onValueChange = { newTimeMs = it.toLong() },
-                valueRange = 0f..kotlin.math.max(newTimeMs.toFloat(), 60_000f),
-                colors = SliderDefaults.colors(
-                    thumbColor = ApexPalette.NeonCyan,
-                    activeTrackColor = ApexPalette.NeonCyan,
-                    inactiveTrackColor = ApexPalette.BorderGlass
-                ),
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("${newTimeMs / 1000f}s", color = ApexPalette.TextPrimary, fontSize = 12.sp, modifier = Modifier.width(48.dp))
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (canAdd) ApexPalette.NeonCyan else ApexPalette.BorderGlass)
-                    .clickable(enabled = canAdd) { onAdd(newTimeMs) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary, modifier = Modifier.size(20.dp))
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        if (sorted.isEmpty()) {
-            Text(
-                text = "No keyframes yet. Add one to start animating.",
-                color = ApexPalette.TextTertiary,
-                fontSize = 12.sp
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(sorted, key = { it.id }) { kf ->
-                    KeyframeRow(
-                        keyframe = kf,
-                        onUpdate = onUpdate,
-                        onRemove = { onRemove(kf.id) }
+        // --- Property Tabs Row ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            KeyframePropertyFilter.values().forEach { filter ->
+                val active = propertyFilter == filter
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) filter.color.copy(alpha = 0.22f) else ApexPalette.BgBase)
+                        .border(1.dp, if (active) filter.color else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { propertyFilter = filter }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        filter.label,
+                        color = if (active) filter.color else ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.BgBase)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                    .clickable(enabled = sorted.isNotEmpty()) { onClear() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = ApexPalette.TextSecondary, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Clear all", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+
+        // --- Interactive Keyframe Timeline Ruler ---
+        var rulerWidthPx by remember { mutableFloatStateOf(1f) }
+        var rulerHeightPx by remember { mutableFloatStateOf(1f) }
+        val density = LocalDensity.current
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(ApexPalette.BgBase)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                .onSizeChanged {
+                    rulerWidthPx = it.width.toFloat()
+                    rulerHeightPx = it.height.toFloat()
+                }
+        ) {
+            // Background grid / ticks
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val tickStepMs = 1000L
+                var t = 0L
+                while (t <= effectiveDuration) {
+                    val x = (t.toFloat() / effectiveDuration) * size.width
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.12f),
+                        start = Offset(x, 0f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1f
+                    )
+                    t += tickStepMs
+                }
+            }
+
+            // Playhead indicator
+            val playheadX = (playheadMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f) * rulerWidthPx
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawLine(
+                    color = ApexPalette.NeonCyan,
+                    start = Offset(playheadX, 0f),
+                    end = Offset(playheadX, size.height),
+                    strokeWidth = 2f
+                )
+            }
+
+            // Draggable Keyframe Diamond Markers
+            sorted.forEach { kf ->
+                val isSelected = kf.id == selectedKeyframeId
+                val kfProgress = (kf.timeMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
+                val kfXPx = kfProgress * rulerWidthPx
+                val kfXDp = with(density) { kfXPx.toDp() }
+
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (kfXPx - 14.dp.toPx()).toInt(),
+                                ((rulerHeightPx - 28.dp.toPx()) / 2f).toInt()
+                            )
+                        }
+                        .size(28.dp)
+                        .pointerInput(kf.id, effectiveDuration, rulerWidthPx) {
+                            detectHorizontalDragGestures { change, dragAmount ->
+                                change.consume()
+                                val deltaFraction = dragAmount / rulerWidthPx.coerceAtLeast(1f)
+                                val deltaMs = (deltaFraction * effectiveDuration).toLong()
+                                val newTime = (kf.timeMs + deltaMs).coerceIn(0L, effectiveDuration)
+                                selectedKeyframeId = kf.id
+                                onUpdate(kf.copy(timeMs = newTime))
+                            }
+                        }
+                        .clickable {
+                            selectedKeyframeId = kf.id
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(if (isSelected) 14.dp else 10.dp)
+                            .graphicsLayer(rotationZ = 45f)
+                            .background(if (isSelected) ApexPalette.NeonCyan else propertyFilter.color)
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) Color.White else Color.Black.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(2.dp)
+                            )
+                    )
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun KeyframeRow(
-    keyframe: Keyframe,
-    onUpdate: (Keyframe) -> Unit,
-    onRemove: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ApexPalette.BgBase)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
-            .padding(10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Diamond marker so users can scan the list quickly.
+        // Timeline Action Controls (Add at playhead, Delete selected, Clear all)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(ApexPalette.NeonCyan)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Keyframe at ${keyframe.timeMs / 1000f}s",
-                color = ApexPalette.TextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove keyframe", tint = ApexPalette.TextTertiary, modifier = Modifier.size(16.dp))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (canAdd) ApexPalette.NeonCyan else ApexPalette.BorderGlass)
+                    .clickable(enabled = canAdd) {
+                        onAdd(playheadMs)
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add at playhead (${TimeFormat.msToShort(playheadMs)})", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
-        }
-        Spacer(Modifier.height(4.dp))
-        KeyframeSlider(
-            label = "Translate X",
-            value = keyframe.translateX,
-            range = -1f..1f,
-            onValueChange = { v -> onUpdate(keyframe.copy(translateX = v)) }
-        )
-        KeyframeSlider(
-            label = "Translate Y",
-            value = keyframe.translateY,
-            range = -1f..1f,
-            onValueChange = { v -> onUpdate(keyframe.copy(translateY = v)) }
-        )
-        KeyframeSlider(
-            label = "Scale",
-            value = keyframe.scale,
-            range = 0.25f..4f,
-            onValueChange = { v -> onUpdate(keyframe.copy(scale = v)) }
-        )
-        KeyframeSlider(
-            label = "Rotation",
-            value = keyframe.rotationDeg,
-            range = -180f..180f,
-            onValueChange = { v -> onUpdate(keyframe.copy(rotationDeg = v)) }
-        )
-        KeyframeSlider(
-            label = "Opacity",
-            value = keyframe.opacity,
-            range = 0f..1f,
-            onValueChange = { v -> onUpdate(keyframe.copy(opacity = v)) }
-        )
-        Spacer(Modifier.height(4.dp))
-        // Curve selector.
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            KeyframeCurve.values().forEach { curve ->
-                val selected = keyframe.curve == curve
+
+            Spacer(Modifier.width(8.dp))
+
+            if (activeKeyframe != null) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
-                        .border(1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
-                        .clickable { onUpdate(keyframe.copy(curve = curve)) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { onRemove(activeKeyframe.id) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = ApexPalette.Danger, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete", color = ApexPalette.Danger, fontSize = 11.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            if (sorted.isNotEmpty()) {
+                Text(
+                    text = "Clear all",
+                    color = ApexPalette.TextTertiary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .clickable { onClear() }
+                        .padding(4.dp)
+                )
+            }
+        }
+
+        // --- Active Keyframe Inspector & Sliders ---
+        if (activeKeyframe != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ApexPalette.BgBase)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = curve.name.lowercase().replace('_', ' '),
-                        color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        text = "Keyframe @ ${TimeFormat.formatMs(activeKeyframe.timeMs)}",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "Drag diamond above to slide time",
+                        color = ApexPalette.TextTertiary,
                         fontSize = 10.sp
                     )
                 }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Sliders based on selected tab
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.POSITION) {
+                    KeyframeSliderRow(
+                        label = "Position X",
+                        value = activeKeyframe.translateX,
+                        range = -1f..1f,
+                        color = ApexPalette.NeonCyan,
+                        onValueChange = { onUpdate(activeKeyframe.copy(translateX = it)) }
+                    )
+                    KeyframeSliderRow(
+                        label = "Position Y",
+                        value = activeKeyframe.translateY,
+                        range = -1f..1f,
+                        color = ApexPalette.NeonCyan,
+                        onValueChange = { onUpdate(activeKeyframe.copy(translateY = it)) }
+                    )
+                }
+
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.SCALE) {
+                    KeyframeSliderRow(
+                        label = "Scale",
+                        value = activeKeyframe.scale,
+                        range = 0.1f..3f,
+                        color = ApexPalette.TrackVideo,
+                        onValueChange = { onUpdate(activeKeyframe.copy(scale = it)) }
+                    )
+                }
+
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.ROTATION) {
+                    KeyframeSliderRow(
+                        label = "Rotation",
+                        value = activeKeyframe.rotationDeg,
+                        range = -180f..180f,
+                        color = ApexPalette.NeonPurple,
+                        onValueChange = { onUpdate(activeKeyframe.copy(rotationDeg = it)) }
+                    )
+                }
+
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.OPACITY) {
+                    KeyframeSliderRow(
+                        label = "Opacity",
+                        value = activeKeyframe.opacity,
+                        range = 0f..1f,
+                        color = ApexPalette.NeonEmerald,
+                        onValueChange = { onUpdate(activeKeyframe.copy(opacity = it)) }
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // Interpolation Curve Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Curve:", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                    KeyframeCurve.values().forEach { curve ->
+                        val active = activeKeyframe.curve == curve
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (active) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
+                                .border(1.dp, if (active) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                                .clickable { onUpdate(activeKeyframe.copy(curve = curve)) }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = curve.name.lowercase().replace('_', ' '),
+                                color = if (active) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+                                fontSize = 9.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
             }
+        } else {
+            Text(
+                text = "No keyframes on this clip. Tap '+ Add at playhead' to pin transform values.",
+                color = ApexPalette.TextTertiary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun KeyframeSlider(
+private fun KeyframeSliderRow(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    color: Color,
     onValueChange: (Float) -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.width(74.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(label, color = ApexPalette.TextSecondary, fontSize = 11.sp, modifier = Modifier.width(72.dp))
         Slider(
             value = value,
             onValueChange = onValueChange,
             valueRange = range,
             colors = SliderDefaults.colors(
-                thumbColor = ApexPalette.NeonCyan,
-                activeTrackColor = ApexPalette.NeonCyan,
+                thumbColor = color,
+                activeTrackColor = color,
                 inactiveTrackColor = ApexPalette.BorderGlass
             ),
             modifier = Modifier.weight(1f)
@@ -299,8 +473,9 @@ private fun KeyframeSlider(
         Text(
             text = String.format("%.2f", value),
             color = ApexPalette.TextPrimary,
-            fontSize = 10.sp,
-            modifier = Modifier.width(44.dp)
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.width(42.dp)
         )
     }
 }

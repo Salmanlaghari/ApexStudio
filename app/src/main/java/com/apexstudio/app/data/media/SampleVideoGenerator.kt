@@ -88,13 +88,29 @@ object SampleVideoGenerator {
         val shapePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         try {
+            var trackIndex = -1
+            var muxerStarted = false
+            var lastPtsUs = -1L
+            val ptsStepUs = 1_000_000L / FRAME_RATE
+
             for (frameIndex in 0 until TOTAL_FRAMES) {
                 // Drain encoder output
-                drainEncoder(encoder, muxer, bufferInfo, muxerStarted) { index ->
-                    trackIndex = index
-                    muxer.start()
-                    muxerStarted = true
-                }
+                drainEncoder(
+                    encoder = encoder,
+                    muxer = muxer,
+                    bufferInfo = bufferInfo,
+                    muxerStarted = muxerStarted,
+                    endOfStream = false,
+                    trackIndexProvider = { trackIndex },
+                    ptsStepUs = ptsStepUs,
+                    lastPtsUsProvider = { lastPtsUs },
+                    onPtsUpdated = { lastPtsUs = it },
+                    onMuxerStart = { index ->
+                        trackIndex = index
+                        muxer.start()
+                        muxerStarted = true
+                    }
+                )
 
                 // Render frame to inputSurface
                 val canvas: Canvas = inputSurface.lockHardwareCanvas()
@@ -161,11 +177,22 @@ object SampleVideoGenerator {
             encoder.signalEndOfInputStream()
 
             // Drain remaining output buffers
-            drainEncoder(encoder, muxer, bufferInfo, muxerStarted, endOfStream = true) { index ->
-                trackIndex = index
-                muxer.start()
-                muxerStarted = true
-            }
+            drainEncoder(
+                encoder = encoder,
+                muxer = muxer,
+                bufferInfo = bufferInfo,
+                muxerStarted = muxerStarted,
+                endOfStream = true,
+                trackIndexProvider = { trackIndex },
+                ptsStepUs = ptsStepUs,
+                lastPtsUsProvider = { lastPtsUs },
+                onPtsUpdated = { lastPtsUs = it },
+                onMuxerStart = { index ->
+                    trackIndex = index
+                    muxer.start()
+                    muxerStarted = true
+                }
+            )
         } finally {
             try { encoder.stop() } catch (_: Exception) {}
             try { encoder.release() } catch (_: Exception) {}
@@ -183,6 +210,10 @@ object SampleVideoGenerator {
         bufferInfo: MediaCodec.BufferInfo,
         muxerStarted: Boolean,
         endOfStream: Boolean = false,
+        trackIndexProvider: () -> Int = { 0 },
+        ptsStepUs: Long = 33_333L,
+        lastPtsUsProvider: () -> Long = { -1L },
+        onPtsUpdated: (Long) -> Unit = {},
         onMuxerStart: (Int) -> Unit
     ) {
         val timeoutUs = if (endOfStream) 10_000L else 0L
@@ -208,10 +239,17 @@ object SampleVideoGenerator {
                     bufferInfo.size = 0
                 }
 
-                if (bufferInfo.size != 0 && localMuxerStarted) {
+                val currentTrack = trackIndexProvider()
+                if (bufferInfo.size != 0 && localMuxerStarted && currentTrack >= 0) {
+                    val lastPts = lastPtsUsProvider()
+                    if (bufferInfo.presentationTimeUs <= lastPts) {
+                        bufferInfo.presentationTimeUs = lastPts + ptsStepUs
+                    }
+                    onPtsUpdated(bufferInfo.presentationTimeUs)
+
                     encodedData.position(bufferInfo.offset)
                     encodedData.limit(bufferInfo.offset + bufferInfo.size)
-                    muxer.writeSampleData(0, encodedData, bufferInfo)
+                    muxer.writeSampleData(currentTrack, encodedData, bufferInfo)
                 }
 
                 encoder.releaseOutputBuffer(status, false)

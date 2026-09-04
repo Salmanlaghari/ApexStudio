@@ -413,39 +413,40 @@ fun EditorScreen(
         }
     }
 
+    val seekPlayerAndState: (Long) -> Unit = remember(exoPlayer, state.durationMs) {
+        { targetMs ->
+            val clamped = targetMs.coerceIn(0L, state.durationMs)
+            exoPlayer?.seekTo(clamped)
+            vm.seekTo(clamped)
+        }
+    }
+
     LaunchedEffect(exoPlayer) {
         val player = exoPlayer ?: return@LaunchedEffect
         while (isActive) {
-            val pos = player.currentPosition
-            if (pos != state.playerPositionMs) {
+            if (player.isPlaying) {
+                val pos = player.currentPosition
                 vm.setPlayerPosition(pos)
-            }
-            // Loop within trimmed start and end boundaries for the active clip
-            val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-                ?: state.project?.clips?.firstOrNull()
-            if (activeClip != null && player.isPlaying) {
-                if (pos >= activeClip.trimEndMs) {
-                    player.seekTo(activeClip.trimStartMs)
-                    vm.setPlayerPosition(activeClip.trimStartMs)
-                } else if (pos < activeClip.trimStartMs) {
-                    player.seekTo(activeClip.trimStartMs)
-                    vm.setPlayerPosition(activeClip.trimStartMs)
+                // Loop within trimmed start and end boundaries for the active clip
+                val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                    ?: state.project?.clips?.firstOrNull()
+                if (activeClip != null) {
+                    if (pos >= activeClip.trimEndMs) {
+                        player.seekTo(activeClip.trimStartMs)
+                        vm.setPlayerPosition(activeClip.trimStartMs)
+                    } else if (pos < activeClip.trimStartMs) {
+                        player.seekTo(activeClip.trimStartMs)
+                        vm.setPlayerPosition(activeClip.trimStartMs)
+                    }
                 }
             }
-            // Forward seek requests from the timeline scrubber /
-            // ±5s buttons / etc. into ExoPlayer. The VM only updates
-            // state.playerPositionMs; without this hop the player
-            // would never actually seek and the playhead indicator
-            // would drift away from the frame ExoPlayer is rendering.
-            val target = state.playerPositionMs
-            val current = player.currentPosition
-            if (player.currentMediaItem != null &&
-                kotlin.math.abs(current - target) > 30
-            ) {
-                player.seekTo(target)
-            }
-            delay(25)
+            delay(33)
         }
+    }
+
+    val currentTransform = remember(selectedClip, state.playerPositionMs) {
+        selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
+            ?: com.apexstudio.app.domain.model.AnimatedTransform.Identity
     }
 
     Column(
@@ -464,9 +465,16 @@ fun EditorScreen(
         VideoPreviewSection(
             isPlaying = state.isPlaying,
             currentTimeMs = state.playerPositionMs,
+            durationMs = state.durationMs,
+            currentTransform = currentTransform,
             onTogglePlay = { vm.togglePlay() },
-            onPrev = { vm.seekTo((state.playerPositionMs - 5000).coerceAtLeast(0)) },
-            onNext = { vm.seekTo((state.playerPositionMs + 5000).coerceAtMost(state.durationMs)) },
+            onPrev = { seekPlayerAndState((state.playerPositionMs - 5000L).coerceAtLeast(0L)) },
+            onNext = { seekPlayerAndState((state.playerPositionMs + 5000L).coerceAtMost(state.durationMs)) },
+            onStepFrame = { forward ->
+                val delta = if (forward) 33L else -33L
+                seekPlayerAndState((state.playerPositionMs + delta).coerceIn(0L, state.durationMs))
+            },
+            onScrubFrame = { seekPlayerAndState(it) },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
             cropMode = state.cropMode,
@@ -483,9 +491,6 @@ fun EditorScreen(
                 val clipId = state.selectedClipId
                 val overlayId = state.selectedTextOverlayId
                 if (clipId != null && overlayId != null) {
-                    // Suppress per-frame DataStore saves while the finger
-                    // moves (dozens of events per drag); the drag-end
-                    // callback flushes the final position once.
                     vm.moveTextOverlay(clipId, overlayId, dx, dy, persist = false)
                 }
             },
@@ -498,23 +503,30 @@ fun EditorScreen(
         TimelineSection(
             state = state,
             onScrub = { targetMs ->
-                vm.seekTo(targetMs)
-                exoPlayer?.seekTo(targetMs)
+                seekPlayerAndState(targetMs)
             },
             onZoom = { vm.multiplyZoom(it) },
             onSelectClip = { vm.selectClip(it) },
             onAddMedia = {
-                // The + button lives on the empty timeline now (see
-                // TimelineSection). It launches the multi-video gallery
-                // directly — going through isMediaPickerOpen caused the
-                // launcher to be cancelled mid-flight.
                 mediaPicker.pickMultipleMedia.launch(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                 )
             },
             onTrimChange = { clipId, startMs, endMs ->
                 vm.trimClip(clipId, startMs, endMs)
-                exoPlayer?.seekTo(startMs)
+                seekPlayerAndState(startMs)
+            },
+            onSplitClip = { clipId, atMs ->
+                vm.splitClip(clipId, atMs)
+            },
+            onDeleteClip = { clipId ->
+                vm.deleteClip(clipId)
+            },
+            onMoveClipTrack = { clipId, newType, newIdx ->
+                vm.moveClipToTrack(clipId, newType, newIdx)
+            },
+            onAddClipToLane = { type, idx ->
+                vm.addClipToTrack(type, idx)
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -893,9 +905,13 @@ private fun EditorTopBar(
 private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
+    durationMs: Long = 0L,
+    currentTransform: com.apexstudio.app.domain.model.AnimatedTransform = com.apexstudio.app.domain.model.AnimatedTransform.Identity,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onStepFrame: ((Boolean) -> Unit)? = null,
+    onScrubFrame: ((Long) -> Unit)? = null,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
     cropMode: Boolean,
@@ -1067,10 +1083,21 @@ private fun VideoPreviewSection(
             // will render frames as they become available. The old gating
             // on playerReady caused the preview to stay black because
             // STATE_READY never fired on some devices.
+            // In addition, currentTransform is applied via graphicsLayer so keyframe
+            // transforms (position/scale/rotation/opacity) animate dynamically.
             if (exoPlayer != null) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: attaching PlayerView")
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = currentTransform.translateX * (size.width / 2f)
+                            translationY = currentTransform.translateY * (size.height / 2f)
+                            scaleX = currentTransform.scale
+                            scaleY = currentTransform.scale
+                            rotationZ = currentTransform.rotationDeg
+                            alpha = currentTransform.opacity
+                        },
                     factory = { ctx ->
                         try {
                             PlayerView(ctx).apply {
@@ -1079,11 +1106,6 @@ private fun VideoPreviewSection(
                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT
                                 )
                                 useController = false
-                                // FIT preserves the video's aspect ratio inside
-                                // the container; the container itself is sized
-                                // to the video's ratio above, so together they
-                                // give us a full-bleed preview at the right
-                                // shape (16:9, 9:16, 1:1, …).
                                 resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 player = exoPlayer
                             }
@@ -1268,7 +1290,7 @@ private fun VideoPreviewSection(
                         )
                     }
 
-                    // Top-End: Timecode chip
+                    // Top-End: Frame and Timecode chip
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -1278,26 +1300,27 @@ private fun VideoPreviewSection(
                             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
+                        val frameNum = (currentTimeMs / 33L).coerceAtLeast(0L)
                         Text(
-                            TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                            "F# $frameNum  •  ${TimeFormat.msToTimecode(currentTimeMs, includeFrames = true)}",
                             color = ApexPalette.NeonCyan,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp
                         )
                     }
 
-                    // Center transport controls (⏪ -5s, Play/Pause, ⏩ +5s)
+                    // Center transport controls (⏪ -5s, ⏮ -1F, Play/Pause, ⏭ +1F, ⏩ +5s)
                     Row(
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .fillMaxWidth(0.85f),
+                            .fillMaxWidth(0.95f),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Rewind -5s
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f))
                                 .border(1.dp, ApexPalette.BorderGlass, CircleShape)
@@ -1312,14 +1335,35 @@ private fun VideoPreviewSection(
                                 Icons.Default.FastRewind,
                                 contentDescription = "Seek back 5s",
                                 tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // Step -1 Frame
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    onStepFrame?.invoke(false)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "-1F",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
                             )
                         }
 
                         // Central Play/Pause button
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(60.dp)
                                 .clip(CircleShape)
                                 .background(ApexPalette.NeonCyan.copy(alpha = 0.25f))
                                 .border(2.dp, ApexPalette.NeonCyan, CircleShape)
@@ -1334,14 +1378,35 @@ private fun VideoPreviewSection(
                                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                 tint = Color.White,
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        // Step +1 Frame
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    onStepFrame?.invoke(true)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "+1F",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
                             )
                         }
 
                         // Forward +5s
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f))
                                 .border(1.dp, ApexPalette.BorderGlass, CircleShape)
@@ -1356,7 +1421,7 @@ private fun VideoPreviewSection(
                                 Icons.Default.FastForward,
                                 contentDescription = "Seek forward 5s",
                                 tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
@@ -1704,6 +1769,10 @@ private fun TimelineSection(
     onSelectClip: (String?) -> Unit,
     onAddMedia: () -> Unit,
     onTrimChange: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
+    onSplitClip: ((clipId: String, atMs: Long) -> Unit)? = null,
+    onDeleteClip: ((clipId: String) -> Unit)? = null,
+    onMoveClipTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
+    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
@@ -1711,13 +1780,13 @@ private fun TimelineSection(
     val density = LocalDensity.current
     val basePxPerMs = with(density) { 0.16f.dp.toPx() }
     val pxPerMs = basePxPerMs * state.zoomLevel
-    // Total on-track width is the SUM of every clip's track length
-    // (sequential timeline), not just the longest single clip. If we
-    // used state.durationMs here the user would see a single-clip
-    // filmstrip that's the same length regardless of how many
-    // clips they actually added.
-    val totalTrackMs = clips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
-    val totalWidth = (totalTrackMs * pxPerMs).toInt().coerceAtLeast(0)
+    // Total on-track width is the maximum of project duration and sum of clip lengths,
+    // ensuring the timeline ruler and tracks always match and clips fit comfortably.
+    val totalTrackMs = maxOf(
+        state.durationMs,
+        clips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+    ).coerceAtLeast(15_000L)
+    val totalWidth = (totalTrackMs * pxPerMs).toInt().coerceAtLeast(600)
     val scroll = rememberScrollState()
     val context = LocalContext.current
 
@@ -1986,43 +2055,77 @@ private fun TimelineSection(
                     .fillMaxSize()
                     .horizontalScroll(scroll)
             ) {
-                VideoTrackRow(
+                TimelineTrackLaneRow(
                     label = "V1",
+                    trackType = com.apexstudio.app.domain.model.ClipType.VIDEO,
+                    trackIndex = 0,
                     color = ApexPalette.TrackVideo,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO },
+                    clips = clips.filter { it.trackIndex == 0 && it.type == com.apexstudio.app.domain.model.ClipType.VIDEO },
                     selectedClipId = state.selectedClipId,
+                    playheadMs = state.playerPositionMs,
                     onSelectClip = onSelectClip,
                     mediaByClipId = mediaByClipId,
-                    onTrimChange = onTrimChange
+                    onTrimChange = onTrimChange,
+                    onSplitClip = onSplitClip,
+                    onDeleteClip = onDeleteClip,
+                    onMoveTrack = onMoveClipTrack,
+                    onAddClipToLane = onAddClipToLane
                 )
-                VideoTrackRow(
+                TimelineTrackLaneRow(
                     label = "V2",
+                    trackType = com.apexstudio.app.domain.model.ClipType.OVERLAY,
+                    trackIndex = 1,
                     color = ApexPalette.TrackOverlay,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY },
+                    clips = clips.filter { it.trackIndex == 1 || it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY },
                     selectedClipId = state.selectedClipId,
+                    playheadMs = state.playerPositionMs,
                     onSelectClip = onSelectClip,
                     mediaByClipId = mediaByClipId,
-                    onTrimChange = onTrimChange
+                    onTrimChange = onTrimChange,
+                    onSplitClip = onSplitClip,
+                    onDeleteClip = onDeleteClip,
+                    onMoveTrack = onMoveClipTrack,
+                    onAddClipToLane = onAddClipToLane
                 )
-                RealWaveformTrackRow(
+                TimelineTrackLaneRow(
                     label = "A1",
+                    trackType = com.apexstudio.app.domain.model.ClipType.AUDIO,
+                    trackIndex = 0,
                     color = ApexPalette.NeonEmerald,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    progress = state.playerPositionMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
-                    samples = state.audioWaveform
+                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.AUDIO },
+                    selectedClipId = state.selectedClipId,
+                    playheadMs = state.playerPositionMs,
+                    onSelectClip = onSelectClip,
+                    mediaByClipId = mediaByClipId,
+                    onTrimChange = onTrimChange,
+                    onSplitClip = onSplitClip,
+                    onDeleteClip = onDeleteClip,
+                    onMoveTrack = onMoveClipTrack,
+                    onAddClipToLane = onAddClipToLane
                 )
-                RealWaveformTrackRow(
+                TimelineTrackLaneRow(
                     label = "FX",
+                    trackType = com.apexstudio.app.domain.model.ClipType.SFX,
+                    trackIndex = 1,
                     color = ApexPalette.TrackAudio,
                     width = totalWidth,
                     pxPerMs = pxPerMs,
-                    progress = state.playerPositionMs.toFloat() / state.durationMs.coerceAtLeast(1).toFloat(),
-                    samples = FloatArray(0)
+                    clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.SFX },
+                    selectedClipId = state.selectedClipId,
+                    playheadMs = state.playerPositionMs,
+                    onSelectClip = onSelectClip,
+                    mediaByClipId = mediaByClipId,
+                    onTrimChange = onTrimChange,
+                    onSplitClip = onSplitClip,
+                    onDeleteClip = onDeleteClip,
+                    onMoveTrack = onMoveClipTrack,
+                    onAddClipToLane = onAddClipToLane
                 )
             }
 
@@ -2051,112 +2154,134 @@ private fun TimelineSection(
                     )
                 }
             }
-
-            // Tap / single-finger-drag anywhere on the timeline (V1,
-            // V2, A1, FX tracks) seeks the player instantly. Horizontal
-            // drags scrub instead of scrolling; pinch still zooms.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(state.durationMs, pxPerMs) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val startX = down.position.x
-                            var dragging = false
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id }
-                                if (change == null) break
-                                if (event.changes.size > 1) break // pinch -> zoom
-                                if (!change.pressed) {
-                                    if (!dragging) onScrub(timelineMsAt(change.position.x))
-                                    break
-                                }
-                                if (!dragging &&
-                                    kotlin.math.abs(change.position.x - startX) >
-                                    viewConfiguration.touchSlop
-                                ) {
-                                    dragging = true
-                                }
-                                if (dragging) {
-                                    change.consume()
-                                    onScrub(timelineMsAt(change.position.x))
-                                }
-                            }
-                        }
-                    }
-            )
         }
     }
 }
 
 @Composable
-private fun VideoTrackRow(
+private fun TimelineTrackLaneRow(
     label: String,
+    trackType: com.apexstudio.app.domain.model.ClipType,
+    trackIndex: Int,
     color: Color,
     width: Int,
     pxPerMs: Float,
     clips: List<MediaClip>,
     selectedClipId: String?,
+    playheadMs: Long,
     onSelectClip: (String?) -> Unit,
     mediaByClipId: Map<String, ClipMedia> = emptyMap(),
-    onTrimChange: ((clipId: String, startMs: Long, endMs: Long) -> Unit)? = null
+    onTrimChange: ((clipId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onSplitClip: ((clipId: String, atMs: Long) -> Unit)? = null,
+    onDeleteClip: ((clipId: String) -> Unit)? = null,
+    onMoveTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
+    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null
 ) {
     val density = LocalDensity.current
-    val trackHeightDp = 42.dp
+    val trackHeightDp = 46.dp
+    val widthDp = with(density) { width.toDp() }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(trackHeightDp + 4.dp)
+            .height(trackHeightDp + 6.dp)
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Track Header Pill with Add Button
         Box(
             modifier = Modifier
-                .width(28.dp)
+                .width(32.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp)),
+                .border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                .clickable { onAddClipToLane?.invoke(trackType, trackIndex) },
             contentAlignment = Alignment.Center
         ) {
-            Text(label, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(label, color = color, fontWeight = FontWeight.Black, fontSize = 10.sp)
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add to $label",
+                    tint = color,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
         }
-        Spacer(Modifier.width(3.dp))
+        Spacer(Modifier.width(4.dp))
+
+        // Track Content Area
         Box(
             modifier = Modifier
                 .height(trackHeightDp)
-                .clip(RoundedCornerShape(4.dp))
+                .width(widthDp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
         ) {
-            val widthDp = with(density) { width.toDp() }
-            // Lay the clips out sequentially on the track. Each
-            // clip's on-track start is the running sum of every
-            // previous clip's duration — that way the user sees a
-            // proper filmstrip, not a stack of zero-offset blocks.
-            // We deliberately ignore clip.trimStartMs here because
-            // trim is a *source* offset (where in the original file
-            // playback starts), not a *track* offset.
-            var runningMs = 0L
-            val blocks = clips.map { clip ->
-                val trackStart = runningMs
-                val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
-                runningMs += trackLen
-                Triple(clip, trackStart, trackLen)
-            }
-            Box(modifier = Modifier.width(widthDp)) {
-                for ((clip, trackStart, trackLen) in blocks) {
-                    VideoClipBlock(
-                        clip = clip,
-                        trackStartMs = trackStart,
-                        trackLengthMs = trackLen,
-                        pxPerMs = pxPerMs,
-                        selected = selectedClipId == clip.id,
-                        onSelect = { onSelectClip(clip.id) },
-                        media = mediaByClipId[clip.id],
-                        onTrimChange = { start, end -> onTrimChange?.invoke(clip.id, start, end) }
-                    )
+            if (clips.isEmpty()) {
+                // Empty Track Placeholder Lane
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(color.copy(alpha = 0.05f))
+                        .clickable { onAddClipToLane?.invoke(trackType, trackIndex) }
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = color.copy(alpha = 0.7f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            "+ Add clip to $label lane",
+                            color = color.copy(alpha = 0.8f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            } else {
+                var runningMs = 0L
+                val blocks = clips.map { clip ->
+                    val trackStart = runningMs
+                    val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+                    runningMs += trackLen
+                    Triple(clip, trackStart, trackLen)
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    for ((clip, trackStart, trackLen) in blocks) {
+                        val targetType = when (trackType) {
+                            com.apexstudio.app.domain.model.ClipType.VIDEO -> com.apexstudio.app.domain.model.ClipType.OVERLAY
+                            com.apexstudio.app.domain.model.ClipType.OVERLAY -> com.apexstudio.app.domain.model.ClipType.VIDEO
+                            com.apexstudio.app.domain.model.ClipType.AUDIO -> com.apexstudio.app.domain.model.ClipType.SFX
+                            com.apexstudio.app.domain.model.ClipType.SFX -> com.apexstudio.app.domain.model.ClipType.AUDIO
+                        }
+                        val targetIdx = if (trackIndex == 0) 1 else 0
+
+                        VideoClipBlock(
+                            clip = clip,
+                            trackStartMs = trackStart,
+                            trackLengthMs = trackLen,
+                            pxPerMs = pxPerMs,
+                            selected = selectedClipId == clip.id,
+                            playheadMs = playheadMs,
+                            onSelect = { onSelectClip(clip.id) },
+                            media = mediaByClipId[clip.id],
+                            onTrimChange = { start, end -> onTrimChange?.invoke(clip.id, start, end) },
+                            onSplit = { onSplitClip?.invoke(clip.id, playheadMs) },
+                            onDelete = { onDeleteClip?.invoke(clip.id) },
+                            onMoveTrack = { onMoveTrack?.invoke(clip.id, targetType, targetIdx) }
+                        )
+                    }
                 }
             }
         }
@@ -2170,9 +2295,13 @@ private fun VideoClipBlock(
     trackLengthMs: Long,
     pxPerMs: Float,
     selected: Boolean,
+    playheadMs: Long = 0L,
     onSelect: () -> Unit,
     media: ClipMedia? = null,
-    onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null
+    onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null,
+    onSplit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    onMoveTrack: (() -> Unit)? = null
 ) {
     val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
     val x = (trackStartMs * pxPerMs).toInt()
@@ -2185,10 +2314,22 @@ private fun VideoClipBlock(
             .padding(1.dp)
             .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onSelect)
-    ) {        // 1) Faux-tile background — drawn first so the real
-        //    thumbnails / waveform can layer on top the moment
-        //    TimelineMediaCache finishes extraction. The tile
-        //    pattern reads as "filmstrip" while the data loads.
+            .then(
+                if (selected) {
+                    Modifier.pointerInput(clip.id, pxPerMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            val curLen = clip.trimEndMs - clip.trimStartMs
+                            val newStart = (clip.trimStartMs + deltaMs).coerceIn(0L, (clip.durationMs - curLen).coerceAtLeast(0L))
+                            val newEnd = (newStart + curLen).coerceIn(newStart + 200L, clip.durationMs)
+                            onTrimChange?.invoke(newStart, newEnd)
+                        }
+                    }
+                } else Modifier
+            )
+    ) {
+        // 1) Faux-tile background
         Canvas(modifier = Modifier.fillMaxSize()) {
             val tileW = (size.width / 8f).coerceAtLeast(8f)
             val grad = Brush.horizontalGradient(
@@ -2223,17 +2364,12 @@ private fun VideoClipBlock(
                 size = Size(size.width, size.height * 0.3f)
             )
         }
-        // 2) Real clip content overlays — drawn on top of the
-        //    faux background. The block is wide enough that we
-        //    only render the frames/waveform that intersect the
-        //    visible region, but for a 17-frame filmstrip we just
-        //    draw all of them since they're cheap Canvas blits.
+
+        // 2) Real clip content overlays
         if (media != null) {
             if (clip.type == com.apexstudio.app.domain.model.ClipType.AUDIO ||
                 clip.type == com.apexstudio.app.domain.model.ClipType.SFX
             ) {
-                // Audio track: render the downsampled waveform
-                // as a vertical bar chart.
                 if (media.waveform.isNotEmpty()) {
                     Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
                         val mid = size.height / 2f
@@ -2253,10 +2389,6 @@ private fun VideoClipBlock(
                     }
                 }
             } else {
-                // Video / overlay track: render the real thumbnail
-                // filmstrip. Each frame is drawn at its slice of the
-                // block width; empty cells (frames not yet
-                // extracted) fall through to the faux background.
                 if (media.frames.isNotEmpty()) {
                     val frames = media.frames
                     Row(modifier = Modifier.fillMaxSize()) {
@@ -2275,8 +2407,6 @@ private fun VideoClipBlock(
                             }
                         }
                     }
-                    // Soft dark gradient so the clip label stays
-                    // legible over (potentially bright) frames.
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         drawRect(
                             brush = Brush.verticalGradient(
@@ -2288,7 +2418,8 @@ private fun VideoClipBlock(
                 }
             }
         }
-        // 3) Border + label are always on top of the media.
+
+        // 3) Border + label
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -2330,8 +2461,51 @@ private fun VideoClipBlock(
             }
         }
 
-        // 4) Interactive Trim Handles when selected
-        if (selected && clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
+        // 4) Quick Action Pill on Selected Clip (Split, Move Track, Delete)
+        if (selected) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .border(0.5.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 2.dp, vertical = 1.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Split at playhead
+                Box(
+                    modifier = Modifier
+                        .clickable { onSplit?.invoke() }
+                        .padding(horizontal = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✂", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+                // Move track
+                Box(
+                    modifier = Modifier
+                        .clickable { onMoveTrack?.invoke() }
+                        .padding(horizontal = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⇄", color = ApexPalette.Warning, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+                // Delete
+                Box(
+                    modifier = Modifier
+                        .clickable { onDelete?.invoke() }
+                        .padding(horizontal = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✕", color = ApexPalette.Danger, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 5) Interactive Trim Handles when selected
+        if (selected) {
             // Left Trim Handle (Draggable start bracket)
             Box(
                 modifier = Modifier

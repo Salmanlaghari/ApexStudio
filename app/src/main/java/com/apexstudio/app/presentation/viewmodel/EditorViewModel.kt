@@ -107,18 +107,42 @@ class EditorViewModel(
                 _state.update { it.copy(project = null, durationMs = 0L) }
                 return@launch
             }
-            // Auto-select the first video clip in the project AND
-            // flip isPlaying = true so the play/pause effect drives
-            // ExoPlayer into STATE_READY + playback as soon as the
-            // media-prep effect has queued the media item. The
-            // previous behaviour left both null/false on load, so
-            // the preview sat black until the user pressed play.
-            val firstClipId = p.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
-                ?: p.clips.firstOrNull()?.id
+
+            val sampleUri = context?.let { ctx ->
+                try {
+                    com.apexstudio.app.data.media.SampleVideoGenerator.getOrCreateSampleVideo(ctx)
+                } catch (_: Exception) { null }
+            }
+            val validClips = p.clips.map { clip ->
+                if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
+                    if (sampleUri != null) clip.copy(uri = sampleUri) else clip
+                } else clip
+            }
+            val effectiveClips = if (validClips.isEmpty() && sampleUri != null) {
+                listOf(
+                    MediaClip(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = "Sample_V1.mp4",
+                        uri = sampleUri,
+                        durationMs = 10_000L,
+                        trimStartMs = 0L,
+                        trimEndMs = 10_000L,
+                        type = ClipType.VIDEO,
+                        trackIndex = 0
+                    )
+                )
+            } else validClips
+            val updatedP = p.copy(
+                clips = effectiveClips,
+                durationMs = effectiveClips.maxOfOrNull { it.trimEndMs } ?: p.durationMs
+            )
+
+            val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
+                ?: updatedP.clips.firstOrNull()?.id
             _state.update {
                 it.copy(
-                    project = p,
-                    durationMs = p.durationMs,
+                    project = updatedP,
+                    durationMs = updatedP.durationMs,
                     canUndo = false, canRedo = false,
                     selectedClipId = it.selectedClipId ?: firstClipId,
                     isPlaying = firstClipId != null
@@ -285,12 +309,49 @@ class EditorViewModel(
     fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
 
     // ---- Filters ----
-    fun openFilterPanel() = _state.update { it.copy(filterPanelOpen = true) }
+    fun openFilterPanel() {
+        _state.update { it.copy(filterPanelOpen = true) }
+        ensureFilterThumbnails()
+    }
     fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     /** id == null clears the active filter (back to original video). */
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
+
+    /**
+     * Ensure generic filter preview swatches are generated for all filter presets.
+     * Uses a fixed photographic reference image so preview swatches are always
+     * available instantly and deterministically.
+     */
+    fun ensureFilterThumbnails() {
+        val ctx = context ?: return
+        if (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading) return
+        val manifest = try {
+            com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "Failed to load filter manifest", e)
+            return
+        }
+        _state.update { it.copy(filterThumbnailsLoading = true) }
+        viewModelScope.launch {
+            try {
+                val thumbMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateWithGenericImage(ctx, manifest)
+                val composeMap = thumbMap.mapValues { (_, bmp) -> bmp.asImageBitmap() }
+                _state.update {
+                    it.copy(
+                        filterThumbnails = composeMap,
+                        filterThumbnailsLoading = false
+                    )
+                }
+                Log.d("EditorViewModel", "Generated ${composeMap.size} generic filter thumbnails")
+            } catch (e: Exception) {
+                Log.e("EditorViewModel", "Generic filter thumbnail generation failed", e)
+                _state.update { it.copy(filterThumbnailsLoading = false) }
+            }
+        }
+    }
 
     /**
      * Generate 1:1 filter preview thumbnails from the video's first frame.
@@ -868,6 +929,71 @@ class EditorViewModel(
                     } else it
                 }
             ))
+        }
+    }
+
+    fun deleteClip(clipId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.filterNot { it.id == clipId }
+            val newSelected = if (s.selectedClipId == clipId) updated.firstOrNull()?.id else s.selectedClipId
+            val newDur = updated.maxOfOrNull { it.trimEndMs - it.trimStartMs } ?: 0L
+            s.copy(
+                project = p.copy(clips = updated, durationMs = newDur),
+                durationMs = newDur,
+                selectedClipId = newSelected
+            )
+        }
+        persistProject()
+    }
+
+    fun moveClipToTrack(clipId: String, newType: ClipType, newTrackIndex: Int) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.map {
+                if (it.id == clipId) it.copy(type = newType, trackIndex = newTrackIndex)
+                else it
+            }
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
+    fun addClipToTrack(type: ClipType, trackIndex: Int) {
+        val ctx = context ?: return
+        viewModelScope.launch {
+            val sampleUri = try {
+                com.apexstudio.app.data.media.SampleVideoGenerator.getOrCreateSampleVideo(ctx)
+            } catch (e: Exception) { "" }
+            val newClip = MediaClip(
+                id = java.util.UUID.randomUUID().toString(),
+                name = when(type) {
+                    ClipType.VIDEO -> "Clip_V1.mp4"
+                    ClipType.OVERLAY -> "Overlay_V2.mp4"
+                    ClipType.AUDIO -> "Track_A1.mp3"
+                    ClipType.SFX -> "Sfx_FX.wav"
+                },
+                uri = sampleUri,
+                durationMs = 10_000L,
+                trimStartMs = 0L,
+                trimEndMs = 10_000L,
+                trackIndex = trackIndex,
+                type = type
+            )
+            pushUndo()
+            _state.update { s ->
+                val p = s.project ?: return@update s
+                val updated = p.clips + newClip
+                val newDur = maxOf(s.durationMs, 10_000L)
+                s.copy(
+                    project = p.copy(clips = updated, durationMs = newDur),
+                    durationMs = newDur,
+                    selectedClipId = newClip.id
+                )
+            }
+            persistProject()
         }
     }
 

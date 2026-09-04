@@ -171,7 +171,7 @@ class TimelineTemplateManager(private val context: Context) {
             // 2. Color Filter LUT
             val filterConfig = template.filters.firstOrNull { it.clipId == clip.id }
             if (filterConfig != null) {
-                val preset = FilterManifest.findPreset(filterConfig.filterId)
+                val preset = FilterManifest.presetById(filterConfig.filterId)
                 if (preset != null && filterConfig.intensity > 0f) {
                     videoEffects.add(LutFilterGlEffect(context, preset, filterConfig.intensity))
                 }

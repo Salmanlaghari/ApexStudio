@@ -62,6 +62,12 @@ data class TextOverlay(
     val sizeScale: Float = 1f,
     val colorArgb: Long = 0xFFFFFFFFL,
     val bgArgb: Long? = null,
+    val strokeColorArgb: Long? = null,
+    val shadowColorArgb: Long? = null,
+    val fontFamily: String = "sans",
+    val isItalic: Boolean = false,
+    val isBold: Boolean = true,
+    val presetId: String? = null,
     // Active window on the clip's timeline (ms). Defaults to the
     // whole clip.
     val startMs: Long = 0L,
@@ -77,10 +83,18 @@ data class TextOverlay(
             y: Float = 0.5f,
             sizeScale: Float = 1f,
             colorArgb: Long = 0xFFFFFFFFL,
-            bgArgb: Long? = null
+            bgArgb: Long? = null,
+            strokeColorArgb: Long? = null,
+            shadowColorArgb: Long? = null,
+            fontFamily: String = "sans",
+            isItalic: Boolean = false,
+            isBold: Boolean = true,
+            presetId: String? = null
         ): TextOverlay = TextOverlay(
             id = id, text = text, x = x, y = y, sizeScale = sizeScale,
-            colorArgb = colorArgb, bgArgb = bgArgb
+            colorArgb = colorArgb, bgArgb = bgArgb, strokeColorArgb = strokeColorArgb,
+            shadowColorArgb = shadowColorArgb, fontFamily = fontFamily,
+            isItalic = isItalic, isBold = isBold, presetId = presetId
         )
     }
 }

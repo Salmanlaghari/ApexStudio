@@ -60,22 +60,75 @@ fun RealAudioWaveform(
     Canvas(modifier = modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
-        val mid = h / 2
+        val mid = h / 2f
         if (samples.isEmpty()) return@Canvas
-        val barWidth = (w / samples.size).coerceAtLeast(1f)
-        samples.forEachIndexed { i, v ->
-            val x = i * barWidth
-            val barH = (kotlin.math.abs(v) * mid * 0.92f).coerceAtLeast(2f)
-            val played = (i.toFloat() / samples.size) < progress
-            val c = if (played) color else color.copy(alpha = 0.25f)
-            drawLine(
-                color = c,
-                start = Offset(x, mid - barH / 2),
-                end = Offset(x, mid + barH / 2),
-                strokeWidth = barWidth * 0.8f,
-                cap = StrokeCap.Butt
-            )
+
+        val count = samples.size
+        val dx = w / count.coerceAtLeast(1).toFloat()
+
+        // Construct continuous upper and lower envelope paths
+        val upperPath = Path()
+        val lowerPath = Path()
+        val closedPath = Path()
+
+        upperPath.moveTo(0f, mid)
+        lowerPath.moveTo(0f, mid)
+        closedPath.moveTo(0f, mid)
+
+        for (i in 0 until count) {
+            val x = i * dx
+            val amp = (kotlin.math.abs(samples[i]) * mid * 0.95f).coerceAtLeast(1.5f)
+            val yTop = mid - amp
+            val yBottom = mid + amp
+
+            upperPath.lineTo(x, yTop)
+            closedPath.lineTo(x, yTop)
         }
+
+        closedPath.lineTo(w, mid)
+
+        for (i in count - 1 downTo 0) {
+            val x = i * dx
+            val amp = (kotlin.math.abs(samples[i]) * mid * 0.95f).coerceAtLeast(1.5f)
+            val yBottom = mid + amp
+            lowerPath.lineTo(x, yBottom)
+            closedPath.lineTo(x, yBottom)
+        }
+        closedPath.close()
+
+        // Fill background area under waveform with dynamic gradient
+        drawPath(
+            path = closedPath,
+            brush = Brush.verticalGradient(
+                listOf(
+                    color.copy(alpha = 0.45f),
+                    color.copy(alpha = 0.12f),
+                    color.copy(alpha = 0.45f)
+                ),
+                startY = 0f,
+                endY = h
+            )
+        )
+
+        // Draw upper and lower contour lines
+        drawPath(
+            path = upperPath,
+            color = color,
+            style = Stroke(width = 1.5f, cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = lowerPath,
+            color = color.copy(alpha = 0.75f),
+            style = Stroke(width = 1.5f, cap = StrokeCap.Round)
+        )
+
+        // Center zero-crossing baseline
+        drawLine(
+            color = color.copy(alpha = 0.3f),
+            start = Offset(0f, mid),
+            end = Offset(w, mid),
+            strokeWidth = 1f
+        )
     }
 }
 

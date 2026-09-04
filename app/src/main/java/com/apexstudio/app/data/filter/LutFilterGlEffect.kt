@@ -36,11 +36,12 @@ import java.io.InputStreamReader
 class LutFilterGlEffect(
     private val context: Context,
     private val preset: FilterPreset?,
-    private val intensity: Float
+    private val intensity: Float = 1f,
+    private val intensityProvider: (() -> Float)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), useHdr)
+        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, useHdr)
     }
 
     @UnstableApi
@@ -48,6 +49,7 @@ class LutFilterGlEffect(
         context: Context,
         preset: FilterPreset?,
         private val intensity: Float,
+        private val intensityProvider: (() -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -190,7 +192,8 @@ class LutFilterGlEffect(
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.setSamplerTexIdUniform("uLutSampler", lutTexId[0], 1)
                 glProgram.setFloatUniform("uLutSize", lutSize.toFloat())
-                glProgram.setFloatUniform("uIntensity", intensity)
+                val currentIntensity = intensityProvider?.invoke()?.coerceIn(0f, 1f) ?: intensity
+                glProgram.setFloatUniform("uIntensity", currentIntensity)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {

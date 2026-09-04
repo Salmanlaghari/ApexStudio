@@ -68,12 +68,34 @@ object TextSpriteRenderer {
         val centerX = overlay.x.coerceIn(0f, 1f) * width
         val centerY = overlay.y.coerceIn(0f, 1f) * height
 
+        val baseTf = when (overlay.fontFamily.lowercase()) {
+            "serif" -> Typeface.SERIF
+            "monospace", "mono" -> Typeface.MONOSPACE
+            else -> Typeface.SANS_SERIF
+        }
+        val tfStyle = when {
+            overlay.isBold && overlay.isItalic -> Typeface.BOLD_ITALIC
+            overlay.isBold -> Typeface.BOLD
+            overlay.isItalic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(baseTf, tfStyle)
             textAlign = Paint.Align.CENTER
             color = overlay.colorArgb.toInt()
             textSize = height * BASE_FONT_FRACTION * overlay.sizeScale.coerceIn(0.3f, 4f)
         }
+
+        overlay.shadowColorArgb?.let { shadowColor ->
+            paint.setShadowLayer(
+                height * 0.015f,
+                height * 0.004f,
+                height * 0.004f,
+                shadowColor.toInt()
+            )
+        }
+
         // Auto-fit long captions: start at the requested size and
         // shrink until the string fits the safe width.
         val maxW = width * MAX_TEXT_WIDTH_FRACTION
@@ -102,6 +124,17 @@ object TextSpriteRenderer {
                 height * 0.012f,
                 pill
             )
+        }
+
+        // Draw outline stroke if specified
+        overlay.strokeColorArgb?.let { strokeColor ->
+            val strokePaint = Paint(paint).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = (height * 0.008f).coerceAtLeast(2f)
+                color = strokeColor.toInt()
+                clearShadowLayer()
+            }
+            canvas.drawText(overlay.text, centerX, textTop, strokePaint)
         }
 
         canvas.drawText(overlay.text, centerX, textTop, paint)

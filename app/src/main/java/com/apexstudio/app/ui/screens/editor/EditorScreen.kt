@@ -1,11 +1,15 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,6 +42,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -71,9 +77,11 @@ import com.apexstudio.app.ui.components.NeonIconButton
 import com.apexstudio.app.ui.components.RealAudioWaveform
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun EditorScreen(
@@ -273,7 +281,8 @@ fun EditorScreen(
             if (activePreset != null && state.filterIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
-                        context, activePreset, state.filterIntensity
+                        context, activePreset, state.filterIntensity,
+                        intensityProvider = { state.filterIntensity }
                     )
                 )
             }
@@ -375,6 +384,35 @@ fun EditorScreen(
         }
     }
 
+    // Live filter thumbnails: extract active video frame and generate real-time LUT previews
+    LaunchedEffect(state.filterPanelOpen, state.selectedClipId) {
+        if (state.filterPanelOpen && state.filterThumbnails.isEmpty()) {
+            val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                ?: state.project?.clips?.firstOrNull()
+            if (clip != null) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val retriever = MediaMetadataRetriever()
+                        retriever.setDataSource(context, Uri.parse(clip.uri))
+                        val frameUs = state.playerPositionMs * 1000L
+                        val bmp = retriever.getScaledFrameAtTime(
+                            frameUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            160,
+                            160
+                        ) ?: retriever.frameAtTime
+                        retriever.release()
+                        if (bmp != null) {
+                            vm.generateFilterThumbnails(bmp)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("EditorScreen", "Could not extract frame for filter thumbnails", e)
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(exoPlayer) {
         val player = exoPlayer ?: return@LaunchedEffect
         while (isActive) {
@@ -399,21 +437,14 @@ fun EditorScreen(
             // state.playerPositionMs; without this hop the player
             // would never actually seek and the playhead indicator
             // would drift away from the frame ExoPlayer is rendering.
-            //
-            // We poll instead of a separate LaunchedEffect because
-            // (a) the polling loop already runs every 100ms so we
-            // don't need a redundant effect, and (b) the dead-band
-            // check here naturally folds "user-initiated seek" and
-            // "polling tick" into the same code path without the
-            // risk of two effects fighting each other.
             val target = state.playerPositionMs
             val current = player.currentPosition
             if (player.currentMediaItem != null &&
-                kotlin.math.abs(current - target) > 80
+                kotlin.math.abs(current - target) > 30
             ) {
                 player.seekTo(target)
             }
-            delay(100)
+            delay(25)
         }
     }
 
@@ -466,7 +497,10 @@ fun EditorScreen(
 
         TimelineSection(
             state = state,
-            onScrub = { vm.seekTo(it) },
+            onScrub = { targetMs ->
+                vm.seekTo(targetMs)
+                exoPlayer?.seekTo(targetMs)
+            },
             onZoom = { vm.multiplyZoom(it) },
             onSelectClip = { vm.selectClip(it) },
             onAddMedia = {
@@ -509,6 +543,8 @@ fun EditorScreen(
             onAudio = onAudio,
             onText = { vm.openTextPanel() },
             onFx = { vm.openFxPanel() },
+            onKeyframes = { vm.setKeyframePanelOpen(true) },
+            keyframesActive = state.keyframePanelOpen || (selectedClipForTrim != null && !selectedClipForTrim.keyframes.isEmpty()),
             onExport = onExport,
             modifier = Modifier
                 .fillMaxWidth()
@@ -713,6 +749,11 @@ fun EditorScreen(
                     onDelete = { overlayId ->
                         textClip?.let { vm.removeTextOverlay(it.id, overlayId) }
                     },
+                    onApplyPreset = { preset ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.applyTextPreset(textClip.id, activeOverlayId, preset)
+                        }
+                    },
                     onClose = { vm.closeTextPanel() }
                 )
             }
@@ -898,6 +939,17 @@ private fun VideoPreviewSection(
         }
     }
 
+    var controlsVisible by remember { mutableStateOf(true) }
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Auto-hide controls overlay after 2 seconds of inactivity while video is playing
+    LaunchedEffect(controlsVisible, isPlaying, lastInteractionTime) {
+        if (controlsVisible && isPlaying) {
+            delay(2000)
+            controlsVisible = false
+        }
+    }
+
     // The outer Box no longer adds vertical padding around the video
     // surface. A previous 4.dp vertical padding combined with the
     // weight(0.35f) slot produced a thin strip of background bleeding
@@ -949,10 +1001,15 @@ private fun VideoPreviewSection(
                 .then(
                     if (cropMode) Modifier
                     else Modifier.clickable {
-                        flashFeedback(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
-                        )
-                        onTogglePlay()
+                        lastInteractionTime = System.currentTimeMillis()
+                        if (!controlsVisible) {
+                            controlsVisible = true
+                        } else {
+                            flashFeedback(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+                            )
+                            onTogglePlay()
+                        }
                     }
                 ),
             contentAlignment = Alignment.Center
@@ -1168,94 +1225,141 @@ private fun VideoPreviewSection(
                 }
             }
 
-            // Timecode chip (top-end). The previous bottom control row
-            // (add / prev / rewind / play / forward / next) has been
-            // removed entirely — the user now toggles play/pause by
-            // tapping anywhere on the video surface, and the + add
-            // media button lives on the empty timeline (see
-            // TimelineSection).
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(10.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(ApexPalette.BgGlass)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            // Auto-hiding gesture controls overlay (Play/Pause, +5s, -5s, Timecode, Aspect Ratio Badge)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = controlsVisible && !cropMode,
+                enter = fadeIn(tween(180)),
+                exit = fadeOut(tween(300)),
+                modifier = Modifier.fillMaxSize()
             ) {
-                Text(
-                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
-                    color = ApexPalette.NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-        }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                ) {
+                    // Top-Start: Aspect Ratio Badge
+                    val aspectLabel = remember(videoWidth, videoHeight) {
+                        if (videoWidth > 0 && videoHeight > 0) {
+                            val ratio = videoWidth.toFloat() / videoHeight.toFloat()
+                            when {
+                                kotlin.math.abs(ratio - 16f / 9f) < 0.05f -> "16:9 HD"
+                                kotlin.math.abs(ratio - 9f / 16f) < 0.05f -> "9:16 Shorts"
+                                kotlin.math.abs(ratio - 1f) < 0.05f -> "1:1 Square"
+                                kotlin.math.abs(ratio - 4f / 5f) < 0.05f -> "4:5 Portrait"
+                                kotlin.math.abs(ratio - 21f / 9f) < 0.05f -> "21:9 Cinema"
+                                else -> "${videoWidth}x${videoHeight}"
+                            }
+                        } else "16:9 HD"
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ApexPalette.BgGlass)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            aspectLabel,
+                            color = ApexPalette.NeonCyan,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 10.sp
+                        )
+                    }
 
-        // Left/right seek-5s zones overlaid on the video. The main
-        // clickable on the video Box still toggles play/pause, but
-        // these pointer-input handlers sit on top and consume taps in
-        // the outer thirds so the user can scrub ±5s without hunting
-        // for on-screen buttons.
-        //
-        // While crop mode is on both the zones and the tap-to-play
-        // surface are disabled so the crop handles can never be
-        // shadowed by an invisible tap catcher.
-        if (!cropMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .pointerInput(Unit) {
-                            detectTapGestures {
-                                flashFeedback(Icons.Default.FastRewind)
-                                onPrev()
-                            }
+                    // Top-End: Timecode chip
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ApexPalette.BgGlass)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                            color = ApexPalette.NeonCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+
+                    // Center transport controls (⏪ -5s, Play/Pause, ⏩ +5s)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth(0.85f),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Rewind -5s
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    flashFeedback(Icons.Default.FastRewind)
+                                    onPrev()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FastRewind,
+                                contentDescription = "Seek back 5s",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .pointerInput(Unit) {
-                            detectTapGestures {
-                                flashFeedback(Icons.Default.FastForward)
-                                onNext()
-                            }
+
+                        // Central Play/Pause button
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(ApexPalette.NeonCyan.copy(alpha = 0.25f))
+                                .border(2.dp, ApexPalette.NeonCyan, CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    flashFeedback(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow)
+                                    onTogglePlay()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(34.dp)
+                            )
                         }
-                )
-            }
-            // Visible ⏪ / ⏩ quick-seek buttons layered over the tap
-            // zones, centre-left / centre-right of the video. Hidden in
-            // crop mode so they never shadow the crop handles.
-            Row(
-                modifier = Modifier
-                    .fillMaxSize(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                QuickSeekButton(
-                    icon = Icons.Default.FastRewind,
-                    contentDescription = "Seek back 5s"
-                ) {
-                    flashFeedback(Icons.Default.FastRewind)
-                    onPrev()
-                }
-                QuickSeekButton(
-                    icon = Icons.Default.FastForward,
-                    contentDescription = "Seek forward 5s"
-                ) {
-                    flashFeedback(Icons.Default.FastForward)
-                    onNext()
+
+                        // Forward +5s
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    flashFeedback(Icons.Default.FastForward)
+                                    onNext()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FastForward,
+                                contentDescription = "Seek forward 5s",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2205,6 +2309,27 @@ private fun VideoClipBlock(
                 .padding(start = if (selected) 16.dp else 4.dp, top = 2.dp)
         )
 
+        // 3.5) Keyframe diamond markers directly on the clip
+        val keyframeList = clip.keyframes.keyframes
+        if (keyframeList.isNotEmpty()) {
+            keyframeList.forEach { kf ->
+                val relMs = kf.timeMs - clip.trimStartMs
+                if (relMs in 0L..(clip.trimEndMs - clip.trimStartMs)) {
+                    val kfPx = relMs * pxPerMs
+                    val kfDp = with(density) { kfPx.toDp() }
+                    Box(
+                        modifier = Modifier
+                            .offset(x = kfDp - 4.dp)
+                            .align(Alignment.CenterStart)
+                            .size(8.dp)
+                            .graphicsLayer(rotationZ = 45f)
+                            .background(ApexPalette.NeonCyan)
+                            .border(0.75.dp, Color.White, RectangleShape)
+                    )
+                }
+            }
+        }
+
         // 4) Interactive Trim Handles when selected
         if (selected && clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
             // Left Trim Handle (Draggable start bracket)
@@ -2346,6 +2471,8 @@ private fun HorizontalToolBar(
     onAudio: () -> Unit,
     onText: () -> Unit,
     onFx: () -> Unit,
+    onKeyframes: () -> Unit = {},
+    keyframesActive: Boolean = false,
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2406,10 +2533,11 @@ private fun HorizontalToolBar(
             ToolDef("Speed", Icons.Default.Speed, onSpeed),
             ToolDef("Crop", Icons.Default.Crop, onCrop, highlight = cropActive),
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),
-            ToolDef("Color", Icons.Default.Palette, onColor),
-            ToolDef("Audio", Icons.Default.GraphicEq, onAudio),
+            ToolDef("Keyframe", Icons.Default.Animation, onKeyframes, highlight = keyframesActive),
+            ToolDef("FX", Icons.Default.AutoAwesome, onFx),
             ToolDef("Text", Icons.Default.TextFields, onText),
-            ToolDef("FX", Icons.Default.AutoAwesome, onFx)
+            ToolDef("Color", Icons.Default.Palette, onColor),
+            ToolDef("Audio", Icons.Default.GraphicEq, onAudio)
         )
         LazyRow(
             modifier = Modifier

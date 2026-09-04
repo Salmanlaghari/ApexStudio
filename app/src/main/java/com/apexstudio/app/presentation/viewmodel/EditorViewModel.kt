@@ -408,6 +408,9 @@ class EditorViewModel(
     fun setTextOverlaySize(clipId: String, overlayId: String, sizeScale: Float) =
         updateTextOverlay(clipId, overlayId) { it.copy(sizeScale = sizeScale.coerceIn(0.4f, 3f)) }
 
+    fun applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
+        updateTextOverlay(clipId, overlayId) { preset.applyTo(it) }
+
     fun removeTextOverlay(clipId: String, overlayId: String) {
         updateClip(clipId) { clip ->
             clip.copy(textOverlays = clip.textOverlays.filterNot { it.id == overlayId })

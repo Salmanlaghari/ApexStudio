@@ -20,6 +20,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.text.TextPreset
+import com.apexstudio.app.data.text.TextPresetEngine
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 
@@ -35,6 +41,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * clip (tap to select, drag on the preview to position), edits the
  * selected caption's text / colour / pill / size, and adds/deletes
  * captions. All changes persist to the project immediately.
+ * Features the 500+ Text Studio Preset Engine for instant styling.
  */
 @Composable
 fun TextPanel(
@@ -47,9 +54,13 @@ fun TextPanel(
     onBgChange: (Long?) -> Unit,
     onSizeChange: (Float) -> Unit,
     onDelete: (String) -> Unit,
+    onApplyPreset: (TextPreset) -> Unit = {},
     onClose: () -> Unit
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
+    var selectedCategory by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(TextPresetEngine.categories.first())
+    }
 
     Column(
         modifier = Modifier
@@ -177,6 +188,90 @@ fun TextPanel(
             ),
             modifier = Modifier.fillMaxWidth()
         )
+
+        Spacer(Modifier.height(12.dp))
+
+        // 500+ Text Studio Presets
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Preset Studio (500+)",
+                color = ApexPalette.NeonCyan,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "${TextPresetEngine.presets.size} Styles",
+                color = ApexPalette.TextTertiary,
+                fontSize = 10.sp
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        // Preset Categories
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(TextPresetEngine.categories) { cat ->
+                val isSel = cat == selectedCategory
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSel) ApexPalette.NeonCyan else ApexPalette.BgElevated)
+                        .clickable { selectedCategory = cat }
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        cat,
+                        color = if (isSel) Color(0xFF0A0E1A) else ApexPalette.TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Presets in category
+        val categoryPresets = TextPresetEngine.getPresetsForCategory(selectedCategory)
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(categoryPresets) { preset ->
+                val isCurrent = selected.presetId == preset.id
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (preset.bgArgb != null) Color(preset.bgArgb.toInt())
+                            else ApexPalette.BgElevated
+                        )
+                        .border(
+                            1.5.dp,
+                            if (isCurrent) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onApplyPreset(preset) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        preset.name,
+                        color = Color(preset.colorArgb.toInt()),
+                        fontSize = 11.sp,
+                        fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
+                        fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
+                    )
+                }
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
 

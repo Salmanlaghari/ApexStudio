@@ -62,6 +62,14 @@ object TimeFormat {
         val cs = ((ms % 1000) / 10).toInt()
         return "%02d:%02d:%02d".format(m, s, cs)
     }
+
+    fun formatMs(ms: Long): String {
+        val totalSec = (ms / 1000).coerceAtLeast(0)
+        val m = totalSec / 60
+        val s = totalSec % 60
+        val tenths = ((ms.coerceAtLeast(0) % 1000) / 100).toInt()
+        return "%02d:%02d.%d".format(m, s, tenths)
+    }
 }
 
 object Fps {

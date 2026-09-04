@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -381,6 +382,18 @@ fun EditorScreen(
             if (pos != state.playerPositionMs) {
                 vm.setPlayerPosition(pos)
             }
+            // Loop within trimmed start and end boundaries for the active clip
+            val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                ?: state.project?.clips?.firstOrNull()
+            if (activeClip != null && player.isPlaying) {
+                if (pos >= activeClip.trimEndMs) {
+                    player.seekTo(activeClip.trimStartMs)
+                    vm.setPlayerPosition(activeClip.trimStartMs)
+                } else if (pos < activeClip.trimStartMs) {
+                    player.seekTo(activeClip.trimStartMs)
+                    vm.setPlayerPosition(activeClip.trimStartMs)
+                }
+            }
             // Forward seek requests from the timeline scrubber /
             // ±5s buttons / etc. into ExoPlayer. The VM only updates
             // state.playerPositionMs; without this hop the player
@@ -465,12 +478,22 @@ fun EditorScreen(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                 )
             },
+            onTrimChange = { clipId, startMs, endMs ->
+                vm.trimClip(clipId, startMs, endMs)
+                exoPlayer?.seekTo(startMs)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.45f)
         )
 
+        val selectedClipForTrim = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+            ?: state.project?.clips?.firstOrNull()
+        val isTrimmedActive = state.trimPanelOpen || (selectedClipForTrim != null && (selectedClipForTrim.trimStartMs > 0 || (selectedClipForTrim.trimEndMs < selectedClipForTrim.durationMs && selectedClipForTrim.trimEndMs > 0)))
+
         HorizontalToolBar(
+            onTrim = { vm.openTrimPanel() },
+            trimActive = isTrimmedActive,
             onSplit = {
                 state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
             },
@@ -486,11 +509,64 @@ fun EditorScreen(
             onAudio = onAudio,
             onText = { vm.openTextPanel() },
             onFx = { vm.openFxPanel() },
-            onExport = {},
+            onExport = onExport,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.20f)
         )
+    }
+
+    // Trim panel — bottom-sheet style overlay with visual start/end sliders & preview
+    if (state.trimPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeTrimPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { /* eat clicks */ }
+            ) {
+                val clipToTrim = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                    ?: state.project?.clips?.firstOrNull()
+                TrimPanel(
+                    clip = clipToTrim,
+                    currentPlayheadMs = state.playerPositionMs,
+                    onTrimChange = { start, end ->
+                        clipToTrim?.let {
+                            vm.trimClip(it.id, start, end)
+                            exoPlayer?.seekTo(start)
+                        }
+                    },
+                    onSetStartAtPlayhead = {
+                        clipToTrim?.let {
+                            vm.setTrimStartAtPlayhead(it.id)
+                            exoPlayer?.seekTo(state.playerPositionMs)
+                        }
+                    },
+                    onSetEndAtPlayhead = {
+                        clipToTrim?.let {
+                            vm.setTrimEndAtPlayhead(it.id)
+                            exoPlayer?.seekTo(state.playerPositionMs)
+                        }
+                    },
+                    onResetTrim = {
+                        clipToTrim?.let { vm.resetTrim(it.id) }
+                    },
+                    onPreviewTrimmed = {
+                        clipToTrim?.let {
+                            exoPlayer?.seekTo(it.trimStartMs)
+                            if (!state.isPlaying) vm.togglePlay()
+                        }
+                    },
+                    onExport = onExport,
+                    onClose = { vm.closeTrimPanel() }
+                )
+            }
+        }
     }
 
     // Filter panel — bottom-sheet style overlay. Only mounted while
@@ -1523,6 +1599,7 @@ private fun TimelineSection(
     onZoom: (Float) -> Unit,
     onSelectClip: (String?) -> Unit,
     onAddMedia: () -> Unit,
+    onTrimChange: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
@@ -1813,7 +1890,8 @@ private fun TimelineSection(
                     clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO },
                     selectedClipId = state.selectedClipId,
                     onSelectClip = onSelectClip,
-                    mediaByClipId = mediaByClipId
+                    mediaByClipId = mediaByClipId,
+                    onTrimChange = onTrimChange
                 )
                 VideoTrackRow(
                     label = "V2",
@@ -1823,7 +1901,8 @@ private fun TimelineSection(
                     clips = clips.filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY },
                     selectedClipId = state.selectedClipId,
                     onSelectClip = onSelectClip,
-                    mediaByClipId = mediaByClipId
+                    mediaByClipId = mediaByClipId,
+                    onTrimChange = onTrimChange
                 )
                 RealWaveformTrackRow(
                     label = "A1",
@@ -1916,7 +1995,8 @@ private fun VideoTrackRow(
     clips: List<MediaClip>,
     selectedClipId: String?,
     onSelectClip: (String?) -> Unit,
-    mediaByClipId: Map<String, ClipMedia> = emptyMap()
+    mediaByClipId: Map<String, ClipMedia> = emptyMap(),
+    onTrimChange: ((clipId: String, startMs: Long, endMs: Long) -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val trackHeightDp = 42.dp
@@ -1970,7 +2050,8 @@ private fun VideoTrackRow(
                         pxPerMs = pxPerMs,
                         selected = selectedClipId == clip.id,
                         onSelect = { onSelectClip(clip.id) },
-                        media = mediaByClipId[clip.id]
+                        media = mediaByClipId[clip.id],
+                        onTrimChange = { start, end -> onTrimChange?.invoke(clip.id, start, end) }
                     )
                 }
             }
@@ -1986,7 +2067,8 @@ private fun VideoClipBlock(
     pxPerMs: Float,
     selected: Boolean,
     onSelect: () -> Unit,
-    media: ClipMedia? = null
+    media: ClipMedia? = null,
+    onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null
 ) {
     val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
     val x = (trackStartMs * pxPerMs).toInt()
@@ -1997,7 +2079,7 @@ private fun VideoClipBlock(
             .width(with(density) { w.toDp() })
             .fillMaxHeight()
             .padding(1.dp)
-            .clip(RoundedCornerShape(3.dp))
+            .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onSelect)
     ) {        // 1) Faux-tile background — drawn first so the real
         //    thumbnails / waveform can layer on top the moment
@@ -2107,9 +2189,9 @@ private fun VideoClipBlock(
             modifier = Modifier
                 .fillMaxSize()
                 .border(
-                    if (selected) 1.5.dp else 0.5.dp,
+                    if (selected) 2.dp else 0.5.dp,
                     if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.15f),
-                    RoundedCornerShape(3.dp)
+                    RoundedCornerShape(4.dp)
                 )
         )
         Text(
@@ -2120,8 +2202,82 @@ private fun VideoClipBlock(
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(3.dp)
+                .padding(start = if (selected) 16.dp else 4.dp, top = 2.dp)
         )
+
+        // 4) Interactive Trim Handles when selected
+        if (selected && clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
+            // Left Trim Handle (Draggable start bracket)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(16.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp))
+                    .background(ApexPalette.NeonCyan.copy(alpha = 0.85f))
+                    .pointerInput(clip.id, clip.durationMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            val newStart = (clip.trimStartMs + deltaMs).coerceIn(0L, clip.trimEndMs - 200L)
+                            onTrimChange?.invoke(newStart, clip.trimEndMs)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "[",
+                    color = ApexPalette.BgDeep,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+            }
+
+            // Right Trim Handle (Draggable end bracket)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(16.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
+                    .background(ApexPalette.NeonCyan.copy(alpha = 0.85f))
+                    .pointerInput(clip.id, clip.durationMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            val newEnd = (clip.trimEndMs + deltaMs).coerceIn(clip.trimStartMs + 200L, clip.durationMs)
+                            onTrimChange?.invoke(clip.trimStartMs, newEnd)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "]",
+                    color = ApexPalette.BgDeep,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+            }
+
+            // Trim info badge at bottom
+            if (clip.trimStartMs > 0 || clip.trimEndMs < clip.durationMs) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 2.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        "${com.apexstudio.app.util.TimeFormat.formatMs(clip.trimStartMs)} ── ${com.apexstudio.app.util.TimeFormat.formatMs(clip.trimEndMs)}",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2175,6 +2331,8 @@ private fun RealWaveformTrackRow(
 
 @Composable
 private fun HorizontalToolBar(
+    onTrim: () -> Unit,
+    trimActive: Boolean = false,
     onSplit: () -> Unit,
     onCut: () -> Unit,
     onSpeed: () -> Unit,
@@ -2242,8 +2400,9 @@ private fun HorizontalToolBar(
             }
         }
         val items = listOf(
-            ToolDef("Split", Icons.Default.ContentCut, onSplit),
-            ToolDef("Cut", Icons.Default.ContentCut, onCut),
+            ToolDef("Trim", Icons.Default.ContentCut, onTrim, highlight = trimActive),
+            ToolDef("Split", Icons.Default.VerticalAlignCenter, onSplit),
+            ToolDef("Cut", Icons.Default.DeleteSweep, onCut),
             ToolDef("Speed", Icons.Default.Speed, onSpeed),
             ToolDef("Crop", Icons.Default.Crop, onCrop, highlight = cropActive),
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),

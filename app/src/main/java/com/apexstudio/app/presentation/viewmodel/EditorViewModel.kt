@@ -464,7 +464,9 @@ class EditorViewModel(
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },
-                textOverlays = selected?.textOverlays ?: emptyList()
+                textOverlays = selected?.textOverlays ?: emptyList(),
+                trimStartMs = selected?.trimStartMs ?: 0L,
+                trimEndMs = selected?.trimEndMs ?: 0L
             )
         )
     }
@@ -781,15 +783,51 @@ class EditorViewModel(
     fun trimClip(clipId: String, startMs: Long, endMs: Long) {
         pushUndo()
         _state.update { s ->
-            s.copy(project = s.project?.copy(
-                clips = s.project.clips.map { c ->
-                    if (c.id == clipId) c.copy(
-                        trimStartMs = startMs.coerceAtLeast(0),
-                        trimEndMs = endMs.coerceAtMost(c.durationMs)
-                    ) else c
-                }
-            ))
+            val proj = s.project ?: return@update s
+            val updatedClips = proj.clips.map { c ->
+                if (c.id == clipId) {
+                    val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
+                    val safeEnd = endMs.coerceIn(safeStart + 100L, c.durationMs)
+                    c.copy(
+                        trimStartMs = safeStart,
+                        trimEndMs = safeEnd
+                    )
+                } else c
+            }
+            val newDuration = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+            val newPlayhead = s.playerPositionMs.coerceIn(0L, newDuration)
+            s.copy(
+                project = proj.copy(clips = updatedClips, durationMs = newDuration),
+                durationMs = newDuration,
+                playerPositionMs = newPlayhead,
+                currentTimeMs = newPlayhead,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty()
+            )
         }
+        persistProject()
+    }
+
+    fun openTrimPanel() = _state.update { it.copy(trimPanelOpen = true) }
+    fun closeTrimPanel() = _state.update { it.copy(trimPanelOpen = false) }
+
+    fun setTrimStartAtPlayhead(clipId: String) {
+        val playhead = _state.value.playerPositionMs
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
+        trimClip(clipId, newStart, clip.trimEndMs)
+    }
+
+    fun setTrimEndAtPlayhead(clipId: String) {
+        val playhead = _state.value.playerPositionMs
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+        trimClip(clipId, clip.trimStartMs, newEnd)
+    }
+
+    fun resetTrim(clipId: String) {
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        trimClip(clipId, 0L, clip.durationMs)
     }
 
     fun splitClip(clipId: String, atMs: Long) {

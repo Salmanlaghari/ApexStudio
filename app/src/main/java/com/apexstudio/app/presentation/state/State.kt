@@ -59,7 +59,9 @@ data class EditorState(
     // sheet is up; selectedTextOverlayId points at the caption being
     // edited / dragged on the preview.
     val textPanelOpen: Boolean = false,
-    val selectedTextOverlayId: String? = null
+    val selectedTextOverlayId: String? = null,
+    // Set to true while the Trim & Set Points bottom sheet is open.
+    val trimPanelOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

@@ -75,7 +75,12 @@ class ExportEngine(private val context: Context) {
         // its own TextOverlayGlEffect that composites a rasterised
         // sprite (same geometry as the editor preview) over the
         // frame after crop / grade / transform.
-        val textOverlays: List<TextOverlay> = emptyList()
+        val textOverlays: List<TextOverlay> = emptyList(),
+        // Trimming start and end offsets in milliseconds.
+        // Media3 Transformer uses ClippingConfiguration to cleanly trim the video
+        // at frame-accurate boundaries without unnecessary re-encoding.
+        val trimStartMs: Long = 0L,
+        val trimEndMs: Long = 0L
     )
 
     fun startExport(
@@ -87,7 +92,18 @@ class ExportEngine(private val context: Context) {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
 
-                val inputMediaItem = MediaItem.fromUri(Uri.parse(inputUri))
+                val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
+                if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
+                    val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
+                    if (config.trimStartMs > 0L) {
+                        clippingBuilder.setStartPositionMs(config.trimStartMs)
+                    }
+                    if (config.trimEndMs > config.trimStartMs) {
+                        clippingBuilder.setEndPositionMs(config.trimEndMs)
+                    }
+                    mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
+                }
+                val inputMediaItem = mediaItemBuilder.build()
 
                 val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                 outputDir.mkdirs()
@@ -147,34 +163,56 @@ class ExportEngine(private val context: Context) {
                     .setEffects(Effects(audioProcessors, videoEffects))
                     .build()
 
-                val transformer = Transformer.Builder(context)
-                    .addListener(object : Transformer.Listener {
-                        override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                            mainHandler.post {
-                                _exportState.value = ExportProgressState(
-                                    isExporting = false,
-                                    progress = 1f,
-                                    outputUri = Uri.fromFile(outputFile).toString()
-                                )
-                            }
+                var progressJob: kotlinx.coroutines.Job? = null
+                val transformerListener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        progressJob?.cancel()
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(outputFile).toString()
+                            )
                         }
+                    }
 
-                        override fun onError(
-                            composition: Composition,
-                            exportResult: ExportResult,
-                            exportException: ExportException
-                        ) {
-                            mainHandler.post {
-                                _exportState.value = ExportProgressState(
-                                    isExporting = false,
-                                    progress = 0f,
-                                    error = exportException.message ?: "Export failed"
-                                )
-                            }
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        progressJob?.cancel()
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 0f,
+                                error = exportException.message ?: "Export failed"
+                            )
                         }
-                    })
+                    }
+                }
+
+                val transformer = Transformer.Builder(context)
+                    .addListener(transformerListener)
                     .build()
                 this@ExportEngine.transformer = transformer
+
+                val progressHolder = androidx.media3.transformer.ProgressHolder()
+                progressJob = launch {
+                    while (_exportState.value.isExporting && this@ExportEngine.transformer != null) {
+                        val pState = this@ExportEngine.transformer?.getProgress(progressHolder)
+                        if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
+                            val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
+                            mainHandler.post {
+                                if (_exportState.value.isExporting) {
+                                    _exportState.value = _exportState.value.copy(progress = p)
+                                }
+                            }
+                        }
+                        kotlinx.coroutines.delay(150)
+                    }
+                }
+
                 transformer.start(editedMediaItem, outputFile.absolutePath)
             } catch (e: Exception) {
                 Log.e("ExportEngine", "Export failed", e)

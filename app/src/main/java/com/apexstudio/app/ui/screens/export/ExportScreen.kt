@@ -47,6 +47,7 @@ fun ExportScreen(
     )
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
+    val editorState by vm.state.collectAsStateWithLifecycle()
     val fxList = vm.fx.collectAsStateWithLifecycle().value
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
     var selectedResolution by remember { mutableStateOf("4K") }
@@ -222,6 +223,112 @@ fun ExportScreen(
                             color = ApexPalette.NeonCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            val selectedClip = editorState.project?.clips?.firstOrNull { it.id == editorState.selectedClipId }
+                ?: editorState.project?.clips?.firstOrNull()
+            val trimStart = selectedClip?.trimStartMs ?: 0L
+            val trimEnd = selectedClip?.trimEndMs ?: selectedClip?.durationMs ?: 0L
+            val clipDuration = selectedClip?.durationMs ?: 0L
+            val isTrimmed = trimStart > 0L || (trimEnd < clipDuration && trimEnd > 0L)
+            val trimmedDuration = (trimEnd - trimStart).coerceAtLeast(0L)
+
+            SectionLabel("MEDIA3 TRANSFORMER TRIMMING")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isTrimmed) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                else ApexPalette.BgElevated
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCut,
+                            contentDescription = null,
+                            tint = if (isTrimmed) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (isTrimmed) "Trim Points Active" else "Full Video Clip",
+                                color = if (isTrimmed) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isTrimmed) {
+                                Spacer(Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(ApexPalette.NeonCyan)
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text("TRIMMED", color = ApexPalette.BgDeep, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (isTrimmed)
+                                "Range: ${com.apexstudio.app.util.TimeFormat.formatMs(trimStart)} ➔ ${com.apexstudio.app.util.TimeFormat.formatMs(trimEnd)} (Length: ${com.apexstudio.app.util.TimeFormat.formatMs(trimmedDuration)})"
+                            else "Full video export (${com.apexstudio.app.util.TimeFormat.formatMs(clipDuration)})",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            if (export.outputUri != null) {
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 14.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = ApexPalette.NeonCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Media3 Transformer Export Complete!",
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Text(
+                            "Exported trimmed MP4 to device storage:",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            export.outputUri ?: "",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            maxLines = 2
                         )
                     }
                 }

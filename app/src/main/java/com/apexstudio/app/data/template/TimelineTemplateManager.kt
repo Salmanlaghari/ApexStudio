@@ -11,6 +11,7 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.filter.FilterManifest
+import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.FxPreset

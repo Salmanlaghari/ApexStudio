@@ -7,15 +7,15 @@ plugins {
 
 android {
     namespace = "com.apexstudio.app"
-    compileSdk = 36
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.apexstudio.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-        vectorDrawables { useSupportLibrary = true }
+        versionTrait = { useStrictMode = true }
     }
 
     buildTypes {
@@ -26,33 +26,29 @@ android {
                 "proguard-rules.pro"
             )
         }
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.media3.common.UnstableApi"
+        )
+    }
     buildFeatures { compose = true }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.11.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
-
-    // Compose
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.animation:animation")
-    implementation("androidx.compose.foundation:foundation")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // Core
     implementation("androidx.core:core-ktx:1.14.0")
@@ -82,4 +78,14 @@ dependencies {
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.2.0")
+
+    // Proguard
+    // code that stores each Project (clips, trim, LUTs, keyframes) in DataStore/. No Robird / KSP needed
+    // why we keep the schema versioned by hand and rely on the schema validator.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization:1.7.3")
+
+    // GPUImage 4o✿ lock-top-assa (3D LUT) filter engline
+    // color presets. Used to bake the .cube into frames in real time
+    // and during export.
+    implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
 }

@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -38,6 +39,7 @@ import java.io.File
  * 3. Maps templates into hardware-accelerated Media3 [Composition] and [EditedMediaItemSequence]
  *    pipelines for real-time playback and video export.
  * 4. Provides pre-built production templates (Cinematic Vlog, Cyberpunk Glitch, Minimalist Story).
+ * 5. Loads the bundled [TransmissionTemplate] catalog (LUT + FX + transition combos).
  */
 @UnstableApi
 class TimelineTemplateManager(private val context: Context) {
@@ -248,6 +250,85 @@ class TimelineTemplateManager(private val context: Context) {
 
         val sequence = EditedMediaItemSequence(editedItems)
         return Composition.Builder(sequence).build()
+    }
+
+    /**
+     * Loads the bundled [TransmissionTemplate] catalog from
+     * `assets/transmission_templates.json` and validates every entry
+     * against the live [FilterManifest] (LUT ids) and [FxPreset]
+     * enum (FX ids). Entries with an unknown LUT or FX are dropped
+     * with a warning — this keeps the editor from crashing if a
+     * later rename disconnects a template id from its LUT/FX.
+     *
+     * Each [TransmissionTemplate.transitionType] string is the same
+     * id used by [TransitionEngine.Companion.TransitionType] (e.g.
+     * "cross", "wipe", "zoom", "slide", "glitch"); the loader does
+     * not enforce it here because the transition type is consumed
+     * by the caller (the editor's clip-to-clip transition picker)
+     * which already maps the id via the same `when` clause as
+     * [mapTemplateToComposition].
+     */
+    fun loadTransmissionTemplates(): List<TransmissionTemplate> {
+        return try {
+            val raw = context.assets.open("transmission_templates.json").use { input ->
+                input.bufferedReader().readText()
+            }
+            parseTransmissionTemplates(raw)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load transmission_templates.json", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parses the raw `transmission_templates.json` text and validates
+     * each entry against the live LUT manifest + FX enum. Public so
+     * unit tests can drive it without an Android [Context].
+     */
+    fun parseTransmissionTemplates(jsonText: String): List<TransmissionTemplate> {
+        val root = JSONObject(jsonText)
+        val arr = root.optJSONArray("templates") ?: return emptyList()
+        val manifest = LutFilterEngine(context).manifest
+        val valid = ArrayList<TransmissionTemplate>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val filterId = o.optString("filterId")
+            val fxPresetId = o.optString("fxPresetId")
+
+            val lutOk = manifest.presetById(filterId) != null
+            val fxOk = FxPreset.byId(fxPresetId) != null
+            if (!lutOk) {
+                Log.w(TAG, "Transmission template '${o.optString("id")}' references unknown LUT '$filterId' — skipping")
+                continue
+            }
+            if (!fxOk) {
+                Log.w(TAG, "Transmission template '${o.optString("id")}' references unknown FX preset '$fxPresetId' — skipping")
+                continue
+            }
+
+            valid.add(
+                TransmissionTemplate(
+                    id = o.getString("id"),
+                    name = o.getString("name"),
+                    description = o.optString("description"),
+                    resolution = o.optString("resolution", "1080p"),
+                    fps = o.optInt("fps", 60),
+                    aspectRatio = o.optString("aspectRatio", "16:9"),
+                    filterId = filterId,
+                    filterIntensity = o.optDouble("filterIntensity", 1.0).toFloat(),
+                    fxPresetId = fxPresetId,
+                    fxIntensity = o.optDouble("fxIntensity", 1.0).toFloat(),
+                    transitionType = o.optString("transitionType", "cross"),
+                    transitionDurationMs = o.optLong("transitionDurationMs", 500L),
+                    defaultIntensity = o.optDouble("defaultIntensity", 1.0).toFloat(),
+                    previewAccentArgb = o.optLong("previewAccentArgb", 0xFF6E5BFFL),
+                    tags = o.optJSONArray("tags")?.let { tagsArr ->
+                        (0 until tagsArr.length()).map { tagsArr.getString(it) }
+                    } ?: emptyList()
+                )
+            )
+        }
+        return valid
     }
 
     /**

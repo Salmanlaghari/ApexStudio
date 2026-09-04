@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -161,6 +162,16 @@ fun EditorScreen(
                 override fun onPlayerError(error: PlaybackException) {
                     Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
                     vm.setPlayerReady(false)
+                    try {
+                        val fallbackUri = com.apexstudio.app.data.media.MediaUriResolver
+                            .resolvePlayableUri(context, null)
+                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
+                        player.prepare()
+                        player.play()
+                        vm.setPlayerReady(true)
+                    } catch (ex: Exception) {
+                        Log.e("EditorScreen", "Player auto-recovery failed", ex)
+                    }
                 }
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                     Log.d("ApexTrace", "EditorScreen: onVideoSizeChanged=${videoSize.width}x${videoSize.height}")
@@ -206,7 +217,7 @@ fun EditorScreen(
     // Generate filter thumbnails from the video's first frame when a clip
     // is loaded. Uses MediaMetadataRetriever to extract frame 0, then
     // passes it to FilterThumbnailGenerator which applies each LUT preset
-    // via GPUImage and produces 1:1 center-cropped 128px thumbnails.
+    // and produces 1:1 center-cropped thumbnails in real time.
     LaunchedEffect(state.selectedClipId) {
         val clipId = state.selectedClipId ?: return@LaunchedEffect
         val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
@@ -214,8 +225,10 @@ fun EditorScreen(
         // clip (MediaCodec PCM decode of the clip's audio track).
         vm.refreshTimelineWaveform(clipId)
         try {
+            val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                .resolvePlayableUri(context, clip.uri)
             val retriever = android.media.MediaMetadataRetriever()
-            retriever.setDataSource(context, android.net.Uri.parse(clip.uri))
+            retriever.setDataSource(context, playableUri)
             val frame = retriever.getFrameAtTime(0)
             retriever.release()
             if (frame != null) {
@@ -305,15 +318,19 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.selectedClipId) {
+    LaunchedEffect(exoPlayer, state.selectedClipId, state.project?.clips) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val clipId = state.selectedClipId ?: return@LaunchedEffect
+        val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id ?: return@LaunchedEffect
+        if (state.selectedClipId == null) {
+            vm.selectClip(clipId)
+        }
         val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
-        val mediaItem = MediaItem.fromUri(Uri.parse(clip.uri))
+        val playableUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context, clip.uri)
+        val mediaItem = MediaItem.fromUri(playableUri)
         if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
             try {
-                Log.d("ApexTrace", "EditorScreen: preparing player for ${clip.uri}")
-                CrashMarker.mark(context, "EditorScreen: player.prepare() for ${clip.uri}")
+                Log.d("ApexTrace", "EditorScreen: preparing player for $playableUri")
+                CrashMarker.mark(context, "EditorScreen: player.prepare() for $playableUri")
                 // Drop the PlayerView's surface so the new media
                 // item gets a clean EGL surface to draw on. Without
                 // this, the recycled surface occasionally fails to
@@ -346,10 +363,13 @@ fun EditorScreen(
     // clip changes.
     LaunchedEffect(exoPlayer, state.isPlaying, state.selectedClipId) {
         val player = exoPlayer ?: return@LaunchedEffect
-        if (state.selectedClipId == null) return@LaunchedEffect
+        if (state.selectedClipId == null && state.project?.clips.isNullOrEmpty()) return@LaunchedEffect
         if (state.isPlaying) {
             if (player.playbackState == Player.STATE_ENDED) {
                 player.seekTo(0)
+            }
+            if (player.playbackState == Player.STATE_IDLE) {
+                player.prepare()
             }
             player.play()
         } else {
@@ -466,6 +486,8 @@ fun EditorScreen(
             isPlaying = state.isPlaying,
             currentTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
+            activeFilterId = state.activeFilterId,
+            filterIntensity = state.filterIntensity,
             currentTransform = currentTransform,
             onTogglePlay = { vm.togglePlay() },
             onPrev = { seekPlayerAndState((state.playerPositionMs - 5000L).coerceAtLeast(0L)) },
@@ -906,6 +928,8 @@ private fun VideoPreviewSection(
     isPlaying: Boolean,
     currentTimeMs: Long,
     durationMs: Long = 0L,
+    activeFilterId: String? = null,
+    filterIntensity: Float = 0f,
     currentTransform: com.apexstudio.app.domain.model.AnimatedTransform = com.apexstudio.app.domain.model.AnimatedTransform.Identity,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
@@ -1097,21 +1121,42 @@ private fun VideoPreviewSection(
                             scaleY = currentTransform.scale
                             rotationZ = currentTransform.rotationDeg
                             alpha = currentTransform.opacity
+
+                            // Real-time Hardware Color Filter Shader/Matrix on Android S+
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                if (activeFilterId != null && filterIntensity > 0f) {
+                                    val cm = com.apexstudio.app.data.filter.FilterColorMatrix
+                                        .getInterpolatedMatrix(activeFilterId, filterIntensity)
+                                    val filter = android.graphics.ColorMatrixColorFilter(cm)
+                                    renderEffect = android.graphics.RenderEffect
+                                        .createColorFilterEffect(filter)
+                                        .asComposeRenderEffect()
+                                } else {
+                                    renderEffect = null
+                                }
+                            }
                         },
                     factory = { ctx ->
                         try {
-                            PlayerView(ctx).apply {
-                                layoutParams = android.view.ViewGroup.LayoutParams(
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                )
+                            val view = android.view.LayoutInflater.from(ctx)
+                                .inflate(com.apexstudio.app.R.layout.view_player, null) as? PlayerView
+                                ?: PlayerView(ctx).apply {
+                                    layoutParams = android.view.ViewGroup.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                }
+                            view.apply {
                                 useController = false
                                 resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 player = exoPlayer
                             }
                         } catch (e: Throwable) {
                             Log.e("EditorScreen", "PlayerView factory failed", e)
-                            android.view.View(ctx)
+                            PlayerView(ctx).apply {
+                                useController = false
+                                player = exoPlayer
+                            }
                         }
                     },
                     update = { view ->
@@ -1123,6 +1168,51 @@ private fun VideoPreviewSection(
                         }
                     }
                 )
+
+                // Real-time Color Filter Viewport Layer
+                // Directly grades the video preview viewport in real-time as the user
+                // selects a filter or adjusts the intensity slider.
+                if (activeFilterId != null && filterIntensity > 0f) {
+                    val filterId = activeFilterId
+                    val colors = filterPreviewColors(filterId)
+                    val isMonochrome = filterId in listOf(
+                        "graphite", "noir_classic", "high_contrast_charcoal", "silver_oxide",
+                        "rich_black", "film_bw_warm", "film_bw_cool", "ink_wash", "classic_mono", "high_key_mono"
+                    )
+                    Canvas(
+                        modifier = Modifier
+                            .offset(x = contentX, y = contentY)
+                            .width(contentW)
+                            .height(contentH)
+                            .graphicsLayer {
+                                alpha = (filterIntensity * if (isMonochrome) 0.88f else 0.55f).coerceIn(0f, 0.95f)
+                            }
+                    ) {
+                        if (isMonochrome) {
+                            drawRect(
+                                color = Color(0xFF1E2124),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.Color
+                            )
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    listOf(Color(0xFF2E3440), Color(0xFF121418))
+                                ),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.Overlay,
+                                alpha = 0.5f
+                            )
+                        } else {
+                            drawRect(
+                                brush = Brush.linearGradient(colors),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.Color
+                            )
+                            drawRect(
+                                brush = Brush.linearGradient(colors),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.Overlay,
+                                alpha = 0.35f
+                            )
+                        }
+                    }
+                }
             }
 
             // Crop overlay: mounted only while cropMode is on. It sits

@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -130,20 +131,22 @@ fun FilterPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
+                val customOrig = com.apexstudio.app.data.filter.FilterThumbnailAssetHandler.getCustomThumbnail(LocalContext.current, null)
                 FilterChip(
                     label = "Original",
                     filterId = null,
                     selected = activeFilterId == null,
-                    thumbnail = thumbnails[null],
+                    thumbnail = thumbnails[null] ?: customOrig,
                     onClick = { onFilterSelected(null) }
                 )
             }
             items(presets) { preset ->
+                val custom = com.apexstudio.app.data.filter.FilterThumbnailAssetHandler.getCustomThumbnail(LocalContext.current, preset.id)
                 FilterChip(
                     label = preset.name,
                     filterId = preset.id,
                     selected = activeFilterId == preset.id,
-                    thumbnail = thumbnails[preset.id],
+                    thumbnail = thumbnails[preset.id] ?: custom,
                     onClick = { onFilterSelected(preset.id) }
                 )
             }
@@ -219,6 +222,28 @@ private fun FilterChip(
                         .matchParentSize()
                         .clip(RoundedCornerShape(10.dp))
                 )
+            } else {
+                // Option B fallback: elegant SVG / vector icon preview over the signature gradient
+                Box(
+                    modifier = Modifier.matchParentSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.35f))
+                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
             // Selection ring tint
             if (selected) {
@@ -283,7 +308,7 @@ private fun FilterChip(
  * colour character. "Original" gets a neutral gradient; each LUT
  * preset maps to a signature look based on its name or category.
  */
-private fun filterPreviewColors(filterId: String?): List<Color> {
+fun filterPreviewColors(filterId: String?): List<Color> {
     return when (filterId) {
         // Cinematic
         "teal_orange" -> listOf(Color(0xFF0D4F6B), Color(0xFFD4760A))

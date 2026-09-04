@@ -113,8 +113,12 @@ class EditorViewModel(
                     com.apexstudio.app.data.media.SampleVideoGenerator.getOrCreateSampleVideo(ctx)
                 } catch (_: Exception) { null }
             }
+            val ctx = context
             val validClips = p.clips.map { clip ->
-                if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
+                if (ctx != null) {
+                    val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
+                    clip.copy(uri = resolvedUri)
+                } else if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
                     if (sampleUri != null) clip.copy(uri = sampleUri) else clip
                 } else clip
             }
@@ -168,7 +172,10 @@ class EditorViewModel(
         viewModelScope.launch {
             val s = _state.value
             val newClips = mediaList.mapNotNull { meta ->
-                mediaPicker?.toMediaClip(meta, s.project?.clips?.size ?: 0)
+                val resolvedMeta = if (context != null) {
+                    meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
+                } else meta
+                mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
             }
             val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
@@ -231,14 +238,19 @@ class EditorViewModel(
         val ctx = context ?: return
         viewModelScope.launch {
             try {
+                val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                    .resolvePlayableUri(ctx, clip.uri).toString()
                 val thumbs = VideoThumbnailExtractor.extractStrip(
                     context = ctx,
-                    videoUri = clip.uri,
+                    videoUri = playableUri,
                     durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L),
                     count = 12
                 )
                 _thumbnails.update { current ->
                     current + (clip.id to thumbs)
+                }
+                thumbs.firstOrNull()?.second?.let { firstFrame ->
+                    generateFilterThumbnails(firstFrame)
                 }
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
@@ -336,16 +348,22 @@ class EditorViewModel(
         _state.update { it.copy(filterThumbnailsLoading = true) }
         viewModelScope.launch {
             try {
-                val thumbMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                    .generateWithGenericImage(ctx, manifest)
-                val composeMap = thumbMap.mapValues { (_, bmp) -> bmp.asImageBitmap() }
+                val activeClipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
+                val cachedThumb = activeClipId?.let { _thumbnails.value[it]?.firstOrNull()?.second }
+                val composeMap = if (cachedThumb != null) {
+                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                        .generateDynamicThumbnails(ctx, cachedThumb, manifest)
+                } else {
+                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                        .generateWithGenericImage(ctx, manifest)
+                }
                 _state.update {
                     it.copy(
                         filterThumbnails = composeMap,
                         filterThumbnailsLoading = false
                     )
                 }
-                Log.d("EditorViewModel", "Generated ${composeMap.size} generic filter thumbnails")
+                Log.d("EditorViewModel", "Generated ${composeMap.size} filter thumbnails")
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Generic filter thumbnail generation failed", e)
                 _state.update { it.copy(filterThumbnailsLoading = false) }
@@ -360,9 +378,9 @@ class EditorViewModel(
      * corresponding LUT applied at full intensity.
      */
     fun generateFilterThumbnails(sourceFrame: android.graphics.Bitmap) {
-        if (context == null) return
+        val ctx = context ?: return
         val manifest = try {
-            com.apexstudio.app.data.filter.LutFilterEngine(context!!).manifest
+            com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Failed to load filter manifest", e)
             return
@@ -370,19 +388,15 @@ class EditorViewModel(
         _state.update { it.copy(filterThumbnailsLoading = true) }
         viewModelScope.launch {
             try {
-                val thumbMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                    .generateAll(context!!, sourceFrame, manifest)
-                // Convert Bitmap → ImageBitmap for Compose
-                val composeMap = thumbMap.mapValues { (_, bmp) ->
-                    bmp.asImageBitmap()
-                }
+                val composeMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateDynamicThumbnails(ctx, sourceFrame, manifest)
                 _state.update {
                     it.copy(
                         filterThumbnails = composeMap,
                         filterThumbnailsLoading = false
                     )
                 }
-                Log.d("EditorViewModel", "Generated ${composeMap.size} filter thumbnails")
+                Log.d("EditorViewModel", "Generated ${composeMap.size} dynamic filter thumbnails")
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Filter thumbnail generation failed", e)
                 _state.update { it.copy(filterThumbnailsLoading = false) }

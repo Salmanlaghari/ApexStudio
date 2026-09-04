@@ -27,8 +27,8 @@ data class MediaClip(
     val rampEndSpeed: Float = 1f,
     // Animated transform track — empty by default. When populated
     // by the Keyframe panel, the GL effect applies the interpolated
-    // translate / scale / rotation / opacity on every preview
-    // frame and bakes the same into the exported video.
+    // translate / scale / rotation / opacity on every preview frame
+    // and bakes the same into the exported video.
     val keyframes: KeyframeTrack = KeyframeTrack(),
     // Caption / title overlays attached to this clip. Each overlay
     // carries its own text, style, and a normalised (0..1) anchor
@@ -132,7 +132,19 @@ data class Project(
     val resolution: String = "4K",
     val fps: Int = 60,
     val clips: List<MediaClip> = emptyList(),
-    val audioTracks: List<AudioTrack> = emptyList()
+    val audioTracks: List<AudioTrack> = emptyList(),
+    /**
+     * Last transmission template the user applied to this project.
+     * Pure metadata — when the editor opens the project it preloads
+     * this template's LUT + FX + intensity so the user starts with
+     * the look they had last time. Null means "no preset applied"
+     * (the LUT / FX panels are still empty until the user picks one).
+     *
+     * Default-null + a default-value field means the JSON project
+     * file stays backwards-compatible: older saved projects without
+     * this field deserialise as null and behave exactly as before.
+     */
+    val lastTransmissionTemplateId: String? = null
 )
 
 @Serializable

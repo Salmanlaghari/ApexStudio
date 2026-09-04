@@ -1,0 +1,6 @@
+{
+  "name": "ApexStudio",
+  "description": "Video trimming and editing tool using Media3 Transformer to allow users to set start and end points for video clips.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -39,7 +39,7 @@ data class FilterManifest(
          * entry point and returns `null` when the id is not present in the in-memory
          * catalog. Callers already null-check the result, so this is safe.
          *
-         * TODO (follow-up PR): wire this to scan `assets/luts/*.cube` at startup and
+         * TODO (follow-up PR): wire this to scan `assets/luts/` for `.cube` LUTs at startup and
          * build a full `Map<String, FilterPreset>` so the 73 bundled LUTs resolve here.
          */
         fun presetById(id: String): FilterPreset? = null

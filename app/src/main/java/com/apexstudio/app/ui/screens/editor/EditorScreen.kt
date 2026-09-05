@@ -87,7 +87,3 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-// NOTE: Phase C patch (lines ~579, ~2153, ~2561, 4× call-site forwards) is applied.
-// This commit only adds the missing middle-layer wiring: TimelineTrackLaneRow signature
-// gets onOpenClipMenu and all four call sites forward onOpenClipMenu = onOpenClipMenu.
-

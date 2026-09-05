@@ -271,13 +271,24 @@ class TimelineTemplateManager(private val context: Context) {
      */
     fun loadTransmissionTemplates(): List<TransmissionTemplate> {
         return try {
-            val raw = context.assets.open("transmission_templates.json").use { input ->
-                input.bufferedReader().readText()
+            loadTransmissionTemplatesRaw().let { raw ->
+                parseTransmissionTemplatesWithStats(raw).templates
             }
-            parseTransmissionTemplates(raw)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load transmission_templates.json", e)
             emptyList()
+        }
+    }
+
+    /**
+     * Read the raw `transmission_templates.json` asset text. Lets
+     * callers pair it with [parseTransmissionTemplatesWithStats] to
+     * observe how many entries were dropped due to unknown LUT/FX
+     * ids.
+     */
+    fun loadTransmissionTemplatesRaw(): String {
+        return context.assets.open("transmission_templates.json").use { input ->
+            input.bufferedReader().readText()
         }
     }
 
@@ -287,29 +298,41 @@ class TimelineTemplateManager(private val context: Context) {
      * unit tests can drive it without an Android [Context].
      */
     fun parseTransmissionTemplates(jsonText: String): List<TransmissionTemplate> {
+        return parseTransmissionTemplatesWithStats(jsonText).templates
+    }
+
+    /**
+     * Variant of [parseTransmissionTemplates] that also returns the
+     * count of skipped entries + their ids. Use this when you want
+     * to log / display how many templates were dropped.
+     */
+    fun parseTransmissionTemplatesWithStats(
+        jsonText: String
+    ): TransmissionTemplateLoadResult {
         val root = JSONObject(jsonText)
-        val arr = root.optJSONArray("templates") ?: return emptyList()
+        val arr = root.optJSONArray("templates") ?: return TransmissionTemplateLoadResult(emptyList(), 0, emptyList())
         val manifest = LutFilterEngine(context).manifest
         val valid = ArrayList<TransmissionTemplate>(arr.length())
+        val skipped = ArrayList<String>(0)
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val filterId = o.optString("filterId")
             val fxPresetId = o.optString("fxPresetId")
-
-            val lutOk = manifest.presetById(filterId) != null
-            val fxOk = FxPreset.byId(fxPresetId) != null
-            if (!lutOk) {
-                Log.w(TAG, "Transmission template '${o.optString("id")}' references unknown LUT '$filterId' — skipping")
-                continue
+            val templateId = o.optString("id")
+            val reason = when {
+                manifest.presetById(filterId) == null -> "unknown LUT '$filterId'"
+                FxPreset.byId(fxPresetId) == null -> "unknown FX preset '$fxPresetId'"
+                else -> null
             }
-            if (!fxOk) {
-                Log.w(TAG, "Transmission template '${o.optString("id")}' references unknown FX preset '$fxPresetId' — skipping")
+            if (reason != null) {
+                Log.w(TAG, "Transmission template '$templateId' skipped — $reason")
+                skipped += templateId
                 continue
             }
 
             valid.add(
                 TransmissionTemplate(
-                    id = o.getString("id"),
+                    id = templateId,
                     name = o.getString("name"),
                     description = o.optString("description"),
                     resolution = o.optString("resolution", "1080p"),
@@ -329,7 +352,7 @@ class TimelineTemplateManager(private val context: Context) {
                 )
             )
         }
-        return valid
+        return TransmissionTemplateLoadResult(valid, skipped.size, skipped)
     }
 
     /**

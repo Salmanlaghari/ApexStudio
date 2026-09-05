@@ -55,6 +55,14 @@ data class EditorState(
     val fxPanelOpen: Boolean = false,
     val activeFxId: String? = null,
     val fxIntensity: Float = 1f,
+    // Transition hint applied by the Transmission panel ("One-tap LUT
+    // + FX + transition presets"). Currently the project has no
+    // per-clip transition model, so this is a project-level hint —
+    // future per-clip transition features read it. Persisted on
+    // the project alongside [lastTransmissionTemplateId] so the
+    // choice survives an app restart.
+    val lastTransitionType: String? = null,
+    val lastTransitionDurationMs: Long = 500L,
     // Text overlay editing. textPanelOpen is true while the bottom
     // sheet is up; selectedTextOverlayId points at the caption being
     // edited / dragged on the preview.

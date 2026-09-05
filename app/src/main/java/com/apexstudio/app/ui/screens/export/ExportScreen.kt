@@ -50,8 +50,19 @@ fun ExportScreen(
     val editorState by vm.state.collectAsStateWithLifecycle()
     val fxList = vm.fx.collectAsStateWithLifecycle().value
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
-    var selectedResolution by remember { mutableStateOf("4K") }
-    var selectedFps by remember { mutableStateOf(60f) }
+
+    // Resolution / FPS / FX are now read from the ViewModel's
+    // ExportSettings + activeFxId so the picker state survives
+    // screen exit and matches what the export engine bakes in.
+    // Previously the resolution and FPS lived in a local
+    // `remember { mutableStateOf(...) }` that reset to "4K" / 60
+    // every time the user re-opened the Export screen, and the
+    // Motion Graphics chips had a hardcoded `selected = fx.id ==
+    // "chrom"` (only one card ever highlighted) plus an empty
+    // `.clickable { }` that did nothing.
+    val selectedResolution = export.settings.resolution
+    val selectedFps = export.settings.frameRate.toFloat()
+    val activeFxId = editorState.activeFxId
 
 
     Column(
@@ -79,7 +90,11 @@ fun ExportScreen(
                     MotionGraphicsCard(
                         label = fx.label,
                         icon = fx.icon,
-                        selected = fx.id == "chrom",
+                        selected = fx.id == activeFxId,
+                        onClick = {
+                            // Tapping the same FX again clears it.
+                            vm.setActiveFx(if (fx.id == activeFxId) null else fx.id)
+                        },
                         modifier = Modifier.width(88.dp)
                     )
                 }
@@ -91,6 +106,13 @@ fun ExportScreen(
                     TransitionCard(
                         label = t.label,
                         icon = t.icon,
+                        // Transitions list is still display-only —
+                        // there's no per-clip transition state yet
+                        // (see the Transmission panel's TODO about
+                        // per-clip transitions). Cards render but
+                        // don't toggle; clicking is a no-op until
+                        // that model lands.
+                        onClick = { },
                         modifier = Modifier.width(70.dp)
                     )
                 }
@@ -115,7 +137,9 @@ fun ExportScreen(
                                 label = label,
                                 sub = sub,
                                 selected = selectedResolution == label,
-                                onClick = { selectedResolution = label },
+                                onClick = {
+                                    vm.updateExport { it.copy(resolution = label) }
+                                },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -138,7 +162,9 @@ fun ExportScreen(
                         )
                         Slider(
                             value = selectedFps,
-                            onValueChange = { selectedFps = it },
+                            onValueChange = { v ->
+                                vm.updateExport { it.copy(frameRate = v.toInt()) }
+                            },
                             valueRange = 30f..120f,
                             steps = 2,
                             colors = SliderDefaults.colors(
@@ -176,7 +202,9 @@ fun ExportScreen(
                                         ApexPalette.NeonCyan,
                                         RoundedCornerShape(6.dp)
                                     )
-                                    .clickable { selectedFps = f }
+                                    .clickable {
+                                        vm.updateExport { it.copy(frameRate = f.toInt()) }
+                                    }
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -201,14 +229,23 @@ fun ExportScreen(
                     modifier = Modifier.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // The gauge now drives off the live export
+                    // progress (was hardcoded 0.78f so it never
+                    // changed once the export started). When
+                    // export.progress == 0f and isExporting is
+                    // false we leave the gauge blank rather than
+                    // showing a misleading "0%" before the user
+                    // taps the button.
                     GaugeArc(
-                        progress = 0.78f,
+                        progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
                         modifier = Modifier.size(56.dp)
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Estimated File Size",
+                            if (export.isExporting) "Exporting…"
+                            else if (export.progress > 0f) "Export Complete"
+                            else "Estimated File Size",
                             color = ApexPalette.TextTertiary,
                             fontSize = 9.sp
                         )
@@ -324,6 +361,17 @@ fun ExportScreen(
                             color = ApexPalette.TextSecondary,
                             fontSize = 10.sp
                         )
+                        // TODO: ExportEngine currently returns
+                        // Uri.fromFile(...) which produces a file://
+                        // URI. On Android 11+ sharing that URI to
+                        // another app (e.g. WhatsApp, Drive) trips
+                        // FileUriExposedException. The proper fix is
+                        // to write the output via MediaStore in
+                        // ExportEngine.startExport so the URI is a
+                        // content:// that survives scoped storage.
+                        // Out of scope for this PR — the share
+                        // action still works inside the app's own
+                        // process.
                         Text(
                             export.outputUri ?: "",
                             color = Color.White,
@@ -412,6 +460,7 @@ private fun MotionGraphicsCard(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val border = if (selected) ApexPalette.NeonCyan else Color.Transparent
@@ -425,7 +474,7 @@ private fun MotionGraphicsCard(
                 )
             )
             .border(1.5.dp, border, RoundedCornerShape(10.dp))
-            .clickable { }
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -468,6 +517,7 @@ private fun MotionGraphicsCard(
 private fun TransitionCard(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -479,7 +529,7 @@ private fun TransitionCard(
                     listOf(Color(0xFF1A2440), Color(0xFF0F1B33))
                 )
             )
-            .clickable { },
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(

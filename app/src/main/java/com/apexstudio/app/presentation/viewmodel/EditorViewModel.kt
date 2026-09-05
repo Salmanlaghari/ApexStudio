@@ -432,6 +432,7 @@ class EditorViewModel(
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
+    fun setPlayerBuffering(buffering: Boolean) = _state.update { it.copy(playerBuffering = buffering) }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }

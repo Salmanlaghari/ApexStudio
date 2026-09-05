@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -148,6 +149,10 @@ fun EditorScreen(
                     val ready = playbackState == Player.STATE_READY
                     Log.d("ApexTrace", "EditorScreen: onPlaybackStateChanged=$playbackState ready=$ready")
                     vm.setPlayerReady(ready)
+                    // Buffering flag drives the "Loading…" overlay.
+                    // We only care about BUFFERING (waiting for the
+                    // first / next frame); READY flips it back off.
+                    vm.setPlayerBuffering(playbackState == Player.STATE_BUFFERING)
                     // When the video finishes playing, ExoPlayer parks at
                     // STATE_ENDED. The app's own isPlaying flag never
                     // flipped, so the play button kept showing a "Pause"
@@ -1159,6 +1164,45 @@ private fun VideoPreviewSection(
             // transforms (position/scale/rotation/opacity) animate dynamically.
             if (exoPlayer != null) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: attaching PlayerView")
+                // Spinner overlay: shown while ExoPlayer is in STATE_BUFFERING
+                // (first-frame or re-buffer after clip switch / seek). The
+                // playerBuffering state is driven by the Player.Listener in
+                // the build block above. We render this OUTSIDE the
+                // AndroidView so the spinner composes with the same
+                // graphicsLayer transform (translation/scale/rotation/opacity)
+                // as the PlayerView below — i.e. keyframe animation applies
+                // to the spinner too, which keeps the UI consistent if the
+                // user has a "spin while loading" keyframe.
+                AnimatedVisibility(
+                    visible = state.playerBuffering,
+                    enter = fadeIn(animationSpec = tween(120)),
+                    exit = fadeOut(animationSpec = tween(180)),
+                    modifier = Modifier
+                        .offset(x = contentX, y = contentY)
+                        .width(contentW)
+                        .height(contentH)
+                        .graphicsLayer {
+                            translationX = currentTransform.translateX * (size.width / 2f)
+                            translationY = currentTransform.translateY * (size.height / 2f)
+                            scaleX = currentTransform.scale
+                            scaleY = currentTransform.scale
+                            rotationZ = currentTransform.rotationDeg
+                            alpha = currentTransform.opacity
+                        }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color.White.copy(alpha = 0.85f),
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
                 AndroidView(
                     modifier = Modifier
                         .fillMaxSize()

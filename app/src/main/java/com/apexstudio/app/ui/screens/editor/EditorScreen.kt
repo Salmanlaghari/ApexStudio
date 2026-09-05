@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.data.crashlog.CrashMarker
@@ -3487,7 +3488,7 @@ private fun OverlayLayer(
                         com.apexstudio.app.presentation.state.OverlayTransform.ScaleMin,
                         com.apexstudio.app.presentation.state.OverlayTransform.ScaleMax
                     )
-                    val sizePx = size.toFloat()
+                    val sizePx = size.toSize()
                     val newX = (transform.x + pan.x / sizePx.width)
                         .coerceIn(0f, 1f)
                     val newY = (transform.y + pan.y / sizePx.height)

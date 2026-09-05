@@ -125,6 +125,15 @@ class ExportEngine(private val context: Context) {
                 val outputFile = File(outputDir, outputFileName)
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+
+                // TODO(PHASE_D_EXPORT): Picture-in-Picture overlays are
+                // rendered in the preview (EditorScreen.OverlayLayer) but
+                // not yet in the export. The Transformer pipeline here
+                // accepts a single EditedMediaItem + inputUri — compositing
+                // a second overlay clip needs EditedMediaItemSequence +
+                // MediaItem instances for the V2 clip + an OverlayEffect
+                // that reads its MediaItem as a GL texture. Track this
+                // work as a follow-up so preview ↔ export stay in sync.
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
                 // 1. Crop

@@ -17,6 +17,7 @@ object ApexPalette {
     val NeonPurpleGlow = Color(0xFF5E35B1)
     val NeonEmerald = Color(0xFF10B981)
     val NeonPink = Color(0xFFFF4081)
+    val NeonAmber = Color(0xFFF59E0B)
 
     val TextPrimary = Color(0xFFF1F5F9)
     val TextSecondary = Color(0xFF94A3B8)

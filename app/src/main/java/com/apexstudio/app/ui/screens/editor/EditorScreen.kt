@@ -1024,9 +1024,15 @@ private fun VideoPreviewSection(
     var controlsVisible by remember { mutableStateOf(true) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    // Auto-hide controls overlay after 2 seconds of inactivity while video is playing
-    LaunchedEffect(controlsVisible, isPlaying, lastInteractionTime) {
-        if (controlsVisible && isPlaying) {
+    // Auto-hide the controls overlay (aspect badge + F# timecode chip
+    // + transport row) after 2s of inactivity. Previously the
+    // condition was `controlsVisible && isPlaying`, which meant a
+    // paused preview kept the overlay on screen forever — the F#
+    // chip + "16:9 HD" badge would only disappear when the user hit
+    // play. Tapping the surface still brings controls back via the
+    // existing clickable handler below.
+    LaunchedEffect(controlsVisible, lastInteractionTime) {
+        if (controlsVisible) {
             delay(2000)
             controlsVisible = false
         }

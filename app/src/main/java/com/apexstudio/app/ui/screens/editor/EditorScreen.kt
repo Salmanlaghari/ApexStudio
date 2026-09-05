@@ -2827,7 +2827,7 @@ private fun HorizontalToolBar(
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),
             ToolDef("Keyframe", Icons.Default.Animation, onKeyframes, highlight = keyframesActive),
             ToolDef("FX", Icons.Default.AutoAwesome, onFx),
-            ToolDef("Transmission", Icons.Default.AutoAwesome, onTransmission, highlight = transmissionActive),
+            ToolDef("Transmission", Icons.Default.Tune, onTransmission, highlight = transmissionActive),
             ToolDef("Text", Icons.Default.TextFields, onText),
             ToolDef("Color", Icons.Default.Palette, onColor),
             ToolDef("Audio", Icons.Default.GraphicEq, onAudio)

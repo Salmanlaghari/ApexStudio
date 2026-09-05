@@ -211,12 +211,19 @@ fun EditorScreen(
                     vm.setVideoSize(videoSize.width, videoSize.height)
                 }
             })
+            // Phase E: register the player so vm.setPitch() can push
+            // PlaybackParameters.pitch to it when the user dials the
+            // voice-changer slider in AudioStudioScreen.
             // If the player is already in a terminal state (unlikely but safe),
             // sync the flag immediately.
             if (player.playbackState == Player.STATE_READY) {
                 vm.setPlayerReady(true)
             }
             exoPlayer = player
+            vm.registerMainPlayerForAudioEffects(player)
+            // Phase E: register the player with the VM so pitch /
+            // speed changes (audio effects) apply to the live preview.
+            vm.registerMainPlayerForAudioEffects(player)
         } catch (e: Exception) {
             Log.e("EditorScreen", "ExoPlayer build failed", e)
             CrashMarker.clear(context)
@@ -705,12 +712,24 @@ fun EditorScreen(
                 seekPlayerAndState(targetMs)
             },
             onZoom = { vm.multiplyZoom(it) },
-            onSelectClip = { vm.selectClip(it) },
+            onSelectClip = { id ->
+                vm.selectClip(id)
+                // Phase E: tapping an audio clip opens the AudioStudio
+                // screen via the existing onAudio navigation. We let
+                // the existing flow handle the navigation so we don't
+                // duplicate the route; non-audio clips keep the
+                // current "just select" behaviour.
+                val selected = id?.let { id2 -> state.project?.clips?.firstOrNull { it.id == id2 } }
+                if (selected != null && selected.type == com.apexstudio.app.domain.model.ClipType.AUDIO) {
+                    onAudio()
+                }
+            },
             onAddMedia = {
                 // Phase D: open the + Add menu so the user can choose
                 // between a regular V1 video clip and an Overlay clip.
                 // The actual media picker is launched once they pick a
                 // kind — pendingAddAsOverlay on state tags the result.
+                // Phase E: a 3rd row "Audio" handles A1 lane picks.
                 showAddMediaMenu = true
             },
             onTrimChange = { clipId, startMs, endMs ->
@@ -1073,15 +1092,22 @@ if (showAddMediaMenu) {
     AddMediaMenuSheet(
         onPickVideo = {
             vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddAsAudio(false)
             mediaPicker.pickMultipleMedia.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
             )
         },
         onPickOverlay = {
             vm.setPendingAddAsOverlay(true)
+            vm.setPendingAddAsAudio(false)
             mediaPicker.pickMultipleMedia.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
             )
+        },
+        onPickAudio = {
+            vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddAsAudio(true)
+            mediaPicker.pickAudioMedia.launch("audio/*")
         },
         onDismiss = { showAddMediaMenu = false }
     )
@@ -1278,7 +1304,6 @@ private fun ClipActionRow(
             modifier = Modifier.size(18.dp)
         )
     }
-
 }
 
 @Composable
@@ -3590,6 +3615,7 @@ private fun OverlayOpacityPanel(
 private fun AddMediaMenuSheet(
     onPickVideo: () -> Unit,
     onPickOverlay: () -> Unit,
+    onPickAudio: () -> Unit,
     onDismiss: () -> Unit
 ) {
     androidx.compose.material3.ModalBottomSheet(
@@ -3617,6 +3643,16 @@ private fun AddMediaMenuSheet(
                 tint = ApexPalette.NeonCyan,
                 onClick = {
                     onPickVideo()
+                    onDismiss()
+                }
+            )
+            AddMediaRow(
+                icon = Icons.Default.GraphicEq,
+                title = "Audio",
+                subtitle = "Add to the A1 audio lane",
+                tint = ApexPalette.NeonEmerald,
+                onClick = {
+                    onPickAudio()
                     onDismiss()
                 }
             )

@@ -345,6 +345,9 @@ class EditorViewModel(
     fun setPendingAddAsOverlay(v: Boolean) = _state.update {
         it.copy(pendingAddAsOverlay = v)
     }
+    fun setPendingAddAsAudio(v: Boolean) = _state.update {
+        it.copy(pendingAddAsAudio = v)
+    }
     fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
 
     // Phase C: open / close the per-clip action menu (Cut, Trim, Add,
@@ -368,7 +371,10 @@ class EditorViewModel(
             val s = _state.value
             // Phase D: read the pendingAddAsOverlay flag from state so
             // the picker's callback can route the result through either
-            // the regular video path or the overlay path.
+            // the regular video path or the overlay path. Phase E: audio
+            // picks land in the A1 lane; the timeline's existing filter
+            // `it.type == ClipType.AUDIO` routes them correctly without
+            // any extra re-tagging.
             val asOverlay = s.pendingAddAsOverlay
             val newClips = mediaList.mapNotNull { meta ->
                 val resolvedMeta = if (context != null) {
@@ -428,7 +434,9 @@ class EditorViewModel(
                     // Clear the pending flag so a subsequent + Add picks
                     // the default VIDEO path until the user re-selects
                     // Overlay clip.
-                    pendingAddAsOverlay = false
+                    pendingAddAsOverlay = false,
+                    // Phase E: same pattern for audio picks.
+                    pendingAddAsAudio = false
                 )
             }
             persistProject()
@@ -749,6 +757,50 @@ class EditorViewModel(
     fun toggleAiVoice() = _audio.update { it.copy(aiVoiceEnhance = !it.aiVoiceEnhance) }
     fun setClarity(v: Float) = _audio.update { it.copy(clarity = v) }
     fun setReduceNoise(v: Float) = _audio.update { it.copy(reduceNoise = v) }
+
+    // Phase E: voice-changer + audio effects. setPitch translates
+    // semitones to PlaybackParameters.pitch via 2^(semitones/12) and
+    // writes it to the main ExoPlayer so the preview reflects the
+    // change. enableReverb / enableEcho / enableBassBoost gate the
+    // matching android.media.audiofx classes inside AudioEngine and
+    // the export pipeline picks them up via the same state fields.
+    fun setPitch(semitones: Float) {
+        val clamped = semitones.coerceIn(-12f, 12f)
+        _audio.update { it.copy(pitchSemitones = clamped) }
+        audioEngine?.setPitchSemitones(clamped)
+        applyAudioPitchToMainPlayer(clamped)
+    }
+
+    fun enableReverb(enabled: Boolean, preset: Short = 0) {
+        _audio.update { it.copy(reverbEnabled = enabled, reverbPreset = preset) }
+        audioEngine?.enableReverb(enabled, preset)
+    }
+
+    fun enableEcho(enabled: Boolean) {
+        _audio.update { it.copy(echoEnabled = enabled) }
+        audioEngine?.enableEcho(enabled)
+    }
+
+    fun enableBassBoost(enabled: Boolean, strength: Short = 0) {
+        _audio.update { it.copy(bassBoostEnabled = enabled, bassBoostStrength = strength) }
+        audioEngine?.enableBassBoost(enabled, strength)
+    }
+
+    // Phase E: push pitch to the preview ExoPlayer. ExoPlayer exposes
+    // pitch via PlaybackParameters(speed, pitch). speed stays at 1f
+    // so we only change the pitch component.
+    private var mainPlayerRef: androidx.media3.exoplayer.ExoPlayer? = null
+    fun registerMainPlayerForAudioEffects(p: androidx.media3.exoplayer.ExoPlayer?) {
+        mainPlayerRef = p
+        // Apply any previously-stored pitch immediately so re-attaching
+        // the player preserves the user's setting.
+        applyAudioPitchToMainPlayer(_audio.value.pitchSemitones)
+    }
+    private fun applyAudioPitchToMainPlayer(semitones: Float) {
+        val p = mainPlayerRef ?: return
+        val pitch = Math.pow(2.0, (semitones / 12.0).toDouble()).toFloat()
+        p.playbackParameters = androidx.media3.common.PlaybackParameters(1f, pitch)
+    }
     fun toggleMute(trackId: String) = _audio.update { s ->
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
     }

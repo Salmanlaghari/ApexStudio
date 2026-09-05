@@ -48,6 +48,13 @@ class MediaPickerHelper(private val context: Context) {
 
     lateinit var pickMultipleMedia: ActivityResultLauncher<PickVisualMediaRequest>
     lateinit var pickSingleMedia: ActivityResultLauncher<String>
+    // Phase E: dedicated audio launcher. Used when the user taps
+    // "+ Add → Audio" on the A1 lane. The contract is AudioOnly so
+    // the picker UI hides video / image sources. The result goes
+    // through the same _pickedMedia flow as video clips — the VM's
+    // onMediaPicked tags the clip as ClipType.AUDIO because the
+    // extractMetadata() helper already detects audio/ MIME.
+    lateinit var pickAudioMedia: ActivityResultLauncher<String>
 
     @Composable
     fun registerLaunchers() {
@@ -74,6 +81,22 @@ class MediaPickerHelper(private val context: Context) {
                         _pickedMedia.emit(listOf(meta))
                         _pickGeneration.emit(_pickGeneration.value + 1)
                     }
+                }
+            }
+        }
+
+        // Phase E: audio-only picker. Reuses the same _pickedMedia flow
+        // so the existing collect callback in EditorScreen needs no
+        // changes — it just sees a list with ClipType.AUDIO metadata.
+        pickAudioMedia = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetMultipleContents()
+        ) { uris ->
+            if (uris != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
+                        .filter { it.type == com.apexstudio.app.domain.model.ClipType.AUDIO }
+                    _pickedMedia.emit(metadataList)
+                    _pickGeneration.emit(_pickGeneration.value + 1)
                 }
             }
         }

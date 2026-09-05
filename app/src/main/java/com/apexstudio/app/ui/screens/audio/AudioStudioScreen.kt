@@ -1,5 +1,7 @@
 package com.apexstudio.app.ui.screens.audio
 
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -239,6 +241,59 @@ fun AudioStudioScreen(
                             color = ApexPalette.BgDeep,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            SectionLabel("VOICE CHANGER + EFFECTS")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    LabeledSlider(
+                        label = "Pitch",
+                        valueLabel = "${state.pitchSemitones.toInt()} st",
+                        value = state.pitchSemitones,
+                        valueRange = -12f..12f,
+                        steps = 24,
+                        onValueChange = { vm.setPitch(it) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    EffectToggleRow(
+                        label = "Reverb",
+                        enabled = state.reverbEnabled,
+                        onToggle = { vm.enableReverb(!state.reverbEnabled, state.reverbPreset) }
+                    )
+                    if (state.reverbEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        ReverbPresetRow(
+                            selected = state.reverbPreset.toInt(),
+                            onSelect = { vm.enableReverb(true, it.toShort()) }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    EffectToggleRow(
+                        label = "Echo",
+                        enabled = state.echoEnabled,
+                        onToggle = { vm.enableEcho(!state.echoEnabled) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    EffectToggleRow(
+                        label = "Bass Boost",
+                        enabled = state.bassBoostEnabled,
+                        onToggle = { vm.enableBassBoost(!state.bassBoostEnabled, state.bassBoostStrength) }
+                    )
+                    if (state.bassBoostEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        LabeledSlider(
+                            label = "Strength",
+                            valueLabel = "${(state.bassBoostStrength.toInt() / 10)}%",
+                            value = state.bassBoostStrength.toFloat(),
+                            valueRange = 0f..1000f,
+                            steps = 20,
+                            onValueChange = { vm.enableBassBoost(true, it.toInt().toShort()) }
                         )
                     }
                 }
@@ -611,5 +666,99 @@ private fun FxLibraryRow(name: String) {
                 .size(20.dp)
                 .clickable { }
         )
+    }
+}
+// ====================================================================
+// Phase E: voice-changer + audio effects composables.
+// ====================================================================
+
+@Composable
+private fun LabeledSlider(
+    label: String,
+    valueLabel: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onValueChange: (Float) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(valueLabel, color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
+        androidx.compose.material3.Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps
+        )
+    }
+}
+
+@Composable
+private fun EffectToggleRow(
+    label: String,
+    enabled: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(ApexPalette.BgGlass)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            color = if (enabled) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        androidx.compose.material3.Switch(
+            checked = enabled,
+            onCheckedChange = { onToggle() }
+        )
+    }
+}
+
+@Composable
+private fun ReverbPresetRow(selected: Int, onSelect: (Int) -> Unit) {
+    val presets = listOf(
+        "None" to 0,
+        "Small Room" to 1,
+        "Medium Hall" to 2,
+        "Large Hall" to 3,
+        "Plate" to 4
+    )
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(presets) { (name, presetId) ->
+            val isSelected = presetId == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgGlass)
+                    .border(
+                        1.dp,
+                        if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(presetId) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    name,
+                    color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
     }
 }

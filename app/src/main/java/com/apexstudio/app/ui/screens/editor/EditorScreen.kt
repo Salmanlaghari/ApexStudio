@@ -339,18 +339,22 @@ fun EditorScreen(
         // Keep the A1 timeline waveform in sync with the selected
         // clip (MediaCodec PCM decode of the clip's audio track).
         vm.refreshTimelineWaveform(clipId)
-        try {
-            val playableUri = com.apexstudio.app.data.media.MediaUriResolver
-                .resolvePlayableUri(context, clip.uri)
-            val retriever = android.media.MediaMetadataRetriever()
-            retriever.setDataSource(context, playableUri)
-            val frame = retriever.getFrameAtTime(0)
-            retriever.release()
-            if (frame != null) {
-                vm.generateFilterThumbnails(frame)
+        if (state.filterThumbnails.isEmpty()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(context, clip.uri)
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(context, playableUri)
+                    val frame = retriever.getFrameAtTime(0)
+                    retriever.release()
+                    if (frame != null) {
+                        vm.generateFilterThumbnails(frame)
+                    }
+                } catch (e: Exception) {
+                    Log.w("ApexTrace", "EditorScreen: failed to extract first frame for thumbnails", e)
+                }
             }
-        } catch (e: Exception) {
-            Log.w("ApexTrace", "EditorScreen: failed to extract first frame for thumbnails", e)
         }
     }
 
@@ -750,6 +754,33 @@ fun EditorScreen(
             },
             onOpenClipMenu = { clipId, atMs ->
                 vm.openClipActionMenu(clipId, atMs)
+            },
+            onToggleKeyframe = {
+                val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id
+                if (clipId != null) {
+                    val clip = state.project?.clips?.firstOrNull { it.id == clipId }
+                    val existingKf = clip?.keyframes?.keyframes?.firstOrNull {
+                        kotlin.math.abs(it.timeMs - state.playerPositionMs) < 300L
+                    }
+                    if (existingKf != null) {
+                        vm.removeKeyframe(clipId, existingKf.id)
+                    } else {
+                        vm.addKeyframe(clipId, state.playerPositionMs)
+                    }
+                }
+                vm.setKeyframePanelOpen(!state.keyframePanelOpen)
+            },
+            onQuickSplit = {
+                val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id
+                if (clipId != null) {
+                    vm.splitClip(clipId, state.playerPositionMs)
+                }
+            },
+            onFitView = {
+                vm.fitTimelineToScreen(1000f)
+            },
+            onOpenTransitions = {
+                vm.openTransmissionTemplatesPanel()
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -1646,14 +1677,10 @@ private fun VideoPreviewSection(
                 // through STATE_READY is partially visible behind it; the
                 // instant isBuffering flips false the overlay vanishes in
                 // one frame because both flags are reactive Compose state.
-                // Note: we deliberately do NOT gate on playerReady here.
-                // The AndroidView above is only mounted when exoPlayer !=
-                // null (line 1173), so this overlay is already implicitly
-                // gated by the player being built. Gating on playerReady
-                // would suppress the spinner during the very first BUFFERING
-                // window (cold open) — which is exactly the 1-3s black-screen
-                // gap this PR is meant to fix.
-                if (isBuffering) {
+                // Only show loading spinner when actually waiting for initial media playback or active network buffer.
+                // When paused or grading filters, keep the video frame visible without covering it with a loading screen.
+                val showBufferingOverlay = isBuffering && (!playerReady || isPlaying)
+                if (showBufferingOverlay) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -2397,14 +2424,19 @@ private fun TimelineSection(
     onDeleteClip: ((clipId: String) -> Unit)? = null,
     onMoveClipTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
     onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
-    // Phase C: opens the per-clip action menu at the current playhead.
     onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null,
+    onToggleKeyframe: (() -> Unit)? = null,
+    onQuickSplit: (() -> Unit)? = null,
+    onFitView: (() -> Unit)? = null,
+    onOpenTransitions: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
     val clips = state.project?.clips ?: emptyList()
     val density = LocalDensity.current
-    val basePxPerMs = with(density) { 0.16f.dp.toPx() }
+    // Optimized 2026 timeline scale: 0.045dp/ms ensures comfortable, smooth playback
+    // and displays ~10-15s per screen width without racing or jumping.
+    val basePxPerMs = with(density) { 0.045f.dp.toPx() }
     val pxPerMs = basePxPerMs * state.zoomLevel
     // Total on-track width is the maximum of project duration and sum of clip lengths,
     // ensuring the timeline ruler and tracks always match and clips fit comfortably.
@@ -2477,25 +2509,160 @@ private fun TimelineSection(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        // Zoom readout + buttons. The pinch gesture lives on the
-        // scrollable track area below; these buttons give the same
-        // effect for users on devices / emulators without a
-        // multi-touch screen. Both paths go through
-        // vm.multiplyZoom so the level is accumulated correctly.
+        // 2026 Professional Timeline Controls Header: Timecode + Keyframe + Split + Fit + Zoom + Add
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                "Zoom ${"%.1f".format(state.zoomLevel)}x",
-                color = ApexPalette.TextSecondary,
-                fontSize = 10.sp,
-                modifier = Modifier.weight(1f)
-            )
-            ZoomButton(label = "−", onClick = { onZoom(1f / 1.25f) })
-            Spacer(Modifier.width(4.dp))
-            ZoomButton(label = "+", onClick = { onZoom(1.25f) })
+            // Playhead Timecode / Total Duration
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = TimeFormat.msToTimecode(state.playerPositionMs, includeFrames = false),
+                    color = ApexPalette.NeonCyan,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+                Text(
+                    text = "/",
+                    color = ApexPalette.TextTertiary,
+                    fontSize = 10.sp
+                )
+                Text(
+                    text = TimeFormat.msToTimecode(state.durationMs, includeFrames = false),
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
+            }
+
+            // Central Modern Quick Controls (Keyframe icon, Split, Fit View)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val selectedClip = clips.firstOrNull { it.id == state.selectedClipId }
+                val hasKeyframeAtPlayhead = selectedClip?.keyframes?.keyframes?.any {
+                    kotlin.math.abs(it.timeMs - state.playerPositionMs) < 300L
+                } ?: false
+
+                // Keyframe Icon & Action Button directly on top of timeline
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgGlass)
+                        .border(
+                            1.dp,
+                            if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            RoundedCornerShape(6.dp)
+                        )
+                        .clickable { onToggleKeyframe?.invoke() }
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .graphicsLayer(rotationZ = 45f)
+                                .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else ApexPalette.NeonAmber)
+                        )
+                        Text(
+                            text = "Keyframe",
+                            color = if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Quick Split Button
+                if (selectedClip != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ApexPalette.BgGlass)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                            .clickable { onQuickSplit?.invoke() }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "✂ Split",
+                            color = ApexPalette.NeonPink,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Fit to Screen (Full View) Button
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ApexPalette.BgGlass)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                        .clickable { onFitView?.invoke() }
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "⤢ Fit",
+                        color = ApexPalette.NeonEmerald,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Right side: Zoom controls + Add media
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                ZoomButton(label = "−", onClick = { onZoom(1f / 1.25f) })
+                Text(
+                    text = "${"%.1f".format(state.zoomLevel)}x",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 9.sp,
+                    modifier = Modifier.padding(horizontal = 2.dp)
+                )
+                ZoomButton(label = "+", onClick = { onZoom(1.25f) })
+
+                Spacer(Modifier.width(3.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ApexPalette.BgGlass)
+                        .border(1.dp, ApexPalette.NeonEmerald.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                        .clickable(onClick = onAddMedia)
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Add media",
+                            tint = ApexPalette.NeonEmerald,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            "Add",
+                            color = ApexPalette.NeonEmerald,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
+
         // Empty-state: when the project has no clips yet, show a
         // prominent "+ Add media" call-to-action inside the timeline
         // slot. The preview still plays its placeholder gradient, and
@@ -2528,47 +2695,6 @@ private fun TimelineSection(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
-                }
-            }
-        }
-
-        // Compact + button shown above the timecode ruler when clips
-        // already exist. The big "Add your first video" CTA above
-        // covers the empty-state case; this is the always-available
-        // "append another clip" affordance.
-        if (clips.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(ApexPalette.BgGlass)
-                        .border(1.dp, ApexPalette.NeonEmerald.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .clickable(onClick = onAddMedia)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "Add media",
-                            tint = ApexPalette.NeonEmerald,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            "Add",
-                            color = ApexPalette.NeonEmerald,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
                 }
             }
         }
@@ -2698,7 +2824,8 @@ private fun TimelineSection(
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
                     onAddClipToLane = onAddClipToLane,
-                    onOpenClipMenu = onOpenClipMenu
+                    onOpenClipMenu = onOpenClipMenu,
+                    onOpenTransitions = onOpenTransitions
                 )
                 TimelineTrackLaneRow(
                     label = "V2",
@@ -2717,7 +2844,8 @@ private fun TimelineSection(
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
                     onAddClipToLane = onAddClipToLane,
-                    onOpenClipMenu = onOpenClipMenu
+                    onOpenClipMenu = onOpenClipMenu,
+                    onOpenTransitions = onOpenTransitions
                 )
                 TimelineTrackLaneRow(
                     label = "A1",
@@ -2736,7 +2864,8 @@ private fun TimelineSection(
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
                     onAddClipToLane = onAddClipToLane,
-                    onOpenClipMenu = onOpenClipMenu
+                    onOpenClipMenu = onOpenClipMenu,
+                    onOpenTransitions = onOpenTransitions
                 )
                 TimelineTrackLaneRow(
                     label = "FX",
@@ -2755,7 +2884,8 @@ private fun TimelineSection(
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
                     onAddClipToLane = onAddClipToLane,
-                    onOpenClipMenu = onOpenClipMenu
+                    onOpenClipMenu = onOpenClipMenu,
+                    onOpenTransitions = onOpenTransitions
                 )
             }
 
@@ -2806,7 +2936,8 @@ private fun TimelineTrackLaneRow(
     onDeleteClip: ((clipId: String) -> Unit)? = null,
     onMoveTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
     onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
-    onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null
+    onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null,
+    onOpenTransitions: (() -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val trackHeightDp = 46.dp
@@ -2889,7 +3020,8 @@ private fun TimelineTrackLaneRow(
                     Triple(clip, trackStart, trackLen)
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
-                    for ((clip, trackStart, trackLen) in blocks) {
+                    for (i in blocks.indices) {
+                        val (clip, trackStart, trackLen) = blocks[i]
                         val targetType = when (trackType) {
                             com.apexstudio.app.domain.model.ClipType.VIDEO -> com.apexstudio.app.domain.model.ClipType.OVERLAY
                             com.apexstudio.app.domain.model.ClipType.OVERLAY -> com.apexstudio.app.domain.model.ClipType.VIDEO
@@ -2913,6 +3045,30 @@ private fun TimelineTrackLaneRow(
                             onMoveTrack = { onMoveTrack?.invoke(clip.id, targetType, targetIdx) },
                             onOpenMenu = { onOpenClipMenu?.invoke(clip.id, playheadMs) }
                         )
+
+                        // 5. Trim/Split junction '+' icon: Allows user to tap and insert transitions, effects, or new clips
+                        if (i < blocks.size - 1) {
+                            val junctionX = ((trackStart + trackLen) * pxPerMs).toInt() - 11
+                            Box(
+                                modifier = Modifier
+                                    .offset { androidx.compose.ui.unit.IntOffset(junctionX, 12) }
+                                    .size(22.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(ApexPalette.BgElevated)
+                                    .border(1.dp, ApexPalette.NeonEmerald, RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        onOpenTransitions?.invoke() ?: onOpenClipMenu?.invoke(clip.id, trackStart + trackLen)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "Add transition or clip at trim point",
+                                    tint = ApexPalette.NeonEmerald,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

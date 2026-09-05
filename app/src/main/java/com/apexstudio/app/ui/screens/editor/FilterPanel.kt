@@ -211,8 +211,8 @@ private fun FilterChip(
                     RoundedCornerShape(10.dp)
                 )
         ) {
-            // Real 1:1 filter preview (video frame + this LUT applied) —
-            // drawn over the fallback gradient so the tile is never empty.
+            // Real 1:1 filter preview (video frame + this LUT applied) or
+            // permanent cinematic real image background with filter color grading applied
             if (thumbnail != null) {
                 androidx.compose.foundation.Image(
                     bitmap = thumbnail,
@@ -223,27 +223,21 @@ private fun FilterChip(
                         .clip(RoundedCornerShape(10.dp))
                 )
             } else {
-                // Option B fallback: elegant SVG / vector icon preview over the signature gradient
+                // Real photographic image background permanently applied
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.apexstudio.app.R.drawable.filter_sample_portrait),
+                    contentDescription = label,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(10.dp))
+                )
+                // Filter grading tint overlay over the real image
                 Box(
-                    modifier = Modifier.matchParentSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.35f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Brush.linearGradient(colors.map { it.copy(alpha = 0.55f) }))
+                )
             }
             // Selection ring tint
             if (selected) {

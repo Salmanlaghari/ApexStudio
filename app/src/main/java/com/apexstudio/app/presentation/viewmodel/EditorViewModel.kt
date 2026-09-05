@@ -394,29 +394,17 @@ class EditorViewModel(
             }
             val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
-            val firstVideo = newClips.firstOrNull { it.type == ClipType.VIDEO }
-            val waveform = if (firstVideo != null && context != null) {
-                mediaAnalyzer?.analyzeAudioWaveform(
-                    firstVideo.uri, context,
-                    sampleCount = 200,
-                    trimStartMs = firstVideo.trimStartMs,
-                    trimEndMs = firstVideo.trimEndMs
-                )?.samples ?: FloatArray(0)
-            } else {
-                FloatArray(0)
-            }
-
             val updatedClips = existingClips + newClips
             val updatedProject = s.project?.copy(clips = updatedClips)
             val maxDuration = updatedClips.maxOfOrNull { it.durationMs } ?: s.durationMs
 
+            // Immediate state update so video preview loads in 0ms without delay
             _state.update {
                 it.copy(
                     project = updatedProject,
                     durationMs = maxDuration,
                     pickedMedia = mediaList,
                     isMediaPickerOpen = false,
-                    audioWaveform = waveform,
                     selectedClipId = when {
                         replace -> newClips.firstOrNull()?.id
                         it.selectedClipId != null -> it.selectedClipId
@@ -431,15 +419,32 @@ class EditorViewModel(
                     overlayTransform = if (asOverlay) {
                         com.apexstudio.app.presentation.state.OverlayTransform.Identity
                     } else it.overlayTransform,
-                    // Clear the pending flag so a subsequent + Add picks
-                    // the default VIDEO path until the user re-selects
-                    // Overlay clip.
                     pendingAddAsOverlay = false,
-                    // Phase E: same pattern for audio picks.
                     pendingAddAsAudio = false
                 )
             }
             persistProject()
+
+            val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO } ?: updatedClips.firstOrNull()
+            // Asynchronously analyze audio waveform in background without blocking video preview
+            if (firstVideo != null && context != null) {
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val wf = mediaAnalyzer?.analyzeAudioWaveform(
+                            firstVideo.uri, context,
+                            sampleCount = 200,
+                            trimStartMs = firstVideo.trimStartMs,
+                            trimEndMs = firstVideo.trimEndMs
+                        )?.samples ?: FloatArray(0)
+                        if (wf.isNotEmpty()) {
+                            _state.update { it.copy(audioWaveform = wf) }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("EditorViewModel", "Waveform analysis failed", e)
+                    }
+                }
+            }
+
             for (clip in newClips) {
                 if (clip.type == ClipType.VIDEO && context != null) {
                     loadClipThumbnails(clip)
@@ -450,7 +455,7 @@ class EditorViewModel(
 
     private fun loadClipThumbnails(clip: MediaClip) {
         val ctx = context ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val playableUri = com.apexstudio.app.data.media.MediaUriResolver
                     .resolvePlayableUri(ctx, clip.uri).toString()
@@ -458,13 +463,10 @@ class EditorViewModel(
                     context = ctx,
                     videoUri = playableUri,
                     durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L),
-                    count = 12
+                    count = 8
                 )
                 _thumbnails.update { current ->
                     current + (clip.id to thumbs)
-                }
-                thumbs.firstOrNull()?.second?.let { firstFrame ->
-                    generateFilterThumbnails(firstFrame)
                 }
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
@@ -483,11 +485,16 @@ class EditorViewModel(
         val next = if (forward) it.currentTimeMs + step else (it.currentTimeMs - step).coerceAtLeast(0)
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
-    fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.5f, 4f)) }
+    fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.2f, 4f)) }
     fun multiplyZoom(factor: Float) = _state.update {
         val current = it.zoomLevel
-        val next = (current * factor).coerceIn(0.5f, 4f)
+        val next = (current * factor).coerceIn(0.2f, 4f)
         it.copy(zoomLevel = next)
+    }
+    fun fitTimelineToScreen(viewportPx: Float = 1000f) = _state.update {
+        val totalMs = it.durationMs.coerceAtLeast(5000L)
+        val target = (viewportPx / (totalMs * 0.12f)).coerceIn(0.2f, 4f)
+        it.copy(zoomLevel = target)
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }

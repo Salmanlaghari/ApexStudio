@@ -8,6 +8,9 @@ import android.media.MediaRecorder
 import android.media.audiofx.Equalizer
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.media.audiofx.PresetReverb
+import android.media.audiofx.BassBoost
+import android.media.audiofx.EnvironmentalReverb
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +31,17 @@ data class AudioEQState(
     val isSolo: Boolean = false,
     val noiseReduction: Float = 0f,
     val echoCancellation: Boolean = false,
-    val noiseSuppression: Boolean = false
+    val noiseSuppression: Boolean = false,
+    // Phase E: voice-changer + audio effects. Pitch in semitones
+    // (-12..+12) is applied via ExoPlayer.PlaybackParameters.pitch =
+    // 2^(semitones/12). Reverb preset follows PresetReverb.PRESET_*
+    // (0..6); bassBoostStrength is 0..1000 (PresetReverb-strength).
+    val pitchSemitones: Float = 0f,
+    val reverbEnabled: Boolean = false,
+    val reverbPreset: Short = 0,
+    val echoEnabled: Boolean = false,
+    val bassBoostEnabled: Boolean = false,
+    val bassBoostStrength: Short = 0
 )
 
 class AudioEngine(private val context: Context) {
@@ -37,6 +50,18 @@ class AudioEngine(private val context: Context) {
     val eqState: StateFlow<AudioEQState> = _eqState
 
     private var equalizer: Equalizer? = null
+    // Phase E: voice-changer + audio effects. Each one is created
+    // lazily on first use and released in [release]. The audio session
+    // id is 0 (= system mixer) so we don't need a live ExoPlayer
+    // handle here — the preview player's effects will be applied at
+    // session-id routing when it's wired into the player's audio
+    // session. For now these flags drive the AudioStudioScreen UI
+    // state and the export will reference the same effect classes
+    // once the Transformer pipeline picks them up (see
+    // TODO(PHASE_E_EXPORT) in ExportEngine).
+    private var presetReverb: PresetReverb? = null
+    private var environmentalReverb: EnvironmentalReverb? = null
+    private var bassBoost: BassBoost? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
     private var isRecording = false
@@ -114,6 +139,88 @@ class AudioEngine(private val context: Context) {
         _eqState.update { it.copy(noiseSuppression = enabled) }
     }
 
+    // Phase E: pitch control. semitones is clamped to -12..+12; the
+    // native float pitch passed to PlaybackParameters.pitch is
+    // 2^(semitones/12). -12 = octave down (0.5x), 0 = unchanged (1.0x),
+    // +12 = octave up (2.0x). State-only for now — the preview
+    // ExoPlayer reads pitch via vm.applyAudioEffects() and the export
+    // picks it up through the same AudioStudioState.pitchSemitones
+    // field. Engine just remembers the value.
+    fun setPitchSemitones(semitones: Float) {
+        val clamped = semitones.coerceIn(-12f, 12f)
+        _eqState.update { it.copy(pitchSemitones = clamped) }
+    }
+
+    fun enableReverb(enabled: Boolean, preset: Short = 0) {
+        if (enabled) {
+            ensurePresetReverb()
+            presetReverb?.preset = preset.coerceIn(0, 6).toShort()
+            presetReverb?.enabled = true
+        } else {
+            presetReverb?.enabled = false
+        }
+        _eqState.update { it.copy(reverbEnabled = enabled, reverbPreset = preset.coerceIn(0, 6).toShort()) }
+    }
+
+    fun enableEcho(enabled: Boolean) {
+        if (enabled) {
+            ensureEnvironmentalReverb()
+            environmentalReverb?.enabled = true
+        } else {
+            environmentalReverb?.enabled = false
+        }
+        _eqState.update { it.copy(echoEnabled = enabled) }
+    }
+
+    fun enableBassBoost(enabled: Boolean, strength: Short = 0) {
+        if (enabled) {
+            ensureBassBoost()
+            bassBoost?.enabled = true
+            bassBoost?.setStrength(strength.coerceIn(0, 1000).toShort())
+        } else {
+            bassBoost?.enabled = false
+        }
+        _eqState.update {
+            it.copy(bassBoostEnabled = enabled, bassBoostStrength = strength.coerceIn(0, 1000).toShort())
+        }
+    }
+
+    private fun ensurePresetReverb() {
+        if (presetReverb != null) return
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.MODIFY_AUDIO_SETTINGS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        try {
+            presetReverb = PresetReverb(0, 0).apply { enabled = false }
+        } catch (e: Exception) {
+            Log.e("AudioEngine", "Failed to init PresetReverb", e)
+            presetReverb = null
+        }
+    }
+
+    private fun ensureEnvironmentalReverb() {
+        if (environmentalReverb != null) return
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.MODIFY_AUDIO_SETTINGS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        try {
+            environmentalReverb = EnvironmentalReverb(0, 0).apply { enabled = false }
+        } catch (e: Exception) {
+            Log.e("AudioEngine", "Failed to init EnvironmentalReverb", e)
+            environmentalReverb = null
+        }
+    }
+
+    private fun ensureBassBoost() {
+        if (bassBoost != null) return
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.MODIFY_AUDIO_SETTINGS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        try {
+            bassBoost = BassBoost(0, 0).apply { enabled = false }
+        } catch (e: Exception) {
+            Log.e("AudioEngine", "Failed to init BassBoost", e)
+            bassBoost = null
+        }
+    }
+
     fun startRecording(sampleRate: Int = 44100) {
         if (isRecording) return
         if (ContextCompat.checkSelfPermission(
@@ -185,5 +292,11 @@ class AudioEngine(private val context: Context) {
         stopRecording()
         equalizer?.release()
         equalizer = null
+        presetReverb?.release()
+        presetReverb = null
+        environmentalReverb?.release()
+        environmentalReverb = null
+        bassBoost?.release()
+        bassBoost = null
     }
 }

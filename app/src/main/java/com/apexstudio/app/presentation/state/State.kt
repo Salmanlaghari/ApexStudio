@@ -98,7 +98,11 @@ data class EditorState(
     // Phase D: pending + Add intent. When non-null, the next media
     // picker callback will route the result to the chosen lane.
     // Cleared after the picker returns.
-    val pendingAddAsOverlay: Boolean = false
+    val pendingAddAsOverlay: Boolean = false,
+    // Phase E: same routing flag pattern as pendingAddAsOverlay but
+    // for audio picks from the A1 lane "+ Add → Audio" entry. Cleared
+    // after onMediaPicked consumes it.
+    val pendingAddAsAudio: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the
@@ -210,5 +214,17 @@ data class AudioStudioState(
     val echoCancellation: Boolean = false,
     val noiseSuppression: Boolean = false,
     val waveformSamples: FloatArray = FloatArray(0),
-    val isRecording: Boolean = false
+    val isRecording: Boolean = false,
+    // Phase E: per-clip voice-changer + audio effects. semitones is
+    // -12..+12; pitch is computed as 2^(semitones/12) and applied via
+    // ExoPlayer.PlaybackParameters.pitch. reverbPreset follows
+    // android.media.audiofx.PresetReverb.PRESET_* constants (0..6).
+    // bassBoostStrength is 0..1000 (mapped from PresetReverb-style
+    // bands in AudioEngine).
+    val pitchSemitones: Float = 0f,
+    val reverbEnabled: Boolean = false,
+    val reverbPreset: Short = 0,
+    val echoEnabled: Boolean = false,
+    val bassBoostEnabled: Boolean = false,
+    val bassBoostStrength: Short = 0
 )

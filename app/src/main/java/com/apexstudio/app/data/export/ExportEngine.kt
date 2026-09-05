@@ -134,6 +134,17 @@ class ExportEngine(private val context: Context) {
                 // MediaItem instances for the V2 clip + an OverlayEffect
                 // that reads its MediaItem as a GL texture. Track this
                 // work as a follow-up so preview ↔ export stay in sync.
+                //
+                // TODO(PHASE_E_EXPORT): Audio Studio effects (pitch via
+                // PlaybackParameters, PresetReverb, EnvironmentalReverb
+                // for Echo, BassBoost) are reflected in the preview
+                // ExoPlayer (vm.registerMainPlayerForAudioEffects →
+                // PlaybackParameters.pitch + AudioEngine effect classes)
+                // but not yet in the export. Media3 Transformer accepts
+                // audio effects via EditedMediaItem.audioProcessors, so
+                // the work is wiring each enabled effect into a
+                // matching audio processor chain. Track for a follow-up
+                // so audio preview ↔ export stay in sync.
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
                 // 1. Crop

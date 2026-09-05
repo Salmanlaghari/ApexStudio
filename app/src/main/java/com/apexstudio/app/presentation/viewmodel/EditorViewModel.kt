@@ -332,6 +332,19 @@ class EditorViewModel(
     fun openTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = true) }
     fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
 
+    // Phase C: open / close the per-clip action menu (Cut, Trim, Add,
+    // Remove, Move, Split, Delete). Mirrors the setTrimPanelOpen
+    // pattern from earlier phases. We deliberately do NOT clear the
+    // selected clip here — selection persists so the clip stays
+    // highlighted after the menu closes, matching the behaviour of
+    // the existing trim / filter panels.
+    fun openClipActionMenu(clipId: String, atMs: Long) = _state.update {
+        it.copy(clipActionMenuClipId = clipId, clipActionMenuPlayheadMs = atMs)
+    }
+    fun closeClipActionMenu() = _state.update {
+        it.copy(clipActionMenuClipId = null)
+    }
+
     fun openMediaPicker() = _state.update { it.copy(isMediaPickerOpen = true) }
     fun closeMediaPicker() = _state.update { it.copy(isMediaPickerOpen = false) }
 

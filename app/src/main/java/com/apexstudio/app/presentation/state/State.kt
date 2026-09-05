@@ -79,7 +79,14 @@ data class EditorState(
     // Selecting a template from the chip strip drives the LUT + FX +
     // intensity state, which the preview GL pipeline re-reads on the
     // next recomposition.
-    val transmissionPanelOpen: Boolean = false
+    val transmissionPanelOpen: Boolean = false,
+    // Phase C: when non-null, the clip action menu ModalBottomSheet is
+    // open with this clip as the target. Cleared by closeClipActionMenu
+    // (scrim tap, back press, or any menu option). The companion
+    // playheadMs field is captured at open time so the menu can show
+    // "Split at 00:12" context if needed.
+    val clipActionMenuClipId: String? = null,
+    val clipActionMenuPlayheadMs: Long = 0L
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

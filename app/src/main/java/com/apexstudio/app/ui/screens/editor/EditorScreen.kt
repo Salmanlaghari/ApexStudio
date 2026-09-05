@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -575,6 +576,9 @@ fun EditorScreen(
             onAddClipToLane = { type, idx ->
                 vm.addClipToTrack(type, idx)
             },
+            onOpenClipMenu = { clipId, atMs ->
+                vm.openClipActionMenu(clipId, atMs)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.45f)
@@ -903,6 +907,187 @@ fun EditorScreen(
                 )
             }
         }
+
+        // Phase C: per-clip action menu (Cut / Trim / Add / Remove /
+        // Move / Split / Delete). ModalBottomSheet shows on scrim
+        // tap-to-dismiss (handled by onDismissRequest), back press
+        // (handled by the BackHandler below), and on each option tap.
+        // We resolve the target clip from state (clipActionMenuClipId)
+        // rather than a captured parameter, so the menu survives
+        // recompositions while the user is dragging the playhead.
+        val menuClipId = state.clipActionMenuClipId
+        if (menuClipId != null) {
+            val targetClip = state.project?.clips?.firstOrNull { it.id == menuClipId }
+            BackHandler(enabled = true) {
+                vm.closeClipActionMenu()
+            }
+            @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+            androidx.compose.material3.ModalBottomSheet(
+                onDismissRequest = { vm.closeClipActionMenu() },
+                containerColor = ApexPalette.BgElevated,
+                scrimColor = Color.Black.copy(alpha = 0.55f)
+            ) {
+                ClipActionMenuContent(
+                    clipName = targetClip?.name ?: "Clip",
+                    playheadMs = state.clipActionMenuPlayheadMs,
+                    onCut = {
+                        vm.setTrimStartAtPlayhead(menuClipId)
+                        vm.closeClipActionMenu()
+                    },
+                    onTrim = {
+                        vm.setTrimEndAtPlayhead(menuClipId)
+                        vm.closeClipActionMenu()
+                    },
+                    onAdd = {
+                        vm.addClipToTrack(
+                            targetClip?.type ?: com.apexstudio.app.domain.model.ClipType.VIDEO,
+                            targetClip?.trackIndex ?: 0
+                        )
+                        vm.closeClipActionMenu()
+                    },
+                    onRemove = {
+                        vm.deleteClip(menuClipId)
+                        vm.closeClipActionMenu()
+                    },
+                    onMove = {
+                        // Cycle the clip onto its sibling track. For V1↔V2
+                        // and A1↔A2 lanes this matches the existing
+                        // "move to other lane" behaviour from the timeline
+                        // body. The original ClipType.VIDEO→OVERLAY swap
+                        // is preserved so existing exports keep working.
+                        val current = targetClip
+                        if (current != null) {
+                            val (newType, newIdx) = when (current.type) {
+                                com.apexstudio.app.domain.model.ClipType.VIDEO ->
+                                    com.apexstudio.app.domain.model.ClipType.OVERLAY to 1
+                                com.apexstudio.app.domain.model.ClipType.OVERLAY ->
+                                    com.apexstudio.app.domain.model.ClipType.VIDEO to 0
+                                com.apexstudio.app.domain.model.ClipType.AUDIO ->
+                                    com.apexstudio.app.domain.model.ClipType.SFX to 1
+                                com.apexstudio.app.domain.model.ClipType.SFX ->
+                                    com.apexstudio.app.domain.model.ClipType.AUDIO to 0
+                            }
+                            vm.moveClipToTrack(menuClipId, newType, newIdx)
+                        }
+                        vm.closeClipActionMenu()
+                    },
+                    onSplit = {
+                        vm.splitClip(menuClipId, state.clipActionMenuPlayheadMs)
+                        vm.closeClipActionMenu()
+                    },
+                    onDelete = {
+                        vm.deleteClip(menuClipId)
+                        vm.closeClipActionMenu()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Phase C: content for the per-clip action menu. Renders a vertical
+ * list of labelled rows (icon + label). Kept separate from the
+ * EditorScreen body so it doesn't bloat the main composable and is
+ * easy to preview in isolation. The 7 options map 1:1 to the spec:
+ * Cut / Trim / Add / Remove / Move / Split / Delete.
+ */
+@Composable
+private fun ClipActionMenuContent(
+    clipName: String,
+    playheadMs: Long,
+    onCut: () -> Unit,
+    onTrim: () -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+    onMove: () -> Unit,
+    onSplit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = clipName,
+            color = ApexPalette.TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = "Playhead: ${com.apexstudio.app.util.TimeFormat.formatMs(playheadMs)}",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        ClipActionRow(Icons.Default.ContentCut, "Cut", "Trim start to playhead", onCut)
+        ClipActionRow(Icons.Default.Tune, "Trim", "Trim end to playhead", onTrim)
+        ClipActionRow(Icons.Default.Add, "Add", "Add empty clip to this lane", onAdd)
+        ClipActionRow(Icons.Default.Close, "Remove", "Delete this clip", onRemove)
+        ClipActionRow(Icons.Default.SwapHoriz, "Move", "Move to sibling lane", onMove)
+        ClipActionRow(
+            Icons.Default.VerticalAlignCenter,
+            "Split",
+            "Split this clip at the playhead",
+            onSplit
+        )
+        ClipActionRow(
+            Icons.Default.Delete,
+            "Delete",
+            "Permanently remove this clip",
+            onDelete,
+            destructive = true
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ClipActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    destructive: Boolean = false
+) {
+    val tint = if (destructive) ApexPalette.NeonPink else ApexPalette.NeonCyan
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = if (destructive) tint else ApexPalette.TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = ApexPalette.TextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -1964,6 +2149,8 @@ private fun TimelineSection(
     onDeleteClip: ((clipId: String) -> Unit)? = null,
     onMoveClipTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
     onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
+    // Phase C: opens the per-clip action menu at the current playhead.
+    onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: TimelineSection")
@@ -2262,7 +2449,8 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
+                    onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
                     label = "V2",
@@ -2280,7 +2468,8 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
+                    onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
                     label = "A1",
@@ -2298,7 +2487,8 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
+                    onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
                     label = "FX",
@@ -2316,7 +2506,8 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
+                    onOpenClipMenu = onOpenClipMenu
                 )
             }
 
@@ -2366,7 +2557,8 @@ private fun TimelineTrackLaneRow(
     onSplitClip: ((clipId: String, atMs: Long) -> Unit)? = null,
     onDeleteClip: ((clipId: String) -> Unit)? = null,
     onMoveTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
-    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null
+    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
+    onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null
 ) {
     val density = LocalDensity.current
     val trackHeightDp = 46.dp
@@ -2470,7 +2662,8 @@ private fun TimelineTrackLaneRow(
                             onTrimChange = { start, end -> onTrimChange?.invoke(clip.id, start, end) },
                             onSplit = { onSplitClip?.invoke(clip.id, playheadMs) },
                             onDelete = { onDeleteClip?.invoke(clip.id) },
-                            onMoveTrack = { onMoveTrack?.invoke(clip.id, targetType, targetIdx) }
+                            onMoveTrack = { onMoveTrack?.invoke(clip.id, targetType, targetIdx) },
+                            onOpenMenu = { onOpenClipMenu?.invoke(clip.id, playheadMs) }
                         )
                     }
                 }
@@ -2492,7 +2685,11 @@ private fun VideoClipBlock(
     onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null,
     onSplit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
-    onMoveTrack: (() -> Unit)? = null
+    onMoveTrack: (() -> Unit)? = null,
+    // Phase C: opens the per-clip action menu (Cut, Trim, Add,
+    // Remove, Move, Split, Delete). Single-tap and long-press both
+    // call this; double-tap calls onSplit instead.
+    onOpenMenu: (() -> Unit)? = null
 ) {
     val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
     val x = (trackStartMs * pxPerMs).toInt()
@@ -2504,7 +2701,26 @@ private fun VideoClipBlock(
             .fillMaxHeight()
             .padding(1.dp)
             .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onSelect)
+            // Phase C: replace plain clickable with detectTapGestures so
+            // we can route single-tap → select+menu, double-tap → split,
+            // long-press → select+menu. The existing drag-to-trim
+            // gesture in the selected-branch pointerInput below is
+            // untouched (per MUST NOT clause).
+            .pointerInput(clip.id) {
+                detectTapGestures(
+                    onTap = {
+                        onSelect()
+                        onOpenMenu?.invoke()
+                    },
+                    onDoubleTap = {
+                        onSplit?.invoke()
+                    },
+                    onLongPress = {
+                        onSelect()
+                        onOpenMenu?.invoke()
+                    }
+                )
+            }
             .then(
                 if (selected) {
                     Modifier.pointerInput(clip.id, pxPerMs) {

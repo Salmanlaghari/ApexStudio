@@ -2449,7 +2449,7 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
                     onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
@@ -2468,7 +2468,7 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
                     onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
@@ -2487,7 +2487,7 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
                     onOpenClipMenu = onOpenClipMenu
                 )
                 TimelineTrackLaneRow(
@@ -2506,7 +2506,7 @@ private fun TimelineSection(
                     onSplitClip = onSplitClip,
                     onDeleteClip = onDeleteClip,
                     onMoveTrack = onMoveClipTrack,
-                    onAddClipToLane = onAddClipToLane
+                    onAddClipToLane = onAddClipToLane,
                     onOpenClipMenu = onOpenClipMenu
                 )
             }
@@ -2557,7 +2557,7 @@ private fun TimelineTrackLaneRow(
     onSplitClip: ((clipId: String, atMs: Long) -> Unit)? = null,
     onDeleteClip: ((clipId: String) -> Unit)? = null,
     onMoveTrack: ((clipId: String, newType: com.apexstudio.app.domain.model.ClipType, newIndex: Int) -> Unit)? = null,
-    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null
+    onAddClipToLane: ((com.apexstudio.app.domain.model.ClipType, Int) -> Unit)? = null,
     onOpenClipMenu: ((clipId: String, atMs: Long) -> Unit)? = null
 ) {
     val density = LocalDensity.current

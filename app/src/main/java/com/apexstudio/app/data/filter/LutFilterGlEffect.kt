@@ -13,8 +13,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Real-time 3D LUT colour filter wired into the Media3 GL pipeline.
@@ -37,11 +40,12 @@ class LutFilterGlEffect(
     private val context: Context,
     private val preset: FilterPreset?,
     private val intensity: Float = 1f,
-    private val intensityProvider: (() -> Float)? = null
+    private val intensityProvider: (() -> Float)? = null,
+    private val preloaded: LutTexture? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, useHdr)
+        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, preloaded, useHdr)
     }
 
     @UnstableApi
@@ -50,6 +54,7 @@ class LutFilterGlEffect(
         preset: FilterPreset?,
         private val intensity: Float,
         private val intensityProvider: (() -> Float)?,
+        preloaded: LutTexture?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -88,7 +93,12 @@ class LutFilterGlEffect(
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
             glProgram.setFloatUniform("uIntensity", intensity)
 
-            if (preset != null) {
+            if (preloaded != null) {
+                // Hot path: caller already parsed + packed the LUT on
+                // Dispatchers.Default (see LutBitmapCache). Only the GL
+                // texture upload runs here.
+                uploadStrip(preloaded.pixels, preloaded.width, preloaded.height, preloaded.size)
+            } else if (preset != null) {
                 uploadLut(context, preset)
             } else {
                 // No preset selected: upload a 1x1 identity LUT so the
@@ -103,38 +113,12 @@ class LutFilterGlEffect(
                 uploadIdentityLut()
                 return
             }
-            val entries = lut.size / 3
-            val size = Math.cbrt(entries.toDouble()).toInt()
-            if (size * size * size != entries) {
+            val packed = LutBitmapCache.packLut(lut) ?: run {
                 Log.w(TAG, "LUT ${preset.id} is not a valid cube; using identity")
                 uploadIdentityLut()
                 return
             }
-            // Pack into a 2D strip: width = size*size, height = size.
-            // For B slice b, the (g, r) plane lives at row b, columns [g*size .. g*size+size).
-            val width = size * size
-            val height = size
-            val pixels = IntArray(width * height)
-            // .cube data is ordered with R changing fastest, then G, then B
-            // (the "natural" reading order). We want the GPUImage-style
-            // 2D-strip layout where the x axis is "slice_index + g" and
-            // y axis is "r" within that slice. Match the original LUT
-            // ordering to keep the shader math symmetric.
-            var idx = 0
-            for (b in 0 until size) {
-                for (g in 0 until size) {
-                    for (r in 0 until size) {
-                        val rr = (lut[idx].coerceIn(0f, 1f) * 255f).toInt()
-                        val gg = (lut[idx + 1].coerceIn(0f, 1f) * 255f).toInt()
-                        val bb = (lut[idx + 2].coerceIn(0f, 1f) * 255f).toInt()
-                        val x = b * size + g
-                        val y = r
-                        pixels[y * width + x] = 0xFF000000.toInt() or (rr shl 16) or (gg shl 8) or bb
-                        idx += 3
-                    }
-                }
-            }
-            uploadStrip(pixels, width, height, size)
+            uploadStrip(packed.pixels, packed.width, packed.height, packed.size)
         }
 
         private fun uploadIdentityLut() {
@@ -281,5 +265,105 @@ class LutFilterGlEffect(
                 null
             }
         }
+    }
+}
+
+/**
+ * Pre-built LUT pixel buffer ready for `GLUtils.texImage2D`. Pixel
+ * layout matches the 2D-strip convention used by
+ * [LutFilterGlEffect]'s fragment shader (width = size*size, height =
+ * size). Constructed off the main thread by [LutBitmapCache].
+ */
+data class LutTexture(
+    val pixels: IntArray,
+    val width: Int,
+    val height: Int,
+    val size: Int
+)
+
+/**
+ * Process-scoped cache of parsed + pixel-packed LUTs.
+ *
+ * Each entry holds the full ARGB pixel buffer ready for upload to a
+ * 2D GL texture. Loading happens on [Dispatchers.Default] so the
+ * asset read + parsing + bitmap-sized IntArray allocation never runs
+ * on the Android Main thread. Repeated taps on the same preset are a
+ * map hit, not a re-parse.
+ */
+object LutBitmapCache {
+    private val cache = ConcurrentHashMap<String, LutTexture>()
+
+    /**
+     * Return the cached [LutTexture] for [preset], loading + packing
+     * it on [Dispatchers.Default] on the first call. Returns null if
+     * the .cube asset is missing or malformed.
+     */
+    suspend fun getOrLoad(context: Context, preset: FilterPreset): LutTexture? {
+        cache[preset.id]?.let { return it }
+        return withContext(Dispatchers.Default) {
+            // Re-check after dispatch: a concurrent caller may have
+            // populated the cache while we were waiting for the
+            // dispatcher.
+            cache[preset.id]?.let { return@withContext it }
+            val lut = readLutFromAssets(context, preset) ?: return@withContext null
+            val packed = packLut(lut) ?: return@withContext null
+            cache[preset.id] = packed
+            packed
+        }
+    }
+
+    /**
+     * Drop the cached entry for [preset]. Useful when the editor
+     * unloads a project so a subsequent re-load doesn't see stale
+     * pixels.
+     */
+    fun evict(presetId: String) {
+        cache.remove(presetId)
+    }
+
+    fun clear() {
+        cache.clear()
+    }
+
+    private fun readLutFromAssets(context: Context, preset: FilterPreset): FloatArray? {
+        return try {
+            context.assets.open(preset.asset).use { input ->
+                BufferedReader(InputStreamReader(input)).use { reader ->
+                    CubeLutParser.parse(reader)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("LutBitmapCache", "Failed to load LUT ${preset.asset}", e)
+            null
+        }
+    }
+
+    /**
+     * Pack a flat float[size³·3] LUT into the 2D-strip IntArray
+     * layout the shader expects (width = size², height = size).
+     * Pure CPU — safe to call off the GL thread.
+     */
+    fun packLut(lut: FloatArray): LutTexture? {
+        val entries = lut.size / 3
+        val size = Math.cbrt(entries.toDouble()).toInt()
+        if (size * size * size != entries) return null
+        val width = size * size
+        val height = size
+        val pixels = IntArray(width * height)
+        var idx = 0
+        for (b in 0 until size) {
+            for (g in 0 until size) {
+                for (r in 0 until size) {
+                    val rr = (lut[idx].coerceIn(0f, 1f) * 255f).toInt()
+                    val gg = (lut[idx + 1].coerceIn(0f, 1f) * 255f).toInt()
+                    val bb = (lut[idx + 2].coerceIn(0f, 1f) * 255f).toInt()
+                    val x = b * size + g
+                    val y = r
+                    pixels[y * width + x] = 0xFF000000.toInt() or (rr shl 16) or (gg shl 8) or bb
+                    idx += 3
+                }
+            }
+        }
+        return LutTexture(pixels, width, height, size)
     }
 }

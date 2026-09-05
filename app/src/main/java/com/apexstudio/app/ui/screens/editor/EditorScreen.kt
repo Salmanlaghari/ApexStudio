@@ -270,18 +270,34 @@ fun EditorScreen(
         appliedCropRect = state.cropRect
     }
 
+    // Pre-load the LUT pixels off the Main thread so the GL effect
+    // init only has to upload them to the GPU — keeps filter switching
+    // responsive. The cache (LutBitmapCache) makes repeat selections
+    // instant.
+    var cachedLut by remember(activePreset) {
+        mutableStateOf<com.apexstudio.app.data.filter.LutTexture?>(null)
+    }
+    LaunchedEffect(activePreset) {
+        cachedLut = if (activePreset == null) null
+        else com.apexstudio.app.data.filter.LutBitmapCache.getOrLoad(context, activePreset)
+    }
+
     // The current Effect list, memoised as a stable value (not a
     // local function — those can't be captured by a LaunchedEffect's
     // coroutine because the function reference isn't stable across
     // recompositions). Re-evaluated only when the active filter /
     // intensity / crop / selected clip's keyframes actually change.
+    // `cachedLut` joins the key list so a freshly-loaded LUT triggers
+    // a one-shot re-build, after which repeat taps on the same preset
+    // are a cache hit and don't re-enter this block.
     val currentEffects = remember(
         activePreset,
         state.filterIntensity,
         activeFx,
         state.fxIntensity,
         selectedKeyframes,
-        appliedCropRect
+        appliedCropRect,
+        cachedLut
     ) {
         buildList<androidx.media3.common.Effect> {
             // Crop first: the LUT + FX + keyframes then grade/transform
@@ -296,7 +312,8 @@ fun EditorScreen(
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity,
-                        intensityProvider = { state.filterIntensity }
+                        intensityProvider = { state.filterIntensity },
+                        preloaded = cachedLut
                     )
                 )
             }
@@ -318,7 +335,6 @@ fun EditorScreen(
             }
         }
     }
-
     LaunchedEffect(exoPlayer, state.selectedClipId, state.project?.clips) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id ?: return@LaunchedEffect

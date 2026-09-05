@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -104,7 +105,12 @@ fun EditorScreen(
     // Filter engine: reads the 70+ .cube LUTs and the filter_manifest.json
     // from assets. Created once per EditorScreen entry.
     val filterEngine = remember { LutFilterEngine(context) }
-    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    // ExoPlayer is owned by the ViewModel so it survives recompositions,
+    // navigation away/back, and configuration changes. Previously it was
+    // created here in a `LaunchedEffect(Unit)`, which meant every recompose
+    // that survived a config change tore the player down and rebuilt it,
+    // causing a full 1-3s re-buffer.
+    val exoPlayer = remember(vm) { vm.getPlayer() }
 
     mediaPicker.registerLaunchers()
 
@@ -127,79 +133,13 @@ fun EditorScreen(
             }
     }
 
-    // Build the player for audio/playback + video preview. Wrapped in try/catch
-    // so a codec/init failure degrades gracefully instead of taking down the
-    // process. The PlayerView is shown as soon as the player exists — ExoPlayer
-    // handles its own surface lifecycle internally, so we don't need to gate
-    // on STATE_READY (which made the previous attempt never reach the preview).
-    LaunchedEffect(Unit) {
-        try {
-            Log.d("ApexTrace", "EditorScreen: building ExoPlayer")
-            CrashMarker.mark(context, "EditorScreen: ExoPlayer.Builder.build()")
-            val player = ExoPlayer.Builder(context).build()
-            Log.d("ApexTrace", "EditorScreen: ExoPlayer built")
-            CrashMarker.mark(context, "EditorScreen: ExoPlayer built")
-            // Track readiness + video size in the ViewModel so the UI can
-            // react. The video size is what lets the preview container pick
-            // the right aspect ratio (16:9 vs 9:16 vs 1:1) instead of
-            // letterboxing every clip into a 16:9 frame.
-            player.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    val ready = playbackState == Player.STATE_READY
-                    Log.d("ApexTrace", "EditorScreen: onPlaybackStateChanged=$playbackState ready=$ready")
-                    vm.setPlayerReady(ready)
-                    // When the video finishes playing, ExoPlayer parks at
-                    // STATE_ENDED. The app's own isPlaying flag never
-                    // flipped, so the play button kept showing a "Pause"
-                    // icon and tapping it called play() on a player that
-                    // was already at the end — which is a no-op. Flip
-                    // isPlaying off here so the UI shows a fresh "Play"
-                    // icon, and the play effect below will seekTo(0)
-                    // before play() to actually restart from frame zero.
-                    if (playbackState == Player.STATE_ENDED) {
-                        vm.setPlaying(false)
-                    }
-                }
-                override fun onPlayerError(error: PlaybackException) {
-                    Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
-                    vm.setPlayerReady(false)
-                    try {
-                        val fallbackUri = com.apexstudio.app.data.media.MediaUriResolver
-                            .resolvePlayableUri(context, null)
-                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                        player.prepare()
-                        player.play()
-                        vm.setPlayerReady(true)
-                    } catch (ex: Exception) {
-                        Log.e("EditorScreen", "Player auto-recovery failed", ex)
-                    }
-                }
-                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                    Log.d("ApexTrace", "EditorScreen: onVideoSizeChanged=${videoSize.width}x${videoSize.height}")
-                    vm.setVideoSize(videoSize.width, videoSize.height)
-                }
-            })
-            // If the player is already in a terminal state (unlikely but safe),
-            // sync the flag immediately.
-            if (player.playbackState == Player.STATE_READY) {
-                vm.setPlayerReady(true)
-            }
-            exoPlayer = player
-        } catch (e: Exception) {
-            Log.e("EditorScreen", "ExoPlayer build failed", e)
-            CrashMarker.clear(context)
-            exoPlayer = null
-        } finally {
-            CrashMarker.clear(context)
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer?.release()
-            exoPlayer = null
-        }
-    }
+    // ExoPlayer is built lazily by EditorViewModel.getPlayer() — see the
+    // `remember(vm) { vm.getPlayer() }` call above. The Player.Listener
+    // that used to live here has moved into the ViewModel too so it stays
+    // paired with the player across recompositions.
+    //
+    // We DON'T release the player in DisposableEffect.onDispose anymore —
+    // the ViewModel owns the lifecycle and releases it in onCleared().
 
     // Safety net: if STATE_READY never fires (e.g. listener not installed in
     // time, or the player is already in a terminal state we don't catch),
@@ -461,6 +401,13 @@ fun EditorScreen(
     LaunchedEffect(exoPlayer) {
         val player = exoPlayer ?: return@LaunchedEffect
         while (isActive) {
+            // Only poll the player's clock while it's actually playing.
+            // When paused, player.currentPosition is static so polling is
+            // wasted work on the UI thread (a 30fps wake-up even when the
+            // preview is frozen). The previous implementation polled
+            // unconditionally, which is fine on a high-end device but
+            // burns measurable battery on low-end ones and can contribute
+            // to jank when the timeline is being scrubbed at the same time.
             if (player.isPlaying) {
                 val pos = player.currentPosition
                 vm.setPlayerPosition(pos)
@@ -476,8 +423,12 @@ fun EditorScreen(
                         vm.setPlayerPosition(activeClip.trimStartMs)
                     }
                 }
+                delay(33)
+            } else {
+                // Sleep longer when idle so we wake up ~10x/sec to catch
+                // the moment the user hits play.
+                delay(100)
             }
-            delay(33)
         }
     }
 
@@ -1159,6 +1110,45 @@ private fun VideoPreviewSection(
             // transforms (position/scale/rotation/opacity) animate dynamically.
             if (exoPlayer != null) {
                 CrashMarker.mark(LocalContext.current, "EditorScreen: attaching PlayerView")
+                // Spinner overlay: shown while ExoPlayer is in STATE_BUFFERING
+                // (first-frame or re-buffer after clip switch / seek). The
+                // playerBuffering state is driven by the Player.Listener in
+                // the build block above. We render this OUTSIDE the
+                // AndroidView so the spinner composes with the same
+                // graphicsLayer transform (translation/scale/rotation/opacity)
+                // as the PlayerView below — i.e. keyframe animation applies
+                // to the spinner too, which keeps the UI consistent if the
+                // user has a "spin while loading" keyframe.
+                AnimatedVisibility(
+                    visible = state.playerBuffering,
+                    enter = fadeIn(animationSpec = tween(120)),
+                    exit = fadeOut(animationSpec = tween(180)),
+                    modifier = Modifier
+                        .offset(x = contentX, y = contentY)
+                        .width(contentW)
+                        .height(contentH)
+                        .graphicsLayer {
+                            translationX = currentTransform.translateX * (size.width / 2f)
+                            translationY = currentTransform.translateY * (size.height / 2f)
+                            scaleX = currentTransform.scale
+                            scaleY = currentTransform.scale
+                            rotationZ = currentTransform.rotationDeg
+                            alpha = currentTransform.opacity
+                        }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color.White.copy(alpha = 0.85f),
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
                 AndroidView(
                     modifier = Modifier
                         .fillMaxSize()

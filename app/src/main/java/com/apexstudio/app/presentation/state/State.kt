@@ -18,6 +18,11 @@ data class EditorState(
     val playerPositionMs: Long = 0L,
     val playerDurationMs: Long = 0L,
     val isPlayerReady: Boolean = false,
+    // True while the ExoPlayer is in STATE_BUFFERING (loading or
+    // re-buffering the first frame). Drives the spinner overlay so
+    // the user sees "Loading…" instead of a blank black surface
+    // for the 1–3s it takes to prepare a clip.
+    val playerBuffering: Boolean = false,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val audioWaveform: FloatArray = FloatArray(0),

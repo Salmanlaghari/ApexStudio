@@ -198,7 +198,16 @@ class EditorViewModel(
             return
         }
         try {
-            _transmissionTemplates.value = mgr.loadTransmissionTemplates()
+            val raw = mgr.loadTransmissionTemplatesRaw()
+            val stats = mgr.parseTransmissionTemplatesWithStats(raw)
+            _transmissionTemplates.value = stats.templates
+            if (stats.skippedCount > 0) {
+                Log.w(
+                    "EditorViewModel",
+                    "transmission_templates.json: ${stats.skippedCount} entries skipped " +
+                        "(unknown LUT or FX id) — ids: ${stats.skippedIds.joinToString()}"
+                )
+            }
         } catch (e: Exception) {
             Log.w("EditorViewModel", "loadTransmissionTemplates failed", e)
             _transmissionTemplates.value = emptyList()
@@ -237,10 +246,16 @@ class EditorViewModel(
                     activeFilterId = null,
                     filterIntensity = 0f,
                     activeFxId = null,
-                    fxIntensity = 0f
+                    fxIntensity = 0f,
+                    lastTransitionType = null,
+                    lastTransitionDurationMs = 500L
                 )
             }
-            persistTransmissionTemplateId(null)
+            persistTransmissionTemplate(
+                id = null,
+                transitionType = null,
+                transitionDurationMs = 500L
+            )
             return
         }
         val template = _transmissionTemplates.value.firstOrNull { it.id == id }
@@ -256,34 +271,56 @@ class EditorViewModel(
      * up by id. Used by [loadProject] on project open so we can
      * skip the "unknown id" warning path for the auto-apply case.
      */
+    /**
+     * Apply a resolved [TransmissionTemplate] without re-looking it
+     * up by id. Used by [loadProject] on project open so we can
+     * skip the "unknown id" warning path for the auto-apply case.
+     *
+     * The template's `transitionType` and `transitionDurationMs` are
+     * also applied as a project-level hint (see
+     * `Project.lastTransitionType`). The project doesn't model
+     * per-clip transitions yet, so this surfaces the choice in
+     * state for a future per-clip transition feature to consume.
+     */
     private fun applyTransmissionTemplateInternal(template: TransmissionTemplate, persistProjectId: String?) {
         _state.update {
             it.copy(
                 activeFilterId = template.filterId,
                 filterIntensity = template.filterIntensity.coerceIn(0f, 1f),
                 activeFxId = template.fxPresetId,
-                fxIntensity = template.fxIntensity.coerceIn(0f, 1f)
+                fxIntensity = template.fxIntensity.coerceIn(0f, 1f),
+                lastTransitionType = template.transitionType,
+                lastTransitionDurationMs = template.transitionDurationMs
             )
         }
-        persistTransmissionTemplateId(template.id)
+        persistTransmissionTemplate(id = template.id, transitionType = template.transitionType,
+            transitionDurationMs = template.transitionDurationMs)
     }
 
     /**
-     * Save the chosen transmission template id on the current project
-     * and write the project back to DataStore so the choice survives
-     * an app restart. Called from both apply paths (manual + auto).
+     * Save the chosen transmission template id + transition hint on
+     * the current project and write the project back to DataStore so
+     * the choice survives an app restart. Called from both apply
+     * paths (manual + auto).
      */
-    private fun persistTransmissionTemplateId(id: String?) {
+    private fun persistTransmissionTemplate(id: String?, transitionType: String?, transitionDurationMs: Long) {
         val snapshot = _state.value.project ?: return
-        if (snapshot.lastTransmissionTemplateId == id) return
-        val updated = snapshot.copy(lastTransmissionTemplateId = id)
+        if (snapshot.lastTransmissionTemplateId == id &&
+            snapshot.lastTransitionType == transitionType &&
+            snapshot.lastTransitionDurationMs == transitionDurationMs
+        ) return
+        val updated = snapshot.copy(
+            lastTransmissionTemplateId = id,
+            lastTransitionType = transitionType,
+            lastTransitionDurationMs = transitionDurationMs
+        )
         _state.update { it.copy(project = updated) }
         val repo = projectRepository ?: return
         viewModelScope.launch {
             try {
                 repo.saveProject(updated)
             } catch (e: Exception) {
-                Log.w("EditorViewModel", "Failed to persist transmission template id", e)
+                Log.w("EditorViewModel", "Failed to persist transmission template", e)
             }
         }
     }

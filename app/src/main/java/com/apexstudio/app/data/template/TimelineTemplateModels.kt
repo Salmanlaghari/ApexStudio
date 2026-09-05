@@ -91,3 +91,19 @@ data class TemplateTextOverlay(
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE
 )
+
+
+/**
+ * Result of parsing a `transmission_templates.json` payload.
+ *
+ * Surfaces how many entries were dropped because they referenced a
+ * LUT id not in the live manifest or an FX preset id not in the
+ * [com.apexstudio.app.data.fx.FxPreset] enum, so the editor can
+ * log a one-line summary instead of silently dropping the chips the
+ * user expected to see in the transmission panel.
+ */
+data class TransmissionTemplateLoadResult(
+    val templates: List<TransmissionTemplate>,
+    val skippedCount: Int,
+    val skippedIds: List<String>
+)

@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.ui.theme.ApexPalette
 
@@ -112,7 +113,7 @@ fun TransmissionTemplatesPanel(
             items(templates) { template ->
                 TransmissionTemplateTile(
                     label = template.name,
-                    sublabel = "${template.filterId} + ${template.fxPresetId}",
+                    sublabel = resolveTransmissionTemplateSublabel(template),
                     accent = Color(template.previewAccentArgb.toULong().toLong()),
                     secondary = Color(0xFF0E1116),
                     icon = iconForTemplate(template),
@@ -199,4 +200,24 @@ private fun iconForTemplate(template: TransmissionTemplate): ImageVector = when 
     "soft_blur" -> Icons.Default.Tune
     "pixelate" -> Icons.Default.Tune
     else -> Icons.Default.AutoAwesome
+}
+
+/**
+ * Resolve the [TransmissionTemplate] sublabel shown beneath the
+ * template name. Tries to show the human-readable LUT name + FX
+ * label so the user sees "Cinematic Travel Vlog" + "Kodak 35mm +
+ * VHS" instead of the raw kebab-case ids ("kodak_35mm + vhs") the
+ * JSON catalog stores. Falls back to the raw ids only when the
+ * lookup fails (e.g. a preset was renamed but the catalog hasn't
+ * been updated yet), and surfaces a `?` suffix so the user can
+ * tell the lookup didn't resolve cleanly.
+ */
+private fun resolveTransmissionTemplateSublabel(template: TransmissionTemplate): String {
+    val lutName = com.apexstudio.app.data.filter.FilterManifest
+        .presetById(template.filterId)
+        ?.name
+        ?: "${template.filterId} (?)"
+    val fxName = FxPreset.byId(template.fxPresetId)?.label
+        ?: "${template.fxPresetId} (?)"
+    return "$lutName + $fxName"
 }

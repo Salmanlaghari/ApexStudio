@@ -144,7 +144,14 @@ data class Project(
      * file stays backwards-compatible: older saved projects without
      * this field deserialise as null and behave exactly as before.
      */
-    val lastTransmissionTemplateId: String? = null
+    val lastTransmissionTemplateId: String? = null,
+    // Transition hint chosen by the Transmission panel. Project-level
+    // for now (per-clip transitions are a follow-up feature); null
+    // means "no transition preset was picked". Persisted alongside
+    // lastTransmissionTemplateId so the choice survives an app
+    // restart.
+    val lastTransitionType: String? = null,
+    val lastTransitionDurationMs: Long = 500L
 )
 
 @Serializable

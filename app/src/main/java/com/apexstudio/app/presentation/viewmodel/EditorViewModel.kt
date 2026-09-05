@@ -6,6 +6,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.engine.AudioEngine
 import com.apexstudio.app.data.engine.ColorGradingEngine
@@ -77,6 +82,113 @@ class EditorViewModel(
     private val colorGradingEngine = ColorGradingEngine()
     private val projectRepository: ProjectRepository? = context?.let { ProjectRepository(it) }
     private val timelineTemplateManager = context?.let { TimelineTemplateManager(it) }
+
+    /**
+     * Owned by the ViewModel so it survives configuration changes and
+     * Composable recompositions. Previously the player was created in a
+     * `LaunchedEffect(Unit)` inside EditorScreen, which meant every
+     * navigation away/back or theme switch re-built the player and
+     * re-buffered the first frame — a 1-3s black surface every time.
+     *
+     * Lazily built on the first call to [getPlayer]; application context
+     * is used (not activity) to keep the reference valid across config
+     * changes. Released in [onCleared].
+     */
+    private var player: ExoPlayer? = null
+
+    /**
+     * Returns the ViewModel-owned [ExoPlayer], creating it on first call.
+     *
+     * The player lives for the entire lifetime of the ViewModel — that's
+     * the whole point of moving it here: recreation, navigation, and
+     * rotation no longer tear it down.
+     *
+     * Returns `null` if the constructor was created without an
+     * application context (e.g. unit tests with no Android fixture).
+     */
+    fun getPlayer(): ExoPlayer? {
+        val ctx = context ?: return null
+        val existing = player
+        if (existing != null) return existing
+        return try {
+            Log.d("ApexTrace", "EditorViewModel: building ExoPlayer")
+            CrashMarker.mark(ctx, "EditorViewModel: ExoPlayer.Builder.build()")
+            val built = ExoPlayer.Builder(ctx).build()
+            // CacheControlSeekParameters tells ExoPlayer to prefer seeks
+            // inside already-loaded buffer windows (key-frame seek) rather
+            // than re-buffering from the nearest sync frame. Default
+            // behavior seeks to the nearest sync frame and re-decodes,
+            // which on slow storage causes a 200-800ms visible glitch on
+            // every timeline scrub. CacheControl is a strict subset of
+            // CloserSeek but always succeeds immediately if any buffered
+            // data is available, which matches what the timeline UI
+            // expects: instant feedback.
+            built.setSeekParameters(SeekParameters.CACHE_CONTROL)
+            attachPlayerListener(built, ctx)
+            if (built.playbackState == Player.STATE_READY) {
+                _state.update { it.copy(isPlayerReady = true) }
+            }
+            player = built
+            Log.d("ApexTrace", "EditorViewModel: ExoPlayer built")
+            CrashMarker.mark(ctx, "EditorViewModel: ExoPlayer built")
+            built
+        } catch (e: Exception) {
+            Log.e("EditorViewModel", "ExoPlayer build failed", e)
+            CrashMarker.clear(ctx)
+            null
+        }
+    }
+
+    /**
+     * Player.Listener attached once at creation time. Mirrors the
+     * listener that used to live in EditorScreen — moved here so it
+     * survives recompositions and stays in lock-step with the player.
+     */
+    private fun attachPlayerListener(p: ExoPlayer, ctx: Context) {
+        p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                val ready = playbackState == Player.STATE_READY
+                Log.d(
+                    "ApexTrace",
+                    "EditorViewModel: onPlaybackStateChanged=$playbackState ready=$ready"
+                )
+                _state.update {
+                    it.copy(
+                        isPlayerReady = ready,
+                        playerBuffering = playbackState == Player.STATE_BUFFERING
+                    )
+                }
+                if (playbackState == Player.STATE_ENDED) {
+                    _state.update { it.copy(isPlaying = false) }
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("EditorViewModel", "Player error: ${error.errorCodeName}", error)
+                _state.update { it.copy(isPlayerReady = false) }
+                try {
+                    val fallbackUri = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(ctx, null)
+                    p.setMediaItem(MediaItem.fromUri(fallbackUri))
+                    p.prepare()
+                    p.play()
+                    _state.update { it.copy(isPlayerReady = true) }
+                } catch (ex: Exception) {
+                    Log.e("EditorViewModel", "Player auto-recovery failed", ex)
+                }
+            }
+
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                Log.d(
+                    "ApexTrace",
+                    "EditorViewModel: onVideoSizeChanged=${videoSize.width}x${videoSize.height}"
+                )
+                _state.update {
+                    it.copy(videoWidth = videoSize.width, videoHeight = videoSize.height)
+                }
+            }
+        })
+    }
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
@@ -1096,5 +1208,11 @@ class EditorViewModel(
         audioEngine?.release()
         exportEngine?.release()
         colorGradingEngine.release()
+        try {
+            player?.release()
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "player.release() failed", e)
+        }
+        player = null
     }
 }

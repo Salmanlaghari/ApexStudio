@@ -97,6 +97,7 @@ fun EditorScreen(
     )
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
     val context = LocalContext.current
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
@@ -579,6 +580,8 @@ fun EditorScreen(
             onFx = { vm.openFxPanel() },
             onKeyframes = { vm.setKeyframePanelOpen(true) },
             keyframesActive = state.keyframePanelOpen || (selectedClipForTrim != null && !selectedClipForTrim.keyframes.isEmpty()),
+            onTransmission = { vm.openTransmissionTemplatesPanel() },
+            transmissionActive = state.transmissionPanelOpen,
             onExport = onExport,
             modifier = Modifier
                 .fillMaxWidth()
@@ -850,6 +853,29 @@ fun EditorScreen(
                     onRemove = { id -> selectedClip?.let { vm.removeKeyframe(it.id, id) } },
                     onClear = { selectedClip?.let { vm.clearKeyframes(it.id) } },
                     onClose = { vm.setKeyframePanelOpen(false) }
+                )
+            }
+        }
+    }
+
+    if (state.transmissionPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeTransmissionTemplatesPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) { }
+            ) {
+                TransmissionTemplatesPanel(
+                    templates = transmissionTemplates,
+                    activeTemplateId = state.project?.lastTransmissionTemplateId,
+                    onTemplateApplied = { id -> vm.applyTransmissionTemplate(id) },
+                    onClose = { vm.closeTransmissionTemplatesPanel() }
                 )
             }
         }
@@ -2737,6 +2763,8 @@ private fun HorizontalToolBar(
     onFx: () -> Unit,
     onKeyframes: () -> Unit = {},
     keyframesActive: Boolean = false,
+    onTransmission: () -> Unit = {},
+    transmissionActive: Boolean = false,
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2799,6 +2827,7 @@ private fun HorizontalToolBar(
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),
             ToolDef("Keyframe", Icons.Default.Animation, onKeyframes, highlight = keyframesActive),
             ToolDef("FX", Icons.Default.AutoAwesome, onFx),
+            ToolDef("Transmission", Icons.Default.AutoAwesome, onTransmission, highlight = transmissionActive),
             ToolDef("Text", Icons.Default.TextFields, onText),
             ToolDef("Color", Icons.Default.Palette, onColor),
             ToolDef("Audio", Icons.Default.GraphicEq, onAudio)

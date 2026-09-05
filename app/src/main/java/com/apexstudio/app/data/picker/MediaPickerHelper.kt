@@ -54,7 +54,7 @@ class MediaPickerHelper(private val context: Context) {
     // through the same _pickedMedia flow as video clips — the VM's
     // onMediaPicked tags the clip as ClipType.AUDIO because the
     // extractMetadata() helper already detects audio/ MIME.
-    lateinit var pickAudioMedia: ActivityResultLauncher<PickVisualMediaRequest>
+    lateinit var pickAudioMedia: ActivityResultLauncher<String>
 
     @Composable
     fun registerLaunchers() {
@@ -89,7 +89,7 @@ class MediaPickerHelper(private val context: Context) {
         // so the existing collect callback in EditorScreen needs no
         // changes — it just sees a list with ClipType.AUDIO metadata.
         pickAudioMedia = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.PickMultipleVisualMedia()
+            contract = ActivityResultContracts.GetMultipleContents()
         ) { uris ->
             if (uris != null) {
                 CoroutineScope(Dispatchers.IO).launch {

@@ -148,6 +148,13 @@ fun EditorScreen(
                     val ready = playbackState == Player.STATE_READY
                     Log.d("ApexTrace", "EditorScreen: onPlaybackStateChanged=$playbackState ready=$ready")
                     vm.setPlayerReady(ready)
+                    // Phase A: surface the buffering state separately so the
+                    // preview can show a spinner overlay. Only STATE_BUFFERING
+                    // flips isBuffering on; every other state (READY, ENDED,
+                    // IDLE) clears it. We deliberately do NOT touch the
+                    // READY/ENDED/ERROR handlers below — those remain the
+                    // source of truth for isPlaying + auto-recovery.
+                    vm.setBuffering(playbackState == Player.STATE_BUFFERING)
                     // When the video finishes playing, ExoPlayer parks at
                     // STATE_ENDED. The app's own isPlaying flag never
                     // flipped, so the play button kept showing a "Pause"
@@ -516,6 +523,7 @@ fun EditorScreen(
             onScrubFrame = { seekPlayerAndState(it) },
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
+            isBuffering = state.isBuffering,
             cropMode = state.cropMode,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
@@ -980,6 +988,11 @@ private fun VideoPreviewSection(
     onScrubFrame: ((Long) -> Unit)? = null,
     exoPlayer: ExoPlayer?,
     playerReady: Boolean,
+    // Phase A: when true, VideoPreviewSection renders a translucent scrim
+    // with a CircularProgressIndicator + "Loading…" label over the
+    // preview surface. Defaults to false so existing call sites stay
+    // unaffected.
+    isBuffering: Boolean = false,
     cropMode: Boolean,
     videoWidth: Int,
     videoHeight: Int,
@@ -1216,6 +1229,46 @@ private fun VideoPreviewSection(
                         }
                     }
                 )
+
+                // Phase A: "Loading…" overlay while ExoPlayer is buffering.
+                // Sits in the same outer Box as the AndroidView so it covers
+                // the preview surface (not the top/bottom bars). The scrim
+                // is semi-transparent so the very first frame that comes
+                // through STATE_READY is partially visible behind it; the
+                // instant isBuffering flips false the overlay vanishes in
+                // one frame because both flags are reactive Compose state.
+                // Note: we deliberately do NOT gate on playerReady here.
+                // The AndroidView above is only mounted when exoPlayer !=
+                // null (line 1173), so this overlay is already implicitly
+                // gated by the player being built. Gating on playerReady
+                // would suppress the spinner during the very first BUFFERING
+                // window (cold open) — which is exactly the 1-3s black-screen
+                // gap this PR is meant to fix.
+                if (isBuffering) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = ApexPalette.NeonCyan,
+                                strokeWidth = 4.dp
+                            )
+                            Text(
+                                text = "Loading…",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
 
                 // Real-time Color Filter Viewport Layer
                 // Directly grades the video preview viewport in real-time as the user

@@ -366,4 +366,97 @@ object LutBitmapCache {
         }
         return LutTexture(pixels, width, height, size)
     }
+
+    /**
+     * Apply [texture] (a 2D-strip packed LUT, see [packLut]) to every
+     * pixel of [source] using trilinear interpolation, cross-faded
+     * with the original pixel by [intensity] (0..1, 1 = full LUT).
+     *
+     * Mirrors the math in [LutFilterGlEffect]'s fragment shader so
+     * the CPU-rendered thumbnail matches the GPU-rendered preview.
+     * Returns a new bitmap; [source] is left untouched.
+     *
+     * Pure CPU — safe to call off the GL thread, intended to be
+     * invoked from a `Dispatchers.Default` coroutine in the filter
+     * thumbnail generator.
+     */
+    fun applyToBitmap(source: Bitmap, texture: LutTexture, intensity: Float): Bitmap {
+        val w = source.width
+        val h = source.height
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val srcPixels = IntArray(w * h)
+        source.getPixels(srcPixels, 0, w, 0, 0, w, h)
+        val dstPixels = IntArray(w * h)
+        val s = texture.size
+        val sMax = (s - 1).toFloat()
+        val alpha = intensity.coerceIn(0f, 1f)
+        val strip = texture.pixels
+        val sw = texture.width // = s*s
+        for (i in srcPixels.indices) {
+            val c = srcPixels[i]
+            val a = (c ushr 24) and 0xff
+            val rr0 = (c ushr 16) and 0xff
+            val gg0 = (c ushr 8) and 0xff
+            val bb0 = c and 0xff
+            // Sample the LUT with the same split + half-texel math the
+            // GL shader uses (see LutFilterGlEffect.FRAGMENT_SHADER).
+            val rF = rr0 / 255f * sMax
+            val gF = gg0 / 255f * sMax
+            val bIdx = bb0 / 255f * sMax
+            val bLow = kotlin.math.floor(bIdx).toInt().coerceIn(0, s - 1)
+            val bHigh = (bLow + 1).coerceAtMost(s - 1)
+            val bT = bIdx - bLow
+            // Strip layout: width = s*s, height = s. For B slice b,
+            // columns [b*s .. b*s+s) hold G, rows hold R.
+            val yLo = rF.toInt().coerceIn(0, s - 1)
+            val yHi = (yLo + 1).coerceAtMost(s - 1)
+            val yT = rF - yLo
+            val gLo = gF.toInt().coerceIn(0, s - 1)
+            val gHi = (gLo + 1).coerceAtMost(s - 1)
+            val gT = gF - gLo
+            // Four taps along G+R, on each of two B slices.
+            val baseLo = bLow * s
+            val baseHi = bHigh * s
+            fun tap(bOff: Int, xLo: Int, xHi: Int, yIdx: Int): Int {
+                // Linear blend along G, then along R.
+                val p00 = strip[yIdx * sw + (bOff + xLo)]
+                val p01 = strip[yIdx * sw + (bOff + xHi)]
+                val p10 = strip[(yIdx + 1).coerceAtMost(s - 1) * sw + (bOff + xLo)]
+                val p11 = strip[(yIdx + 1).coerceAtMost(s - 1) * sw + (bOff + xHi)]
+                val gBlend0 = lerpArgb(p00, p01, gT)
+                val gBlend1 = lerpArgb(p10, p11, gT)
+                return lerpArgb(gBlend0, gBlend1, yT)
+            }
+            val lowB = tap(baseLo, gLo, gHi, yLo)
+            val highB = tap(baseHi, gLo, gHi, yLo)
+            val graded = lerpArgb(lowB, highB, bT)
+            // Cross-fade with the original at the requested intensity.
+            val r = lerpByte(rr0, (graded ushr 16) and 0xff, alpha)
+            val g = lerpByte(gg0, (graded ushr 8) and 0xff, alpha)
+            val b = lerpByte(bb0, graded and 0xff, alpha)
+            dstPixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        out.setPixels(dstPixels, 0, w, 0, 0, w, h)
+        return out
+    }
+
+    private fun lerpArgb(c0: Int, c1: Int, t: Float): Int {
+        val a0 = (c0 ushr 24) and 0xff
+        val r0 = (c0 ushr 16) and 0xff
+        val g0 = (c0 ushr 8) and 0xff
+        val b0 = c0 and 0xff
+        val a1 = (c1 ushr 24) and 0xff
+        val r1 = (c1 ushr 16) and 0xff
+        val g1 = (c1 ushr 8) and 0xff
+        val b1 = c1 and 0xff
+        val a = lerpByte(a0, a1, t)
+        val r = lerpByte(r0, r1, t)
+        val g = lerpByte(g0, g1, t)
+        val bl = lerpByte(b0, b1, t)
+        return (a shl 24) or (r shl 16) or (g shl 8) or bl
+    }
+
+    private fun lerpByte(v0: Int, v1: Int, t: Float): Int {
+        return (v0 + (v1 - v0) * t).toInt().coerceIn(0, 255)
+    }
 }

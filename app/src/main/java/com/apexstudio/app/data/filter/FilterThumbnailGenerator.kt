@@ -16,6 +16,13 @@ import kotlin.math.min
  * Generates 1:1 cropped filter preview thumbnails by applying each
  * LUT preset to a source [Bitmap] (typically the video's active frame).
  *
+ * The thumbnail uses the same 3D LUT lookup the preview's
+ * [LutFilterGlEffect] runs on the GPU — see [LutBitmapCache.applyToBitmap]
+ * for the CPU-side port. The old 4×5 color-matrix path
+ * ([FilterColorMatrix]) is kept as a fallback for presets whose .cube
+ * asset is missing or malformed, so a missing LUT never blanks the
+ * thumbnail row.
+ *
  * Supports:
  * - Dynamic live frame previews (Option A) generated at 60fps speeds (<10ms).
  * - Custom thumbnail assets / uploaded images (Option B).
@@ -105,8 +112,11 @@ object FilterThumbnailGenerator {
         val baseThumb = centerCropAndScale(source, THUMB_SIZE)
         result[null] = baseThumb.asImageBitmap()
 
-        // 2. Apply each filter preset's signature matrix
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        // 2. Apply each filter preset. Preferred path is the real
+        //    3D LUT lookup via LutBitmapCache (matches the GPU
+        //    preview pixel-for-pixel). Fall back to the 4×5 color
+        //    matrix only if the .cube asset is missing/malformed.
+        val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         for (category in manifest.categories) {
             for (preset in category.filters) {
                 // Option B: check custom thumbnail first
@@ -116,15 +126,23 @@ object FilterThumbnailGenerator {
                     continue
                 }
 
-                // Option A: dynamic frame preview with filter color matrix
-                val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(outBmp)
-                val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
-                paint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(baseThumb, 0f, 0f, paint)
-                paint.colorFilter = null
-
-                result[preset.id] = outBmp.asImageBitmap()
+                val texture = LutBitmapCache.getOrLoad(context, preset)
+                if (texture != null) {
+                    result[preset.id] = LutBitmapCache
+                        .applyToBitmap(baseThumb, texture, 1f)
+                        .asImageBitmap()
+                } else {
+                    // Color-matrix fallback so a missing LUT never
+                    // leaves an empty thumbnail slot.
+                    Log.d(TAG, "No LUT for ${preset.id}; using color-matrix fallback")
+                    val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(outBmp)
+                    val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
+                    fallbackPaint.colorFilter = ColorMatrixColorFilter(cm)
+                    canvas.drawBitmap(baseThumb, 0f, 0f, fallbackPaint)
+                    fallbackPaint.colorFilter = null
+                    result[preset.id] = outBmp.asImageBitmap()
+                }
             }
         }
 
@@ -148,25 +166,36 @@ object FilterThumbnailGenerator {
 
     /**
      * Backward-compatible legacy generator.
+     *
+     * Like [generateDynamicThumbnails] but returns [Bitmap]s instead of
+     * [ImageBitmap]s for callers that still need the raw platform
+     * bitmap (e.g. legacy exporters / share sheets). Runs the same
+     * LUT lookup path as [generateDynamicThumbnails] so the two
+     * generators stay in lockstep.
      */
     suspend fun generateAll(
         context: Context,
         source: Bitmap,
         manifest: FilterManifest
     ): Map<String?, Bitmap> = withContext(Dispatchers.Default) {
-        val dyn = generateDynamicThumbnails(context, source, manifest)
         val out = mutableMapOf<String?, Bitmap>()
         val base = centerCropAndScale(source, THUMB_SIZE)
         out[null] = base
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         for (category in manifest.categories) {
             for (preset in category.filters) {
-                val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(outBmp)
-                val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
-                paint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-                out[preset.id] = outBmp
+                val texture = LutBitmapCache.getOrLoad(context, preset)
+                if (texture != null) {
+                    out[preset.id] = LutBitmapCache.applyToBitmap(base, texture, 1f)
+                } else {
+                    val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(outBmp)
+                    val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
+                    fallbackPaint.colorFilter = ColorMatrixColorFilter(cm)
+                    canvas.drawBitmap(base, 0f, 0f, fallbackPaint)
+                    fallbackPaint.colorFilter = null
+                    out[preset.id] = outBmp
+                }
             }
         }
         out

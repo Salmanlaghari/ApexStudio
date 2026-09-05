@@ -17,6 +17,12 @@ import kotlinx.coroutines.withContext
  * Both calls are off the main thread — `getFrameAtTime` blocks on
  * the media server, and a 17-frame sweep is enough to keep us in
  * the low hundreds of milliseconds for typical phone videos.
+ *
+ * Phase B: [frameCount] is caller-driven. The timeline cache now
+ * computes N = clip duration in seconds, clamped to [4, 60], and
+ * passes it explicitly. The 8-frame default here is only used as
+ * a safety net for any future ad-hoc caller that forgets to
+ * override it.
  */
 object ThumbnailExtractor {
 

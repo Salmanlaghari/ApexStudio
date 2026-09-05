@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.LinkedHashMap
 
 /**
  * One clip's timeline media: a downsampled filmstrip (video
@@ -67,6 +68,21 @@ class TimelineMediaCache(private val context: Context) {
 
     private val inFlight = HashMap<String, Job>()
 
+    // Phase B: LRU byte budget. accessOrder=true so reads via
+    // state.value / observe also bump recency. Forgotten (no longer
+    // pinned) clips drop out first; pinned ones are protected.
+    private val maxBytes = 64L * 1024L * 1024L
+    private val byteBudget = LinkedHashMap<String, Long>(16, 0.75f, true)
+    private var currentBytes = 0L
+
+    // Phase B: race protection for zoom / trim changes. Every
+    // observe() call records the "desired" cache key for each
+    // pinned clip. Extraction publishes via _state.update only
+    // when its computed key still matches the desired key — so a
+    // slow extraction started before a zoom change can't clobber
+    // a fresh extraction that started after.
+    private val desiredKeyByClipId = HashMap<String, String>()
+
     /**
      * Ensure every clip in [clips] has a media entry. The current
      * map is returned synchronously from [state.value] so the
@@ -76,17 +92,49 @@ class TimelineMediaCache(private val context: Context) {
      */
     fun observe(clips: List<MediaClip>, pxPerMs: Float): Map<String, ClipMedia> {
         val frameWidth = (pxPerMs * 1000f).toInt().coerceAtLeast(32) // ~1s slice
+        // Build the pinned set so we never evict a clip the timeline
+        // is currently showing, even if its byte budget is large.
+        val pinned = clips.mapTo(HashSet()) { it.id }
         for (clip in clips) {
-            val key = cacheKey(clip, frameWidth)
+            val frameCount = frameCountForClip(clip)
+            val key = cacheKey(clip, frameWidth, frameCount)
+            // Record the latest desired key so in-flight extractions
+            // for an older (uri, trim, width, count) tuple know to
+            // drop their result on the floor if it would clobber a
+            // newer request.
+            desiredKeyByClipId[clip.id] = key
             if (inFlight.containsKey(key)) continue
             val existing = _state.value[clip.id]
             if (existing != null && existing.cacheKey == key) continue
-            inFlight[key] = scope.launch { extractFor(clip, frameWidth, key) }
+            inFlight[key] = scope.launch {
+                extractFor(clip, frameWidth, frameCount, key)
+                // After extraction finishes the entry is published;
+                // enforce the LRU ceiling. Forgotten clips (those no
+                // longer in [pinned]) are evicted first.
+                evictIfNeeded(pinned)
+            }
         }
         return _state.value
     }
 
-    private suspend fun extractFor(clip: MediaClip, frameWidth: Int, key: String) {
+    /**
+     * Compute the per-second frame count for the filmstrip.
+     * N = clip duration in seconds, clamped to [4, 60] so very short
+     * clips are still recognisable and very long clips don't run
+     * the extractor into the seconds-per-frame range.
+     */
+    private fun frameCountForClip(clip: MediaClip): Int {
+        val durMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(0L)
+        val secs = (durMs / 1000L).toInt().coerceAtLeast(0)
+        return secs.coerceIn(4, 60)
+    }
+
+    private suspend fun extractFor(
+        clip: MediaClip,
+        frameWidth: Int,
+        frameCount: Int,
+        key: String
+    ) {
         try {
             val media = when (clip.type) {
                 com.apexstudio.app.domain.model.ClipType.VIDEO,
@@ -97,7 +145,8 @@ class TimelineMediaCache(private val context: Context) {
                         trimStartMs = clip.trimStartMs,
                         trimEndMs = clip.trimEndMs,
                         frameWidthPx = frameWidth,
-                        frameHeightPx = 64
+                        frameHeightPx = 64,
+                        frameCount = frameCount
                     )
                     ClipMedia(frames = frames, cacheKey = key)
                 }
@@ -113,6 +162,20 @@ class TimelineMediaCache(private val context: Context) {
                 }
             }
             _state.value = _state.value + (clip.id to media)
+            // Phase B: race protection. If the desired key for this
+            // clip moved on while we were extracting (zoom / trim
+            // change), skip publishing — a newer extraction is
+            // already underway and will land its own _state.update.
+            // Also skip the LRU byte-tracking for stale results so
+            // they don't count against the 64MB ceiling.
+            val desired = desiredKeyByClipId[clip.id]
+            if (desired != null && desired != key) {
+                Log.d(TAG, "drop stale extraction for ${clip.id}: wanted $desired, got $key")
+                return
+            }
+            // Track byte cost for the LRU ceiling.
+            byteBudget[clip.id] = bytesOf(media)
+            currentBytes = byteBudget.values.sum()
         } catch (e: Exception) {
             Log.w(TAG, "extract failed for ${clip.uri}", e)
         } finally {
@@ -120,8 +183,33 @@ class TimelineMediaCache(private val context: Context) {
         }
     }
 
-    private fun cacheKey(clip: MediaClip, frameWidth: Int): String =
-        "${clip.uri}|${clip.trimStartMs}|${clip.trimEndMs}|w=$frameWidth"
+    /**
+     * Drop oldest entries until we're back under [maxBytes]. Pinned
+     * clips (those currently in the timeline) are protected — only
+     * forgotten ones get evicted, in LRU order.
+     */
+    private fun evictIfNeeded(pinned: Set<String>) {
+        while (currentBytes > maxBytes && byteBudget.isNotEmpty()) {
+            // LinkedHashMap with accessOrder=true: iterate() yields
+            // least-recently-used first.
+            val victim = byteBudget.keys.firstOrNull { it !in pinned }
+                ?: break // everything pinned → bail out
+            val cost = byteBudget.remove(victim) ?: 0L
+            currentBytes -= cost
+            _state.value = _state.value - victim
+            Log.d(TAG, "evicted $victim (-${cost / 1024}KB) → ${currentBytes / 1024}KB used")
+        }
+    }
+
+    private fun bytesOf(media: ClipMedia): Long {
+        var sum = 0L
+        for (bmp in media.frames) sum += bmp.byteCount.toLong()
+        // Audio waveform is a FloatArray(240) = 960 bytes — negligible.
+        return sum
+    }
+
+    private fun cacheKey(clip: MediaClip, frameWidth: Int, frameCount: Int): String =
+        "${clip.uri}|${clip.trimStartMs}|${clip.trimEndMs}|w=$frameWidth|n=$frameCount"
 
     fun release() {
         scope.cancel()

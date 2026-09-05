@@ -2469,7 +2469,14 @@ private fun VideoClipBlock(
     ) {
         // 1) Faux-tile background
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val tileW = (size.width / 8f).coerceAtLeast(8f)
+            // Phase B: the faux-tile divider count matches the actual
+            // filmstrip cell count once extraction finishes, so the
+            // grid lines stay aligned with the real frames. Fall back
+            // to 8 (historical default) when no frames are in cache
+            // yet — that mirrors the cell width the thumbnails will
+            // arrive at for typical 8-15s clips.
+            val cellCount = (media?.frames?.size ?: 8).coerceAtLeast(1)
+            val tileW = (size.width / cellCount).coerceAtLeast(8f)
             val grad = Brush.horizontalGradient(
                 listOf(
                     ApexPalette.NeonPurple.copy(alpha = 0.85f),

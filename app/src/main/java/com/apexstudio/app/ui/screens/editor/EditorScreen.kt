@@ -1059,80 +1059,90 @@ fun EditorScreen(
                 )
             }
         }
+    }
 
-        // Phase C: per-clip action menu (Cut / Trim / Add / Remove /
-        // Move / Split / Delete). ModalBottomSheet shows on scrim
-        // tap-to-dismiss (handled by onDismissRequest), back press
-        // (handled by the BackHandler below), and on each option tap.
-        // We resolve the target clip from state (clipActionMenuClipId)
-        // rather than a captured parameter, so the menu survives
-        // recompositions while the user is dragging the playhead.
-        val menuClipId = state.clipActionMenuClipId
-        if (menuClipId != null) {
-            val targetClip = state.project?.clips?.firstOrNull { it.id == menuClipId }
-            BackHandler(enabled = true) {
-                vm.closeClipActionMenu()
-            }
-            @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-            androidx.compose.material3.ModalBottomSheet(
-                onDismissRequest = { vm.closeClipActionMenu() },
-                containerColor = ApexPalette.BgElevated,
-                scrimColor = Color.Black.copy(alpha = 0.55f)
-            ) {
-                ClipActionMenuContent(
-                    clipName = targetClip?.name ?: "Clip",
-                    playheadMs = state.clipActionMenuPlayheadMs,
-                    onCut = {
-                        vm.setTrimStartAtPlayhead(menuClipId)
-                        vm.closeClipActionMenu()
-                    },
-                    onTrim = {
-                        vm.setTrimEndAtPlayhead(menuClipId)
-                        vm.closeClipActionMenu()
-                    },
-                    onAdd = {
-                        vm.addClipToTrack(
-                            targetClip?.type ?: com.apexstudio.app.domain.model.ClipType.VIDEO,
-                            targetClip?.trackIndex ?: 0
-                        )
-                        vm.closeClipActionMenu()
-                    },
-                    onRemove = {
-                        vm.deleteClip(menuClipId)
-                        vm.closeClipActionMenu()
-                    },
-                    onMove = {
-                        // Cycle the clip onto its sibling track. For V1↔V2
-                        // and A1↔A2 lanes this matches the existing
-                        // "move to other lane" behaviour from the timeline
-                        // body. The original ClipType.VIDEO→OVERLAY swap
-                        // is preserved so existing exports keep working.
-                        val current = targetClip
-                        if (current != null) {
-                            val (newType, newIdx) = when (current.type) {
-                                com.apexstudio.app.domain.model.ClipType.VIDEO ->
-                                    com.apexstudio.app.domain.model.ClipType.OVERLAY to 1
-                                com.apexstudio.app.domain.model.ClipType.OVERLAY ->
-                                    com.apexstudio.app.domain.model.ClipType.VIDEO to 0
-                                com.apexstudio.app.domain.model.ClipType.AUDIO ->
-                                    com.apexstudio.app.domain.model.ClipType.SFX to 1
-                                com.apexstudio.app.domain.model.ClipType.SFX ->
-                                    com.apexstudio.app.domain.model.ClipType.AUDIO to 0
-                            }
-                            vm.moveClipToTrack(menuClipId, newType, newIdx)
-                        }
-                        vm.closeClipActionMenu()
-                    },
-                    onSplit = {
-                        vm.splitClip(menuClipId, state.clipActionMenuPlayheadMs)
-                        vm.closeClipActionMenu()
-                    },
-                    onDelete = {
-                        vm.deleteClip(menuClipId)
-                        vm.closeClipActionMenu()
+    // Phase C: per-clip action menu (Cut / Trim / Add / Remove /
+    // Move / Split / Delete). ModalBottomSheet shows on scrim
+    // tap-to-dismiss (handled by onDismissRequest), back press
+    // (handled by the BackHandler below), and on each option tap.
+    // We resolve the target clip from state (clipActionMenuClipId)
+    // rather than a captured parameter, so the menu survives
+    // recompositions while the user is dragging the playhead.
+    val menuClipId = state.clipActionMenuClipId
+    if (menuClipId != null) {
+        val targetClip = state.project?.clips?.firstOrNull { it.id == menuClipId }
+        BackHandler(enabled = true) {
+            vm.closeClipActionMenu()
+        }
+        @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { vm.closeClipActionMenu() },
+            containerColor = ApexPalette.BgElevated,
+            scrimColor = Color.Black.copy(alpha = 0.55f)
+        ) {
+            ClipActionMenuContent(
+                clipName = targetClip?.name ?: "Clip",
+                playheadMs = state.clipActionMenuPlayheadMs,
+                onCut = {
+                    val clipForCut = state.project?.clips?.firstOrNull { it.id == menuClipId }
+                    if (clipForCut != null) {
+                        val capturedMs = state.clipActionMenuPlayheadMs
+                        val newStart = capturedMs.coerceIn(0L, (clipForCut.trimEndMs - 100L).coerceAtLeast(0L))
+                        vm.trimClip(menuClipId, newStart, clipForCut.trimEndMs)
                     }
-                )
-            }
+                    vm.closeClipActionMenu()
+                },
+                onTrim = {
+                    val clipForTrim = state.project?.clips?.firstOrNull { it.id == menuClipId }
+                    if (clipForTrim != null) {
+                        val capturedMs = state.clipActionMenuPlayheadMs
+                        val newEnd = capturedMs.coerceIn(clipForTrim.trimStartMs + 100L, clipForTrim.durationMs)
+                        vm.trimClip(menuClipId, clipForTrim.trimStartMs, newEnd)
+                    }
+                    vm.closeClipActionMenu()
+                },
+                onAdd = {
+                    vm.addClipToTrack(
+                        targetClip?.type ?: com.apexstudio.app.domain.model.ClipType.VIDEO,
+                        targetClip?.trackIndex ?: 0
+                    )
+                    vm.closeClipActionMenu()
+                },
+                onRemove = {
+                    vm.deleteClip(menuClipId)
+                    vm.closeClipActionMenu()
+                },
+                onMove = {
+                    // Cycle the clip onto its sibling track. For V1↔V2
+                    // and A1↔A2 lanes this matches the existing
+                    // "move to other lane" behaviour from the timeline
+                    // body. The original ClipType.VIDEO→OVERLAY swap
+                    // is preserved so existing exports keep working.
+                    val current = targetClip
+                    if (current != null) {
+                        val (newType, newIdx) = when (current.type) {
+                            com.apexstudio.app.domain.model.ClipType.VIDEO ->
+                                com.apexstudio.app.domain.model.ClipType.OVERLAY to 1
+                            com.apexstudio.app.domain.model.ClipType.OVERLAY ->
+                                com.apexstudio.app.domain.model.ClipType.VIDEO to 0
+                            com.apexstudio.app.domain.model.ClipType.AUDIO ->
+                                com.apexstudio.app.domain.model.ClipType.SFX to 1
+                            com.apexstudio.app.domain.model.ClipType.SFX ->
+                                com.apexstudio.app.domain.model.ClipType.AUDIO to 0
+                        }
+                        vm.moveClipToTrack(menuClipId, newType, newIdx)
+                    }
+                    vm.closeClipActionMenu()
+                },
+                onSplit = {
+                    vm.splitClip(menuClipId, state.clipActionMenuPlayheadMs)
+                    vm.closeClipActionMenu()
+                },
+                onDelete = {
+                    vm.deleteClip(menuClipId)
+                    vm.closeClipActionMenu()
+                }
+            )
         }
     }
 }
@@ -2947,14 +2957,7 @@ private fun VideoClipBlock(
     ) {
         // 1) Faux-tile background
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Phase B: the faux-tile divider count matches the actual
-            // filmstrip cell count once extraction finishes, so the
-            // grid lines stay aligned with the real frames. Fall back
-            // to 8 (historical default) when no frames are in cache
-            // yet — that mirrors the cell width the thumbnails will
-            // arrive at for typical 8-15s clips.
-            val cellCount = (media?.frames?.size ?: 8).coerceAtLeast(1)
-            val tileW = (size.width / cellCount).coerceAtLeast(8f)
+            val tileW = (size.width / 8f).coerceAtLeast(8f)
             val grad = Brush.horizontalGradient(
                 listOf(
                     ApexPalette.NeonPurple.copy(alpha = 0.85f),

@@ -1237,11 +1237,14 @@ private fun VideoPreviewSection(
                 // through STATE_READY is partially visible behind it; the
                 // instant isBuffering flips false the overlay vanishes in
                 // one frame because both flags are reactive Compose state.
-                // We require playerReady=true so the very first ExoPlayer
-                // build (state still cold, listener not yet installed)
-                // doesn't double up with the canvas placeholder gradient
-                // that already draws behind this Box.
-                if (isBuffering && playerReady) {
+                // Note: we deliberately do NOT gate on playerReady here.
+                // The AndroidView above is only mounted when exoPlayer !=
+                // null (line 1173), so this overlay is already implicitly
+                // gated by the player being built. Gating on playerReady
+                // would suppress the spinner during the very first BUFFERING
+                // window (cold open) — which is exactly the 1-3s black-screen
+                // gap this PR is meant to fix.
+                if (isBuffering) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()

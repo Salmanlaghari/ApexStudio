@@ -86,12 +86,46 @@ data class EditorState(
     // playheadMs field is captured at open time so the menu can show
     // "Split at 00:12" context if needed.
     val clipActionMenuClipId: String? = null,
-    val clipActionMenuPlayheadMs: Long = 0L
+    val clipActionMenuPlayheadMs: Long = 0L,
+    // Phase D: per-overlay-clip transform for the PiP preview. x/y are
+    // normalised 0..1 anchor inside the preview rect (0.5 = centred).
+    // scale is clamped 0.1..3, opacity 0..1. Survives recompositions so
+    // a pinch-zoom on the overlay doesn't get clobbered by unrelated
+    // state updates. overlayClipId tracks which clip this transform
+    // belongs to so we can clear it when the clip is deleted.
+    val overlayTransform: OverlayTransform = OverlayTransform(),
+    val overlayClipId: String? = null,
+    // Phase D: pending + Add intent. When non-null, the next media
+    // picker callback will route the result to the chosen lane.
+    // Cleared after the picker returns.
+    val pendingAddAsOverlay: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the
         // array contents; EditorViewModel never updates audioWaveform
         // after init, so this is safe to leave to the default.
+    }
+}
+
+/**
+ * Phase D: per-overlay-clip transform for the PiP preview.
+ * - x, y: normalised 0..1 anchor inside the preview rect (0.5 = centred)
+ * - scale: clamped 0.1..3, multiplied into PlayerView.graphicsLayer
+ * - opacity: 0..1 alpha applied via graphicsLayer
+ *
+ * Identity is the default (centred, full-size, opaque) so a freshly
+ * added overlay renders at a sensible spot until the user touches it.
+ */
+data class OverlayTransform(
+    val x: Float = 0.7f,
+    val y: Float = 0.7f,
+    val scale: Float = 0.4f,
+    val opacity: Float = 1.0f
+) {
+    companion object {
+        val Identity = OverlayTransform()
+        val ScaleMin = 0.1f
+        val ScaleMax = 3.0f
     }
 }
 

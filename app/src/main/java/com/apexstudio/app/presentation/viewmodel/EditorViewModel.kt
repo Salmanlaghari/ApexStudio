@@ -330,6 +330,21 @@ class EditorViewModel(
      * the open/close pattern used by [openFilterPanel] / [openFxPanel].
      */
     fun openTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = true) }
+
+    // Phase D: PiP overlay preview. setOverlayTransform persists the
+    // (x, y, scale, opacity) tuple so a pinch-zoom doesn't get clobbered
+    // by unrelated state recompositions. setOverlayClip registers /
+    // clears which clip owns the transform. clearOverlay resets both.
+    fun setOverlayTransform(transform: com.apexstudio.app.presentation.state.OverlayTransform) =
+        _state.update { it.copy(overlayTransform = transform) }
+    fun setOverlayClip(clipId: String?) =
+        _state.update { it.copy(overlayClipId = clipId) }
+    fun clearOverlay() = _state.update {
+        it.copy(overlayClipId = null, overlayTransform = com.apexstudio.app.presentation.state.OverlayTransform.Identity)
+    }
+    fun setPendingAddAsOverlay(v: Boolean) = _state.update {
+        it.copy(pendingAddAsOverlay = v)
+    }
     fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
 
     // Phase C: open / close the per-clip action menu (Cut, Trim, Add,
@@ -351,11 +366,25 @@ class EditorViewModel(
     fun onMediaPicked(mediaList: List<com.apexstudio.app.data.picker.MediaMetadata>, replace: Boolean = false) {
         viewModelScope.launch {
             val s = _state.value
+            // Phase D: read the pendingAddAsOverlay flag from state so
+            // the picker's callback can route the result through either
+            // the regular video path or the overlay path.
+            val asOverlay = s.pendingAddAsOverlay
             val newClips = mediaList.mapNotNull { meta ->
                 val resolvedMeta = if (context != null) {
                     meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
                 } else meta
-                mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
+                val created = mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
+                // Phase D: when the user picked from the "Overlay clip"
+                // entry point, re-tag the clip as OVERLAY + trackIndex 1
+                // and register it as the active overlay. A new overlay
+                // replaces any prior one (single-overlay v1 limit).
+                if (asOverlay && created != null) {
+                    created.copy(
+                        type = ClipType.OVERLAY,
+                        trackIndex = 1
+                    )
+                } else created
             }
             val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
@@ -387,7 +416,19 @@ class EditorViewModel(
                         it.selectedClipId != null -> it.selectedClipId
                         else -> newClips.firstOrNull()?.id
                     },
-                    isPlaying = true
+                    isPlaying = true,
+                    // Phase D: register the freshly added overlay so the
+                    // preview layer starts rendering it immediately.
+                    overlayClipId = if (asOverlay) {
+                        newClips.firstOrNull()?.id ?: it.overlayClipId
+                    } else it.overlayClipId,
+                    overlayTransform = if (asOverlay) {
+                        com.apexstudio.app.presentation.state.OverlayTransform.Identity
+                    } else it.overlayTransform,
+                    // Clear the pending flag so a subsequent + Add picks
+                    // the default VIDEO path until the user re-selects
+                    // Overlay clip.
+                    pendingAddAsOverlay = false
                 )
             }
             persistProject()
@@ -1045,7 +1086,12 @@ class EditorViewModel(
             s.copy(
                 project = p.copy(clips = updated, durationMs = newDur),
                 durationMs = newDur,
-                selectedClipId = newSelected
+                selectedClipId = newSelected,
+                // Phase D: deleting the active overlay clip clears the
+                // transform too, otherwise the preview layer would keep
+                // trying to render a non-existent overlay's PlayerView.
+                overlayClipId = if (s.overlayClipId == clipId) null else s.overlayClipId,
+                overlayTransform = if (s.overlayClipId == clipId) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform
             )
         }
         persistProject()

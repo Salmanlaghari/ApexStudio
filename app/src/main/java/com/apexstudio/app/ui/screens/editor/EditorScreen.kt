@@ -106,6 +106,29 @@ fun EditorScreen(
     // from assets. Created once per EditorScreen entry.
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    // Phase D: a second ExoPlayer dedicated to the active OVERLAY clip.
+    // Built / torn down when the overlay clip id changes so each
+    // overlay gets a clean MediaItem rather than reusing the main
+    // player's surface.
+    var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    // Phase D: + Add menu open flag. When true the bottom sheet with
+    // "Video clip" / "Overlay clip" is shown.
+    var showAddMediaMenu by remember { mutableStateOf(false) }
+    // Phase D: transient flag for the "overlay won't export" warning.
+    // When set, a banner is shown above the export settings screen to
+    // tell the user the V2 clip will be dropped from the MP4.
+    var exportOverlayWarning by remember { mutableStateOf(false) }
+    // Phase D: wrap the caller-supplied onExport so any export entry
+    // point (top-bar button, future toolbar shortcut, etc.) flips the
+    // warning banner when an overlay is active. The banner UI is
+    // rendered just below the EditorTopBar and auto-dismisses after
+    // 4s.
+    val safeOnExport: () -> Unit = {
+        if (state.overlayClipId != null) {
+            exportOverlayWarning = true
+        }
+        onExport()
+    }
 
     mediaPicker.registerLaunchers()
 
@@ -206,7 +229,82 @@ fun EditorScreen(
         onDispose {
             exoPlayer?.release()
             exoPlayer = null
+            overlayPlayer?.release()
+            overlayPlayer = null
         }
+    }
+
+    // Phase D: build / rebuild the overlay ExoPlayer whenever the
+    // active overlay clip id changes. The listener is intentionally
+    // minimal — we only need it to track STATE_READY so the overlay
+    // surface doesn't render black during a 1-3s startup window.
+    LaunchedEffect(state.overlayClipId) {
+        val overlayId = state.overlayClipId
+        // Always release the previous overlay player first so the new
+        // MediaItem gets a clean surface. Releasing null is a no-op.
+        overlayPlayer?.release()
+        overlayPlayer = null
+        if (overlayId == null) return@LaunchedEffect
+        val overlayClip = state.project?.clips?.firstOrNull { it.id == overlayId }
+            ?: return@LaunchedEffect
+        try {
+            Log.d("ApexTrace", "EditorScreen: building overlay ExoPlayer for ${overlayClip.uri}")
+            val player = ExoPlayer.Builder(context).build()
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    Log.d("ApexTrace", "EditorScreen: overlay onPlaybackStateChanged=$playbackState")
+                }
+            })
+            // Clipping the MediaItem to the trim range keeps the
+            // overlay in sync with the timeline — trimming the overlay
+            // clip in the timeline immediately re-trims the preview.
+            val clipConfig = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(overlayClip.trimStartMs)
+                .setEndPositionMs(overlayClip.trimEndMs)
+                .build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(overlayClip.uri)
+                .setClippingConfiguration(clipConfig)
+                .build()
+            player.setMediaItem(mediaItem)
+            player.prepare()
+            // Mirror the main playback state so both layers stay in
+            // sync when the user hits play / pause.
+            if (exoPlayer?.isPlaying == true) player.play() else player.pause()
+            overlayPlayer = player
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "overlay ExoPlayer build failed", e)
+            overlayPlayer = null
+        }
+    }
+
+    // Phase D: keep the overlay player's play/pause + seek in sync with
+    // the main player. Scrubbing the V1 timeline must move the overlay
+    // to the same position — otherwise the user sees a V1 frame at
+    // 5s alongside an overlay frame at 0s, which breaks the whole
+    // "picture-in-picture" mental model. Clamped into the overlay
+    // clip's own trim range so seek past the overlay's end falls
+    // inside the MediaItem clipping window instead of stalling.
+    LaunchedEffect(state.isPlaying, exoPlayer?.currentPosition) {
+        val op = overlayPlayer ?: return@LaunchedEffect
+        if (state.isPlaying) {
+            if (!op.isPlaying) op.play()
+        } else {
+            if (op.isPlaying) op.pause()
+        }
+    }
+    LaunchedEffect(state.playerPositionMs, state.overlayClipId) {
+        val op = overlayPlayer ?: return@LaunchedEffect
+        val overlayId = state.overlayClipId ?: return@LaunchedEffect
+        val overlayClip = state.project?.clips?.firstOrNull { it.id == overlayId }
+            ?: return@LaunchedEffect
+        // Map the timeline playhead onto the overlay's own trim range
+        // so seek is in the overlay's local coordinate system. For a
+        // 30s overlay starting at 10s, a playhead at 12s means the
+        // overlay should be at 2s into its own clip.
+        val trimLen = (overlayClip.trimEndMs - overlayClip.trimStartMs).coerceAtLeast(1L)
+        val localMs = ((state.playerPositionMs - overlayClip.trimStartMs).coerceIn(0L, trimLen))
+        op.seekTo(localMs)
     }
 
     // Safety net: if STATE_READY never fires (e.g. listener not installed in
@@ -504,8 +602,53 @@ fun EditorScreen(
         EditorTopBar(
             currentTimeMs = state.playerPositionMs,
             onBack = onBack,
-            onExport = onExport
+            onExport = safeOnExport
         )
+        // Phase D: warn before opening export settings if a PiP
+        // overlay is active. The Transformer pipeline doesn't yet
+        // composite overlays (see TODO(PHASE_D_EXPORT) in
+        // ExportEngine) so exporting would silently drop the
+        // overlay from the output MP4. Auto-dismisses after 4s.
+        // Hoisted LaunchedEffect — calling it inside an `if` branch
+        // would create a new effect every recomposition; keyed on
+        // exportOverlayWarning so it only runs while the flag is on.
+        LaunchedEffect(exportOverlayWarning) {
+            if (exportOverlayWarning) {
+                kotlinx.coroutines.delay(4000)
+                exportOverlayWarning = false
+            }
+        }
+        if (exportOverlayWarning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.NeonPink.copy(alpha = 0.18f))
+                        .border(1.dp, ApexPalette.NeonPink, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = ApexPalette.NeonPink,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Overlay clip won't be in the exported MP4 (preview only).",
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
 
         VideoPreviewSection(
             isPlaying = state.isPlaying,
@@ -525,6 +668,13 @@ fun EditorScreen(
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
             isBuffering = state.isBuffering,
+            overlayClip = state.overlayClipId?.let { id ->
+                state.project?.clips?.firstOrNull { it.id == id }
+            },
+            overlayPlayer = overlayPlayer,
+            overlayTransform = state.overlayTransform,
+            onOverlayTransformChange = { t -> vm.setOverlayTransform(t) },
+            onOverlaySelect = { vm.selectClip(state.overlayClipId) },
             cropMode = state.cropMode,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
@@ -556,9 +706,11 @@ fun EditorScreen(
             onZoom = { vm.multiplyZoom(it) },
             onSelectClip = { vm.selectClip(it) },
             onAddMedia = {
-                mediaPicker.pickMultipleMedia.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                )
+                // Phase D: open the + Add menu so the user can choose
+                // between a regular V1 video clip and an Overlay clip.
+                // The actual media picker is launched once they pick a
+                // kind — pendingAddAsOverlay on state tags the result.
+                showAddMediaMenu = true
             },
             onTrimChange = { clipId, startMs, endMs ->
                 vm.trimClip(clipId, startMs, endMs)
@@ -610,7 +762,7 @@ fun EditorScreen(
             keyframesActive = state.keyframePanelOpen || (selectedClipForTrim != null && !selectedClipForTrim.keyframes.isEmpty()),
             onTransmission = { vm.openTransmissionTemplatesPanel() },
             transmissionActive = state.transmissionPanelOpen,
-            onExport = onExport,
+            onExport = safeOnExport,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.20f)
@@ -663,7 +815,7 @@ fun EditorScreen(
                             if (!state.isPlaying) vm.togglePlay()
                         }
                     },
-                    onExport = onExport,
+                    onExport = safeOnExport,
                     onClose = { vm.closeTrimPanel() }
                 )
             }
@@ -1089,6 +1241,30 @@ private fun ClipActionRow(
             modifier = Modifier.size(18.dp)
         )
     }
+
+    // Phase D: + Add menu. Tapping the "+" button on a lane flips
+    // showAddMediaMenu → the sheet appears with two rows. Selecting
+    // "Overlay clip" sets pendingAddAsOverlay = true on state, then
+    // launches the existing media picker; the picker callback reads
+    // that flag inside onMediaPicked and re-tags the new clip as
+    // OVERLAY + trackIndex 1.
+    if (showAddMediaMenu) {
+        AddMediaMenuSheet(
+            onPickVideo = {
+                vm.setPendingAddAsOverlay(false)
+                mediaPicker.pickMultipleMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            },
+            onPickOverlay = {
+                vm.setPendingAddAsOverlay(true)
+                mediaPicker.pickMultipleMedia.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            },
+            onDismiss = { showAddMediaMenu = false }
+        )
+    }
 }
 
 @Composable
@@ -1178,6 +1354,15 @@ private fun VideoPreviewSection(
     // preview surface. Defaults to false so existing call sites stay
     // unaffected.
     isBuffering: Boolean = false,
+    // Phase D: optional PiP overlay clip + its dedicated ExoPlayer +
+    // current transform. When overlayClip is null the overlay layer
+    // doesn't render and gestures fall through to the main preview.
+    overlayClip: com.apexstudio.app.domain.model.MediaClip? = null,
+    overlayPlayer: ExoPlayer? = null,
+    overlayTransform: com.apexstudio.app.presentation.state.OverlayTransform =
+        com.apexstudio.app.presentation.state.OverlayTransform.Identity,
+    onOverlayTransformChange: ((com.apexstudio.app.presentation.state.OverlayTransform) -> Unit)? = null,
+    onOverlaySelect: (() -> Unit)? = null,
     cropMode: Boolean,
     videoWidth: Int,
     videoHeight: Int,
@@ -1499,6 +1684,30 @@ private fun VideoPreviewSection(
                         }
                     }
                 }
+            }
+
+            // Phase D: Picture-in-Picture overlay. Renders a second
+            // PlayerView on top of V1 + the color filter viewport,
+            // positioned / scaled / faded by [overlayTransform]. Drag
+            // moves the (x, y) anchor; pinch multiplies scale; opacity
+            // is driven from the floating slider below the preview.
+            // Crop overlay (below) still draws on top so users can
+            // adjust V1's crop while a PiP is active.
+            if (overlayClip != null && overlayPlayer != null && onOverlayTransformChange != null) {
+                OverlayLayer(
+                    overlayClip = overlayClip,
+                    overlayPlayer = overlayPlayer!!,
+                    transform = overlayTransform,
+                    onTransformChange = onOverlayTransformChange,
+                    onSelect = { onOverlaySelect?.invoke() }
+                )
+                // Floating opacity slider that appears when an overlay
+                // is active. Stays below the preview so it doesn't
+                // obscure the timeline below it.
+                OverlayOpacityPanel(
+                    transform = overlayTransform,
+                    onChange = onOverlayTransformChange
+                )
             }
 
             // Crop overlay: mounted only while cropMode is on. It sits
@@ -3224,6 +3433,237 @@ private fun Float.toDp() = androidx.compose.ui.unit.Dp(this /
 private fun Int.pxToDp(): androidx.compose.ui.unit.Dp {
     val density = androidx.compose.ui.platform.LocalDensity.current
     return androidx.compose.ui.unit.Dp(this / density.density)
+}
+
+// ====================================================================
+// Phase D: Picture-in-Picture overlay preview + + Add menu sheet.
+// ====================================================================
+
+/**
+ * Phase D: Picture-in-Picture overlay composable. Renders the
+ * overlay's PlayerView inside the same outer preview Box as the main
+ * V1 player, with a graphicsLayer that applies (x, y, scale, opacity).
+ * Pan + pinch gestures are folded into onTransformChange so the user
+ * can drag the overlay around and resize it without leaving the
+ * preview. detectTapGestures handles select-on-tap.
+ *
+ * Kept separate from the rest of VideoPreviewSection to avoid
+ * bloating the main composable and so the gesture logic stays
+ * readable. Default render is anchored at the bottom-right
+ * (transform x=0.7, y=0.7) per OverlayTransform.Identity defaults.
+ */
+@Composable
+private fun OverlayLayer(
+    overlayClip: com.apexstudio.app.domain.model.MediaClip,
+    overlayPlayer: ExoPlayer,
+    transform: com.apexstudio.app.presentation.state.OverlayTransform,
+    onTransformChange: (com.apexstudio.app.presentation.state.OverlayTransform) -> Unit,
+    onSelect: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // Pan = anchor move; pinch = scale. detectTransformGestures
+            // reports the centroid / panOffset / zoomChange / rotation
+            // since the last frame. We add pan.x/y directly to the
+            // transform's normalised (x, y) and multiply scale by
+            // zoom. Rotation is intentionally ignored (out of scope).
+            .pointerInput(overlayClip.id) {
+                detectTransformGestures(panZoomLock = false) { _, pan, zoom, _ ->
+                    val newScale = (transform.scale * zoom).coerceIn(
+                        com.apexstudio.app.presentation.state.OverlayTransform.ScaleMin,
+                        com.apexstudio.app.presentation.state.OverlayTransform.ScaleMax
+                    )
+                    val sizePx = size.toFloat()
+                    val newX = (transform.x + pan.x / sizePx.width)
+                        .coerceIn(0f, 1f)
+                    val newY = (transform.y + pan.y / sizePx.height)
+                        .coerceIn(0f, 1f)
+                    onTransformChange(
+                        transform.copy(x = newX, y = newY, scale = newScale)
+                    )
+                }
+            }
+            .pointerInput(overlayClip.id) {
+                detectTapGestures(onTap = { onSelect() })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            modifier = Modifier
+                .fillMaxSize(0.5f)
+                .graphicsLayer {
+                    translationX = (transform.x - 0.5f) * size.width
+                    translationY = (transform.y - 0.5f) * size.height
+                    scaleX = transform.scale
+                    scaleY = transform.scale
+                    alpha = transform.opacity
+                },
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    player = overlayPlayer
+                }
+            },
+            update = { view ->
+                view.player = overlayPlayer
+                view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+        )
+    }
+}
+
+/**
+ * Phase D: floating opacity slider that appears when an overlay is
+ * active. Sits over the bottom of the preview rect (above the
+ * timeline), pill-shaped and translucent so it doesn't dominate the
+ * preview. Range 0..1, default 1.
+ */
+@Composable
+private fun OverlayOpacityPanel(
+    transform: com.apexstudio.app.presentation.state.OverlayTransform,
+    onChange: (com.apexstudio.app.presentation.state.OverlayTransform) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(ApexPalette.BgGlass)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(20.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Opacity,
+                contentDescription = "Overlay opacity",
+                tint = ApexPalette.NeonCyan,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            androidx.compose.material3.Slider(
+                value = transform.opacity,
+                onValueChange = { v -> onChange(transform.copy(opacity = v)) },
+                valueRange = 0f..1f,
+                modifier = Modifier.width(160.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "${(transform.opacity * 100).toInt()}%",
+                color = ApexPalette.TextPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+/**
+ * Phase D: + Add menu. ModalBottomSheet with two rows: "Video clip"
+ * (default) and "Overlay clip" (tags the next picker result as
+ * OVERLAY + trackIndex 1). Picking either row launches the existing
+ * mediaPicker.pickMultipleMedia launcher; the asOverlay flag is
+ * stored in state.pendingAddAsOverlay so the picker callback knows
+ * which path to take.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AddMediaMenuSheet(
+    onPickVideo: () -> Unit,
+    onPickOverlay: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ApexPalette.BgElevated,
+        scrimColor = Color.Black.copy(alpha = 0.55f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Add to project",
+                color = ApexPalette.TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            AddMediaRow(
+                icon = Icons.Default.VideoLibrary,
+                title = "Video clip",
+                subtitle = "Add to the V1 timeline lane",
+                tint = ApexPalette.NeonCyan,
+                onClick = {
+                    onPickVideo()
+                    onDismiss()
+                }
+            )
+            AddMediaRow(
+                icon = Icons.Default.Layers,
+                title = "Overlay clip",
+                subtitle = "Add as a picture-in-picture overlay (V2)",
+                tint = ApexPalette.NeonPurple,
+                onClick = {
+                    onPickOverlay()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun AddMediaRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = ApexPalette.TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = ApexPalette.TextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+    }
 }
 
 

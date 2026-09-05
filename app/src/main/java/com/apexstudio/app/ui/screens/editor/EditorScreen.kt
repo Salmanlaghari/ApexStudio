@@ -2573,12 +2573,28 @@ private fun VideoClipBlock(
         )
 
         // 3.5) Keyframe diamond markers directly on the clip
+        //
+        // `kf.timeMs` is an absolute project-time position (see
+        // domain.model.Keyframe), so the diamond's x inside this
+        // clip's Box is `kf.timeMs - trackStartMs`, NOT
+        // `kf.timeMs - clip.trimStartMs` (which was the previous
+        // code — that put the diamond at the wrong x for any clip
+        // whose trimStartMs > 0, so for the second clip on a track
+        // the marker drifted off the right edge into the next clip
+        // and overlapped the neighbour).
+        //
+        // Bounds check uses absolute project time: a keyframe only
+        // shows on the clip whose trim window covers that project
+        // time. The diamond's x is then clamped to the clip's
+        // interior in case the trim window ends inside the track
+        // slot but the keyframe is exactly on the edge.
         val keyframeList = clip.keyframes.keyframes
         if (keyframeList.isNotEmpty()) {
+            val clipLenMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(0L)
             keyframeList.forEach { kf ->
-                val relMs = kf.timeMs - clip.trimStartMs
-                if (relMs in 0L..(clip.trimEndMs - clip.trimStartMs)) {
-                    val kfPx = relMs * pxPerMs
+                if (kf.timeMs in clip.trimStartMs..clip.trimEndMs) {
+                    val trackRelMs = (kf.timeMs - trackStartMs).coerceIn(0L, clipLenMs)
+                    val kfPx = trackRelMs * pxPerMs
                     val kfDp = with(density) { kfPx.toDp() }
                     Box(
                         modifier = Modifier

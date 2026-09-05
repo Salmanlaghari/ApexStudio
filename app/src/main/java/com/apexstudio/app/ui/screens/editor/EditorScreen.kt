@@ -1060,6 +1060,31 @@ fun EditorScreen(
             }
         }
 
+    }
+
+// Phase D: + Add menu. Tapping the "+" button on a lane flips
+// showAddMediaMenu → the sheet appears with two rows. Selecting
+// "Overlay clip" sets pendingAddAsOverlay = true on state, then
+// launches the existing media picker; the picker callback reads
+// that flag inside onMediaPicked and re-tags the new clip as
+// OVERLAY + trackIndex 1.
+if (showAddMediaMenu) {
+    AddMediaMenuSheet(
+        onPickVideo = {
+            vm.setPendingAddAsOverlay(false)
+            mediaPicker.pickMultipleMedia.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            )
+        },
+        onPickOverlay = {
+            vm.setPendingAddAsOverlay(true)
+            mediaPicker.pickMultipleMedia.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            )
+        },
+        onDismiss = { showAddMediaMenu = false }
+    )
+}
 
     // Phase C: per-clip action menu (Cut / Trim / Add / Remove /
     // Move / Split / Delete). ModalBottomSheet shows on scrim
@@ -1146,31 +1171,112 @@ fun EditorScreen(
         }
     }
 
-    }
-
-// Phase D: + Add menu. Tapping the "+" button on a lane flips
-// showAddMediaMenu → the sheet appears with two rows. Selecting
-// "Overlay clip" sets pendingAddAsOverlay = true on state, then
-// launches the existing media picker; the picker callback reads
-// that flag inside onMediaPicked and re-tags the new clip as
-// OVERLAY + trackIndex 1.
-if (showAddMediaMenu) {
-    AddMediaMenuSheet(
-        onPickVideo = {
-            vm.setPendingAddAsOverlay(false)
-            mediaPicker.pickMultipleMedia.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-            )
-        },
-        onPickOverlay = {
-            vm.setPendingAddAsOverlay(true)
-            mediaPicker.pickMultipleMedia.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-            )
-        },
-        onDismiss = { showAddMediaMenu = false }
-    )
 }
+
+/**
+ * Phase C: content for the per-clip action menu. Renders a vertical
+ * list of labelled rows (icon + label). Kept separate from the
+ * EditorScreen body so it doesn't bloat the main composable and is
+ * easy to preview in isolation. The 7 options map 1:1 to the spec:
+ * Cut / Trim / Add / Remove / Move / Split / Delete.
+ */
+@Composable
+private fun ClipActionMenuContent(
+    clipName: String,
+    playheadMs: Long,
+    onCut: () -> Unit,
+    onTrim: () -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+    onMove: () -> Unit,
+    onSplit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = clipName,
+            color = ApexPalette.TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = "Playhead: ${com.apexstudio.app.util.TimeFormat.formatMs(playheadMs)}",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        ClipActionRow(Icons.Default.ContentCut, "Cut", "Trim start to playhead", onCut)
+        ClipActionRow(Icons.Default.Tune, "Trim", "Trim end to playhead", onTrim)
+        ClipActionRow(Icons.Default.Add, "Add", "Add empty clip to this lane", onAdd)
+        ClipActionRow(Icons.Default.Close, "Remove", "Delete this clip", onRemove)
+        ClipActionRow(Icons.Default.SwapHoriz, "Move", "Move to sibling lane", onMove)
+        ClipActionRow(
+            Icons.Default.VerticalAlignCenter,
+            "Split",
+            "Split this clip at the playhead",
+            onSplit
+        )
+        ClipActionRow(
+            Icons.Default.Delete,
+            "Delete",
+            "Permanently remove this clip",
+            onDelete,
+            destructive = true
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ClipActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    destructive: Boolean = false
+) {
+    val tint = if (destructive) ApexPalette.NeonPink else ApexPalette.NeonCyan
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = if (destructive) tint else ApexPalette.TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = ApexPalette.TextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+    }
 
 }
 

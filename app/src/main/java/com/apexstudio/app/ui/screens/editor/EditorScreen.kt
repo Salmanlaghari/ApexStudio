@@ -939,7 +939,7 @@ fun EditorScreen(
                         vm.trimClip(menuClipId, newStart, clipForCut.trimEndMs)
                     }
                     vm.closeClipActionMenu()
-            },
+                },
                 onTrim = {
                     val clipForTrim = state.project?.clips?.firstOrNull { it.id == menuClipId }
                     if (clipForTrim != null) {
@@ -948,7 +948,7 @@ fun EditorScreen(
                         vm.trimClip(menuClipId, clipForTrim.trimStartMs, newEnd)
                     }
                     vm.closeClipActionMenu()
-            },
+                },
                 onAdd = {
                     vm.addClipToTrack(
                         targetClip?.type ?: com.apexstudio.app.domain.model.ClipType.VIDEO,

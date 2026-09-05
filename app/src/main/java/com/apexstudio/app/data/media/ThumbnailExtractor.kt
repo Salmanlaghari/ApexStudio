@@ -21,7 +21,15 @@ import kotlinx.coroutines.withContext
 object ThumbnailExtractor {
 
     private const val TAG = "ThumbnailExtractor"
-    private const val DEFAULT_FRAME_COUNT = 8
+    // Frame-accurate timeline strips. The previous constant was 8 frames per
+    // clip regardless of length — a 5-second clip showed 8 cells (1.6 fps) but
+    // a 60-second clip also showed 8 cells (0.13 fps). Phase B makes this
+    // dynamic: aim for 1 fps so users see roughly one frame per second of
+    // media, with sane bounds so very short clips still get a representative
+    // cell and very long clips don't blow memory.
+    private const val MIN_FRAME_COUNT = 4
+    private const val MAX_FRAME_COUNT = 60
+    private const val TARGET_FRAME_INTERVAL_MS = 1000L
     private const val DEFAULT_WAVEFORM_SAMPLES = 240
 
     /**
@@ -37,8 +45,20 @@ object ThumbnailExtractor {
         trimEndMs: Long,
         frameWidthPx: Int,
         frameHeightPx: Int,
-        frameCount: Int = DEFAULT_FRAME_COUNT
+        frameCount: Int = -1
     ): List<Bitmap> = withContext(Dispatchers.IO) {
+        // Derive a sensible frame count from the trimmed duration if the
+        // caller didn't pin one. We aim for ~1 fps (TARGET_FRAME_INTERVAL_MS),
+        // clamped to [MIN_FRAME_COUNT, MAX_FRAME_COUNT] so a 1s clip still
+        // gets 4 cells while a 10-minute clip tops out at 60.
+        val effectiveCount = if (frameCount > 0) {
+            frameCount
+        } else {
+            val durationMs = (trimEndMs - trimStartMs).coerceAtLeast(1L)
+            (durationMs / TARGET_FRAME_INTERVAL_MS)
+                .toInt()
+                .coerceIn(MIN_FRAME_COUNT, MAX_FRAME_COUNT)
+        }
         val retriever = MediaMetadataRetriever()
         try {
             val effectiveUri = if (uri.startsWith("asset://") || uri.isBlank()) {
@@ -57,9 +77,9 @@ object ThumbnailExtractor {
             }
 
             val total = (trimEndMs - trimStartMs).coerceAtLeast(1L)
-            val out = ArrayList<Bitmap>(frameCount)
-            for (i in 0 until frameCount) {
-                val t = trimStartMs + (total * i / frameCount)
+            val out = ArrayList<Bitmap>(effectiveCount)
+            for (i in 0 until effectiveCount) {
+                val t = trimStartMs + (total * i / effectiveCount)
                 val frame = try {
                     retriever.getFrameAtTime(
                         t * 1000L,
@@ -83,11 +103,11 @@ object ThumbnailExtractor {
             if (out.isNotEmpty()) {
                 out
             } else {
-                generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
+                generateFilmstripFrames(effectiveCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
             }
         } catch (e: Exception) {
             Log.w(TAG, "extractFrames failed for $uri, using generated filmstrip", e)
-            generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
+            generateFilmstripFrames(effectiveCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }

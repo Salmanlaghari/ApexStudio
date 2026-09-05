@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.LinkedHashMap
 
 /**
  * One clip's timeline media: a downsampled filmstrip (video
@@ -58,6 +59,17 @@ data class ClipMedia(
  * width). Zoom-level changes that affect the frame width
  * invalidate the entry so the timeline re-extracts at the new
  * resolution.
+ *
+ * Phase B additions:
+ * - **LRU eviction** with a soft bitmap-memory budget (default
+ *   64 MB). Without this, a project with 30+ clips kept every
+ *   bitmap resident and OOM'd on long sessions.
+ * - **Race protection** for zoom changes: an in-flight extraction
+ *   that loses the race for a clip's *current* desired cache key
+ *   is dropped instead of clobbering the newer one.
+ * - The extractor now produces 1-fps strips (length-dependent,
+ *   clamped 4-60 frames), so a 10-second clip gets 10 cells while
+ *   a 5-minute clip tops out at 60.
  */
 class TimelineMediaCache(private val context: Context) {
 
@@ -65,6 +77,15 @@ class TimelineMediaCache(private val context: Context) {
     private val _state = MutableStateFlow<Map<String, ClipMedia>>(emptyMap())
     val state: StateFlow<Map<String, ClipMedia>> = _state.asStateFlow()
 
+    // Keyed by clip.id → the full cache key currently desired for
+    // that clip. In-flight jobs use this map to detect "I lost the
+    // race" and skip their write.
+    private val currentKey = HashMap<String, String>()
+
+    // Jobs in flight, keyed by full cache key. Multiple in-flight
+    // jobs are fine (different clips / different keys) because
+    // SupervisorJob + Dispatchers.IO gives us multi-clip parallelism
+    // for free.
     private val inFlight = HashMap<String, Job>()
 
     /**
@@ -73,16 +94,24 @@ class TimelineMediaCache(private val context: Context) {
      * Composable can render the first frame immediately; extraction
      * jobs are launched in the background and the flow updates
      * as they finish.
+     *
+     * Also marks every requested clip as "recently wanted" so the
+     * LRU evicts entries the timeline isn't looking at anymore.
      */
     fun observe(clips: List<MediaClip>, pxPerMs: Float): Map<String, ClipMedia> {
         val frameWidth = (pxPerMs * 1000f).toInt().coerceAtLeast(32) // ~1s slice
         for (clip in clips) {
             val key = cacheKey(clip, frameWidth)
+            currentKey[clip.id] = key
             if (inFlight.containsKey(key)) continue
             val existing = _state.value[clip.id]
             if (existing != null && existing.cacheKey == key) continue
             inFlight[key] = scope.launch { extractFor(clip, frameWidth, key) }
         }
+        // Touch the LRU for everything we just asked about so the
+        // eviction policy knows which clips are still in use.
+        touchAccessOrder(clips.map { it.id })
+        evictIfOverBudget()
         return _state.value
     }
 
@@ -112,7 +141,17 @@ class TimelineMediaCache(private val context: Context) {
                     ClipMedia(waveform = samples, cacheKey = key)
                 }
             }
-            _state.value = _state.value + (clip.id to media)
+            // Race protection: only publish if our key is still the
+            // current desired key for this clip. A zoom change in the
+            // middle of extraction would have bumped currentKey, so
+            // our stale frames shouldn't overwrite the new extraction's.
+            if (currentKey[clip.id] == key) {
+                _state.value = _state.value + (clip.id to media)
+            } else {
+                // Drop the bitmaps we just decoded — they'll never be
+                // shown and would otherwise sit on the LRU.
+                media.frames.forEach { if (!it.isRecycled) it.recycle() }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "extract failed for ${clip.uri}", e)
         } finally {
@@ -123,11 +162,87 @@ class TimelineMediaCache(private val context: Context) {
     private fun cacheKey(clip: MediaClip, frameWidth: Int): String =
         "${clip.uri}|${clip.trimStartMs}|${clip.trimEndMs}|w=$frameWidth"
 
+    /**
+     * Tracks recently-touched clip IDs in insertion order. Used by
+     * [evictIfOverBudget] to know which entries the timeline is
+     * still asking about. We don't use a real LRU (LinkedHashMap
+     * with access-order=true) because touchAccessOrder mutates on
+     * every observe() call and we want to keep that cheap.
+     *
+     * Instead: insert new IDs at the tail; on eviction, walk from
+     * the head (oldest first) and drop entries that aren't in
+     * `currentKey` of any active request.
+     */
+    private val accessOrder = LinkedHashMap<String, Unit>()
+
+    private fun touchAccessOrder(clipIds: List<String>) {
+        // Move-to-end semantics: remove + re-insert each id.
+        for (id in clipIds) {
+            accessOrder.remove(id)
+            accessOrder[id] = Unit
+        }
+    }
+
+    /**
+     * If the cached bitmaps exceed [MAX_BITMAP_BYTES], drop the
+     * oldest entries (by access order) until we're under budget.
+     * Audio waveform arrays count toward memory at a tiny rate so
+     * we don't track them explicitly.
+     */
+    private fun evictIfOverBudget() {
+        val snapshot = _state.value
+        var total = snapshot.values.sumOf { media -> media.frames.sumOf { bitmapBytes(it) } }
+        if (total <= MAX_BITMAP_BYTES) return
+        // Walk oldest → newest, drop anything not currently pinned.
+        val activeClipIds = currentKey.keys
+        val toEvict = ArrayList<String>()
+        for (clipId in accessOrder.keys) {
+            if (total <= MAX_BITMAP_BYTES) break
+            if (clipId in activeClipIds) continue
+            val media = snapshot[clipId] ?: continue
+            val bytes = media.frames.sumOf { bitmapBytes(it) }
+            media.frames.forEach { if (!it.isRecycled) it.recycle() }
+            total -= bytes
+            toEvict.add(clipId)
+        }
+        if (toEvict.isNotEmpty()) {
+            val newMap = _state.value.toMutableMap()
+            for (id in toEvict) {
+                newMap.remove(id)
+                accessOrder.remove(id)
+            }
+            _state.value = newMap
+        }
+    }
+
+    private fun bitmapBytes(b: Bitmap): Long {
+        if (b.isRecycled) return 0L
+        val bytesPerPixel = when (b.config) {
+            Bitmap.Config.ALPHA_8 -> 1
+            Bitmap.Config.RGB_565 -> 2
+            Bitmap.Config.ARGB_4444 -> 2
+            else -> 4 // ARGB_8888 + RGBA_F16 (approx)
+        }
+        return b.width.toLong() * b.height.toLong() * bytesPerPixel
+    }
+
     fun release() {
         scope.cancel()
+        // Recycle all cached bitmaps so we don't leak GL textures
+        // if the user is on a low-memory device.
+        _state.value.values.forEach { media ->
+            media.frames.forEach { if (!it.isRecycled) it.recycle() }
+        }
+        _state.value = emptyMap()
+        accessOrder.clear()
+        currentKey.clear()
     }
 
     companion object {
         private const val TAG = "TimelineMediaCache"
+        // 64 MB covers ~400 frames at 240x80 ARGB_8888 which is
+        // enough for 5-10 typical clips even with a generous zoom.
+        // Bump this if the timeline routinely shows >20 clips.
+        private const val MAX_BITMAP_BYTES = 64L * 1024L * 1024L
     }
 }

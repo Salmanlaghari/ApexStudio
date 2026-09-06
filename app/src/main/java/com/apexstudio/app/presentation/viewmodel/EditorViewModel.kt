@@ -500,13 +500,19 @@ class EditorViewModel(
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
-    fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
+    fun setPlayerReady(ready: Boolean) = _state.update {
+        if (ready) it.copy(isPlayerReady = true, playerError = null, isBuffering = false)
+        else it.copy(isPlayerReady = false)
+    }
     // Phase A: separate "buffering" signal from "ready". The Player.Listener
     // calls this with (playbackState == Player.STATE_BUFFERING). We keep
     // isPlayerReady semantically unchanged — STATE_READY is the source of
     // truth for "first frame painted" so the rest of the UI (filters,
     // transforms, overlays) keeps gating on isPlayerReady as before.
     fun setBuffering(buffering: Boolean) = _state.update { it.copy(isBuffering = buffering) }
+    fun setPlayerError(error: String?) = _state.update {
+        it.copy(playerError = error, isBuffering = false, isPlayerReady = error == null && it.isPlayerReady)
+    }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }

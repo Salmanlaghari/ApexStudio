@@ -196,6 +196,8 @@ fun EditorScreen(
                 override fun onPlayerError(error: PlaybackException) {
                     Log.e("EditorScreen", "Player error: ${error.errorCodeName}", error)
                     vm.setPlayerReady(false)
+                    val errorMsg = error.localizedMessage ?: error.errorCodeName
+                    vm.setPlayerError("Video error: $errorMsg")
                     try {
                         val fallbackUri = com.apexstudio.app.data.media.MediaUriResolver
                             .resolvePlayableUri(context, null)
@@ -203,8 +205,10 @@ fun EditorScreen(
                         player.prepare()
                         player.play()
                         vm.setPlayerReady(true)
+                        vm.setPlayerError(null)
                     } catch (ex: Exception) {
                         Log.e("EditorScreen", "Player auto-recovery failed", ex)
+                        vm.setPlayerError("Failed to load video ($errorMsg)")
                     }
                 }
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -692,6 +696,21 @@ fun EditorScreen(
             exoPlayer = exoPlayer,
             playerReady = state.isPlayerReady,
             isBuffering = state.isBuffering,
+            playerError = state.playerError,
+            onRetryLoad = {
+                exoPlayer?.let { player ->
+                    vm.setPlayerError(null)
+                    try {
+                        val fallbackUri = com.apexstudio.app.data.media.MediaUriResolver
+                            .resolvePlayableUri(context, null)
+                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
+                        player.prepare()
+                        player.play()
+                    } catch (e: Exception) {
+                        vm.setPlayerError("Error reloading video: ${e.message}")
+                    }
+                }
+            },
             overlayClip = state.overlayClipId?.let { id ->
                 state.project?.clips?.firstOrNull { it.id == id }
             },
@@ -902,7 +921,7 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.4f))
+                .background(Color.Black.copy(alpha = 0.15f))
                 .clickable { vm.closeFilterPanel() },
             contentAlignment = Alignment.BottomCenter
         ) {
@@ -1138,7 +1157,7 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.4f))
+                .background(Color.Black.copy(alpha = 0.15f))
                 .clickable { vm.closeAdjustmentsPanel() },
             contentAlignment = Alignment.BottomCenter
         ) {
@@ -1576,18 +1595,28 @@ private fun EditorTopBar(
         )
         Spacer(Modifier.width(6.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 4.dp)
+        ) {
             Text(
                 "ApexStudio",
                 color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Black,
-                fontSize = 14.sp
+                fontSize = 14.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Text(
                 "Pro Video Editor",
                 color = ApexPalette.NeonPurple,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 9.sp
+                fontSize = 9.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
 
@@ -1756,6 +1785,8 @@ private fun VideoPreviewSection(
     // preview surface. Defaults to false so existing call sites stay
     // unaffected.
     isBuffering: Boolean = false,
+    playerError: String? = null,
+    onRetryLoad: (() -> Unit)? = null,
     // Phase D: optional PiP overlay clip + its dedicated ExoPlayer +
     // current transform. When overlayClip is null the overlay layer
     // doesn't render and gestures fall through to the main preview.
@@ -2013,7 +2044,7 @@ private fun VideoPreviewSection(
                 // one frame because both flags are reactive Compose state.
                 // Only show loading spinner when actually waiting for initial media playback or active network buffer.
                 // When paused or grading filters, keep the video frame visible without covering it with a loading screen.
-                val showBufferingOverlay = isBuffering && (!playerReady || isPlaying)
+                val showBufferingOverlay = isBuffering && (!playerReady || isPlaying) && playerError == null
                 if (showBufferingOverlay) {
                     Box(
                         modifier = Modifier
@@ -2036,6 +2067,57 @@ private fun VideoPreviewSection(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
                             )
+                        }
+                    }
+                }
+
+                if (playerError != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f))
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ErrorOutline,
+                                contentDescription = "Video Error",
+                                tint = ApexPalette.NeonPink,
+                                modifier = Modifier.size(44.dp)
+                            )
+                            Text(
+                                text = "Video Load Error",
+                                color = ApexPalette.TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = playerError,
+                                color = ApexPalette.TextSecondary,
+                                fontSize = 12.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            if (onRetryLoad != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ApexPalette.NeonCyan.copy(alpha = 0.2f))
+                                        .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(8.dp))
+                                        .clickable { onRetryLoad() }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Reload Sample Video",
+                                        color = ApexPalette.NeonCyan,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }

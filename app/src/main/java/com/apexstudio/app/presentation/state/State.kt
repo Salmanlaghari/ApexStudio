@@ -102,7 +102,27 @@ data class EditorState(
     // Phase E: same routing flag pattern as pendingAddAsOverlay but
     // for audio picks from the A1 lane "+ Add → Audio" entry. Cleared
     // after onMediaPicked consumes it.
-    val pendingAddAsAudio: Boolean = false
+    val pendingAddAsAudio: Boolean = false,
+    // Resolution selection (720P, 1080P, 1440P, 2160P / 4K)
+    val selectedResolution: String = "1080P",
+    // Adjustments panel
+    val adjustmentsPanelOpen: Boolean = false,
+    val adjustments: VideoAdjustments = VideoAdjustments(),
+    // Sticker system
+    val stickerPanelOpen: Boolean = false,
+    val selectedStickerId: String? = null,
+    // Cover frame selection
+    val coverPanelOpen: Boolean = false,
+    // Voice Over recorder modal
+    val voiceRecorderOpen: Boolean = false,
+    // Camera capture modal
+    val cameraCaptureOpen: Boolean = false,
+    // Help guide modal
+    val helpDialogOpen: Boolean = false,
+    // Comprehensive Media Library sheet
+    val mediaLibraryOpen: Boolean = false,
+    // Fullscreen preview mode
+    val isFullscreenPreview: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

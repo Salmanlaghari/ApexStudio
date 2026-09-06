@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -613,7 +614,14 @@ fun EditorScreen(
     ) {
         EditorTopBar(
             currentTimeMs = state.playerPositionMs,
+            selectedResolution = state.selectedResolution,
+            canUndo = state.canUndo,
+            canRedo = state.canRedo,
             onBack = onBack,
+            onSelectResolution = { vm.setSelectedResolution(it) },
+            onUndo = { vm.undo() },
+            onRedo = { vm.redo() },
+            onHelp = { vm.openHelpDialog() },
             onExport = safeOnExport
         )
         // Phase D: warn before opening export settings if a PiP
@@ -668,6 +676,10 @@ fun EditorScreen(
             durationMs = state.durationMs,
             activeFilterId = state.activeFilterId,
             filterIntensity = state.filterIntensity,
+            adjustments = state.adjustments,
+            clipRotation = selectedClip?.rotationAngle ?: 0f,
+            clipFlipHorizontal = selectedClip?.isFlippedHorizontal ?: false,
+            clipFlipVertical = selectedClip?.isFlippedVertical ?: false,
             currentTransform = currentTransform,
             onTogglePlay = { vm.togglePlay() },
             onPrev = { seekPlayerAndState((state.playerPositionMs - 5000L).coerceAtLeast(0L)) },
@@ -705,6 +717,8 @@ fun EditorScreen(
                 }
             },
             onTextDragEnd = { vm.flushProject() },
+            stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList()),
+            onFullscreenToggle = { vm.toggleFullscreenPreview() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
@@ -803,16 +817,24 @@ fun EditorScreen(
             cropActive = state.cropMode,
             cropAspect = state.cropAspect,
             onCropAspect = { vm.applyCropAspect(it) },
+            onAdjust = { vm.openAdjustmentsPanel() },
+            adjustActive = state.adjustmentsPanelOpen || !state.adjustments.isDefault,
             onFilters = { vm.openFilterPanel() },
             filtersActive = state.activeFilterId != null || state.filterPanelOpen,
             onColor = onColor,
             onAudio = onAudio,
             onText = { vm.openTextPanel() },
+            onSticker = { vm.openStickerPanel() },
             onFx = { vm.openFxPanel() },
             onKeyframes = { vm.setKeyframePanelOpen(true) },
             keyframesActive = state.keyframePanelOpen || (selectedClipForTrim != null && !selectedClipForTrim.keyframes.isEmpty()),
             onTransmission = { vm.openTransmissionTemplatesPanel() },
             transmissionActive = state.transmissionPanelOpen,
+            onRecord = { vm.openVoiceRecorder() },
+            onCamera = { vm.openCameraCapture() },
+            onCover = { vm.openCoverPanel() },
+            onRotate = { vm.rotateSelectedClip() },
+            onFlip = { vm.flipSelectedClipHorizontal() },
             onExport = safeOnExport,
             modifier = Modifier
                 .fillMaxWidth()
@@ -1110,7 +1132,194 @@ fun EditorScreen(
                 )
             }
         }
+    }
 
+    if (state.adjustmentsPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeAdjustmentsPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                AdjustPanel(
+                    adjustments = state.adjustments,
+                    onUpdate = { vm.updateAdjustments(it) },
+                    onReset = { vm.resetAdjustments() },
+                    onResetAll = { vm.resetAllAdjustments() },
+                    onClose = { vm.closeAdjustmentsPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.stickerPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeStickerPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                StickerPanel(
+                    onAddSticker = { symbol, cat, name -> vm.addStickerOverlay(symbol, cat, name) },
+                    onClose = { vm.closeStickerPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.voiceRecorderOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeVoiceRecorder() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                VoiceRecorderPanel(
+                    onAddRecording = { uri, dur, name -> vm.addVoiceOverTrack(uri, dur, name) },
+                    onClose = { vm.closeVoiceRecorder() }
+                )
+            }
+        }
+    }
+
+    if (state.cameraCaptureOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeCameraCapture() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                CameraCapturePanel(
+                    onCapturePicked = { meta -> vm.onMediaPicked(meta) },
+                    onClose = { vm.closeCameraCapture() }
+                )
+            }
+        }
+    }
+
+    if (state.coverPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeCoverPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                CoverPanel(
+                    currentPlayheadMs = state.playerPositionMs,
+                    coverFrameMs = state.project?.coverFrameMs,
+                    customCoverUri = state.project?.coverCustomUri,
+                    onSelectFrameAtPlayhead = { vm.setCoverFrame(it) },
+                    onSelectCustomCover = {
+                        mediaPicker.pickSingleMedia.launch("image/*")
+                        vm.closeCoverPanel()
+                    },
+                    onClose = { vm.closeCoverPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.helpDialogOpen) {
+        HelpDialog(onDismiss = { vm.closeHelpDialog() })
+    }
+
+    if (state.mediaLibraryOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeMediaLibrary() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                MediaLibrarySheet(
+                    onImportMedia = { meta -> vm.onMediaPicked(meta) },
+                    onOpenSystemPicker = {
+                        mediaPicker.pickMultipleMedia.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                        )
+                    },
+                    onClose = { vm.closeMediaLibrary() }
+                )
+            }
+        }
+    }
+
+    if (state.isFullscreenPreview) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            VideoPreviewSection(
+                isPlaying = state.isPlaying,
+                currentTimeMs = state.playerPositionMs,
+                durationMs = state.durationMs,
+                activeFilterId = state.activeFilterId,
+                filterIntensity = state.filterIntensity,
+                currentTransform = currentTransform,
+                onTogglePlay = { vm.togglePlay() },
+                onPrev = { seekPlayerAndState((state.playerPositionMs - 5000L).coerceAtLeast(0L)) },
+                onNext = { seekPlayerAndState((state.playerPositionMs + 5000L).coerceAtMost(state.durationMs)) },
+                onStepFrame = { forward ->
+                    val delta = if (forward) 33L else -33L
+                    seekPlayerAndState((state.playerPositionMs + delta).coerceIn(0L, state.durationMs))
+                },
+                onScrubFrame = { seekPlayerAndState(it) },
+                exoPlayer = exoPlayer,
+                playerReady = state.isPlayerReady,
+                isBuffering = state.isBuffering,
+                cropMode = false,
+                videoWidth = state.videoWidth,
+                videoHeight = state.videoHeight,
+                cropRect = state.cropRect,
+                cropAspect = state.cropAspect,
+                onCropRectChange = {},
+                onResetCrop = {},
+                overlays = selectedTextOverlays.filter { it.isActiveAt(state.playerPositionMs) },
+                stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList()),
+                onFullscreenToggle = { vm.setFullscreenPreview(false) },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgGlass)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("FULLSCREEN PREVIEW", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable { vm.setFullscreenPreview(false) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.FullscreenExit, contentDescription = "Exit Fullscreen", tint = Color.White)
+                }
+            }
+        }
     }
 
 // Phase D: + Add menu. Tapping the "+" button on a lane flips
@@ -1340,46 +1549,165 @@ private fun ClipActionRow(
 @Composable
 private fun EditorTopBar(
     currentTimeMs: Long,
+    selectedResolution: String = "1080P",
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     onBack: () -> Unit,
+    onSelectResolution: (String) -> Unit = {},
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
+    onHelp: () -> Unit = {},
     onExport: () -> Unit
 ) {
     CrashMarker.mark(LocalContext.current, "EditorScreen: EditorTopBar")
+    var showResolutionMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         NeonIconButton(
-            icon = Icons.Default.ChevronLeft,
+            icon = Icons.Default.Menu,
             onClick = onBack,
-            size = 40.dp,
-            iconSize = 22.dp
+            size = 38.dp,
+            iconSize = 20.dp
         )
-        Spacer(Modifier.width(10.dp))
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
+        Spacer(Modifier.width(6.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "ApexStudio",
+                color = ApexPalette.TextPrimary,
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp
+            )
+            Text(
+                "Pro Video Editor",
+                color = ApexPalette.NeonPurple,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 9.sp
+            )
+        }
+
+        Box {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(ApexPalette.BgGlass)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .border(1.dp, ApexPalette.NeonPurple.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                    .clickable { showResolutionMenu = true }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
-                    color = ApexPalette.NeonCyan,
+                    selectedResolution,
+                    color = ApexPalette.NeonPurple,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
+            androidx.compose.material3.DropdownMenu(
+                expanded = showResolutionMenu,
+                onDismissRequest = { showResolutionMenu = false },
+                modifier = Modifier.background(ApexPalette.BgElevated)
+            ) {
+                for (res in listOf("720P", "1080P", "1440P", "2160P / 4K")) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Text(
+                                res,
+                                color = if (res.startsWith(selectedResolution)) ApexPalette.NeonPurple else ApexPalette.TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        },
+                        onClick = {
+                            val cleanRes = if (res.contains("4K")) "4K" else res
+                            onSelectResolution(cleanRes)
+                            showResolutionMenu = false
+                        }
+                    )
+                }
+            }
         }
-        Spacer(Modifier.width(10.dp))
+
+        Spacer(Modifier.width(6.dp))
+
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(ApexPalette.BgGlass)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                TimeFormat.msToTimecode(currentTimeMs, includeFrames = true),
+                color = ApexPalette.NeonCyan,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
+        }
+
+        Spacer(Modifier.width(6.dp))
+
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(if (canUndo) ApexPalette.BgGlass else ApexPalette.BgElevated)
+                .clickable(enabled = canUndo, onClick = onUndo),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Undo,
+                contentDescription = "Undo",
+                tint = if (canUndo) ApexPalette.NeonCyan else ApexPalette.TextMuted,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(Modifier.width(4.dp))
+
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(if (canRedo) ApexPalette.BgGlass else ApexPalette.BgElevated)
+                .clickable(enabled = canRedo, onClick = onRedo),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Redo,
+                contentDescription = "Redo",
+                tint = if (canRedo) ApexPalette.NeonCyan else ApexPalette.TextMuted,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(Modifier.width(4.dp))
+
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(ApexPalette.BgGlass)
+                .clickable(onClick = onHelp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.HelpOutline,
+                contentDescription = "Help",
+                tint = ApexPalette.NeonCyan,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(Modifier.width(6.dp))
+
+        Box(
+            modifier = Modifier
+                .size(36.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
@@ -1398,7 +1726,7 @@ private fun EditorTopBar(
                 Icons.Default.IosShare,
                 null,
                 tint = ApexPalette.NeonCyan,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
     }
@@ -1411,6 +1739,10 @@ private fun VideoPreviewSection(
     durationMs: Long = 0L,
     activeFilterId: String? = null,
     filterIntensity: Float = 0f,
+    adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+    clipRotation: Float = 0f,
+    clipFlipHorizontal: Boolean = false,
+    clipFlipVertical: Boolean = false,
     currentTransform: com.apexstudio.app.domain.model.AnimatedTransform = com.apexstudio.app.domain.model.AnimatedTransform.Identity,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
@@ -1445,6 +1777,8 @@ private fun VideoPreviewSection(
     textInteractionEnabled: Boolean = false,
     onTextDrag: (Float, Float) -> Unit = { _, _ -> },
     onTextDragEnd: () -> Unit = {},
+    stickers: List<com.apexstudio.app.domain.model.StickerOverlay> = emptyList(),
+    onFullscreenToggle: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -1618,16 +1952,16 @@ private fun VideoPreviewSection(
                         .graphicsLayer {
                             translationX = currentTransform.translateX * (size.width / 2f)
                             translationY = currentTransform.translateY * (size.height / 2f)
-                            scaleX = currentTransform.scale
-                            scaleY = currentTransform.scale
-                            rotationZ = currentTransform.rotationDeg
+                            scaleX = currentTransform.scale * (if (clipFlipHorizontal) -1f else 1f)
+                            scaleY = currentTransform.scale * (if (clipFlipVertical) -1f else 1f)
+                            rotationZ = currentTransform.rotationDeg + clipRotation
                             alpha = currentTransform.opacity
 
                             // Real-time Hardware Color Filter Shader/Matrix on Android S+
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                                if (activeFilterId != null && filterIntensity > 0f) {
+                                if ((activeFilterId != null && filterIntensity > 0f) || !adjustments.isDefault) {
                                     val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                                        .getInterpolatedMatrix(activeFilterId, filterIntensity)
+                                        .getCombinedMatrix(activeFilterId, filterIntensity, adjustments)
                                     val filter = android.graphics.ColorMatrixColorFilter(cm)
                                     renderEffect = android.graphics.RenderEffect
                                         .createColorFilterEffect(filter)
@@ -1796,6 +2130,28 @@ private fun VideoPreviewSection(
                 }
             }
 
+            // Sticker overlay layer
+            if (!cropMode && stickers.isNotEmpty()) {
+                val activeStickers = stickers.filter { it.isActiveAt(currentTimeMs) }
+                for (sticker in activeStickers) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = contentX + contentW * sticker.x - 20.dp, y = contentY + contentH * sticker.y - 20.dp)
+                            .graphicsLayer {
+                                scaleX = sticker.sizeScale
+                                scaleY = sticker.sizeScale
+                                rotationZ = sticker.rotationDeg
+                                alpha = sticker.opacity
+                            }
+                    ) {
+                        Text(
+                            sticker.symbolOrUri,
+                            fontSize = 32.sp
+                        )
+                    }
+                }
+            }
+
             // Caption layer: rasterised with the SAME TextSpriteRenderer
             // the export GL effect uses, composited over the video
             // content rect (identical to the crop overlay geometry), so
@@ -1941,23 +2297,47 @@ private fun VideoPreviewSection(
                         )
                     }
 
-                    // Top-End: Frame and Timecode chip
-                    Box(
+                    // Top-End: Frame, Timecode chip & Fullscreen button
+                    Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(10.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ApexPalette.BgGlass)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val frameNum = (currentTimeMs / 33L).coerceAtLeast(0L)
-                        Text(
-                            "F# $frameNum  •  ${TimeFormat.msToTimecode(currentTimeMs, includeFrames = true)}",
-                            color = ApexPalette.NeonCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(ApexPalette.BgGlass)
+                                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            val frameNum = (currentTimeMs / 33L).coerceAtLeast(0L)
+                            Text(
+                                "F# $frameNum  •  ${TimeFormat.msToTimecode(currentTimeMs, includeFrames = true)}",
+                                color = ApexPalette.NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (onFullscreenToggle != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(ApexPalette.BgGlass)
+                                    .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                                    .clickable { onFullscreenToggle() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Fullscreen,
+                                    contentDescription = "Fullscreen Preview",
+                                    tint = ApexPalette.NeonCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Center transport controls (⏪ -5s, ⏮ -1F, Play/Pause, ⏭ +1F, ⏩ +5s)
@@ -3473,16 +3853,24 @@ private fun HorizontalToolBar(
     cropActive: Boolean,
     cropAspect: com.apexstudio.app.presentation.state.CropAspect,
     onCropAspect: (com.apexstudio.app.presentation.state.CropAspect) -> Unit,
+    onAdjust: () -> Unit = {},
+    adjustActive: Boolean = false,
     onFilters: () -> Unit,
     filtersActive: Boolean,
     onColor: () -> Unit,
     onAudio: () -> Unit,
     onText: () -> Unit,
+    onSticker: () -> Unit = {},
     onFx: () -> Unit,
     onKeyframes: () -> Unit = {},
     keyframesActive: Boolean = false,
     onTransmission: () -> Unit = {},
     transmissionActive: Boolean = false,
+    onRecord: () -> Unit = {},
+    onCamera: () -> Unit = {},
+    onCover: () -> Unit = {},
+    onRotate: () -> Unit = {},
+    onFlip: () -> Unit = {},
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -3542,11 +3930,18 @@ private fun HorizontalToolBar(
             ToolDef("Cut", Icons.Default.DeleteSweep, onCut),
             ToolDef("Speed", Icons.Default.Speed, onSpeed),
             ToolDef("Crop", Icons.Default.Crop, onCrop, highlight = cropActive),
+            ToolDef("Adjust", Icons.Default.Tune, onAdjust, highlight = adjustActive),
             ToolDef("Filters", Icons.Default.FilterAlt, onFilters, highlight = filtersActive),
             ToolDef("Keyframe", Icons.Default.Animation, onKeyframes, highlight = keyframesActive),
             ToolDef("FX", Icons.Default.AutoAwesome, onFx),
-            ToolDef("Transmission", Icons.Default.Tune, onTransmission, highlight = transmissionActive),
+            ToolDef("Transmission", Icons.Default.Transform, onTransmission, highlight = transmissionActive),
             ToolDef("Text", Icons.Default.TextFields, onText),
+            ToolDef("Sticker", Icons.Default.EmojiEmotions, onSticker),
+            ToolDef("Cover", Icons.Default.Image, onCover),
+            ToolDef("Record", Icons.Default.Mic, onRecord),
+            ToolDef("Camera", Icons.Default.CameraAlt, onCamera),
+            ToolDef("Rotate", Icons.AutoMirrored.Filled.RotateRight, onRotate),
+            ToolDef("Flip", Icons.Default.Flip, onFlip),
             ToolDef("Color", Icons.Default.Palette, onColor),
             ToolDef("Audio", Icons.Default.GraphicEq, onAudio)
         )

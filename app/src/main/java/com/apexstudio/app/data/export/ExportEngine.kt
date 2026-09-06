@@ -82,6 +82,7 @@ class ExportEngine(private val context: Context) {
         val quality: String = "high",
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
+        val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
@@ -91,6 +92,10 @@ class ExportEngine(private val context: Context) {
         val transitionType: TransitionEngine.Companion.TransitionType? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
+        val stickers: List<com.apexstudio.app.domain.model.StickerOverlay> = emptyList(),
+        val rotationAngle: Float = 0f,
+        val isFlippedHorizontal: Boolean = false,
+        val isFlippedVertical: Boolean = false,
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = 0L
     )
@@ -153,7 +158,19 @@ class ExportEngine(private val context: Context) {
                         ?.let { videoEffects.add(it) }
                 }
 
-                // 2. Color Filter (3D LUT)
+                // 1.5 Rotation and Flipping
+                if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
+                    val scaleX = if (config.isFlippedHorizontal) -1f else 1f
+                    val scaleY = if (config.isFlippedVertical) -1f else 1f
+                    videoEffects.add(
+                        ScaleAndRotateTransformation.Builder()
+                            .setRotationDegrees(config.rotationAngle)
+                            .setScale(scaleX, scaleY)
+                            .build()
+                    )
+                }
+
+                // 2. Color Filter (3D LUT) & Video Adjustments
                 if (config.filterPreset != null && config.filterIntensity > 0f) {
                     videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }
@@ -195,11 +212,23 @@ class ExportEngine(private val context: Context) {
                     )
                 }
 
-                // 7. Caption / Text Overlays
+                // 7. Caption / Text Overlays & Stickers
                 val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() }
-                if (captionOverlays.isNotEmpty()) {
+                if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty()) {
                     val aspect = queryAspectRatio(inputUri)
                     captionOverlays.forEach { overlay ->
+                        videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                    }
+                    config.stickers.forEach { sticker ->
+                        val overlay = TextOverlay(
+                            id = sticker.id,
+                            text = sticker.symbolOrUri,
+                            x = sticker.x,
+                            y = sticker.y,
+                            sizeScale = sticker.sizeScale * 1.5f,
+                            startMs = sticker.startMs,
+                            endMs = sticker.endMs
+                        )
                         videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                     }
                 }

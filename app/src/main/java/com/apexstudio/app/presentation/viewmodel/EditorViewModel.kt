@@ -721,12 +721,17 @@ class EditorViewModel(
                 quality = quality,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
+                adjustments = s.adjustments,
                 fxPreset = fxPreset,
                 fxIntensity = s.fxIntensity,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },
                 textOverlays = selected?.textOverlays ?: emptyList(),
+                stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList()),
+                rotationAngle = selected?.rotationAngle ?: 0f,
+                isFlippedHorizontal = selected?.isFlippedHorizontal ?: false,
+                isFlippedVertical = selected?.isFlippedVertical ?: false,
                 trimStartMs = selected?.trimStartMs ?: 0L,
                 trimEndMs = selected?.trimEndMs ?: 0L
             )
@@ -1073,6 +1078,220 @@ class EditorViewModel(
             )
         }
         persistProject()
+    }
+
+    // Resolution selector (720P, 1080P, 1440P, 2160P / 4K)
+    fun setSelectedResolution(res: String) {
+        _state.update { s ->
+            s.copy(
+                selectedResolution = res,
+                project = s.project?.copy(resolution = res)
+            )
+        }
+        updateExport { it.copy(resolution = res) }
+        persistProject()
+    }
+
+    // Adjustments panel
+    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+
+    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
+        pushUndo()
+        _state.update { s ->
+            val newAdj = transform(s.adjustments)
+            s.copy(
+                adjustments = newAdj,
+                project = s.project?.copy(adjustments = newAdj)
+            )
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) {
+            updateClip(selectedId) { c ->
+                c.copy(adjustments = transform(c.adjustments))
+            }
+        }
+        persistProject()
+    }
+
+    fun resetAdjustments() {
+        pushUndo()
+        val defaultAdj = VideoAdjustments()
+        _state.update { s ->
+            s.copy(
+                adjustments = defaultAdj,
+                project = s.project?.copy(adjustments = defaultAdj)
+            )
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) {
+            updateClip(selectedId) { it.copy(adjustments = defaultAdj) }
+        }
+        persistProject()
+    }
+
+    fun resetAllAdjustments() = resetAdjustments()
+
+    // Sticker system
+    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
+    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
+
+    fun addStickerOverlay(
+        symbolOrUri: String,
+        category: String = "Emoji",
+        name: String = "Sticker"
+    ) {
+        pushUndo()
+        val sticker = StickerOverlay(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            category = category,
+            symbolOrUri = symbolOrUri,
+            x = 0.5f,
+            y = 0.5f,
+            startMs = _state.value.playerPositionMs,
+            endMs = (_state.value.playerPositionMs + 5000L).coerceAtMost(_state.value.durationMs)
+        )
+        val selectedClipId = _state.value.selectedClipId
+        if (selectedClipId != null) {
+            updateClip(selectedClipId) { c ->
+                c.copy(stickers = c.stickers + sticker)
+            }
+        }
+        _state.update { s ->
+            val currentList = s.project?.stickers ?: emptyList()
+            val newList = currentList + sticker
+            s.copy(
+                selectedStickerId = sticker.id,
+                project = s.project?.copy(stickers = newList)
+            )
+        }
+        persistProject()
+    }
+
+    fun updateStickerOverlay(stickerId: String, transform: (StickerOverlay) -> StickerOverlay) {
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.map { if (it.id == stickerId) transform(it) else it }
+            val updatedClips = p.clips.map { clip ->
+                clip.copy(stickers = clip.stickers.map { if (it.id == stickerId) transform(it) else it })
+            }
+            s.copy(project = p.copy(stickers = updatedProjectStickers, clips = updatedClips))
+        }
+        persistProject()
+    }
+
+    fun removeStickerOverlay(stickerId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.filterNot { it.id == stickerId }
+            val updatedClips = p.clips.map { clip ->
+                clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId })
+            }
+            s.copy(
+                selectedStickerId = if (s.selectedStickerId == stickerId) null else s.selectedStickerId,
+                project = p.copy(stickers = updatedProjectStickers, clips = updatedClips)
+            )
+        }
+        persistProject()
+    }
+
+    // Cover selection
+    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
+    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
+
+    fun setCoverFrame(ms: Long) {
+        _state.update { s ->
+            s.copy(project = s.project?.copy(coverFrameMs = ms, coverCustomUri = null))
+        }
+        persistProject()
+    }
+
+    fun setCoverCustomUri(uri: String) {
+        _state.update { s ->
+            s.copy(project = s.project?.copy(coverCustomUri = uri))
+        }
+        persistProject()
+    }
+
+    // Voice Over Recording
+    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
+
+    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String = "Voiceover") {
+        pushUndo()
+        val track = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = 1.0f,
+            trimStartMs = 0L,
+            trimEndMs = durationMs
+        )
+        val clip = MediaClip(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            durationMs = durationMs,
+            trimStartMs = 0L,
+            trimEndMs = durationMs,
+            type = ClipType.SFX,
+            trackIndex = 1
+        )
+        _audio.update { it.copy(tracks = it.tracks + track) }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedClips = p.clips + clip
+            val newDur = maxOf(s.durationMs, durationMs)
+            s.copy(
+                project = p.copy(clips = updatedClips, durationMs = newDur),
+                durationMs = newDur
+            )
+        }
+        persistProject()
+    }
+
+    // Camera Capture
+    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
+    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
+
+    // Help Dialog
+    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
+    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
+
+    // Media Library
+    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
+    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
+
+    // Fullscreen Preview
+    fun setFullscreenPreview(enabled: Boolean) = _state.update { it.copy(isFullscreenPreview = enabled) }
+    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
+
+    // Edit operations (Rotate, Flip)
+    fun rotateSelectedClip() {
+        val selectedId = _state.value.selectedClipId ?: return
+        pushUndo()
+        updateClip(selectedId) { c ->
+            val newAngle = (c.rotationAngle + 90f) % 360f
+            c.copy(rotationAngle = newAngle)
+        }
+    }
+
+    fun flipSelectedClipHorizontal() {
+        val selectedId = _state.value.selectedClipId ?: return
+        pushUndo()
+        updateClip(selectedId) { c ->
+            c.copy(isFlippedHorizontal = !c.isFlippedHorizontal)
+        }
+    }
+
+    fun flipSelectedClipVertical() {
+        val selectedId = _state.value.selectedClipId ?: return
+        pushUndo()
+        updateClip(selectedId) { c ->
+            c.copy(isFlippedVertical = !c.isFlippedVertical)
+        }
     }
 
     fun openTrimPanel() = _state.update { it.copy(trimPanelOpen = true) }

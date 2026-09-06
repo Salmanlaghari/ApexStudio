@@ -1038,8 +1038,9 @@ fun TimelineTrackArea(
     onAddMedia: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    Box(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF0A0A0F))
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1192,6 +1193,25 @@ fun TimelineTrackArea(
         )
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 4.dp))
+    }
+
+    // Phase A rebuild: playhead line that crosses down through ALL the
+    // track rows below the ruler. The ruler itself draws its own
+    // playhead inside TimelineRuler; this overlay keeps the line
+    // visually continuous across the filmstrip + 4 layer rows so the
+    // user can read the current playhead position at a glance.
+    val progress = if (state.durationMs > 0)
+        state.playerPositionMs.toFloat() / state.durationMs
+    else 0f
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val headX = size.width * progress
+        drawLine(
+            color = Color.White,
+            start = Offset(headX, 0f),
+            end = Offset(headX, size.height),
+            strokeWidth = 2f
+        )
+    }
     }
 }
 

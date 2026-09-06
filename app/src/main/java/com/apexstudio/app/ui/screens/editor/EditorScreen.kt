@@ -1553,14 +1553,22 @@ fun BottomEditToolbar(
         // which doesn't apply inside LazyRow + fixed width per item,
         // causing the first item's "Edit" label to be clipped to "it"
         // when total item width exceeded viewport width.
+        //
+        // Note: `Modifier.weight(1f)` is NOT allowed inside
+        // LazyRow.items {} (LazyItemScope doesn't provide RowScope),
+        // so each item uses a fixed but compact width and the
+        // outer spacedBy distributes the leftover space.
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         items(items) { item ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .weight(1f)
+                    // 7 items at 44dp + 6 gaps at 4dp + 24dp horizontal
+                    // padding = 308 + 24 + 24 = 356dp, fits a 360dp
+                    // viewport with 4dp headroom. No horizontal scroll.
+                    .width(44.dp)
                     .clickable(onClick = item.onClick)
             ) {
                 Icon(

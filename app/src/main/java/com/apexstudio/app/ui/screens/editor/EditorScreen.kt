@@ -35,7 +35,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -224,6 +226,23 @@ fun EditorScreen(
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
                 resolution = state.selectedResolution,
+                activeFilterId = state.activeFilterId,
+                filterIntensity = state.filterIntensity,
+                adjustments = state.adjustments,
+                playerError = state.playerError,
+                onRetryLoad = {
+                    exoPlayer?.let { player ->
+                        vm.setPlayerError(null)
+                        try {
+                            val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
+                            player.setMediaItem(MediaItem.fromUri(fallbackUri))
+                            player.prepare()
+                            player.play()
+                        } catch (e: Exception) {
+                            vm.setPlayerError("Error reloading video: ${e.message}")
+                        }
+                    }
+                },
                 onSelectResolution = { vm.setSelectedResolution(it) },
                 onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 modifier = Modifier.fillMaxSize()
@@ -275,7 +294,7 @@ fun EditorScreen(
             onAddMedia = { showAddMediaMenu = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(135.dp)
         )
 
         BottomEditToolbar(
@@ -581,22 +600,22 @@ fun TopAppBarSection(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .padding(horizontal = 16.dp),
+            .height(52.dp)
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         // Left: Hamburger menu + Two-line title
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Menu,
                 contentDescription = "Menu",
                 tint = Color.White,
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .clickable(onClick = onBack)
             )
 
@@ -606,20 +625,26 @@ fun TopAppBarSection(
                         text = "Apex",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Text(
                         text = "Studio",
                         color = Color(0xFF8B5CF6),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
                 Text(
                     text = "Pro Video Editor",
                     color = Color(0xFF9CA3AF),
                     fontWeight = FontWeight.Normal,
-                    fontSize = 12.sp
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
@@ -627,14 +652,14 @@ fun TopAppBarSection(
         // Right side icons + Export button
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.Undo,
                 contentDescription = "Undo",
                 tint = if (canUndo) Color.White else Color(0xFF6B7280),
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(18.dp)
                     .clickable(enabled = canUndo, onClick = onUndo)
             )
 
@@ -643,7 +668,7 @@ fun TopAppBarSection(
                 contentDescription = "Redo",
                 tint = if (canRedo) Color.White else Color(0xFF4B5563),
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(18.dp)
                     .clickable(enabled = canRedo, onClick = onRedo)
             )
 
@@ -652,37 +677,39 @@ fun TopAppBarSection(
                 contentDescription = "Help",
                 tint = Color.White,
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(18.dp)
                     .clickable(onClick = onHelp)
             )
 
-            // Gradient Export Button
+            // Compact Gradient Export Button
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.horizontalGradient(
                             listOf(Color(0xFF8B5CF6), Color(0xFF6366F1))
                         )
                     )
                     .clickable(onClick = onExport)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Upload,
                         contentDescription = "Export",
                         tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Text(
                         text = "Export",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
@@ -695,6 +722,11 @@ fun TopAppBarSection(
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
     resolution: String = "1080P",
+    activeFilterId: String? = null,
+    filterIntensity: Float = 0f,
+    adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+    playerError: String? = null,
+    onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -720,8 +752,24 @@ fun VideoPreviewArea(
                 },
                 update = { view ->
                     view.player = exoPlayer
+                    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            if ((activeFilterId != null && filterIntensity > 0f) || !adjustments.isDefault) {
+                                val cm = com.apexstudio.app.data.filter.FilterColorMatrix
+                                    .getCombinedMatrix(activeFilterId, filterIntensity, adjustments)
+                                val filter = android.graphics.ColorMatrixColorFilter(cm)
+                                renderEffect = android.graphics.RenderEffect
+                                    .createColorFilterEffect(filter)
+                                    .asComposeRenderEffect()
+                            } else {
+                                renderEffect = null
+                            }
+                        }
+                    }
             )
         } else {
             // Placeholder video frame thumbnail render
@@ -731,6 +779,57 @@ fun VideoPreviewArea(
                         listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
                     )
                 )
+            }
+        }
+
+        if (playerError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = "Video Error",
+                        tint = ApexPalette.NeonPink,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = "Video Load Error",
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = playerError,
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    if (onRetryLoad != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ApexPalette.NeonCyan.copy(alpha = 0.2f))
+                                .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(8.dp))
+                                .clickable { onRetryLoad() }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Reload Sample Video",
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -1038,50 +1137,49 @@ fun TimelineTrackArea(
     onAddMedia: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(Color(0xFF0A0A0F))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 10.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // First Row: Video Thumbnail Strip + Cover button + Add button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .height(38.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // "Cover" button
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFF1F1F2E))
                     .clickable(onClick = onCover)
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = "Cover",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(12.dp)
                 )
-                Text("Cover", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                Text("Cover", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium)
             }
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
 
             // Main Video Filmstrip Container
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF1E1B2E))
-                    .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(10.dp))
+                    .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 // Repeated thumbnail frames
@@ -1163,55 +1261,49 @@ fun TimelineTrackArea(
             }
         }
 
+        val clips = state.project?.clips ?: emptyList()
+        val textClip = clips.firstOrNull { it.textOverlays.isNotEmpty() }
+        val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "ApexStudio  Pro Video Editor"
+
+        val activeFxId = state.activeFxId
+        val fxLabel = if (activeFxId != null) activeFxId.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() } else "Cinematic Glow"
+
+        val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
+        val audioLabel = audioClip?.name ?: "Dreamscape"
+
+        val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
+        val voiceLabel = voiceClip?.name ?: "Voice Over"
+
         // Stacked Horizontal Layer Rows (4 Rows)
         TrackLayerRow(
             barColor = Color(0xFF8B5CF6),
             icon = Icons.Default.TextFields,
-            label = "ApexStudio  Pro Video Editor",
+            label = textLabel,
             badgeText = null
         )
 
         TrackLayerRow(
             barColor = Color(0xFF3B82F6),
             icon = Icons.Default.AutoAwesome,
-            label = "Cinematic Glow",
+            label = fxLabel,
             badgeText = "fx"
         )
 
         TrackLayerRow(
             barColor = Color(0xFF10B981),
             icon = Icons.Default.MusicNote,
-            label = "Dreamscape",
+            label = audioLabel,
             isWaveform = true
         )
 
         TrackLayerRow(
             barColor = Color(0xFF7C3AED),
             icon = Icons.Default.Mic,
-            label = "Voice Over",
+            label = voiceLabel,
             isWaveform = true
         )
 
-        Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 4.dp))
-    }
-
-    // Phase A rebuild: playhead line that crosses down through ALL the
-    // track rows below the ruler. The ruler itself draws its own
-    // playhead inside TimelineRuler; this overlay keeps the line
-    // visually continuous across the filmstrip + 4 layer rows so the
-    // user can read the current playhead position at a glance.
-    val progress = if (state.durationMs > 0)
-        state.playerPositionMs.toFloat() / state.durationMs
-    else 0f
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val headX = size.width * progress
-        drawLine(
-            color = Color.White,
-            start = Offset(headX, 0f),
-            end = Offset(headX, size.height),
-            strokeWidth = 2f
-        )
-    }
+        Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -1226,7 +1318,7 @@ private fun TrackLayerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp),
+            .height(24.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left Action Icons [eye] [lock]

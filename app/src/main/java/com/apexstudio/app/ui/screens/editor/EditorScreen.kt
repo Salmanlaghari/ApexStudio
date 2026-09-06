@@ -7,12 +7,15 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -60,6 +63,7 @@ import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -88,6 +92,17 @@ fun EditorScreen(
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
+
+    // Floating rails auto-hide state: hidden by default, tap video preview to reveal for 2s
+    var railsVisible by remember { mutableStateOf(false) }
+    var lastRailInteraction by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(railsVisible, lastRailInteraction) {
+        if (railsVisible) {
+            delay(2000)
+            railsVisible = false
+        }
+    }
 
     mediaPicker.registerLaunchers()
 
@@ -222,7 +237,14 @@ fun EditorScreen(
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 12.dp, vertical = 4.dp)
+                .clickable {
+                    railsVisible = true
+                    lastRailInteraction = System.currentTimeMillis()
+                }
         ) {
+            val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+            val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
+
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
                 resolution = state.selectedResolution,
@@ -230,6 +252,7 @@ fun EditorScreen(
                 filterIntensity = state.filterIntensity,
                 adjustments = state.adjustments,
                 playerError = state.playerError,
+                stickers = stickers,
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
@@ -248,26 +271,28 @@ fun EditorScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            LeftToolRail(
-                onEffects = { vm.openFxPanel() },
-                onFilters = { vm.openFilterPanel() },
-                onAdjust = { vm.openAdjustmentsPanel() },
-                onText = { vm.openTextPanel() },
-                onSticker = { vm.openStickerPanel() },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 8.dp)
-            )
+            if (railsVisible) {
+                LeftToolRail(
+                    onEffects = { vm.openFxPanel() },
+                    onFilters = { vm.openFilterPanel() },
+                    onAdjust = { vm.openAdjustmentsPanel() },
+                    onText = { vm.openTextPanel() },
+                    onSticker = { vm.openStickerPanel() },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 8.dp)
+                )
 
-            RightToolRail(
-                onAdd = { showAddMediaMenu = true },
-                onAudio = onAudio,
-                onRecord = { vm.openVoiceRecorder() },
-                onCamera = { vm.openCameraCapture() },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
-            )
+                RightToolRail(
+                    onAdd = { showAddMediaMenu = true },
+                    onAudio = onAudio,
+                    onRecord = { vm.openVoiceRecorder() },
+                    onCamera = { vm.openCameraCapture() },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 8.dp)
+                )
+            }
         }
 
         PlaybackControlBar(
@@ -310,7 +335,7 @@ fun EditorScreen(
         BottomNavBar(
             onMedia = { vm.openMediaLibrary() },
             onElements = { vm.openStickerPanel() },
-            onProject = { /* Open project panel */ },
+            onTools = { /* Open tools panel */ },
             onSettings = { /* Open settings */ }
         )
     }
@@ -726,6 +751,7 @@ fun VideoPreviewArea(
     filterIntensity: Float = 0f,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     playerError: String? = null,
+    stickers: List<StickerOverlay> = emptyList(),
     onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
@@ -779,6 +805,48 @@ fun VideoPreviewArea(
                         listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
                     )
                 )
+            }
+        }
+
+        // Draggable & Resizable Interactive Stickers
+        if (stickers.isNotEmpty()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val containerW = maxWidth
+                val containerH = maxHeight
+
+                for (sticker in stickers) {
+                    var offsetX by remember(sticker.id) { mutableStateOf(sticker.x) }
+                    var offsetY by remember(sticker.id) { mutableStateOf(sticker.y) }
+                    var scale by remember(sticker.id) { mutableStateOf(sticker.sizeScale) }
+
+                    Box(
+                        modifier = Modifier
+                            .offset(
+                                x = containerW * offsetX - 20.dp,
+                                y = containerH * offsetY - 20.dp
+                            )
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                rotationZ = sticker.rotationDeg
+                                alpha = sticker.opacity
+                            }
+                            .pointerInput(sticker.id) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(0.3f, 4f)
+                                    val newX = (offsetX + pan.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    val newY = (offsetY + pan.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                    offsetX = newX
+                                    offsetY = newY
+                                }
+                            }
+                    ) {
+                        Text(
+                            sticker.symbolOrUri,
+                            fontSize = 32.sp
+                        )
+                    }
+                }
             }
         }
 
@@ -1144,30 +1212,28 @@ fun TimelineTrackArea(
             .padding(horizontal = 10.dp, vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // First Row: Video Thumbnail Strip + Cover button + Add button
+        // First Row: Video Thumbnail Strip + Cover button (icon-only) + Add button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(38.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // "Cover" button
-            Row(
+            // Icon-only "Cover" button (pencil icon)
+            Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFF1F1F2E))
                     .clickable(onClick = onCover)
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = "Cover",
                     tint = Color.White,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(14.dp)
                 )
-                Text("Cover", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium)
             }
 
             Spacer(Modifier.width(6.dp))
@@ -1274,7 +1340,7 @@ fun TimelineTrackArea(
         val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
         val voiceLabel = voiceClip?.name ?: "Voice Over"
 
-        // Stacked Horizontal Layer Rows (4 Rows)
+        // Stacked Horizontal Layer Rows (4 Rows - Lock icon removed, only Eye icon remains)
         TrackLayerRow(
             barColor = Color(0xFF8B5CF6),
             icon = Icons.Default.TextFields,
@@ -1321,21 +1387,15 @@ private fun TrackLayerRow(
             .height(24.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Action Icons [eye] [lock]
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(end = 8.dp)
+        // Left Action Icon [eye] only (lock icon removed)
+        Box(
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .clickable { }
         ) {
             Icon(
                 imageVector = Icons.Default.Visibility,
                 contentDescription = "Toggle Visibility",
-                tint = Color(0xFF9CA3AF),
-                modifier = Modifier.size(16.dp)
-            )
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = "Lock Layer",
                 tint = Color(0xFF9CA3AF),
                 modifier = Modifier.size(16.dp)
             )
@@ -1480,7 +1540,7 @@ private data class EditToolItem(
 fun BottomNavBar(
     onMedia: () -> Unit = {},
     onElements: () -> Unit = {},
-    onProject: () -> Unit = {},
+    onTools: () -> Unit = {},
     onSettings: () -> Unit = {}
 ) {
     Row(
@@ -1495,7 +1555,7 @@ fun BottomNavBar(
     ) {
         NavItem("Media", Icons.Default.Movie, onMedia)
         NavItem("Elements", Icons.Default.Extension, onElements)
-        NavItem("Project", Icons.Default.Folder, onProject)
+        NavItem("Tools", Icons.Default.Build, onTools)
         NavItem("Settings", Icons.Default.Settings, onSettings)
     }
 }

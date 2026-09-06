@@ -253,6 +253,8 @@ fun EditorScreen(
                 adjustments = state.adjustments,
                 playerError = state.playerError,
                 stickers = stickers,
+                activeFxId = state.activeFxId,
+                fxIntensity = state.fxIntensity,
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
@@ -757,6 +759,8 @@ fun VideoPreviewArea(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     playerError: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
+    activeFxId: String? = null,
+    fxIntensity: Float = 0f,
     onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
@@ -769,7 +773,39 @@ fun VideoPreviewArea(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp)),
+            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
+            // Phase Live Filter: renderEffect on the OUTER Box instead
+            // of inside the AndroidView's graphicsLayer. The AndroidView
+            // modifier chain is rebuilt only when AndroidView itself
+            // composes; param changes (activeFilterId, filterIntensity,
+            // adjustments) don't reliably re-trigger the inner
+            // graphicsLayer's lambda because Compose caches modifiers
+            // between recompositions. Putting the graphicsLayer on the
+            // outer Box guarantees re-evaluation whenever VideoPreviewArea
+            // recomposes with new params.
+            .graphicsLayer {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val hasFilter = activeFilterId != null && filterIntensity > 0f
+                    val hasAdjust = !adjustments.isDefault
+                    val hasFx = activeFxId != null && fxIntensity > 0f
+                    if (hasFilter || hasAdjust || hasFx) {
+                        val cm = com.apexstudio.app.data.filter.FilterColorMatrix
+                            .getCombinedMatrix(
+                                filterId = activeFilterId,
+                                intensity = filterIntensity,
+                                adjustments = adjustments,
+                                fxId = activeFxId,
+                                fxIntensity = fxIntensity
+                            )
+                        val filter = android.graphics.ColorMatrixColorFilter(cm)
+                        renderEffect = android.graphics.RenderEffect
+                            .createColorFilterEffect(filter)
+                            .asComposeRenderEffect()
+                    } else {
+                        renderEffect = null
+                    }
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {
@@ -785,22 +821,7 @@ fun VideoPreviewArea(
                     view.player = exoPlayer
                     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                            if ((activeFilterId != null && filterIntensity > 0f) || !adjustments.isDefault) {
-                                val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                                    .getCombinedMatrix(activeFilterId, filterIntensity, adjustments)
-                                val filter = android.graphics.ColorMatrixColorFilter(cm)
-                                renderEffect = android.graphics.RenderEffect
-                                    .createColorFilterEffect(filter)
-                                    .asComposeRenderEffect()
-                            } else {
-                                renderEffect = null
-                            }
-                        }
-                    }
+                modifier = Modifier.fillMaxSize()
             )
         } else {
             // Placeholder video frame thumbnail render

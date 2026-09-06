@@ -353,15 +353,25 @@ object FilterColorMatrix {
     }
 
     /**
-     * Compute combined matrix for filter preset and VideoAdjustments.
+     * Compute combined matrix for filter preset, FX preset, and
+     * VideoAdjustments. The FX param is a best-effort colour-tint
+     * approximation — most FX presets (VHS, Glitch, Scanlines, etc.)
+     * need an OpenGL shader and cannot be expressed as a single
+     * ColorMatrix. For those, the live preview skips the FX tint
+     * while the export pipeline (FxGlEffect) applies the full
+     * shader-based effect. The presets that DO map to a colour
+     * matrix (chromatic, soft_blur as a brightness boost) are
+     * handled inline.
      */
     fun getCombinedMatrix(
         filterId: String?,
         intensity: Float,
-        adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments()
+        adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+        fxId: String? = null,
+        fxIntensity: Float = 0f
     ): FloatArray {
         val filterMatrix = AndroidColorMatrix(getInterpolatedMatrix(filterId, intensity))
-        if (adjustments.isDefault) {
+        if (adjustments.isDefault && fxId == null) {
             return filterMatrix.array
         }
 
@@ -415,6 +425,40 @@ object FilterColorMatrix {
 
         val finalMatrix = AndroidColorMatrix(filterMatrix)
         finalMatrix.postConcat(adjustMatrix)
+
+        // FX colour-tint approximation. fxIntensity is 0..1.
+        // Only FX presets that map cleanly to a colour matrix are
+        // handled here. Others are no-ops in preview; the export
+        // pipeline applies the full OpenGL effect.
+        if (fxId != null && fxIntensity > 0f) {
+            val fxClamped = fxIntensity.coerceIn(0f, 1f)
+            val fxMatrix = when (fxId) {
+                // Chromatic aberration → slight R/B channel offset to
+                // emulate colour-fringing tint at intensity.
+                "chromatic" -> AndroidColorMatrix(floatArrayOf(
+                    1f + 0.08f * fxClamped, 0f, 0.05f * fxClamped, 0f, 0f,
+                    0f, 1f, 0f, 0f, 0f,
+                    0.05f * fxClamped, 0f, 1f + 0.08f * fxClamped, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f
+                ))
+                // Soft blur → slight brightness drop + warm tint to
+                // emulate the diffusion feel. (Real blur needs GL.)
+                "soft_blur" -> AndroidColorMatrix(floatArrayOf(
+                    0.95f, 0f, 0f, 0f, 8f * fxClamped,
+                    0f, 0.95f, 0f, 0f, 6f * fxClamped,
+                    0f, 0f, 0.95f, 0f, 12f * fxClamped,
+                    0f, 0f, 0f, 1f, 0f
+                ))
+                // Vignette, VHS, Glitch, Film Grain, Pixelate,
+                // Scanlines need shader-based effects; no colour
+                // matrix approximation. Skip silently.
+                else -> null
+            }
+            if (fxMatrix != null) {
+                finalMatrix.postConcat(fxMatrix)
+            }
+        }
+
         return finalMatrix.array
     }
 

@@ -35,52 +35,8 @@ data class MediaClip(
     // inside the video frame so the preview (Compose layer) and the
     // export (TextOverlayGlEffect) render the text at exactly the
     // same relative position and size.
-    val textOverlays: List<TextOverlay> = emptyList(),
-    val stickers: List<StickerOverlay> = emptyList(),
-    val adjustments: VideoAdjustments = VideoAdjustments(),
-    val isFlippedHorizontal: Boolean = false,
-    val isFlippedVertical: Boolean = false,
-    val rotationAngle: Float = 0f
+    val textOverlays: List<TextOverlay> = emptyList()
 )
-
-@Serializable
-data class StickerOverlay(
-    val id: String = java.util.UUID.randomUUID().toString(),
-    val name: String = "Sticker",
-    val category: String = "Emoji",
-    val symbolOrUri: String = "🔥",
-    val x: Float = 0.5f,
-    val y: Float = 0.5f,
-    val sizeScale: Float = 1f,
-    val rotationDeg: Float = 0f,
-    val opacity: Float = 1f,
-    val startMs: Long = 0L,
-    val endMs: Long = Long.MAX_VALUE
-) {
-    fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
-}
-
-@Serializable
-data class VideoAdjustments(
-    val brightness: Float = 0f,      // -1..1
-    val contrast: Float = 1f,        // 0..2
-    val saturation: Float = 1f,      // 0..2
-    val exposure: Float = 0f,        // -1..1
-    val highlights: Float = 0f,      // -1..1
-    val shadows: Float = 0f,         // -1..1
-    val temperature: Float = 0f,     // -1..1
-    val tint: Float = 0f,            // -1..1
-    val sharpness: Float = 0f,       // 0..1
-    val fade: Float = 0f,            // 0..1
-    val vignette: Float = 0f,        // 0..1
-    val grain: Float = 0f            // 0..1
-) {
-    val isDefault: Boolean
-        get() = brightness == 0f && contrast == 1f && saturation == 1f &&
-                exposure == 0f && highlights == 0f && shadows == 0f &&
-                temperature == 0f && tint == 0f && sharpness == 0f &&
-                fade == 0f && vignette == 0f && grain == 0f
-}
 
 /**
  * A text overlay (caption / title) rendered on top of a video clip.
@@ -195,11 +151,7 @@ data class Project(
     // lastTransmissionTemplateId so the choice survives an app
     // restart.
     val lastTransitionType: String? = null,
-    val lastTransitionDurationMs: Long = 500L,
-    val stickers: List<StickerOverlay> = emptyList(),
-    val adjustments: VideoAdjustments = VideoAdjustments(),
-    val coverFrameMs: Long? = null,
-    val coverCustomUri: String? = null
+    val lastTransitionDurationMs: Long = 500L
 )
 
 @Serializable
@@ -376,4 +328,50 @@ data class ExportSettings(
 
 enum class ExportQuality(val label: String) {
     HIGH("High"), MEDIUM("Med"), LOW("Low")
+}
+
+@Serializable
+data class VideoAdjustments(
+    val brightness: Float = 0f,
+    val contrast: Float = 1f,
+    val saturation: Float = 1f,
+    val exposure: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val temperature: Float = 0f,
+    val tint: Float = 0f,
+    val sharpness: Float = 0f,
+    val fade: Float = 0f,
+    val vignette: Float = 0f,
+    val grain: Float = 0f
+) {
+    val isDefault: Boolean
+        get() = brightness == 0f &&
+                contrast == 1f &&
+                saturation == 1f &&
+                exposure == 0f &&
+                highlights == 0f &&
+                shadows == 0f &&
+                temperature == 0f &&
+                tint == 0f &&
+                sharpness == 0f &&
+                fade == 0f &&
+                vignette == 0f &&
+                grain == 0f
+}
+
+@Serializable
+data class StickerOverlay(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val symbolOrUri: String = "🔥",
+    val category: String = "Emoji",
+    val name: String = "Sticker",
+    val x: Float = 0.5f,
+    val y: Float = 0.5f,
+    val sizeScale: Float = 1f,
+    val rotationDeg: Float = 0f,
+    val startMs: Long = 0L,
+    val endMs: Long = Long.MAX_VALUE
+) {
+    fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 }

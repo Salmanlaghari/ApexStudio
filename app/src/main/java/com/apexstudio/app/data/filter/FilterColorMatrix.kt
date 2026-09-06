@@ -347,6 +347,54 @@ object FilterColorMatrix {
                 0f, 0f, 0f, 1f, 0f
             )
 
+            // Anime & Fantasy
+            "sakura_bloom" -> floatArrayOf(1.20f, 0.05f, 0.10f, 0f, 15f, 0.02f, 1.05f, 0.02f, 0f, 2f, 0.08f, 0.02f, 1.15f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
+            "makoto_sky" -> floatArrayOf(0.95f, 0.02f, 0.05f, 0f, -10f, 0.02f, 1.10f, 0.08f, 0f, 12f, 0.05f, 0.10f, 1.35f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
+            "spirited_green" -> floatArrayOf(1.00f, 0.08f, 0.02f, 0f, -5f, 0.05f, 1.30f, 0.05f, 0f, 30f, 0.02f, 0.05f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
+            "ghibli_warmth" -> floatArrayOf(1.25f, 0.08f, 0.02f, 0f, 22f, 0.06f, 1.15f, 0.02f, 0f, 16f, 0.02f, 0.02f, 0.90f, 0f, -10f, 0f, 0f, 0f, 1f, 0f)
+            "fantasy_violet" -> floatArrayOf(1.10f, 0.02f, 0.12f, 0f, 20f, 0.02f, 0.90f, 0.05f, 0f, -5f, 0.15f, 0.08f, 1.30f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
+            "sunlit_meadow" -> floatArrayOf(1.15f, 0.10f, 0.02f, 0f, 14f, 0.08f, 1.25f, 0.05f, 0f, 25f, 0.02f, 0.05f, 0.85f, 0f, -20f, 0f, 0f, 0f, 1f, 0f)
+            "celestial_glow" -> floatArrayOf(1.05f, 0.08f, 0.12f, 0f, 25f, 0.08f, 1.15f, 0.08f, 0f, 20f, 0.12f, 0.08f, 1.25f, 0f, 30f, 0f, 0f, 0f, 1f, 0f)
+            "twilight_aurora" -> floatArrayOf(0.85f, 0.05f, 0.15f, 0f, -12f, 0.05f, 1.20f, 0.10f, 0f, 20f, 0.12f, 0.08f, 1.25f, 0f, 32f, 0f, 0f, 0f, 1f, 0f)
+            "golden_chiharu" -> floatArrayOf(1.30f, 0.08f, 0.02f, 0f, 30f, 0.08f, 1.10f, 0.02f, 0f, 20f, 0.02f, 0.02f, 0.85f, 0f, -15f, 0f, 0f, 0f, 1f, 0f)
+            "cherry_dusk" -> floatArrayOf(1.20f, 0.02f, 0.10f, 0f, 26f, 0.05f, 0.95f, 0.05f, 0f, 0f, 0.08f, 0.05f, 1.10f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
+
+            // Vintage 90s & Nostalgia
+            "fuji_velvia_50" -> floatArrayOf(1.20f, 0.05f, 0.02f, 0f, 6f, 0.02f, 1.25f, 0.05f, 0f, 14f, 0.02f, 0.05f, 1.10f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
+            "kodachrome_64" -> floatArrayOf(1.25f, 0.06f, 0.02f, 0f, 16f, 0.04f, 1.10f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
+            "agfa_vista" -> floatArrayOf(1.10f, 0.04f, 0.02f, 0f, 10f, 0.04f, 1.15f, 0.04f, 0f, 15f, 0.02f, 0.04f, 1.20f, 0f, 5f, 0f, 0f, 0f, 1f, 0f)
+            "polaroid_sx70" -> floatArrayOf(1.15f, 0.05f, 0.02f, 0f, 20f, 0.04f, 0.95f, 0.02f, 0f, 8f, 0.02f, 0.02f, 0.85f, 0f, -15f, 0f, 0f, 0f, 1f, 0f)
+            "camcorder_90s" -> floatArrayOf(1.05f, 0.04f, 0.02f, 0f, 6f, 0.04f, 1.10f, 0.02f, 0f, 12f, 0.02f, 0.02f, 0.90f, 0f, -10f, 0f, 0f, 0f, 1f, 0f)
+            "seventies_sun" -> floatArrayOf(1.30f, 0.08f, 0.02f, 0f, 32f, 0.08f, 1.05f, 0.02f, 0f, 14f, 0.02f, 0.02f, 0.80f, 0f, -25f, 0f, 0f, 0f, 1f, 0f)
+            "cassette_faded" -> floatArrayOf(0.95f, 0.04f, 0.02f, 0f, 14f, 0.04f, 0.90f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.85f, 0f, 6f, 0f, 0f, 0f, 1f, 0f)
+            "indie_disposable" -> floatArrayOf(1.15f, 0.05f, 0.02f, 0f, 16f, 0.04f, 1.05f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.90f, 0f, -8f, 0f, 0f, 0f, 1f, 0f)
+            "lomography_red" -> floatArrayOf(1.35f, 0.02f, 0.02f, 0f, 38f, 0.02f, 0.90f, 0.02f, 0f, -12f, 0.02f, 0.02f, 0.95f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
+            "expired_film" -> floatArrayOf(1.05f, 0.02f, 0.05f, 0f, 6f, 0.02f, 0.95f, 0.05f, 0f, -6f, 0.06f, 0.04f, 1.15f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
+
+            // Dramatic & HDR Punch
+            "hdr_punch" -> floatArrayOf(1.35f, 0.02f, 0.02f, 0f, -12f, 0.02f, 1.35f, 0.02f, 0f, -12f, 0.02f, 0.02f, 1.35f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
+            "hyper_clarity" -> floatArrayOf(1.25f, 0.02f, 0.02f, 0f, 0f, 0.02f, 1.25f, 0.02f, 0f, 0f, 0.02f, 0.02f, 1.25f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)
+            "shadow_crush" -> floatArrayOf(1.20f, 0.02f, 0.02f, 0f, -30f, 0.02f, 1.20f, 0.02f, 0f, -30f, 0.02f, 0.02f, 1.20f, 0f, -30f, 0f, 0f, 0f, 1f, 0f)
+            "crimson_impact" -> floatArrayOf(1.40f, 0.02f, 0.02f, 0f, 26f, 0.02f, 0.90f, 0.02f, 0f, -12f, 0.02f, 0.02f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
+            "deep_abyss" -> floatArrayOf(0.85f, 0.02f, 0.05f, 0f, -20f, 0.02f, 0.95f, 0.08f, 0f, -10f, 0.05f, 0.08f, 1.30f, 0f, 32f, 0f, 0f, 0f, 1f, 0f)
+            "volcanic_ember" -> floatArrayOf(1.40f, 0.05f, 0.02f, 0f, 38f, 0.04f, 1.05f, 0.02f, 0f, 6f, 0.02f, 0.02f, 0.75f, 0f, -25f, 0f, 0f, 0f, 1f, 0f)
+            "thunderstorm_sky" -> floatArrayOf(0.90f, 0.02f, 0.05f, 0f, -15f, 0.02f, 1.00f, 0.06f, 0f, 0f, 0.05f, 0.08f, 1.25f, 0f, 26f, 0f, 0f, 0f, 1f, 0f)
+            "metallic_bronze" -> floatArrayOf(1.25f, 0.05f, 0.02f, 0f, 20f, 0.05f, 1.15f, 0.02f, 0f, 14f, 0.02f, 0.02f, 0.85f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
+            "neon_overdrive" -> floatArrayOf(1.30f, 0.02f, 0.12f, 0f, 12f, 0.02f, 0.80f, 0.05f, 0f, -20f, 0.12f, 0.05f, 1.40f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
+            "electric_lime" -> floatArrayOf(0.90f, 0.10f, 0.02f, 0f, -12f, 0.05f, 1.40f, 0.05f, 0f, 38f, 0.02f, 0.05f, 0.85f, 0f, -20f, 0f, 0f, 0f, 1f, 0f)
+
+            // Nordic & Cold Minimal
+            "oslo_winter" -> floatArrayOf(0.90f, 0.02f, 0.08f, 0f, -6f, 0.02f, 0.95f, 0.05f, 0f, 0f, 0.08f, 0.05f, 1.25f, 0f, 30f, 0f, 0f, 0f, 1f, 0f)
+            "fjord_mist" -> floatArrayOf(0.85f, 0.04f, 0.08f, 0f, -12f, 0.04f, 1.05f, 0.06f, 0f, 10f, 0.08f, 0.06f, 1.20f, 0f, 25f, 0f, 0f, 0f, 1f, 0f)
+            "arctic_frost" -> floatArrayOf(0.90f, 0.02f, 0.12f, 0f, -10f, 0.02f, 1.00f, 0.08f, 0f, 6f, 0.10f, 0.08f, 1.35f, 0f, 45f, 0f, 0f, 0f, 1f, 0f)
+            "scandi_clean" -> floatArrayOf(1.05f, 0.04f, 0.04f, 0f, 16f, 0.04f, 1.05f, 0.04f, 0f, 16f, 0.04f, 0.04f, 1.10f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
+            "glacier_blue" -> floatArrayOf(0.80f, 0.02f, 0.12f, 0f, -20f, 0.02f, 1.00f, 0.08f, 0f, 6f, 0.12f, 0.08f, 1.40f, 0f, 45f, 0f, 0f, 0f, 1f, 0f)
+            "pale_fog" -> floatArrayOf(0.95f, 0.04f, 0.04f, 0f, 20f, 0.04f, 0.95f, 0.04f, 0f, 20f, 0.04f, 0.04f, 1.05f, 0f, 26f, 0f, 0f, 0f, 1f, 0f)
+            "midnight_sun_nordic" -> floatArrayOf(1.20f, 0.05f, 0.02f, 0f, 20f, 0.04f, 1.05f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.95f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
+            "pine_needle" -> floatArrayOf(0.90f, 0.06f, 0.02f, 0f, -10f, 0.04f, 1.25f, 0.04f, 0f, 26f, 0.02f, 0.04f, 0.95f, 0f, -6f, 0f, 0f, 0f, 1f, 0f)
+            "coastal_rock" -> floatArrayOf(0.92f, 0.02f, 0.04f, 0f, 6f, 0.02f, 0.92f, 0.04f, 0f, 6f, 0.04f, 0.04f, 1.05f, 0f, 14f, 0f, 0f, 0f, 1f, 0f)
+            "nordic_dusk" -> floatArrayOf(0.95f, 0.02f, 0.10f, 0f, 10f, 0.02f, 0.90f, 0.05f, 0f, 0f, 0.10f, 0.05f, 1.20f, 0f, 35f, 0f, 0f, 0f, 1f, 0f)
+
             // Original or Unknown fallback
             else -> IDENTITY
         }

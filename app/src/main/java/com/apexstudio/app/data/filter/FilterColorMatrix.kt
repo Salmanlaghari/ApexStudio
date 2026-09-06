@@ -353,6 +353,72 @@ object FilterColorMatrix {
     }
 
     /**
+     * Compute combined matrix for filter preset and VideoAdjustments.
+     */
+    fun getCombinedMatrix(
+        filterId: String?,
+        intensity: Float,
+        adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments()
+    ): FloatArray {
+        val filterMatrix = AndroidColorMatrix(getInterpolatedMatrix(filterId, intensity))
+        if (adjustments.isDefault) {
+            return filterMatrix.array
+        }
+
+        val adjustMatrix = AndroidColorMatrix()
+
+        // 1. Contrast
+        if (adjustments.contrast != 1f) {
+            val c = adjustments.contrast
+            val cm = AndroidColorMatrix(floatArrayOf(
+                c, 0f, 0f, 0f, 128f * (1f - c),
+                0f, c, 0f, 0f, 128f * (1f - c),
+                0f, 0f, c, 0f, 128f * (1f - c),
+                0f, 0f, 0f, 1f, 0f
+            ))
+            adjustMatrix.postConcat(cm)
+        }
+
+        // 2. Brightness & Exposure
+        val expScale = Math.pow(2.0, adjustments.exposure.toDouble()).toFloat()
+        val totalBrightness = (adjustments.brightness + (expScale - 1f) * 0.5f) * 255f
+        if (totalBrightness != 0f || expScale != 1f) {
+            val bm = AndroidColorMatrix(floatArrayOf(
+                expScale, 0f, 0f, 0f, totalBrightness,
+                0f, expScale, 0f, 0f, totalBrightness,
+                0f, 0f, expScale, 0f, totalBrightness,
+                0f, 0f, 0f, 1f, 0f
+            ))
+            adjustMatrix.postConcat(bm)
+        }
+
+        // 3. Saturation
+        if (adjustments.saturation != 1f) {
+            val sm = AndroidColorMatrix()
+            sm.setSaturation(adjustments.saturation)
+            adjustMatrix.postConcat(sm)
+        }
+
+        // 4. Temperature & Tint
+        if (adjustments.temperature != 0f || adjustments.tint != 0f) {
+            val rGain = 1f + (adjustments.temperature * 0.2f)
+            val bGain = 1f - (adjustments.temperature * 0.2f)
+            val gGain = 1f - (adjustments.tint * 0.2f)
+            val tm = AndroidColorMatrix(floatArrayOf(
+                rGain, 0f, 0f, 0f, 0f,
+                0f, gGain, 0f, 0f, 0f,
+                0f, 0f, bGain, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            ))
+            adjustMatrix.postConcat(tm)
+        }
+
+        val finalMatrix = AndroidColorMatrix(filterMatrix)
+        finalMatrix.postConcat(adjustMatrix)
+        return finalMatrix.array
+    }
+
+    /**
      * Compute interpolated matrix based on filter intensity (0.0 to 1.0).
      */
     fun getInterpolatedMatrix(filterId: String?, intensity: Float): FloatArray {

@@ -68,21 +68,21 @@ fun AdjustPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(14.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     "Adjustments",
                     color = ApexPalette.TextPrimary,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
                 if (!adjustments.isDefault) {
@@ -90,48 +90,48 @@ fun AdjustPanel(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
                             .background(ApexPalette.NeonCyan.copy(alpha = 0.2f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
                     ) {
-                        Text("ACTIVE", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text("ACTIVE", color = ApexPalette.NeonCyan, fontSize = 8.sp, fontWeight = FontWeight.Black)
                     }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(ApexPalette.BgElevated)
                         .clickable { onResetAll() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(12.dp))
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(11.dp))
                         Text("Reset All", color = ApexPalette.NeonPink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(26.dp)
                         .clip(CircleShape)
                         .background(ApexPalette.BgElevated)
                         .clickable { onClose() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary, modifier = Modifier.size(14.dp))
                 }
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Selected Adjustment Slider + Value
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -141,13 +141,13 @@ fun AdjustPanel(
                 Text(
                     activeItem.label,
                     color = ApexPalette.NeonCyan,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     activeItem.formatValue(currentValue),
                     color = ApexPalette.TextPrimary,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Black
                 )
             }
@@ -161,16 +161,17 @@ fun AdjustPanel(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,
                     inactiveTrackColor = ApexPalette.BgElevated
-                )
+                ),
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Adjustment Categories Strip
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(ADJUST_ITEMS) { item ->
                 val isSelected = item.id == selectedAdjustId
@@ -180,7 +181,7 @@ fun AdjustPanel(
 
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
                             else ApexPalette.BgElevated
@@ -190,23 +191,23 @@ fun AdjustPanel(
                             if (isSelected) ApexPalette.NeonCyan
                             else if (isModified) ApexPalette.NeonAmber
                             else ApexPalette.BorderGlass,
-                            RoundedCornerShape(10.dp)
+                            RoundedCornerShape(8.dp)
                         )
                         .clickable { selectedAdjustId = item.id }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             item.label,
                             color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             item.formatValue(valForDisplay),
                             color = if (isModified) ApexPalette.NeonAmber else ApexPalette.TextTertiary,
-                            fontSize = 9.sp
+                            fontSize = 8.sp
                         )
                     }
                 }

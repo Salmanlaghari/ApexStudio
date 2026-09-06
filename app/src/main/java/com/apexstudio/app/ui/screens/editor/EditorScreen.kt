@@ -319,7 +319,12 @@ fun EditorScreen(
             onAddMedia = { showAddMediaMenu = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(135.dp)
+                // Reference image shows all 4 layer rows (purple
+                // text, blue fx, green Dreamscape waveform, purple
+                // Voice Over waveform) fully visible. 135dp clipped
+                // the bottom one to half-height. Bumped to 200dp so
+                // the Cover row + 4 layer rows all fit comfortably.
+                .height(200.dp)
         )
 
         BottomEditToolbar(
@@ -970,6 +975,30 @@ fun VideoPreviewArea(
                 modifier = Modifier.size(18.dp)
             )
         }
+
+        // Top-Right: "fx" filter chip — reference image shows a small
+        // pill above the fullscreen icon labelled "fx" in purple to
+        // mirror the fx badge on the Cinematic Glow track row. Tapping
+        // it opens the filter panel for quick access.
+        if (activeFilterId != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 64.dp, end = 12.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "fx",
+                    color = Color(0xFF8B5CF6),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
     }
 }
 
@@ -1219,20 +1248,32 @@ fun TimelineTrackArea(
                 .height(38.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon-only "Cover" button (pencil icon)
-            Box(
+            // "Cover" button (pencil icon + label) — reference image shows
+            // both, so the previous icon-only rendering from PR #71 is
+            // restored here. The spec for PR #71 said icon-only but the
+            // actual reference UI keeps the "Cover" label.
+            Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFF1F1F2E))
                     .clickable(onClick = onCover)
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = "Cover",
                     tint = Color.White,
                     modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Cover",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
 
@@ -1384,7 +1425,10 @@ private fun TrackLayerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(24.dp),
+            // Reference image rows are ~50dp tall — was 24dp which
+            // collapsed the waveform bars and made the coloured bars
+            // look like thin strips.
+            .height(50.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left Action Icon [eye] only (lock icon removed)
@@ -1435,19 +1479,23 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-                    // Simulated waveform lines
+                    // Simulated waveform lines — reference image shows
+                    // ~32 bars filling the row width; was 16 bars at
+                    // 20dp height. Bumped to match the new 50dp row.
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
                     ) {
-                        repeat(16) { index ->
+                        repeat(32) { index ->
                             val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
                             Box(
                                 modifier = Modifier
                                     .width(2.dp)
-                                    .height(20.dp * heightFraction)
-                                    .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(1.dp))
+                                    .height(34.dp * heightFraction)
+                                    .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
                             )
                         }
                     }
@@ -1498,16 +1546,21 @@ fun BottomEditToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(Color(0xFF0F0F17))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .background(Color(0xFF0F0F17)),
+        verticalAlignment = Alignment.CenterVertically,
+        // Evenly distribute items across the row width so all 7 fit
+        // without clipping. Earlier used `Arrangement.SpaceBetween`
+        // which doesn't apply inside LazyRow + fixed width per item,
+        // causing the first item's "Edit" label to be clipped to "it"
+        // when total item width exceeded viewport width.
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(items) { item ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(52.dp)
+                    .weight(1f)
                     .clickable(onClick = item.onClick)
             ) {
                 Icon(
@@ -1521,7 +1574,9 @@ fun BottomEditToolbar(
                     text = item.label,
                     color = if (item.isActive) Color(0xFF8B5CF6) else Color(0xFF9CA3AF),
                     fontSize = 10.sp,
-                    fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }

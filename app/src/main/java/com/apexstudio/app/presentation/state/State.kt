@@ -50,6 +50,18 @@ data class EditorState(
     // the speed of the currently selected clip; the speed panel also
     // lets the user set it independently for quick time-lapse previews.
     val playbackSpeed: Float = 1f,
+    // Phase H: slow-motion + reverse playback + intro/outro + colour combo.
+    // All default to off so existing project files round-trip safely.
+    val slowMotionPanelOpen: Boolean = false,
+    val slowMotionSpeed: Float = 0.5f,
+    val playbackDirection: Int = 1,             // +1 forward, -1 reverse
+    val reversePanelOpen: Boolean = false,
+    val introClipId: String? = null,            // applied at start of project
+    val introPanelOpen: Boolean = false,
+    val outroClipId: String? = null,            // applied at end of project
+    val outroPanelOpen: Boolean = false,
+    val activeColorComboId: String? = null,
+    val colorComboPanelOpen: Boolean = false,
     // Set to true while the Audio Mixer bottom sheet is open.
     val audioMixerOpen: Boolean = false,
     // Set to true while the Speed Ramping bottom sheet is open.

@@ -253,11 +253,8 @@ fun EditorScreen(
                 adjustments = state.adjustments,
                 playerError = state.playerError,
                 stickers = stickers,
-<<<<<<< HEAD
-=======
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
->>>>>>> origin/main
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
@@ -319,25 +316,17 @@ fun EditorScreen(
         TimelineTrackArea(
             state = state,
             onScrub = { seekPlayerAndState(it) },
-<<<<<<< HEAD
-            onSelectClip = { vm.selectClip(it) },
-=======
             onSelectClip = { vm.selectClipAndRefresh(it) },
->>>>>>> origin/main
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
             modifier = Modifier
                 .fillMaxWidth()
-<<<<<<< HEAD
-                .height(135.dp)
-=======
                 // Reference image shows all 4 layer rows (purple
                 // text, blue fx, green Dreamscape waveform, purple
                 // Voice Over waveform) fully visible. 135dp clipped
                 // the bottom one to half-height. Bumped to 200dp so
                 // the Cover row + 4 layer rows all fit comfortably.
                 .height(200.dp)
->>>>>>> origin/main
         )
 
         BottomEditToolbar(
@@ -770,11 +759,8 @@ fun VideoPreviewArea(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     playerError: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
-<<<<<<< HEAD
-=======
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
->>>>>>> origin/main
     onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
@@ -782,8 +768,6 @@ fun VideoPreviewArea(
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
 
-<<<<<<< HEAD
-=======
     // Phase Live Filter (reliability fix): remember a fresh graphicsLayer
     // modifier per filter value. The rememberKey is a string built from
     // every input the renderEffect lambda reads. When the key changes,
@@ -822,18 +806,13 @@ fun VideoPreviewArea(
         } else Modifier
     }
 
->>>>>>> origin/main
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
-<<<<<<< HEAD
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp)),
-=======
             .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
             .then(liveFilterModifier),
->>>>>>> origin/main
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {
@@ -843,30 +822,6 @@ fun VideoPreviewArea(
                         useController = false
                         resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                         player = exoPlayer
-<<<<<<< HEAD
-                    }
-                },
-                update = { view ->
-                    view.player = exoPlayer
-                    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                            if ((activeFilterId != null && filterIntensity > 0f) || !adjustments.isDefault) {
-                                val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                                    .getCombinedMatrix(activeFilterId, filterIntensity, adjustments)
-                                val filter = android.graphics.ColorMatrixColorFilter(cm)
-                                renderEffect = android.graphics.RenderEffect
-                                    .createColorFilterEffect(filter)
-                                    .asComposeRenderEffect()
-                            } else {
-                                renderEffect = null
-                            }
-                        }
-                    }
-=======
                     }
                 },
                 update = { view ->
@@ -874,7 +829,6 @@ fun VideoPreviewArea(
                     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 },
                 modifier = Modifier.fillMaxSize()
->>>>>>> origin/main
             )
         } else {
             // Placeholder video frame thumbnail render
@@ -1049,147 +1003,6 @@ fun VideoPreviewArea(
                 modifier = Modifier.size(18.dp)
             )
         }
-<<<<<<< HEAD
-    }
-}
-
-// Left Tool Rail floating over video preview
-@Composable
-fun LeftToolRail(
-    onEffects: () -> Unit = {},
-    onFilters: () -> Unit = {},
-    onAdjust: () -> Unit = {},
-    onText: () -> Unit = {},
-    onSticker: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(vertical = 8.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        RailItem(Icons.Default.AutoAwesome, "Effects", onEffects)
-        RailItem(Icons.Default.FilterAlt, "Filters", onFilters)
-        RailItem(Icons.Default.Tune, "Adjust", onAdjust)
-        RailItem(Icons.Default.TextFields, "Text", onText)
-        RailItem(Icons.Default.EmojiEmotions, "Sticker", onSticker)
-    }
-}
-
-// Right Tool Rail floating over video preview
-@Composable
-fun RightToolRail(
-    onAdd: () -> Unit = {},
-    onAudio: () -> Unit = {},
-    onRecord: () -> Unit = {},
-    onCamera: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(vertical = 8.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        RailItem(Icons.Default.Add, "Add", onAdd)
-        RailItem(Icons.Default.MusicNote, "Audio", onAudio)
-        RailItem(Icons.Default.Mic, "Record", onRecord)
-        RailItem(Icons.Default.CameraAlt, "Camera", onCamera)
-    }
-}
-
-@Composable
-private fun RailItem(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(44.dp)
-            .clickable(onClick = onClick)
-            .padding(vertical = 2.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = Color.White,
-            modifier = Modifier.size(18.dp)
-        )
-        Text(
-            text = label,
-            color = Color(0xFFD1D5DB),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-// === 3. PLAYBACK CONTROL BAR ===
-@Composable
-fun PlaybackControlBar(
-    currentTimeMs: Long = 4370L,
-    totalDurationMs: Long = 18690L,
-    isPlaying: Boolean = false,
-    onTogglePlay: () -> Unit = {},
-    onPrev: () -> Unit = {},
-    onNext: () -> Unit = {},
-    onFullscreenToggle: () -> Unit = {},
-    onSettings: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Left: Time counter
-        Text(
-            text = "${TimeFormat.formatMs(currentTimeMs)} / ${TimeFormat.formatMs(totalDurationMs)}",
-            color = Color(0xFF9CA3AF),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp
-        )
-
-        // Center Playback Icons
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.SkipPrevious,
-                contentDescription = "Previous Clip",
-                tint = Color.White,
-                modifier = Modifier
-                    .size(22.dp)
-                    .clickable(onClick = onPrev)
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .clickable(onClick = onTogglePlay),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.Black,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-=======
 
         // Top-Right: "fx" filter chip — reference image shows a small
         // pill above the fullscreen icon labelled "fx" in purple to
@@ -1353,7 +1166,6 @@ fun PlaybackControlBar(
                 )
             }
 
->>>>>>> origin/main
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "Next Clip",
@@ -1464,28 +1276,18 @@ fun TimelineTrackArea(
                 .height(38.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-<<<<<<< HEAD
-            // Icon-only "Cover" button (pencil icon)
-            Box(
-=======
             // "Cover" button (pencil icon + label) — reference image shows
             // both, so the previous icon-only rendering from PR #71 is
             // restored here. The spec for PR #71 said icon-only but the
             // actual reference UI keeps the "Cover" label.
             Row(
->>>>>>> origin/main
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFF1F1F2E))
                     .clickable(onClick = onCover)
-<<<<<<< HEAD
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-=======
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
->>>>>>> origin/main
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -1493,8 +1295,6 @@ fun TimelineTrackArea(
                     tint = Color.White,
                     modifier = Modifier.size(14.dp)
                 )
-<<<<<<< HEAD
-=======
                 Text(
                     text = "Cover",
                     color = Color.White,
@@ -1503,7 +1303,6 @@ fun TimelineTrackArea(
                     maxLines = 1,
                     softWrap = false
                 )
->>>>>>> origin/main
             }
 
             Spacer(Modifier.width(6.dp))
@@ -1654,14 +1453,10 @@ private fun TrackLayerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-<<<<<<< HEAD
-            .height(24.dp),
-=======
             // Reference image rows are ~50dp tall — was 24dp which
             // collapsed the waveform bars and made the coloured bars
             // look like thin strips.
             .height(50.dp),
->>>>>>> origin/main
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left Action Icon [eye] only (lock icon removed)
@@ -1712,15 +1507,6 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-<<<<<<< HEAD
-                    // Simulated waveform lines
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        repeat(16) { index ->
-=======
                     // Simulated waveform lines — reference image shows
                     // ~32 bars filling the row width; was 16 bars at
                     // 20dp height. Bumped to match the new 50dp row.
@@ -1732,18 +1518,12 @@ private fun TrackLayerRow(
                             .padding(end = 8.dp)
                     ) {
                         repeat(32) { index ->
->>>>>>> origin/main
                             val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
                             Box(
                                 modifier = Modifier
                                     .width(2.dp)
-<<<<<<< HEAD
-                                    .height(20.dp * heightFraction)
-                                    .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(1.dp))
-=======
                                     .height(34.dp * heightFraction)
                                     .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
->>>>>>> origin/main
                             )
                         }
                     }
@@ -1794,12 +1574,6 @@ fun BottomEditToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-<<<<<<< HEAD
-            .background(Color(0xFF0F0F17))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-=======
             .background(Color(0xFF0F0F17)),
         verticalAlignment = Alignment.CenterVertically,
         // Evenly distribute items across the row width so all 7 fit
@@ -1814,20 +1588,15 @@ fun BottomEditToolbar(
         // outer spacedBy distributes the leftover space.
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
->>>>>>> origin/main
     ) {
         items(items) { item ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-<<<<<<< HEAD
-                    .width(52.dp)
-=======
                     // 7 items at 44dp + 6 gaps at 4dp + 24dp horizontal
                     // padding = 308 + 24 + 24 = 356dp, fits a 360dp
                     // viewport with 4dp headroom. No horizontal scroll.
                     .width(44.dp)
->>>>>>> origin/main
                     .clickable(onClick = item.onClick)
             ) {
                 Icon(
@@ -1841,13 +1610,9 @@ fun BottomEditToolbar(
                     text = item.label,
                     color = if (item.isActive) Color(0xFF8B5CF6) else Color(0xFF9CA3AF),
                     fontSize = 10.sp,
-<<<<<<< HEAD
-                    fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal
-=======
                     fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
                     softWrap = false
->>>>>>> origin/main
                 )
             }
         }

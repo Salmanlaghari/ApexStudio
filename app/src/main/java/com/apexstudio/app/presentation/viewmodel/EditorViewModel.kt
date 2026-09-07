@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 
 class EditorViewModel(
     private val repo: MediaRepository = MediaRepository,
@@ -479,10 +480,12 @@ class EditorViewModel(
                         videoUri = playableUri,
                         timeMs = clip.trimStartMs
                     )
-                    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
-                    val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateDynamicThumbnails(ctx, firstFrame, manifest)
-                    _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                    if (firstFrame != null) {
+                        val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                        val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                            .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                        _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                    }
                 } catch (e: Exception) {
                     Log.w("EditorViewModel", "Per-filter thumbnail generation failed", e)
                 }
@@ -722,10 +725,12 @@ class EditorViewModel(
                 val firstFrame = VideoThumbnailExtractor.extractFrame(
                     context = ctx, videoUri = playableUri, timeMs = clip.trimStartMs
                 )
-                val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
-                val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                    .generateDynamicThumbnails(ctx, firstFrame, manifest)
-                _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                if (firstFrame != null) {
+                    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                    val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                        .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                    _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                }
             } catch (e: Exception) {
                 Log.w("EditorViewModel", "regenerateFilterThumbnails failed", e)
             }

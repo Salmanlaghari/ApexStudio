@@ -1539,6 +1539,34 @@ fun TimelineTrackArea(
     modifier: Modifier = Modifier
 ) {
     val clips = state.project?.clips ?: emptyList()
+    val videoClips = clips.filter {
+        it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
+    }
+
+    // PR C: pxPerMs is shared with the per-clip VideoClipBlock so a
+    // clip's width is consistent with the playhead scrub math used
+    // by the TimelineRuler above.
+    val pxPerMs = state.zoomLevel.coerceAtLeast(0.1f) * 0.12f
+
+    // Kick off TimelineMediaCache extractions for every clip in the
+    // project. The cache is content-keyed, so repeat observe() calls
+    // with the same clips + pxPerMs are no-ops.
+    timelineMediaCache.observe(clips, pxPerMs)
+    val cacheMap by timelineMediaCache.state.collectAsStateWithLifecycle()
+
+    // Build a [trackStartMs, trackLengthMs] map for every clip so
+    // each VideoClipBlock knows its time-axis position. The current
+    // UI shows a single lane (V1 only); a follow-up can split into
+    // V1/V2 lanes for VIDEO vs OVERLAY clips.
+    val blockGeometry = remember(clips, pxPerMs) {
+        var runningMs = 0L
+        clips.map { clip ->
+            val trackStart = runningMs
+            val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+            runningMs += trackLen
+            Triple(clip, trackStart, trackLen)
+        }
+    }
 
     Column(
         modifier = modifier

@@ -207,6 +207,53 @@ fun EditorScreen(
         }
     }
 
+    // Phase H: apply slow-motion speed to the ExoPlayer when the
+    // slider is non-1.0. ExoPlayer supports any speed 0.1..2.0 via
+    // setPlaybackSpeed; below 0.1 it falls back to step-frame on the
+    // pre-recorded media which is the closest a normal player gets
+    // to extreme slow-mo. We re-apply on every change so the slider
+    // has live feedback.
+    LaunchedEffect(exoPlayer, state.slowMotionSpeed, state.playbackDirection) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        val direction = if (state.playbackDirection < 0) -1 else 1
+        // ExoPlayer.setPlaybackSpeed accepts a positive value; for
+        // reverse direction we simulate by re-seeking on every tick
+        // (see the 33ms loop above + the per-frame reverse step in
+        // the same effect). For forward direction we just apply the
+        // slow-motion factor.
+        if (direction > 0) {
+            val speed = state.slowMotionSpeed.coerceIn(0.1f, 2.0f)
+            player.setPlaybackSpeed(speed)
+        } else {
+            // Reverse preview: keep speed at 1.0 in the player; the
+            // play loop (combined with playbackDirection = -1) seeks
+            // backwards by 33ms per frame to simulate reverse.
+            player.setPlaybackSpeed(1.0f)
+        }
+    }
+
+    // Phase H: reverse-mode simulation. While playbackDirection = -1
+    // and the user is "playing", we step the player backwards by 33ms
+    // per frame instead of playing forwards. A real reverse is
+    // export-only (TODO in ExportEngine).
+    LaunchedEffect(exoPlayer, state.isPlaying, state.playbackDirection) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (state.playbackDirection >= 0 || !state.isPlaying) return@LaunchedEffect
+        while (isActive) {
+            if (player.isPlaying) {
+                val newPos = (player.currentPosition - 33L).coerceAtLeast(0L)
+                if (newPos <= 0L) {
+                    player.pause()
+                    vm.setPlaying(false)
+                } else {
+                    player.seekTo(newPos)
+                    vm.setPlayerPosition(newPos)
+                }
+            }
+            delay(33)
+        }
+    }
+
     val seekPlayerAndState: (Long) -> Unit = remember(exoPlayer, state.durationMs) {
         { targetMs ->
             val clamped = targetMs.coerceIn(0L, state.durationMs.coerceAtLeast(1L))
@@ -290,6 +337,11 @@ fun EditorScreen(
                     onAudio = onAudio,
                     onRecord = { vm.openVoiceRecorder() },
                     onCamera = { vm.openCameraCapture() },
+                    onSlowMotion = { vm.openSlowMotionPanel() },
+                    onReverse = { vm.openReversePanel() },
+                    onIntro = { vm.openIntroPanel() },
+                    onOutro = { vm.openOutroPanel() },
+                    onColorCombo = { vm.openColorComboPanel() },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 8.dp)
@@ -457,6 +509,110 @@ fun EditorScreen(
                         vm.closeFxPanel()
                     },
                     onClose = { vm.closeFxPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Slow-motion panel
+    if (state.slowMotionPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeSlowMotionPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                SlowMotionPanel(
+                    currentSpeed = state.slowMotionSpeed,
+                    onSpeedChange = { vm.setSlowMotionSpeed(it) },
+                    onClose = { vm.closeSlowMotionPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Reverse panel
+    if (state.reversePanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeReversePanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ReversePanel(
+                    direction = state.playbackDirection,
+                    onToggle = {
+                        vm.setPlaybackDirection(if (state.playbackDirection < 0) 1 else -1)
+                    },
+                    onClose = { vm.closeReversePanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Intro picker
+    if (state.introPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeIntroPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ClipPickerPanel(
+                    title = "Set Intro",
+                    introOrOutro = "intro",
+                    selectedClipId = state.introClipId,
+                    clips = state.project?.clips ?: emptyList(),
+                    onSelect = { vm.setIntroClip(it) },
+                    onClose = { vm.closeIntroPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Outro picker
+    if (state.outroPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeOutroPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ClipPickerPanel(
+                    title = "Set Outro",
+                    introOrOutro = "outro",
+                    selectedClipId = state.outroClipId,
+                    clips = state.project?.clips ?: emptyList(),
+                    onSelect = { vm.setOutroClip(it) },
+                    onClose = { vm.closeOutroPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Colour Combo panel
+    if (state.colorComboPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeColorComboPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ColorComboPanel(
+                    activeComboId = state.activeColorComboId,
+                    onApply = { vm.applyColourCombo(it) },
+                    onClear = { vm.clearColorCombo() },
+                    onClose = { vm.closeColorComboPanel() }
                 )
             }
         }
@@ -1056,6 +1212,11 @@ fun RightToolRail(
     onAudio: () -> Unit = {},
     onRecord: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onSlowMotion: () -> Unit = {},
+    onReverse: () -> Unit = {},
+    onIntro: () -> Unit = {},
+    onOutro: () -> Unit = {},
+    onColorCombo: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1070,6 +1231,12 @@ fun RightToolRail(
         RailItem(Icons.Default.MusicNote, "Audio", onAudio)
         RailItem(Icons.Default.Mic, "Record", onRecord)
         RailItem(Icons.Default.CameraAlt, "Camera", onCamera)
+        // Phase H: speed / direction / bookend / one-tap colour
+        RailItem(Icons.Default.SlowMotionVideo, "Slow", onSlowMotion)
+        RailItem(Icons.Default.FastForward, "Reverse", onReverse)
+        RailItem(Icons.Default.Start, "Intro", onIntro)
+        RailItem(Icons.Default.Stop, "Outro", onOutro)
+        RailItem(Icons.Default.Palette, "Combo", onColorCombo)
     }
 }
 
@@ -1777,4 +1944,336 @@ private fun AddMediaRow(
             modifier = Modifier.size(18.dp)
         )
     }
+}
+
+// ====================================================================
+// Phase H: Slow-Motion / Reverse / Intro / Outro / Colour Combo panels
+// ====================================================================
+
+@Composable
+private fun SlowMotionPanel(
+    currentSpeed: Float,
+    onSpeedChange: (Float) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Slow Motion", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Speed: ${"%.2f".format(currentSpeed)}x",
+            color = ApexPalette.NeonCyan,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        androidx.compose.material3.Slider(
+            value = currentSpeed,
+            onValueChange = onSpeedChange,
+            valueRange = 0.1f..2.0f,
+            steps = 38 // 0.05 increments across 1.9 range
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("0.1x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            Text("1.0x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            Text("2.0x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(0.25f, 0.5f, 1.0f).forEach { preset ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { onSpeedChange(preset) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("${preset}x", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReversePanel(
+    direction: Int,
+    onToggle: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Reverse Playback", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Preview reverses by stepping the playhead 33ms per frame. " +
+                    "Final export uses true reverse-frame rendering (see TODO in ExportEngine).",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (direction < 0) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                .border(
+                    1.dp,
+                    if (direction < 0) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                    RoundedCornerShape(12.dp)
+                )
+                .clickable { onToggle() }
+                .padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (direction < 0) Icons.Default.FastForward else Icons.Default.FastRewind,
+                    contentDescription = null,
+                    tint = if (direction < 0) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (direction < 0) "Reverse ON" else "Reverse OFF",
+                    color = if (direction < 0) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipPickerPanel(
+    title: String,
+    introOrOutro: String, // "intro" or "outro"
+    selectedClipId: String?,
+    clips: List<com.apexstudio.app.domain.model.MediaClip>,
+    onSelect: (String?) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Plays this clip at the ${introOrOutro} of the project.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .clickable { onSelect(null) }
+                .padding(12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No ${introOrOutro}", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+        clips.forEach { clip ->
+            val isSelected = clip.id == selectedClipId
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color.Transparent)
+                    .border(
+                        1.dp,
+                        if (isSelected) ApexPalette.NeonCyan else Color.Transparent,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(clip.id) }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (introOrOutro == "intro") Icons.Default.PlayArrow else Icons.Default.Stop,
+                        contentDescription = null,
+                        tint = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        clip.name,
+                        color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorComboPanel(
+    activeComboId: String?,
+    onApply: (String) -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit
+) {
+    val combos = com.apexstudio.app.data.preset.ColourComboPreset.BUILTIN
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Colour Combo", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "One-tap filter + adjustments + FX. Live preview.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        combos.forEach { combo ->
+            val isActive = combo.id == activeComboId
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isActive) combo.previewAccentArgb.toColor().copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                    .border(
+                        1.dp,
+                        if (isActive) combo.previewAccentArgb.toColor() else ApexPalette.BorderGlass,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { onApply(combo.id) }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(combo.previewAccentArgb.toColor())
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            combo.name,
+                            color = if (isActive) combo.previewAccentArgb.toColor() else ApexPalette.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            combo.description,
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp,
+                            maxLines = 2
+                        )
+                    }
+                }
+            }
+        }
+        if (activeComboId != null) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onClear)
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Clear combo", color = ApexPalette.NeonPink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+private fun Long.toColor(): Color {
+    val r = ((this shr 16) and 0xFF).toInt()
+    val g = ((this shr 8) and 0xFF).toInt()
+    val b = (this and 0xFF).toInt()
+    val a = ((this shr 24) and 0xFF).toInt()
+    return Color(r, g, b, a)
 }

@@ -510,6 +510,77 @@ class EditorViewModel(
     fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
     fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
 
+    // Phase H: slow-motion + reverse + intro/outro + colour combo.
+
+    // Slow-motion: per-project playback speed; 0.25..2.0 typical. Applied
+    // to the main ExoPlayer in EditorScreen.body so preview runs at
+    // the selected speed.
+    fun openSlowMotionPanel() = _state.update { it.copy(slowMotionPanelOpen = true) }
+    fun closeSlowMotionPanel() = _state.update { it.copy(slowMotionPanelOpen = false) }
+    fun setSlowMotionSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.1f, 2.0f)
+        _state.update { it.copy(slowMotionSpeed = clamped) }
+    }
+
+    // Reverse: ExoPlayer's PlaybackParameters doesn't natively support
+    // negative direction. For preview, toggling reverse flips a
+    // playbackDirection state field; EditorScreen's LaunchedEffect on
+    // playbackDirection restarts the player with seekTo(currentPosition)
+    // and a stepped seek-back loop to simulate reverse (33ms steps).
+    // True frame-reversed playback is documented as export-only via
+    // a TODO(PHASE_H_EXPORT_REVERSE) in ExportEngine.kt.
+    fun openReversePanel() = _state.update { it.copy(reversePanelOpen = true) }
+    fun closeReversePanel() = _state.update { it.copy(reversePanelOpen = false) }
+    fun setPlaybackDirection(direction: Int) {
+        val clamped = if (direction < 0) -1 else 1
+        _state.update { it.copy(playbackDirection = clamped) }
+    }
+
+    // Intro / Outro: reference a clip id on the Project; preview layer
+    // could use these to mark a clip as "intro" or "outro" for the
+    // project. Persistence handled in the JSON project file via
+    // Project.introClipId / outroClipId (added separately).
+    fun openIntroPanel() = _state.update { it.copy(introPanelOpen = true) }
+    fun closeIntroPanel() = _state.update { it.copy(introPanelOpen = false) }
+    fun setIntroClip(clipId: String?) = _state.update {
+        it.copy(introClipId = clipId, project = it.project?.copy(introClipId = clipId))
+    }
+    fun openOutroPanel() = _state.update { it.copy(outroPanelOpen = true) }
+    fun closeOutroPanel() = _state.update { it.copy(outroPanelOpen = false) }
+    fun setOutroClip(clipId: String?) = _state.update {
+        it.copy(outroClipId = clipId, project = it.project?.copy(outroClipId = clipId))
+    }
+
+    // Colour Combo: single-tap apply of bundled filter + adjustments +
+    // FX. Updates state the same way the individual panels do, so the
+    // live preview RenderEffect picks it up immediately.
+    fun openColorComboPanel() = _state.update { it.copy(colorComboPanelOpen = true) }
+    fun closeColorComboPanel() = _state.update { it.copy(colorComboPanelOpen = false) }
+    fun applyColourCombo(comboId: String) {
+        val combo = com.apexstudio.app.data.preset.ColourComboPreset.byId(comboId) ?: return
+        _state.update { s ->
+            s.copy(
+                activeFilterId = combo.filterId,
+                filterIntensity = combo.filterIntensity,
+                activeFxId = combo.fxId,
+                fxIntensity = combo.fxIntensity,
+                adjustments = combo.adjustments,
+                activeColorComboId = combo.id,
+                colorComboPanelOpen = false
+            )
+        }
+    }
+    fun clearColorCombo() = _state.update {
+        it.copy(
+            activeColorComboId = null,
+            activeFilterId = null,
+            filterIntensity = 0f,
+            activeFxId = null,
+            fxIntensity = 0f,
+            adjustments = com.apexstudio.app.domain.model.VideoAdjustments()
+        )
+    }
+
     fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
         pushUndo()
         _state.update { s ->

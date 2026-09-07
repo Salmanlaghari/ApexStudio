@@ -150,6 +150,22 @@ class ExportEngine(private val context: Context) {
                 // the work is wiring each enabled effect into a
                 // matching audio processor chain. Track for a follow-up
                 // so audio preview ↔ export stay in sync.
+                //
+                // TODO(PHASE_H_EXPORT_REVERSE): Reverse playback is
+                // preview-only — EditorScreen.kt simulates reverse by
+                // stepping the playhead 33ms per frame. True
+                // frame-reversed export needs a frame-extractor that
+                // decodes the source MediaItem, reverses the frame
+                // order, and writes the reversed track via Media3
+                // Transformer. Document for a follow-up so reverse
+                // survives an export.
+                //
+                // TODO(PHASE_H_EXPORT_INTRO_OUTRO): Intro and Outro
+                // markers on the Project (introClipId / outroClipId)
+                // are currently only metadata. Final export should
+                // prepend the intro clip to the timeline and append
+                // the outro clip on the export — wiring through the
+                // EditedMediaItem sequence is the natural follow-up.
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
                 // 1. Crop

@@ -61,10 +61,10 @@ fun FilterPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         // Header
         Row(
@@ -75,7 +75,7 @@ fun FilterPanel(
                 "Filters",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
             )
             Icon(
@@ -83,26 +83,25 @@ fun FilterPanel(
                 contentDescription = "Close filters",
                 tint = ApexPalette.NeonCyan,
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .clickable { onClose() }
-                    .padding(4.dp)
+                    .padding(3.dp)
             )
         }
-        Spacer(Modifier.height(10.dp))
-
+        Spacer(Modifier.height(6.dp))
         // Category chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             manifest.categories.forEach { c ->
                 val selected = c.id == activeCategory
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
                             else ApexPalette.BgElevated
@@ -110,25 +109,25 @@ fun FilterPanel(
                         .border(
                             1.dp,
                             if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                            RoundedCornerShape(10.dp)
+                            RoundedCornerShape(8.dp)
                         )
                         .clickable { onCategoryChange(c.id) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         c.name,
                         color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Filter chips row (Original + each preset in the active category)
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             item {
                 val customOrig = com.apexstudio.app.data.filter.FilterThumbnailAssetHandler.getCustomThumbnail(LocalContext.current, null)
@@ -152,34 +151,40 @@ fun FilterPanel(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Intensity slider — disabled when no filter is active
-        Text(
-            "Intensity",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Slider(
-            value = intensity,
-            onValueChange = onIntensityChange,
-            valueRange = 0f..1f,
-            enabled = activeFilterId != null,
-            colors = SliderDefaults.colors(
-                thumbColor = ApexPalette.NeonCyan,
-                activeTrackColor = ApexPalette.NeonCyan,
-                inactiveTrackColor = ApexPalette.BorderGlass
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            "${(intensity * 100).toInt()}%",
-            color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.End)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Intensity",
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(8.dp))
+            Slider(
+                value = intensity,
+                onValueChange = onIntensityChange,
+                valueRange = 0f..1f,
+                enabled = activeFilterId != null,
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonCyan,
+                    activeTrackColor = ApexPalette.NeonCyan,
+                    inactiveTrackColor = ApexPalette.BorderGlass
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "${(intensity * 100).toInt()}%",
+                color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -195,20 +200,20 @@ private fun FilterChip(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(80.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .width(68.dp)
+            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 2.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(76.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(64.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(colors))
                 .border(
-                    2.dp,
+                    1.5.dp,
                     if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                    RoundedCornerShape(10.dp)
+                    RoundedCornerShape(8.dp)
                 )
         ) {
             // Real 1:1 filter preview (video frame + this LUT applied) or

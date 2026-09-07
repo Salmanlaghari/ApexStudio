@@ -23,6 +23,7 @@ data class EditorState(
     // sees feedback during the 1-3s startup / seek-while-paused gap
     // instead of a black screen. Cleared the moment STATE_READY fires.
     val isBuffering: Boolean = false,
+    val playerError: String? = null,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val audioWaveform: FloatArray = FloatArray(0),

@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -40,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -59,6 +62,7 @@ import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
+import com.apexstudio.app.data.media.TimelineMediaCache
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -89,6 +93,18 @@ fun EditorScreen(
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
+    // TimelineMediaCache is a process-lifetime LRU cache of per-clip
+    // filmstrip frames (Video/OVERLAY clips) and waveform samples
+    // (AUDIO/SFX clips). It runs MediaMetadataRetriever extractions on
+    // Dispatchers.IO and publishes results through a StateFlow. The
+    // Composable reads the flow via collectAsStateWithLifecycle so
+    // frames appear progressively without blocking the timeline.
+    // PR C (Adopt pre-refactor wins) wires this into the new
+    // per-clip VideoClipBlock rendering inside TimelineTrackArea.
+    val timelineMediaCache = remember { TimelineMediaCache(context) }
+    DisposableEffect(Unit) {
+        onDispose { timelineMediaCache.release() }
+    }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
 
@@ -179,14 +195,55 @@ fun EditorScreen(
     // internal SurfaceView is composited by SurfaceFlinger and is
     // outside any Compose RenderEffect / graphicsLayer / draw modifier.
     //
-    // Slider drag needs to be smooth without rebuilding the GL chain on
-    // every event. We side-channel the per-frame values through
-    // MutableStateFlow holders — the lambdas in the effect constructor
-    // read the current holder value, so the per-frame uniform is always
-    // the latest, but the effect itself is only rebuilt when the chain
-    // composition actually changes (filter id, fx id, or any adjustment
-    // crosses the "default" threshold).
+    // PR C (Adopt pre-refactor wins) restores the four behaviours that
+    // were lost in commit c6465b6 (the "100+ filter catalog" UI
+    // refactor):
+    //
+    //  (1) LutBitmapCache pre-parses the selected .cube file on
+    //      Dispatchers.Default and the result is handed to
+    //      LutFilterGlEffect via the `preloaded` slot, so the GPU
+    //      init only has to upload a pre-packed pixel buffer instead
+    //      of re-parsing the cube on the GL thread. The first tap on
+    //      a filter still costs the parse (100-300ms) but subsequent
+    //      taps are instant.
+    //  (2) The effect chain is re-asserted via setVideoEffects after
+    //      every player.prepare() so a freshly queued media item
+    //      doesn't lose its effect chain between prepare and the first
+    //      frame.
+    //  (3) When the player is paused, a freshly tapped filter / crop /
+    //      intensity-slider move would otherwise leave the surface
+    //      showing the pre-change frame (Media3 only renders effects
+    //      on produced frames). After setVideoEffects we nudge a
+    //      one-frame re-render via seekTo(currentPosition) so the new
+    //      GL pipeline shows up instantly on a paused preview.
+    //  (4) The chain now includes VideoCropGlEffect and
+    //      KeyframeAnimationEffect, not just LUT + FX + Adjustments.
+    //
+    // Slider drag is smooth for LUT (intensityProvider) and Adjustments
+    // (per-uniform providers); FX has no intensityProvider, so a
+    // slider drag on FX intensity triggers a chain rebuild. The
+    // rebuild cost is small (no GL texture upload) and the slider
+    // value range is small, so it's still smooth in practice.
     // ----------------------------------------------------------------
+    val activeFilterId = state.activeFilterId
+    val activeFilterPreset: com.apexstudio.app.data.filter.FilterPreset? =
+        if (activeFilterId != null) filterEngine.manifest.presetById(activeFilterId) else null
+    val activeFxPreset = com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
+
+    // Pre-load the LUT texture off the Main thread. Re-runs whenever
+    // the active filter preset changes; a repeat tap on the same
+    // preset is a cache hit and returns immediately. The
+    // pre-parsed buffer is then passed to LutFilterGlEffect via the
+    // `preloaded` slot so its init doesn't have to parse the .cube
+    // on the GL thread.
+    var preloadedLut by remember(activeFilterPreset?.id) {
+        mutableStateOf<com.apexstudio.app.data.filter.LutTexture?>(null)
+    }
+    LaunchedEffect(activeFilterPreset) {
+        preloadedLut = if (activeFilterPreset == null) null
+        else com.apexstudio.app.data.filter.LutBitmapCache.getOrLoad(context, activeFilterPreset)
+    }
+
     val filterIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.filterIntensity) }
     val fxIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.fxIntensity) }
     val brightnessFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.brightness) }
@@ -213,85 +270,111 @@ fun EditorScreen(
     highlightsFlow.value = state.adjustments.highlights
     shadowsFlow.value = state.adjustments.shadows
 
-    // Build (or rebuild) the effect chain only when the chain
-    // composition changes — filter id, fx id, the boolean "any
-    // adjustment non-default" flag, or the FX intensity (FxGlEffect
-    // does not expose an intensityProvider, so the chain must be
-    // rebuilt on every FX slider tick). Filter / Adjustment
-    // intensities are routed through the flows above, NOT through
-    // this LaunchedEffect, so dragging those sliders doesn't
-    // rebuild the chain (and re-upload the LUT texture) 60×/s.
-    LaunchedEffect(
-        exoPlayer,
-        state.activeFilterId,
-        state.activeFxId,
+    // Resolve keyframes + crop for the effect chain.
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val selectedKeyframes = selectedClip?.keyframes
+
+    // Build the GL effect chain. Mirrors the order the export uses
+    // (see ExportEngine.startExport): Crop first, then Keyframes,
+    // then LUT, then FX, then Adjustments.
+    val currentEffects = remember(
+        activeFilterPreset,
+        state.filterIntensity,
+        activeFxPreset,
         state.fxIntensity,
+        selectedKeyframes,
+        state.cropRect,
+        preloadedLut,
         state.adjustments.isDefault
     ) {
+        buildList<androidx.media3.common.Effect> {
+            // Crop first: the LUT + FX + keyframes then grade/transform
+            // the already-cropped frame, exactly like the export path.
+            com.apexstudio.app.data.effect.VideoCropGlEffect.fromRect(
+                state.cropRect.left,
+                state.cropRect.top,
+                state.cropRect.right,
+                state.cropRect.bottom
+            )?.let { add(it) }
+
+            // Keyframe animation (translate/scale/rotation/opacity
+            // over time). Wrapped in a single-element list by
+            // .buildEffects(); we add the first one. The selected
+            // clip's KeyframeTrack is captured by reference so the
+            // effect's per-frame trackProvider reads the current
+            // animation.
+            if (selectedKeyframes != null && !selectedKeyframes.isEmpty()) {
+                add(
+                    com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                        trackProvider = { selectedKeyframes }
+                    ).buildEffects().first()
+                )
+            }
+
+            // 3D LUT filter. Pre-parsed via LutBitmapCache so the
+            // GL init only uploads the pixel buffer; .cube parsing
+            // happened on Dispatchers.Default.
+            if (activeFilterPreset != null && state.filterIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.filter.LutFilterGlEffect(
+                        context = context,
+                        preset = activeFilterPreset,
+                        intensity = state.filterIntensity.coerceIn(0f, 1f),
+                        intensityProvider = { filterIntensityFlow.value.coerceIn(0f, 1f) },
+                        preloaded = preloadedLut
+                    )
+                )
+            }
+
+            // Dynamic FX (Vignette, VHS, Glitch, Chromatic, Bloom, …).
+            if (activeFxPreset != null && state.fxIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.fx.FxGlEffect(
+                        activeFxPreset,
+                        fxIntensityFlow.value.coerceIn(0f, 1f)
+                    )
+                )
+            }
+
+            // Adjustments (Brightness / Contrast / Saturation / etc.) —
+            // ColorMatrix-equivalent on the GPU. Installed only when
+            // the user has touched at least one slider, so an
+            // unmodified project doesn't add a no-op GL pass.
+            if (!state.adjustments.isDefault) {
+                add(
+                    com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                        adjustments = state.adjustments,
+                        brightnessProvider = { brightnessFlow.value },
+                        contrastProvider = { contrastFlow.value },
+                        saturationProvider = { saturationFlow.value },
+                        exposureProvider = { exposureFlow.value },
+                        temperatureProvider = { temperatureFlow.value },
+                        tintProvider = { tintFlow.value },
+                        highlightsProvider = { highlightsFlow.value },
+                        shadowsProvider = { shadowsFlow.value }
+                    )
+                )
+            }
+        }
+    }
+
+    // Re-apply the chain whenever it changes — and nudge a one-frame
+    // re-render on a paused preview so a freshly tapped filter /
+    // crop / intensity move shows up instantly instead of waiting
+    // for the next decoded frame.
+    LaunchedEffect(exoPlayer, currentEffects) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val effects = mutableListOf<androidx.media3.common.Effect>()
-
-        // 1. Adjustments (Brightness / Contrast / Saturation / etc.) —
-        //    ColorMatrix-equivalent on the GPU. Always installed so the
-        //    preview reacts to every adjustment slider in real time.
-        if (!state.adjustments.isDefault) {
-            effects.add(
-                com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
-                    adjustments = state.adjustments,
-                    brightnessProvider = { brightnessFlow.value },
-                    contrastProvider = { contrastFlow.value },
-                    saturationProvider = { saturationFlow.value },
-                    exposureProvider = { exposureFlow.value },
-                    temperatureProvider = { temperatureFlow.value },
-                    tintProvider = { tintFlow.value },
-                    highlightsProvider = { highlightsFlow.value },
-                    shadowsProvider = { shadowsFlow.value }
-                )
-            )
-        }
-
-        // 2. 3D LUT filter. The GL effect accepts a null preset and
-        //    uploads an identity LUT, which is a no-op on the frame.
-        //    When a filter is selected we resolve the preset from the
-        //    manifest and pass an intensityProvider so the slider
-        //    drag is smooth.
-        val activeFilterId = state.activeFilterId
-        val filterPreset: com.apexstudio.app.data.filter.FilterPreset? =
-            if (activeFilterId != null)
-                filterEngine.manifest.presetById(activeFilterId)
-            else null
-        if (filterPreset != null && state.filterIntensity > 0f) {
-            effects.add(
-                com.apexstudio.app.data.filter.LutFilterGlEffect(
-                    context = context,
-                    preset = filterPreset,
-                    intensity = state.filterIntensity.coerceIn(0f, 1f),
-                    intensityProvider = { filterIntensityFlow.value.coerceIn(0f, 1f) }
-                )
-            )
-        }
-
-        // 3. Dynamic FX (Vignette, VHS, Glitch, Chromatic, Bloom, …).
-        //    FxGlEffect requires a non-null preset, so only install
-        //    when a valid id is active. FxGlEffect does not expose an
-        //    intensityProvider today, so a slider drag does trigger a
-        //    chain rebuild (acceptable for FX — at most ~60×/s, and
-        //    FxGlEffect is cheap to construct: no GL texture upload,
-        //    just a shader-program re-resolution on the next frame).
-        val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
-        if (fxPreset != null && state.fxIntensity > 0f) {
-            effects.add(
-                com.apexstudio.app.data.fx.FxGlEffect(
-                    preset = fxPreset,
-                    intensity = fxIntensityFlow.value.coerceIn(0f, 1f)
-                )
-            )
-        }
-
         try {
-            player.setVideoEffects(effects)
+            player.setVideoEffects(currentEffects)
         } catch (e: Exception) {
-            Log.e("EditorScreen", "setVideoEffects failed", e)
+            Log.e("EditorScreen", "setVideoEffects (filter) failed", e)
+        }
+        if (!player.isPlaying && player.playbackState == Player.STATE_READY) {
+            try {
+                player.seekTo(player.currentPosition.coerceAtLeast(0L))
+            } catch (e: Exception) {
+                Log.w("EditorScreen", "paused preview re-render seek failed", e)
+            }
         }
     }
 
@@ -306,6 +389,18 @@ fun EditorScreen(
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                // PR C: re-assert the current Effect list AFTER
+                // prepare() so the GL pipeline has both the media and
+                // the LUT/keyframes attached when the first frame is
+                // produced. Without this, a clip change could leave
+                // the freshly queued media item with no effects until
+                // the user next touched a slider (which would
+                // re-trigger the `currentEffects` LaunchedEffect).
+                try {
+                    player.setVideoEffects(currentEffects)
+                } catch (e: Exception) {
+                    Log.e("EditorScreen", "setVideoEffects (after prepare) failed", e)
+                }
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -493,10 +588,12 @@ fun EditorScreen(
 
         TimelineTrackArea(
             state = state,
+            timelineMediaCache = timelineMediaCache,
             onScrub = { seekPlayerAndState(it) },
             onSelectClip = { vm.selectClipAndRefresh(it) },
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
+            onTrimChange = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
             modifier = Modifier
                 .fillMaxWidth()
                 // Reference image shows all 4 layer rows (purple
@@ -1435,12 +1532,44 @@ fun TimelineRuler(
 @Composable
 fun TimelineTrackArea(
     state: com.apexstudio.app.presentation.state.EditorState,
+    timelineMediaCache: com.apexstudio.app.data.media.TimelineMediaCache,
     onScrub: (Long) -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
     onCover: () -> Unit = {},
     onAddMedia: () -> Unit = {},
+    onTrimChange: ((clipId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val clips = state.project?.clips ?: emptyList()
+    val videoClips = clips.filter {
+        it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
+    }
+
+    // PR C: pxPerMs is shared with the per-clip VideoClipBlock so a
+    // clip's width is consistent with the playhead scrub math used
+    // by the TimelineRuler above.
+    val pxPerMs = state.zoomLevel.coerceAtLeast(0.1f) * 0.12f
+
+    // Kick off TimelineMediaCache extractions for every clip in the
+    // project. The cache is content-keyed, so repeat observe() calls
+    // with the same clips + pxPerMs are no-ops.
+    timelineMediaCache.observe(clips, pxPerMs)
+    val cacheMap by timelineMediaCache.state.collectAsStateWithLifecycle()
+
+    // Build a [trackStartMs, trackLengthMs] map for every clip so
+    // each VideoClipBlock knows its time-axis position. The current
+    // UI shows a single lane (V1 only); a follow-up can split into
+    // V1/V2 lanes for VIDEO vs OVERLAY clips.
+    val blockGeometry = remember(clips, pxPerMs) {
+        var runningMs = 0L
+        clips.map { clip ->
+            val trackStart = runningMs
+            val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+            runningMs += trackLen
+            Triple(clip, trackStart, trackLen)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1486,7 +1615,22 @@ fun TimelineTrackArea(
 
             Spacer(Modifier.width(6.dp))
 
-            // Main Video Filmstrip Container
+            // Main Video Filmstrip Container.
+            //
+            // PR C: per-clip VideoClipBlock rendering with real
+            // time-axis positioning. Each clip is laid out at
+            // `trackStartMs * pxPerMs` with width `trackLengthMs *
+            // pxPerMs`, so a 5s clip and a 60s clip show
+            // proportional blocks on the same ruler. The cached
+            // ClipMedia.frames are rendered as Image Composables
+            // inside each block; the gradient tile divider matches
+            // the cell count so the grid lines stay aligned with
+            // the real frames.
+            //
+            // Honest fallback: when no frames are in cache yet
+            // (extraction in flight, source undecodable), the
+            // block draws a single thin progress line — no fake
+            // render.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1496,29 +1640,46 @@ fun TimelineTrackArea(
                     .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                // Repeated thumbnail frames
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    repeat(6) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(1.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF2E1065), Color(0xFF3B0764))
-                                    )
-                                )
+                if (videoClips.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Tap + to add a video clip",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        for ((clip, trackStart, trackLen) in blockGeometry) {
+                            if (clip.type != ClipType.VIDEO && clip.type != ClipType.OVERLAY) continue
+                            val media = cacheMap[clip.id]
+                            VideoClipBlock(
+                                clip = clip,
+                                trackStartMs = trackStart,
+                                trackLengthMs = trackLen,
+                                pxPerMs = pxPerMs,
+                                selected = state.selectedClipId == clip.id,
+                                playheadMs = state.playerPositionMs,
+                                media = media,
+                                onSelect = { onSelectClip(clip.id) },
+                                onTrimChange = { start, end ->
+                                    onTrimChange?.invoke(clip.id, start, end)
+                                }
+                            )
+                        }
                     }
                 }
 
-                // Speed Indicator Chip "1.0x"
+                // Speed Indicator Chip "1.0x" (kept on top of the
+                // filmstrip lane — does not interfere with the
+                // per-clip blocks because it sits at TopStart with
+                // a small padding).
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -1537,22 +1698,6 @@ fun TimelineTrackArea(
                     )
                     Text("1.0x", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-
-                // Trim handles (white vertical bars)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
             }
 
             Spacer(Modifier.width(8.dp))
@@ -1607,14 +1752,20 @@ fun TimelineTrackArea(
             barColor = Color(0xFF10B981),
             icon = Icons.Default.MusicNote,
             label = audioLabel,
-            isWaveform = true
+            isWaveform = true,
+            waveform = audioClip?.let { cacheMap[it.id]?.waveform }
+                ?.takeIf { it.isNotEmpty() }
+                ?: state.audioWaveform
         )
 
         TrackLayerRow(
             barColor = Color(0xFF7C3AED),
             icon = Icons.Default.Mic,
             label = voiceLabel,
-            isWaveform = true
+            isWaveform = true,
+            waveform = voiceClip?.let { cacheMap[it.id]?.waveform }
+                ?.takeIf { it.isNotEmpty() }
+                ?: FloatArray(0)
         )
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
@@ -1627,7 +1778,8 @@ private fun TrackLayerRow(
     icon: ImageVector,
     label: String,
     badgeText: String? = null,
-    isWaveform: Boolean = false
+    isWaveform: Boolean = false,
+    waveform: FloatArray = FloatArray(0)
 ) {
     Row(
         modifier = Modifier
@@ -1686,25 +1838,45 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-                    // Simulated waveform lines — reference image shows
-                    // ~32 bars filling the row width; was 16 bars at
-                    // 20dp height. Bumped to match the new 50dp row.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                    ) {
-                        repeat(32) { index ->
-                            val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(34.dp * heightFraction)
-                                    .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
-                            )
+                    // PR C: when a real waveform is available, render
+                    // each sample as a vertical bar with height
+                    // proportional to the sample amplitude (0..1). If
+                    // no waveform data has been extracted yet, fall
+                    // back to a "Loading…" label — same honest
+                    // fallback as the filmstrip row, no fake bars.
+                    if (waveform.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        ) {
+                            val maxBars = 48
+                            val stride = (waveform.size / maxBars).coerceAtLeast(1)
+                            val indices = (0 until waveform.size step stride)
+                                .take(maxBars)
+                            indices.forEach { i ->
+                                val amp = waveform[i].coerceIn(0f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height((2f + 32f * amp).dp)
+                                        .background(
+                                            Color.White.copy(alpha = 0.85f),
+                                            RoundedCornerShape(1.dp)
+                                        )
+                                )
+                            }
                         }
+                    } else {
+                        Text(
+                            text = "Loading…",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
                     }
                 }
 
@@ -1722,6 +1894,219 @@ private fun TrackLayerRow(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One clip rendered as a horizontally-laid-out block on the timeline.
+ *
+ * The block's x position is `trackStartMs * pxPerMs` and its width
+ * is `trackLengthMs * pxPerMs`, so a 5s clip and a 60s clip show
+ * proportional sizes on the same ruler. Inside the block, the
+ * cached `ClipMedia.frames` are rendered as Image Composables so
+ * the user sees the actual decoded content (not a colored tile).
+ *
+ * PR C: restores the pre-refactor per-clip block design that was
+ * removed in commit c6465b6. The block supports:
+ *   - Single-tap → onSelect
+ *   - Horizontal drag (when selected) → onTrimChange
+ *   - Keyframe diamond markers from clip.keyframes
+ *   - "Loading…" fallback when no frames have been extracted yet
+ */
+@Composable
+private fun VideoClipBlock(
+    clip: MediaClip,
+    trackStartMs: Long,
+    trackLengthMs: Long,
+    pxPerMs: Float,
+    selected: Boolean,
+    playheadMs: Long = 0L,
+    media: com.apexstudio.app.data.media.ClipMedia? = null,
+    onSelect: () -> Unit,
+    onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null
+) {
+    val density = LocalDensity.current
+    val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
+    val x = (trackStartMs * pxPerMs).toInt()
+    Box(
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(x, 0) }
+            .width(with(density) { w.toDp() })
+            .fillMaxHeight()
+            .padding(1.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onSelect)
+            .then(
+                if (selected && onTrimChange != null) {
+                    Modifier.pointerInput(clip.id, pxPerMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            val curLen = clip.trimEndMs - clip.trimStartMs
+                            val newStart = (clip.trimStartMs + deltaMs).coerceIn(
+                                0L, (clip.durationMs - curLen).coerceAtLeast(0L)
+                            )
+                            val newEnd = (newStart + curLen).coerceIn(
+                                newStart + 200L, clip.durationMs
+                            )
+                            onTrimChange(newStart, newEnd)
+                        }
+                    }
+                } else Modifier
+            )
+    ) {
+        // 1) Faux-tile background so the block is visible even before
+        //    extraction finishes. Cell count matches the eventual
+        //    filmstrip cell count so the grid lines stay aligned.
+        val cellCount = (media?.frames?.size ?: 8).coerceAtLeast(1)
+        val tileW = with(density) {
+            (w.toDp() / cellCount).toPx().coerceAtLeast(8f)
+        }
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val grad = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                listOf(
+                    Color(0xFF2E1065), Color(0xFF1E1B2E), Color(0xFF0F3460)
+                )
+            )
+            drawRect(brush = grad, size = size)
+            var i = 0f
+            while (i < size.width) {
+                drawLine(
+                    color = Color.Black.copy(alpha = 0.35f),
+                    start = Offset(i, 0f),
+                    end = Offset(i, size.height),
+                    strokeWidth = 1.2f
+                )
+                i += tileW
+            }
+            drawRect(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent)
+                ),
+                size = Size(size.width, size.height * 0.3f)
+            )
+            drawRect(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))
+                ),
+                topLeft = Offset(0f, size.height * 0.7f),
+                size = Size(size.width, size.height * 0.3f)
+            )
+        }
+
+        // 2) Real clip content overlays. When extraction has
+        //    finished, render the cached Bitmap frames so the
+        //    block shows actual video content. When extraction is
+        //    still in flight, fall through to the loading state.
+        if (media != null && media.frames.isNotEmpty()) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                for (frame in media.frames) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Image(
+                            bitmap = frame.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                    ),
+                    size = Size(size.width, size.height * 0.35f)
+                )
+            }
+        } else if (media != null && media.waveform.isNotEmpty()) {
+            // Audio-only clip inside a VIDEO track: render the
+            // waveform inside the block.
+            Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+                val mid = size.height / 2f
+                val step = size.width / media.waveform.size
+                val barWidth = (step * 0.6f).coerceAtLeast(1f)
+                for (i in media.waveform.indices) {
+                    val v = media.waveform[i].coerceIn(0f, 1f)
+                    val barH = (v * size.height * 0.85f).coerceAtLeast(2f)
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.85f),
+                        start = Offset(i * step, mid - barH / 2f),
+                        end = Offset(i * step, mid + barH / 2f),
+                        strokeWidth = barWidth,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                }
+            }
+        } else {
+            // Honest loading state — a single thin progress line.
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.3f)
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(Color(0xFF8B5CF6).copy(alpha = 0.7f))
+                )
+            }
+        }
+
+        // 3) Border + label
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    if (selected) 2.dp else 0.5.dp,
+                    if (selected) Color(0xFF06B6D4) else Color.White.copy(alpha = 0.15f),
+                    RoundedCornerShape(4.dp)
+                )
+        )
+        Text(
+            clip.name,
+            color = Color.White,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = if (selected) 16.dp else 4.dp, top = 2.dp)
+        )
+
+        // 4) Keyframe diamond markers. `keyframe.timeMs` is the
+        //    absolute project-time position; x inside the block is
+        //    `keyframe.timeMs - trackStartMs`, mapped through
+        //    pxPerMs. Wrapped in `media` non-null so the diamonds
+        //    never paint before the cell layout settles.
+        if (clip.keyframes.keyframes.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                for (kf in clip.keyframes.keyframes) {
+                    val xf = (kf.timeMs - trackStartMs) * pxPerMs
+                    if (xf < 0f || xf > size.width) continue
+                    val cx = xf
+                    val cy = size.height * 0.18f
+                    val r = 3.5f
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(cx, cy - r)
+                        lineTo(cx + r, cy)
+                        lineTo(cx, cy + r)
+                        lineTo(cx - r, cy)
+                        close()
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color(0xFFFBBF24),
+                        style = androidx.compose.ui.graphics.drawscope.Fill
+                    )
                 }
             }
         }

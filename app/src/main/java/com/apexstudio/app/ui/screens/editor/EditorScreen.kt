@@ -38,7 +38,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -163,6 +162,136 @@ fun EditorScreen(
         onDispose {
             exoPlayer?.release()
             exoPlayer = null
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // LIVE VIDEO EFFECTS for the preview ExoPlayer.
+    //
+    // The ExoPlayer preview must render the same LUT / FX / Adjustments
+    // the user has selected, otherwise the editor shows stale pixels and
+    // only the export "sees" the effect.
+    //
+    // We install the real Media3 GlEffect chain on the player via
+    // `setVideoEffects(...)`. Each effect's shader runs on every decoded
+    // frame in the Media3 GL pipeline — which is the only place that can
+    // touch the actual decoded video pixels, because PlayerView's
+    // internal SurfaceView is composited by SurfaceFlinger and is
+    // outside any Compose RenderEffect / graphicsLayer / draw modifier.
+    //
+    // Slider drag needs to be smooth without rebuilding the GL chain on
+    // every event. We side-channel the per-frame values through
+    // MutableStateFlow holders — the lambdas in the effect constructor
+    // read the current holder value, so the per-frame uniform is always
+    // the latest, but the effect itself is only rebuilt when the chain
+    // composition actually changes (filter id, fx id, or any adjustment
+    // crosses the "default" threshold).
+    // ----------------------------------------------------------------
+    val filterIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.filterIntensity) }
+    val fxIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.fxIntensity) }
+    val brightnessFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.brightness) }
+    val contrastFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.contrast) }
+    val saturationFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.saturation) }
+    val exposureFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.exposure) }
+    val temperatureFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.temperature) }
+    val tintFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.tint) }
+    val highlightsFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.highlights) }
+    val shadowsFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.shadows) }
+
+    // Sync the flows from state on every recomposition. Cheap (a
+    // single .value = ... assignment each), and ensures the next
+    // drawFrame picks up the new slider value without rebuilding
+    // the effect chain.
+    filterIntensityFlow.value = state.filterIntensity
+    fxIntensityFlow.value = state.fxIntensity
+    brightnessFlow.value = state.adjustments.brightness
+    contrastFlow.value = state.adjustments.contrast
+    saturationFlow.value = state.adjustments.saturation
+    exposureFlow.value = state.adjustments.exposure
+    temperatureFlow.value = state.adjustments.temperature
+    tintFlow.value = state.adjustments.tint
+    highlightsFlow.value = state.adjustments.highlights
+    shadowsFlow.value = state.adjustments.shadows
+
+    // Build (or rebuild) the effect chain only when the chain
+    // composition changes — filter id, fx id, the boolean "any
+    // adjustment non-default" flag, or the FX intensity (FxGlEffect
+    // does not expose an intensityProvider, so the chain must be
+    // rebuilt on every FX slider tick). Filter / Adjustment
+    // intensities are routed through the flows above, NOT through
+    // this LaunchedEffect, so dragging those sliders doesn't
+    // rebuild the chain (and re-upload the LUT texture) 60×/s.
+    LaunchedEffect(
+        exoPlayer,
+        state.activeFilterId,
+        state.activeFxId,
+        state.fxIntensity,
+        state.adjustments.isDefault
+    ) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        val effects = mutableListOf<androidx.media3.common.Effect>()
+
+        // 1. Adjustments (Brightness / Contrast / Saturation / etc.) —
+        //    ColorMatrix-equivalent on the GPU. Always installed so the
+        //    preview reacts to every adjustment slider in real time.
+        if (!state.adjustments.isDefault) {
+            effects.add(
+                com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                    adjustments = state.adjustments,
+                    brightnessProvider = { brightnessFlow.value },
+                    contrastProvider = { contrastFlow.value },
+                    saturationProvider = { saturationFlow.value },
+                    exposureProvider = { exposureFlow.value },
+                    temperatureProvider = { temperatureFlow.value },
+                    tintProvider = { tintFlow.value },
+                    highlightsProvider = { highlightsFlow.value },
+                    shadowsProvider = { shadowsFlow.value }
+                )
+            )
+        }
+
+        // 2. 3D LUT filter. The GL effect accepts a null preset and
+        //    uploads an identity LUT, which is a no-op on the frame.
+        //    When a filter is selected we resolve the preset from the
+        //    manifest and pass an intensityProvider so the slider
+        //    drag is smooth.
+        val activeFilterId = state.activeFilterId
+        val filterPreset: com.apexstudio.app.data.filter.FilterPreset? =
+            if (activeFilterId != null)
+                filterEngine.manifest.presetById(activeFilterId)
+            else null
+        if (filterPreset != null && state.filterIntensity > 0f) {
+            effects.add(
+                com.apexstudio.app.data.filter.LutFilterGlEffect(
+                    context = context,
+                    preset = filterPreset,
+                    intensity = state.filterIntensity.coerceIn(0f, 1f),
+                    intensityProvider = { filterIntensityFlow.value.coerceIn(0f, 1f) }
+                )
+            )
+        }
+
+        // 3. Dynamic FX (Vignette, VHS, Glitch, Chromatic, Bloom, …).
+        //    FxGlEffect requires a non-null preset, so only install
+        //    when a valid id is active. FxGlEffect does not expose an
+        //    intensityProvider today, so a slider drag does trigger a
+        //    chain rebuild (acceptable for FX — at most ~60×/s, and
+        //    FxGlEffect is cheap to construct: no GL texture upload,
+        //    just a shader-program re-resolution on the next frame).
+        val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
+        if (fxPreset != null && state.fxIntensity > 0f) {
+            effects.add(
+                com.apexstudio.app.data.fx.FxGlEffect(
+                    preset = fxPreset,
+                    intensity = fxIntensityFlow.value.coerceIn(0f, 1f)
+                )
+            )
+        }
+
+        try {
+            player.setVideoEffects(effects)
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "setVideoEffects failed", e)
         }
     }
 
@@ -760,49 +889,21 @@ fun VideoPreviewArea(
     onRetryLoad: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    // Phase Live Filter (reliability fix): remember a fresh graphicsLayer
-    // modifier per filter value. The rememberKey is a string built from
-    // every input the renderEffect lambda reads. When the key changes,
-    // remember() disposes the old Modifier and creates a new one, so
-    // Compose rebuilds the modifier chain and the inner renderEffect
-    // is re-evaluated on the next draw.
+    // The live filter, FX, and adjustments are NOT applied here in
+    // Compose. PlayerView's internal SurfaceView is composited by
+    // SurfaceFlinger (a separate hardware overlay) and sits outside
+    // Compose's graphicsLayer / RenderEffect pipeline, so any
+    // Modifier.graphicsLayer { renderEffect = ... } on the wrapping
+    // AndroidView can never reach the decoded video pixels — at
+    // best it would tint sibling Compose composables (the original
+    // "1080P badge" bug).
     //
-    // CRITICAL: this modifier is applied ONLY to the AndroidView
-    // (PlayerView) below, NOT to the outer Box. Earlier it was attached
-    // to the outer Box, which caused the ColorMatrix/RenderEffect to
-    // tint every sibling/child composable on top of the video — the
-    // 1080P badge, fullscreen icon, etc. — while the actual decoded
-    // frame stayed untouched. Scoping the modifier to the PlayerView
-    // confines the color filter to the video surface only.
-    val filterKey = "$activeFilterId:$filterIntensity:" +
-            "${adjustments.brightness}:${adjustments.contrast}:${adjustments.saturation}:" +
-            "${adjustments.temperature}:${adjustments.tint}:$activeFxId:$fxIntensity"
-    val liveFilterModifier: Modifier = remember(filterKey) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            Modifier.graphicsLayer {
-                val hasFilter = activeFilterId != null && filterIntensity > 0f
-                val hasAdjust = !adjustments.isDefault
-                val hasFx = activeFxId != null && fxIntensity > 0f
-                if (hasFilter || hasAdjust || hasFx) {
-                    val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                        .getCombinedMatrix(
-                            filterId = activeFilterId,
-                            intensity = filterIntensity,
-                            adjustments = adjustments,
-                            fxId = activeFxId,
-                            fxIntensity = fxIntensity
-                        )
-                    val filter = android.graphics.ColorMatrixColorFilter(cm)
-                    renderEffect = android.graphics.RenderEffect
-                        .createColorFilterEffect(filter)
-                        .asComposeRenderEffect()
-                } else {
-                    renderEffect = null
-                }
-            }
-        } else Modifier
-    }
-
+    // The real-time render path is in EditorScreen itself: a
+    // LaunchedEffect installs LutFilterGlEffect + FxGlEffect +
+    // AdjustmentsGlEffect on the preview ExoPlayer via
+    // `player.setVideoEffects(...)`, so the GL pipeline processes
+    // every decoded frame and the pixels you see on screen match
+    // what the export pipeline will bake into the MP4.
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -824,9 +925,7 @@ fun VideoPreviewArea(
                     view.player = exoPlayer
                     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(liveFilterModifier)
+                modifier = Modifier.fillMaxSize()
             )
         } else {
             // Placeholder video frame thumbnail render
@@ -932,17 +1031,14 @@ fun VideoPreviewArea(
             }
         }
 
-        // Top overlay (1080P dropdown, fullscreen icon, fx chip) removed:
-        // these controls used to sit on top of the video preview and —
-        // because the live-filter graphicsLayer modifier was attached
-        // to the outer Box — they were also the visible target of the
-        // color filter (the 1080P badge would visibly shift hue with
-        // every filter/adjustment pick, while the actual decoded video
-        // frame stayed unchanged). The video preview is now a clean
-        // surface with no obstructing badges/icons. Resolution and
-        // fullscreen controls will be relocated to Settings in a
-        // follow-up; PlaybackControlBar still exposes fullscreen +
-        // settings so the user isn't blocked.
+        // No top overlay on the video preview — the "1080P" badge,
+        // fullscreen icon, and fx chip were removed in an earlier fix
+        // because (a) they obscured the preview and (b) they used to be
+        // the visible target of the broken Compose RenderEffect
+        // graphicsLayer, which couldn't reach the PlayerView's actual
+        // video pixels. The video preview is now a clean surface.
+        // Resolution and fullscreen controls are still available via
+        // PlaybackControlBar (and will be relocated to Settings later).
     }
 }
 

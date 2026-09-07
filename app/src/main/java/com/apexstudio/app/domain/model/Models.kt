@@ -382,13 +382,14 @@ data class VideoAdjustments(
 @Serializable
 data class StickerOverlay(
     val id: String = java.util.UUID.randomUUID().toString(),
-    val symbolOrUri: String = "🔥",
-    val category: String = "Emoji",
     val name: String = "Sticker",
+    val category: String = "Emoji",
+    val symbolOrUri: String = "🔥",
     val x: Float = 0.5f,
     val y: Float = 0.5f,
     val sizeScale: Float = 1f,
     val rotationDeg: Float = 0f,
+    val opacity: Float = 1f,
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE
 ) {

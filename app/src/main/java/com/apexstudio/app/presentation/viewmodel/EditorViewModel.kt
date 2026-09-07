@@ -487,6 +487,140 @@ class EditorViewModel(
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
     fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.2f, 4f)) }
+
+    // Resolution / preview mode + modal triggers consumed by EditorScreen.kt
+    // panels. These were removed by the 'add new color LUT filters'
+    // commit but EditorScreen.kt still references them; restoring here so
+    // the existing UI integration continues to compile.
+    fun setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
+    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
+    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
+    fun selectSticker(id: String?) = _state.update { it.copy(selectedStickerId = id) }
+    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
+    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
+    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
+    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
+    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
+    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
+    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
+    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
+    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
+
+    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
+        pushUndo()
+        _state.update { s ->
+            val newAdj = transform(s.adjustments)
+            s.copy(
+                adjustments = newAdj,
+                project = s.project?.copy(adjustments = newAdj)
+            )
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) {
+            updateClip(selectedId) { c -> c.copy(adjustments = transform(c.adjustments)) }
+        }
+        persistProject()
+    }
+
+    fun resetAdjustments() {
+        pushUndo()
+        val defaultAdj = VideoAdjustments()
+        _state.update { s ->
+            s.copy(adjustments = defaultAdj, project = s.project?.copy(adjustments = defaultAdj))
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) updateClip(selectedId) { it.copy(adjustments = defaultAdj) }
+        persistProject()
+    }
+    fun resetAllAdjustments() = resetAdjustments()
+
+    fun addStickerOverlay(symbolOrUri: String, category: String = "Emoji", name: String = "Sticker") {
+        pushUndo()
+        val sticker = StickerOverlay(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            category = category,
+            symbolOrUri = symbolOrUri,
+            x = 0.5f,
+            y = 0.5f,
+            startMs = _state.value.playerPositionMs,
+            endMs = (_state.value.playerPositionMs + 5000L).coerceAtMost(_state.value.durationMs)
+        )
+        val selectedClipId = _state.value.selectedClipId
+        if (selectedClipId != null) updateClip(selectedClipId) { c -> c.copy(stickers = c.stickers + sticker) }
+        _state.update { s ->
+            val currentList = s.project?.stickers ?: emptyList()
+            s.copy(selectedStickerId = sticker.id, project = s.project?.copy(stickers = currentList + sticker))
+        }
+        persistProject()
+    }
+
+    fun updateStickerOverlay(stickerId: String, transform: (StickerOverlay) -> StickerOverlay) {
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.map { if (it.id == stickerId) transform(it) else it }
+            val updatedClips = p.clips.map { clip ->
+                clip.copy(stickers = clip.stickers.map { if (it.id == stickerId) transform(it) else it })
+            }
+            s.copy(project = p.copy(stickers = updatedProjectStickers, clips = updatedClips))
+        }
+        persistProject()
+    }
+
+    fun removeStickerOverlay(stickerId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.filterNot { it.id == stickerId }
+            val updatedClips = p.clips.map { clip -> clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId }) }
+            s.copy(
+                selectedStickerId = if (s.selectedStickerId == stickerId) null else s.selectedStickerId,
+                project = p.copy(stickers = updatedProjectStickers, clips = updatedClips)
+            )
+        }
+        persistProject()
+    }
+
+    fun setCoverFrame(ms: Long) {
+        _state.update { s -> s.copy(project = s.project?.copy(coverFrameMs = ms, coverCustomUri = null)) }
+        persistProject()
+    }
+    fun setCoverCustomUri(uri: String) {
+        _state.update { s -> s.copy(project = s.project?.copy(coverCustomUri = uri)) }
+        persistProject()
+    }
+
+    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String = "Voiceover") {
+        pushUndo()
+        val track = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = 1.0f,
+            trimStartMs = 0L,
+            trimEndMs = durationMs
+        )
+        val clip = MediaClip(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            durationMs = durationMs,
+            trimStartMs = 0L,
+            trimEndMs = durationMs,
+            type = ClipType.SFX,
+            trackIndex = 1
+        )
+        _audio.update { it.copy(tracks = it.tracks + track) }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            s.copy(project = p.copy(clips = p.clips + clip, audioTracks = p.audioTracks + track))
+        }
+        persistProject()
+    }
     fun multiplyZoom(factor: Float) = _state.update {
         val current = it.zoomLevel
         val next = (current * factor).coerceIn(0.2f, 4f)
@@ -501,13 +635,19 @@ class EditorViewModel(
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
-    fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
+    fun setPlayerReady(ready: Boolean) = _state.update {
+        if (ready) it.copy(isPlayerReady = true, playerError = null, isBuffering = false)
+        else it.copy(isPlayerReady = false)
+    }
     // Phase A: separate "buffering" signal from "ready". The Player.Listener
     // calls this with (playbackState == Player.STATE_BUFFERING). We keep
     // isPlayerReady semantically unchanged — STATE_READY is the source of
     // truth for "first frame painted" so the rest of the UI (filters,
     // transforms, overlays) keeps gating on isPlayerReady as before.
     fun setBuffering(buffering: Boolean) = _state.update { it.copy(isBuffering = buffering) }
+    fun setPlayerError(error: String?) = _state.update {
+        it.copy(playerError = error, isBuffering = false, isPlayerReady = error == null && it.isPlayerReady)
+    }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }

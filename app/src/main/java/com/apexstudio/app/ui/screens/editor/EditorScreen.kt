@@ -99,8 +99,6 @@ fun EditorScreen(
     // Dispatchers.IO and publishes results through a StateFlow. The
     // Composable reads the flow via collectAsStateWithLifecycle so
     // frames appear progressively without blocking the timeline.
-    // PR C (Adopt pre-refactor wins) wires this into the new
-    // per-clip VideoClipBlock rendering inside TimelineTrackArea.
     val timelineMediaCache = remember { TimelineMediaCache(context) }
     DisposableEffect(Unit) {
         onDispose { timelineMediaCache.release() }
@@ -1541,34 +1539,6 @@ fun TimelineTrackArea(
     modifier: Modifier = Modifier
 ) {
     val clips = state.project?.clips ?: emptyList()
-    val videoClips = clips.filter {
-        it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
-    }
-
-    // PR C: pxPerMs is shared with the per-clip VideoClipBlock so a
-    // clip's width is consistent with the playhead scrub math used
-    // by the TimelineRuler above.
-    val pxPerMs = state.zoomLevel.coerceAtLeast(0.1f) * 0.12f
-
-    // Kick off TimelineMediaCache extractions for every clip in the
-    // project. The cache is content-keyed, so repeat observe() calls
-    // with the same clips + pxPerMs are no-ops.
-    timelineMediaCache.observe(clips, pxPerMs)
-    val cacheMap by timelineMediaCache.state.collectAsStateWithLifecycle()
-
-    // Build a [trackStartMs, trackLengthMs] map for every clip so
-    // each VideoClipBlock knows its time-axis position. The current
-    // UI shows a single lane (V1 only); a follow-up can split into
-    // V1/V2 lanes for VIDEO vs OVERLAY clips.
-    val blockGeometry = remember(clips, pxPerMs) {
-        var runningMs = 0L
-        clips.map { clip ->
-            val trackStart = runningMs
-            val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
-            runningMs += trackLen
-            Triple(clip, trackStart, trackLen)
-        }
-    }
 
     Column(
         modifier = modifier
@@ -1617,20 +1587,6 @@ fun TimelineTrackArea(
 
             // Main Video Filmstrip Container.
             //
-            // PR C: per-clip VideoClipBlock rendering with real
-            // time-axis positioning. Each clip is laid out at
-            // `trackStartMs * pxPerMs` with width `trackLengthMs *
-            // pxPerMs`, so a 5s clip and a 60s clip show
-            // proportional blocks on the same ruler. The cached
-            // ClipMedia.frames are rendered as Image Composables
-            // inside each block; the gradient tile divider matches
-            // the cell count so the grid lines stay aligned with
-            // the real frames.
-            //
-            // Honest fallback: when no frames are in cache yet
-            // (extraction in flight, source undecodable), the
-            // block draws a single thin progress line — no fake
-            // render.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1640,15 +1596,6 @@ fun TimelineTrackArea(
                     .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                if (videoClips.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Tap + to add a video clip",
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 9.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false
@@ -1720,7 +1667,6 @@ fun TimelineTrackArea(
             }
         }
 
-        val clips = state.project?.clips ?: emptyList()
         val textClip = clips.firstOrNull { it.textOverlays.isNotEmpty() }
         val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "ApexStudio  Pro Video Editor"
 
@@ -1729,6 +1675,14 @@ fun TimelineTrackArea(
 
         val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
         val audioLabel = audioClip?.name ?: "Dreamscape"
+        // PR B: the audio track row now reads the real waveform
+        // samples from the cache (or the state-level audioWaveform as
+        // a fallback for the legacy decode path). If neither is
+        // available, we render the same "Loading…" text we use for
+        // the video filmstrip.
+        val audioWaveform: FloatArray = audioClip?.let { cacheMap[it.id]?.waveform }
+            ?.takeIf { it.isNotEmpty() }
+            ?: state.audioWaveform
 
         val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
         val voiceLabel = voiceClip?.name ?: "Voice Over"
@@ -1753,9 +1707,6 @@ fun TimelineTrackArea(
             icon = Icons.Default.MusicNote,
             label = audioLabel,
             isWaveform = true,
-            waveform = audioClip?.let { cacheMap[it.id]?.waveform }
-                ?.takeIf { it.isNotEmpty() }
-                ?: state.audioWaveform
         )
 
         TrackLayerRow(
@@ -1770,6 +1721,31 @@ fun TimelineTrackArea(
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
     }
+}
+
+/**
+ * Small "pulse" loading indicator for the filmstrip row. Shows a
+ * thin horizontal bar whose brightness animates 0.4..1.0 so the user
+ * knows the cache is working. Deliberately tiny (2dp tall, 30% wide)
+ * so it doesn't visually compete with the eventual filmstrip.
+ */
+@Composable
+private fun FilmstripLoadingBar(isActive: Boolean) {
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1f else 0.4f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(700),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "filmstrip-loading-pulse"
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.3f)
+            .height(2.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(Color(0xFF8B5CF6).copy(alpha = alpha * 0.7f))
+    )
 }
 
 @Composable
@@ -1838,11 +1814,6 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-                    // PR C: when a real waveform is available, render
-                    // each sample as a vertical bar with height
-                    // proportional to the sample amplitude (0..1). If
-                    // no waveform data has been extracted yet, fall
-                    // back to a "Loading…" label — same honest
                     // fallback as the filmstrip row, no fake bars.
                     if (waveform.isNotEmpty()) {
                         Row(

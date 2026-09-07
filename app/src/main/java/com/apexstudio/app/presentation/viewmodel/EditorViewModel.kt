@@ -469,6 +469,23 @@ class EditorViewModel(
                 _thumbnails.update { current ->
                     current + (clip.id to thumbs)
                 }
+                // Phase Live Filter fix: with the source frame on
+                // hand, also generate per-filter thumbnails so the
+                // Filter panel shows the actual video frame with each
+                // LUT applied (not the generic hard-coded gradient).
+                try {
+                    val firstFrame = VideoThumbnailExtractor.extractFrame(
+                        context = ctx,
+                        videoUri = playableUri,
+                        timeMs = clip.trimStartMs
+                    )
+                    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                    val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                        .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                    _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                } catch (e: Exception) {
+                    Log.w("EditorViewModel", "Per-filter thumbnail generation failed", e)
+                }
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
             }
@@ -633,6 +650,12 @@ class EditorViewModel(
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
+    // Phase Live Filter fix: selectClip + regenerate thumbnails so the
+    // Filter panel reflects the newly selected clip's frame.
+    fun selectClipAndRefresh(id: String?) {
+        _state.update { it.copy(selectedClipId = id) }
+        regenerateFilterThumbnails()
+    }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update {
@@ -683,6 +706,31 @@ class EditorViewModel(
     fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
+
+    // Phase Live Filter fix: regenerate the per-filter thumbnails
+    // against the current clip's frame. Cheap (uses Android's hardware
+    // ColorMatrix path) and runs on Dispatchers.IO. Called when the
+    // user picks a clip OR when the source video URI changes.
+    fun regenerateFilterThumbnails() {
+        val ctx = context ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+            ?: _state.value.project?.clips?.firstOrNull() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                    .resolvePlayableUri(ctx, clip.uri).toString()
+                val firstFrame = VideoThumbnailExtractor.extractFrame(
+                    context = ctx, videoUri = playableUri, timeMs = clip.trimStartMs
+                )
+                val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "regenerateFilterThumbnails failed", e)
+            }
+        }
+    }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
     fun ensureFilterThumbnails() {

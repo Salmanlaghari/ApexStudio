@@ -316,7 +316,7 @@ fun EditorScreen(
         TimelineTrackArea(
             state = state,
             onScrub = { seekPlayerAndState(it) },
-            onSelectClip = { vm.selectClip(it) },
+            onSelectClip = { vm.selectClipAndRefresh(it) },
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
             modifier = Modifier
@@ -768,44 +768,51 @@ fun VideoPreviewArea(
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
 
+    // Phase Live Filter (reliability fix): remember a fresh graphicsLayer
+    // modifier per filter value. The rememberKey is a string built from
+    // every input the renderEffect lambda reads. When the key changes,
+    // remember() disposes the old Modifier and creates a new one, so
+    // Compose rebuilds the modifier chain and the inner renderEffect
+    // is re-evaluated on the next draw. Without this, Compose caches
+    // the graphicsLayer between recompositions and the lambda's
+    // renderEffect would only be re-evaluated on full Modifier
+    // invalidation — explaining why filter picks wouldn't apply live.
+    val filterKey = "$activeFilterId:$filterIntensity:" +
+            "${adjustments.brightness}:${adjustments.contrast}:${adjustments.saturation}:" +
+            "${adjustments.temperature}:${adjustments.tint}:$activeFxId:$fxIntensity"
+    val liveFilterModifier: Modifier = remember(filterKey) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            Modifier.graphicsLayer {
+                val hasFilter = activeFilterId != null && filterIntensity > 0f
+                val hasAdjust = !adjustments.isDefault
+                val hasFx = activeFxId != null && fxIntensity > 0f
+                if (hasFilter || hasAdjust || hasFx) {
+                    val cm = com.apexstudio.app.data.filter.FilterColorMatrix
+                        .getCombinedMatrix(
+                            filterId = activeFilterId,
+                            intensity = filterIntensity,
+                            adjustments = adjustments,
+                            fxId = activeFxId,
+                            fxIntensity = fxIntensity
+                        )
+                    val filter = android.graphics.ColorMatrixColorFilter(cm)
+                    renderEffect = android.graphics.RenderEffect
+                        .createColorFilterEffect(filter)
+                        .asComposeRenderEffect()
+                } else {
+                    renderEffect = null
+                }
+            }
+        } else Modifier
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
             .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
-            // Phase Live Filter: renderEffect on the OUTER Box instead
-            // of inside the AndroidView's graphicsLayer. The AndroidView
-            // modifier chain is rebuilt only when AndroidView itself
-            // composes; param changes (activeFilterId, filterIntensity,
-            // adjustments) don't reliably re-trigger the inner
-            // graphicsLayer's lambda because Compose caches modifiers
-            // between recompositions. Putting the graphicsLayer on the
-            // outer Box guarantees re-evaluation whenever VideoPreviewArea
-            // recomposes with new params.
-            .graphicsLayer {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    val hasFilter = activeFilterId != null && filterIntensity > 0f
-                    val hasAdjust = !adjustments.isDefault
-                    val hasFx = activeFxId != null && fxIntensity > 0f
-                    if (hasFilter || hasAdjust || hasFx) {
-                        val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                            .getCombinedMatrix(
-                                filterId = activeFilterId,
-                                intensity = filterIntensity,
-                                adjustments = adjustments,
-                                fxId = activeFxId,
-                                fxIntensity = fxIntensity
-                            )
-                        val filter = android.graphics.ColorMatrixColorFilter(cm)
-                        renderEffect = android.graphics.RenderEffect
-                            .createColorFilterEffect(filter)
-                            .asComposeRenderEffect()
-                    } else {
-                        renderEffect = null
-                    }
-                }
-            },
+            .then(liveFilterModifier),
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {

@@ -35,7 +35,16 @@ data class MediaClip(
     // inside the video frame so the preview (Compose layer) and the
     // export (TextOverlayGlEffect) render the text at exactly the
     // same relative position and size.
-    val textOverlays: List<TextOverlay> = emptyList()
+    val textOverlays: List<TextOverlay> = emptyList(),
+    // Phase G: per-clip colour adjustments. Used by AdjustPanel and
+    // composed with active LUT in FilterColorMatrix.getCombinedMatrix.
+    val adjustments: VideoAdjustments = VideoAdjustments(),
+    // Phase G: sticker overlays attached to this clip. Each sticker
+    // carries its own symbol/URI, normalised anchor (x, y), size
+    // scale, rotation, opacity, and time-window so the preview
+    // (StickerLayer in EditorScreen.kt) and the export render the
+    // sticker at exactly the same position with the same transform.
+    val stickers: List<StickerOverlay> = emptyList()
 )
 
 /**
@@ -151,7 +160,17 @@ data class Project(
     // lastTransmissionTemplateId so the choice survives an app
     // restart.
     val lastTransitionType: String? = null,
-    val lastTransitionDurationMs: Long = 500L
+    val lastTransitionDurationMs: Long = 500L,
+    // Project-level adjustment defaults; AdjustPanel persists them so
+    // reopening a project restores the current grade.
+    val adjustments: VideoAdjustments = VideoAdjustments(),
+    // Phase G: project-level stickers (Phase D added per-clip stickers,
+    // this is the project-wide set surfaced by the Sticker panel).
+    val stickers: List<StickerOverlay> = emptyList(),
+    // Cover selection: frame time or custom URI. Custom URI wins
+    // whenever non-null.
+    val coverFrameMs: Long? = null,
+    val coverCustomUri: String? = null
 )
 
 @Serializable

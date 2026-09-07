@@ -23,6 +23,7 @@ data class EditorState(
     // sees feedback during the 1-3s startup / seek-while-paused gap
     // instead of a black screen. Cleared the moment STATE_READY fires.
     val isBuffering: Boolean = false,
+    val playerError: String? = null,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val audioWaveform: FloatArray = FloatArray(0),
@@ -102,7 +103,27 @@ data class EditorState(
     // Phase E: same routing flag pattern as pendingAddAsOverlay but
     // for audio picks from the A1 lane "+ Add → Audio" entry. Cleared
     // after onMediaPicked consumes it.
-    val pendingAddAsAudio: Boolean = false
+    val pendingAddAsAudio: Boolean = false,
+    // Resolution selection (720P, 1080P, 1440P, 2160P / 4K)
+    val selectedResolution: String = "1080P",
+    // Adjustments panel
+    val adjustmentsPanelOpen: Boolean = false,
+    val adjustments: VideoAdjustments = VideoAdjustments(),
+    // Sticker system
+    val stickerPanelOpen: Boolean = false,
+    val selectedStickerId: String? = null,
+    // Cover frame selection
+    val coverPanelOpen: Boolean = false,
+    // Voice Over recorder modal
+    val voiceRecorderOpen: Boolean = false,
+    // Camera capture modal
+    val cameraCaptureOpen: Boolean = false,
+    // Help guide modal
+    val helpDialogOpen: Boolean = false,
+    // Comprehensive Media Library sheet
+    val mediaLibraryOpen: Boolean = false,
+    // Fullscreen preview mode
+    val isFullscreenPreview: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

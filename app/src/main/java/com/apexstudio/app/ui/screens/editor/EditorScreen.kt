@@ -247,7 +247,6 @@ fun EditorScreen(
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
-                resolution = state.selectedResolution,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
                 adjustments = state.adjustments,
@@ -268,8 +267,6 @@ fun EditorScreen(
                         }
                     }
                 },
-                onSelectResolution = { vm.setSelectedResolution(it) },
-                onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -753,7 +750,6 @@ fun TopAppBarSection(
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
-    resolution: String = "1080P",
     activeFilterId: String? = null,
     filterIntensity: Float = 0f,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
@@ -762,21 +758,22 @@ fun VideoPreviewArea(
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
     onRetryLoad: (() -> Unit)? = null,
-    onSelectResolution: (String) -> Unit = {},
-    onFullscreenToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showResolutionDropdown by remember { mutableStateOf(false) }
-
     // Phase Live Filter (reliability fix): remember a fresh graphicsLayer
     // modifier per filter value. The rememberKey is a string built from
     // every input the renderEffect lambda reads. When the key changes,
     // remember() disposes the old Modifier and creates a new one, so
     // Compose rebuilds the modifier chain and the inner renderEffect
-    // is re-evaluated on the next draw. Without this, Compose caches
-    // the graphicsLayer between recompositions and the lambda's
-    // renderEffect would only be re-evaluated on full Modifier
-    // invalidation — explaining why filter picks wouldn't apply live.
+    // is re-evaluated on the next draw.
+    //
+    // CRITICAL: this modifier is applied ONLY to the AndroidView
+    // (PlayerView) below, NOT to the outer Box. Earlier it was attached
+    // to the outer Box, which caused the ColorMatrix/RenderEffect to
+    // tint every sibling/child composable on top of the video — the
+    // 1080P badge, fullscreen icon, etc. — while the actual decoded
+    // frame stayed untouched. Scoping the modifier to the PlayerView
+    // confines the color filter to the video surface only.
     val filterKey = "$activeFilterId:$filterIntensity:" +
             "${adjustments.brightness}:${adjustments.contrast}:${adjustments.saturation}:" +
             "${adjustments.temperature}:${adjustments.tint}:$activeFxId:$fxIntensity"
@@ -811,8 +808,7 @@ fun VideoPreviewArea(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
-            .then(liveFilterModifier),
+            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {
@@ -828,7 +824,9 @@ fun VideoPreviewArea(
                     view.player = exoPlayer
                     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(liveFilterModifier)
             )
         } else {
             // Placeholder video frame thumbnail render
@@ -934,99 +932,17 @@ fun VideoPreviewArea(
             }
         }
 
-        // Top-Left Pill: "1080P" Dropdown
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .clickable { showResolutionDropdown = true }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = resolution,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            androidx.compose.material3.DropdownMenu(
-                expanded = showResolutionDropdown,
-                onDismissRequest = { showResolutionDropdown = false },
-                modifier = Modifier.background(ApexPalette.BgElevated)
-            ) {
-                listOf("720P", "1080P", "1440P", "4K").forEach { res ->
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = res,
-                                color = if (res == resolution) Color(0xFF8B5CF6) else Color.White,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        onClick = {
-                            onSelectResolution(res)
-                            showResolutionDropdown = false
-                        }
-                    )
-                }
-            }
-        }
-
-        // Top-Right: Fullscreen / Expand icon
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(onClick = onFullscreenToggle)
-                .padding(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Fullscreen,
-                contentDescription = "Expand",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        // Top-Right: "fx" filter chip — reference image shows a small
-        // pill above the fullscreen icon labelled "fx" in purple to
-        // mirror the fx badge on the Cinematic Glow track row. Tapping
-        // it opens the filter panel for quick access.
-        if (activeFilterId != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 64.dp, end = 12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text = "fx",
-                    color = Color(0xFF8B5CF6),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    softWrap = false
-                )
-            }
-        }
+        // Top overlay (1080P dropdown, fullscreen icon, fx chip) removed:
+        // these controls used to sit on top of the video preview and —
+        // because the live-filter graphicsLayer modifier was attached
+        // to the outer Box — they were also the visible target of the
+        // color filter (the 1080P badge would visibly shift hue with
+        // every filter/adjustment pick, while the actual decoded video
+        // frame stayed unchanged). The video preview is now a clean
+        // surface with no obstructing badges/icons. Resolution and
+        // fullscreen controls will be relocated to Settings in a
+        // follow-up; PlaybackControlBar still exposes fullscreen +
+        // settings so the user isn't blocked.
     }
 }
 

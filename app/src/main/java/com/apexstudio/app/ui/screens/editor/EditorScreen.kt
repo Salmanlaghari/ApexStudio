@@ -1587,6 +1587,20 @@ fun TimelineTrackArea(
 
             // Main Video Filmstrip Container.
             //
+            // PR C: per-clip VideoClipBlock rendering with real
+            // time-axis positioning. Each clip is laid out at
+            // `trackStartMs * pxPerMs` with width `trackLengthMs *
+            // pxPerMs`, so a 5s clip and a 60s clip show
+            // proportional blocks on the same ruler. The cached
+            // ClipMedia.frames are rendered as Image Composables
+            // inside each block; the gradient tile divider matches
+            // the cell count so the grid lines stay aligned with
+            // the real frames.
+            //
+            // Honest fallback: when no frames are in cache yet
+            // (extraction in flight, source undecodable), the
+            // block draws a single thin progress line — no fake
+            // render.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1596,6 +1610,15 @@ fun TimelineTrackArea(
                     .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
+                if (videoClips.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Tap + to add a video clip",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false
@@ -1707,6 +1730,9 @@ fun TimelineTrackArea(
             icon = Icons.Default.MusicNote,
             label = audioLabel,
             isWaveform = true,
+            waveform = audioClip?.let { cacheMap[it.id]?.waveform }
+                ?.takeIf { it.isNotEmpty() }
+                ?: state.audioWaveform
         )
 
         TrackLayerRow(

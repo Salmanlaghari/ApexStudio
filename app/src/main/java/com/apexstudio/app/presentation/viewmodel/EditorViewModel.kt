@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 
 class EditorViewModel(
     private val repo: MediaRepository = MediaRepository,
@@ -248,7 +249,8 @@ class EditorViewModel(
                     activeFxId = null,
                     fxIntensity = 0f,
                     lastTransitionType = null,
-                    lastTransitionDurationMs = 500L
+                    lastTransitionDurationMs = 500L,
+                    playbackSpeed = 1.0f
                 )
             }
             persistTransmissionTemplate(
@@ -270,19 +272,13 @@ class EditorViewModel(
      * Apply a resolved [TransmissionTemplate] without re-looking it
      * up by id. Used by [loadProject] on project open so we can
      * skip the "unknown id" warning path for the auto-apply case.
-     */
-    /**
-     * Apply a resolved [TransmissionTemplate] without re-looking it
-     * up by id. Used by [loadProject] on project open so we can
-     * skip the "unknown id" warning path for the auto-apply case.
      *
      * The template's `transitionType` and `transitionDurationMs` are
      * also applied as a project-level hint (see
-     * `Project.lastTransitionType`). The project doesn't model
-     * per-clip transitions yet, so this surfaces the choice in
-     * state for a future per-clip transition feature to consume.
+     * `Project.lastTransitionType`).
      */
     private fun applyTransmissionTemplateInternal(template: TransmissionTemplate, persistProjectId: String?) {
+        val targetSpeed = if (template.isSlowMotion && template.playbackSpeed > 0f) template.playbackSpeed else 1.0f
         _state.update {
             it.copy(
                 activeFilterId = template.filterId,
@@ -290,8 +286,14 @@ class EditorViewModel(
                 activeFxId = template.fxPresetId,
                 fxIntensity = template.fxIntensity.coerceIn(0f, 1f),
                 lastTransitionType = template.transitionType,
-                lastTransitionDurationMs = template.transitionDurationMs
+                lastTransitionDurationMs = template.transitionDurationMs,
+                playbackSpeed = targetSpeed
             )
+        }
+        // If slow motion is included, also update the active clip's playback speed
+        val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
+        if (clipId != null && template.isSlowMotion) {
+            setClipSpeed(clipId, targetSpeed)
         }
         persistTransmissionTemplate(id = template.id, transitionType = template.transitionType,
             transitionDurationMs = template.transitionDurationMs)
@@ -468,6 +470,25 @@ class EditorViewModel(
                 _thumbnails.update { current ->
                     current + (clip.id to thumbs)
                 }
+                // Phase Live Filter fix: with the source frame on
+                // hand, also generate per-filter thumbnails so the
+                // Filter panel shows the actual video frame with each
+                // LUT applied (not the generic hard-coded gradient).
+                try {
+                    val firstFrame = VideoThumbnailExtractor.extractFrame(
+                        context = ctx,
+                        videoUri = playableUri,
+                        timeMs = clip.trimStartMs
+                    )
+                    if (firstFrame != null) {
+                        val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                        val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                            .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                        _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                    }
+                } catch (e: Exception) {
+                    Log.w("EditorViewModel", "Per-filter thumbnail generation failed", e)
+                }
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
             }
@@ -486,6 +507,140 @@ class EditorViewModel(
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
     fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.2f, 4f)) }
+
+    // Resolution / preview mode + modal triggers consumed by EditorScreen.kt
+    // panels. These were removed by the 'add new color LUT filters'
+    // commit but EditorScreen.kt still references them; restoring here so
+    // the existing UI integration continues to compile.
+    fun setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
+    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
+    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
+    fun selectSticker(id: String?) = _state.update { it.copy(selectedStickerId = id) }
+    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
+    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
+    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
+    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
+    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
+    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
+    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
+    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
+    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
+
+    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
+        pushUndo()
+        _state.update { s ->
+            val newAdj = transform(s.adjustments)
+            s.copy(
+                adjustments = newAdj,
+                project = s.project?.copy(adjustments = newAdj)
+            )
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) {
+            updateClip(selectedId) { c -> c.copy(adjustments = transform(c.adjustments)) }
+        }
+        persistProject()
+    }
+
+    fun resetAdjustments() {
+        pushUndo()
+        val defaultAdj = VideoAdjustments()
+        _state.update { s ->
+            s.copy(adjustments = defaultAdj, project = s.project?.copy(adjustments = defaultAdj))
+        }
+        val selectedId = _state.value.selectedClipId
+        if (selectedId != null) updateClip(selectedId) { it.copy(adjustments = defaultAdj) }
+        persistProject()
+    }
+    fun resetAllAdjustments() = resetAdjustments()
+
+    fun addStickerOverlay(symbolOrUri: String, category: String = "Emoji", name: String = "Sticker") {
+        pushUndo()
+        val sticker = StickerOverlay(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            category = category,
+            symbolOrUri = symbolOrUri,
+            x = 0.5f,
+            y = 0.5f,
+            startMs = _state.value.playerPositionMs,
+            endMs = (_state.value.playerPositionMs + 5000L).coerceAtMost(_state.value.durationMs)
+        )
+        val selectedClipId = _state.value.selectedClipId
+        if (selectedClipId != null) updateClip(selectedClipId) { c -> c.copy(stickers = c.stickers + sticker) }
+        _state.update { s ->
+            val currentList = s.project?.stickers ?: emptyList()
+            s.copy(selectedStickerId = sticker.id, project = s.project?.copy(stickers = currentList + sticker))
+        }
+        persistProject()
+    }
+
+    fun updateStickerOverlay(stickerId: String, transform: (StickerOverlay) -> StickerOverlay) {
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.map { if (it.id == stickerId) transform(it) else it }
+            val updatedClips = p.clips.map { clip ->
+                clip.copy(stickers = clip.stickers.map { if (it.id == stickerId) transform(it) else it })
+            }
+            s.copy(project = p.copy(stickers = updatedProjectStickers, clips = updatedClips))
+        }
+        persistProject()
+    }
+
+    fun removeStickerOverlay(stickerId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedProjectStickers = p.stickers.filterNot { it.id == stickerId }
+            val updatedClips = p.clips.map { clip -> clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId }) }
+            s.copy(
+                selectedStickerId = if (s.selectedStickerId == stickerId) null else s.selectedStickerId,
+                project = p.copy(stickers = updatedProjectStickers, clips = updatedClips)
+            )
+        }
+        persistProject()
+    }
+
+    fun setCoverFrame(ms: Long) {
+        _state.update { s -> s.copy(project = s.project?.copy(coverFrameMs = ms, coverCustomUri = null)) }
+        persistProject()
+    }
+    fun setCoverCustomUri(uri: String) {
+        _state.update { s -> s.copy(project = s.project?.copy(coverCustomUri = uri)) }
+        persistProject()
+    }
+
+    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String = "Voiceover") {
+        pushUndo()
+        val track = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = 1.0f,
+            trimStartMs = 0L,
+            trimEndMs = durationMs
+        )
+        val clip = MediaClip(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            durationMs = durationMs,
+            trimStartMs = 0L,
+            trimEndMs = durationMs,
+            type = ClipType.SFX,
+            trackIndex = 1
+        )
+        _audio.update { it.copy(tracks = it.tracks + track) }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            s.copy(project = p.copy(clips = p.clips + clip, audioTracks = p.audioTracks + track))
+        }
+        persistProject()
+    }
     fun multiplyZoom(factor: Float) = _state.update {
         val current = it.zoomLevel
         val next = (current * factor).coerceIn(0.2f, 4f)
@@ -498,6 +653,12 @@ class EditorViewModel(
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
+    // Phase Live Filter fix: selectClip + regenerate thumbnails so the
+    // Filter panel reflects the newly selected clip's frame.
+    fun selectClipAndRefresh(id: String?) {
+        _state.update { it.copy(selectedClipId = id) }
+        regenerateFilterThumbnails()
+    }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update {
@@ -548,6 +709,33 @@ class EditorViewModel(
     fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
+
+    // Phase Live Filter fix: regenerate the per-filter thumbnails
+    // against the current clip's frame. Cheap (uses Android's hardware
+    // ColorMatrix path) and runs on Dispatchers.IO. Called when the
+    // user picks a clip OR when the source video URI changes.
+    fun regenerateFilterThumbnails() {
+        val ctx = context ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+            ?: _state.value.project?.clips?.firstOrNull() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                    .resolvePlayableUri(ctx, clip.uri).toString()
+                val firstFrame = VideoThumbnailExtractor.extractFrame(
+                    context = ctx, videoUri = playableUri, timeMs = clip.trimStartMs
+                )
+                if (firstFrame != null) {
+                    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
+                    val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                        .generateDynamicThumbnails(ctx, firstFrame, manifest)
+                    _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
+                }
+            } catch (e: Exception) {
+                Log.w("EditorViewModel", "regenerateFilterThumbnails failed", e)
+            }
+        }
+    }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
     fun ensureFilterThumbnails() {
@@ -727,17 +915,12 @@ class EditorViewModel(
                 quality = quality,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
-                adjustments = s.adjustments,
                 fxPreset = fxPreset,
                 fxIntensity = s.fxIntensity,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },
                 textOverlays = selected?.textOverlays ?: emptyList(),
-                stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList()),
-                rotationAngle = selected?.rotationAngle ?: 0f,
-                isFlippedHorizontal = selected?.isFlippedHorizontal ?: false,
-                isFlippedVertical = selected?.isFlippedVertical ?: false,
                 trimStartMs = selected?.trimStartMs ?: 0L,
                 trimEndMs = selected?.trimEndMs ?: 0L
             )
@@ -1084,220 +1267,6 @@ class EditorViewModel(
             )
         }
         persistProject()
-    }
-
-    // Resolution selector (720P, 1080P, 1440P, 2160P / 4K)
-    fun setSelectedResolution(res: String) {
-        _state.update { s ->
-            s.copy(
-                selectedResolution = res,
-                project = s.project?.copy(resolution = res)
-            )
-        }
-        updateExport { it.copy(resolution = res) }
-        persistProject()
-    }
-
-    // Adjustments panel
-    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
-    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
-
-    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
-        pushUndo()
-        _state.update { s ->
-            val newAdj = transform(s.adjustments)
-            s.copy(
-                adjustments = newAdj,
-                project = s.project?.copy(adjustments = newAdj)
-            )
-        }
-        val selectedId = _state.value.selectedClipId
-        if (selectedId != null) {
-            updateClip(selectedId) { c ->
-                c.copy(adjustments = transform(c.adjustments))
-            }
-        }
-        persistProject()
-    }
-
-    fun resetAdjustments() {
-        pushUndo()
-        val defaultAdj = VideoAdjustments()
-        _state.update { s ->
-            s.copy(
-                adjustments = defaultAdj,
-                project = s.project?.copy(adjustments = defaultAdj)
-            )
-        }
-        val selectedId = _state.value.selectedClipId
-        if (selectedId != null) {
-            updateClip(selectedId) { it.copy(adjustments = defaultAdj) }
-        }
-        persistProject()
-    }
-
-    fun resetAllAdjustments() = resetAdjustments()
-
-    // Sticker system
-    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
-    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
-
-    fun addStickerOverlay(
-        symbolOrUri: String,
-        category: String = "Emoji",
-        name: String = "Sticker"
-    ) {
-        pushUndo()
-        val sticker = StickerOverlay(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            category = category,
-            symbolOrUri = symbolOrUri,
-            x = 0.5f,
-            y = 0.5f,
-            startMs = _state.value.playerPositionMs,
-            endMs = (_state.value.playerPositionMs + 5000L).coerceAtMost(_state.value.durationMs)
-        )
-        val selectedClipId = _state.value.selectedClipId
-        if (selectedClipId != null) {
-            updateClip(selectedClipId) { c ->
-                c.copy(stickers = c.stickers + sticker)
-            }
-        }
-        _state.update { s ->
-            val currentList = s.project?.stickers ?: emptyList()
-            val newList = currentList + sticker
-            s.copy(
-                selectedStickerId = sticker.id,
-                project = s.project?.copy(stickers = newList)
-            )
-        }
-        persistProject()
-    }
-
-    fun updateStickerOverlay(stickerId: String, transform: (StickerOverlay) -> StickerOverlay) {
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updatedProjectStickers = p.stickers.map { if (it.id == stickerId) transform(it) else it }
-            val updatedClips = p.clips.map { clip ->
-                clip.copy(stickers = clip.stickers.map { if (it.id == stickerId) transform(it) else it })
-            }
-            s.copy(project = p.copy(stickers = updatedProjectStickers, clips = updatedClips))
-        }
-        persistProject()
-    }
-
-    fun removeStickerOverlay(stickerId: String) {
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updatedProjectStickers = p.stickers.filterNot { it.id == stickerId }
-            val updatedClips = p.clips.map { clip ->
-                clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId })
-            }
-            s.copy(
-                selectedStickerId = if (s.selectedStickerId == stickerId) null else s.selectedStickerId,
-                project = p.copy(stickers = updatedProjectStickers, clips = updatedClips)
-            )
-        }
-        persistProject()
-    }
-
-    // Cover selection
-    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
-    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
-
-    fun setCoverFrame(ms: Long) {
-        _state.update { s ->
-            s.copy(project = s.project?.copy(coverFrameMs = ms, coverCustomUri = null))
-        }
-        persistProject()
-    }
-
-    fun setCoverCustomUri(uri: String) {
-        _state.update { s ->
-            s.copy(project = s.project?.copy(coverCustomUri = uri))
-        }
-        persistProject()
-    }
-
-    // Voice Over Recording
-    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
-    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
-
-    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String = "Voiceover") {
-        pushUndo()
-        val track = AudioTrack(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            uri = uri,
-            volume = 1.0f,
-            trimStartMs = 0L,
-            trimEndMs = durationMs
-        )
-        val clip = MediaClip(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            uri = uri,
-            durationMs = durationMs,
-            trimStartMs = 0L,
-            trimEndMs = durationMs,
-            type = ClipType.SFX,
-            trackIndex = 1
-        )
-        _audio.update { it.copy(tracks = it.tracks + track) }
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updatedClips = p.clips + clip
-            val newDur = maxOf(s.durationMs, durationMs)
-            s.copy(
-                project = p.copy(clips = updatedClips, durationMs = newDur),
-                durationMs = newDur
-            )
-        }
-        persistProject()
-    }
-
-    // Camera Capture
-    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
-    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
-
-    // Help Dialog
-    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
-    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
-
-    // Media Library
-    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
-    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
-
-    // Fullscreen Preview
-    fun setFullscreenPreview(enabled: Boolean) = _state.update { it.copy(isFullscreenPreview = enabled) }
-    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
-
-    // Edit operations (Rotate, Flip)
-    fun rotateSelectedClip() {
-        val selectedId = _state.value.selectedClipId ?: return
-        pushUndo()
-        updateClip(selectedId) { c ->
-            val newAngle = (c.rotationAngle + 90f) % 360f
-            c.copy(rotationAngle = newAngle)
-        }
-    }
-
-    fun flipSelectedClipHorizontal() {
-        val selectedId = _state.value.selectedClipId ?: return
-        pushUndo()
-        updateClip(selectedId) { c ->
-            c.copy(isFlippedHorizontal = !c.isFlippedHorizontal)
-        }
-    }
-
-    fun flipSelectedClipVertical() {
-        val selectedId = _state.value.selectedClipId ?: return
-        pushUndo()
-        updateClip(selectedId) { c ->
-            c.copy(isFlippedVertical = !c.isFlippedVertical)
-        }
     }
 
     fun openTrimPanel() = _state.update { it.copy(trimPanelOpen = true) }

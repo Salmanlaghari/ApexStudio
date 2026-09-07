@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,13 +38,6 @@ import com.apexstudio.app.data.text.TextPresetEngine
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 
-/**
- * Bottom-sheet caption editor. Lists every caption on the selected
- * clip (tap to select, drag on the preview to position), edits the
- * selected caption's text / colour / pill / size, and adds/deletes
- * captions. All changes persist to the project immediately.
- * Features the 500+ Text Studio Preset Engine for instant styling.
- */
 @Composable
 fun TextPanel(
     overlays: List<TextOverlay>,
@@ -58,27 +53,28 @@ fun TextPanel(
     onClose: () -> Unit
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
-    var selectedCategory by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(TextPresetEngine.categories.first())
-    }
+    var selectedCategory by remember { mutableStateOf(TextPresetEngine.categories.first()) }
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = 380.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .padding(14.dp)
+            .verticalScroll(scrollState)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Text",
+                "Text Studio",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 modifier = Modifier.weight(1f)
             )
             Icon(
@@ -86,13 +82,13 @@ fun TextPanel(
                 contentDescription = "Close text",
                 tint = ApexPalette.NeonCyan,
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .clickable { onClose() }
-                    .padding(4.dp)
+                    .padding(3.dp)
             )
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
         // Caption chips: one pill per caption + an add button.
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -140,7 +136,7 @@ fun TextPanel(
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         if (selected == null) {
             Text(
@@ -152,7 +148,7 @@ fun TextPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(40.dp)
+                    .height(38.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
                     .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(10.dp))
@@ -177,7 +173,7 @@ fun TextPanel(
             maxLines = 3,
             textStyle = androidx.compose.ui.text.TextStyle(
                 color = Color.White,
-                fontSize = 14.sp
+                fontSize = 13.sp
             ),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = ApexPalette.NeonCyan,
@@ -189,7 +185,7 @@ fun TextPanel(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         // 500+ Text Studio Presets
         Row(
@@ -273,7 +269,7 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         // Text colour swatches.
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -288,7 +284,7 @@ fun TextPanel(
                 textColors().forEach { c ->
                     Box(
                         modifier = Modifier
-                            .size(26.dp)
+                            .size(24.dp)
                             .clip(CircleShape)
                             .background(Color(c.toInt()))
                             .border(
@@ -312,7 +308,7 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         // Pill background.
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -352,7 +348,7 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         Text(
             "Size",

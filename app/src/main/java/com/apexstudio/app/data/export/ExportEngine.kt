@@ -175,6 +175,19 @@ class ExportEngine(private val context: Context) {
                     videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }
 
+                // 2.5 Adjustments (Brightness / Contrast / Saturation /
+                //     Temperature / Tint / Highlights / Shadows). The
+                //     CPU side handled these for thumbnails; the export
+                //     was previously dropping them. Add the GL effect so
+                //     the exported MP4 reflects the user's adjustments.
+                if (!config.adjustments.isDefault) {
+                    videoEffects.add(
+                        com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                            adjustments = config.adjustments
+                        )
+                    )
+                }
+
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)
                 if (config.fxPreset != null && config.fxIntensity > 0f) {
                     videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity))

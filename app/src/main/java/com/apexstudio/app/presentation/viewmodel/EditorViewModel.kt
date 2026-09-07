@@ -907,6 +907,30 @@ class EditorViewModel(
         }
         val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
         val speed = selected?.speedMultiplier ?: s.playbackSpeed
+
+        // Resolve transition: the Transmission panel writes
+        // lastTransitionType / lastTransitionDurationMs to project
+        // state. Until now they were never propagated into
+        // ExportConfig, so the transition was applied in the live
+        // preview's state but silently dropped on export.
+        val transitionType: com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType? =
+            s.project?.lastTransitionType?.let {
+                com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.byId(it)
+            }
+        val transitionDurationMs: Long =
+            s.project?.lastTransitionDurationMs?.takeIf { it > 0L } ?: 500L
+
+        // Adjustments (Brightness/Contrast/Saturation/etc.). Same
+        // story: the AdjustPanel writes them to state, but
+        // ExportConfig.adjustments was declared and never read, so
+        // the export baked in the raw video. Pull the currently
+        // selected clip's adjustments — fall back to project-level
+        // defaults for clips that have none.
+        val adjustments: com.apexstudio.app.domain.model.VideoAdjustments =
+            selected?.adjustments?.takeIf { !it.isDefault }
+                ?: s.project?.adjustments
+                ?: com.apexstudio.app.domain.model.VideoAdjustments()
+
         engine.startExport(
             inputUri,
             ExportEngine.ExportConfig(
@@ -915,8 +939,11 @@ class EditorViewModel(
                 quality = quality,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
+                adjustments = adjustments,
                 fxPreset = fxPreset,
                 fxIntensity = s.fxIntensity,
+                transitionType = transitionType,
+                transitionDurationMs = transitionDurationMs,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },

@@ -161,6 +161,11 @@ data class Project(
     // restart.
     val lastTransitionType: String? = null,
     val lastTransitionDurationMs: Long = 500L,
+    // Phase H: intro / outro clip references. The clip with
+    // introClipId is played at the start of the project; outroClipId
+    // at the end. Null = no intro/outro configured.
+    val introClipId: String? = null,
+    val outroClipId: String? = null,
     // Project-level adjustment defaults; AdjustPanel persists them so
     // reopening a project restores the current grade.
     val adjustments: VideoAdjustments = VideoAdjustments(),

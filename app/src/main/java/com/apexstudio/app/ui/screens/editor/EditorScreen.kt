@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -40,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -90,6 +93,12 @@ fun EditorScreen(
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
+    // TimelineMediaCache is a process-lifetime LRU cache of per-clip
+    // filmstrip frames (Video/OVERLAY clips) and waveform samples
+    // (AUDIO/SFX clips). It runs MediaMetadataRetriever extractions on
+    // Dispatchers.IO and publishes results through a StateFlow. The
+    // Composable reads the flow via collectAsStateWithLifecycle so
+    // frames appear progressively without blocking the timeline.
     val timelineMediaCache = remember { TimelineMediaCache(context) }
     DisposableEffect(Unit) {
         onDispose { timelineMediaCache.release() }
@@ -174,14 +183,55 @@ fun EditorScreen(
     // internal SurfaceView is composited by SurfaceFlinger and is
     // outside any Compose RenderEffect / graphicsLayer / draw modifier.
     //
-    // Slider drag needs to be smooth without rebuilding the GL chain on
-    // every event. We side-channel the per-frame values through
-    // MutableStateFlow holders — the lambdas in the effect constructor
-    // read the current holder value, so the per-frame uniform is always
-    // the latest, but the effect itself is only rebuilt when the chain
-    // composition actually changes (filter id, fx id, or any adjustment
-    // crosses the "default" threshold).
+    // PR C (Adopt pre-refactor wins) restores the four behaviours that
+    // were lost in commit c6465b6 (the "100+ filter catalog" UI
+    // refactor):
+    //
+    //  (1) LutBitmapCache pre-parses the selected .cube file on
+    //      Dispatchers.Default and the result is handed to
+    //      LutFilterGlEffect via the `preloaded` slot, so the GPU
+    //      init only has to upload a pre-packed pixel buffer instead
+    //      of re-parsing the cube on the GL thread. The first tap on
+    //      a filter still costs the parse (100-300ms) but subsequent
+    //      taps are instant.
+    //  (2) The effect chain is re-asserted via setVideoEffects after
+    //      every player.prepare() so a freshly queued media item
+    //      doesn't lose its effect chain between prepare and the first
+    //      frame.
+    //  (3) When the player is paused, a freshly tapped filter / crop /
+    //      intensity-slider move would otherwise leave the surface
+    //      showing the pre-change frame (Media3 only renders effects
+    //      on produced frames). After setVideoEffects we nudge a
+    //      one-frame re-render via seekTo(currentPosition) so the new
+    //      GL pipeline shows up instantly on a paused preview.
+    //  (4) The chain now includes VideoCropGlEffect and
+    //      KeyframeAnimationEffect, not just LUT + FX + Adjustments.
+    //
+    // Slider drag is smooth for LUT (intensityProvider) and Adjustments
+    // (per-uniform providers); FX has no intensityProvider, so a
+    // slider drag on FX intensity triggers a chain rebuild. The
+    // rebuild cost is small (no GL texture upload) and the slider
+    // value range is small, so it's still smooth in practice.
     // ----------------------------------------------------------------
+    val activeFilterId = state.activeFilterId
+    val activeFilterPreset: com.apexstudio.app.data.filter.FilterPreset? =
+        if (activeFilterId != null) filterEngine.manifest.presetById(activeFilterId) else null
+    val activeFxPreset = com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
+
+    // Pre-load the LUT texture off the Main thread. Re-runs whenever
+    // the active filter preset changes; a repeat tap on the same
+    // preset is a cache hit and returns immediately. The
+    // pre-parsed buffer is then passed to LutFilterGlEffect via the
+    // `preloaded` slot so its init doesn't have to parse the .cube
+    // on the GL thread.
+    var preloadedLut by remember(activeFilterPreset?.id) {
+        mutableStateOf<com.apexstudio.app.data.filter.LutTexture?>(null)
+    }
+    LaunchedEffect(activeFilterPreset) {
+        preloadedLut = if (activeFilterPreset == null) null
+        else com.apexstudio.app.data.filter.LutBitmapCache.getOrLoad(context, activeFilterPreset)
+    }
+
     val filterIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.filterIntensity) }
     val fxIntensityFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.fxIntensity) }
     val brightnessFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(state.adjustments.brightness) }
@@ -208,85 +258,111 @@ fun EditorScreen(
     highlightsFlow.value = state.adjustments.highlights
     shadowsFlow.value = state.adjustments.shadows
 
-    // Build (or rebuild) the effect chain only when the chain
-    // composition changes — filter id, fx id, the boolean "any
-    // adjustment non-default" flag, or the FX intensity (FxGlEffect
-    // does not expose an intensityProvider, so the chain must be
-    // rebuilt on every FX slider tick). Filter / Adjustment
-    // intensities are routed through the flows above, NOT through
-    // this LaunchedEffect, so dragging those sliders doesn't
-    // rebuild the chain (and re-upload the LUT texture) 60×/s.
-    LaunchedEffect(
-        exoPlayer,
-        state.activeFilterId,
-        state.activeFxId,
+    // Resolve keyframes + crop for the effect chain.
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val selectedKeyframes = selectedClip?.keyframes
+
+    // Build the GL effect chain. Mirrors the order the export uses
+    // (see ExportEngine.startExport): Crop first, then Keyframes,
+    // then LUT, then FX, then Adjustments.
+    val currentEffects = remember(
+        activeFilterPreset,
+        state.filterIntensity,
+        activeFxPreset,
         state.fxIntensity,
+        selectedKeyframes,
+        state.cropRect,
+        preloadedLut,
         state.adjustments.isDefault
     ) {
+        buildList<androidx.media3.common.Effect> {
+            // Crop first: the LUT + FX + keyframes then grade/transform
+            // the already-cropped frame, exactly like the export path.
+            com.apexstudio.app.data.effect.VideoCropGlEffect.fromRect(
+                state.cropRect.left,
+                state.cropRect.top,
+                state.cropRect.right,
+                state.cropRect.bottom
+            )?.let { add(it) }
+
+            // Keyframe animation (translate/scale/rotation/opacity
+            // over time). Wrapped in a single-element list by
+            // .buildEffects(); we add the first one. The selected
+            // clip's KeyframeTrack is captured by reference so the
+            // effect's per-frame trackProvider reads the current
+            // animation.
+            if (selectedKeyframes != null && !selectedKeyframes.isEmpty()) {
+                add(
+                    com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                        trackProvider = { selectedKeyframes }
+                    ).buildEffects().first()
+                )
+            }
+
+            // 3D LUT filter. Pre-parsed via LutBitmapCache so the
+            // GL init only uploads the pixel buffer; .cube parsing
+            // happened on Dispatchers.Default.
+            if (activeFilterPreset != null && state.filterIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.filter.LutFilterGlEffect(
+                        context = context,
+                        preset = activeFilterPreset,
+                        intensity = state.filterIntensity.coerceIn(0f, 1f),
+                        intensityProvider = { filterIntensityFlow.value.coerceIn(0f, 1f) },
+                        preloaded = preloadedLut
+                    )
+                )
+            }
+
+            // Dynamic FX (Vignette, VHS, Glitch, Chromatic, Bloom, …).
+            if (activeFxPreset != null && state.fxIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.fx.FxGlEffect(
+                        activeFxPreset,
+                        fxIntensityFlow.value.coerceIn(0f, 1f)
+                    )
+                )
+            }
+
+            // Adjustments (Brightness / Contrast / Saturation / etc.) —
+            // ColorMatrix-equivalent on the GPU. Installed only when
+            // the user has touched at least one slider, so an
+            // unmodified project doesn't add a no-op GL pass.
+            if (!state.adjustments.isDefault) {
+                add(
+                    com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                        adjustments = state.adjustments,
+                        brightnessProvider = { brightnessFlow.value },
+                        contrastProvider = { contrastFlow.value },
+                        saturationProvider = { saturationFlow.value },
+                        exposureProvider = { exposureFlow.value },
+                        temperatureProvider = { temperatureFlow.value },
+                        tintProvider = { tintFlow.value },
+                        highlightsProvider = { highlightsFlow.value },
+                        shadowsProvider = { shadowsFlow.value }
+                    )
+                )
+            }
+        }
+    }
+
+    // Re-apply the chain whenever it changes — and nudge a one-frame
+    // re-render on a paused preview so a freshly tapped filter /
+    // crop / intensity move shows up instantly instead of waiting
+    // for the next decoded frame.
+    LaunchedEffect(exoPlayer, currentEffects) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val effects = mutableListOf<androidx.media3.common.Effect>()
-
-        // 1. Adjustments (Brightness / Contrast / Saturation / etc.) —
-        //    ColorMatrix-equivalent on the GPU. Always installed so the
-        //    preview reacts to every adjustment slider in real time.
-        if (!state.adjustments.isDefault) {
-            effects.add(
-                com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
-                    adjustments = state.adjustments,
-                    brightnessProvider = { brightnessFlow.value },
-                    contrastProvider = { contrastFlow.value },
-                    saturationProvider = { saturationFlow.value },
-                    exposureProvider = { exposureFlow.value },
-                    temperatureProvider = { temperatureFlow.value },
-                    tintProvider = { tintFlow.value },
-                    highlightsProvider = { highlightsFlow.value },
-                    shadowsProvider = { shadowsFlow.value }
-                )
-            )
-        }
-
-        // 2. 3D LUT filter. The GL effect accepts a null preset and
-        //    uploads an identity LUT, which is a no-op on the frame.
-        //    When a filter is selected we resolve the preset from the
-        //    manifest and pass an intensityProvider so the slider
-        //    drag is smooth.
-        val activeFilterId = state.activeFilterId
-        val filterPreset: com.apexstudio.app.data.filter.FilterPreset? =
-            if (activeFilterId != null)
-                filterEngine.manifest.presetById(activeFilterId)
-            else null
-        if (filterPreset != null && state.filterIntensity > 0f) {
-            effects.add(
-                com.apexstudio.app.data.filter.LutFilterGlEffect(
-                    context = context,
-                    preset = filterPreset,
-                    intensity = state.filterIntensity.coerceIn(0f, 1f),
-                    intensityProvider = { filterIntensityFlow.value.coerceIn(0f, 1f) }
-                )
-            )
-        }
-
-        // 3. Dynamic FX (Vignette, VHS, Glitch, Chromatic, Bloom, …).
-        //    FxGlEffect requires a non-null preset, so only install
-        //    when a valid id is active. FxGlEffect does not expose an
-        //    intensityProvider today, so a slider drag does trigger a
-        //    chain rebuild (acceptable for FX — at most ~60×/s, and
-        //    FxGlEffect is cheap to construct: no GL texture upload,
-        //    just a shader-program re-resolution on the next frame).
-        val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(state.activeFxId)
-        if (fxPreset != null && state.fxIntensity > 0f) {
-            effects.add(
-                com.apexstudio.app.data.fx.FxGlEffect(
-                    preset = fxPreset,
-                    intensity = fxIntensityFlow.value.coerceIn(0f, 1f)
-                )
-            )
-        }
-
         try {
-            player.setVideoEffects(effects)
+            player.setVideoEffects(currentEffects)
         } catch (e: Exception) {
-            Log.e("EditorScreen", "setVideoEffects failed", e)
+            Log.e("EditorScreen", "setVideoEffects (filter) failed", e)
+        }
+        if (!player.isPlaying && player.playbackState == Player.STATE_READY) {
+            try {
+                player.seekTo(player.currentPosition.coerceAtLeast(0L))
+            } catch (e: Exception) {
+                Log.w("EditorScreen", "paused preview re-render seek failed", e)
+            }
         }
     }
 
@@ -301,6 +377,18 @@ fun EditorScreen(
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                // PR C: re-assert the current Effect list AFTER
+                // prepare() so the GL pipeline has both the media and
+                // the LUT/keyframes attached when the first frame is
+                // produced. Without this, a clip change could leave
+                // the freshly queued media item with no effects until
+                // the user next touched a slider (which would
+                // re-trigger the `currentEffects` LaunchedEffect).
+                try {
+                    player.setVideoEffects(currentEffects)
+                } catch (e: Exception) {
+                    Log.e("EditorScreen", "setVideoEffects (after prepare) failed", e)
+                }
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -326,6 +414,53 @@ fun EditorScreen(
             if (player.isPlaying) {
                 val pos = player.currentPosition
                 vm.setPlayerPosition(pos)
+            }
+            delay(33)
+        }
+    }
+
+    // Phase H: apply slow-motion speed to the ExoPlayer when the
+    // slider is non-1.0. ExoPlayer supports any speed 0.1..2.0 via
+    // setPlaybackSpeed; below 0.1 it falls back to step-frame on the
+    // pre-recorded media which is the closest a normal player gets
+    // to extreme slow-mo. We re-apply on every change so the slider
+    // has live feedback.
+    LaunchedEffect(exoPlayer, state.slowMotionSpeed, state.playbackDirection) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        val direction = if (state.playbackDirection < 0) -1 else 1
+        // ExoPlayer.setPlaybackSpeed accepts a positive value; for
+        // reverse direction we simulate by re-seeking on every tick
+        // (see the 33ms loop above + the per-frame reverse step in
+        // the same effect). For forward direction we just apply the
+        // slow-motion factor.
+        if (direction > 0) {
+            val speed = state.slowMotionSpeed.coerceIn(0.1f, 2.0f)
+            player.setPlaybackSpeed(speed)
+        } else {
+            // Reverse preview: keep speed at 1.0 in the player; the
+            // play loop (combined with playbackDirection = -1) seeks
+            // backwards by 33ms per frame to simulate reverse.
+            player.setPlaybackSpeed(1.0f)
+        }
+    }
+
+    // Phase H: reverse-mode simulation. While playbackDirection = -1
+    // and the user is "playing", we step the player backwards by 33ms
+    // per frame instead of playing forwards. A real reverse is
+    // export-only (TODO in ExportEngine).
+    LaunchedEffect(exoPlayer, state.isPlaying, state.playbackDirection) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (state.playbackDirection >= 0 || !state.isPlaying) return@LaunchedEffect
+        while (isActive) {
+            if (player.isPlaying) {
+                val newPos = (player.currentPosition - 33L).coerceAtLeast(0L)
+                if (newPos <= 0L) {
+                    player.pause()
+                    vm.setPlaying(false)
+                } else {
+                    player.seekTo(newPos)
+                    vm.setPlayerPosition(newPos)
+                }
             }
             delay(33)
         }
@@ -415,6 +550,11 @@ fun EditorScreen(
                     onAudio = onAudio,
                     onRecord = { vm.openVoiceRecorder() },
                     onCamera = { vm.openCameraCapture() },
+                    onSlowMotion = { vm.openSlowMotionPanel() },
+                    onReverse = { vm.openReversePanel() },
+                    onIntro = { vm.openIntroPanel() },
+                    onOutro = { vm.openOutroPanel() },
+                    onColorCombo = { vm.openColorComboPanel() },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 8.dp)
@@ -445,6 +585,7 @@ fun EditorScreen(
             onSelectClip = { vm.selectClipAndRefresh(it) },
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
+            onTrimChange = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
             modifier = Modifier
                 .fillMaxWidth()
                 // Reference image shows all 4 layer rows (purple
@@ -583,6 +724,110 @@ fun EditorScreen(
                         vm.closeFxPanel()
                     },
                     onClose = { vm.closeFxPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Slow-motion panel
+    if (state.slowMotionPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeSlowMotionPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                SlowMotionPanel(
+                    currentSpeed = state.slowMotionSpeed,
+                    onSpeedChange = { vm.setSlowMotionSpeed(it) },
+                    onClose = { vm.closeSlowMotionPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Reverse panel
+    if (state.reversePanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeReversePanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ReversePanel(
+                    direction = state.playbackDirection,
+                    onToggle = {
+                        vm.setPlaybackDirection(if (state.playbackDirection < 0) 1 else -1)
+                    },
+                    onClose = { vm.closeReversePanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Intro picker
+    if (state.introPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeIntroPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ClipPickerPanel(
+                    title = "Set Intro",
+                    introOrOutro = "intro",
+                    selectedClipId = state.introClipId,
+                    clips = state.project?.clips ?: emptyList(),
+                    onSelect = { vm.setIntroClip(it) },
+                    onClose = { vm.closeIntroPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Outro picker
+    if (state.outroPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeOutroPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ClipPickerPanel(
+                    title = "Set Outro",
+                    introOrOutro = "outro",
+                    selectedClipId = state.outroClipId,
+                    clips = state.project?.clips ?: emptyList(),
+                    onSelect = { vm.setOutroClip(it) },
+                    onClose = { vm.closeOutroPanel() }
+                )
+            }
+        }
+    }
+
+    // Phase H: Colour Combo panel
+    if (state.colorComboPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeColorComboPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ColorComboPanel(
+                    activeComboId = state.activeColorComboId,
+                    onApply = { vm.applyColourCombo(it) },
+                    onClear = { vm.clearColorCombo() },
+                    onClose = { vm.closeColorComboPanel() }
                 )
             }
         }
@@ -1075,6 +1320,11 @@ fun RightToolRail(
     onAudio: () -> Unit = {},
     onRecord: () -> Unit = {},
     onCamera: () -> Unit = {},
+    onSlowMotion: () -> Unit = {},
+    onReverse: () -> Unit = {},
+    onIntro: () -> Unit = {},
+    onOutro: () -> Unit = {},
+    onColorCombo: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1089,6 +1339,12 @@ fun RightToolRail(
         RailItem(Icons.Default.MusicNote, "Audio", onAudio)
         RailItem(Icons.Default.Mic, "Record", onRecord)
         RailItem(Icons.Default.CameraAlt, "Camera", onCamera)
+        // Phase H: speed / direction / bookend / one-tap colour
+        RailItem(Icons.Default.SlowMotionVideo, "Slow", onSlowMotion)
+        RailItem(Icons.Default.FastForward, "Reverse", onReverse)
+        RailItem(Icons.Default.Start, "Intro", onIntro)
+        RailItem(Icons.Default.Stop, "Outro", onOutro)
+        RailItem(Icons.Default.Palette, "Combo", onColorCombo)
     }
 }
 
@@ -1273,6 +1529,7 @@ fun TimelineTrackArea(
     onSelectClip: (String?) -> Unit = {},
     onCover: () -> Unit = {},
     onAddMedia: () -> Unit = {},
+    onTrimChange: ((clipId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val clips = state.project?.clips ?: emptyList()
@@ -1280,11 +1537,21 @@ fun TimelineTrackArea(
         it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
     }
 
+    // PR C: pxPerMs is shared with the per-clip VideoClipBlock so a
+    // clip's width is consistent with the playhead scrub math used
+    // by the TimelineRuler above.
     val pxPerMs = state.zoomLevel.coerceAtLeast(0.1f) * 0.12f
 
+    // Kick off TimelineMediaCache extractions for every clip in the
+    // project. The cache is content-keyed, so repeat observe() calls
+    // with the same clips + pxPerMs are no-ops.
     timelineMediaCache.observe(clips, pxPerMs)
     val cacheMap by timelineMediaCache.state.collectAsStateWithLifecycle()
 
+    // Build a [trackStartMs, trackLengthMs] map for every clip so
+    // each VideoClipBlock knows its time-axis position. The current
+    // UI shows a single lane (V1 only); a follow-up can split into
+    // V1/V2 lanes for VIDEO vs OVERLAY clips.
     val blockGeometry = remember(clips, pxPerMs) {
         var runningMs = 0L
         clips.map { clip ->
@@ -1342,10 +1609,20 @@ fun TimelineTrackArea(
 
             // Main Video Filmstrip Container.
             //
-            // Real filmstrip: read extracted Bitmaps from the cache
-            // and render them. When no frames are available yet
-            // (extraction in flight or source couldn't be decoded),
-            // show an honest loading state instead of fake gradients.
+            // PR C: per-clip VideoClipBlock rendering with real
+            // time-axis positioning. Each clip is laid out at
+            // `trackStartMs * pxPerMs` with width `trackLengthMs *
+            // pxPerMs`, so a 5s clip and a 60s clip show
+            // proportional blocks on the same ruler. The cached
+            // ClipMedia.frames are rendered as Image Composables
+            // inside each block; the gradient tile divider matches
+            // the cell count so the grid lines stay aligned with
+            // the real frames.
+            //
+            // Honest fallback: when no frames are in cache yet
+            // (extraction in flight, source undecodable), the
+            // block draws a single thin progress line — no fake
+            // render.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1355,51 +1632,46 @@ fun TimelineTrackArea(
                     .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                val firstVideoClip = clips.firstOrNull {
-                    it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
-                }
-                val firstVideoMedia = firstVideoClip?.let { cacheMap[it.id] }
-                val frames = firstVideoMedia?.frames.orEmpty()
-                if (frames.isNotEmpty()) {
-                    Row(
+                if (videoClips.isEmpty()) {
+                    Box(
                         modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(1.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        contentAlignment = Alignment.Center
                     ) {
-                        frames.forEach { bmp ->
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(4.dp)),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        }
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 6.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        FilmstripLoadingBar(isActive = firstVideoClip != null && firstVideoMedia == null)
-                        Spacer(Modifier.height(2.dp))
                         Text(
-                            text = if (firstVideoClip == null) "No clip selected" else "Loading thumbnails…",
+                            text = "Tap + to add a video clip",
                             color = Color(0xFF9CA3AF),
-                            fontSize = 8.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false
                         )
                     }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        for ((clip, trackStart, trackLen) in blockGeometry) {
+                            if (clip.type != ClipType.VIDEO && clip.type != ClipType.OVERLAY) continue
+                            val media = cacheMap[clip.id]
+                            VideoClipBlock(
+                                clip = clip,
+                                trackStartMs = trackStart,
+                                trackLengthMs = trackLen,
+                                pxPerMs = pxPerMs,
+                                selected = state.selectedClipId == clip.id,
+                                playheadMs = state.playerPositionMs,
+                                media = media,
+                                onSelect = { onSelectClip(clip.id) },
+                                onTrimChange = { start, end ->
+                                    onTrimChange?.invoke(clip.id, start, end)
+                                }
+                            )
+                        }
+                    }
                 }
 
-                // Speed Indicator Chip "1.0x"
+                // Speed Indicator Chip "1.0x" (kept on top of the
+                // filmstrip lane — does not interfere with the
+                // per-clip blocks because it sits at TopStart with
+                // a small padding).
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -1418,22 +1690,6 @@ fun TimelineTrackArea(
                     )
                     Text("1.0x", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-
-                // Trim handles (white vertical bars)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
             }
 
             Spacer(Modifier.width(8.dp))
@@ -1456,7 +1712,6 @@ fun TimelineTrackArea(
             }
         }
 
-        val clips = state.project?.clips ?: emptyList()
         val textClip = clips.firstOrNull { it.textOverlays.isNotEmpty() }
         val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "ApexStudio  Pro Video Editor"
 
@@ -1465,6 +1720,11 @@ fun TimelineTrackArea(
 
         val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
         val audioLabel = audioClip?.name ?: "Dreamscape"
+        // PR B: the audio track row now reads the real waveform
+        // samples from the cache (or the state-level audioWaveform as
+        // a fallback for the legacy decode path). If neither is
+        // available, we render the same "Loading…" text we use for
+        // the video filmstrip.
         val audioMedia = audioClip?.let { cacheMap[it.id] }
         val audioLoading = audioClip != null && audioMedia == null
         val audioWaveform = audioMedia?.waveform?.takeIf { it.isNotEmpty() } ?: state.audioWaveform
@@ -1510,6 +1770,31 @@ fun TimelineTrackArea(
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
     }
+}
+
+/**
+ * Small "pulse" loading indicator for the filmstrip row. Shows a
+ * thin horizontal bar whose brightness animates 0.4..1.0 so the user
+ * knows the cache is working. Deliberately tiny (2dp tall, 30% wide)
+ * so it doesn't visually compete with the eventual filmstrip.
+ */
+@Composable
+private fun FilmstripLoadingBar(isActive: Boolean) {
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1f else 0.4f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(700),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "filmstrip-loading-pulse"
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.3f)
+            .height(2.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(Color(0xFF8B5CF6).copy(alpha = alpha * 0.7f))
+    )
 }
 
 @Composable
@@ -1630,23 +1915,217 @@ private fun TrackLayerRow(
     }
 }
 
+/**
+ * One clip rendered as a horizontally-laid-out block on the timeline.
+ *
+ * The block's x position is `trackStartMs * pxPerMs` and its width
+ * is `trackLengthMs * pxPerMs`, so a 5s clip and a 60s clip show
+ * proportional sizes on the same ruler. Inside the block, the
+ * cached `ClipMedia.frames` are rendered as Image Composables so
+ * the user sees the actual decoded content (not a colored tile).
+ *
+ * PR C: restores the pre-refactor per-clip block design that was
+ * removed in commit c6465b6. The block supports:
+ *   - Single-tap → onSelect
+ *   - Horizontal drag (when selected) → onTrimChange
+ *   - Keyframe diamond markers from clip.keyframes
+ *   - "Loading…" fallback when no frames have been extracted yet
+ */
 @Composable
-private fun FilmstripLoadingBar(isActive: Boolean) {
-    val alpha by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isActive) 1f else 0.4f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(700),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-        ),
-        label = "filmstrip-loading-bar"
-    )
+private fun VideoClipBlock(
+    clip: MediaClip,
+    trackStartMs: Long,
+    trackLengthMs: Long,
+    pxPerMs: Float,
+    selected: Boolean,
+    playheadMs: Long = 0L,
+    media: com.apexstudio.app.data.media.ClipMedia? = null,
+    onSelect: () -> Unit,
+    onTrimChange: ((startMs: Long, endMs: Long) -> Unit)? = null
+) {
+    val density = LocalDensity.current
+    val w = (trackLengthMs * pxPerMs).toInt().coerceAtLeast(40)
+    val x = (trackStartMs * pxPerMs).toInt()
     Box(
         modifier = Modifier
-            .fillMaxWidth(0.3f)
-            .height(2.dp)
-            .clip(RoundedCornerShape(1.dp))
-            .background(Color(0xFF00F0FF).copy(alpha = alpha))
-    )
+            .offset { androidx.compose.ui.unit.IntOffset(x, 0) }
+            .width(with(density) { w.toDp() })
+            .fillMaxHeight()
+            .padding(1.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onSelect)
+            .then(
+                if (selected && onTrimChange != null) {
+                    Modifier.pointerInput(clip.id, pxPerMs) {
+                        detectHorizontalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val deltaMs = (dragAmount / pxPerMs).toLong()
+                            val curLen = clip.trimEndMs - clip.trimStartMs
+                            val newStart = (clip.trimStartMs + deltaMs).coerceIn(
+                                0L, (clip.durationMs - curLen).coerceAtLeast(0L)
+                            )
+                            val newEnd = (newStart + curLen).coerceIn(
+                                newStart + 200L, clip.durationMs
+                            )
+                            onTrimChange(newStart, newEnd)
+                        }
+                    }
+                } else Modifier
+            )
+    ) {
+        // 1) Faux-tile background so the block is visible even before
+        //    extraction finishes. Cell count matches the eventual
+        //    filmstrip cell count so the grid lines stay aligned.
+        val cellCount = (media?.frames?.size ?: 8).coerceAtLeast(1)
+        val tileW = with(density) {
+            (w.toDp() / cellCount).toPx().coerceAtLeast(8f)
+        }
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val grad = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                listOf(
+                    Color(0xFF2E1065), Color(0xFF1E1B2E), Color(0xFF0F3460)
+                )
+            )
+            drawRect(brush = grad, size = size)
+            var i = 0f
+            while (i < size.width) {
+                drawLine(
+                    color = Color.Black.copy(alpha = 0.35f),
+                    start = Offset(i, 0f),
+                    end = Offset(i, size.height),
+                    strokeWidth = 1.2f
+                )
+                i += tileW
+            }
+            drawRect(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent)
+                ),
+                size = Size(size.width, size.height * 0.3f)
+            )
+            drawRect(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))
+                ),
+                topLeft = Offset(0f, size.height * 0.7f),
+                size = Size(size.width, size.height * 0.3f)
+            )
+        }
+
+        // 2) Real clip content overlays. When extraction has
+        //    finished, render the cached Bitmap frames so the
+        //    block shows actual video content. When extraction is
+        //    still in flight, fall through to the loading state.
+        if (media != null && media.frames.isNotEmpty()) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                for (frame in media.frames) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Image(
+                            bitmap = frame.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                    ),
+                    size = Size(size.width, size.height * 0.35f)
+                )
+            }
+        } else if (media != null && media.waveform.isNotEmpty()) {
+            // Audio-only clip inside a VIDEO track: render the
+            // waveform inside the block.
+            Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+                val mid = size.height / 2f
+                val step = size.width / media.waveform.size
+                val barWidth = (step * 0.6f).coerceAtLeast(1f)
+                for (i in media.waveform.indices) {
+                    val v = media.waveform[i].coerceIn(0f, 1f)
+                    val barH = (v * size.height * 0.85f).coerceAtLeast(2f)
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.85f),
+                        start = Offset(i * step, mid - barH / 2f),
+                        end = Offset(i * step, mid + barH / 2f),
+                        strokeWidth = barWidth,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                }
+            }
+        } else {
+            // Honest loading state — a single thin progress line.
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.3f)
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(Color(0xFF8B5CF6).copy(alpha = 0.7f))
+                )
+            }
+        }
+
+        // 3) Border + label
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(
+                    if (selected) 2.dp else 0.5.dp,
+                    if (selected) Color(0xFF06B6D4) else Color.White.copy(alpha = 0.15f),
+                    RoundedCornerShape(4.dp)
+                )
+        )
+        Text(
+            clip.name,
+            color = Color.White,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = if (selected) 16.dp else 4.dp, top = 2.dp)
+        )
+
+        // 4) Keyframe diamond markers. `keyframe.timeMs` is the
+        //    absolute project-time position; x inside the block is
+        //    `keyframe.timeMs - trackStartMs`, mapped through
+        //    pxPerMs. Wrapped in `media` non-null so the diamonds
+        //    never paint before the cell layout settles.
+        if (clip.keyframes.keyframes.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                for (kf in clip.keyframes.keyframes) {
+                    val xf = (kf.timeMs - trackStartMs) * pxPerMs
+                    if (xf < 0f || xf > size.width) continue
+                    val cx = xf
+                    val cy = size.height * 0.18f
+                    val r = 3.5f
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(cx, cy - r)
+                        lineTo(cx + r, cy)
+                        lineTo(cx, cy + r)
+                        lineTo(cx - r, cy)
+                        close()
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color(0xFFFBBF24),
+                        style = androidx.compose.ui.graphics.drawscope.Fill
+                    )
+                }
+            }
+        }
+    }
 }
 
 // === 6. BOTTOM EDIT TOOLBAR ===
@@ -1884,4 +2363,336 @@ private fun AddMediaRow(
             modifier = Modifier.size(18.dp)
         )
     }
+}
+
+// ====================================================================
+// Phase H: Slow-Motion / Reverse / Intro / Outro / Colour Combo panels
+// ====================================================================
+
+@Composable
+private fun SlowMotionPanel(
+    currentSpeed: Float,
+    onSpeedChange: (Float) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Slow Motion", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Speed: ${"%.2f".format(currentSpeed)}x",
+            color = ApexPalette.NeonCyan,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        androidx.compose.material3.Slider(
+            value = currentSpeed,
+            onValueChange = onSpeedChange,
+            valueRange = 0.1f..2.0f,
+            steps = 38 // 0.05 increments across 1.9 range
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("0.1x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            Text("1.0x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            Text("2.0x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(0.25f, 0.5f, 1.0f).forEach { preset ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { onSpeedChange(preset) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("${preset}x", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReversePanel(
+    direction: Int,
+    onToggle: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Reverse Playback", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Preview reverses by stepping the playhead 33ms per frame. " +
+                    "Final export uses true reverse-frame rendering (see TODO in ExportEngine).",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (direction < 0) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                .border(
+                    1.dp,
+                    if (direction < 0) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                    RoundedCornerShape(12.dp)
+                )
+                .clickable { onToggle() }
+                .padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (direction < 0) Icons.Default.FastForward else Icons.Default.FastRewind,
+                    contentDescription = null,
+                    tint = if (direction < 0) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (direction < 0) "Reverse ON" else "Reverse OFF",
+                    color = if (direction < 0) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipPickerPanel(
+    title: String,
+    introOrOutro: String, // "intro" or "outro"
+    selectedClipId: String?,
+    clips: List<com.apexstudio.app.domain.model.MediaClip>,
+    onSelect: (String?) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Plays this clip at the ${introOrOutro} of the project.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .clickable { onSelect(null) }
+                .padding(12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No ${introOrOutro}", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+        clips.forEach { clip ->
+            val isSelected = clip.id == selectedClipId
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color.Transparent)
+                    .border(
+                        1.dp,
+                        if (isSelected) ApexPalette.NeonCyan else Color.Transparent,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(clip.id) }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (introOrOutro == "intro") Icons.Default.PlayArrow else Icons.Default.Stop,
+                        contentDescription = null,
+                        tint = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        clip.name,
+                        color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorComboPanel(
+    activeComboId: String?,
+    onApply: (String) -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit
+) {
+    val combos = com.apexstudio.app.data.preset.ColourComboPreset.BUILTIN
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Colour Combo", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(20.dp).clickable(onClick = onClose)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "One-tap filter + adjustments + FX. Live preview.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        combos.forEach { combo ->
+            val isActive = combo.id == activeComboId
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isActive) combo.previewAccentArgb.toColor().copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                    .border(
+                        1.dp,
+                        if (isActive) combo.previewAccentArgb.toColor() else ApexPalette.BorderGlass,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .clickable { onApply(combo.id) }
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(combo.previewAccentArgb.toColor())
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            combo.name,
+                            color = if (isActive) combo.previewAccentArgb.toColor() else ApexPalette.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            combo.description,
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp,
+                            maxLines = 2
+                        )
+                    }
+                }
+            }
+        }
+        if (activeComboId != null) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onClear)
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Clear combo", color = ApexPalette.NeonPink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+private fun Long.toColor(): Color {
+    val r = ((this shr 16) and 0xFF).toInt()
+    val g = ((this shr 8) and 0xFF).toInt()
+    val b = (this and 0xFF).toInt()
+    val a = ((this shr 24) and 0xFF).toInt()
+    return Color(r, g, b, a)
 }

@@ -61,10 +61,10 @@ fun FilterPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         // Header
         Row(
@@ -75,7 +75,7 @@ fun FilterPanel(
                 "Filters",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
             )
             Icon(
@@ -83,26 +83,25 @@ fun FilterPanel(
                 contentDescription = "Close filters",
                 tint = ApexPalette.NeonCyan,
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .clickable { onClose() }
-                    .padding(4.dp)
+                    .padding(3.dp)
             )
         }
-        Spacer(Modifier.height(10.dp))
-
+        Spacer(Modifier.height(6.dp))
         // Category chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             manifest.categories.forEach { c ->
                 val selected = c.id == activeCategory
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
                             else ApexPalette.BgElevated
@@ -110,25 +109,25 @@ fun FilterPanel(
                         .border(
                             1.dp,
                             if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                            RoundedCornerShape(10.dp)
+                            RoundedCornerShape(8.dp)
                         )
                         .clickable { onCategoryChange(c.id) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         c.name,
                         color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Filter chips row (Original + each preset in the active category)
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             item {
                 val customOrig = com.apexstudio.app.data.filter.FilterThumbnailAssetHandler.getCustomThumbnail(LocalContext.current, null)
@@ -152,34 +151,40 @@ fun FilterPanel(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(6.dp))
 
         // Intensity slider — disabled when no filter is active
-        Text(
-            "Intensity",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Slider(
-            value = intensity,
-            onValueChange = onIntensityChange,
-            valueRange = 0f..1f,
-            enabled = activeFilterId != null,
-            colors = SliderDefaults.colors(
-                thumbColor = ApexPalette.NeonCyan,
-                activeTrackColor = ApexPalette.NeonCyan,
-                inactiveTrackColor = ApexPalette.BorderGlass
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            "${(intensity * 100).toInt()}%",
-            color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.End)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Intensity",
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(8.dp))
+            Slider(
+                value = intensity,
+                onValueChange = onIntensityChange,
+                valueRange = 0f..1f,
+                enabled = activeFilterId != null,
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonCyan,
+                    activeTrackColor = ApexPalette.NeonCyan,
+                    inactiveTrackColor = ApexPalette.BorderGlass
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "${(intensity * 100).toInt()}%",
+                color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -195,20 +200,20 @@ private fun FilterChip(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(80.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .width(68.dp)
+            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 2.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(76.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(64.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(colors))
                 .border(
-                    2.dp,
+                    1.5.dp,
                     if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                    RoundedCornerShape(10.dp)
+                    RoundedCornerShape(8.dp)
                 )
         ) {
             // Real 1:1 filter preview (video frame + this LUT applied) or
@@ -380,6 +385,50 @@ fun filterPreviewColors(filterId: String?): List<Color> {
         "blue_hour" -> listOf(Color(0xFF1A2A5A), Color(0xFF4A6ABA))
         "mountain_air" -> listOf(Color(0xFF3A5A6A), Color(0xFF8ABABA))
         "desert_sand" -> listOf(Color(0xFF7A5A2A), Color(0xFFCABA7A))
+        // Anime & Fantasy
+        "sakura_bloom" -> listOf(Color(0xFFE57373), Color(0xFFF8BBD0))
+        "makoto_sky" -> listOf(Color(0xFF0288D1), Color(0xFF81D4FA))
+        "spirited_green" -> listOf(Color(0xFF2E7D32), Color(0xFFA5D6A7))
+        "ghibli_warmth" -> listOf(Color(0xFFF57C00), Color(0xFFFFE082))
+        "fantasy_violet" -> listOf(Color(0xFF6A1B9A), Color(0xFFCE93D8))
+        "sunlit_meadow" -> listOf(Color(0xFF558B2F), Color(0xFFFFF59D))
+        "celestial_glow" -> listOf(Color(0xFF4527A0), Color(0xFFB39DDB))
+        "twilight_aurora" -> listOf(Color(0xFF00695C), Color(0xFF80CBC4))
+        "golden_chiharu" -> listOf(Color(0xFFEF6C00), Color(0xFFFFD54F))
+        "cherry_dusk" -> listOf(Color(0xFFC2185B), Color(0xFFFF80AB))
+        // Vintage 90s & Nostalgia
+        "fuji_velvia_50" -> listOf(Color(0xFF1B5E20), Color(0xFFFF5252))
+        "kodachrome_64" -> listOf(Color(0xFFB71C1C), Color(0xFFFFD54F))
+        "agfa_vista" -> listOf(Color(0xFFC62828), Color(0xFF42A5F5))
+        "polaroid_sx70" -> listOf(Color(0xFF8D6E63), Color(0xFFFFE082))
+        "camcorder_90s" -> listOf(Color(0xFF455A64), Color(0xFFCFD8DC))
+        "seventies_sun" -> listOf(Color(0xFFE65100), Color(0xFFFFB74D))
+        "cassette_faded" -> listOf(Color(0xFF6D4C41), Color(0xFFD7CCC8))
+        "indie_disposable" -> listOf(Color(0xFFBF360C), Color(0xFFFFCC80))
+        "lomography_red" -> listOf(Color(0xFF880E4F), Color(0xFFFF1744))
+        "expired_film" -> listOf(Color(0xFF4E342E), Color(0xFF80CBC4))
+        // Dramatic & HDR Punch
+        "hdr_punch" -> listOf(Color(0xFF212121), Color(0xFFFF3D00))
+        "hyper_clarity" -> listOf(Color(0xFF37474F), Color(0xFF00E5FF))
+        "shadow_crush" -> listOf(Color(0xFF000000), Color(0xFF616161))
+        "crimson_impact" -> listOf(Color(0xFF3E2723), Color(0xFFD50000))
+        "deep_abyss" -> listOf(Color(0xFF0D47A1), Color(0xFF000051))
+        "volcanic_ember" -> listOf(Color(0xFFBF360C), Color(0xFFFF9100))
+        "thunderstorm_sky" -> listOf(Color(0xFF263238), Color(0xFF78909C))
+        "metallic_bronze" -> listOf(Color(0xFF3E2723), Color(0xFFBCAAA4))
+        "neon_overdrive" -> listOf(Color(0xFF4A148C), Color(0xFF00E676))
+        "electric_lime" -> listOf(Color(0xFF1B5E20), Color(0xFFAEEA00))
+        // Nordic & Cold Minimal
+        "oslo_winter" -> listOf(Color(0xFF263238), Color(0xFFB0BEC5))
+        "fjord_mist" -> listOf(Color(0xFF37474F), Color(0xFF80DEEA))
+        "arctic_frost" -> listOf(Color(0xFF01579B), Color(0xFFE1F5FE))
+        "scandi_clean" -> listOf(Color(0xFFECEFF1), Color(0xFFB0BEC5))
+        "glacier_blue" -> listOf(Color(0xFF006064), Color(0xFF4DD0E1))
+        "pale_fog" -> listOf(Color(0xFF546E7A), Color(0xFFCFD8DC))
+        "midnight_sun_nordic" -> listOf(Color(0xFF3E2723), Color(0xFFFFE082))
+        "pine_needle" -> listOf(Color(0xFF1B5E20), Color(0xFF33691E))
+        "coastal_rock" -> listOf(Color(0xFF37474F), Color(0xFF78909C))
+        "nordic_dusk" -> listOf(Color(0xFF1A237E), Color(0xFF9FA8DA))
         // Original / no filter
         null -> listOf(
             ApexPalette.NeonPurple.copy(alpha = 0.5f),

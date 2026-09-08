@@ -59,7 +59,7 @@ class ProjectRepository(private val context: Context) {
             val current = decode(prefs[key]).toMutableList()
             val idx = current.indexOfFirst { it.id == project.id }
             if (idx >= 0) current[idx] = project else current.add(project)
-            prefs[key] = json.encodeToString(serializer, current)
+            prefs[key] = json.encodeToString(serializer, current.distinctBy { it.id })
         }
     }
 

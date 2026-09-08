@@ -67,8 +67,10 @@ object TimeFormat {
         val totalSec = (ms / 1000).coerceAtLeast(0)
         val m = totalSec / 60
         val s = totalSec % 60
-        val tenths = ((ms.coerceAtLeast(0) % 1000) / 100).toInt()
-        return "%02d:%02d.%d".format(m, s, tenths)
+        // Reference image shows MM:SS.cs (centiseconds, zero-padded).
+        // Was previously .t (tenths, no pad) which produced "00:00.8".
+        val cs = ((ms.coerceAtLeast(0) % 1000) / 10).toInt()
+        return "%02d:%02d.%02d".format(m, s, cs)
     }
 }
 

@@ -57,7 +57,7 @@ fun HomeScreen(
     var projects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
     LaunchedEffect(Unit) {
         val saved = projectRepo.loadAllNow()
-        projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
+        projects = if (saved.isNotEmpty()) saved.distinctBy { it.id } else repo.loadProjects().distinctBy { it.id }
     }
     val mediaPicker = remember { MediaPickerHelper(context) }
     var pickedMedia by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }

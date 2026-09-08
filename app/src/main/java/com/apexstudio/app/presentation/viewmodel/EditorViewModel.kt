@@ -248,7 +248,8 @@ class EditorViewModel(
                     activeFxId = null,
                     fxIntensity = 0f,
                     lastTransitionType = null,
-                    lastTransitionDurationMs = 500L
+                    lastTransitionDurationMs = 500L,
+                    playbackSpeed = 1.0f
                 )
             }
             persistTransmissionTemplate(
@@ -270,19 +271,13 @@ class EditorViewModel(
      * Apply a resolved [TransmissionTemplate] without re-looking it
      * up by id. Used by [loadProject] on project open so we can
      * skip the "unknown id" warning path for the auto-apply case.
-     */
-    /**
-     * Apply a resolved [TransmissionTemplate] without re-looking it
-     * up by id. Used by [loadProject] on project open so we can
-     * skip the "unknown id" warning path for the auto-apply case.
      *
      * The template's `transitionType` and `transitionDurationMs` are
      * also applied as a project-level hint (see
-     * `Project.lastTransitionType`). The project doesn't model
-     * per-clip transitions yet, so this surfaces the choice in
-     * state for a future per-clip transition feature to consume.
+     * `Project.lastTransitionType`).
      */
     private fun applyTransmissionTemplateInternal(template: TransmissionTemplate, persistProjectId: String?) {
+        val targetSpeed = if (template.isSlowMotion && template.playbackSpeed > 0f) template.playbackSpeed else 1.0f
         _state.update {
             it.copy(
                 activeFilterId = template.filterId,
@@ -290,8 +285,14 @@ class EditorViewModel(
                 activeFxId = template.fxPresetId,
                 fxIntensity = template.fxIntensity.coerceIn(0f, 1f),
                 lastTransitionType = template.transitionType,
-                lastTransitionDurationMs = template.transitionDurationMs
+                lastTransitionDurationMs = template.transitionDurationMs,
+                playbackSpeed = targetSpeed
             )
+        }
+        // If slow motion is included, also update the active clip's playback speed
+        val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
+        if (clipId != null && template.isSlowMotion) {
+            setClipSpeed(clipId, targetSpeed)
         }
         persistTransmissionTemplate(id = template.id, transitionType = template.transitionType,
             transitionDurationMs = template.transitionDurationMs)
@@ -349,6 +350,79 @@ class EditorViewModel(
         it.copy(pendingAddAsAudio = v)
     }
     fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
+
+    fun setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
+    fun setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
+
+    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
+        _state.update { it.copy(adjustments = transform(it.adjustments)) }
+    }
+    fun resetAdjustments() {
+        _state.update { it.copy(adjustments = VideoAdjustments()) }
+    }
+    fun resetAllAdjustments() {
+        _state.update { it.copy(adjustments = VideoAdjustments()) }
+    }
+
+    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
+    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
+    fun addStickerOverlay(symbolOrUri: String, category: String, name: String) {
+        val newSticker = StickerOverlay(
+            symbolOrUri = symbolOrUri,
+            category = category,
+            name = name,
+            x = 0.5f,
+            y = 0.5f,
+            sizeScale = 1f,
+            opacity = 1f
+        )
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            val updatedStickers = proj.stickers + newSticker
+            st.copy(project = proj.copy(stickers = updatedStickers))
+        }
+    }
+
+    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
+    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String) {
+        val newTrack = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = 1f,
+            trimEndMs = durationMs
+        )
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            val updatedTracks = proj.audioTracks + newTrack
+            st.copy(project = proj.copy(audioTracks = updatedTracks))
+        }
+    }
+
+    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
+    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
+
+    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
+    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
+    fun setCoverFrame(frameMs: Long) {
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            st.copy(
+                coverFrameMs = frameMs,
+                project = proj.copy(coverFrameMs = frameMs)
+            )
+        }
+    }
+
+    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
+    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
+
+    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
+    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
 
     // Phase C: open / close the per-clip action menu (Cut, Trim, Add,
     // Remove, Move, Split, Delete). Mirrors the setTrimPanelOpen

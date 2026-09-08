@@ -117,6 +117,7 @@ fun TransmissionTemplatesPanel(
                     accent = Color(template.previewAccentArgb.toULong().toLong()),
                     secondary = Color(0xFF0E1116),
                     icon = iconForTemplate(template),
+                    speedBadge = if (template.isSlowMotion) (if (template.speedLabel.isNotBlank()) template.speedLabel else "${template.playbackSpeed}x Slow-Mo") else null,
                     selected = activeTemplateId == template.id,
                     onClick = { onTemplateApplied(template.id) }
                 )
@@ -132,6 +133,7 @@ private fun TransmissionTemplateTile(
     accent: Color,
     secondary: Color,
     icon: ImageVector,
+    speedBadge: String? = null,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -167,6 +169,23 @@ private fun TransmissionTemplateTile(
                 tint = Color.White.copy(alpha = 0.92f),
                 modifier = Modifier.size(28.dp)
             )
+            if (speedBadge != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(ApexPalette.NeonCyan.copy(alpha = 0.9f))
+                        .padding(vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        speedBadge,
+                        color = Color.Black,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(

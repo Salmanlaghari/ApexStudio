@@ -147,16 +147,6 @@ fun EditorScreen(
                     vm.setPlayerReady(false)
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
                     vm.setPlayerError("Video error: $errorMsg")
-                    try {
-                        val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                        player.prepare()
-                        player.play()
-                        vm.setPlayerReady(true)
-                        vm.setPlayerError(null)
-                    } catch (ex: Exception) {
-                        vm.setPlayerError("Failed to load video ($errorMsg)")
-                    }
                 }
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                     vm.setVideoSize(videoSize.width, videoSize.height)
@@ -526,13 +516,17 @@ fun EditorScreen(
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
-                        try {
-                            val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                            player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                            player.prepare()
-                            player.play()
-                        } catch (e: Exception) {
-                            vm.setPlayerError("Error reloading video: ${e.message}")
+                        val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                            ?: state.project?.clips?.firstOrNull()
+                        if (clip != null) {
+                            try {
+                                val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
+                                player.setMediaItem(MediaItem.fromUri(playableUri))
+                                player.prepare()
+                                player.play()
+                            } catch (e: Exception) {
+                                vm.setPlayerError("Error reloading video: ${e.message}")
+                            }
                         }
                     }
                 },
@@ -1271,7 +1265,7 @@ fun VideoPreviewArea(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Reload Sample Video",
+                                text = "Retry",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -1731,12 +1725,15 @@ fun TimelineTrackArea(
         // a fallback for the legacy decode path). If neither is
         // available, we render the same "Loading…" text we use for
         // the video filmstrip.
-        val audioWaveform: FloatArray = audioClip?.let { cacheMap[it.id]?.waveform }
-            ?.takeIf { it.isNotEmpty() }
-            ?: state.audioWaveform
+        val audioMedia = audioClip?.let { cacheMap[it.id] }
+        val audioLoading = audioClip != null && audioMedia == null
+        val audioWaveform = audioMedia?.waveform?.takeIf { it.isNotEmpty() } ?: state.audioWaveform
 
         val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
         val voiceLabel = voiceClip?.name ?: "Voice Over"
+        val voiceMedia = voiceClip?.let { cacheMap[it.id] }
+        val voiceLoading = voiceClip != null && voiceMedia == null
+        val voiceWaveform = voiceMedia?.waveform?.takeIf { it.isNotEmpty() } ?: FloatArray(0)
 
         // Stacked Horizontal Layer Rows (4 Rows - Lock icon removed, only Eye icon remains)
         TrackLayerRow(
@@ -1758,9 +1755,8 @@ fun TimelineTrackArea(
             icon = Icons.Default.MusicNote,
             label = audioLabel,
             isWaveform = true,
-            waveform = audioClip?.let { cacheMap[it.id]?.waveform }
-                ?.takeIf { it.isNotEmpty() }
-                ?: state.audioWaveform
+            waveform = audioWaveform,
+            isLoading = audioLoading
         )
 
         TrackLayerRow(
@@ -1768,9 +1764,8 @@ fun TimelineTrackArea(
             icon = Icons.Default.Mic,
             label = voiceLabel,
             isWaveform = true,
-            waveform = voiceClip?.let { cacheMap[it.id]?.waveform }
-                ?.takeIf { it.isNotEmpty() }
-                ?: FloatArray(0)
+            waveform = voiceWaveform,
+            isLoading = voiceLoading
         )
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
@@ -1809,7 +1804,8 @@ private fun TrackLayerRow(
     label: String,
     badgeText: String? = null,
     isWaveform: Boolean = false,
-    waveform: FloatArray = FloatArray(0)
+    waveform: FloatArray = FloatArray(0),
+    isLoading: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -1868,40 +1864,34 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-                    // fallback as the filmstrip row, no fake bars.
                     if (waveform.isNotEmpty()) {
+                        val barCount = waveform.take(48).size
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(end = 8.dp)
                         ) {
-                            val maxBars = 48
-                            val stride = (waveform.size / maxBars).coerceAtLeast(1)
-                            val indices = (0 until waveform.size step stride)
-                                .take(maxBars)
-                            indices.forEach { i ->
-                                val amp = waveform[i].coerceIn(0f, 1f)
+                            waveform.take(48).forEach { amplitude ->
+                                val heightFraction = amplitude.coerceIn(0.05f, 1f)
                                 Box(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height((2f + 32f * amp).dp)
-                                        .background(
-                                            Color.White.copy(alpha = 0.85f),
-                                            RoundedCornerShape(1.dp)
-                                        )
+                                        .width(2.dp)
+                                        .height(34.dp * heightFraction)
+                                        .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
                                 )
                             }
                         }
-                    } else {
+                    } else if (isLoading) {
                         Text(
                             text = "Loading…",
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = Color(0xFF9CA3AF),
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(end = 8.dp)
+                            modifier = Modifier.weight(1f)
                         )
+                    } else {
+                        Box(modifier = Modifier.weight(1f))
                     }
                 }
 

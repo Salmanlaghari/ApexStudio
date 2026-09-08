@@ -178,6 +178,10 @@ class TimelineMediaCache(private val context: Context) {
             currentBytes = byteBudget.values.sum()
         } catch (e: Exception) {
             Log.w(TAG, "extract failed for ${clip.uri}", e)
+            // Publish an empty entry so the UI knows extraction
+            // completed (even if it failed) and can stop showing
+            // a perpetual loading state.
+            _state.value = _state.value + (clip.id to ClipMedia(cacheKey = key))
         } finally {
             inFlight.remove(key)
         }

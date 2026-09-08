@@ -59,6 +59,7 @@ import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
+import com.apexstudio.app.data.media.TimelineMediaCache
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -89,6 +90,10 @@ fun EditorScreen(
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
+    val timelineMediaCache = remember { TimelineMediaCache(context) }
+    DisposableEffect(Unit) {
+        onDispose { timelineMediaCache.release() }
+    }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
 
@@ -133,16 +138,6 @@ fun EditorScreen(
                     vm.setPlayerReady(false)
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
                     vm.setPlayerError("Video error: $errorMsg")
-                    try {
-                        val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                        player.prepare()
-                        player.play()
-                        vm.setPlayerReady(true)
-                        vm.setPlayerError(null)
-                    } catch (ex: Exception) {
-                        vm.setPlayerError("Failed to load video ($errorMsg)")
-                    }
                 }
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                     vm.setVideoSize(videoSize.width, videoSize.height)
@@ -386,13 +381,17 @@ fun EditorScreen(
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
-                        try {
-                            val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                            player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                            player.prepare()
-                            player.play()
-                        } catch (e: Exception) {
-                            vm.setPlayerError("Error reloading video: ${e.message}")
+                        val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                            ?: state.project?.clips?.firstOrNull()
+                        if (clip != null) {
+                            try {
+                                val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
+                                player.setMediaItem(MediaItem.fromUri(playableUri))
+                                player.prepare()
+                                player.play()
+                            } catch (e: Exception) {
+                                vm.setPlayerError("Error reloading video: ${e.message}")
+                            }
                         }
                     }
                 },
@@ -441,6 +440,7 @@ fun EditorScreen(
 
         TimelineTrackArea(
             state = state,
+            timelineMediaCache = timelineMediaCache,
             onScrub = { seekPlayerAndState(it) },
             onSelectClip = { vm.selectClipAndRefresh(it) },
             onCover = { vm.openCoverPanel() },
@@ -1020,7 +1020,7 @@ fun VideoPreviewArea(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Reload Sample Video",
+                                text = "Retry",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -1268,12 +1268,33 @@ fun TimelineRuler(
 @Composable
 fun TimelineTrackArea(
     state: com.apexstudio.app.presentation.state.EditorState,
+    timelineMediaCache: com.apexstudio.app.data.media.TimelineMediaCache,
     onScrub: (Long) -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
     onCover: () -> Unit = {},
     onAddMedia: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val clips = state.project?.clips ?: emptyList()
+    val videoClips = clips.filter {
+        it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
+    }
+
+    val pxPerMs = state.zoomLevel.coerceAtLeast(0.1f) * 0.12f
+
+    timelineMediaCache.observe(clips, pxPerMs)
+    val cacheMap by timelineMediaCache.state.collectAsStateWithLifecycle()
+
+    val blockGeometry = remember(clips, pxPerMs) {
+        var runningMs = 0L
+        clips.map { clip ->
+            val trackStart = runningMs
+            val trackLen = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+            runningMs += trackLen
+            Triple(clip, trackStart, trackLen)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1319,7 +1340,12 @@ fun TimelineTrackArea(
 
             Spacer(Modifier.width(6.dp))
 
-            // Main Video Filmstrip Container
+            // Main Video Filmstrip Container.
+            //
+            // Real filmstrip: read extracted Bitmaps from the cache
+            // and render them. When no frames are available yet
+            // (extraction in flight or source couldn't be decoded),
+            // show an honest loading state instead of fake gradients.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1329,24 +1355,46 @@ fun TimelineTrackArea(
                     .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                // Repeated thumbnail frames
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    repeat(6) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(1.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF2E1065), Color(0xFF3B0764))
-                                    )
-                                )
+                val firstVideoClip = clips.firstOrNull {
+                    it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY
+                }
+                val firstVideoMedia = firstVideoClip?.let { cacheMap[it.id] }
+                val frames = firstVideoMedia?.frames.orEmpty()
+                if (frames.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        frames.forEach { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(4.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 6.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        FilmstripLoadingBar(isActive = firstVideoClip != null && firstVideoMedia == null)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = if (firstVideoClip == null) "No clip selected" else "Loading thumbnails…",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -1417,9 +1465,15 @@ fun TimelineTrackArea(
 
         val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
         val audioLabel = audioClip?.name ?: "Dreamscape"
+        val audioMedia = audioClip?.let { cacheMap[it.id] }
+        val audioLoading = audioClip != null && audioMedia == null
+        val audioWaveform = audioMedia?.waveform?.takeIf { it.isNotEmpty() } ?: state.audioWaveform
 
         val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
         val voiceLabel = voiceClip?.name ?: "Voice Over"
+        val voiceMedia = voiceClip?.let { cacheMap[it.id] }
+        val voiceLoading = voiceClip != null && voiceMedia == null
+        val voiceWaveform = voiceMedia?.waveform?.takeIf { it.isNotEmpty() } ?: FloatArray(0)
 
         // Stacked Horizontal Layer Rows (4 Rows - Lock icon removed, only Eye icon remains)
         TrackLayerRow(
@@ -1440,14 +1494,18 @@ fun TimelineTrackArea(
             barColor = Color(0xFF10B981),
             icon = Icons.Default.MusicNote,
             label = audioLabel,
-            isWaveform = true
+            isWaveform = true,
+            waveform = audioWaveform,
+            isLoading = audioLoading
         )
 
         TrackLayerRow(
             barColor = Color(0xFF7C3AED),
             icon = Icons.Default.Mic,
             label = voiceLabel,
-            isWaveform = true
+            isWaveform = true,
+            waveform = voiceWaveform,
+            isLoading = voiceLoading
         )
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
@@ -1460,7 +1518,9 @@ private fun TrackLayerRow(
     icon: ImageVector,
     label: String,
     badgeText: String? = null,
-    isWaveform: Boolean = false
+    isWaveform: Boolean = false,
+    waveform: FloatArray = FloatArray(0),
+    isLoading: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -1519,25 +1579,34 @@ private fun TrackLayerRow(
                 }
 
                 if (isWaveform) {
-                    // Simulated waveform lines — reference image shows
-                    // ~32 bars filling the row width; was 16 bars at
-                    // 20dp height. Bumped to match the new 50dp row.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                    ) {
-                        repeat(32) { index ->
-                            val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(34.dp * heightFraction)
-                                    .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
-                            )
+                    if (waveform.isNotEmpty()) {
+                        val barCount = waveform.take(48).size
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        ) {
+                            waveform.take(48).forEach { amplitude ->
+                                val heightFraction = amplitude.coerceIn(0.05f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .height(34.dp * heightFraction)
+                                        .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
+                                )
+                            }
                         }
+                    } else if (isLoading) {
+                        Text(
+                            text = "Loading…",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 9.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Box(modifier = Modifier.weight(1f))
                     }
                 }
 
@@ -1559,6 +1628,25 @@ private fun TrackLayerRow(
             }
         }
     }
+}
+
+@Composable
+private fun FilmstripLoadingBar(isActive: Boolean) {
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1f else 0.4f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(700),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "filmstrip-loading-bar"
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.3f)
+            .height(2.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(Color(0xFF00F0FF).copy(alpha = alpha))
+    )
 }
 
 // === 6. BOTTOM EDIT TOOLBAR ===

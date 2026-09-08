@@ -129,6 +129,7 @@ fun ExportScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         for ((label, sub) in listOf(
+                            "720p" to "1280×720",
                             "1080p" to "1920×1080",
                             "4K" to "3840×2160",
                             "8K" to "7680×4320"

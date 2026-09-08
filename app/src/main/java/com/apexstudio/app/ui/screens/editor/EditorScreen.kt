@@ -167,13 +167,20 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.selectedClipId, state.project?.clips) {
+    val currentSelectedClip = remember(state.project?.clips, state.selectedClipId) {
+        val cid = state.selectedClipId
+        if (cid != null) state.project?.clips?.firstOrNull { it.id == cid }
+        else state.project?.clips?.firstOrNull()
+    }
+    val currentClipUri = currentSelectedClip?.uri
+
+    LaunchedEffect(exoPlayer, state.selectedClipId, currentClipUri) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id ?: return@LaunchedEffect
-        val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@LaunchedEffect
+        val clip = currentSelectedClip ?: return@LaunchedEffect
         val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
         val mediaItem = MediaItem.fromUri(playableUri)
-        if (player.currentMediaItem?.mediaId != mediaItem.mediaId) {
+        val currentUri = player.currentMediaItem?.localConfiguration?.uri
+        if (player.currentMediaItem?.mediaId != mediaItem.mediaId && currentUri != playableUri) {
             try {
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
@@ -185,16 +192,21 @@ fun EditorScreen(
         }
     }
 
+    LaunchedEffect(exoPlayer, state.playbackSpeed) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        try {
+            val speed = state.playbackSpeed.coerceIn(0.25f, 4.0f)
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "Failed to set playback speed", e)
+        }
+    }
+
     val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId) {
         state.activeFilterId?.let { id -> filterEngine.manifest.filters.firstOrNull { it.id == id } }
     }
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
-    }
-    val currentSelectedClip = remember(state.project?.clips, state.selectedClipId) {
-        val cid = state.selectedClipId
-        if (cid != null) state.project?.clips?.firstOrNull { it.id == cid }
-        else state.project?.clips?.firstOrNull()
     }
     val selectedKeyframes = currentSelectedClip?.keyframes
 
@@ -243,8 +255,12 @@ fun EditorScreen(
 
     LaunchedEffect(exoPlayer, currentEffects) {
         val player = exoPlayer ?: return@LaunchedEffect
+        val wasPlaying = player.isPlaying
         try {
             player.setVideoEffects(currentEffects)
+            if (wasPlaying && !player.isPlaying) {
+                player.play()
+            }
         } catch (e: Exception) {
             Log.e("EditorScreen", "player.setVideoEffects failed", e)
         }
@@ -317,6 +333,7 @@ fun EditorScreen(
         ) {
             val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
             val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
+            val textOverlays = selectedClip?.textOverlays ?: emptyList()
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
@@ -328,6 +345,17 @@ fun EditorScreen(
                 stickers = stickers,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
+                isPlaying = state.isPlaying,
+                textOverlays = textOverlays,
+                selectedTextOverlayId = state.selectedTextOverlayId,
+                currentTimeMs = state.currentTimeMs,
+                onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
+                onMoveTextOverlay = { id, dx, dy ->
+                    val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id
+                    if (clipId != null) {
+                        vm.updateTextOverlay(clipId, id) { it.copy(x = it.x + dx, y = it.y + dy) }
+                    }
+                },
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
@@ -599,6 +627,11 @@ fun EditorScreen(
                             vm.applyTextPreset(textClip.id, activeOverlayId, preset)
                         }
                     },
+                    onAnimationChange = { anim ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayAnimation(textClip.id, activeOverlayId, anim)
+                        }
+                    },
                     onClose = { vm.closeTextPanel() }
                 )
             }
@@ -853,6 +886,12 @@ fun VideoPreviewArea(
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
+    isPlaying: Boolean = false,
+    textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
+    selectedTextOverlayId: String? = null,
+    currentTimeMs: Long = 0L,
+    onSelectTextOverlay: ((String) -> Unit)? = null,
+    onMoveTextOverlay: ((id: String, dx: Float, dy: Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
@@ -866,15 +905,6 @@ fun VideoPreviewArea(
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
             .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
-            // Phase Live Filter: renderEffect on the OUTER Box instead
-            // of inside the AndroidView's graphicsLayer. The AndroidView
-            // modifier chain is rebuilt only when AndroidView itself
-            // composes; param changes (activeFilterId, filterIntensity,
-            // adjustments) don't reliably re-trigger the inner
-            // graphicsLayer's lambda because Compose caches modifiers
-            // between recompositions. Putting the graphicsLayer on the
-            // outer Box guarantees re-evaluation whenever VideoPreviewArea
-            // recomposes with new params.
             .graphicsLayer {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                     val hasFilter = activeFilterId != null && filterIntensity > 0f
@@ -928,6 +958,16 @@ fun VideoPreviewArea(
             }
         }
 
+        // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
+        if (activeFxId != null && fxIntensity > 0f) {
+            FxPreviewOverlay(
+                fxId = activeFxId,
+                intensity = fxIntensity,
+                isPlaying = isPlaying,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
         // Draggable & Resizable Interactive Stickers
         if (stickers.isNotEmpty()) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -966,6 +1006,32 @@ fun VideoPreviewArea(
                             fontSize = 32.sp
                         )
                     }
+                }
+            }
+        }
+
+        // Interactive Animated Text Overlays
+        if (textOverlays.isNotEmpty()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val containerW = maxWidth
+                val containerH = maxHeight
+
+                for (overlay in textOverlays) {
+                    val isSelected = overlay.id == selectedTextOverlayId
+                    AnimatedTextOverlayView(
+                        overlay = overlay,
+                        isSelected = isSelected,
+                        containerWidth = containerW,
+                        containerHeight = containerH,
+                        currentTimeMs = currentTimeMs,
+                        isPlaying = isPlaying,
+                        onSelect = { onSelectTextOverlay?.invoke(overlay.id) },
+                        onPositionChange = { newX, newY ->
+                            val dx = newX - overlay.x
+                            val dy = newY - overlay.y
+                            onMoveTextOverlay?.invoke(overlay.id, dx, dy)
+                        }
+                    )
                 }
             }
         }
@@ -1021,7 +1087,7 @@ fun VideoPreviewArea(
             }
         }
 
-        // Top-Left Pill: "1080P" Dropdown
+        // Top-Left Pill: Resolution Dropdown
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -1073,44 +1139,44 @@ fun VideoPreviewArea(
             }
         }
 
-        // Top-Right: Fullscreen / Expand icon
-        Box(
+        // Top-Right: Active filter / FX status indicator chip & Fullscreen toggle
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(onClick = onFullscreenToggle)
-                .padding(8.dp)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Fullscreen,
-                contentDescription = "Expand",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
+            if (activeFilterId != null || activeFxId != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (activeFxId != null) "FX: ${activeFxId.uppercase()}" else "FILTER",
+                        color = Color(0xFF8B5CF6),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
 
-        // Top-Right: "fx" filter chip — reference image shows a small
-        // pill above the fullscreen icon labelled "fx" in purple to
-        // mirror the fx badge on the Cinematic Glow track row. Tapping
-        // it opens the filter panel for quick access.
-        if (activeFilterId != null) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 64.dp, end = 12.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .clickable(onClick = onFullscreenToggle)
+                    .padding(8.dp)
             ) {
-                Text(
-                    text = "fx",
-                    color = Color(0xFF8B5CF6),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    softWrap = false
+                Icon(
+                    imageVector = Icons.Default.Fullscreen,
+                    contentDescription = "Expand",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

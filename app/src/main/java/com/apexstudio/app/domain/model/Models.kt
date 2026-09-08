@@ -72,7 +72,9 @@ data class TextOverlay(
     // Active window on the clip's timeline (ms). Defaults to the
     // whole clip.
     val startMs: Long = 0L,
-    val endMs: Long = Long.MAX_VALUE
+    val endMs: Long = Long.MAX_VALUE,
+    val animationType: String = "NONE",
+    val animationDurationMs: Long = 800L
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 
@@ -81,7 +83,7 @@ data class TextOverlay(
             id: String = java.util.UUID.randomUUID().toString(),
             text: String = "Text",
             x: Float = 0.5f,
-            y: Float = 0.5f,
+            y: Float = 0.35f,
             sizeScale: Float = 1f,
             colorArgb: Long = 0xFFFFFFFFL,
             bgArgb: Long? = null,
@@ -90,12 +92,15 @@ data class TextOverlay(
             fontFamily: String = "sans",
             isItalic: Boolean = false,
             isBold: Boolean = true,
-            presetId: String? = null
+            presetId: String? = null,
+            animationType: String = "NONE",
+            animationDurationMs: Long = 800L
         ): TextOverlay = TextOverlay(
             id = id, text = text, x = x, y = y, sizeScale = sizeScale,
             colorArgb = colorArgb, bgArgb = bgArgb, strokeColorArgb = strokeColorArgb,
             shadowColorArgb = shadowColorArgb, fontFamily = fontFamily,
-            isItalic = isItalic, isBold = isBold, presetId = presetId
+            isItalic = isItalic, isBold = isBold, presetId = presetId,
+            animationType = animationType, animationDurationMs = animationDurationMs
         )
     }
 }

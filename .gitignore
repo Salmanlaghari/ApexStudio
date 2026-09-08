@@ -13,3 +13,5 @@ local.properties
 *.keystore
 *.jks
 *.log
+.kotlin/
+debug.keystore.base64

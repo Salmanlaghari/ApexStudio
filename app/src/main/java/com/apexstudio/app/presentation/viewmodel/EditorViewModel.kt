@@ -695,13 +695,16 @@ class EditorViewModel(
     fun closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }
     fun selectTextOverlay(id: String?) = _state.update { it.copy(selectedTextOverlayId = id) }
 
-    fun addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.5f) {
+    fun addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.35f) {
         val overlay = com.apexstudio.app.domain.model.TextOverlay.of(
             text = text, x = x, y = y
         )
         updateClip(clipId) { it.copy(textOverlays = it.textOverlays + overlay) }
         _state.update { it.copy(selectedTextOverlayId = overlay.id) }
     }
+
+    fun setTextOverlayAnimation(clipId: String, overlayId: String, animationType: String, durationMs: Long = 800L) =
+        updateTextOverlay(clipId, overlayId) { it.copy(animationType = animationType, animationDurationMs = durationMs) }
 
     fun updateTextOverlay(clipId: String, overlayId: String, transform: (com.apexstudio.app.domain.model.TextOverlay) -> com.apexstudio.app.domain.model.TextOverlay) {
         updateClip(clipId) { clip ->

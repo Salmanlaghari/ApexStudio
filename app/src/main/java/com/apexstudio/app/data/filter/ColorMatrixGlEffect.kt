@@ -31,7 +31,7 @@ class ColorMatrixGlEffect(
     private class ColorMatrixShaderProgram(
         private val matrixProvider: () -> FloatArray,
         useHdr: Boolean
-    ) : BaseGlShaderProgram(useHdr, 1) {
+    ) : BaseGlShaderProgram(useHdr, 4) {
 
         private val glProgram: GlProgram
 

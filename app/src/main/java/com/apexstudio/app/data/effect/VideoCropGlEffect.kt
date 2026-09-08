@@ -39,7 +39,7 @@ class VideoCropGlEffect private constructor(
     }
 
     companion object {
-        private const val TEXTURE_POOL_CAPACITY = 1
+        private const val TEXTURE_POOL_CAPACITY = 4
 
         /**
          * Build a crop effect from a UI crop rectangle given in

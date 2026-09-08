@@ -150,7 +150,7 @@ class AdjustmentsGlEffect(
     }
 
     companion object {
-        private const val TEXTURE_POOL_CAPACITY = 1
+        private const val TEXTURE_POOL_CAPACITY = 4
 
         // GLSL ES 1.00 — matches what LutFilterGlEffect and
         // FxGlEffect use (compatible with minSdk 26, no GLES3 needed).

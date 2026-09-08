@@ -143,7 +143,7 @@ class TextOverlayGlEffect(
 
     companion object {
         private const val TAG = "TextOverlayGlEffect"
-        private const val TEXTURE_POOL_CAPACITY = 1
+        private const val TEXTURE_POOL_CAPACITY = 4
 
         private val VERTEX_SHADER = """
             attribute vec4 aFramePosition;

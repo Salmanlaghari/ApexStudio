@@ -150,22 +150,6 @@ class ExportEngine(private val context: Context) {
                 // the work is wiring each enabled effect into a
                 // matching audio processor chain. Track for a follow-up
                 // so audio preview ↔ export stay in sync.
-                //
-                // TODO(PHASE_H_EXPORT_REVERSE): Reverse playback is
-                // preview-only — EditorScreen.kt simulates reverse by
-                // stepping the playhead 33ms per frame. True
-                // frame-reversed export needs a frame-extractor that
-                // decodes the source MediaItem, reverses the frame
-                // order, and writes the reversed track via Media3
-                // Transformer. Document for a follow-up so reverse
-                // survives an export.
-                //
-                // TODO(PHASE_H_EXPORT_INTRO_OUTRO): Intro and Outro
-                // markers on the Project (introClipId / outroClipId)
-                // are currently only metadata. Final export should
-                // prepend the intro clip to the timeline and append
-                // the outro clip on the export — wiring through the
-                // EditedMediaItem sequence is the natural follow-up.
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
                 // 1. Crop
@@ -190,18 +174,13 @@ class ExportEngine(private val context: Context) {
                 if (config.filterPreset != null && config.filterIntensity > 0f) {
                     videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                 }
-
-                // 2.5 Adjustments (Brightness / Contrast / Saturation /
-                //     Temperature / Tint / Highlights / Shadows). The
-                //     CPU side handled these for thumbnails; the export
-                //     was previously dropping them. Add the GL effect so
-                //     the exported MP4 reflects the user's adjustments.
                 if (!config.adjustments.isDefault) {
-                    videoEffects.add(
-                        com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
-                            adjustments = config.adjustments
-                        )
+                    val adjustMatrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
+                        filterId = null,
+                        intensity = 0f,
+                        adjustments = config.adjustments
                     )
+                    videoEffects.add(com.apexstudio.app.data.filter.ColorMatrixGlEffect(adjustMatrix))
                 }
 
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)

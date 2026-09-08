@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
 
 class EditorViewModel(
     private val repo: MediaRepository = MediaRepository,
@@ -352,6 +351,79 @@ class EditorViewModel(
     }
     fun closeTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = false) }
 
+    fun setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
+    fun setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
+
+    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
+        _state.update { it.copy(adjustments = transform(it.adjustments)) }
+    }
+    fun resetAdjustments() {
+        _state.update { it.copy(adjustments = VideoAdjustments()) }
+    }
+    fun resetAllAdjustments() {
+        _state.update { it.copy(adjustments = VideoAdjustments()) }
+    }
+
+    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
+    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
+    fun addStickerOverlay(symbolOrUri: String, category: String, name: String) {
+        val newSticker = StickerOverlay(
+            symbolOrUri = symbolOrUri,
+            category = category,
+            name = name,
+            x = 0.5f,
+            y = 0.5f,
+            sizeScale = 1f,
+            opacity = 1f
+        )
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            val updatedStickers = proj.stickers + newSticker
+            st.copy(project = proj.copy(stickers = updatedStickers))
+        }
+    }
+
+    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
+    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String) {
+        val newTrack = AudioTrack(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            uri = uri,
+            volume = 1f,
+            trimEndMs = durationMs
+        )
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            val updatedTracks = proj.audioTracks + newTrack
+            st.copy(project = proj.copy(audioTracks = updatedTracks))
+        }
+    }
+
+    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
+    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
+
+    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
+    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
+    fun setCoverFrame(frameMs: Long) {
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            st.copy(
+                coverFrameMs = frameMs,
+                project = proj.copy(coverFrameMs = frameMs)
+            )
+        }
+    }
+
+    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
+    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
+
+    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
+    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
+
     // Phase C: open / close the per-clip action menu (Cut, Trim, Add,
     // Remove, Move, Split, Delete). Mirrors the setTrimPanelOpen
     // pattern from earlier phases. We deliberately do NOT clear the
@@ -470,25 +542,6 @@ class EditorViewModel(
                 _thumbnails.update { current ->
                     current + (clip.id to thumbs)
                 }
-                // Phase Live Filter fix: with the source frame on
-                // hand, also generate per-filter thumbnails so the
-                // Filter panel shows the actual video frame with each
-                // LUT applied (not the generic hard-coded gradient).
-                try {
-                    val firstFrame = VideoThumbnailExtractor.extractFrame(
-                        context = ctx,
-                        videoUri = playableUri,
-                        timeMs = clip.trimStartMs
-                    )
-                    if (firstFrame != null) {
-                        val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
-                        val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                            .generateDynamicThumbnails(ctx, firstFrame, manifest)
-                        _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
-                    }
-                } catch (e: Exception) {
-                    Log.w("EditorViewModel", "Per-filter thumbnail generation failed", e)
-                }
             } catch (e: Exception) {
                 Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
             }
@@ -507,211 +560,6 @@ class EditorViewModel(
         it.copy(currentTimeMs = next, playerPositionMs = next)
     }
     fun setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.2f, 4f)) }
-
-    // Resolution / preview mode + modal triggers consumed by EditorScreen.kt
-    // panels. These were removed by the 'add new color LUT filters'
-    // commit but EditorScreen.kt still references them; restoring here so
-    // the existing UI integration continues to compile.
-    fun setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
-    fun toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
-    fun openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
-    fun closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
-    fun openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
-    fun closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
-    fun selectSticker(id: String?) = _state.update { it.copy(selectedStickerId = id) }
-    fun openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
-    fun closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
-    fun openCameraCapture() = _state.update { it.copy(cameraCaptureOpen = true) }
-    fun closeCameraCapture() = _state.update { it.copy(cameraCaptureOpen = false) }
-    fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
-    fun closeHelpDialog() = _state.update { it.copy(helpDialogOpen = false) }
-    fun openCoverPanel() = _state.update { it.copy(coverPanelOpen = true) }
-    fun closeCoverPanel() = _state.update { it.copy(coverPanelOpen = false) }
-    fun openMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = true) }
-    fun closeMediaLibrary() = _state.update { it.copy(mediaLibraryOpen = false) }
-
-    // Phase H: slow-motion + reverse + intro/outro + colour combo.
-
-    // Slow-motion: per-project playback speed; 0.25..2.0 typical. Applied
-    // to the main ExoPlayer in EditorScreen.body so preview runs at
-    // the selected speed.
-    fun openSlowMotionPanel() = _state.update { it.copy(slowMotionPanelOpen = true) }
-    fun closeSlowMotionPanel() = _state.update { it.copy(slowMotionPanelOpen = false) }
-    fun setSlowMotionSpeed(speed: Float) {
-        val clamped = speed.coerceIn(0.1f, 2.0f)
-        _state.update { it.copy(slowMotionSpeed = clamped) }
-    }
-
-    // Reverse: ExoPlayer's PlaybackParameters doesn't natively support
-    // negative direction. For preview, toggling reverse flips a
-    // playbackDirection state field; EditorScreen's LaunchedEffect on
-    // playbackDirection restarts the player with seekTo(currentPosition)
-    // and a stepped seek-back loop to simulate reverse (33ms steps).
-    // True frame-reversed playback is documented as export-only via
-    // a TODO(PHASE_H_EXPORT_REVERSE) in ExportEngine.kt.
-    fun openReversePanel() = _state.update { it.copy(reversePanelOpen = true) }
-    fun closeReversePanel() = _state.update { it.copy(reversePanelOpen = false) }
-    fun setPlaybackDirection(direction: Int) {
-        val clamped = if (direction < 0) -1 else 1
-        _state.update { it.copy(playbackDirection = clamped) }
-    }
-
-    // Intro / Outro: reference a clip id on the Project; preview layer
-    // could use these to mark a clip as "intro" or "outro" for the
-    // project. Persistence handled in the JSON project file via
-    // Project.introClipId / outroClipId (added separately).
-    fun openIntroPanel() = _state.update { it.copy(introPanelOpen = true) }
-    fun closeIntroPanel() = _state.update { it.copy(introPanelOpen = false) }
-    fun setIntroClip(clipId: String?) = _state.update {
-        it.copy(introClipId = clipId, project = it.project?.copy(introClipId = clipId))
-    }
-    fun openOutroPanel() = _state.update { it.copy(outroPanelOpen = true) }
-    fun closeOutroPanel() = _state.update { it.copy(outroPanelOpen = false) }
-    fun setOutroClip(clipId: String?) = _state.update {
-        it.copy(outroClipId = clipId, project = it.project?.copy(outroClipId = clipId))
-    }
-
-    // Colour Combo: single-tap apply of bundled filter + adjustments +
-    // FX. Updates state the same way the individual panels do, so the
-    // live preview RenderEffect picks it up immediately.
-    fun openColorComboPanel() = _state.update { it.copy(colorComboPanelOpen = true) }
-    fun closeColorComboPanel() = _state.update { it.copy(colorComboPanelOpen = false) }
-    fun applyColourCombo(comboId: String) {
-        val combo = com.apexstudio.app.data.preset.ColourComboPreset.byId(comboId) ?: return
-        _state.update { s ->
-            s.copy(
-                activeFilterId = combo.filterId,
-                filterIntensity = combo.filterIntensity,
-                activeFxId = combo.fxId,
-                fxIntensity = combo.fxIntensity,
-                adjustments = combo.adjustments,
-                activeColorComboId = combo.id,
-                colorComboPanelOpen = false
-            )
-        }
-    }
-    fun clearColorCombo() = _state.update {
-        it.copy(
-            activeColorComboId = null,
-            activeFilterId = null,
-            filterIntensity = 0f,
-            activeFxId = null,
-            fxIntensity = 0f,
-            adjustments = com.apexstudio.app.domain.model.VideoAdjustments()
-        )
-    }
-
-    fun updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
-        pushUndo()
-        _state.update { s ->
-            val newAdj = transform(s.adjustments)
-            s.copy(
-                adjustments = newAdj,
-                project = s.project?.copy(adjustments = newAdj)
-            )
-        }
-        val selectedId = _state.value.selectedClipId
-        if (selectedId != null) {
-            updateClip(selectedId) { c -> c.copy(adjustments = transform(c.adjustments)) }
-        }
-        persistProject()
-    }
-
-    fun resetAdjustments() {
-        pushUndo()
-        val defaultAdj = VideoAdjustments()
-        _state.update { s ->
-            s.copy(adjustments = defaultAdj, project = s.project?.copy(adjustments = defaultAdj))
-        }
-        val selectedId = _state.value.selectedClipId
-        if (selectedId != null) updateClip(selectedId) { it.copy(adjustments = defaultAdj) }
-        persistProject()
-    }
-    fun resetAllAdjustments() = resetAdjustments()
-
-    fun addStickerOverlay(symbolOrUri: String, category: String = "Emoji", name: String = "Sticker") {
-        pushUndo()
-        val sticker = StickerOverlay(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            category = category,
-            symbolOrUri = symbolOrUri,
-            x = 0.5f,
-            y = 0.5f,
-            startMs = _state.value.playerPositionMs,
-            endMs = (_state.value.playerPositionMs + 5000L).coerceAtMost(_state.value.durationMs)
-        )
-        val selectedClipId = _state.value.selectedClipId
-        if (selectedClipId != null) updateClip(selectedClipId) { c -> c.copy(stickers = c.stickers + sticker) }
-        _state.update { s ->
-            val currentList = s.project?.stickers ?: emptyList()
-            s.copy(selectedStickerId = sticker.id, project = s.project?.copy(stickers = currentList + sticker))
-        }
-        persistProject()
-    }
-
-    fun updateStickerOverlay(stickerId: String, transform: (StickerOverlay) -> StickerOverlay) {
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updatedProjectStickers = p.stickers.map { if (it.id == stickerId) transform(it) else it }
-            val updatedClips = p.clips.map { clip ->
-                clip.copy(stickers = clip.stickers.map { if (it.id == stickerId) transform(it) else it })
-            }
-            s.copy(project = p.copy(stickers = updatedProjectStickers, clips = updatedClips))
-        }
-        persistProject()
-    }
-
-    fun removeStickerOverlay(stickerId: String) {
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updatedProjectStickers = p.stickers.filterNot { it.id == stickerId }
-            val updatedClips = p.clips.map { clip -> clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId }) }
-            s.copy(
-                selectedStickerId = if (s.selectedStickerId == stickerId) null else s.selectedStickerId,
-                project = p.copy(stickers = updatedProjectStickers, clips = updatedClips)
-            )
-        }
-        persistProject()
-    }
-
-    fun setCoverFrame(ms: Long) {
-        _state.update { s -> s.copy(project = s.project?.copy(coverFrameMs = ms, coverCustomUri = null)) }
-        persistProject()
-    }
-    fun setCoverCustomUri(uri: String) {
-        _state.update { s -> s.copy(project = s.project?.copy(coverCustomUri = uri)) }
-        persistProject()
-    }
-
-    fun addVoiceOverTrack(uri: String, durationMs: Long, name: String = "Voiceover") {
-        pushUndo()
-        val track = AudioTrack(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            uri = uri,
-            volume = 1.0f,
-            trimStartMs = 0L,
-            trimEndMs = durationMs
-        )
-        val clip = MediaClip(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            uri = uri,
-            durationMs = durationMs,
-            trimStartMs = 0L,
-            trimEndMs = durationMs,
-            type = ClipType.SFX,
-            trackIndex = 1
-        )
-        _audio.update { it.copy(tracks = it.tracks + track) }
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            s.copy(project = p.copy(clips = p.clips + clip, audioTracks = p.audioTracks + track))
-        }
-        persistProject()
-    }
     fun multiplyZoom(factor: Float) = _state.update {
         val current = it.zoomLevel
         val next = (current * factor).coerceIn(0.2f, 4f)
@@ -724,27 +572,15 @@ class EditorViewModel(
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
     fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
-    // Phase Live Filter fix: selectClip + regenerate thumbnails so the
-    // Filter panel reflects the newly selected clip's frame.
-    fun selectClipAndRefresh(id: String?) {
-        _state.update { it.copy(selectedClipId = id) }
-        regenerateFilterThumbnails()
-    }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
-    fun setPlayerReady(ready: Boolean) = _state.update {
-        if (ready) it.copy(isPlayerReady = true, playerError = null, isBuffering = false)
-        else it.copy(isPlayerReady = false)
-    }
+    fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
     // Phase A: separate "buffering" signal from "ready". The Player.Listener
     // calls this with (playbackState == Player.STATE_BUFFERING). We keep
     // isPlayerReady semantically unchanged — STATE_READY is the source of
     // truth for "first frame painted" so the rest of the UI (filters,
     // transforms, overlays) keeps gating on isPlayerReady as before.
     fun setBuffering(buffering: Boolean) = _state.update { it.copy(isBuffering = buffering) }
-    fun setPlayerError(error: String?) = _state.update {
-        it.copy(playerError = error, isBuffering = false, isPlayerReady = error == null && it.isPlayerReady)
-    }
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }
@@ -780,33 +616,6 @@ class EditorViewModel(
     fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
-
-    // Phase Live Filter fix: regenerate the per-filter thumbnails
-    // against the current clip's frame. Cheap (uses Android's hardware
-    // ColorMatrix path) and runs on Dispatchers.IO. Called when the
-    // user picks a clip OR when the source video URI changes.
-    fun regenerateFilterThumbnails() {
-        val ctx = context ?: return
-        val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
-            ?: _state.value.project?.clips?.firstOrNull() ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val playableUri = com.apexstudio.app.data.media.MediaUriResolver
-                    .resolvePlayableUri(ctx, clip.uri).toString()
-                val firstFrame = VideoThumbnailExtractor.extractFrame(
-                    context = ctx, videoUri = playableUri, timeMs = clip.trimStartMs
-                )
-                if (firstFrame != null) {
-                    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
-                    val perFilter = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateDynamicThumbnails(ctx, firstFrame, manifest)
-                    _state.update { it.copy(filterThumbnails = perFilter, filterThumbnailsLoading = false) }
-                }
-            } catch (e: Exception) {
-                Log.w("EditorViewModel", "regenerateFilterThumbnails failed", e)
-            }
-        }
-    }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
     fun ensureFilterThumbnails() {
@@ -978,30 +787,6 @@ class EditorViewModel(
         }
         val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
         val speed = selected?.speedMultiplier ?: s.playbackSpeed
-
-        // Resolve transition: the Transmission panel writes
-        // lastTransitionType / lastTransitionDurationMs to project
-        // state. Until now they were never propagated into
-        // ExportConfig, so the transition was applied in the live
-        // preview's state but silently dropped on export.
-        val transitionType: com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType? =
-            s.project?.lastTransitionType?.let {
-                com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.byId(it)
-            }
-        val transitionDurationMs: Long =
-            s.project?.lastTransitionDurationMs?.takeIf { it > 0L } ?: 500L
-
-        // Adjustments (Brightness/Contrast/Saturation/etc.). Same
-        // story: the AdjustPanel writes them to state, but
-        // ExportConfig.adjustments was declared and never read, so
-        // the export baked in the raw video. Pull the currently
-        // selected clip's adjustments — fall back to project-level
-        // defaults for clips that have none.
-        val adjustments: com.apexstudio.app.domain.model.VideoAdjustments =
-            selected?.adjustments?.takeIf { !it.isDefault }
-                ?: s.project?.adjustments
-                ?: com.apexstudio.app.domain.model.VideoAdjustments()
-
         engine.startExport(
             inputUri,
             ExportEngine.ExportConfig(
@@ -1010,11 +795,8 @@ class EditorViewModel(
                 quality = quality,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
-                adjustments = adjustments,
                 fxPreset = fxPreset,
                 fxIntensity = s.fxIntensity,
-                transitionType = transitionType,
-                transitionDurationMs = transitionDurationMs,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },

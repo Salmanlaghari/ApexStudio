@@ -40,7 +40,7 @@ data class TransmissionTemplate(
     val defaultIntensity: Float = 1f,
     val previewAccentArgb: Long = 0xFF6E5BFFL,
     val tags: List<String> = emptyList(),
-    val playbackSpeed: Float = 1.0f,
     val isSlowMotion: Boolean = false,
-    val speedLabel: String = ""
+    val playbackSpeed: Float = 1.0f,
+    val speedLabel: String = "1.0x"
 )

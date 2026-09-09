@@ -197,7 +197,13 @@ class TimelineTemplateManager(private val context: Context) {
             // 4. Transitions
             val transition = template.transitions.firstOrNull { it.fromClipId == clip.id }
             if (transition != null) {
-                val transType = TransitionEngine.Companion.TransitionType.byId(transition.type)
+                val transType = when (transition.type) {
+                    "wipe" -> TransitionEngine.Companion.TransitionType.WIPE
+                    "zoom" -> TransitionEngine.Companion.TransitionType.ZOOM_BLUR
+                    "slide" -> TransitionEngine.Companion.TransitionType.SLIDE
+                    "glitch" -> TransitionEngine.Companion.TransitionType.GLITCH
+                    else -> TransitionEngine.Companion.TransitionType.CROSS_DISSOLVE
+                }
                 val durationUs = transition.durationMs * 1000L
                 val clipDurationUs = (clip.trimEndMs - clip.trimStartMs) * 1000L
                 val startUs = (clipDurationUs - durationUs).coerceAtLeast(0L)

@@ -7,7 +7,6 @@ import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 /**
  * Extracts evenly-spaced video frame thumbnails + a downsampled
@@ -46,64 +45,57 @@ object ThumbnailExtractor {
         frameHeightPx: Int,
         frameCount: Int = DEFAULT_FRAME_COUNT
     ): List<Bitmap> = withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
         try {
-            withTimeout(30_000) {
-                val retriever = MediaMetadataRetriever()
+            val effectiveUri = if (uri.startsWith("asset://") || uri.isBlank()) {
                 try {
-                    val effectiveUri = if (uri.startsWith("asset://") || uri.isBlank()) {
-                        try {
-                            SampleVideoGenerator.getOrCreateSampleVideo(context)
-                        } catch (e: Exception) { uri }
-                    } else uri
+                    SampleVideoGenerator.getOrCreateSampleVideo(context)
+                } catch (e: Exception) { uri }
+            } else uri
 
-                    val parsed = Uri.parse(effectiveUri)
-                    if (effectiveUri.startsWith("/")) {
-                        retriever.setDataSource(effectiveUri)
-                    } else if (parsed.scheme == "file") {
-                        retriever.setDataSource(parsed.path ?: effectiveUri)
-                    } else {
-                        retriever.setDataSource(context, parsed)
-                    }
+            val parsed = Uri.parse(effectiveUri)
+            if (effectiveUri.startsWith("/")) {
+                retriever.setDataSource(effectiveUri)
+            } else if (parsed.scheme == "file") {
+                retriever.setDataSource(parsed.path ?: effectiveUri)
+            } else {
+                retriever.setDataSource(context, parsed)
+            }
 
-                    val total = (trimEndMs - trimStartMs).coerceAtLeast(1L)
-                    val out = ArrayList<Bitmap>(frameCount)
-                    for (i in 0 until frameCount) {
-                        val t = trimStartMs + (total * i / frameCount)
-                        val frame = try {
-                            retriever.getFrameAtTime(
-                                t * 1000L,
-                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                            ) ?: retriever.getFrameAtTime(t * 1000L)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "getFrameAtTime($t) failed for $effectiveUri", e)
-                            null
-                        }
-                        if (frame != null) {
-                            val scaled = Bitmap.createScaledBitmap(
-                                frame,
-                                frameWidthPx.coerceAtLeast(1),
-                                frameHeightPx.coerceAtLeast(1),
-                                true
-                            )
-                            if (scaled !== frame) frame.recycle()
-                            out.add(scaled)
-                        }
-                    }
-                    if (out.isNotEmpty()) {
-                        out
-                    } else {
-                        generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
-                    }
+            val total = (trimEndMs - trimStartMs).coerceAtLeast(1L)
+            val out = ArrayList<Bitmap>(frameCount)
+            for (i in 0 until frameCount) {
+                val t = trimStartMs + (total * i / frameCount)
+                val frame = try {
+                    retriever.getFrameAtTime(
+                        t * 1000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    ) ?: retriever.getFrameAtTime(t * 1000L)
                 } catch (e: Exception) {
-                    Log.w(TAG, "extractFrames failed for $uri, using generated filmstrip", e)
-                    generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
-                } finally {
-                    try { retriever.release() } catch (_: Exception) {}
+                    Log.w(TAG, "getFrameAtTime($t) failed for $effectiveUri", e)
+                    null
+                }
+                if (frame != null) {
+                    val scaled = Bitmap.createScaledBitmap(
+                        frame,
+                        frameWidthPx.coerceAtLeast(1),
+                        frameHeightPx.coerceAtLeast(1),
+                        true
+                    )
+                    if (scaled !== frame) frame.recycle()
+                    out.add(scaled)
                 }
             }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Log.w(TAG, "extractFrames timed out for $uri", e)
+            if (out.isNotEmpty()) {
+                out
+            } else {
+                generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "extractFrames failed for $uri, using generated filmstrip", e)
             generateFilmstripFrames(frameCount, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
         }
     }
 
@@ -168,31 +160,24 @@ object ThumbnailExtractor {
         trimEndMs: Long,
         sampleCount: Int = DEFAULT_WAVEFORM_SAMPLES
     ): FloatArray = withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
         try {
-            withTimeout(15_000) {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(context, Uri.parse(uri))
-                    // We can't decode raw PCM out of MediaMetadataRetriever
-                    // on all devices, so fall back to a deterministic
-                    // pseudo-waveform derived from the file name + duration
-                    // when no amplitude data is available. The result is
-                    // still useful as a visual cue that *this* clip has
-                    // audio, and it's stable across re-renders so the
-                    // timeline doesn't flicker.
-                    val totalMs = (trimEndMs - trimStartMs).coerceAtLeast(1L)
-                    val seed = (uri.hashCode().toLong() xor totalMs)
-                    SyntheticWaveform.generate(seed, sampleCount)
-                } catch (e: Exception) {
-                    Log.w(TAG, "extractWaveform failed for $uri", e)
-                    FloatArray(0)
-                } finally {
-                    try { retriever.release() } catch (_: Exception) {}
-                }
-            }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Log.w(TAG, "extractWaveform timed out for $uri", e)
+            retriever.setDataSource(context, Uri.parse(uri))
+            // We can't decode raw PCM out of MediaMetadataRetriever
+            // on all devices, so fall back to a deterministic
+            // pseudo-waveform derived from the file name + duration
+            // when no amplitude data is available. The result is
+            // still useful as a visual cue that *this* clip has
+            // audio, and it's stable across re-renders so the
+            // timeline doesn't flicker.
+            val totalMs = (trimEndMs - trimStartMs).coerceAtLeast(1L)
+            val seed = (uri.hashCode().toLong() xor totalMs)
+            SyntheticWaveform.generate(seed, sampleCount)
+        } catch (e: Exception) {
+            Log.w(TAG, "extractWaveform failed for $uri", e)
             FloatArray(0)
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
         }
     }
 }

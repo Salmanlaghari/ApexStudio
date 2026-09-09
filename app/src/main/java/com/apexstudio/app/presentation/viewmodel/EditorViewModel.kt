@@ -749,7 +749,35 @@ class EditorViewModel(
         updateTextOverlay(clipId, overlayId) { it.copy(bgArgb = bgArgb) }
 
     fun setTextOverlaySize(clipId: String, overlayId: String, sizeScale: Float) =
-        updateTextOverlay(clipId, overlayId) { it.copy(sizeScale = sizeScale.coerceIn(0.4f, 3f)) }
+        updateTextOverlay(clipId, overlayId) { it.copy(sizeScale = sizeScale.coerceIn(0.4f, 4f)) }
+
+    fun setTextOverlayFont(clipId: String, overlayId: String, fontFamily: String) =
+        updateTextOverlay(clipId, overlayId) { it.copy(fontFamily = fontFamily) }
+
+    fun setTextOverlayStyle(clipId: String, overlayId: String, isBold: Boolean, isItalic: Boolean) =
+        updateTextOverlay(clipId, overlayId) { it.copy(isBold = isBold, isItalic = isItalic) }
+
+    fun setTextOverlayStroke(clipId: String, overlayId: String, strokeArgb: Long?) =
+        updateTextOverlay(clipId, overlayId) { it.copy(strokeColorArgb = strokeArgb) }
+
+    fun setTextOverlayShadow(clipId: String, overlayId: String, shadowArgb: Long?) =
+        updateTextOverlay(clipId, overlayId) { it.copy(shadowColorArgb = shadowArgb) }
+
+    fun setTextOverlayAnimDuration(clipId: String, overlayId: String, durationMs: Long) =
+        updateTextOverlay(clipId, overlayId) { it.copy(animationDurationMs = durationMs) }
+
+    fun duplicateTextOverlay(clipId: String, overlayId: String) {
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
+        val newId = "txt_${System.currentTimeMillis()}"
+        val duplicated = target.copy(
+            id = newId,
+            x = (target.x + 0.05f).coerceIn(0.1f, 0.9f),
+            y = (target.y + 0.05f).coerceIn(0.1f, 0.9f)
+        )
+        updateClip(clipId) { it.copy(textOverlays = it.textOverlays + duplicated) }
+        _state.update { it.copy(selectedTextOverlayId = newId) }
+    }
 
     fun applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
         updateTextOverlay(clipId, overlayId) { preset.applyTo(it) }
@@ -1177,23 +1205,57 @@ class EditorViewModel(
     fun splitClip(clipId: String, atMs: Long) {
         pushUndo()
         _state.update { s ->
-            val c = s.project?.clips?.firstOrNull { it.id == clipId } ?: return@update s
-            if (atMs <= c.trimStartMs || atMs >= c.trimEndMs) return@update s
+            val p = s.project ?: return@update s
+            val c = p.clips.firstOrNull { it.id == clipId } ?: return@update s
+            val safeSplit = atMs.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
 
             val originalEnd = c.trimEndMs
             val newClip = c.copy(
-                id = c.id + "_split",
-                trimStartMs = atMs,
+                id = "clip_${System.currentTimeMillis()}_split",
+                trimStartMs = safeSplit,
                 trimEndMs = originalEnd,
-                durationMs = originalEnd - atMs
+                durationMs = originalEnd - safeSplit
             )
-            s.copy(project = s.project.copy(
-                clips = s.project.clips.map {
-                    if (it.id == clipId) it.copy(trimEndMs = atMs, durationMs = atMs - it.trimStartMs)
-                    else it
-                } + newClip
-            ))
+            val updatedClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
+            for (clip in p.clips) {
+                if (clip.id == clipId) {
+                    updatedClips.add(clip.copy(trimEndMs = safeSplit, durationMs = safeSplit - clip.trimStartMs))
+                    updatedClips.add(newClip)
+                } else {
+                    updatedClips.add(clip)
+                }
+            }
+            val newDur = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
+            s.copy(
+                project = p.copy(clips = updatedClips, durationMs = newDur),
+                durationMs = newDur,
+                selectedClipId = newClip.id,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty()
+            )
         }
+        persistProject()
+    }
+
+    fun duplicateClip(clipId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val target = p.clips.firstOrNull { it.id == clipId } ?: return@update s
+            val newClip = target.copy(
+                id = "clip_${System.currentTimeMillis()}_dup"
+            )
+            val updated = p.clips + newClip
+            val newDur = updated.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
+            s.copy(
+                project = p.copy(clips = updated, durationMs = newDur),
+                durationMs = newDur,
+                selectedClipId = newClip.id,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty()
+            )
+        }
+        persistProject()
     }
 
     fun cutClipAtPlayhead() {

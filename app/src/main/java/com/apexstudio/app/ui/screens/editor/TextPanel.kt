@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,6 +65,11 @@ fun TextPanel(
     onColorChange: (Long) -> Unit,
     onBgChange: (Long?) -> Unit,
     onSizeChange: (Float) -> Unit,
+    onFontFamilyChange: (String) -> Unit = {},
+    onStyleChange: (isBold: Boolean, isItalic: Boolean) -> Unit = { _, _ -> },
+    onShadowChange: (Long?) -> Unit = {},
+    onAnimDurationChange: (Long) -> Unit = {},
+    onDuplicate: (String) -> Unit = {},
     onDelete: (String) -> Unit,
     onApplyPreset: (TextPreset) -> Unit = {},
     onAnimationChange: (String) -> Unit = {},
@@ -79,7 +85,7 @@ fun TextPanel(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding()
-            .heightIn(max = 360.dp)
+            .heightIn(max = 420.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
@@ -175,7 +181,7 @@ fun TextPanel(
 
         if (selected == null) {
             Text(
-                "Tap + Add to place a caption on the video. Drag to reposition.",
+                "Tap + Add to place a caption on the video. Drag or tap on video to edit.",
                 color = ApexPalette.TextTertiary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(vertical = 12.dp)
@@ -183,7 +189,7 @@ fun TextPanel(
             return@Column
         }
 
-        // Section Tabs: Edit, Animation, Presets
+        // Section Tabs: Edit & Font, Style & Color, Animation, Presets
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -193,9 +199,9 @@ fun TextPanel(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             listOf(
-                TextPanelTab.EDIT to "Edit & Style",
+                TextPanelTab.EDIT to "Edit & Font",
                 TextPanelTab.ANIMATION to "Animation",
-                TextPanelTab.PRESETS to "Presets (500+)"
+                TextPanelTab.PRESETS to "Presets"
             ).forEach { (tab, label) ->
                 val isSel = activeTab == tab
                 Box(
@@ -227,9 +233,10 @@ fun TextPanel(
                     singleLine = false,
                     minLines = 1,
                     maxLines = 2,
+                    placeholder = { Text("Enter text...", color = ApexPalette.TextTertiary) },
                     textStyle = androidx.compose.ui.text.TextStyle(
                         color = Color.White,
-                        fontSize = 13.sp
+                        fontSize = 14.sp
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = ApexPalette.NeonCyan,
@@ -241,22 +248,166 @@ fun TextPanel(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
 
-                // Text colour swatches
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Numerical Font Size Control with - and + buttons and slider (CapCut style)
+                val currentSizeSp = (20f * selected.sizeScale).toInt()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
-                        "Colour",
+                        "Size",
                         color = ApexPalette.TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(44.dp)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        textColors().forEach { c ->
+
+                    // Decrement button
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                            .clickable {
+                                onSizeChange((selected.sizeScale - 0.1f).coerceIn(0.4f, 4f))
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("-", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Slider
+                    Slider(
+                        value = selected.sizeScale.coerceIn(0.4f, 4f),
+                        onValueChange = onSizeChange,
+                        valueRange = 0.4f..4f,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = ApexPalette.NeonCyan,
+                            activeTrackColor = ApexPalette.NeonCyan,
+                            inactiveTrackColor = ApexPalette.BgElevated
+                        )
+                    )
+
+                    // Increment button
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                            .clickable {
+                                onSizeChange((selected.sizeScale + 0.1f).coerceIn(0.4f, 4f))
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    // Exact SP badge
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
+                            .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            "${currentSizeSp}sp",
+                            color = ApexPalette.NeonCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Font Family & Weight Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Font",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            "sans" to "Sans",
+                            "serif" to "Serif",
+                            "monospace" to "Mono",
+                            "cursive" to "Script"
+                        ).forEach { (fontKey, fontLabel) ->
+                            val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
                             Box(
                                 modifier = Modifier
-                                    .size(22.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSel) ApexPalette.NeonCyan else ApexPalette.BgElevated)
+                                    .clickable { onFontFamilyChange(fontKey) }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    fontLabel,
+                                    color = if (isSel) Color(0xFF0A0E1A) else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+
+                        // Bold toggle
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected.isBold) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
+                                .border(1.dp, if (selected.isBold) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                .clickable { onStyleChange(!selected.isBold, selected.isItalic) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("B", color = if (selected.isBold) ApexPalette.NeonCyan else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+
+                        // Italic toggle
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected.isItalic) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
+                                .border(1.dp, if (selected.isItalic) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                .clickable { onStyleChange(selected.isBold, !selected.isItalic) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("I", color = if (selected.isItalic) ApexPalette.NeonCyan else Color.White, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Text colour swatches (CapCut popular colors)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Color",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(textColors()) { c ->
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
                                     .clip(CircleShape)
                                     .background(Color(c.toInt()))
                                     .border(
@@ -271,8 +422,8 @@ fun TextPanel(
                                 if (selected.colorArgb == c) {
                                     Icon(
                                         Icons.Default.Check, null,
-                                        tint = Color(0xFF0A0E1A),
-                                        modifier = Modifier.size(12.dp)
+                                        tint = if (c == 0xFFFFFFFFL || c == 0xFFFFC400L || c == 0xFF00E5FFL) Color.Black else Color.White,
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
@@ -289,7 +440,7 @@ fun TextPanel(
                         color = ApexPalette.TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(44.dp)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         pillOptions().forEach { (label, argb) ->
@@ -320,69 +471,124 @@ fun TextPanel(
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
 
-                // Size Slider
+                // Text Shadow / Glow toggle
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Size",
+                        "Glow",
                         color = ApexPalette.TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(44.dp)
                     )
-                    Slider(
-                        value = selected.sizeScale.coerceIn(0.4f, 3f),
-                        onValueChange = onSizeChange,
-                        valueRange = 0.4f..3f,
-                        modifier = Modifier.weight(1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan,
-                            inactiveTrackColor = ApexPalette.BgElevated
-                        )
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            "None" to null,
+                            "Black Shadow" to 0xCC000000L,
+                            "Cyan Glow" to 0xFF00E5FFL,
+                            "Yellow Glow" to 0xFFFFC400L,
+                            "Neon Pink" to 0xFFFF2D55L
+                        ).forEach { (label, argb) ->
+                            val sel = selected.shadowColorArgb == argb
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .clickable { onShadowChange(argb) }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(label, color = if (sel) ApexPalette.NeonCyan else Color.White, fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
 
+                Spacer(Modifier.height(10.dp))
+
+                // Quick Duplicate and Delete Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                            .clickable { onDuplicate(selected.id) }
+                            .padding(vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.ContentCopy, null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Duplicate", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(ApexPalette.Danger.copy(alpha = 0.15f))
                             .border(1.dp, ApexPalette.Danger, RoundedCornerShape(8.dp))
                             .clickable { onDelete(selected.id) }
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                            .padding(vertical = 7.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Delete, null,
-                                tint = ApexPalette.Danger,
-                                modifier = Modifier.size(13.dp)
-                            )
+                            Icon(Icons.Default.Delete, null, tint = ApexPalette.Danger, modifier = Modifier.size(13.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Delete",
-                                color = ApexPalette.Danger,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text("Delete", color = ApexPalette.Danger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
 
             TextPanelTab.ANIMATION -> {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Animation Duration Slider
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Speed",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.width(44.dp)
+                        )
+                        Slider(
+                            value = (selected.animationDurationMs / 1000f).coerceIn(0.2f, 2.5f),
+                            onValueChange = { onAnimDurationChange((it * 1000L).toLong()) },
+                            valueRange = 0.2f..2.5f,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = ApexPalette.NeonCyan,
+                                activeTrackColor = ApexPalette.NeonCyan,
+                                inactiveTrackColor = ApexPalette.BgElevated
+                            )
+                        )
+                        Text(
+                            "${String.format("%.1fs", selected.animationDurationMs / 1000f)}",
+                            color = ApexPalette.NeonCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+
                     Text(
-                        "Text Motion & In-Animations",
+                        "In & Loop Animations",
                         color = ApexPalette.NeonCyan,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
+
                     TEXT_ANIMATIONS.forEach { opt ->
                         val isSel = selected.animationType.equals(opt.id, ignoreCase = true)
                         Box(
@@ -498,13 +704,17 @@ fun TextPanel(
 }
 
 private fun textColors(): List<Long> = listOf(
-    0xFFFFFFFFL, 0xFF0A0E1A, 0xFF00E5FF, 0xFF7C4DFF,
-    0xFFFF2D55, 0xFFFFC400, 0xFF00C853, 0xFF2979FF
+    0xFFFFFFFFL, 0xFFFFC400L, 0xFF00E5FFL, 0xFFFF2D55L,
+    0xFF00C853L, 0xFF7C4DFFL, 0xFFFF6D00L, 0xFF00B0FFL,
+    0xFFFF4081L, 0xFF18FFFFL, 0xFFEEEEEEL, 0xFF0A0E1AL
 )
 
 private fun pillOptions(): List<Pair<String, Long?>> = listOf(
     "None" to null,
-    "Black" to 0xCC000000L,
-    "White" to 0xE6FFFFFFL,
-    "Cyan" to 0xB300E5FFL
+    "Black Glass" to 0xB3000000L,
+    "Solid Black" to 0xFF000000L,
+    "Yellow" to 0xCCFFC400L,
+    "Cyan" to 0xB300E5FFL,
+    "Red" to 0xCCE11D48L,
+    "White" to 0xE6FFFFFFL
 )

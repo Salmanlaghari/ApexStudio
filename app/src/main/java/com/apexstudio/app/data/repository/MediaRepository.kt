@@ -68,43 +68,17 @@ object MediaRepository {
         LutPreset("lu", "LUT 06", "asset://lut_6")
     )
 
-    fun loadTransitionPresets(): List<ToolItem> =
-        com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.values().map { trans ->
-            val icon = when (trans.category) {
-                "Wipe & Split" -> Icons.Default.SwapHoriz
-                "Slide & Push" -> Icons.Default.SwapHoriz
-                "Zoom & Warp" -> Icons.Default.ZoomIn
-                "Glitch & Digital" -> Icons.Default.Bolt
-                "Light & Flash" -> Icons.Default.WbSunny
-                else -> Icons.Default.Layers
-            }
-            val tint = when (trans.category) {
-                "Wipe & Split" -> ApexPalette.NeonPurple
-                "Slide & Push" -> ApexPalette.NeonPink
-                "Zoom & Warp" -> ApexPalette.NeonCyan
-                "Glitch & Digital" -> ApexPalette.NeonPurple
-                "Light & Flash" -> ApexPalette.NeonPink
-                else -> ApexPalette.NeonCyan
-            }
-            ToolItem(trans.id, trans.label, icon, tint)
-        }
+    fun loadTransitionPresets(): List<ToolItem> = listOf(
+        ToolItem("cross", "Cross Dissolve", Icons.Default.Layers, ApexPalette.NeonCyan),
+        ToolItem("wipe", "Wipe", Icons.Default.SwapHoriz, ApexPalette.NeonPurple),
+        ToolItem("zoom", "Zoom", Icons.Default.ZoomIn, ApexPalette.NeonPink),
+        ToolItem("cube", "Cube Spin", Icons.Default.ViewInAr, ApexPalette.NeonCyan)
+    )
 
-    fun loadFxPresets(): List<ToolItem> =
-        com.apexstudio.app.data.fx.FxPreset.values().map { fx ->
-            val icon = when (fx.category) {
-                "Glitch & Digital" -> Icons.Default.Bolt
-                "Retro & Film" -> Icons.Default.Videocam
-                "Blur & Motion" -> Icons.Default.BlurOn
-                "Light & Optics" -> Icons.Default.WbSunny
-                else -> Icons.Default.Layers
-            }
-            val tint = when (fx.category) {
-                "Glitch & Digital" -> ApexPalette.NeonPurple
-                "Retro & Film" -> ApexPalette.NeonPink
-                "Blur & Motion" -> ApexPalette.TextSecondary
-                "Light & Optics" -> ApexPalette.NeonCyan
-                else -> ApexPalette.NeonCyan
-            }
-            ToolItem(fx.id, fx.label, icon, tint)
-        }
+    fun loadFxPresets(): List<ToolItem> = listOf(
+        ToolItem("chrom", "Chromatic Glitch", Icons.Default.Bolt, ApexPalette.NeonPurple),
+        ToolItem("grain", "Film Grain", Icons.Default.BlurOn, ApexPalette.TextSecondary),
+        ToolItem("vhs", "VHS Retro", Icons.Default.Videocam, ApexPalette.NeonPink),
+        ToolItem("leak", "Light Leak", Icons.Default.WbSunny, ApexPalette.NeonCyan)
+    )
 }

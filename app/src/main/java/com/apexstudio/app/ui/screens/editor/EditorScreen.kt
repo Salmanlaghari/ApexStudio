@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
@@ -43,6 +44,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -60,7 +62,9 @@ import androidx.media3.ui.PlayerView
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
+import com.apexstudio.app.data.media.ThumbnailExtractor
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
@@ -86,6 +90,7 @@ fun EditorScreen(
     )
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
     val context = LocalContext.current
     CrashMarker.mark(context, "EditorScreen: composable start")
@@ -253,7 +258,7 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, currentEffects) {
+    LaunchedEffect(exoPlayer, activePreset?.id, activeFx?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
         val wasPlaying = player.isPlaying
         try {
@@ -261,15 +266,8 @@ fun EditorScreen(
             if (wasPlaying && !player.isPlaying) {
                 player.play()
             }
-        } catch (e: Exception) {
-            Log.e("EditorScreen", "player.setVideoEffects failed", e)
-        }
-        if (!player.isPlaying && player.playbackState == Player.STATE_READY) {
-            try {
-                player.seekTo(player.currentPosition.coerceAtLeast(0L))
-            } catch (e: Exception) {
-                Log.w("EditorScreen", "seekTo re-render failed", e)
-            }
+        } catch (e: Throwable) {
+            Log.w("EditorScreen", "GL pipeline video effects fallback: ${e.message}")
         }
     }
 
@@ -332,6 +330,7 @@ fun EditorScreen(
                 }
         ) {
             val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                ?: state.project?.clips?.firstOrNull()
             val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
             val textOverlays = selectedClip?.textOverlays ?: emptyList()
 
@@ -351,10 +350,23 @@ fun EditorScreen(
                 currentTimeMs = state.currentTimeMs,
                 onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
                 onMoveTextOverlay = { id, dx, dy ->
-                    val clipId = state.selectedClipId ?: state.project?.clips?.firstOrNull()?.id
+                    val clipId = selectedClip?.id ?: state.project?.clips?.firstOrNull()?.id
                     if (clipId != null) {
                         vm.updateTextOverlay(clipId, id) { it.copy(x = it.x + dx, y = it.y + dy) }
                     }
+                },
+                onDeleteTextOverlay = { id ->
+                    selectedClip?.let { vm.removeTextOverlay(it.id, id) }
+                },
+                onDuplicateTextOverlay = { id ->
+                    selectedClip?.let { vm.duplicateTextOverlay(it.id, id) }
+                },
+                onEditTextOverlay = { id ->
+                    vm.selectTextOverlay(id)
+                    vm.openTextPanel()
+                },
+                onSizeScaleChange = { id, scale ->
+                    selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
                 },
                 onRetryLoad = {
                     exoPlayer?.let { player ->
@@ -388,7 +400,7 @@ fun EditorScreen(
 
                 RightToolRail(
                     onAdd = { showAddMediaMenu = true },
-                    onAudio = onAudio,
+                    onAudio = { vm.openAudioMixer() },
                     onRecord = { vm.openVoiceRecorder() },
                     onCamera = { vm.openCameraCapture() },
                     modifier = Modifier
@@ -420,19 +432,23 @@ fun EditorScreen(
             onSelectClip = { vm.selectClip(it) },
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
+            onSplitClip = { clipId, atMs -> vm.splitClip(clipId, atMs) },
+            onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
+            onDeleteClip = { clipId -> vm.deleteClip(clipId) },
+            onOpenSpeed = { vm.openSpeedPanel() },
+            onOpenAudio = { vm.openAudioMixer() },
+            onOpenTrim = { vm.openTrimPanel() },
+            onOpenText = { vm.openTextPanel() },
+            onOpenFx = { vm.openFxPanel() },
+            onOpenVoice = { vm.openVoiceRecorder() },
             modifier = Modifier
                 .fillMaxWidth()
-                // Reference image shows all 4 layer rows (purple
-                // text, blue fx, green Dreamscape waveform, purple
-                // Voice Over waveform) fully visible. 135dp clipped
-                // the bottom one to half-height. Bumped to 200dp so
-                // the Cover row + 4 layer rows all fit comfortably.
-                .height(200.dp)
+                .height(240.dp)
         )
 
         BottomEditToolbar(
             onEdit = { vm.openTrimPanel() },
-            onAudio = onAudio,
+            onAudio = { vm.openAudioMixer() },
             onText = { vm.openTextPanel() },
             onEffects = { vm.openFxPanel() },
             onOverlay = { showAddMediaMenu = true },
@@ -584,6 +600,7 @@ fun EditorScreen(
 
     if (state.textPanelOpen) {
         val textClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+            ?: state.project?.clips?.firstOrNull()
         val textOverlays = textClip?.textOverlays ?: emptyList()
         val activeOverlayId = state.selectedTextOverlayId
         Box(
@@ -619,6 +636,29 @@ fun EditorScreen(
                             vm.setTextOverlaySize(textClip.id, activeOverlayId, scale)
                         }
                     },
+                    onFontFamilyChange = { font ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayFont(textClip.id, activeOverlayId, font)
+                        }
+                    },
+                    onStyleChange = { bold, italic ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayStyle(textClip.id, activeOverlayId, bold, italic)
+                        }
+                    },
+                    onShadowChange = { shadow ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayShadow(textClip.id, activeOverlayId, shadow)
+                        }
+                    },
+                    onAnimDurationChange = { dur ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayAnimDuration(textClip.id, activeOverlayId, dur)
+                        }
+                    },
+                    onDuplicate = { overlayId ->
+                        textClip?.let { vm.duplicateTextOverlay(it.id, overlayId) }
+                    },
                     onDelete = { overlayId ->
                         textClip?.let { vm.removeTextOverlay(it.id, overlayId) }
                     },
@@ -633,6 +673,51 @@ fun EditorScreen(
                         }
                     },
                     onClose = { vm.closeTextPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.audioMixerOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeAudioMixer() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                AudioMixerPanel(
+                    state = audioState,
+                    muteOriginalVideo = audioState.isMuted,
+                    onMuteOriginal = { vm.setMuteOriginalVideo(it) },
+                    onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
+                    onRemoveTrack = { vm.removeAudioTrack(it) },
+                    onVolume = { trackId, vol -> vm.setAudioTrackVolume(trackId, vol) },
+                    onMute = { trackId -> vm.toggleAudioTrackMute(trackId) },
+                    onSolo = { trackId -> vm.toggleAudioTrackSolo(trackId) },
+                    onTrim = { trackId, start, end -> vm.setAudioTrackTrim(trackId, start, end) },
+                    onFadeIn = { trackId, ms -> vm.setAudioTrackFadeIn(trackId, ms) },
+                    onFadeOut = { trackId, ms -> vm.setAudioTrackFadeOut(trackId, ms) },
+                    onClose = { vm.closeAudioMixer() }
+                )
+            }
+        }
+    }
+
+    if (state.speedPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeSpeedPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                SpeedControlSheet(
+                    currentSpeed = state.playbackSpeed,
+                    onSpeedChange = { vm.setPlaybackSpeed(it) },
+                    onClose = { vm.closeSpeedPanel() }
                 )
             }
         }
@@ -892,12 +977,22 @@ fun VideoPreviewArea(
     currentTimeMs: Long = 0L,
     onSelectTextOverlay: ((String) -> Unit)? = null,
     onMoveTextOverlay: ((id: String, dx: Float, dy: Float) -> Unit)? = null,
+    onDeleteTextOverlay: ((String) -> Unit)? = null,
+    onDuplicateTextOverlay: ((String) -> Unit)? = null,
+    onEditTextOverlay: ((String) -> Unit)? = null,
+    onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onSelectResolution: (String) -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
+    var isCoverMode by remember { mutableStateOf(true) }
+    val currentResizeMode = if (isCoverMode) {
+        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    } else {
+        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    }
 
     Box(
         modifier = modifier
@@ -937,13 +1032,13 @@ fun VideoPreviewArea(
                         .inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView
                     pv.apply {
                         useController = false
-                        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = currentResizeMode
                         player = exoPlayer
                     }
                 },
                 update = { view ->
                     view.player = exoPlayer
-                    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    view.resizeMode = currentResizeMode
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -1030,6 +1125,18 @@ fun VideoPreviewArea(
                             val dx = newX - overlay.x
                             val dy = newY - overlay.y
                             onMoveTextOverlay?.invoke(overlay.id, dx, dy)
+                        },
+                        onSizeScaleChange = { scale ->
+                            onSizeScaleChange?.invoke(overlay.id, scale)
+                        },
+                        onEditText = {
+                            onEditTextOverlay?.invoke(overlay.id)
+                        },
+                        onDelete = {
+                            onDeleteTextOverlay?.invoke(overlay.id)
+                        },
+                        onDuplicate = {
+                            onDuplicateTextOverlay?.invoke(overlay.id)
                         }
                     )
                 }
@@ -1139,7 +1246,7 @@ fun VideoPreviewArea(
             }
         }
 
-        // Top-Right: Active filter / FX status indicator chip & Fullscreen toggle
+        // Top-Right: Active filter / FX status indicator chip, Fit/Cover mode & Fullscreen toggle
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -1147,6 +1254,22 @@ fun VideoPreviewArea(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Fit / Cover Mode Toggle Button
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .clickable { isCoverMode = !isCoverMode }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isCoverMode) "COVER" else "FIT",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             if (activeFilterId != null || activeFxId != null) {
                 Box(
                     modifier = Modifier
@@ -1413,8 +1536,47 @@ fun TimelineTrackArea(
     onSelectClip: (String?) -> Unit = {},
     onCover: () -> Unit = {},
     onAddMedia: () -> Unit = {},
+    onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
+    onDuplicateClip: (clipId: String) -> Unit = {},
+    onDeleteClip: (clipId: String) -> Unit = {},
+    onOpenSpeed: () -> Unit = {},
+    onOpenAudio: () -> Unit = {},
+    onOpenTrim: () -> Unit = {},
+    onOpenText: () -> Unit = {},
+    onOpenFx: () -> Unit = {},
+    onOpenVoice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val clips = state.project?.clips ?: emptyList()
+    val activeClip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
+
+    // Real video frames extracted for filmstrip
+    var extractedThumbnails by remember(activeClip?.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
+    LaunchedEffect(activeClip?.id, activeClip?.uri, activeClip?.trimStartMs, activeClip?.trimEndMs) {
+        val uri = activeClip?.uri
+        if (uri != null) {
+            try {
+                val trimStart = activeClip.trimStartMs
+                val trimEnd = if (activeClip.trimEndMs > trimStart) activeClip.trimEndMs else (activeClip.durationMs).coerceAtLeast(1000L)
+                val frames = com.apexstudio.app.data.media.ThumbnailExtractor.extractFrames(
+                    context = context,
+                    uri = uri,
+                    trimStartMs = trimStart,
+                    trimEndMs = trimEnd,
+                    frameWidthPx = 120,
+                    frameHeightPx = 80,
+                    frameCount = 6
+                )
+                if (frames.isNotEmpty()) {
+                    extractedThumbnails = frames
+                }
+            } catch (e: Exception) {
+                Log.w("TimelineTrackArea", "Thumbnail extraction fallback: ${e.message}")
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1422,17 +1584,68 @@ fun TimelineTrackArea(
             .padding(horizontal = 10.dp, vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // First Row: Video Thumbnail Strip + Cover button (icon-only) + Add button
+        // CapCut Quick Actions Toolbar directly above timeline
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp),
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF14141E))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // "Cover" button (pencil icon + label) — reference image shows
-            // both, so the previous icon-only rendering from PR #71 is
-            // restored here. The spec for PR #71 said icon-only but the
-            // actual reference UI keeps the "Cover" label.
+            TimelineQuickButton(
+                icon = Icons.Default.ContentCut,
+                label = "Split",
+                onClick = {
+                    activeClip?.let { onSplitClip(it.id, state.playerPositionMs) }
+                }
+            )
+
+            TimelineQuickButton(
+                icon = Icons.Default.Speed,
+                label = "Speed",
+                onClick = onOpenSpeed
+            )
+
+            TimelineQuickButton(
+                icon = Icons.Default.Tune,
+                label = "Trim",
+                onClick = onOpenTrim
+            )
+
+            TimelineQuickButton(
+                icon = Icons.Default.VolumeUp,
+                label = "Audio",
+                onClick = onOpenAudio
+            )
+
+            TimelineQuickButton(
+                icon = Icons.Default.ContentCopy,
+                label = "Copy",
+                onClick = {
+                    activeClip?.let { onDuplicateClip(it.id) }
+                }
+            )
+
+            TimelineQuickButton(
+                icon = Icons.Default.DeleteOutline,
+                label = "Delete",
+                tint = ApexPalette.NeonPink,
+                onClick = {
+                    activeClip?.let { onDeleteClip(it.id) }
+                }
+            )
+        }
+
+        // First Row: Video Thumbnail Strip + Cover button + Add button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // "Cover" button
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -1467,39 +1680,73 @@ fun TimelineTrackArea(
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF1E1B2E))
-                    .border(1.5.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .border(2.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
+                    .clickable { activeClip?.let { onSelectClip(it.id) } }
+                    .padding(horizontal = 2.dp, vertical = 2.dp)
             ) {
-                // Repeated thumbnail frames
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    repeat(6) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(1.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF2E1065), Color(0xFF3B0764))
-                                    )
+                // Real Extracted Thumbnail Frames or Gradients
+                if (extractedThumbnails.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        extractedThumbnails.forEach { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Video Frame",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .padding(horizontal = 1.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(6) { idx ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .padding(1.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                Color(0xFF2E1065 + idx * 0x050308),
+                                                Color(0xFF3B0764 + idx * 0x040206)
+                                            )
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Movie,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(16.dp)
                                 )
-                        )
+                            }
+                        }
                     }
                 }
 
-                // Speed Indicator Chip "1.0x"
+                // Speed Indicator Chip
+                val speedDisplay = String.format(java.util.Locale.US, "%.1fx", state.playbackSpeed)
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(4.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
@@ -1509,7 +1756,7 @@ fun TimelineTrackArea(
                         tint = Color.White,
                         modifier = Modifier.size(10.dp)
                     )
-                    Text("1.0x", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(speedDisplay, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Trim handles (white vertical bars)
@@ -1549,49 +1796,82 @@ fun TimelineTrackArea(
             }
         }
 
-        val clips = state.project?.clips ?: emptyList()
         val textClip = clips.firstOrNull { it.textOverlays.isNotEmpty() }
-        val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "ApexStudio  Pro Video Editor"
+        val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "Text: Add or Edit Text"
 
         val activeFxId = state.activeFxId
-        val fxLabel = if (activeFxId != null) activeFxId.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() } else "Cinematic Glow"
+        val fxLabel = if (activeFxId != null) activeFxId.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() } else "FX: Select Effects"
 
         val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
-        val audioLabel = audioClip?.name ?: "Dreamscape"
+        val audioLabel = audioClip?.name ?: "Audio: Mixer & Soundtracks"
 
         val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
-        val voiceLabel = voiceClip?.name ?: "Voice Over"
+        val voiceLabel = voiceClip?.name ?: "Voiceover: Record Voice"
 
-        // Stacked Horizontal Layer Rows (4 Rows - Lock icon removed, only Eye icon remains)
+        // Stacked Horizontal Layer Rows - fully interactive to open their respective editor sessions!
         TrackLayerRow(
             barColor = Color(0xFF8B5CF6),
             icon = Icons.Default.TextFields,
             label = textLabel,
-            badgeText = null
+            badgeText = "TEXT",
+            onClick = onOpenText
         )
 
         TrackLayerRow(
             barColor = Color(0xFF3B82F6),
             icon = Icons.Default.AutoAwesome,
             label = fxLabel,
-            badgeText = "fx"
+            badgeText = "FX",
+            onClick = onOpenFx
         )
 
         TrackLayerRow(
             barColor = Color(0xFF10B981),
             icon = Icons.Default.MusicNote,
             label = audioLabel,
-            isWaveform = true
+            isWaveform = true,
+            onClick = onOpenAudio
         )
 
         TrackLayerRow(
             barColor = Color(0xFF7C3AED),
             icon = Icons.Default.Mic,
             label = voiceLabel,
-            isWaveform = true
+            isWaveform = true,
+            onClick = onOpenVoice
         )
 
         Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+private fun TimelineQuickButton(
+    icon: ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -1601,18 +1881,16 @@ private fun TrackLayerRow(
     icon: ImageVector,
     label: String,
     badgeText: String? = null,
-    isWaveform: Boolean = false
+    isWaveform: Boolean = false,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // Reference image rows are ~50dp tall — was 24dp which
-            // collapsed the waveform bars and made the coloured bars
-            // look like thin strips.
             .height(50.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Action Icon [eye] only (lock icon removed)
+        // Left Action Icon [eye] only
         Box(
             modifier = Modifier
                 .padding(end = 6.dp)
@@ -1626,13 +1904,14 @@ private fun TrackLayerRow(
             )
         }
 
-        // Colored Rounded Rectangle Bar
+        // Colored Rounded Rectangle Bar (Clickable to edit session)
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(10.dp))
                 .background(barColor.copy(alpha = 0.85f))
+                .clickable(onClick = onClick)
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.CenterStart
         ) {
@@ -1655,20 +1934,18 @@ private fun TrackLayerRow(
                         text = label,
                         color = Color.White,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
                     )
                 }
 
                 if (isWaveform) {
-                    // Simulated waveform lines — reference image shows
-                    // ~32 bars filling the row width; was 16 bars at
-                    // 20dp height. Bumped to match the new 50dp row.
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(end = 8.dp)
+                            .padding(horizontal = 8.dp)
                     ) {
                         repeat(32) { index ->
                             val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
@@ -1697,6 +1974,89 @@ private fun TrackLayerRow(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun SpeedControlSheet(
+    currentSpeed: Float,
+    onSpeedChange: (Float) -> Unit,
+    onClose: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        color = Color(0xFF14141E),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, tint = ApexPalette.NeonCyan)
+                    Text("Speed Control", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                androidx.compose.material3.IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+
+            // Speed Presets Row
+            val presets = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 4.0f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                presets.forEach { speed ->
+                    val isSelected = kotlin.math.abs(currentSpeed - speed) < 0.05f
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) ApexPalette.NeonCyan else Color(0xFF222232))
+                            .clickable { onSpeedChange(speed) }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "${speed}x",
+                            color = if (isSelected) Color.Black else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            // Slider
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Custom Speed", color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                    Text(String.format(java.util.Locale.US, "%.2fx", currentSpeed), color = ApexPalette.NeonCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                androidx.compose.material3.Slider(
+                    value = currentSpeed,
+                    onValueChange = { onSpeedChange(it) },
+                    valueRange = 0.25f..8.0f,
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = ApexPalette.NeonCyan,
+                        activeTrackColor = ApexPalette.NeonCyan,
+                        inactiveTrackColor = Color(0xFF2A2A3C)
+                    )
+                )
             }
         }
     }

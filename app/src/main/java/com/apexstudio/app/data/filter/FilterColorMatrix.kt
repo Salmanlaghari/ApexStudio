@@ -347,167 +347,9 @@ object FilterColorMatrix {
                 0f, 0f, 0f, 1f, 0f
             )
 
-            // Anime & Fantasy
-            "sakura_bloom" -> floatArrayOf(1.20f, 0.05f, 0.10f, 0f, 15f, 0.02f, 1.05f, 0.02f, 0f, 2f, 0.08f, 0.02f, 1.15f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
-            "makoto_sky" -> floatArrayOf(0.95f, 0.02f, 0.05f, 0f, -10f, 0.02f, 1.10f, 0.08f, 0f, 12f, 0.05f, 0.10f, 1.35f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
-            "spirited_green" -> floatArrayOf(1.00f, 0.08f, 0.02f, 0f, -5f, 0.05f, 1.30f, 0.05f, 0f, 30f, 0.02f, 0.05f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
-            "ghibli_warmth" -> floatArrayOf(1.25f, 0.08f, 0.02f, 0f, 22f, 0.06f, 1.15f, 0.02f, 0f, 16f, 0.02f, 0.02f, 0.90f, 0f, -10f, 0f, 0f, 0f, 1f, 0f)
-            "fantasy_violet" -> floatArrayOf(1.10f, 0.02f, 0.12f, 0f, 20f, 0.02f, 0.90f, 0.05f, 0f, -5f, 0.15f, 0.08f, 1.30f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
-            "sunlit_meadow" -> floatArrayOf(1.15f, 0.10f, 0.02f, 0f, 14f, 0.08f, 1.25f, 0.05f, 0f, 25f, 0.02f, 0.05f, 0.85f, 0f, -20f, 0f, 0f, 0f, 1f, 0f)
-            "celestial_glow" -> floatArrayOf(1.05f, 0.08f, 0.12f, 0f, 25f, 0.08f, 1.15f, 0.08f, 0f, 20f, 0.12f, 0.08f, 1.25f, 0f, 30f, 0f, 0f, 0f, 1f, 0f)
-            "twilight_aurora" -> floatArrayOf(0.85f, 0.05f, 0.15f, 0f, -12f, 0.05f, 1.20f, 0.10f, 0f, 20f, 0.12f, 0.08f, 1.25f, 0f, 32f, 0f, 0f, 0f, 1f, 0f)
-            "golden_chiharu" -> floatArrayOf(1.30f, 0.08f, 0.02f, 0f, 30f, 0.08f, 1.10f, 0.02f, 0f, 20f, 0.02f, 0.02f, 0.85f, 0f, -15f, 0f, 0f, 0f, 1f, 0f)
-            "cherry_dusk" -> floatArrayOf(1.20f, 0.02f, 0.10f, 0f, 26f, 0.05f, 0.95f, 0.05f, 0f, 0f, 0.08f, 0.05f, 1.10f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
-
-            // Vintage 90s & Nostalgia
-            "fuji_velvia_50" -> floatArrayOf(1.20f, 0.05f, 0.02f, 0f, 6f, 0.02f, 1.25f, 0.05f, 0f, 14f, 0.02f, 0.05f, 1.10f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
-            "kodachrome_64" -> floatArrayOf(1.25f, 0.06f, 0.02f, 0f, 16f, 0.04f, 1.10f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
-            "agfa_vista" -> floatArrayOf(1.10f, 0.04f, 0.02f, 0f, 10f, 0.04f, 1.15f, 0.04f, 0f, 15f, 0.02f, 0.04f, 1.20f, 0f, 5f, 0f, 0f, 0f, 1f, 0f)
-            "polaroid_sx70" -> floatArrayOf(1.15f, 0.05f, 0.02f, 0f, 20f, 0.04f, 0.95f, 0.02f, 0f, 8f, 0.02f, 0.02f, 0.85f, 0f, -15f, 0f, 0f, 0f, 1f, 0f)
-            "camcorder_90s" -> floatArrayOf(1.05f, 0.04f, 0.02f, 0f, 6f, 0.04f, 1.10f, 0.02f, 0f, 12f, 0.02f, 0.02f, 0.90f, 0f, -10f, 0f, 0f, 0f, 1f, 0f)
-            "seventies_sun" -> floatArrayOf(1.30f, 0.08f, 0.02f, 0f, 32f, 0.08f, 1.05f, 0.02f, 0f, 14f, 0.02f, 0.02f, 0.80f, 0f, -25f, 0f, 0f, 0f, 1f, 0f)
-            "cassette_faded" -> floatArrayOf(0.95f, 0.04f, 0.02f, 0f, 14f, 0.04f, 0.90f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.85f, 0f, 6f, 0f, 0f, 0f, 1f, 0f)
-            "indie_disposable" -> floatArrayOf(1.15f, 0.05f, 0.02f, 0f, 16f, 0.04f, 1.05f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.90f, 0f, -8f, 0f, 0f, 0f, 1f, 0f)
-            "lomography_red" -> floatArrayOf(1.35f, 0.02f, 0.02f, 0f, 38f, 0.02f, 0.90f, 0.02f, 0f, -12f, 0.02f, 0.02f, 0.95f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
-            "expired_film" -> floatArrayOf(1.05f, 0.02f, 0.05f, 0f, 6f, 0.02f, 0.95f, 0.05f, 0f, -6f, 0.06f, 0.04f, 1.15f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
-
-            // Dramatic & HDR Punch
-            "hdr_punch" -> floatArrayOf(1.35f, 0.02f, 0.02f, 0f, -12f, 0.02f, 1.35f, 0.02f, 0f, -12f, 0.02f, 0.02f, 1.35f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
-            "hyper_clarity" -> floatArrayOf(1.25f, 0.02f, 0.02f, 0f, 0f, 0.02f, 1.25f, 0.02f, 0f, 0f, 0.02f, 0.02f, 1.25f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)
-            "shadow_crush" -> floatArrayOf(1.20f, 0.02f, 0.02f, 0f, -30f, 0.02f, 1.20f, 0.02f, 0f, -30f, 0.02f, 0.02f, 1.20f, 0f, -30f, 0f, 0f, 0f, 1f, 0f)
-            "crimson_impact" -> floatArrayOf(1.40f, 0.02f, 0.02f, 0f, 26f, 0.02f, 0.90f, 0.02f, 0f, -12f, 0.02f, 0.02f, 0.90f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
-            "deep_abyss" -> floatArrayOf(0.85f, 0.02f, 0.05f, 0f, -20f, 0.02f, 0.95f, 0.08f, 0f, -10f, 0.05f, 0.08f, 1.30f, 0f, 32f, 0f, 0f, 0f, 1f, 0f)
-            "volcanic_ember" -> floatArrayOf(1.40f, 0.05f, 0.02f, 0f, 38f, 0.04f, 1.05f, 0.02f, 0f, 6f, 0.02f, 0.02f, 0.75f, 0f, -25f, 0f, 0f, 0f, 1f, 0f)
-            "thunderstorm_sky" -> floatArrayOf(0.90f, 0.02f, 0.05f, 0f, -15f, 0.02f, 1.00f, 0.06f, 0f, 0f, 0.05f, 0.08f, 1.25f, 0f, 26f, 0f, 0f, 0f, 1f, 0f)
-            "metallic_bronze" -> floatArrayOf(1.25f, 0.05f, 0.02f, 0f, 20f, 0.05f, 1.15f, 0.02f, 0f, 14f, 0.02f, 0.02f, 0.85f, 0f, -12f, 0f, 0f, 0f, 1f, 0f)
-            "neon_overdrive" -> floatArrayOf(1.30f, 0.02f, 0.12f, 0f, 12f, 0.02f, 0.80f, 0.05f, 0f, -20f, 0.12f, 0.05f, 1.40f, 0f, 38f, 0f, 0f, 0f, 1f, 0f)
-            "electric_lime" -> floatArrayOf(0.90f, 0.10f, 0.02f, 0f, -12f, 0.05f, 1.40f, 0.05f, 0f, 38f, 0.02f, 0.05f, 0.85f, 0f, -20f, 0f, 0f, 0f, 1f, 0f)
-
-            // Nordic & Cold Minimal
-            "oslo_winter" -> floatArrayOf(0.90f, 0.02f, 0.08f, 0f, -6f, 0.02f, 0.95f, 0.05f, 0f, 0f, 0.08f, 0.05f, 1.25f, 0f, 30f, 0f, 0f, 0f, 1f, 0f)
-            "fjord_mist" -> floatArrayOf(0.85f, 0.04f, 0.08f, 0f, -12f, 0.04f, 1.05f, 0.06f, 0f, 10f, 0.08f, 0.06f, 1.20f, 0f, 25f, 0f, 0f, 0f, 1f, 0f)
-            "arctic_frost" -> floatArrayOf(0.90f, 0.02f, 0.12f, 0f, -10f, 0.02f, 1.00f, 0.08f, 0f, 6f, 0.10f, 0.08f, 1.35f, 0f, 45f, 0f, 0f, 0f, 1f, 0f)
-            "scandi_clean" -> floatArrayOf(1.05f, 0.04f, 0.04f, 0f, 16f, 0.04f, 1.05f, 0.04f, 0f, 16f, 0.04f, 0.04f, 1.10f, 0f, 20f, 0f, 0f, 0f, 1f, 0f)
-            "glacier_blue" -> floatArrayOf(0.80f, 0.02f, 0.12f, 0f, -20f, 0.02f, 1.00f, 0.08f, 0f, 6f, 0.12f, 0.08f, 1.40f, 0f, 45f, 0f, 0f, 0f, 1f, 0f)
-            "pale_fog" -> floatArrayOf(0.95f, 0.04f, 0.04f, 0f, 20f, 0.04f, 0.95f, 0.04f, 0f, 20f, 0.04f, 0.04f, 1.05f, 0f, 26f, 0f, 0f, 0f, 1f, 0f)
-            "midnight_sun_nordic" -> floatArrayOf(1.20f, 0.05f, 0.02f, 0f, 20f, 0.04f, 1.05f, 0.02f, 0f, 10f, 0.02f, 0.02f, 0.95f, 0f, -5f, 0f, 0f, 0f, 1f, 0f)
-            "pine_needle" -> floatArrayOf(0.90f, 0.06f, 0.02f, 0f, -10f, 0.04f, 1.25f, 0.04f, 0f, 26f, 0.02f, 0.04f, 0.95f, 0f, -6f, 0f, 0f, 0f, 1f, 0f)
-            "coastal_rock" -> floatArrayOf(0.92f, 0.02f, 0.04f, 0f, 6f, 0.02f, 0.92f, 0.04f, 0f, 6f, 0.04f, 0.04f, 1.05f, 0f, 14f, 0f, 0f, 0f, 1f, 0f)
-            "nordic_dusk" -> floatArrayOf(0.95f, 0.02f, 0.10f, 0f, 10f, 0.02f, 0.90f, 0.05f, 0f, 0f, 0.10f, 0.05f, 1.20f, 0f, 35f, 0f, 0f, 0f, 1f, 0f)
-
             // Original or Unknown fallback
             else -> IDENTITY
         }
-    }
-
-    /**
-     * Compute combined matrix for filter preset, FX preset, and
-     * VideoAdjustments. The FX param is a best-effort colour-tint
-     * approximation — most FX presets (VHS, Glitch, Scanlines, etc.)
-     * need an OpenGL shader and cannot be expressed as a single
-     * ColorMatrix. For those, the live preview skips the FX tint
-     * while the export pipeline (FxGlEffect) applies the full
-     * shader-based effect. The presets that DO map to a colour
-     * matrix (chromatic, soft_blur as a brightness boost) are
-     * handled inline.
-     */
-    fun getCombinedMatrix(
-        filterId: String?,
-        intensity: Float,
-        adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
-        fxId: String? = null,
-        fxIntensity: Float = 0f
-    ): FloatArray {
-        val filterMatrix = AndroidColorMatrix(getInterpolatedMatrix(filterId, intensity))
-        if (adjustments.isDefault && fxId == null) {
-            return filterMatrix.array
-        }
-
-        val adjustMatrix = AndroidColorMatrix()
-
-        // 1. Contrast
-        if (adjustments.contrast != 1f) {
-            val c = adjustments.contrast
-            val cm = AndroidColorMatrix(floatArrayOf(
-                c, 0f, 0f, 0f, 128f * (1f - c),
-                0f, c, 0f, 0f, 128f * (1f - c),
-                0f, 0f, c, 0f, 128f * (1f - c),
-                0f, 0f, 0f, 1f, 0f
-            ))
-            adjustMatrix.postConcat(cm)
-        }
-
-        // 2. Brightness & Exposure
-        val expScale = Math.pow(2.0, adjustments.exposure.toDouble()).toFloat()
-        val totalBrightness = (adjustments.brightness + (expScale - 1f) * 0.5f) * 255f
-        if (totalBrightness != 0f || expScale != 1f) {
-            val bm = AndroidColorMatrix(floatArrayOf(
-                expScale, 0f, 0f, 0f, totalBrightness,
-                0f, expScale, 0f, 0f, totalBrightness,
-                0f, 0f, expScale, 0f, totalBrightness,
-                0f, 0f, 0f, 1f, 0f
-            ))
-            adjustMatrix.postConcat(bm)
-        }
-
-        // 3. Saturation
-        if (adjustments.saturation != 1f) {
-            val sm = AndroidColorMatrix()
-            sm.setSaturation(adjustments.saturation)
-            adjustMatrix.postConcat(sm)
-        }
-
-        // 4. Temperature & Tint
-        if (adjustments.temperature != 0f || adjustments.tint != 0f) {
-            val rGain = 1f + (adjustments.temperature * 0.2f)
-            val bGain = 1f - (adjustments.temperature * 0.2f)
-            val gGain = 1f - (adjustments.tint * 0.2f)
-            val tm = AndroidColorMatrix(floatArrayOf(
-                rGain, 0f, 0f, 0f, 0f,
-                0f, gGain, 0f, 0f, 0f,
-                0f, 0f, bGain, 0f, 0f,
-                0f, 0f, 0f, 1f, 0f
-            ))
-            adjustMatrix.postConcat(tm)
-        }
-
-        val finalMatrix = AndroidColorMatrix(filterMatrix)
-        finalMatrix.postConcat(adjustMatrix)
-
-        // FX colour-tint approximation. fxIntensity is 0..1.
-        // Only FX presets that map cleanly to a colour matrix are
-        // handled here. Others are no-ops in preview; the export
-        // pipeline applies the full OpenGL effect.
-        if (fxId != null && fxIntensity > 0f) {
-            val fxClamped = fxIntensity.coerceIn(0f, 1f)
-            val fxMatrix = when (fxId) {
-                // Chromatic aberration → slight R/B channel offset to
-                // emulate colour-fringing tint at intensity.
-                "chromatic" -> AndroidColorMatrix(floatArrayOf(
-                    1f + 0.08f * fxClamped, 0f, 0.05f * fxClamped, 0f, 0f,
-                    0f, 1f, 0f, 0f, 0f,
-                    0.05f * fxClamped, 0f, 1f + 0.08f * fxClamped, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f
-                ))
-                // Soft blur → slight brightness drop + warm tint to
-                // emulate the diffusion feel. (Real blur needs GL.)
-                "soft_blur" -> AndroidColorMatrix(floatArrayOf(
-                    0.95f, 0f, 0f, 0f, 8f * fxClamped,
-                    0f, 0.95f, 0f, 0f, 6f * fxClamped,
-                    0f, 0f, 0.95f, 0f, 12f * fxClamped,
-                    0f, 0f, 0f, 1f, 0f
-                ))
-                // Vignette, VHS, Glitch, Film Grain, Pixelate,
-                // Scanlines need shader-based effects; no colour
-                // matrix approximation. Skip silently.
-                else -> null
-            }
-            if (fxMatrix != null) {
-                finalMatrix.postConcat(fxMatrix)
-            }
-        }
-
-        return finalMatrix.array
     }
 
     /**
@@ -532,5 +374,99 @@ object FilterColorMatrix {
 
     fun getComposeColorMatrix(filterId: String?, intensity: Float): ComposeColorMatrix {
         return ComposeColorMatrix(getInterpolatedMatrix(filterId, intensity))
+    }
+
+    /**
+     * Computes a combined 4x5 ColorMatrix incorporating:
+     * - Filter preset with intensity interpolation
+     * - Video adjustments (brightness, contrast, saturation, temperature, tint, exposure)
+     * - Visual FX color grading (sepia, night vision, thermal, bad tv, vhs)
+     */
+    fun getCombinedMatrix(
+        filterId: String? = null,
+        intensity: Float = 0f,
+        adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+        fxId: String? = null,
+        fxIntensity: Float = 0f
+    ): FloatArray {
+        val matrix = getInterpolatedMatrix(filterId, intensity).copyOf()
+
+        // 1. Brightness & Exposure
+        val bOffset = (adjustments.brightness + adjustments.exposure * 0.5f) * 100f
+        if (bOffset != 0f) {
+            matrix[4] += bOffset
+            matrix[9] += bOffset
+            matrix[14] += bOffset
+        }
+
+        // 2. Contrast
+        if (adjustments.contrast != 1f) {
+            val c = adjustments.contrast.coerceAtLeast(0f)
+            val t = 128f * (1f - c)
+            matrix[0] *= c
+            matrix[6] *= c
+            matrix[12] *= c
+            matrix[4] += t
+            matrix[9] += t
+            matrix[14] += t
+        }
+
+        // 3. Saturation
+        if (adjustments.saturation != 1f) {
+            val sat = adjustments.saturation.coerceAtLeast(0f)
+            val invSat = 1f - sat
+            val r = 0.213f * invSat
+            val g = 0.715f * invSat
+            val b = 0.072f * invSat
+            val m0 = r + sat
+            val m1 = g
+            val m2 = b
+            matrix[0] = matrix[0] * m0 + matrix[1] * r + matrix[2] * r
+            matrix[6] = matrix[5] * g + matrix[6] * (g + sat) + matrix[7] * g
+            matrix[12] = matrix[10] * b + matrix[11] * b + matrix[12] * (b + sat)
+        }
+
+        // 4. Temperature (warm vs cool)
+        if (adjustments.temperature != 0f) {
+            val temp = adjustments.temperature * 30f
+            matrix[4] += temp
+            matrix[14] -= temp
+        }
+
+        // 5. Tint (magenta vs green)
+        if (adjustments.tint != 0f) {
+            val tint = adjustments.tint * 25f
+            matrix[9] += tint
+        }
+
+        // 6. FX-specific color shifts
+        if (fxId != null && fxIntensity > 0f) {
+            when (fxId) {
+                "sepia_grain" -> {
+                    val s = fxIntensity * 0.8f
+                    matrix[4] += 35f * s
+                    matrix[9] += 18f * s
+                    matrix[14] -= 25f * s
+                }
+                "night_vision" -> {
+                    val s = fxIntensity
+                    matrix[0] *= (1f - 0.7f * s)
+                    matrix[6] *= (1f + 0.5f * s)
+                    matrix[12] *= (1f - 0.8f * s)
+                    matrix[9] += 40f * s
+                }
+                "thermal_vision" -> {
+                    val s = fxIntensity
+                    matrix[0] *= (1f + 0.6f * s)
+                    matrix[12] *= (1f + 0.6f * s)
+                }
+                "bad_tv", "vhs" -> {
+                    matrix[4] += 12f * fxIntensity
+                    matrix[14] += 16f * fxIntensity
+                }
+            }
+        }
+
+        return matrix
     }
 }

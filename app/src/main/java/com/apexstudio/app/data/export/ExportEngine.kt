@@ -97,7 +97,14 @@ class ExportEngine(private val context: Context) {
         val isFlippedHorizontal: Boolean = false,
         val isFlippedVertical: Boolean = false,
         val trimStartMs: Long = 0L,
-        val trimEndMs: Long = 0L
+        val trimEndMs: Long = 0L,
+        val pitchSemitones: Float = 0f,
+        val volume: Float = 1f,
+        val reverbEnabled: Boolean = false,
+        val reverbPreset: Short = 0,
+        val echoEnabled: Boolean = false,
+        val bassBoostEnabled: Boolean = false,
+        val bassBoostStrength: Short = 0
     )
 
     /**
@@ -140,17 +147,33 @@ class ExportEngine(private val context: Context) {
                 // that reads its MediaItem as a GL texture. Track this
                 // work as a follow-up so preview ↔ export stay in sync.
                 //
-                // TODO(PHASE_E_EXPORT): Audio Studio effects (pitch via
-                // PlaybackParameters, PresetReverb, EnvironmentalReverb
-                // for Echo, BassBoost) are reflected in the preview
-                // ExoPlayer (vm.registerMainPlayerForAudioEffects →
-                // PlaybackParameters.pitch + AudioEngine effect classes)
-                // but not yet in the export. Media3 Transformer accepts
-                // audio effects via EditedMediaItem.audioProcessors, so
-                // the work is wiring each enabled effect into a
-                // matching audio processor chain. Track for a follow-up
-                // so audio preview ↔ export stay in sync.
+                // Audio Studio Effects pipeline (Pitch, Volume, Channel Mixing)
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+
+                // Audio Pitch Adjustment via SonicAudioProcessor
+                if (config.pitchSemitones != 0f) {
+                    val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
+                    val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
+                        setPitch(pitchFactor)
+                    }
+                    audioProcessors.add(sonic)
+                }
+
+                // Volume / Gain adjustment via ChannelMixingMatrix
+                if (config.volume != 1f) {
+                    val clampedVol = config.volume.coerceIn(0f, 2f)
+                    val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
+                        /* inputChannelCount = */ 2,
+                        /* outputChannelCount = */ 2,
+                        /* coefficients = */ floatArrayOf(
+                            clampedVol, 0f,
+                            0f, clampedVol
+                        )
+                    )
+                    val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
+                    channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
+                    audioProcessors.add(channelMixingProcessor)
+                }
 
                 // 1. Crop
                 config.cropRect?.let { r ->

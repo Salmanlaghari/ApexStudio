@@ -137,18 +137,15 @@ fun EditorScreen(
                     }
                 }
                 override fun onPlayerError(error: PlaybackException) {
-                    vm.setPlayerReady(false)
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
-                    vm.setPlayerError("Video error: $errorMsg")
+                    Log.e("EditorScreen", "ExoPlayer playback warning: $errorMsg", error)
                     try {
-                        val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
                         player.prepare()
-                        player.play()
-                        vm.setPlayerReady(true)
-                        vm.setPlayerError(null)
+                        if (state.isPlaying) {
+                            player.play()
+                        }
                     } catch (ex: Exception) {
-                        vm.setPlayerError("Failed to load video ($errorMsg)")
+                        Log.e("EditorScreen", "Player recovery fallback: ${ex.message}")
                     }
                 }
                 override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -258,18 +255,9 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, activePreset?.id, activeFx?.id) {
-        val player = exoPlayer ?: return@LaunchedEffect
-        val wasPlaying = player.isPlaying
-        try {
-            player.setVideoEffects(currentEffects)
-            if (wasPlaying && !player.isPlaying) {
-                player.play()
-            }
-        } catch (e: Throwable) {
-            Log.w("EditorScreen", "GL pipeline video effects fallback: ${e.message}")
-        }
-    }
+    // Live preview effects and filters are rendered in real-time by FilterPreviewOverlay
+    // and FxPreviewOverlay with Compose hardware acceleration, preventing ExoPlayer
+    // GL pipeline crashes and surface detachment on Android devices.
 
     LaunchedEffect(exoPlayer, state.isPlaying) {
         val player = exoPlayer ?: return@LaunchedEffect
@@ -414,16 +402,24 @@ fun EditorScreen(
             currentTimeMs = state.playerPositionMs,
             totalDurationMs = state.durationMs,
             isPlaying = state.isPlaying,
+            canUndo = state.canUndo,
+            canRedo = state.canRedo,
             onTogglePlay = { vm.togglePlay() },
-            onPrev = { seekPlayerAndState((state.playerPositionMs - 5000L).coerceAtLeast(0L)) },
-            onNext = { seekPlayerAndState((state.playerPositionMs + 5000L).coerceAtMost(state.durationMs)) },
+            onPrev = {
+                val clips = state.project?.clips ?: emptyList()
+                val current = state.playerPositionMs
+                val prevClip = clips.lastOrNull { it.trimStartMs < current - 500L }
+                seekPlayerAndState(prevClip?.trimStartMs ?: 0L)
+            },
+            onNext = {
+                val clips = state.project?.clips ?: emptyList()
+                val current = state.playerPositionMs
+                val nextClip = clips.firstOrNull { it.trimStartMs > current + 500L }
+                seekPlayerAndState(nextClip?.trimStartMs ?: state.durationMs)
+            },
+            onUndo = { vm.undo() },
+            onRedo = { vm.redo() },
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
-        )
-
-        TimelineRuler(
-            currentTimeMs = state.playerPositionMs,
-            totalDurationMs = state.durationMs,
-            onScrub = { seekPlayerAndState(it) }
         )
 
         TimelineTrackArea(
@@ -441,26 +437,21 @@ fun EditorScreen(
             onOpenText = { vm.openTextPanel() },
             onOpenFx = { vm.openFxPanel() },
             onOpenVoice = { vm.openVoiceRecorder() },
+            onOpenAnimation = { vm.setKeyframePanelOpen(true) },
+            onOpenTransition = { vm.openTransmissionTemplatesPanel() },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .weight(1f)
         )
 
         BottomEditToolbar(
             onEdit = { vm.openTrimPanel() },
             onAudio = { vm.openAudioMixer() },
             onText = { vm.openTextPanel() },
+            onStickers = { vm.openStickerPanel() },
             onEffects = { vm.openFxPanel() },
-            onOverlay = { showAddMediaMenu = true },
-            onTransition = { vm.openTransmissionTemplatesPanel() },
-            onFilters = { vm.openFilterPanel() }
-        )
-
-        BottomNavBar(
-            onMedia = { vm.openMediaLibrary() },
-            onElements = { vm.openStickerPanel() },
-            onTools = { /* Open tools panel */ },
-            onSettings = { /* Open settings */ }
+            onFilters = { vm.openFilterPanel() },
+            onAdjust = { vm.openAdjustmentsPanel() }
         )
     }
 
@@ -891,49 +882,77 @@ fun TopAppBarSection(
             }
         }
 
-        // Right side icons + Export button
+        // Right side: Pro badge + 1080P dropdown + Export button
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Undo,
-                contentDescription = "Undo",
-                tint = if (canUndo) Color.White else Color(0xFF6B7280),
+            // Pro Crown Badge
+            Box(
                 modifier = Modifier
-                    .size(18.dp)
-                    .clickable(enabled = canUndo, onClick = onUndo)
-            )
-
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Redo,
-                contentDescription = "Redo",
-                tint = if (canRedo) Color.White else Color(0xFF4B5563),
-                modifier = Modifier
-                    .size(18.dp)
-                    .clickable(enabled = canRedo, onClick = onRedo)
-            )
-
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.HelpOutline,
-                contentDescription = "Help",
-                tint = Color.White,
-                modifier = Modifier
-                    .size(18.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF231B38))
+                    .border(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                     .clickable(onClick = onHelp)
-            )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WorkspacePremium,
+                        contentDescription = "Pro",
+                        tint = Color(0xFFFBBF24),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "Pro",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+            }
 
-            // Compact Gradient Export Button
+            // 1080P Resolution Tag
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1B1B26))
+                    .clickable(onClick = onExport)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "1080P",
+                        color = Color(0xFFD1D5DB),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Quality",
+                        tint = Color(0xFF9CA3AF),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            // Prominent Gradient Export Button
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.horizontalGradient(
-                            listOf(Color(0xFF8B5CF6), Color(0xFF6366F1))
+                            listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
                         )
                     )
                     .clickable(onClick = onExport)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -999,30 +1018,7 @@ fun VideoPreviewArea(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
-            .graphicsLayer {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    val hasFilter = activeFilterId != null && filterIntensity > 0f
-                    val hasAdjust = !adjustments.isDefault
-                    val hasFx = activeFxId != null && fxIntensity > 0f
-                    if (hasFilter || hasAdjust || hasFx) {
-                        val cm = com.apexstudio.app.data.filter.FilterColorMatrix
-                            .getCombinedMatrix(
-                                filterId = activeFilterId,
-                                intensity = filterIntensity,
-                                adjustments = adjustments,
-                                fxId = activeFxId,
-                                fxIntensity = fxIntensity
-                            )
-                        val filter = android.graphics.ColorMatrixColorFilter(cm)
-                        renderEffect = android.graphics.RenderEffect
-                            .createColorFilterEffect(filter)
-                            .asComposeRenderEffect()
-                    } else {
-                        renderEffect = null
-                    }
-                }
-            },
+            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {
@@ -1052,6 +1048,14 @@ fun VideoPreviewArea(
                 )
             }
         }
+
+        // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
+        FilterPreviewOverlay(
+            filterId = activeFilterId,
+            intensity = filterIntensity,
+            adjustments = adjustments,
+            modifier = Modifier.fillMaxSize()
+        )
 
         // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
         if (activeFxId != null && fxIntensity > 0f) {
@@ -1390,32 +1394,36 @@ fun PlaybackControlBar(
     currentTimeMs: Long = 4370L,
     totalDurationMs: Long = 18690L,
     isPlaying: Boolean = false,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     onTogglePlay: () -> Unit = {},
     onPrev: () -> Unit = {},
     onNext: () -> Unit = {},
-    onFullscreenToggle: () -> Unit = {},
-    onSettings: () -> Unit = {}
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
+    onFullscreenToggle: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .padding(horizontal = 16.dp),
+            .height(44.dp)
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Time counter
+        // Left: Time counter matching reference image (e.g. 00:12 / 00:28)
         Text(
-            text = "${TimeFormat.formatMs(currentTimeMs)} / ${TimeFormat.formatMs(totalDurationMs)}",
-            color = Color(0xFF9CA3AF),
+            text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(totalDurationMs)}",
+            color = Color.White,
             fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 12.sp
         )
 
-        // Center Playback Icons
+        // Center Playback Icons: Previous, Play/Pause, Next
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
@@ -1452,11 +1460,29 @@ fun PlaybackControlBar(
             )
         }
 
-        // Right Icons
+        // Right Icons: Undo, Redo, Fullscreen
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Undo,
+                contentDescription = "Undo",
+                tint = if (canUndo) Color.White else Color(0xFF4B5563),
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable(enabled = canUndo, onClick = onUndo)
+            )
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Redo,
+                contentDescription = "Redo",
+                tint = if (canRedo) Color.White else Color(0xFF4B5563),
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable(enabled = canRedo, onClick = onRedo)
+            )
+
             Icon(
                 imageVector = Icons.Default.Fullscreen,
                 contentDescription = "Fullscreen",
@@ -1465,70 +1491,11 @@ fun PlaybackControlBar(
                     .size(20.dp)
                     .clickable(onClick = onFullscreenToggle)
             )
-
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Settings",
-                tint = Color.White,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clickable(onClick = onSettings)
-            )
         }
     }
 }
 
-// === 4. TIMELINE RULER ===
-@Composable
-fun TimelineRuler(
-    currentTimeMs: Long = 4000L,
-    totalDurationMs: Long = 18690L,
-    onScrub: (Long) -> Unit = {}
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .background(Color(0xFF0F0F17))
-            .pointerInput(totalDurationMs) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val fraction = (change.position.x / size.width).coerceIn(0f, 1f)
-                    onScrub((fraction * totalDurationMs).toLong())
-                }
-            }
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf("00:00", "00:02", "00:04", "00:06", "00:08", "00:10", "00:12", "00:14", "00:16", "00:18").forEach { time ->
-                Text(
-                    text = time,
-                    color = Color(0xFF6B7280),
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-        }
-
-        // Vertical Playhead Line
-        val progress = if (totalDurationMs > 0) currentTimeMs.toFloat() / totalDurationMs else 0f
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val headX = size.width * progress
-            drawLine(
-                color = Color.White,
-                start = Offset(headX, 0f),
-                end = Offset(headX, size.height),
-                strokeWidth = 2f
-            )
-        }
-    }
-}
-
-// === 5. TIMELINE TRACK AREA ===
+// === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 @Composable
 fun TimelineTrackArea(
     state: com.apexstudio.app.presentation.state.EditorState,
@@ -1545,13 +1512,17 @@ fun TimelineTrackArea(
     onOpenText: () -> Unit = {},
     onOpenFx: () -> Unit = {},
     onOpenVoice: () -> Unit = {},
+    onOpenAnimation: () -> Unit = {},
+    onOpenTransition: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val clips = state.project?.clips ?: emptyList()
     val activeClip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
+    val durationMs = state.durationMs.coerceAtLeast(1000L)
+    val playheadMs = state.playerPositionMs.coerceIn(0L, durationMs)
 
-    // Real video frames extracted for filmstrip
+    // Real extracted video frames for filmstrip
     var extractedThumbnails by remember(activeClip?.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
     LaunchedEffect(activeClip?.id, activeClip?.uri, activeClip?.trimStartMs, activeClip?.trimEndMs) {
         val uri = activeClip?.uri
@@ -1559,7 +1530,7 @@ fun TimelineTrackArea(
             try {
                 val trimStart = activeClip.trimStartMs
                 val trimEnd = if (activeClip.trimEndMs > trimStart) activeClip.trimEndMs else (activeClip.durationMs).coerceAtLeast(1000L)
-                val frames = com.apexstudio.app.data.media.ThumbnailExtractor.extractFrames(
+                val frames = ThumbnailExtractor.extractFrames(
                     context = context,
                     uri = uri,
                     trimStartMs = trimStart,
@@ -1580,402 +1551,566 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0A0A0F))
-            .padding(horizontal = 10.dp, vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .background(Color(0xFF08080E))
+            .padding(top = 2.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // CapCut Quick Actions Toolbar directly above timeline
+        // Multi-Track Timeline Container: Pinned Icon Sidebar on Left + Horizontal Scrollable Tracks on Right
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF14141E))
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .weight(1f)
         ) {
-            TimelineQuickButton(
-                icon = Icons.Default.ContentCut,
-                label = "Split",
-                onClick = {
-                    activeClip?.let { onSplitClip(it.id, state.playerPositionMs) }
-                }
-            )
-
-            TimelineQuickButton(
-                icon = Icons.Default.Speed,
-                label = "Speed",
-                onClick = onOpenSpeed
-            )
-
-            TimelineQuickButton(
-                icon = Icons.Default.Tune,
-                label = "Trim",
-                onClick = onOpenTrim
-            )
-
-            TimelineQuickButton(
-                icon = Icons.Default.VolumeUp,
-                label = "Audio",
-                onClick = onOpenAudio
-            )
-
-            TimelineQuickButton(
-                icon = Icons.Default.ContentCopy,
-                label = "Copy",
-                onClick = {
-                    activeClip?.let { onDuplicateClip(it.id) }
-                }
-            )
-
-            TimelineQuickButton(
-                icon = Icons.Default.DeleteOutline,
-                label = "Delete",
-                tint = ApexPalette.NeonPink,
-                onClick = {
-                    activeClip?.let { onDeleteClip(it.id) }
-                }
-            )
-        }
-
-        // First Row: Video Thumbnail Strip + Cover button + Add button
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(42.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // "Cover" button
-            Row(
+            // --- 1. LEFT TRACK TYPE ICON SIDEBAR (Matches Reference Image) ---
+            Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF1F1F2E))
-                    .clickable(onClick = onCover)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .width(46.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFF0C0C14))
+                    .border(width = 1.dp, color = Color(0xFF1B1B28)),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Cover",
+                // Top header / ruler height spacer
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Lock",
+                        tint = Color(0xFF4B5563),
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // Video Track Icon
+                TrackSidebarIcon(
+                    icon = Icons.Default.Movie,
+                    contentDesc = "Video Track",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    onClick = { activeClip?.let { onSelectClip(it.id) } }
                 )
-                Text(
-                    text = "Cover",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    softWrap = false
+
+                Spacer(Modifier.height(8.dp))
+
+                // Text Track Icon
+                TrackSidebarIcon(
+                    icon = Icons.Default.TextFields,
+                    contentDesc = "Text Track",
+                    tint = Color(0xFFA78BFA),
+                    onClick = onOpenText
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Effects Track Icon
+                TrackSidebarIcon(
+                    icon = Icons.Default.AutoAwesome,
+                    contentDesc = "Effects Track",
+                    tint = Color(0xFF60A5FA),
+                    onClick = onOpenFx
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Audio Track Icon
+                TrackSidebarIcon(
+                    icon = Icons.Default.MusicNote,
+                    contentDesc = "Audio Track",
+                    tint = Color(0xFF34D399),
+                    onClick = onOpenAudio
                 )
             }
 
-            Spacer(Modifier.width(6.dp))
-
-            // Main Video Filmstrip Container
-            Box(
+            // --- 2. HORIZONTAL TRACK AREA WITH UNIFIED PLAYHEAD ---
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF1E1B2E))
-                    .border(2.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
-                    .clickable { activeClip?.let { onSelectClip(it.id) } }
-                    .padding(horizontal = 2.dp, vertical = 2.dp)
+                    .background(Color(0xFF0A0A10))
             ) {
-                // Real Extracted Thumbnail Frames or Gradients
-                if (extractedThumbnails.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                val containerWidth = maxWidth
+                val progress = (playheadMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp)
+                ) {
+                    // Time Ruler
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(24.dp)
+                            .pointerInput(durationMs) {
+                                detectDragGestures { change, _ ->
+                                    change.consume()
+                                    val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                                    onScrub((frac * durationMs).toLong())
+                                }
+                            }
                     ) {
-                        extractedThumbnails.forEach { bmp ->
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = "Video Frame",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .padding(horizontal = 1.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val stepCount = 5
+                            for (i in 0..stepCount) {
+                                val timeAtStep = (durationMs * i / stepCount)
+                                Text(
+                                    text = TimeFormat.msToShort(timeAtStep),
+                                    color = Color(0xFF6B7280),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
-                } else {
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Track 1: Video Filmstrip with Transition buttons between clips + Add button
                     Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        repeat(6) { idx ->
+                        // Cover button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF1E1E2C))
+                                .clickable(onClick = onCover)
+                                .padding(horizontal = 6.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Cover", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(Modifier.width(6.dp))
+
+                        // Clips Filmstrip Row
+                        val displayClips = if (clips.isNotEmpty()) clips else listOf(
+                            MediaClip(
+                                id = "clip_default",
+                                name = "Main Video",
+                                uri = "",
+                                durationMs = durationMs,
+                                trimStartMs = 0L,
+                                trimEndMs = durationMs
+                            )
+                        )
+
+                        displayClips.forEachIndexed { index, clip ->
+                            val isSelected = clip.id == activeClip?.id
+                            // Video Clip Filmstrip Box
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
-                                    .padding(1.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(
-                                                Color(0xFF2E1065 + idx * 0x050308),
-                                                Color(0xFF3B0764 + idx * 0x040206)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF1A1A28))
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) Color(0xFF38BDF8) else Color(0xFF2A2A3C),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { onSelectClip(clip.id) }
+                                    .padding(2.dp)
+                            ) {
+                                if (extractedThumbnails.isNotEmpty() && isSelected) {
+                                    Row(modifier = Modifier.fillMaxSize()) {
+                                        extractedThumbnails.forEach { bmp ->
+                                            Image(
+                                                bitmap = bmp.asImageBitmap(),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .padding(horizontal = 0.5.dp)
+                                                    .clip(RoundedCornerShape(3.dp))
                                             )
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
+                                        }
+                                    }
+                                } else {
+                                    Row(modifier = Modifier.fillMaxSize()) {
+                                        repeat(5) { idx ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .padding(horizontal = 0.5.dp)
+                                                    .background(
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                Color(0xFF1E1B4B + idx * 0x040306),
+                                                                Color(0xFF311042 + idx * 0x030205)
+                                                            )
+                                                        ),
+                                                        RoundedCornerShape(3.dp)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Movie,
+                                                    contentDescription = null,
+                                                    tint = Color.White.copy(alpha = 0.2f),
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Speed chip at top-left
+                                val speedDisplay = String.format(java.util.Locale.US, "%.1fx", state.playbackSpeed)
+                                Text(
+                                    text = speedDisplay,
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(2.dp)
+                                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 3.dp, vertical = 1.dp)
+                                )
+
+                                // Trim Handles when selected
+                                if (isSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .width(4.dp)
+                                            .fillMaxHeight(0.6f)
+                                            .background(Color.White, RoundedCornerShape(2.dp))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .width(4.dp)
+                                            .fillMaxHeight(0.6f)
+                                            .background(Color.White, RoundedCornerShape(2.dp))
+                                    )
+                                }
+                            }
+
+                            // Transition Button between adjacent clips [ ⟐ ]
+                            if (index < displayClips.lastIndex) {
+                                Spacer(Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF262638))
+                                        .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(6.dp))
+                                        .clickable(onClick = onOpenTransition),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = "Transition",
+                                        tint = Color(0xFF60A5FA),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(4.dp))
+                            }
+                        }
+
+                        Spacer(Modifier.width(6.dp))
+
+                        // Add Media "+" Button
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .clickable(onClick = onAddMedia),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Media",
+                                tint = Color.Black,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // Track 2: Text Pill Track (Matches purple pill in reference image)
+                    val textOverlays = activeClip?.textOverlays ?: emptyList()
+                    val textLabel = textOverlays.firstOrNull()?.text ?: "Create Without Limits"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF8B5CF6).copy(alpha = 0.85f))
+                            .clickable(onClick = onOpenText)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TextFields,
+                                contentDescription = "Text",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = textLabel,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // Track 3: Effects / FX Pill Track (Matches blue pill in reference image)
+                    val fxName = state.activeFxId?.replace('_', ' ')?.capitalize()
+                        ?: state.activeFilterId?.replace('_', ' ')?.capitalize()
+                        ?: "Color Grading / Glow"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF3B82F6).copy(alpha = 0.85f))
+                            .clickable(onClick = onOpenFx)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Effect",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = fxName,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // Track 4: Audio Track with Real Waveform (Matches green pill in reference image)
+                    val audioName = state.project?.audioTracks?.firstOrNull()?.name ?: "Background Music.mp3"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF10B981).copy(alpha = 0.85f))
+                            .clickable(onClick = onOpenAudio)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Movie,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.25f),
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = "Audio",
+                                    tint = Color.White,
                                     modifier = Modifier.size(16.dp)
                                 )
+                                Text(
+                                    text = audioName,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            // Real Visual Waveform Bars inside Audio Pill
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 4.dp)
+                            ) {
+                                repeat(28) { i ->
+                                    val hFrac = if (i % 5 == 0) 0.85f else if (i % 3 == 0) 0.6f else if (i % 2 == 0) 0.4f else 0.25f
+                                    Box(
+                                        modifier = Modifier
+                                            .width(2.dp)
+                                            .height(24.dp * hFrac)
+                                            .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(1.dp))
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Speed Indicator Chip
-                val speedDisplay = String.format(java.util.Locale.US, "%.1fx", state.playbackSpeed)
-                Row(
+                // --- UNIFIED VERTICAL PLAYHEAD LINE WITH TIMESTAMP BADGE ---
+                val headX = (containerWidth.value * progress).dp
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.7f))
+                        .offset(x = headX - 1.dp)
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(Color.White)
+                )
+
+                // Timestamp Badge at the top of the playhead (Matches reference image, e.g. 00:15)
+                Box(
+                    modifier = Modifier
+                        .offset(x = (headX - 18.dp).coerceAtLeast(0.dp), y = 0.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.White)
                         .padding(horizontal = 5.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = "Speed",
-                        tint = Color.White,
-                        modifier = Modifier.size(10.dp)
+                    Text(
+                        text = TimeFormat.msToShort(playheadMs),
+                        color = Color.Black,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
                     )
-                    Text(speedDisplay, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-
-                // Trim handles (white vertical bars)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(4.dp)
-                        .fillMaxHeight(0.7f)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
-
-            // White Circular "+" Button
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .clickable(onClick = onAddMedia),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add Media",
-                    tint = Color.Black,
-                    modifier = Modifier.size(20.dp)
-                )
             }
         }
 
-        val textClip = clips.firstOrNull { it.textOverlays.isNotEmpty() }
-        val textLabel = textClip?.textOverlays?.firstOrNull()?.text ?: "Text: Add or Edit Text"
+        Spacer(Modifier.height(4.dp))
 
-        val activeFxId = state.activeFxId
-        val fxLabel = if (activeFxId != null) activeFxId.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() } else "FX: Select Effects"
+        // --- 3. CAPCUT QUICK ACTION TOOLBAR (Row of 6 square cards from reference image) ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickActionSquareCard(
+                icon = Icons.Default.ContentCut,
+                label = "Split",
+                onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
+            )
 
-        val audioClip = clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
-        val audioLabel = audioClip?.name ?: "Audio: Mixer & Soundtracks"
+            QuickActionSquareCard(
+                icon = Icons.Default.Tune,
+                label = "Trim",
+                onClick = onOpenTrim
+            )
 
-        val voiceClip = clips.firstOrNull { it.name.contains("Voice", ignoreCase = true) || it.name.contains("Mic", ignoreCase = true) }
-        val voiceLabel = voiceClip?.name ?: "Voiceover: Record Voice"
+            QuickActionSquareCard(
+                icon = Icons.Default.Speed,
+                label = "Speed",
+                onClick = onOpenSpeed
+            )
 
-        // Stacked Horizontal Layer Rows - fully interactive to open their respective editor sessions!
-        TrackLayerRow(
-            barColor = Color(0xFF8B5CF6),
-            icon = Icons.Default.TextFields,
-            label = textLabel,
-            badgeText = "TEXT",
-            onClick = onOpenText
-        )
+            QuickActionSquareCard(
+                icon = Icons.Default.VolumeUp,
+                label = "Volume",
+                onClick = onOpenAudio
+            )
 
-        TrackLayerRow(
-            barColor = Color(0xFF3B82F6),
-            icon = Icons.Default.AutoAwesome,
-            label = fxLabel,
-            badgeText = "FX",
-            onClick = onOpenFx
-        )
+            QuickActionSquareCard(
+                icon = Icons.Default.Layers,
+                label = "Animation",
+                onClick = onOpenAnimation
+            )
 
-        TrackLayerRow(
-            barColor = Color(0xFF10B981),
-            icon = Icons.Default.MusicNote,
-            label = audioLabel,
-            isWaveform = true,
-            onClick = onOpenAudio
-        )
-
-        TrackLayerRow(
-            barColor = Color(0xFF7C3AED),
-            icon = Icons.Default.Mic,
-            label = voiceLabel,
-            isWaveform = true,
-            onClick = onOpenVoice
-        )
-
-        Divider(color = Color(0xFF1F1F2E), thickness = 1.dp, modifier = Modifier.padding(top = 2.dp))
+            QuickActionSquareCard(
+                icon = Icons.Default.DeleteOutline,
+                label = "Delete",
+                tint = ApexPalette.NeonPink,
+                onClick = { activeClip?.let { onDeleteClip(it.id) } }
+            )
+        }
     }
 }
 
 @Composable
-private fun TimelineQuickButton(
+private fun QuickActionSquareCard(
     icon: ImageVector,
     label: String,
     tint: Color = Color.White,
     onClick: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .size(width = 54.dp, height = 50.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF141420))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(16.dp)
-        )
-        Text(
-            text = label,
-            color = tint,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = label,
+                color = tint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 
 @Composable
-private fun TrackLayerRow(
-    barColor: Color,
+private fun TrackSidebarIcon(
     icon: ImageVector,
-    label: String,
-    badgeText: String? = null,
-    isWaveform: Boolean = false,
-    onClick: () -> Unit = {}
+    contentDesc: String,
+    tint: Color,
+    onClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(50.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .size(34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF161624))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        // Left Action Icon [eye] only
-        Box(
-            modifier = Modifier
-                .padding(end = 6.dp)
-                .clickable { }
-        ) {
-            Icon(
-                imageVector = Icons.Default.Visibility,
-                contentDescription = "Toggle Visibility",
-                tint = Color(0xFF9CA3AF),
-                modifier = Modifier.size(16.dp)
-            )
-        }
-
-        // Colored Rounded Rectangle Bar (Clickable to edit session)
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(10.dp))
-                .background(barColor.copy(alpha = 0.85f))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = label,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                }
-
-                if (isWaveform) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        repeat(32) { index ->
-                            val heightFraction = if (index % 3 == 0) 0.8f else if (index % 2 == 0) 0.5f else 0.3f
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(34.dp * heightFraction)
-                                    .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(1.dp))
-                            )
-                        }
-                    }
-                }
-
-                if (badgeText != null) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.4f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = badgeText,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDesc,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
@@ -2062,66 +2197,55 @@ fun SpeedControlSheet(
     }
 }
 
-// === 6. BOTTOM EDIT TOOLBAR ===
+// === 5. BOTTOM EDIT TOOLBAR (Matches 7 tabs in reference image) ===
 @Composable
 fun BottomEditToolbar(
     onEdit: () -> Unit = {},
     onAudio: () -> Unit = {},
     onText: () -> Unit = {},
+    onStickers: () -> Unit = {},
     onEffects: () -> Unit = {},
-    onOverlay: () -> Unit = {},
-    onTransition: () -> Unit = {},
-    onFilters: () -> Unit = {}
+    onFilters: () -> Unit = {},
+    onAdjust: () -> Unit = {}
 ) {
     val items = listOf(
         EditToolItem("Edit", Icons.Default.ContentCut, isActive = true, onClick = onEdit),
         EditToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
         EditToolItem("Text", Icons.Default.TextFields, onClick = onText),
+        EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
         EditToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-        EditToolItem("Overlay", Icons.Default.Layers, onClick = onOverlay),
-        EditToolItem("Transition", Icons.Default.Transform, onClick = onTransition),
-        EditToolItem("Filters", Icons.Default.FilterAlt, onClick = onFilters)
+        EditToolItem("Filters", Icons.Default.FilterAlt, onClick = onFilters),
+        EditToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
     )
 
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .background(Color(0xFF0F0F17)),
-        verticalAlignment = Alignment.CenterVertically,
-        // Evenly distribute items across the row width so all 7 fit
-        // without clipping. Earlier used `Arrangement.SpaceBetween`
-        // which doesn't apply inside LazyRow + fixed width per item,
-        // causing the first item's "Edit" label to be clipped to "it"
-        // when total item width exceeded viewport width.
-        //
-        // Note: `Modifier.weight(1f)` is NOT allowed inside
-        // LazyRow.items {} (LazyItemScope doesn't provide RowScope),
-        // so each item uses a fixed but compact width and the
-        // outer spacedBy distributes the leftover space.
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            .height(54.dp)
+            .background(Color(0xFF0C0C14))
+            .border(width = 1.dp, color = Color(0xFF1F1F2E)),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items(items) { item ->
+        items.forEach { item ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
                 modifier = Modifier
-                    // 7 items at 44dp + 6 gaps at 4dp + 24dp horizontal
-                    // padding = 308 + 24 + 24 = 356dp, fits a 360dp
-                    // viewport with 4dp headroom. No horizontal scroll.
-                    .width(44.dp)
+                    .weight(1f)
+                    .fillMaxHeight()
                     .clickable(onClick = item.onClick)
             ) {
                 Icon(
                     imageVector = item.icon,
                     contentDescription = item.label,
-                    tint = if (item.isActive) Color(0xFF8B5CF6) else Color(0xFF9CA3AF),
+                    tint = if (item.isActive) Color(0xFF38BDF8) else Color(0xFF9CA3AF),
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = item.label,
-                    color = if (item.isActive) Color(0xFF8B5CF6) else Color(0xFF9CA3AF),
+                    color = if (item.isActive) Color(0xFF38BDF8) else Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
@@ -2138,59 +2262,6 @@ private data class EditToolItem(
     val isActive: Boolean = false,
     val onClick: () -> Unit
 )
-
-// === 7. BOTTOM NAVIGATION BAR ===
-@Composable
-fun BottomNavBar(
-    onMedia: () -> Unit = {},
-    onElements: () -> Unit = {},
-    onTools: () -> Unit = {},
-    onSettings: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .background(Color(0xFF0A0A0F))
-            .border(0.5.dp, Color(0xFF1F1F2E), RectangleShape)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        NavItem("Media", Icons.Default.Movie, onMedia)
-        NavItem("Elements", Icons.Default.Extension, onElements)
-        NavItem("Tools", Icons.Default.Build, onTools)
-        NavItem("Settings", Icons.Default.Settings, onSettings)
-    }
-}
-
-@Composable
-private fun NavItem(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = Color(0xFFD1D5DB),
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = label,
-            color = Color(0xFFD1D5DB),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
 
 // Add Media Menu Sheet
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

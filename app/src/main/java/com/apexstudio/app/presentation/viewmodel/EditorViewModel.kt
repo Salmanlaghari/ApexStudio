@@ -818,6 +818,8 @@ class EditorViewModel(
         }
         val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
         val speed = selected?.speedMultiplier ?: s.playbackSpeed
+        val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
+        val audioSt = _audio.value
         engine.startExport(
             inputUri,
             ExportEngine.ExportConfig(
@@ -826,14 +828,23 @@ class EditorViewModel(
                 quality = quality,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
+                adjustments = s.adjustments,
                 fxPreset = fxPreset,
                 fxIntensity = s.fxIntensity,
                 clipSpeed = speed,
                 keyframes = selected?.keyframes ?: KeyframeTrack(),
                 cropRect = s.cropRect.takeIf { !it.isFullFrame() },
                 textOverlays = selected?.textOverlays ?: emptyList(),
+                stickers = stickers,
                 trimStartMs = selected?.trimStartMs ?: 0L,
-                trimEndMs = selected?.trimEndMs ?: 0L
+                trimEndMs = selected?.trimEndMs ?: 0L,
+                pitchSemitones = audioSt.pitchSemitones,
+                volume = if (audioSt.isMuted) 0f else audioSt.volume,
+                reverbEnabled = audioSt.reverbEnabled,
+                reverbPreset = audioSt.reverbPreset,
+                echoEnabled = audioSt.echoEnabled,
+                bassBoostEnabled = audioSt.bassBoostEnabled,
+                bassBoostStrength = audioSt.bassBoostStrength
             )
         )
     }
@@ -863,8 +874,30 @@ class EditorViewModel(
     fun applyLut(lutId: String) { colorGradingEngine.applyLut(lutId) }
 
     fun setAudioBpm(b: Int) {
-        _audio.update { it.copy(bpm = b) }
-        _state.update { it.copy(bpm = b) }
+        val safeBpm = b.coerceIn(60, 240)
+        _audio.update { it.copy(bpm = safeBpm) }
+        val beatIntervalMs = (60_000.0 / safeBpm).toLong()
+        val totalMs = _state.value.durationMs.coerceAtLeast(10_000L)
+        val beats = mutableListOf<Long>()
+        var curMs = 0L
+        while (curMs <= totalMs) {
+            beats.add(curMs)
+            curMs += beatIntervalMs
+        }
+        _state.update { it.copy(bpm = safeBpm, beatMarkersMs = beats) }
+    }
+
+    fun toggleSnapToBeat() {
+        val next = !_state.value.snapToBeat
+        _state.update { it.copy(snapToBeat = next) }
+    }
+
+    fun findNearestBeat(timeMs: Long, snapThresholdMs: Long = 180L): Long {
+        if (!_state.value.snapToBeat) return timeMs
+        val beats = _state.value.beatMarkersMs
+        if (beats.isEmpty()) return timeMs
+        val closest = beats.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
+        return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
     }
     fun toggleAiVoice() = _audio.update { it.copy(aiVoiceEnhance = !it.aiVoiceEnhance) }
     fun setClarity(v: Float) = _audio.update { it.copy(clarity = v) }

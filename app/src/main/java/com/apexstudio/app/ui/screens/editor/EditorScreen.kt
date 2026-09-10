@@ -424,7 +424,11 @@ fun EditorScreen(
 
         TimelineTrackArea(
             state = state,
-            onScrub = { seekPlayerAndState(it) },
+            onScrub = { targetMs ->
+                val snapped = if (state.snapToBeat) vm.findNearestBeat(targetMs) else targetMs
+                seekPlayerAndState(snapped)
+            },
+            onToggleSnapToBeat = { vm.toggleSnapToBeat() },
             onSelectClip = { vm.selectClip(it) },
             onCover = { vm.openCoverPanel() },
             onAddMedia = { showAddMediaMenu = true },
@@ -791,6 +795,49 @@ fun EditorScreen(
 
     if (state.helpDialogOpen) {
         HelpDialog(onDismiss = { vm.closeHelpDialog() })
+    }
+
+    if (state.keyframePanelOpen) {
+        val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+            ?: state.project?.clips?.firstOrNull()
+        val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.setKeyframePanelOpen(false) },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                KeyframePanel(
+                    track = track,
+                    playheadMs = state.playerPositionMs,
+                    clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
+                    canAdd = selectedClip != null,
+                    onAdd = { atMs ->
+                        selectedClip?.let {
+                            vm.addKeyframe(it.id, atMs)
+                        }
+                    },
+                    onUpdate = { kf ->
+                        selectedClip?.let {
+                            vm.updateKeyframe(it.id, kf.id) { _ -> kf }
+                        }
+                    },
+                    onRemove = { kfId ->
+                        selectedClip?.let {
+                            vm.removeKeyframe(it.id, kfId)
+                        }
+                    },
+                    onClear = {
+                        selectedClip?.let {
+                            vm.clearKeyframes(it.id)
+                        }
+                    },
+                    onClose = { vm.setKeyframePanelOpen(false) }
+                )
+            }
+        }
     }
 
     if (showAddMediaMenu) {
@@ -1500,6 +1547,7 @@ fun PlaybackControlBar(
 fun TimelineTrackArea(
     state: com.apexstudio.app.presentation.state.EditorState,
     onScrub: (Long) -> Unit = {},
+    onToggleSnapToBeat: () -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
     onCover: () -> Unit = {},
     onAddMedia: () -> Unit = {},
@@ -1570,18 +1618,21 @@ fun TimelineTrackArea(
                     .border(width = 1.dp, color = Color(0xFF1B1B28)),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top header / ruler height spacer
+                // Top header / ruler height spacer: Beat Snap Toggle Button
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(24.dp),
+                        .height(24.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (state.snapToBeat) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color.Transparent)
+                        .clickable(onClick = onToggleSnapToBeat),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Lock",
-                        tint = Color(0xFF4B5563),
-                        modifier = Modifier.size(12.dp)
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = if (state.snapToBeat) "Snap to Beat: ON" else "Snap to Beat: OFF",
+                        tint = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                        modifier = Modifier.size(13.dp)
                     )
                 }
 
@@ -1654,6 +1705,22 @@ fun TimelineTrackArea(
                                 }
                             }
                     ) {
+                        // Visual Beat Markers on Ruler
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            if (state.beatMarkersMs.isNotEmpty()) {
+                                for (beatMs in state.beatMarkersMs) {
+                                    if (beatMs in 0L..durationMs) {
+                                        val beatX = (beatMs.toFloat() / durationMs.toFloat()) * size.width
+                                        drawCircle(
+                                            color = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFFF59E0B),
+                                            radius = 2.5f,
+                                            center = Offset(beatX, size.height - 3f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.SpaceBetween,

@@ -439,7 +439,31 @@ object FilterColorMatrix {
             matrix[9] += tint
         }
 
-        // 6. FX-specific color shifts
+        // 6. HDR+ Dynamic Tone Boost
+        if (adjustments.hdr > 0f) {
+            val hdrGain = adjustments.hdr * 22f
+            matrix[4] += hdrGain
+            matrix[9] += hdrGain
+            matrix[14] += hdrGain
+            val c = 1f + adjustments.hdr * 0.18f
+            val t = 128f * (1f - c)
+            matrix[0] *= c
+            matrix[6] *= c
+            matrix[12] *= c
+            matrix[4] += t
+            matrix[9] += t
+            matrix[14] += t
+        }
+
+        // 7. Brilliance Midtone Offset
+        if (adjustments.brilliance != 0f) {
+            val brOffset = adjustments.brilliance * 20f
+            matrix[4] += brOffset
+            matrix[9] += brOffset
+            matrix[14] += brOffset
+        }
+
+        // 8. FX-specific color shifts
         if (fxId != null && fxIntensity > 0f) {
             when (fxId) {
                 "sepia_grain" -> {

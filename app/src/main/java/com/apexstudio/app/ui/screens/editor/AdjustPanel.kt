@@ -38,7 +38,9 @@ private data class AdjustItem(
 )
 
 private val ADJUST_ITEMS = listOf(
+    AdjustItem("hdr", "HDR+", 0f..1f, { it.hdr }, { a, v -> a.copy(hdr = v) }, { "%.0f".format(it * 100) }),
     AdjustItem("brightness", "Brightness", -1f..1f, { it.brightness }, { a, v -> a.copy(brightness = v) }),
+    AdjustItem("brilliance", "Brilliance", -1f..1f, { it.brilliance }, { a, v -> a.copy(brilliance = v) }),
     AdjustItem("contrast", "Contrast", 0f..2f, { it.contrast }, { a, v -> a.copy(contrast = v) }, { "%.0f".format((it - 1f) * 100) }),
     AdjustItem("saturation", "Saturation", 0f..2f, { it.saturation }, { a, v -> a.copy(saturation = v) }, { "%.0f".format((it - 1f) * 100) }),
     AdjustItem("exposure", "Exposure", -1f..1f, { it.exposure }, { a, v -> a.copy(exposure = v) }),

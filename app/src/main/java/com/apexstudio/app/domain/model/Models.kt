@@ -375,6 +375,8 @@ enum class ExportQuality(val label: String) {
 
 @Serializable
 data class VideoAdjustments(
+    val hdr: Float = 0f,
+    val brilliance: Float = 0f,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
     val saturation: Float = 1f,
@@ -389,7 +391,9 @@ data class VideoAdjustments(
     val grain: Float = 0f
 ) {
     val isDefault: Boolean
-        get() = brightness == 0f &&
+        get() = hdr == 0f &&
+                brilliance == 0f &&
+                brightness == 0f &&
                 contrast == 1f &&
                 saturation == 1f &&
                 exposure == 0f &&

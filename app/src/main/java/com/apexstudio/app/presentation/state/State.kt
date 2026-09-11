@@ -117,7 +117,9 @@ data class EditorState(
     val helpDialogOpen: Boolean = false,
     val mediaLibraryOpen: Boolean = false,
     val snapToBeat: Boolean = false,
-    val beatMarkersMs: List<Long> = emptyList()
+    val beatMarkersMs: List<Long> = emptyList(),
+    val timelineZoom: Float = 1.0f,
+    val selectedStickerId: String? = null
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

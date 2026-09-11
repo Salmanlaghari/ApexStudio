@@ -1066,8 +1066,18 @@ class EditorViewModel(
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol.coerceIn(0f, 1f)) else it })
     }
 
-    fun toggleAudioTrackMute(trackId: String) = _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
+    fun toggleAudioTrackMute(trackId: String) {
+        _audio.update { s ->
+            s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
+        }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.audioTracks.map {
+                if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it
+            }
+            s.copy(project = p.copy(audioTracks = updated))
+        }
+        persistProject()
     }
 
     fun toggleAudioTrackSolo(trackId: String) = _audio.update { s ->
@@ -1143,6 +1153,148 @@ class EditorViewModel(
 
     fun setKeyframePanelOpen(open: Boolean) =
         _state.update { it.copy(keyframePanelOpen = open) }
+
+    fun toggleKeyframeAtPlayhead() {
+        val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+        val playheadMs = _state.value.playerPositionMs
+        val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
+        if (existingKf != null) {
+            removeKeyframe(clipId, existingKf.id)
+        } else {
+            val currentTransform = clip.keyframes.interpolateAt(playheadMs)
+            addKeyframe(clipId, playheadMs, currentTransform)
+        }
+    }
+
+    fun jumpToNextKeyframe() {
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+            ?: _state.value.project?.clips?.firstOrNull() ?: return
+        val currentMs = _state.value.playerPositionMs
+        val next = clip.keyframes.keyframes.filter { it.timeMs > currentMs + 50L }.minByOrNull { it.timeMs }
+        if (next != null) {
+            seekTo(next.timeMs)
+        }
+    }
+
+    fun jumpToPrevKeyframe() {
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+            ?: _state.value.project?.clips?.firstOrNull() ?: return
+        val currentMs = _state.value.playerPositionMs
+        val prev = clip.keyframes.keyframes.filter { it.timeMs < currentMs - 50L }.maxByOrNull { it.timeMs }
+        if (prev != null) {
+            seekTo(prev.timeMs)
+        }
+    }
+
+    fun setTimelineZoom(zoom: Float) {
+        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 6.0f)) }
+    }
+
+    fun zoomInTimeline() {
+        val current = _state.value.timelineZoom
+        setTimelineZoom((current + 0.5f).coerceAtMost(6.0f))
+    }
+
+    fun zoomOutTimeline() {
+        val current = _state.value.timelineZoom
+        setTimelineZoom((current - 0.5f).coerceAtLeast(0.5f))
+    }
+
+    fun moveClipLeft(clipId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val index = p.clips.indexOfFirst { it.id == clipId }
+            if (index <= 0) return@update s
+            val updated = p.clips.toMutableList()
+            val item = updated.removeAt(index)
+            updated.add(index - 1, item)
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
+    fun moveClipRight(clipId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val index = p.clips.indexOfFirst { it.id == clipId }
+            if (index < 0 || index >= p.clips.size - 1) return@update s
+            val updated = p.clips.toMutableList()
+            val item = updated.removeAt(index)
+            updated.add(index + 1, item)
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
+    fun applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
+        val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
+        pushUndo()
+        val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, 0L, 1000L)
+        updateClip(clipId) { it.copy(keyframes = track) }
+    }
+
+    fun selectSticker(id: String?) {
+        _state.update { it.copy(selectedStickerId = id) }
+    }
+
+    fun updateTextOverlayTiming(clipId: String, textId: String, startMs: Long, endMs: Long) {
+        updateClip(clipId) { clip ->
+            val updated = clip.textOverlays.map {
+                if (it.id == textId) it.copy(startMs = startMs, endMs = endMs) else it
+            }
+            clip.copy(textOverlays = updated)
+        }
+    }
+
+    fun updateStickerTiming(stickerId: String, startMs: Long, endMs: Long) {
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.stickers.map {
+                if (it.id == stickerId) it.copy(startMs = startMs, endMs = endMs) else it
+            }
+            s.copy(project = p.copy(stickers = updated))
+        }
+        persistProject()
+    }
+
+    fun splitAudioTrack(trackId: String, atMs: Long) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val track = p.audioTracks.firstOrNull { it.id == trackId } ?: return@update s
+            val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
+            val part1 = track.copy(trimEndMs = splitPoint)
+            val part2 = track.copy(
+                id = "audio_${System.currentTimeMillis()}",
+                trimStartMs = splitPoint
+            )
+            val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
+            for (t in p.audioTracks) {
+                if (t.id == trackId) {
+                    updated.add(part1)
+                    updated.add(part2)
+                } else {
+                    updated.add(t)
+                }
+            }
+            s.copy(project = p.copy(audioTracks = updated))
+        }
+        persistProject()
+    }
+
+    fun updateAudioTrackVolume(trackId: String, volume: Float) {
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.audioTracks.map {
+                if (it.id == trackId) it.copy(volume = volume.coerceIn(0f, 1f)) else it
+            }
+            s.copy(project = p.copy(audioTracks = updated))
+        }
+        persistProject()
+    }
 
     private fun persistProject() {
         val snapshot = _state.value.project ?: return

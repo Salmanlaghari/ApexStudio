@@ -74,7 +74,10 @@ data class TextOverlay(
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE,
     val animationType: String = "NONE",
-    val animationDurationMs: Long = 800L
+    val animationDurationMs: Long = 800L,
+    val rotationDeg: Float = 0f,
+    val opacity: Float = 1f,
+    val keyframes: KeyframeTrack = KeyframeTrack()
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 
@@ -94,13 +97,17 @@ data class TextOverlay(
             isBold: Boolean = true,
             presetId: String? = null,
             animationType: String = "NONE",
-            animationDurationMs: Long = 800L
+            animationDurationMs: Long = 800L,
+            rotationDeg: Float = 0f,
+            opacity: Float = 1f,
+            keyframes: KeyframeTrack = KeyframeTrack()
         ): TextOverlay = TextOverlay(
             id = id, text = text, x = x, y = y, sizeScale = sizeScale,
             colorArgb = colorArgb, bgArgb = bgArgb, strokeColorArgb = strokeColorArgb,
             shadowColorArgb = shadowColorArgb, fontFamily = fontFamily,
             isItalic = isItalic, isBold = isBold, presetId = presetId,
-            animationType = animationType, animationDurationMs = animationDurationMs
+            animationType = animationType, animationDurationMs = animationDurationMs,
+            rotationDeg = rotationDeg, opacity = opacity, keyframes = keyframes
         )
     }
 }
@@ -211,6 +218,9 @@ data class Keyframe(
     val scale: Float = 1f,
     val rotationDeg: Float = 0f,
     val opacity: Float = 1f,
+    val volume: Float = 1f,
+    val effectIntensity: Float = 1f,
+    val filterIntensity: Float = 1f,
     val curve: KeyframeCurve = KeyframeCurve.LINEAR
 ) {
     companion object {
@@ -239,7 +249,7 @@ enum class KeyframeCurve {
  * Full animated-transform track attached to a single clip. The
  * track stores the keyframes sorted by time and exposes
  * [interpolateAt] which returns the (translate, scale, rotation,
- * opacity) tuple to render at the given ms.
+ * opacity, volume, effectIntensity, filterIntensity) tuple to render at the given ms.
  */
 @Serializable
 data class KeyframeTrack(
@@ -261,11 +271,29 @@ data class KeyframeTrack(
         val sorted = keyframes.sortedBy { it.timeMs }
         if (timeMs <= sorted.first().timeMs) {
             val k = sorted.first()
-            return AnimatedTransform(k.translateX, k.translateY, k.scale, k.rotationDeg, k.opacity)
+            return AnimatedTransform(
+                translateX = k.translateX,
+                translateY = k.translateY,
+                scale = k.scale,
+                rotationDeg = k.rotationDeg,
+                opacity = k.opacity,
+                volume = k.volume,
+                effectIntensity = k.effectIntensity,
+                filterIntensity = k.filterIntensity
+            )
         }
         if (timeMs >= sorted.last().timeMs) {
             val k = sorted.last()
-            return AnimatedTransform(k.translateX, k.translateY, k.scale, k.rotationDeg, k.opacity)
+            return AnimatedTransform(
+                translateX = k.translateX,
+                translateY = k.translateY,
+                scale = k.scale,
+                rotationDeg = k.rotationDeg,
+                opacity = k.opacity,
+                volume = k.volume,
+                effectIntensity = k.effectIntensity,
+                filterIntensity = k.filterIntensity
+            )
         }
         for (i in 0 until sorted.size - 1) {
             val a = sorted[i]
@@ -286,7 +314,10 @@ data class KeyframeTrack(
             translateY = lerp(a.translateY, b.translateY, eased),
             scale = lerp(a.scale, b.scale, eased),
             rotationDeg = lerp(a.rotationDeg, b.rotationDeg, eased),
-            opacity = lerp(a.opacity, b.opacity, eased)
+            opacity = lerp(a.opacity, b.opacity, eased),
+            volume = lerp(a.volume, b.volume, eased),
+            effectIntensity = lerp(a.effectIntensity, b.effectIntensity, eased),
+            filterIntensity = lerp(a.filterIntensity, b.filterIntensity, eased)
         )
     }
 
@@ -308,10 +339,13 @@ data class AnimatedTransform(
     val translateY: Float,
     val scale: Float,
     val rotationDeg: Float,
-    val opacity: Float
+    val opacity: Float,
+    val volume: Float = 1f,
+    val effectIntensity: Float = 1f,
+    val filterIntensity: Float = 1f
 ) {
     companion object {
-        val Identity = AnimatedTransform(0f, 0f, 1f, 0f, 1f)
+        val Identity = AnimatedTransform(0f, 0f, 1f, 0f, 1f, 1f, 1f, 1f)
     }
 }
 
@@ -381,7 +415,8 @@ data class StickerOverlay(
     val rotationDeg: Float = 0f,
     val opacity: Float = 1f,
     val startMs: Long = 0L,
-    val endMs: Long = Long.MAX_VALUE
+    val endMs: Long = Long.MAX_VALUE,
+    val keyframes: KeyframeTrack = KeyframeTrack()
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 }

@@ -86,20 +86,29 @@ fun AnimatedTextOverlayView(
         label = "pulse"
     )
 
+    // Compute keyframe interpolation if keyframes are defined
+    val kfTransform = if (overlay.keyframes.keyframes.isNotEmpty()) {
+        overlay.keyframes.interpolateAt(currentTimeMs)
+    } else {
+        null
+    }
+
     // Compute animated attributes
-    var displayAlpha = 1f
-    var scaleAnim = currentScale
-    var offsetYAnim = 0f
+    var displayAlpha = overlay.opacity * (kfTransform?.opacity ?: 1f)
+    var scaleAnim = currentScale * (kfTransform?.scale ?: 1f)
+    var offsetXAnim = (kfTransform?.translateX ?: 0f) * containerWidthPx
+    var offsetYAnim = (kfTransform?.translateY ?: 0f) * containerHeightPx
+    var rotationAnim = overlay.rotationDeg + (kfTransform?.rotationDeg ?: 0f)
     var displayText = overlay.text
 
     when (overlay.animationType.uppercase()) {
         "FADE" -> {
-            displayAlpha = progress
+            displayAlpha *= progress
         }
         "POP" -> {
             val easeOutBack = progress * progress * (2.7f * progress - 1.7f)
-            scaleAnim = currentScale * (0.3f + 0.7f * easeOutBack.coerceIn(0f, 1.15f))
-            displayAlpha = progress.coerceIn(0f, 1f)
+            scaleAnim *= (0.3f + 0.7f * easeOutBack.coerceIn(0f, 1.15f))
+            displayAlpha *= progress.coerceIn(0f, 1f)
         }
         "TYPEWRITER" -> {
             val totalChars = overlay.text.length
@@ -107,19 +116,18 @@ fun AnimatedTextOverlayView(
             displayText = overlay.text.take(charsToShow)
         }
         "SLIDE_UP" -> {
-            offsetYAnim = (1f - progress) * 35f
-            displayAlpha = progress
+            offsetYAnim += (1f - progress) * 35f
+            displayAlpha *= progress
         }
         "PULSE" -> {
-            scaleAnim = currentScale * pulseScale
+            scaleAnim *= pulseScale
         }
         "BOUNCE" -> {
             val bounceVal = kotlin.math.sin(progress * kotlin.math.PI * 3.0).toFloat()
-            offsetYAnim = bounceVal * -12f
+            offsetYAnim += bounceVal * -12f
         }
         else -> {
-            displayAlpha = 1f
-            scaleAnim = currentScale
+            // Default: keyframe transform attributes already applied
         }
     }
 
@@ -140,8 +148,8 @@ fun AnimatedTextOverlayView(
     Box(
         modifier = modifier
             .offset(
-                x = containerWidth * posX - 48.dp,
-                y = containerHeight * posY - 24.dp + offsetYAnim.dp
+                x = containerWidth * posX - 48.dp + containerWidth * (kfTransform?.translateX ?: 0f),
+                y = containerHeight * posY - 24.dp + (containerHeight * (kfTransform?.translateY ?: 0f)) + offsetYAnim.dp
             )
             .pointerInput(overlay.id) {
                 detectDragGestures { change, dragAmount ->
@@ -169,6 +177,7 @@ fun AnimatedTextOverlayView(
             modifier = Modifier
                 .graphicsLayer {
                     alpha = displayAlpha
+                    rotationZ = rotationAnim
                 }
                 .clip(RoundedCornerShape(8.dp))
                 .background(

@@ -39,7 +39,7 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "cinematic",
+    val filterCategory: String = "beauty_hd",
     // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
     // Populated asynchronously when a clip is loaded; the FilterPanel
     // shows these instead of gradient color blocks.
@@ -117,7 +117,9 @@ data class EditorState(
     val helpDialogOpen: Boolean = false,
     val mediaLibraryOpen: Boolean = false,
     val snapToBeat: Boolean = false,
-    val beatMarkersMs: List<Long> = emptyList()
+    val beatMarkersMs: List<Long> = emptyList(),
+    val timelineZoom: Float = 1.0f,
+    val selectedStickerId: String? = null
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

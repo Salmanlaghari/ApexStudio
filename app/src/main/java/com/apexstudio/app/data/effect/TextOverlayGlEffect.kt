@@ -44,7 +44,7 @@ class TextOverlayGlEffect(
     @UnstableApi
     private class TextOverlayShaderProgram(
         context: Context,
-        overlay: TextOverlay,
+        private val overlay: TextOverlay,
         aspectRatio: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
@@ -120,10 +120,9 @@ class TextOverlayGlEffect(
             try {
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-                // When no sprite is available (blank caption / upload
-                // failure), sample the video itself as the "overlay" so
-                // the alpha blend is an identity pass-through.
-                val overlayId = if (overlayTexId[0] != 0) overlayTexId[0] else inputTexId
+                val timeMs = presentationTimeUs / 1000L
+                val isVisible = (overlayTexId[0] != 0) && (timeMs >= overlay.startMs && timeMs <= overlay.endMs)
+                val overlayId = if (isVisible) overlayTexId[0] else inputTexId
                 glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

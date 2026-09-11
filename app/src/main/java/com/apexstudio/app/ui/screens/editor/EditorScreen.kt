@@ -422,6 +422,37 @@ fun EditorScreen(
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
         )
 
+        val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
+        val hasKeyframeAtPlayhead = activeClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
+        val clipList = state.project?.clips ?: emptyList()
+        val currentClipIdx = clipList.indexOfFirst { it.id == activeClip?.id }
+
+        TimelineQuickActionBar(
+            hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+            timelineZoom = state.timelineZoom,
+            canSplit = activeClip != null,
+            canMoveLeft = currentClipIdx > 0,
+            canMoveRight = currentClipIdx in 0 until (clipList.size - 1),
+            onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+            onPrevKeyframe = { vm.jumpToPrevKeyframe() },
+            onNextKeyframe = { vm.jumpToNextKeyframe() },
+            onSplit = {
+                activeClip?.let { vm.splitClip(it.id, state.playerPositionMs) }
+            },
+            onMoveLeft = {
+                activeClip?.let { vm.moveClipLeft(it.id) }
+            },
+            onMoveRight = {
+                activeClip?.let { vm.moveClipRight(it.id) }
+            },
+            onZoomIn = { vm.zoomInTimeline() },
+            onZoomOut = { vm.zoomOutTimeline() },
+            onOpenKeyframes = { vm.setKeyframePanelOpen(true) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+        )
+
         TimelineTrackArea(
             state = state,
             onScrub = { targetMs ->
@@ -435,10 +466,13 @@ fun EditorScreen(
             onSplitClip = { clipId, atMs -> vm.splitClip(clipId, atMs) },
             onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
             onDeleteClip = { clipId -> vm.deleteClip(clipId) },
+            onMoveClipLeft = { clipId -> vm.moveClipLeft(clipId) },
+            onMoveClipRight = { clipId -> vm.moveClipRight(clipId) },
             onOpenSpeed = { vm.openSpeedPanel() },
             onOpenAudio = { vm.openAudioMixer() },
             onOpenTrim = { vm.openTrimPanel() },
             onOpenText = { vm.openTextPanel() },
+            onOpenStickers = { vm.openStickerPanel() },
             onOpenFx = { vm.openFxPanel() },
             onOpenVoice = { vm.openVoiceRecorder() },
             onOpenAnimation = { vm.setKeyframePanelOpen(true) },
@@ -834,6 +868,9 @@ fun EditorScreen(
                             vm.clearKeyframes(it.id)
                         }
                     },
+                    onApplyPreset = { preset ->
+                        vm.applyAnimationPreset(preset)
+                    },
                     onClose = { vm.setKeyframePanelOpen(false) }
                 )
             }
@@ -1121,6 +1158,9 @@ fun VideoPreviewArea(
                 val containerH = maxHeight
 
                 for (sticker in stickers) {
+                    if (!sticker.isActiveAt(currentTimeMs)) continue
+
+                    val kf = if (sticker.keyframes.keyframes.isNotEmpty()) sticker.keyframes.interpolateAt(currentTimeMs) else null
                     var offsetX by remember(sticker.id) { mutableStateOf(sticker.x) }
                     var offsetY by remember(sticker.id) { mutableStateOf(sticker.y) }
                     var scale by remember(sticker.id) { mutableStateOf(sticker.sizeScale) }
@@ -1128,14 +1168,14 @@ fun VideoPreviewArea(
                     Box(
                         modifier = Modifier
                             .offset(
-                                x = containerW * offsetX - 20.dp,
-                                y = containerH * offsetY - 20.dp
+                                x = containerW * (offsetX + (kf?.translateX ?: 0f)) - 20.dp,
+                                y = containerH * (offsetY + (kf?.translateY ?: 0f)) - 20.dp
                             )
                             .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                rotationZ = sticker.rotationDeg
-                                alpha = sticker.opacity
+                                scaleX = scale * (kf?.scale ?: 1f)
+                                scaleY = scale * (kf?.scale ?: 1f)
+                                rotationZ = sticker.rotationDeg + (kf?.rotationDeg ?: 0f)
+                                alpha = sticker.opacity * (kf?.opacity ?: 1f)
                             }
                             .pointerInput(sticker.id) {
                                 detectTransformGestures { _, pan, zoom, _ ->
@@ -1554,10 +1594,13 @@ fun TimelineTrackArea(
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
     onDeleteClip: (clipId: String) -> Unit = {},
+    onMoveClipLeft: (clipId: String) -> Unit = {},
+    onMoveClipRight: (clipId: String) -> Unit = {},
     onOpenSpeed: () -> Unit = {},
     onOpenAudio: () -> Unit = {},
     onOpenTrim: () -> Unit = {},
     onOpenText: () -> Unit = {},
+    onOpenStickers: () -> Unit = {},
     onOpenFx: () -> Unit = {},
     onOpenVoice: () -> Unit = {},
     onOpenAnimation: () -> Unit = {},
@@ -1867,6 +1910,27 @@ fun TimelineTrackArea(
                                             .background(Color.White, RoundedCornerShape(2.dp))
                                     )
                                 }
+
+                                // Keyframe Diamonds rendered on Clip
+                                if (clip.keyframes.keyframes.isNotEmpty()) {
+                                    BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+                                        val boxWidth = maxWidth
+                                        val effDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
+                                        clip.keyframes.keyframes.forEach { kf ->
+                                            val frac = (kf.timeMs.toFloat() / effDur.toFloat()).coerceIn(0f, 1f)
+                                            val kfX = (boxWidth.value * frac).dp
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(x = (kfX - 5.dp).coerceAtLeast(0.dp), y = 26.dp)
+                                                    .size(10.dp)
+                                                    .graphicsLayer { rotationZ = 45f }
+                                                    .background(ApexPalette.NeonCyan, RoundedCornerShape(2.dp))
+                                                    .border(1.dp, Color.White, RoundedCornerShape(2.dp))
+                                                    .clickable { onScrub(clip.trimStartMs + kf.timeMs) }
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // Transition Button between adjacent clips [ ⟐ ]
@@ -1944,6 +2008,53 @@ fun TimelineTrackArea(
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1
                             )
+                        }
+                    }
+
+                    // Track 2.5: Stickers Track
+                    val allStickers = (state.project?.stickers ?: emptyList()) + (activeClip?.stickers ?: emptyList())
+                    if (allStickers.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFEC4899).copy(alpha = 0.85f))
+                                .clickable(onClick = onOpenStickers)
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EmojiEmotions,
+                                    contentDescription = "Stickers",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    allStickers.take(6).forEach { sticker ->
+                                        Text(
+                                            text = sticker.symbolOrUri,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                    if (allStickers.size > 6) {
+                                        Text(
+                                            text = "+${allStickers.size - 6}",
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -2117,6 +2228,229 @@ fun TimelineTrackArea(
                 tint = ApexPalette.NeonPink,
                 onClick = { activeClip?.let { onDeleteClip(it.id) } }
             )
+        }
+    }
+}
+
+@Composable
+fun TimelineQuickActionBar(
+    hasKeyframeAtPlayhead: Boolean,
+    timelineZoom: Float,
+    canSplit: Boolean,
+    canMoveLeft: Boolean,
+    canMoveRight: Boolean,
+    onToggleKeyframe: () -> Unit,
+    onPrevKeyframe: () -> Unit,
+    onNextKeyframe: () -> Unit,
+    onSplit: () -> Unit,
+    onMoveLeft: () -> Unit,
+    onMoveRight: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onOpenKeyframes: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0F0F1A))
+            .border(1.dp, Color(0xFF232336), RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Left: Keyframe jump & toggle group
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Jump Prev Keyframe
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF1A1A28))
+                    .clickable(onClick = onPrevKeyframe),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FastRewind,
+                    contentDescription = "Prev Keyframe",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+
+            // Keyframe Diamond Add/Remove
+            Box(
+                modifier = Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF222234))
+                    .border(
+                        1.dp,
+                        if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color(0xFF383852),
+                        RoundedCornerShape(6.dp)
+                    )
+                    .clickable(onClick = onToggleKeyframe)
+                    .padding(horizontal = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .graphicsLayer { rotationZ = 45f }
+                            .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White)
+                    )
+                    Text(
+                        text = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
+                        color = if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Jump Next Keyframe
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF1A1A28))
+                    .clickable(onClick = onNextKeyframe),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FastForward,
+                    contentDescription = "Next Keyframe",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+
+        // Center: Split & Reorder buttons
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Split button
+            Box(
+                modifier = Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (canSplit) Color(0xFF242438) else Color(0xFF141420))
+                    .border(1.dp, if (canSplit) Color(0xFF42425E) else Color.Transparent, RoundedCornerShape(6.dp))
+                    .clickable(enabled = canSplit, onClick = onSplit)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCut,
+                        contentDescription = "Split",
+                        tint = if (canSplit) Color.White else Color(0xFF555566),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "Split",
+                        color = if (canSplit) Color.White else Color(0xFF555566),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            if (canMoveLeft) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF1A1A28))
+                        .clickable(onClick = onMoveLeft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Move Clip Left",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            if (canMoveRight) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF1A1A28))
+                        .clickable(onClick = onMoveRight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "Move Clip Right",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+
+        // Right: Timeline Zoom Controls
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1A1A28))
+                    .clickable(onClick = onZoomOut),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ZoomOut,
+                    contentDescription = "Zoom Out",
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+
+            Text(
+                text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
+                color = Color(0xFF94A3B8),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(horizontal = 3.dp)
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1A1A28))
+                    .clickable(onClick = onZoomIn),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ZoomIn,
+                    contentDescription = "Zoom In",
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
     }
 }

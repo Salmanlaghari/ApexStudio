@@ -41,7 +41,9 @@ class AdjustmentsGlEffect(
     private val temperatureProvider: (() -> Float)? = null,
     private val tintProvider: (() -> Float)? = null,
     private val highlightsProvider: (() -> Float)? = null,
-    private val shadowsProvider: (() -> Float)? = null
+    private val shadowsProvider: (() -> Float)? = null,
+    private val hdrProvider: (() -> Float)? = null,
+    private val brillianceProvider: (() -> Float)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -55,6 +57,8 @@ class AdjustmentsGlEffect(
             tintProvider = tintProvider,
             highlightsProvider = highlightsProvider,
             shadowsProvider = shadowsProvider,
+            hdrProvider = hdrProvider,
+            brillianceProvider = brillianceProvider,
             useHdr = useHdr
         )
     }
@@ -70,6 +74,8 @@ class AdjustmentsGlEffect(
         private val tintProvider: (() -> Float)?,
         private val highlightsProvider: (() -> Float)?,
         private val shadowsProvider: (() -> Float)?,
+        private val hdrProvider: (() -> Float)?,
+        private val brillianceProvider: (() -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -78,6 +84,8 @@ class AdjustmentsGlEffect(
         // Snapshot of the slider values; refreshed on every frame
         // by reading the *Provider lambdas (if set), so live slider
         // drag is smooth without rebuilding this effect.
+        private var hdr: Float = adjustments.hdr
+        private var brilliance: Float = adjustments.brilliance
         private var brightness: Float = adjustments.brightness
         private var contrast: Float = adjustments.contrast
         private var saturation: Float = adjustments.saturation
@@ -124,6 +132,8 @@ class AdjustmentsGlEffect(
                 tintProvider?.let { tint = it() }
                 highlightsProvider?.let { highlights = it() }
                 shadowsProvider?.let { shadows = it() }
+                hdrProvider?.let { hdr = it() }
+                brillianceProvider?.let { brilliance = it() }
 
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
@@ -135,6 +145,8 @@ class AdjustmentsGlEffect(
                 glProgram.setFloatUniform("uTint", tint)
                 glProgram.setFloatUniform("uHighlights", highlights)
                 glProgram.setFloatUniform("uShadows", shadows)
+                glProgram.setFloatUniform("uHdr", hdr)
+                glProgram.setFloatUniform("uBrilliance", brilliance)
                 glProgram.bindAttributesAndUniforms()
                 android.opengl.GLES20.glDrawArrays(
                     android.opengl.GLES20.GL_TRIANGLE_STRIP, 0, 4
@@ -189,6 +201,8 @@ class AdjustmentsGlEffect(
             uniform float uTint;
             uniform float uHighlights;
             uniform float uShadows;
+            uniform float uHdr;
+            uniform float uBrilliance;
 
             vec3 applyContrast(vec3 c, float k) {
                 // Same formula as Android ColorMatrix contrast: scale
@@ -238,6 +252,20 @@ class AdjustmentsGlEffect(
                 c.r *= rGain;
                 c.g *= gGain;
                 c.b *= bGain;
+
+                // 7. HDR+ dynamic tone-mapping boost
+                if (uHdr > 0.0) {
+                    vec3 toneMapped = c / (c + vec3(1.0));
+                    vec3 boosted = mix(c, toneMapped * 1.8, uHdr * 0.7);
+                    c = mix(c, boosted, uHdr);
+                }
+
+                // 8. Brilliance midtone expansion
+                if (uBrilliance != 0.0) {
+                    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                    float midtoneWeight = 1.0 - abs(luma - 0.5) * 2.0;
+                    c += vec3(uBrilliance * 0.25 * midtoneWeight);
+                }
 
                 gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
             }

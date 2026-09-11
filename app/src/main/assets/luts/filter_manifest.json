@@ -1,6 +1,23 @@
 {
   "categories": [
     {
+      "id": "beauty_hd",
+      "name": "Beauty & Ultra HD",
+      "filters": [
+        "hdr_filter",
+        "ultra_hd_filter",
+        "cinema_8k_filter",
+        "iphone_filter",
+        "beauty_face_filter",
+        "makeup_glam_filter",
+        "male_portrait_filter",
+        "female_glow_filter",
+        "studio_radiant_filter",
+        "velvet_skin_filter",
+        "golden_beauty_filter"
+      ]
+    },
+    {
       "id": "cinematic",
       "name": "Cinematic",
       "filters": [
@@ -114,6 +131,72 @@
     }
   ],
   "filters": [
+    {
+      "id": "hdr_filter",
+      "name": "HDR Pro Boost",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/hdr_filter.cube"
+    },
+    {
+      "id": "ultra_hd_filter",
+      "name": "Ultra HD Clarity",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/ultra_hd_filter.cube"
+    },
+    {
+      "id": "cinema_8k_filter",
+      "name": "8K Cinema Master",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/cinema_8k_filter.cube"
+    },
+    {
+      "id": "iphone_filter",
+      "name": "iPhone Cinematic",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/iphone_filter.cube"
+    },
+    {
+      "id": "beauty_face_filter",
+      "name": "Beauty Face Retouch",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/beauty_face_filter.cube"
+    },
+    {
+      "id": "makeup_glam_filter",
+      "name": "Makeup Glamour",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/makeup_glam_filter.cube"
+    },
+    {
+      "id": "male_portrait_filter",
+      "name": "Male Clean Portrait",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/male_portrait_filter.cube"
+    },
+    {
+      "id": "female_glow_filter",
+      "name": "Female Soft Glow",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/female_glow_filter.cube"
+    },
+    {
+      "id": "studio_radiant_filter",
+      "name": "Studio Radiant",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/studio_radiant_filter.cube"
+    },
+    {
+      "id": "velvet_skin_filter",
+      "name": "Velvet Smooth Skin",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/velvet_skin_filter.cube"
+    },
+    {
+      "id": "golden_beauty_filter",
+      "name": "Golden Goddess",
+      "category": "Beauty & Ultra HD",
+      "asset": "luts/golden_beauty_filter.cube"
+    },
     {
       "id": "teal_orange",
       "name": "Teal & Orange",

@@ -68,8 +68,8 @@ class LutFilterEngine(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.w("LutFilterEngine", "Failed to load LUT ${preset.asset}", e)
-            null
+            val matrix = FilterColorMatrix.getRawMatrix(preset.id)
+            LutBitmapCache.generateLutFromMatrix(matrix, 16)
         }
     }
 

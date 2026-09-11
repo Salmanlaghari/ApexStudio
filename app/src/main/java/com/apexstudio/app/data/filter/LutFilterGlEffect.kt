@@ -261,8 +261,9 @@ class LutFilterGlEffect(
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to load LUT ${preset.asset}", e)
-                null
+                // Procedural 3D LUT generation fallback using real color matrix
+                val matrix = FilterColorMatrix.getRawMatrix(preset.id)
+                LutBitmapCache.generateLutFromMatrix(matrix, 16)
             }
         }
     }
@@ -333,9 +334,35 @@ object LutBitmapCache {
                 }
             }
         } catch (e: Exception) {
-            Log.w("LutBitmapCache", "Failed to load LUT ${preset.asset}", e)
-            null
+            val matrix = FilterColorMatrix.getRawMatrix(preset.id)
+            generateLutFromMatrix(matrix, 16)
         }
+    }
+
+    /**
+     * Generates a 3D LUT cube from a 4x5 color matrix.
+     */
+    fun generateLutFromMatrix(matrix: FloatArray, size: Int = 16): FloatArray {
+        val total = size * size * size
+        val lut = FloatArray(total * 3)
+        var idx = 0
+        val step = 1f / (size - 1)
+        for (b in 0 until size) {
+            val bVal = b * step
+            for (g in 0 until size) {
+                val gVal = g * step
+                for (r in 0 until size) {
+                    val rVal = r * step
+                    val outR = (matrix[0] * rVal + matrix[1] * gVal + matrix[2] * bVal + matrix[4] / 255f).coerceIn(0f, 1f)
+                    val outG = (matrix[5] * rVal + matrix[6] * gVal + matrix[7] * bVal + matrix[9] / 255f).coerceIn(0f, 1f)
+                    val outB = (matrix[10] * rVal + matrix[11] * gVal + matrix[12] * bVal + matrix[14] / 255f).coerceIn(0f, 1f)
+                    lut[idx++] = outR
+                    lut[idx++] = outG
+                    lut[idx++] = outB
+                }
+            }
+        }
+        return lut
     }
 
     /**

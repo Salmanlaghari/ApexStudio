@@ -21,6 +21,74 @@ object FilterColorMatrix {
 
     fun getRawMatrix(filterId: String?): FloatArray {
         return when (filterId) {
+            // --- Beauty & Ultra HD ---
+            "hdr_filter" -> floatArrayOf(
+                1.22f, -0.04f, -0.02f, 0f, 15f,
+                -0.03f, 1.20f, -0.02f, 0f, 15f,
+                -0.02f, -0.03f, 1.24f, 0f, 18f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "ultra_hd_filter" -> floatArrayOf(
+                1.15f, 0.02f, -0.02f, 0f, 10f,
+                0.01f, 1.16f, 0.01f, 0f, 10f,
+                -0.02f, 0.01f, 1.18f, 0f, 12f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "cinema_8k_filter" -> floatArrayOf(
+                1.18f, 0.01f, -0.03f, 0f, 8f,
+                0.01f, 1.17f, -0.01f, 0f, 8f,
+                -0.02f, -0.01f, 1.15f, 0f, 6f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "iphone_filter" -> floatArrayOf(
+                1.16f, 0.03f, -0.02f, 0f, 14f,
+                0.02f, 1.10f, 0.02f, 0f, 8f,
+                -0.03f, 0.02f, 1.05f, 0f, -4f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "beauty_face_filter" -> floatArrayOf(
+                1.18f, 0.04f, -0.01f, 0f, 22f,
+                0.02f, 1.12f, 0.02f, 0f, 18f,
+                -0.01f, 0.02f, 1.06f, 0f, 14f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "makeup_glam_filter" -> floatArrayOf(
+                1.28f, -0.02f, -0.01f, 0f, 28f,
+                0.01f, 1.08f, 0.01f, 0f, 10f,
+                -0.02f, 0.01f, 1.12f, 0f, 12f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "male_portrait_filter" -> floatArrayOf(
+                1.12f, 0.02f, -0.02f, 0f, 6f,
+                0.01f, 1.10f, 0.01f, 0f, 6f,
+                -0.01f, 0.02f, 1.15f, 0f, 12f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "female_glow_filter" -> floatArrayOf(
+                1.20f, 0.03f, 0.01f, 0f, 24f,
+                0.02f, 1.14f, 0.02f, 0f, 20f,
+                0.01f, 0.03f, 1.12f, 0f, 18f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "studio_radiant_filter" -> floatArrayOf(
+                1.14f, 0.02f, 0.01f, 0f, 16f,
+                0.02f, 1.14f, 0.01f, 0f, 16f,
+                0.01f, 0.02f, 1.14f, 0f, 16f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "velvet_skin_filter" -> floatArrayOf(
+                1.16f, 0.04f, -0.01f, 0f, 20f,
+                0.03f, 1.10f, 0.01f, 0f, 15f,
+                -0.01f, 0.02f, 1.04f, 0f, 8f,
+                0f, 0f, 0f, 1f, 0f
+            )
+            "golden_beauty_filter" -> floatArrayOf(
+                1.25f, 0.04f, -0.04f, 0f, 26f,
+                0.02f, 1.14f, -0.02f, 0f, 16f,
+                -0.05f, 0.01f, 0.96f, 0f, -6f,
+                0f, 0f, 0f, 1f, 0f
+            )
+
             // --- Monochromatic & B/W ---
             "graphite" -> floatArrayOf(
                 0.33f, 0.45f, 0.15f, 0f, -8f,

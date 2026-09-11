@@ -309,6 +309,19 @@ private fun FilterChip(
  */
 fun filterPreviewColors(filterId: String?): List<Color> {
     return when (filterId) {
+        // Beauty & Ultra HD
+        "hdr_filter" -> listOf(Color(0xFF0F2027), Color(0xFF2C5364), Color(0xFF00F2FE))
+        "ultra_hd_filter" -> listOf(Color(0xFF141E30), Color(0xFF243B55), Color(0xFF4CA1AF))
+        "cinema_8k_filter" -> listOf(Color(0xFF232526), Color(0xFF414345), Color(0xFFE0EAFC))
+        "iphone_filter" -> listOf(Color(0xFF2C3E50), Color(0xFFFD746C), Color(0xFFFF9068))
+        "beauty_face_filter" -> listOf(Color(0xFFFF758C), Color(0xFFFF7EB3), Color(0xFFFED6E3))
+        "makeup_glam_filter" -> listOf(Color(0xFFE94057), Color(0xFF8A2387), Color(0xFFF27121))
+        "male_portrait_filter" -> listOf(Color(0xFF1E3C72), Color(0xFF2A5298), Color(0xFF708090))
+        "female_glow_filter" -> listOf(Color(0xFFFA709A), Color(0xFFFEE140), Color(0xFFFFB199))
+        "studio_radiant_filter" -> listOf(Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFFE1F5FE))
+        "velvet_skin_filter" -> listOf(Color(0xFFD4A373), Color(0xFFCCD5AE), Color(0xFFFEFAE0))
+        "golden_beauty_filter" -> listOf(Color(0xFFF3904F), Color(0xFF3B4371), Color(0xFFFFD200))
+
         // Cinematic
         "teal_orange" -> listOf(Color(0xFF0D4F6B), Color(0xFFD4760A))
         "hollywood" -> listOf(Color(0xFF8B6914), Color(0xFFD4A03C))

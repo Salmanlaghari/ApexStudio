@@ -39,7 +39,7 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "cinematic",
+    val filterCategory: String = "beauty_hd",
     // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
     // Populated asynchronously when a clip is loaded; the FilterPanel
     // shows these instead of gradient color blocks.

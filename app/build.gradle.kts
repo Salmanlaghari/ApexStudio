@@ -99,17 +99,17 @@ dependencies {
   implementation(libs.coil.compose)
 
   // Media3 & Video/Audio Processing
-  implementation(libs.androidx.media3.exoplayer)
-  implementation(libs.androidx.media3.ui)
-  implementation(libs.androidx.media3.common)
-  implementation(libs.androidx.media3.transformer)
-  implementation(libs.androidx.media3.effect)
-  implementation(libs.androidx.media3.session)
-  implementation(libs.androidx.media3.datasource)
+  implementation("androidx.media3:media3-exoplayer:1.5.0")
+  implementation("androidx.media3:media3-ui:1.5.0")
+  implementation("androidx.media3:media3-common:1.5.0")
+  implementation("androidx.media3:media3-transformer:1.5.0")
+  implementation("androidx.media3:media3-effect:1.5.0")
+  implementation("androidx.media3:media3-session:1.5.0")
+  implementation("androidx.media3:media3-datasource:1.5.0")
 
   // Serialization & Data
-  implementation(libs.kotlinx.serialization.json)
-  implementation(libs.gpuimage)
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+  implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)

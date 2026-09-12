@@ -250,6 +250,101 @@ fun FxPreviewOverlay(
                 )
             }
 
+            "pixel_sort" -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val rng = Random((animProgress * 30).toInt())
+                    val streakCount = (16 * clampedIntensity).toInt()
+                    for (i in 0 until streakCount) {
+                        val sx = rng.nextFloat() * w
+                        val sy = rng.nextFloat() * (h * 0.7f)
+                        val length = rng.nextFloat() * (h * 0.35f) + 20f
+                        drawLine(
+                            brush = Brush.verticalGradient(
+                                listOf(Color.Cyan.copy(alpha = 0.45f * clampedIntensity), Color.Transparent),
+                                startY = sy,
+                                endY = sy + length
+                            ),
+                            start = Offset(sx, sy),
+                            end = Offset(sx, sy + length),
+                            strokeWidth = rng.nextFloat() * 4f + 2f
+                        )
+                    }
+                }
+            }
+
+            "halftone" -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val step = 14f
+                    var y = 0f
+                    while (y < h) {
+                        var x = 0f
+                        while (x < w) {
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.18f * clampedIntensity),
+                                radius = 2.5f * clampedIntensity,
+                                center = Offset(x, y)
+                            )
+                            x += step
+                        }
+                        y += step
+                    }
+                }
+            }
+
+            "neon_edge", "edge_neon" -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            listOf(
+                                Color(0xFF00F0FF).copy(alpha = 0.28f * clampedIntensity),
+                                Color.Transparent,
+                                Color(0xFFFF007F).copy(alpha = 0.28f * clampedIntensity)
+                            )
+                        ),
+                        topLeft = Offset.Zero,
+                        size = Size(w, h)
+                    )
+                }
+            }
+
+            "thermal", "thermal_vision" -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFFFF3300).copy(alpha = 0.25f * clampedIntensity),
+                                    Color(0xFFFFEE00).copy(alpha = 0.18f * clampedIntensity),
+                                    Color(0xFF0033CC).copy(alpha = 0.28f * clampedIntensity)
+                                )
+                            )
+                        )
+                )
+            }
+
+            "radial_blur" -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.radialGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.15f * clampedIntensity),
+                                    Color.Black.copy(alpha = 0.35f * clampedIntensity)
+                                )
+                            )
+                        )
+                )
+            }
+
             "3d_chromakey" -> {
                 // 3D ChromaKey VFX live visual preview
                 // 1. Holographic 3D grid and cyber portal background

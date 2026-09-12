@@ -751,6 +751,12 @@ class EditorViewModel(
     fun closeFxPanel() = _state.update { it.copy(fxPanelOpen = false) }
     fun setActiveFx(id: String?) = _state.update { it.copy(activeFxId = id) }
     fun setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
+    fun selectFx(id: String?, intensity: Float = 0.85f) = _state.update {
+        it.copy(activeFxId = id, fxIntensity = intensity.coerceIn(0f, 1f))
+    }
+    fun selectFilter(id: String?, intensity: Float = 0.85f) = _state.update {
+        it.copy(activeFilterId = id, filterIntensity = intensity.coerceIn(0f, 1f))
+    }
 
     fun openTextPanel() = _state.update { it.copy(textPanelOpen = true) }
     fun closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }

@@ -73,6 +73,8 @@ fun AudioMixerPanel(
     muteOriginalVideo: Boolean,
     onMuteOriginal: (Boolean) -> Unit,
     onAddTrack: (name: String, uri: String, kind: AudioTrack.Kind) -> Unit,
+    onPickLocalMusic: () -> Unit,
+    onOpenRoyaltyMusic: () -> Unit,
     onRemoveTrack: (trackId: String) -> Unit,
     onVolume: (trackId: String, vol: Float) -> Unit,
     onMute: (trackId: String) -> Unit,
@@ -155,17 +157,31 @@ fun AudioMixerPanel(
         }
 
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AddTrackButton(
-                label = "+ Music",
-                icon = Icons.Default.MusicNote,
-                onClick = { onAddTrack("Background music", "music://placeholder", AudioTrack.Kind.MUSIC) }
-            )
-            AddTrackButton(
-                label = "+ SFX / Voiceover",
-                icon = Icons.Default.Mic,
-                onClick = { onAddTrack("SFX", "sfx://placeholder", AudioTrack.Kind.SFX) }
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                AddTrackButton(
+                    label = "+ Local Music",
+                    icon = Icons.Default.MusicNote,
+                    onClick = onPickLocalMusic
+                )
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                AddTrackButton(
+                    label = "+ Free Royalty",
+                    icon = Icons.Default.GraphicEq,
+                    onClick = onOpenRoyaltyMusic
+                )
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                AddTrackButton(
+                    label = "+ SFX",
+                    icon = Icons.Default.Mic,
+                    onClick = { onAddTrack("SFX", "sfx://placeholder", AudioTrack.Kind.SFX) }
+                )
+            }
         }
     }
 }

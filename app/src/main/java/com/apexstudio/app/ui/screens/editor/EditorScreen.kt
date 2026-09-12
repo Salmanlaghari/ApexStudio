@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -319,23 +320,48 @@ fun EditorScreen(
         ) {
             val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
                 ?: state.project?.clips?.firstOrNull()
+            val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
             val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
             val textOverlays = selectedClip?.textOverlays ?: emptyList()
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
+                overlayClip = overlayClip,
                 resolution = state.selectedResolution,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
                 adjustments = state.adjustments,
                 playerError = state.playerError,
-                stickers = stickers,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
                 isPlaying = state.isPlaying,
+                onRetryLoad = {
+                    exoPlayer?.let { player ->
+                        vm.setPlayerError(null)
+                        try {
+                            val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
+                            player.setMediaItem(MediaItem.fromUri(fallbackUri))
+                            player.prepare()
+                            player.play()
+                        } catch (e: Exception) {
+                            vm.setPlayerError("Error reloading video: ${e.message}")
+                        }
+                    }
+                },
+                onSelectResolution = { vm.setSelectedResolution(it) },
+                onFullscreenToggle = { vm.toggleFullscreenPreview() },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
+            ScreenWordingObjects(
+                stickers = stickers,
                 textOverlays = textOverlays,
+                coverText = state.coverText,
+                coverTextStyle = state.coverTextStyle,
                 selectedTextOverlayId = state.selectedTextOverlayId,
                 currentTimeMs = state.currentTimeMs,
+                isPlaying = state.isPlaying,
                 onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
                 onMoveTextOverlay = { id, dx, dy ->
                     val clipId = selectedClip?.id ?: state.project?.clips?.firstOrNull()?.id
@@ -356,21 +382,6 @@ fun EditorScreen(
                 onSizeScaleChange = { id, scale ->
                     selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
                 },
-                onRetryLoad = {
-                    exoPlayer?.let { player ->
-                        vm.setPlayerError(null)
-                        try {
-                            val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                            player.setMediaItem(MediaItem.fromUri(fallbackUri))
-                            player.prepare()
-                            player.play()
-                        } catch (e: Exception) {
-                            vm.setPlayerError("Error reloading video: ${e.message}")
-                        }
-                    }
-                },
-                onSelectResolution = { vm.setSelectedResolution(it) },
-                onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -379,6 +390,7 @@ fun EditorScreen(
                     onEffects = { vm.openFxPanel() },
                     onFilters = { vm.openFilterPanel() },
                     onAdjust = { vm.openAdjustmentsPanel() },
+                    onChromaKey = { vm.openChromaKeyPanel() },
                     onText = { vm.openTextPanel() },
                     onSticker = { vm.openStickerPanel() },
                     modifier = Modifier
@@ -721,6 +733,16 @@ fun EditorScreen(
                     muteOriginalVideo = audioState.isMuted,
                     onMuteOriginal = { vm.setMuteOriginalVideo(it) },
                     onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
+                    onPickLocalMusic = {
+                        vm.closeAudioMixer()
+                        vm.setPendingAddAsOverlay(false)
+                        vm.setPendingAddAsAudio(true)
+                        mediaPicker.pickAudioMedia.launch("audio/*")
+                    },
+                    onOpenRoyaltyMusic = {
+                        vm.closeAudioMixer()
+                        vm.openRoyaltyMusicDialog()
+                    },
                     onRemoveTrack = { vm.removeAudioTrack(it) },
                     onVolume = { trackId, vol -> vm.setAudioTrackVolume(trackId, vol) },
                     onMute = { trackId -> vm.toggleAudioTrackMute(trackId) },
@@ -816,15 +838,57 @@ fun EditorScreen(
                     currentPlayheadMs = state.playerPositionMs,
                     coverFrameMs = state.project?.coverFrameMs,
                     customCoverUri = state.project?.coverCustomUri,
+                    initialCoverText = state.coverText,
+                    initialCoverStyle = state.coverTextStyle,
                     onSelectFrameAtPlayhead = { vm.setCoverFrame(it) },
                     onSelectCustomCover = {
                         mediaPicker.pickSingleMedia.launch("image/*")
                         vm.closeCoverPanel()
                     },
+                    onSaveCoverWords = { text, style ->
+                        vm.saveCoverWords(text, style)
+                    },
                     onClose = { vm.closeCoverPanel() }
                 )
             }
         }
+    }
+
+    if (state.chromaKeyPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeChromaKeyPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ChromaKeyPanel(
+                    settings = state.chromaKeySettings,
+                    onUpdate = { vm.updateChromaKeySettings(it) },
+                    onPickCustomBg = {
+                        mediaPicker.pickSingleMedia.launch("image/*")
+                    },
+                    onClose = { vm.closeChromaKeyPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.royaltyMusicDialogOpen) {
+        RoyaltyMusicDialog(
+            onSelectTrack = { track ->
+                vm.addRoyaltyTrack(track)
+                vm.closeRoyaltyMusicDialog()
+            },
+            onUploadLocal = {
+                vm.closeRoyaltyMusicDialog()
+                vm.setPendingAddAsOverlay(false)
+                vm.setPendingAddAsAudio(true)
+                mediaPicker.pickAudioMedia.launch("audio/*")
+            },
+            onClose = { vm.closeRoyaltyMusicDialog() }
+        )
     }
 
     if (state.helpDialogOpen) {
@@ -890,7 +954,7 @@ fun EditorScreen(
                 vm.setPendingAddAsOverlay(true)
                 vm.setPendingAddAsAudio(false)
                 mediaPicker.pickMultipleMedia.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                 )
             },
             onPickAudio = {
@@ -1066,6 +1130,7 @@ fun TopAppBarSection(
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
+    overlayClip: MediaClip? = null,
     resolution: String = "1080P",
     activeFilterId: String? = null,
     filterIntensity: Float = 0f,
@@ -1151,84 +1216,36 @@ fun VideoPreviewArea(
             )
         }
 
-        // Draggable & Resizable Interactive Stickers
-        if (stickers.isNotEmpty()) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val containerW = maxWidth
-                val containerH = maxHeight
-
-                for (sticker in stickers) {
-                    if (!sticker.isActiveAt(currentTimeMs)) continue
-
-                    val kf = if (sticker.keyframes.keyframes.isNotEmpty()) sticker.keyframes.interpolateAt(currentTimeMs) else null
-                    var offsetX by remember(sticker.id) { mutableStateOf(sticker.x) }
-                    var offsetY by remember(sticker.id) { mutableStateOf(sticker.y) }
-                    var scale by remember(sticker.id) { mutableStateOf(sticker.sizeScale) }
-
-                    Box(
-                        modifier = Modifier
-                            .offset(
-                                x = containerW * (offsetX + (kf?.translateX ?: 0f)) - 20.dp,
-                                y = containerH * (offsetY + (kf?.translateY ?: 0f)) - 20.dp
-                            )
-                            .graphicsLayer {
-                                scaleX = scale * (kf?.scale ?: 1f)
-                                scaleY = scale * (kf?.scale ?: 1f)
-                                rotationZ = sticker.rotationDeg + (kf?.rotationDeg ?: 0f)
-                                alpha = sticker.opacity * (kf?.opacity ?: 1f)
-                            }
-                            .pointerInput(sticker.id) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(0.3f, 4f)
-                                    val newX = (offsetX + pan.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                    val newY = (offsetY + pan.y / size.height.toFloat()).coerceIn(0f, 1f)
-                                    offsetX = newX
-                                    offsetY = newY
-                                }
-                            }
-                    ) {
-                        Text(
-                            sticker.symbolOrUri,
-                            fontSize = 32.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        // Interactive Animated Text Overlays
-        if (textOverlays.isNotEmpty()) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val containerW = maxWidth
-                val containerH = maxHeight
-
-                for (overlay in textOverlays) {
-                    val isSelected = overlay.id == selectedTextOverlayId
-                    AnimatedTextOverlayView(
-                        overlay = overlay,
-                        isSelected = isSelected,
-                        containerWidth = containerW,
-                        containerHeight = containerH,
-                        currentTimeMs = currentTimeMs,
-                        isPlaying = isPlaying,
-                        onSelect = { onSelectTextOverlay?.invoke(overlay.id) },
-                        onPositionChange = { newX, newY ->
-                            val dx = newX - overlay.x
-                            val dy = newY - overlay.y
-                            onMoveTextOverlay?.invoke(overlay.id, dx, dy)
-                        },
-                        onSizeScaleChange = { scale ->
-                            onSizeScaleChange?.invoke(overlay.id, scale)
-                        },
-                        onEditText = {
-                            onEditTextOverlay?.invoke(overlay.id)
-                        },
-                        onDelete = {
-                            onDeleteTextOverlay?.invoke(overlay.id)
-                        },
-                        onDuplicate = {
-                            onDuplicateTextOverlay?.invoke(overlay.id)
-                        }
+        // Picture-in-Picture Overlay Media Preview (Video / Image Overlay)
+        if (overlayClip != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 12.dp)
+                    .size(130.dp, 75.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
+                    .border(1.5.dp, Color(0xFF00F0FF), RoundedCornerShape(8.dp))
+            ) {
+                coil.compose.AsyncImage(
+                    model = overlayClip.uri,
+                    contentDescription = "Overlay Media",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(3.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "PIP OVERLAY",
+                        color = Color(0xFF00F0FF),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1403,6 +1420,7 @@ fun LeftToolRail(
     onEffects: () -> Unit = {},
     onFilters: () -> Unit = {},
     onAdjust: () -> Unit = {},
+    onChromaKey: () -> Unit = {},
     onText: () -> Unit = {},
     onSticker: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -1418,6 +1436,7 @@ fun LeftToolRail(
         RailItem(Icons.Default.AutoAwesome, "Effects", onEffects)
         RailItem(Icons.Default.FilterAlt, "Filters", onFilters)
         RailItem(Icons.Default.Tune, "Adjust", onAdjust)
+        RailItem(Icons.Default.Layers, "3D Chroma", onChromaKey)
         RailItem(Icons.Default.TextFields, "Text", onText)
         RailItem(Icons.Default.EmojiEmotions, "Sticker", onSticker)
     }
@@ -1726,6 +1745,25 @@ fun TimelineTrackArea(
                     .weight(1f)
                     .fillMaxHeight()
                     .background(Color(0xFF0A0A10))
+                    .pointerInput(durationMs) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                                onScrub((frac * durationMs).toLong())
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                                onScrub((frac * durationMs).toLong())
+                            }
+                        )
+                    }
+                    .pointerInput(durationMs) {
+                        detectTapGestures { offset ->
+                            val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                            onScrub((frac * durationMs).toLong())
+                        }
+                    }
             ) {
                 val containerWidth = maxWidth
                 val progress = (playheadMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)

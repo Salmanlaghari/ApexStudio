@@ -416,6 +416,67 @@ class EditorViewModel(
                 project = proj.copy(coverFrameMs = frameMs)
             )
         }
+        persistProject()
+    }
+    fun setCoverCustomUri(uri: String) {
+        _state.update { st ->
+            val proj = st.project ?: return@update st
+            st.copy(
+                coverCustomUri = uri,
+                project = proj.copy(coverCustomUri = uri)
+            )
+        }
+        persistProject()
+    }
+    fun saveCoverWords(text: String, style: String) {
+        _state.update { st ->
+            st.copy(
+                coverText = text,
+                coverTextStyle = style
+            )
+        }
+        persistProject()
+    }
+
+    fun openChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = true) }
+    fun closeChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = false) }
+    fun updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings) {
+        _state.update { 
+            it.copy(
+                chromaKeySettings = settings,
+                activeFxId = if (settings.enabled) "3d_chromakey" else it.activeFxId,
+                fxIntensity = if (settings.enabled) 1.0f else it.fxIntensity
+            ) 
+        }
+    }
+
+    fun openRoyaltyMusicDialog() = _state.update { it.copy(royaltyMusicDialogOpen = true) }
+    fun closeRoyaltyMusicDialog() = _state.update { it.copy(royaltyMusicDialogOpen = false) }
+
+    fun addRoyaltyTrack(track: com.apexstudio.app.data.audio.RoyaltyTrack) {
+        val ctx = context ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val file = com.apexstudio.app.data.audio.FreeRoyaltyMusic.getTrackFile(ctx, track)
+            val uri = file.toURI().toString()
+            val audioTrack = com.apexstudio.app.domain.model.AudioTrack(
+                id = java.util.UUID.randomUUID().toString(),
+                name = track.title,
+                uri = uri,
+                volume = 0.85f,
+                trimEndMs = track.durationMs
+            )
+            _audio.update { it.copy(tracks = it.tracks + audioTrack) }
+            _state.update { st ->
+                val proj = st.project ?: return@update st
+                val updatedTracks = proj.audioTracks + audioTrack
+                val maxDur = maxOf(st.durationMs, track.durationMs)
+                st.copy(
+                    project = proj.copy(audioTracks = updatedTracks),
+                    durationMs = maxDur
+                )
+            }
+            persistProject()
+        }
     }
 
     fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }

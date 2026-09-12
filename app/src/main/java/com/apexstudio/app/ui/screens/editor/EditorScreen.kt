@@ -326,6 +326,7 @@ fun EditorScreen(
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
+                chromaKeySettings = state.chromaKeySettings,
                 overlayClip = overlayClip,
                 resolution = state.selectedResolution,
                 activeFilterId = state.activeFilterId,
@@ -1130,6 +1131,7 @@ fun TopAppBarSection(
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
+    chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     overlayClip: MediaClip? = null,
     resolution: String = "1080P",
     activeFilterId: String? = null,
@@ -1205,6 +1207,14 @@ fun VideoPreviewArea(
             adjustments = adjustments,
             modifier = Modifier.fillMaxSize()
         )
+
+        // Real 3D Chroma Key Live Overlay
+        if (chromaKeySettings.enabled) {
+            ChromaKeyPreviewOverlay(
+                settings = chromaKeySettings,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
         if (activeFxId != null && fxIntensity > 0f) {
@@ -1829,20 +1839,6 @@ fun TimelineTrackArea(
                             .height(48.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Cover button
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF1E1E2C))
-                                .clickable(onClick = onCover)
-                                .padding(horizontal = 6.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Cover", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-
-                        Spacer(Modifier.width(6.dp))
-
                         // Clips Filmstrip Row
                         val displayClips = if (clips.isNotEmpty()) clips else listOf(
                             MediaClip(

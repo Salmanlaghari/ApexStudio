@@ -249,6 +249,65 @@ fun FxPreviewOverlay(
                         .background(Color(0xFF003366).copy(alpha = 0.18f * clampedIntensity))
                 )
             }
+
+            "3d_chromakey" -> {
+                // 3D ChromaKey VFX live visual preview
+                // 1. Holographic 3D grid and cyber portal background
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    
+                    // Cyber portal concentric rings
+                    val centerX = w / 2f
+                    val centerY = h / 2f
+                    val maxR = kotlin.math.max(w, h) * 0.7f
+                    val ringCount = 6
+                    for (i in 1..ringCount) {
+                        val r = (maxR * i / ringCount + (animProgress * (maxR / ringCount))) % maxR
+                        drawCircle(
+                            color = Color(0xFF00E5FF).copy(alpha = (0.25f * (1f - r / maxR) * clampedIntensity)),
+                            radius = r,
+                            center = Offset(centerX, centerY),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f)
+                        )
+                    }
+
+                    // 3D perspective floor grid lines
+                    val lineCount = 8
+                    val horizonY = h * 0.55f
+                    for (i in 0..lineCount) {
+                        val bottomX = w * i / lineCount
+                        drawLine(
+                            color = Color(0xFFE040FB).copy(alpha = 0.28f * clampedIntensity),
+                            start = Offset(centerX, horizonY),
+                            end = Offset(bottomX, h),
+                            strokeWidth = 1.5f
+                        )
+                    }
+
+                    // Top/Bottom 3D Neon Edge bars
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            listOf(Color(0xFF00F0FF).copy(alpha = 0.35f * clampedIntensity), Color.Transparent)
+                        ),
+                        size = Size(w, 24f)
+                    )
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xFFFF007F).copy(alpha = 0.35f * clampedIntensity))
+                        ),
+                        topLeft = Offset(0f, h - 24f),
+                        size = Size(w, 24f)
+                    )
+                }
+
+                // Chroma Key Spill Suppression Overlay (tints green edges to neutral)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1A0A2A).copy(alpha = 0.12f * clampedIntensity))
+                )
+            }
         }
     }
 }

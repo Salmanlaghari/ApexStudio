@@ -123,11 +123,31 @@ class MediaPickerHelper(private val context: Context) {
             val name = getFileName(uri)
             val mimeType = context.contentResolver.getType(uri) ?: ""
             retriever.release()
+            val isImage = mimeType.startsWith("image/")
             val type = if (mimeType.startsWith("video/")) ClipType.VIDEO
             else if (mimeType.startsWith("audio/")) ClipType.AUDIO
+            else if (isImage) ClipType.OVERLAY
             else ClipType.VIDEO
+            
+            var finalW = width
+            var finalH = height
+            var finalDur = if (isImage && durationMs <= 0L) 5000L else durationMs
+
+            if (isImage && (finalW <= 0 || finalH <= 0)) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeStream(stream, null, options)
+                        finalW = options.outWidth.coerceAtLeast(1080)
+                        finalH = options.outHeight.coerceAtLeast(1080)
+                    }
+                } catch (_: Exception) {
+                    finalW = 1080
+                    finalH = 1080
+                }
+            }
             CrashMarker.clear(context)
-            MediaMetadata(uri = uri.toString(), name = name, durationMs = durationMs, width = width, height = height, fps = fps, type = type)
+            MediaMetadata(uri = uri.toString(), name = name, durationMs = finalDur, width = finalW, height = finalH, fps = fps, type = type)
         } catch (e: Exception) {
             CrashMarker.clear(context)
             null
@@ -150,10 +170,13 @@ class MediaPickerHelper(private val context: Context) {
                     val dur = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION))
                     val w = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH))
                     val h = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT))
+                    val isImage = mime.startsWith("image/")
                     val type = if (mime.startsWith("video/")) ClipType.VIDEO
                     else if (mime.startsWith("audio/")) ClipType.AUDIO
+                    else if (isImage) ClipType.OVERLAY
                     else ClipType.VIDEO
-                    MediaMetadata(uri = uri.toString(), name = name, durationMs = dur, width = w, height = h, fps = 30, type = type)
+                    val finalDur = if (isImage && dur <= 0L) 5000L else dur
+                    MediaMetadata(uri = uri.toString(), name = name, durationMs = finalDur, width = w, height = h, fps = 30, type = type)
                 } else {
                     null
                 }

@@ -73,7 +73,8 @@ enum class FxPreset(val id: String, val label: String, val category: String = "T
     OIL_PAINT("oil_paint", "Oil Paint", "Stylize & Art"),
     EMBOSS_RELIEF("emboss_relief", "Emboss Relief", "Stylize & Art"),
     INVERT_FX("invert_fx", "Invert FX", "Stylize & Art"),
-    KALEIDOSCOPE("kaleidoscope", "Kaleidoscope", "Stylize & Art");
+    KALEIDOSCOPE("kaleidoscope", "Kaleidoscope", "Stylize & Art"),
+    CHROMAKEY_3D("3d_chromakey", "3D ChromaKey VFX", "Stylize & Art");
 
     companion object {
         fun byId(id: String?): FxPreset? = values().firstOrNull { it.id == id }

@@ -180,7 +180,26 @@ class FxGlEffect(
             FxPreset.EMBOSS_RELIEF -> embossReliefShader()
             FxPreset.INVERT_FX -> invertFxShader()
             FxPreset.KALEIDOSCOPE -> kaleidoscopeShader()
+            FxPreset.CHROMAKEY_3D -> chromakey3DShader()
         }
+
+        private fun chromakey3DShader(): String = """
+            $HEADER
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Chroma key detection (Green screen)
+                vec3 keyColor = vec3(0.0, 0.9, 0.4);
+                float diff = distance(color.rgb, keyColor);
+                float alpha = smoothstep(0.35, 0.50, diff);
+                
+                // 3D holographic scanline background
+                float scanline = sin(vTextureCoord.y * 300.0 + uTime * 6.0) * 0.08;
+                vec3 bg = vec3(0.05, 0.1, 0.25) + vec3(scanline);
+                
+                vec3 finalRgb = mix(bg, color.rgb, alpha);
+                gl_FragColor = vec4(finalRgb, 1.0);
+            }
+        """.trimIndent()
 
         /** Shared precision / varyings / uniforms for the FX shaders. */
         private val HEADER = """

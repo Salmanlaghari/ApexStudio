@@ -1,102 +1,128 @@
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.plugin.serialization")
-    id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
+  alias(libs.plugins.android.application)
+  alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.roborazzi)
+  alias(libs.plugins.secrets)
+  alias(libs.plugins.google.services)
 }
 
 android {
-    namespace = "com.apexstudio.app"
-    compileSdk = 36
+  namespace = "com.apexstudio.app"
+  compileSdk = 36
 
-    defaultConfig {
-        applicationId = "com.apexstudio.app"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
-        vectorDrawables { useSupportLibrary = true }
-    }
+  defaultConfig {
+    applicationId = "com.apexstudio.app"
+    minSdk = 26
+    targetSdk = 36
+    versionCode = 1
+    versionName = "1.0.0"
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-        debug { isMinifyEnabled = false }
-    }
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    vectorDrawables { useSupportLibrary = true }
+  }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+  signingConfigs {
+    create("release") {
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      storeFile = file(keystorePath)
+      storePassword = System.getenv("STORE_PASSWORD")
+      keyAlias = "upload"
+      keyPassword = System.getenv("KEY_PASSWORD")
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.media3.common.util.UnstableApi"
-        )
+    create("debugConfig") {
+      storeFile = file("${rootDir}/debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
-    buildFeatures { compose = true }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+  }
+
+  buildTypes {
+    release {
+      isCrunchPngs = false
+      isMinifyEnabled = false
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      signingConfig = signingConfigs.getByName("release")
+    }
+    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+  }
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
+  buildFeatures {
+    compose = true
+    buildConfig = true
+  }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = true
+  }
+  packaging {
+    resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+  }
 }
 
+// Configure the Secrets Gradle Plugin to use .env and .env.example files
+// to match the convention used in Web projects.
+secrets {
+  propertiesFileName = ".env"
+  defaultPropertiesFileName = ".env.example"
+  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+}
+
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
+
+// Some unused dependencies are commented out below instead of being removed.
+// This makes it easy to add them back in the future if needed.
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2025.03.00")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+  implementation(platform(libs.androidx.compose.bom))
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.icons.extended)
+  implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.ui)
+  implementation(libs.androidx.compose.ui.graphics)
+  implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation(libs.androidx.navigation.compose)
+  implementation(libs.coil.compose)
 
-    // Compose
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.animation:animation")
-    implementation("androidx.compose.foundation:foundation")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+  // Media3 & Video/Audio Processing
+  implementation(libs.androidx.media3.exoplayer)
+  implementation(libs.androidx.media3.ui)
+  implementation(libs.androidx.media3.common)
+  implementation(libs.androidx.media3.transformer)
+  implementation(libs.androidx.media3.effect)
+  implementation(libs.androidx.media3.session)
+  implementation(libs.androidx.media3.datasource)
 
-    // Core
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+  // Serialization & Data
+  implementation(libs.kotlinx.serialization.json)
+  implementation(libs.gpuimage)
 
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.2")
+  implementation(libs.kotlinx.coroutines.android)
+  implementation(libs.kotlinx.coroutines.core)
 
-    // ExoPlayer / Media3
-    implementation("androidx.media3:media3-exoplayer:1.5.0")
-    implementation("androidx.media3:media3-ui:1.5.0")
-    implementation("androidx.media3:media3-common:1.5.0")
-    implementation("androidx.media3:media3-transformer:1.5.0")
-    implementation("androidx.media3:media3-effect:1.5.0")
-    implementation("androidx.media3:media3-session:1.5.0")
-    implementation("androidx.media3:media3-exoplayer-dash:1.5.0")
-    implementation("androidx.media3:media3-exoplayer-hls:1.5.0")
-    implementation("androidx.media3:media3-datasource:1.5.0")
-    implementation("androidx.media3:media3-datasource-okhttp:1.5.0")
-
-    // Coil for image loading
-    implementation("io.coil-kt:coil-compose:2.7.0")
-
-    // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.2.0")
-
-    // Project auto-save: kotlinx-serialization drives the JSON
-    // codec that stores each Project (clips, trim, LUT, audio tracks,
-    // keyframes) in DataStore<Preferences>. No Room / KSP needed —
-    // we keep the schema versioned by hand inside ProjectSerializer.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-
-    // GPUImage — lookup-table (3D LUT) filter engine for the CapCut-style
-    // color presets. Used to bake the .cube LUTs onto frames in real time
-    // and during hardware-accelerated export.
-    implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  testImplementation(libs.androidx.core)
+  testImplementation(libs.androidx.junit)
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.roborazzi)
+  testImplementation(libs.roborazzi.compose)
+  testImplementation(libs.roborazzi.junit.rule)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
+  debugImplementation(libs.androidx.compose.ui.tooling)
 }

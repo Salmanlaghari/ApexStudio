@@ -1,6 +1,6 @@
 {
   "name": "ApexStudio",
-  "description": "Video trimming and editing tool using Media3 Transformer to allow users to set start and end points for video clips.",
+  "description": "Professional video editor with real-time LUT filters, 10+ adjustments, 3D Chroma Key VFX, timeline, overlay and audio studio.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

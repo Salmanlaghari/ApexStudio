@@ -270,7 +270,8 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     FxPreset.CHROMATIC, FxPreset.PRISM, FxPreset.BLEACH_BYPASS,
     FxPreset.TECHNICOLOR_STRIP, FxPreset.CROSS_PROCESS, FxPreset.SOLARIZE,
     FxPreset.POSTERIZE, FxPreset.THERMAL_VISION, FxPreset.NIGHT_VISION,
-    FxPreset.INVERT_FX, FxPreset.KALEIDOSCOPE -> Icons.Default.Layers
+    FxPreset.INVERT_FX, FxPreset.KALEIDOSCOPE,
+    FxPreset.CHROMAKEY_3D -> Icons.Default.Layers
 
     FxPreset.SOFT_BLUR, FxPreset.GLOW_DIFFUSE, FxPreset.RADIAL_BLUR,
     FxPreset.TILT_SHIFT, FxPreset.SPIN_BLUR -> Icons.Default.BlurOn
@@ -337,4 +338,5 @@ private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
     FxPreset.EMBOSS_RELIEF -> listOf(Color(0xFF90A4AE), Color(0xFF455A64))
     FxPreset.INVERT_FX -> listOf(Color(0xFF000000), Color(0xFFFFFFFF))
     FxPreset.KALEIDOSCOPE -> listOf(Color(0xFFAA00FF), Color(0xFF00B0FF))
+    FxPreset.CHROMAKEY_3D -> listOf(Color(0xFF00E676), Color(0xFF00E5FF))
 }

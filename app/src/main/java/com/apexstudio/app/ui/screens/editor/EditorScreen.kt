@@ -260,7 +260,16 @@ fun EditorScreen(
     // and FxPreviewOverlay with Compose hardware acceleration, preventing ExoPlayer
     // GL pipeline crashes and surface detachment on Android devices.
 
-    LaunchedEffect(exoPlayer, state.isPlaying) {
+    val audioPlaybackManager = remember { com.apexstudio.app.data.engine.AudioPlaybackManager(context) }
+    DisposableEffect(Unit) {
+        onDispose {
+            audioPlaybackManager.release()
+        }
+    }
+
+    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks) {
+        val tracks = state.project?.audioTracks ?: emptyList()
+        audioPlaybackManager.sync(state.isPlaying, state.playerPositionMs, tracks)
         val player = exoPlayer ?: return@LaunchedEffect
         if (state.isPlaying) {
             if (player.playbackState == Player.STATE_ENDED) {
@@ -278,15 +287,18 @@ fun EditorScreen(
             if (player.isPlaying) {
                 val pos = player.currentPosition
                 vm.setPlayerPosition(pos)
+                val tracks = state.project?.audioTracks ?: emptyList()
+                audioPlaybackManager.sync(true, pos, tracks)
             }
             delay(33)
         }
     }
 
-    val seekPlayerAndState: (Long) -> Unit = remember(exoPlayer, state.durationMs) {
+    val seekPlayerAndState: (Long) -> Unit = remember(exoPlayer, state.durationMs, audioPlaybackManager) {
         { targetMs ->
             val clamped = targetMs.coerceIn(0L, state.durationMs.coerceAtLeast(1L))
             exoPlayer?.seekTo(clamped)
+            audioPlaybackManager.seekTo(clamped)
             vm.seekTo(clamped)
         }
     }
@@ -334,6 +346,7 @@ fun EditorScreen(
                 playerError = state.playerError,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
+                chromaKeySettings = state.chromaKeySettings,
                 isPlaying = state.isPlaying,
                 onRetryLoad = {
                     exoPlayer?.let { player ->
@@ -473,7 +486,8 @@ fun EditorScreen(
             },
             onToggleSnapToBeat = { vm.toggleSnapToBeat() },
             onSelectClip = { vm.selectClip(it) },
-            onCover = { vm.openCoverPanel() },
+            onSelectFx = { fxId -> vm.selectFx(fxId, intensity = 0.85f) },
+            onSelectFilter = { filterId -> vm.selectFilter(filterId, intensity = 0.85f) },
             onAddMedia = { showAddMediaMenu = true },
             onSplitClip = { clipId, atMs -> vm.splitClip(clipId, atMs) },
             onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
@@ -1139,6 +1153,7 @@ fun VideoPreviewArea(
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
+    chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     isPlaying: Boolean = false,
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
     selectedTextOverlayId: String? = null,
@@ -1205,6 +1220,14 @@ fun VideoPreviewArea(
             adjustments = adjustments,
             modifier = Modifier.fillMaxSize()
         )
+
+        // Real-time 3D Chroma Key Live Overlay
+        if (chromaKeySettings.enabled) {
+            ChromaKeyPreviewOverlay(
+                settings = chromaKeySettings,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
         if (activeFxId != null && fxIntensity > 0f) {
@@ -1608,7 +1631,8 @@ fun TimelineTrackArea(
     onScrub: (Long) -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
-    onCover: () -> Unit = {},
+    onSelectFx: (String) -> Unit = {},
+    onSelectFilter: (String) -> Unit = {},
     onAddMedia: () -> Unit = {},
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
@@ -1829,20 +1853,6 @@ fun TimelineTrackArea(
                             .height(48.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Cover button
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF1E1E2C))
-                                .clickable(onClick = onCover)
-                                .padding(horizontal = 6.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Cover", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-
-                        Spacer(Modifier.width(6.dp))
-
                         // Clips Filmstrip Row
                         val displayClips = if (clips.isNotEmpty()) clips else listOf(
                             MediaClip(
@@ -2098,37 +2108,140 @@ fun TimelineTrackArea(
 
                     Spacer(Modifier.height(6.dp))
 
-                    // Track 3: Effects / FX Pill Track (Matches blue pill in reference image)
-                    val fxName = state.activeFxId?.replace('_', ' ')?.capitalize()
-                        ?: state.activeFilterId?.replace('_', ' ')?.capitalize()
-                        ?: "Color Grading / Glow"
-                    Box(
+                    // Track 3: Real FX Shaders (10) & Color Grading Presets (12) Track
+                    val fxShaders = remember {
+                        listOf(
+                            "rgb_jitter" to "RGB Jitter",
+                            "vhs" to "VHS Glitch",
+                            "pixel_sort" to "Pixel Sort",
+                            "datamosh" to "Datamosh",
+                            "halftone" to "Halftone",
+                            "neon_edge" to "Neon Edge",
+                            "vignette" to "Vignette",
+                            "film_grain" to "Film Grain",
+                            "thermal_vision" to "Thermal",
+                            "radial_blur" to "Radial Blur"
+                        )
+                    }
+                    val colorPresets = remember {
+                        listOf(
+                            "teal_orange" to "Teal & Orange",
+                            "hollywood" to "Hollywood",
+                            "moody_blockbuster" to "Moody",
+                            "matrix_green" to "Matrix",
+                            "kodak_35mm" to "Kodak 35mm",
+                            "fuji_chrome" to "Fuji Chrome",
+                            "vintage_sepia" to "Vintage Sepia",
+                            "super_8" to "Super 8",
+                            "neon_purple" to "Neon Purple",
+                            "cyan_glow" to "Cyan Glow",
+                            "synthwave_pink" to "Synthwave",
+                            "hdr_filter" to "HDR Ultra"
+                        )
+                    }
+
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF3B82F6).copy(alpha = 0.85f))
-                            .clickable(onClick = onOpenFx)
-                            .padding(horizontal = 10.dp),
-                        contentAlignment = Alignment.CenterStart
+                            .height(34.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // Track Header: Opens full FX / Filter panel
+                        Box(
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF3B82F6).copy(alpha = 0.9f))
+                                .clickable(onClick = onOpenFx)
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "Effect",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = fxName,
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "FX",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "FX / Grade",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Scrollable Row of 10 FX Shaders & 12 Color Presets
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(34.dp)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // 10 Distinct FX Shaders
+                            fxShaders.forEach { (id, label) ->
+                                val isSelected = state.activeFxId == id
+                                Box(
+                                    modifier = Modifier
+                                        .height(30.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (isSelected) Color(0xFF00F0FF).copy(alpha = 0.35f)
+                                            else Color(0xFF1E1E2C)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) Color(0xFF00F0FF) else Color(0xFF2E2E3E),
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable { onSelectFx(id) }
+                                        .padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "⚡ $label",
+                                        color = if (isSelected) Color(0xFF00F0FF) else Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+
+                            // 12 Color Grading Presets
+                            colorPresets.forEach { (id, label) ->
+                                val isSelected = state.activeFilterId == id
+                                Box(
+                                    modifier = Modifier
+                                        .height(30.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (isSelected) Color(0xFFFF007F).copy(alpha = 0.35f)
+                                            else Color(0xFF1E1E2C)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) Color(0xFFFF007F) else Color(0xFF2E2E3E),
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable { onSelectFilter(id) }
+                                        .padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "🎨 $label",
+                                        color = if (isSelected) Color(0xFFFF007F) else Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
                         }
                     }
 

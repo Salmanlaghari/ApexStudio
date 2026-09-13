@@ -190,7 +190,7 @@ object ColorGradingProcessor {
         val brightOffset = (adjust.brightness / 100f) * 0.4f
         val expFactor = Math.pow(2.0, (adjust.exposure / 50.0)).toFloat()
         val contrastFactor = (adjust.contrast + 100f) / 100f
-        val satFactor = (adjust.saturation + 100f) / 100f.coerceAtLeast(0f)
+        val satFactor = ((adjust.saturation + 100f) / 100f).coerceAtLeast(0f)
         val tempR = (adjust.temperature / 100f) * 0.25f
         val tempB = -(adjust.temperature / 100f) * 0.25f
         val tintG = -(adjust.tint / 100f) * 0.2f

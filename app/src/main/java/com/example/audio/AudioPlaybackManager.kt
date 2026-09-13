@@ -3,11 +3,13 @@ package com.example.audio
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.util.Log
 import com.example.model.AudioTrackState
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.log10
 
 /**
  * Manages genuine Android MediaPlayer audio playback, per-track volume,
@@ -16,6 +18,9 @@ import java.io.FileOutputStream
 class AudioPlaybackManager(private val context: Context) {
 
     private var mediaPlayer: MediaPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var isPrepared = false
+    private var pendingPlayFromMs: Long? = null
     private var currentTrackState: AudioTrackState = AudioTrackState()
 
     fun loadTrack(trackState: AudioTrackState) {
@@ -28,12 +33,27 @@ class AudioPlaybackManager(private val context: Context) {
         }
 
         try {
+            isPrepared = false
+            pendingPlayFromMs = null
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
-                setOnPreparedListener {
-                    applyVolumeAndFade(0L)
+                try {
+                    loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                        enabled = true
+                    }
+                } catch (e: Exception) {
+                    Log.w("AudioPlaybackManager", "LoudnessEnhancer unavailable", e)
                 }
-                prepare()
+                setOnPreparedListener {
+                    isPrepared = true
+                    applyVolumeAndFade(0L)
+                    val pending = pendingPlayFromMs
+                    if (pending != null) {
+                        pendingPlayFromMs = null
+                        play(pending)
+                    }
+                }
+                prepareAsync()
             }
         } catch (e: Exception) {
             Log.e("AudioPlaybackManager", "Error preparing MediaPlayer for ${file.name}", e)
@@ -42,6 +62,10 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun play(fromMs: Long) {
         val player = mediaPlayer ?: return
+        if (!isPrepared) {
+            pendingPlayFromMs = fromMs
+            return
+        }
         try {
             val seekTarget = (fromMs + currentTrackState.trimStartMs).toInt().coerceIn(0, player.duration)
             player.seekTo(seekTarget)
@@ -53,8 +77,9 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     fun pause() {
+        pendingPlayFromMs = null
         try {
-            if (mediaPlayer?.isPlaying == true) {
+            if (isPrepared && mediaPlayer?.isPlaying == true) {
                 mediaPlayer?.pause()
             }
         } catch (e: Exception) {
@@ -64,6 +89,7 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun seekTo(timelineTimeMs: Long) {
         val player = mediaPlayer ?: return
+        if (!isPrepared) return
         try {
             val targetMs = (timelineTimeMs + currentTrackState.trimStartMs).toInt().coerceIn(0, player.duration)
             player.seekTo(targetMs)
@@ -79,11 +105,19 @@ class AudioPlaybackManager(private val context: Context) {
      * 2. Per-track volume slider (0.0 to 2.0)
      * 3. Fade-in attenuation curve
      * 4. Fade-out attenuation curve
+     * 5. Digital gain (software amplification via LoudnessEnhancer) for > 1.0 volume.
      */
     fun applyVolumeAndFade(timelineTimeMs: Long) {
         val player = mediaPlayer ?: return
+        if (!isPrepared) return
+
         if (currentTrackState.isMuted) {
             player.setVolume(0f, 0f)
+            try {
+                loudnessEnhancer?.setTargetGain(0)
+            } catch (e: Exception) {
+                // Ignore
+            }
             return
         }
 
@@ -103,8 +137,25 @@ class AudioPlaybackManager(private val context: Context) {
             multiplier *= (remaining.toFloat() / fadeOutMs).coerceIn(0f, 1f)
         }
 
-        val finalVol = (currentTrackState.volume * multiplier).coerceIn(0f, 1.0f)
-        player.setVolume(finalVol, finalVol)
+        val totalVol = (currentTrackState.volume * multiplier).coerceIn(0f, 2.0f)
+        if (totalVol <= 1.0f) {
+            player.setVolume(totalVol, totalVol)
+            try {
+                loudnessEnhancer?.setTargetGain(0)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        } else {
+            // MediaPlayer setVolume maxes out at 1.0f. Apply digital gain (mB) for 100%-200% range
+            player.setVolume(1.0f, 1.0f)
+            try {
+                // 20 * log10(gain) dB, converted to millibels (* 100). For 2.0f: ~602 mB
+                val gainMb = (2000.0 * log10(totalVol.toDouble())).toInt().coerceIn(0, 1000)
+                loudnessEnhancer?.setTargetGain(gainMb)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
     }
 
     fun updateTrackConfig(newState: AudioTrackState, currentTimelineMs: Long) {
@@ -119,6 +170,14 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun release() {
         try {
+            isPrepared = false
+            pendingPlayFromMs = null
+            try {
+                loudnessEnhancer?.release()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            loudnessEnhancer = null
             mediaPlayer?.stop()
             mediaPlayer?.release()
             mediaPlayer = null

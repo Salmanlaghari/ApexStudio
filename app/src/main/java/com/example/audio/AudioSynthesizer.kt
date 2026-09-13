@@ -3,6 +3,7 @@ package com.example.audio
 import android.content.Context
 import com.example.model.RoyaltyFreeTrack
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -86,6 +87,7 @@ object AudioSynthesizer {
         val sampleBuffer = ShortArray(numSamples)
         val bpm = track.bpm
         val beatInterval = (sampleRate * 60f / bpm).toInt()
+        val seededRandom = kotlin.random.Random(track.id.hashCode().toLong())
 
         // Generate musical audio based on track archetype
         for (i in 0 until numSamples) {
@@ -133,9 +135,9 @@ object AudioSynthesizer {
                     (pad * swell * 0.5)
                 }
                 "rf_urban_groove" -> {
-                    // Hip-Hop: 808 sub + snare pulse
+                    // Hip-Hop: 808 sub + snare pulse (seeded for reproducible output)
                     val isSnare = (beatIndex % 2 == 1) && (beatFraction < 0.25)
-                    val snare = if (isSnare) (Math.random() - 0.5) * (1.0 - beatFraction * 4.0) else 0.0
+                    val snare = if (isSnare) (seededRandom.nextDouble() - 0.5) * (1.0 - beatFraction * 4.0) else 0.0
                     val subBass = sin(2.0 * PI * 55.0 * t) * 0.5
                     (subBass * 0.6 + snare * 0.4)
                 }
@@ -215,7 +217,8 @@ object AudioSynthesizer {
     }
 
     /**
-     * Generates normalized peak waveform points (60 points) from an audio file.
+     * Generates normalized peak waveform points from an audio file.
+     * Streams the file in fixed-size chunks to avoid OOM on large audio files.
      */
     fun extractWaveformPoints(audioFile: File, pointCount: Int = 64): List<Float> {
         if (!audioFile.exists() || audioFile.length() < 100) {
@@ -223,28 +226,75 @@ object AudioSynthesizer {
         }
 
         try {
-            val bytes = audioFile.readBytes()
-            val sampleCount = (bytes.size - 44) / 2
-            if (sampleCount <= 0) return List(pointCount) { 0.3f }
+            val fileLength = audioFile.length()
+            val dataLength = fileLength - 44L
+            val sampleCount = dataLength / 2L
+            if (sampleCount <= 0L) return List(pointCount) { 0.3f }
 
-            val step = sampleCount / pointCount
-            val result = ArrayList<Float>(pointCount)
+            val step = (sampleCount / pointCount).coerceAtLeast(1L)
+            val maxVals = IntArray(pointCount)
 
-            for (p in 0 until pointCount) {
-                val startSample = p * step
-                var maxVal = 0
-                for (s in 0 until step) {
-                    val byteIdx = 44 + (startSample + s) * 2
-                    if (byteIdx + 1 < bytes.size) {
-                        val sample = (bytes[byteIdx].toInt() and 0xFF) or (bytes[byteIdx + 1].toInt() shl 8)
-                        val absVal = Math.abs(sample.toShort().toInt())
-                        if (absVal > maxVal) maxVal = absVal
+            FileInputStream(audioFile).use { fis ->
+                // Skip 44-byte WAV header safely
+                val header = ByteArray(44)
+                var headerRead = 0
+                while (headerRead < 44) {
+                    val r = fis.read(header, headerRead, 44 - headerRead)
+                    if (r == -1) break
+                    headerRead += r
+                }
+
+                val buffer = ByteArray(4096)
+                var currentSampleIndex = 0L
+                var bytesRead: Int
+                var leftoverByte: Int? = null
+
+                while (fis.read(buffer).also { bytesRead = it } != -1) {
+                    var offset = 0
+
+                    if (leftoverByte != null && bytesRead > 0) {
+                        val b0 = leftoverByte
+                        val b1 = buffer[0].toInt()
+                        val sample = (b0 or (b1 shl 8)).toShort().toInt()
+                        val absVal = Math.abs(sample)
+                        val p = (currentSampleIndex / step).toInt()
+                        if (p in 0 until pointCount && absVal > maxVals[p]) {
+                            maxVals[p] = absVal
+                        }
+                        currentSampleIndex++
+                        offset = 1
+                        leftoverByte = null
+                    }
+
+                    while (offset + 1 < bytesRead) {
+                        val p = (currentSampleIndex / step).toInt()
+                        if (p >= pointCount) break
+
+                        val b0 = buffer[offset].toInt() and 0xFF
+                        val b1 = buffer[offset + 1].toInt()
+                        val sample = (b0 or (b1 shl 8)).toShort().toInt()
+                        val absVal = Math.abs(sample)
+                        if (absVal > maxVals[p]) {
+                            maxVals[p] = absVal
+                        }
+
+                        currentSampleIndex++
+                        offset += 2
+                    }
+
+                    if (offset < bytesRead) {
+                        leftoverByte = buffer[offset].toInt() and 0xFF
+                    }
+
+                    if ((currentSampleIndex / step) >= pointCount) {
+                        break
                     }
                 }
-                val norm = (maxVal / 32767f).coerceIn(0.05f, 1.0f)
-                result.add(norm)
             }
-            return result
+
+            return maxVals.map { maxVal ->
+                (maxVal / 32767f).coerceIn(0.05f, 1.0f)
+            }
         } catch (e: Exception) {
             return List(pointCount) { 0.35f }
         }

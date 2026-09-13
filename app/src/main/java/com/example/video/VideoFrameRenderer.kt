@@ -87,8 +87,19 @@ object VideoFrameRenderer {
         val canvas = Canvas(bitmap)
         val t = timeMs / 1000.0
 
+        // Reset shared Paint to default fill mode
+        paint.reset()
+        paint.isAntiAlias = true
+        paint.style = Paint.Style.FILL
+        paint.strokeWidth = 2f
+        paint.strokeCap = Paint.Cap.BUTT
+
         when (clip) {
             VideoPresetClip.GREEN_SCREEN_DANCER -> {
+                paint.style = Paint.Style.FILL
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.BUTT
+
                 // Pure #00FF00 Green Screen background for Chroma Key testing
                 canvas.drawColor(AndroidColor.rgb(0, 255, 0))
 
@@ -132,7 +143,11 @@ object VideoFrameRenderer {
                 val armRX = cx + 35f + (sin(Math.toRadians(armAngleR)) * 45.0).toFloat()
                 val armRY = cy - 70f + (cos(Math.toRadians(armAngleR)) * 45.0).toFloat()
                 canvas.drawLine(cx + 35f, cy - 70f, armRX, armRY, paint)
+                
+                // Immediately reset paint style and stroke back to defaults
                 paint.style = Paint.Style.FILL
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.BUTT
 
                 // Studio light flare
                 paint.color = AndroidColor.argb(80, 255, 255, 255)
@@ -140,6 +155,10 @@ object VideoFrameRenderer {
             }
 
             VideoPresetClip.CYBERPUNK_METROPOLIS -> {
+                paint.style = Paint.Style.FILL
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.BUTT
+
                 // Dark rainy cyberpunk alley
                 canvas.drawColor(AndroidColor.rgb(12, 14, 22))
 
@@ -165,6 +184,10 @@ object VideoFrameRenderer {
             }
 
             VideoPresetClip.GOLDEN_SUNSET -> {
+                paint.style = Paint.Style.FILL
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.BUTT
+
                 // Sunset sky gradient
                 paint.color = AndroidColor.rgb(240, 100, 40)
                 canvas.drawRect(0f, 0f, FRAME_WIDTH.toFloat(), FRAME_HEIGHT * 0.6f, paint)
@@ -180,11 +203,16 @@ object VideoFrameRenderer {
 
                 // Ocean water golden shimmer waves
                 paint.color = AndroidColor.argb(160, 255, 180, 50)
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.ROUND
                 for (w in 0..8) {
                     val wy = FRAME_HEIGHT * 0.65f + w * 14f
                     val waveOffset = (sin(t * 2.0 + w) * 20.0).toFloat()
                     canvas.drawLine(FRAME_WIDTH * 0.3f + waveOffset, wy, FRAME_WIDTH * 0.7f - waveOffset, wy, paint)
                 }
+                paint.style = Paint.Style.FILL
+                paint.strokeWidth = 2f
+                paint.strokeCap = Paint.Cap.BUTT
             }
         }
 

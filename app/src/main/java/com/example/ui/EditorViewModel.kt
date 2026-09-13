@@ -15,6 +15,7 @@ import com.example.model.EffectType
 import com.example.model.RoyaltyFreeTrack
 import com.example.video.VideoFrameRenderer
 import com.example.video.VideoPresetClip
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +70,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val renderedFrame: StateFlow<Bitmap?> = _renderedFrame.asStateFlow()
 
     private var playbackJob: Job? = null
+    private var renderJob: Job? = null
+    @Volatile private var cachedRenderKey: RenderParamsKey? = null
+    @Volatile private var cachedRenderBitmap: Bitmap? = null
+
+    private data class RenderParamsKey(
+        val timeMs: Long,
+        val clip: VideoPresetClip,
+        val chromaKey: ChromaKeyState,
+        val effect: EffectType,
+        val intensity: Float,
+        val adjustments: AdjustmentValues,
+        val text: String
+    )
 
     init {
         // Pre-load default royalty-free track so audio is ready on first launch
@@ -231,21 +245,44 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun refreshCurrentFrame() {
         val effectiveAdjust = if (_isCompareMode.value) AdjustmentValues() else _adjustments.value
-        val frame = VideoFrameRenderer.renderProcessedFrame(
+        val key = RenderParamsKey(
             timeMs = _currentTimeMs.value,
-            activeClip = _activeClip.value,
+            clip = _activeClip.value,
             chromaKey = _chromaKeyState.value,
-            activeEffect = _activeEffect.value,
-            effectIntensity = _effectIntensity.value,
+            effect = _activeEffect.value,
+            intensity = _effectIntensity.value,
             adjustments = effectiveAdjust,
-            textOverlay = _textOverlay.value
+            text = _textOverlay.value
         )
-        _renderedFrame.value = frame
+
+        // Return cached bitmap if parameters have not changed
+        if (key == cachedRenderKey && cachedRenderBitmap != null) {
+            _renderedFrame.value = cachedRenderBitmap
+            return
+        }
+
+        // Cancel previous in-flight render job to debounce rapid scrubbing or state mutations
+        renderJob?.cancel()
+        renderJob = viewModelScope.launch(Dispatchers.IO) {
+            val frame = VideoFrameRenderer.renderProcessedFrame(
+                timeMs = key.timeMs,
+                activeClip = key.clip,
+                chromaKey = key.chromaKey,
+                activeEffect = key.effect,
+                effectIntensity = key.intensity,
+                adjustments = key.adjustments,
+                textOverlay = key.text
+            )
+            cachedRenderKey = key
+            cachedRenderBitmap = frame
+            _renderedFrame.value = frame
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
         audioManager.release()
         playbackJob?.cancel()
+        renderJob?.cancel()
     }
 }

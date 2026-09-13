@@ -338,6 +338,7 @@ fun EditorScreen(
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
+                chromaKeySettings = state.chromaKeySettings,
                 overlayClip = overlayClip,
                 resolution = state.selectedResolution,
                 activeFilterId = state.activeFilterId,
@@ -346,7 +347,6 @@ fun EditorScreen(
                 playerError = state.playerError,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
-                chromaKeySettings = state.chromaKeySettings,
                 isPlaying = state.isPlaying,
                 onRetryLoad = {
                     exoPlayer?.let { player ->
@@ -1144,6 +1144,7 @@ fun TopAppBarSection(
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
+    chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     overlayClip: MediaClip? = null,
     resolution: String = "1080P",
     activeFilterId: String? = null,
@@ -1153,7 +1154,6 @@ fun VideoPreviewArea(
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
-    chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     isPlaying: Boolean = false,
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
     selectedTextOverlayId: String? = null,

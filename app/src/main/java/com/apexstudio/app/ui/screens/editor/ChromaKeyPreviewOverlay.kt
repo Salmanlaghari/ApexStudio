@@ -2,7 +2,6 @@ package com.apexstudio.app.ui.screens.editor
 
 import android.net.Uri
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -12,14 +11,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.ChromaKeySettings
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Real-time ChromaKey video compositing overlay.
@@ -28,6 +23,7 @@ import kotlin.math.sin
 @Composable
 fun ChromaKeyPreviewOverlay(
     settings: ChromaKeySettings,
+    matteViewOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     if (!settings.enabled) return
@@ -35,19 +31,21 @@ fun ChromaKeyPreviewOverlay(
     val keyColor = Color(settings.keyColorArgb)
 
     Box(modifier = modifier.fillMaxSize()) {
-        // 1. Virtual Background Layer (Rendered underneath keyed subjects)
-        if (settings.customBackgroundUri != null && settings.backgroundType == "custom") {
-            AsyncImage(
-                model = Uri.parse(settings.customBackgroundUri),
-                contentDescription = "Custom Virtual Background",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            VirtualBackgroundPlate(
-                type = settings.backgroundType,
-                modifier = Modifier.fillMaxSize()
-            )
+        if (!matteViewOnly) {
+            // 1. Virtual Background Layer (Rendered underneath keyed subjects)
+            if (settings.customBackgroundUri != null && settings.backgroundType == "custom") {
+                AsyncImage(
+                    model = Uri.parse(settings.customBackgroundUri),
+                    contentDescription = "Custom Virtual Background",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                VirtualBackgroundPlate(
+                    type = settings.backgroundType,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         // 2. Real-time ChromaKey Cutout & Spill Suppression Matrix
@@ -55,12 +53,17 @@ fun ChromaKeyPreviewOverlay(
             val w = size.width
             val h = size.height
 
-            // Tolerance & similarity matte calculation
-            val similarityFactor = settings.similarity.coerceIn(0.05f, 0.95f)
-            val smoothnessFactor = settings.smoothness.coerceIn(0.01f, 0.60f)
-            val spillFactor = settings.spillSuppression.coerceIn(0f, 1f)
+            if (matteViewOnly) {
+                // High-contrast B&W key matte view for precise thresholding
+                drawRect(
+                    color = Color.White.copy(alpha = (1f - settings.similarity).coerceIn(0f, 1f)),
+                    blendMode = BlendMode.SrcOver
+                )
+                return@Canvas
+            }
 
             // Spill suppression edge punch
+            val spillFactor = settings.spillSuppression.coerceIn(0f, 1f)
             if (spillFactor > 0.05f) {
                 // Key color complementary tint to cancel green/blue bounce
                 val cancelColor = when {

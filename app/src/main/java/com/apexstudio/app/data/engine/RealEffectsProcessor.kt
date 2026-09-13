@@ -44,7 +44,6 @@ object RealEffectsProcessor {
             }
             "vhs", "glitch" -> {
                 val scanlinePeriod = 4
-                val jitter = ((timeMs % 1000) / 100f).toInt()
                 val rng = Random(timeMs / 100)
                 for (y in 0 until h) {
                     val lineShift = if (rng.nextFloat() < 0.05f * intClamp) (rng.nextInt(-10, 10) * intClamp).toInt() else 0
@@ -135,7 +134,7 @@ object RealEffectsProcessor {
                     }
                 }
             }
-            "neon_edge" -> {
+            "neon_edge", "edge_neon" -> {
                 // Sobel edge filter with electric neon color
                 for (y in 1 until h - 1) {
                     for (x in 1 until w - 1) {
@@ -176,7 +175,7 @@ object RealEffectsProcessor {
                     dstPixels[i] = AndroidColor.argb(AndroidColor.alpha(p), r, g, b)
                 }
             }
-            "thermal" -> {
+            "thermal", "thermal_vision" -> {
                 for (i in srcPixels.indices) {
                     val p = srcPixels[i]
                     val l = (0.299f * AndroidColor.red(p) + 0.587f * AndroidColor.green(p) + 0.114f * AndroidColor.blue(p)) / 255f
@@ -187,8 +186,33 @@ object RealEffectsProcessor {
                     dstPixels[i] = AndroidColor.argb(AndroidColor.alpha(p), r, g, b)
                 }
             }
+            "radial_blur" -> {
+                val cx = w / 2f
+                val cy = h / 2f
+                val steps = 5
+                for (y in 0 until h) {
+                    for (x in 0 until w) {
+                        var sumR = 0f
+                        var sumG = 0f
+                        var sumB = 0f
+                        val dx = (x - cx) * intClamp * 0.04f
+                        val dy = (y - cy) * intClamp * 0.04f
+                        for (s in 0 until steps) {
+                            val sx = (x - dx * s).toInt().coerceIn(0, w - 1)
+                            val sy = (y - dy * s).toInt().coerceIn(0, h - 1)
+                            val p = srcPixels[sy * w + sx]
+                            sumR += AndroidColor.red(p)
+                            sumG += AndroidColor.green(p)
+                            sumB += AndroidColor.blue(p)
+                        }
+                        val r = (sumR / steps).toInt().coerceIn(0, 255)
+                        val g = (sumG / steps).toInt().coerceIn(0, 255)
+                        val b = (sumB / steps).toInt().coerceIn(0, 255)
+                        dstPixels[y * w + x] = AndroidColor.argb(255, r, g, b)
+                    }
+                }
+            }
             else -> {
-                // Default fallback: copy source
                 System.arraycopy(srcPixels, 0, dstPixels, 0, srcPixels.size)
             }
         }

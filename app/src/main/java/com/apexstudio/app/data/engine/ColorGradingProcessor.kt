@@ -35,7 +35,7 @@ object ColorGradingProcessor {
         source.getPixels(pixels, 0, w, 0, 0, w, h)
 
         val expFactor = 2f.pow(params.exposure)
-        val radHue = Math.toRadians(params.hueShift.toDouble()).toFloat()
+        val satFactor = params.saturation.coerceAtLeast(0f)
 
         for (i in pixels.indices) {
             val p = pixels[i]
@@ -70,9 +70,9 @@ object ColorGradingProcessor {
             g += params.tint * 0.15f
 
             // Saturation
-            r = lum + (r - lum) * params.saturation
-            g = lum + (g - lum) * params.saturation
-            b = lum + (b - lum) * params.saturation
+            r = lum + (r - lum) * satFactor
+            g = lum + (g - lum) * satFactor
+            b = lum + (b - lum) * satFactor
 
             // Vibrance: boosts less saturated colors more
             val maxC = max(r, max(g, b))

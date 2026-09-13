@@ -1,6 +1,6 @@
 {
   "name": "ApexStudio",
-  "description": "Professional video editor with real-time LUT filters, 10+ adjustments, 3D Chroma Key VFX, timeline, overlay and audio studio.",
+  "description": "Professional mobile video editor with 3D Chroma Key, synchronized multi-track timeline, real VFX shaders, 12-factor color grading, and complete audio workstation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

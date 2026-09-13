@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Context
+import com.apexstudio.app.R
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import androidx.test.core.app.ApplicationProvider

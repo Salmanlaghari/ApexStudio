@@ -99,6 +99,9 @@ fun AnimatedTextOverlayView(
     var offsetXAnim = (kfTransform?.translateX ?: 0f) * containerWidthPx
     var offsetYAnim = (kfTransform?.translateY ?: 0f) * containerHeightPx
     var rotationAnim = overlay.rotationDeg + (kfTransform?.rotationDeg ?: 0f)
+    var rotationXAnim = 0f
+    var rotationYAnim = 0f
+    var cameraDistAnim = 16f * density.density
     var displayText = overlay.text
 
     when (overlay.animationType.uppercase()) {
@@ -125,6 +128,43 @@ fun AnimatedTextOverlayView(
         "BOUNCE" -> {
             val bounceVal = kotlin.math.sin(progress * kotlin.math.PI * 3.0).toFloat()
             offsetYAnim += bounceVal * -12f
+        }
+        "3D_FLIP_X", "FLIP_3D_X" -> {
+            val rotProgress = (1f - progress).coerceIn(0f, 1f)
+            rotationXAnim = rotProgress * 90f
+            scaleAnim *= (0.6f + 0.4f * progress)
+            displayAlpha *= progress
+        }
+        "3D_ROTATE_Y", "ROTATE_3D_Y" -> {
+            val rotProgress = (1f - progress).coerceIn(0f, 1f)
+            rotationYAnim = rotProgress * 90f
+            scaleAnim *= (0.6f + 0.4f * progress)
+            displayAlpha *= progress
+        }
+        "3D_DEPTH_WARP", "DEPTH_WARP" -> {
+            val warp = progress * progress
+            scaleAnim *= (0.15f + 0.85f * warp)
+            rotationXAnim = (1f - progress) * 35f
+            rotationYAnim = (1f - progress) * -25f
+            displayAlpha *= progress
+        }
+        "3D_SWING", "SWING_3D" -> {
+            val swing = kotlin.math.sin(progress * kotlin.math.PI.toFloat() * 2.5f) * (1f - progress)
+            rotationYAnim = swing * 45f
+            rotationAnim += swing * 15f
+        }
+        "3D_TUMBLE", "TUMBLE_3D" -> {
+            val rotProgress = (1f - progress).coerceIn(0f, 1f)
+            rotationXAnim = rotProgress * 120f
+            rotationYAnim = rotProgress * 120f
+            scaleAnim *= (0.4f + 0.6f * progress)
+            displayAlpha *= progress
+        }
+        "3D_ISOMETRIC", "ISOMETRIC_3D" -> {
+            rotationXAnim = 25f
+            rotationYAnim = -25f
+            scaleAnim *= (0.7f + 0.3f * progress)
+            displayAlpha *= progress
         }
         else -> {
             // Default: keyframe transform attributes already applied
@@ -177,7 +217,13 @@ fun AnimatedTextOverlayView(
             modifier = Modifier
                 .graphicsLayer {
                     alpha = displayAlpha
+                    rotationX = rotationXAnim
+                    rotationY = rotationYAnim
                     rotationZ = rotationAnim
+                    scaleX = scaleAnim
+                    scaleY = scaleAnim
+                    cameraDistance = cameraDistAnim
+                    shadowElevation = if (rotationXAnim != 0f || rotationYAnim != 0f) 8f else 0f
                 }
                 .clip(RoundedCornerShape(8.dp))
                 .background(

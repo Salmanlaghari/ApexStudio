@@ -453,30 +453,8 @@ class EditorViewModel(
     fun openRoyaltyMusicDialog() = _state.update { it.copy(royaltyMusicDialogOpen = true) }
     fun closeRoyaltyMusicDialog() = _state.update { it.copy(royaltyMusicDialogOpen = false) }
 
-    fun addRoyaltyTrack(track: com.apexstudio.app.data.audio.RoyaltyTrack) {
-        val ctx = context ?: return
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val file = com.apexstudio.app.data.audio.FreeRoyaltyMusic.getTrackFile(ctx, track)
-            val uri = file.toURI().toString()
-            val audioTrack = com.apexstudio.app.domain.model.AudioTrack(
-                id = java.util.UUID.randomUUID().toString(),
-                name = track.title,
-                uri = uri,
-                volume = 0.85f,
-                trimEndMs = track.durationMs
-            )
-            _audio.update { it.copy(tracks = it.tracks + audioTrack) }
-            _state.update { st ->
-                val proj = st.project ?: return@update st
-                val updatedTracks = proj.audioTracks + audioTrack
-                val maxDur = maxOf(st.durationMs, track.durationMs)
-                st.copy(
-                    project = proj.copy(audioTracks = updatedTracks),
-                    durationMs = maxDur
-                )
-            }
-            persistProject()
-        }
+    fun addRoyaltyTrack(title: String, uri: String, durationMs: Long) {
+        addAudioTrack(name = title, uri = uri, kind = com.apexstudio.app.domain.model.AudioTrack.Kind.MUSIC, sourceDurationMs = durationMs)
     }
 
     fun openHelpDialog() = _state.update { it.copy(helpDialogOpen = true) }
@@ -1115,18 +1093,37 @@ class EditorViewModel(
     }
 
     fun addAudioTrack(name: String, uri: String, kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC, sourceDurationMs: Long = 0L) {
+        val finalDuration = if (sourceDurationMs > 0L) sourceDurationMs else 30000L
         val track = AudioTrack(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
             uri = uri,
-            volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.75f,
-            trimEndMs = sourceDurationMs
+            volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.85f,
+            trimStartMs = 0L,
+            trimEndMs = finalDuration
         )
         _audio.update { it.copy(tracks = it.tracks + track) }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updatedTracks = p.audioTracks + track
+            val newDuration = maxOf(s.durationMs, finalDuration)
+            s.copy(
+                project = p.copy(audioTracks = updatedTracks),
+                durationMs = newDuration
+            )
+        }
+        persistProject()
     }
 
-    fun removeAudioTrack(trackId: String) = _audio.update { s ->
-        s.copy(tracks = s.tracks.filter { it.id != trackId })
+    fun removeAudioTrack(trackId: String) {
+        _audio.update { s ->
+            s.copy(tracks = s.tracks.filter { it.id != trackId })
+        }
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            s.copy(project = p.copy(audioTracks = p.audioTracks.filter { it.id != trackId }))
+        }
+        persistProject()
     }
 
     fun setAudioTrackVolume(trackId: String, vol: Float) = _audio.update { s ->

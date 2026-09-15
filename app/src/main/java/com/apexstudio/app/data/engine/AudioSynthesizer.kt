@@ -141,6 +141,25 @@ object AudioSynthesizer {
                     pcm[i] = (wave * 12000).toInt().toShort()
                 }
             }
+            "cinematic_drama" -> {
+                for (i in 0 until totalSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val bass = sin(2 * PI * 48.99 * t) // G1 sub
+                    val brass = sin(2 * PI * 98.0 * t) * 0.5 + sin(2 * PI * 146.83 * t) * 0.3
+                    val swell = (sin(2 * PI * 0.1 * t) + 1.0) * 0.5
+                    pcm[i] = ((bass * 0.5 + brass * swell * 0.5) * 15000).toInt().toShort()
+                }
+            }
+            "urban_groove" -> {
+                for (i in 0 until totalSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val beat = (t % 0.63) / 0.63 // ~95 BPM
+                    val kick = if (beat < 0.15) sin(2 * PI * (60.0 - beat * 200.0) * beat) * (1.0 - beat / 0.15) else 0.0
+                    val hat = if (beat > 0.45 && beat < 0.55) (kotlin.math.sin(t * 12000.0) * 0.2) else 0.0
+                    val sub = sin(2 * PI * 45.0 * t) * 0.4
+                    pcm[i] = ((kick * 0.5 + hat * 0.3 + sub * 0.3) * 16000).toInt().toShort()
+                }
+            }
             else -> { // "neon_horizon"
                 for (i in 0 until totalSamples) {
                     val t = i.toDouble() / sampleRate

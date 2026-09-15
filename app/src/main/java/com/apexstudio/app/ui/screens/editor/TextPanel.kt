@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +49,12 @@ data class TextAnimationOption(
 
 val TEXT_ANIMATIONS = listOf(
     TextAnimationOption("NONE", "None", "Static subtitle"),
+    TextAnimationOption("3D_FLIP_X", "3D Flip X", "3D perspective tumble on horizontal axis"),
+    TextAnimationOption("3D_ROTATE_Y", "3D Spin Y", "3D door swing on vertical axis"),
+    TextAnimationOption("3D_DEPTH_WARP", "3D Depth Warp", "Extrudes from deep 3D horizon"),
+    TextAnimationOption("3D_SWING", "3D Swing", "Dynamic pendulum in 3D perspective"),
+    TextAnimationOption("3D_TUMBLE", "3D Cube Tumble", "Dual-axis tumbling 3D effect"),
+    TextAnimationOption("3D_ISOMETRIC", "3D Isometric", "Angled 3D isometric depth"),
     TextAnimationOption("FADE", "Fade In", "Smooth opacity dissolve"),
     TextAnimationOption("POP", "Pop & Bounce", "Dynamic spring zoom-in"),
     TextAnimationOption("TYPEWRITER", "Typewriter", "Letter by letter reveal"),
@@ -550,6 +558,118 @@ fun TextPanel(
 
             TextPanelTab.ANIMATION -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // --- 3D Text Animation Live Demo Card ---
+                    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "3d_demo_trans")
+                    val demoProgress by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                            animation = androidx.compose.animation.core.tween(
+                                durationMillis = selected.animationDurationMs.toInt().coerceIn(600, 2500),
+                                easing = androidx.compose.animation.core.LinearEasing
+                            ),
+                            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+                        ),
+                        label = "demo_prog"
+                    )
+
+                    var demoRotX = 0f
+                    var demoRotY = 0f
+                    var demoScale = 1f
+                    when (selected.animationType.uppercase()) {
+                        "3D_FLIP_X", "FLIP_3D_X" -> {
+                            demoRotX = (1f - demoProgress) * 90f
+                            demoScale = 0.7f + 0.3f * demoProgress
+                        }
+                        "3D_ROTATE_Y", "ROTATE_3D_Y" -> {
+                            demoRotY = (1f - demoProgress) * 90f
+                            demoScale = 0.7f + 0.3f * demoProgress
+                        }
+                        "3D_DEPTH_WARP", "DEPTH_WARP" -> {
+                            demoScale = 0.2f + 0.8f * (demoProgress * demoProgress)
+                            demoRotX = (1f - demoProgress) * 35f
+                            demoRotY = (1f - demoProgress) * -25f
+                        }
+                        "3D_SWING", "SWING_3D" -> {
+                            val swing = kotlin.math.sin((demoProgress * kotlin.math.PI * 2.0)).toFloat()
+                            demoRotY = swing * 40f
+                        }
+                        "3D_TUMBLE", "TUMBLE_3D" -> {
+                            demoRotX = demoProgress * 180f
+                            demoRotY = demoProgress * 180f
+                            demoScale = 0.6f + 0.4f * demoProgress
+                        }
+                        "3D_ISOMETRIC", "ISOMETRIC_3D" -> {
+                            demoRotX = 25f
+                            demoRotY = -25f + demoProgress * 15f
+                            demoScale = 0.9f + 0.1f * demoProgress
+                        }
+                        else -> {
+                            demoScale = 0.85f + 0.15f * demoProgress
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(84.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF0D0D18))
+                            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "3D LIVE PREVIEW",
+                                    color = ApexPalette.NeonCyan,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = selected.animationType,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            Box(
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        rotationX = demoRotX
+                                        rotationY = demoRotY
+                                        scaleX = demoScale
+                                        scaleY = demoScale
+                                        cameraDistance = 16f * density
+                                        shadowElevation = 8f
+                                    }
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (selected.bgArgb != null) Color(selected.bgArgb.toInt())
+                                        else Color(0xFF1E1E2C)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = selected.text.ifBlank { "3D TITLE DEMO" },
+                                    color = Color(selected.colorArgb.toInt()),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+
                     // Animation Duration Slider
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

@@ -114,17 +114,17 @@ data class EditorState(
     val coverPanelOpen: Boolean = false,
     val coverFrameMs: Long? = null,
     val coverCustomUri: String? = null,
-    val coverText: String? = null,
-    val coverTextStyle: String? = null,
-    val chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
-    val chromaKeyPanelOpen: Boolean = false,
-    val royaltyMusicDialogOpen: Boolean = false,
     val helpDialogOpen: Boolean = false,
     val mediaLibraryOpen: Boolean = false,
     val snapToBeat: Boolean = false,
     val beatMarkersMs: List<Long> = emptyList(),
     val timelineZoom: Float = 1.0f,
-    val selectedStickerId: String? = null
+    val selectedStickerId: String? = null,
+    val coverText: String = "",
+    val coverTextStyle: String = "BOLD_TITLE",
+    val chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
+    val chromaKeyPanelOpen: Boolean = false,
+    val royaltyMusicDialogOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

@@ -99,15 +99,15 @@ fun EditorScreen(
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
+    var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
+    var isCoverMode by remember { mutableStateOf(true) }
 
-    // Floating rails auto-hide state: hidden by default, tap video preview to reveal for 2s
-    var railsVisible by remember { mutableStateOf(false) }
-    var lastRailInteraction by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(railsVisible, lastRailInteraction) {
-        if (railsVisible) {
-            delay(2000)
-            railsVisible = false
+    val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val name = it.lastPathSegment?.substringAfterLast('/') ?: "Imported Audio"
+            vm.addAudioTrack(name = name, uri = it.toString(), kind = AudioTrack.Kind.MUSIC)
         }
     }
 
@@ -281,14 +281,35 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer) {
-        val player = exoPlayer ?: return@LaunchedEffect
+    LaunchedEffect(state.isPlaying, state.durationMs, state.playbackSpeed) {
+        val totalDur = state.durationMs.coerceAtLeast(1000L)
+        var lastTime = android.os.SystemClock.uptimeMillis()
         while (isActive) {
-            if (player.isPlaying) {
-                val pos = player.currentPosition
-                vm.setPlayerPosition(pos)
-                val tracks = state.project?.audioTracks ?: emptyList()
-                audioPlaybackManager.sync(true, pos, tracks)
+            if (state.isPlaying) {
+                val now = android.os.SystemClock.uptimeMillis()
+                val delta = now - lastTime
+                lastTime = now
+
+                val player = exoPlayer
+                val newPos = if (player != null && player.isPlaying) {
+                    player.currentPosition
+                } else {
+                    state.playerPositionMs + (delta * state.playbackSpeed).toLong()
+                }
+
+                if (newPos >= totalDur) {
+                    // Seamless loop back to 0 for continuous professional timeline playback
+                    vm.setPlayerPosition(0L)
+                    exoPlayer?.seekTo(0L)
+                    val tracks = state.project?.audioTracks ?: emptyList()
+                    audioPlaybackManager.sync(true, 0L, tracks)
+                } else {
+                    vm.setPlayerPosition(newPos)
+                    val tracks = state.project?.audioTracks ?: emptyList()
+                    audioPlaybackManager.sync(true, newPos, tracks)
+                }
+            } else {
+                lastTime = android.os.SystemClock.uptimeMillis()
             }
             delay(33)
         }
@@ -313,6 +334,11 @@ fun EditorScreen(
         TopAppBarSection(
             canUndo = state.canUndo,
             canRedo = state.canRedo,
+            resolution = state.selectedResolution,
+            onSelectResolution = { vm.setSelectedResolution(it) },
+            isCoverMode = isCoverMode,
+            onToggleCoverMode = { isCoverMode = !isCoverMode },
+            onFullscreenToggle = { vm.toggleFullscreenPreview() },
             onBack = onBack,
             onUndo = { vm.undo() },
             onRedo = { vm.redo() },
@@ -325,10 +351,6 @@ fun EditorScreen(
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 12.dp, vertical = 4.dp)
-                .clickable {
-                    railsVisible = true
-                    lastRailInteraction = System.currentTimeMillis()
-                }
         ) {
             val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
                 ?: state.project?.clips?.firstOrNull()
@@ -340,10 +362,10 @@ fun EditorScreen(
                 exoPlayer = exoPlayer,
                 chromaKeySettings = state.chromaKeySettings,
                 overlayClip = overlayClip,
-                resolution = state.selectedResolution,
+                isCoverMode = isCoverMode,
+                adjustments = state.adjustments,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
-                adjustments = state.adjustments,
                 playerError = state.playerError,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
@@ -361,8 +383,6 @@ fun EditorScreen(
                         }
                     }
                 },
-                onSelectResolution = { vm.setSelectedResolution(it) },
-                onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -397,30 +417,6 @@ fun EditorScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             )
-
-            if (railsVisible) {
-                LeftToolRail(
-                    onEffects = { vm.openFxPanel() },
-                    onFilters = { vm.openFilterPanel() },
-                    onAdjust = { vm.openAdjustmentsPanel() },
-                    onChromaKey = { vm.openChromaKeyPanel() },
-                    onText = { vm.openTextPanel() },
-                    onSticker = { vm.openStickerPanel() },
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 8.dp)
-                )
-
-                RightToolRail(
-                    onAdd = { showAddMediaMenu = true },
-                    onAudio = { vm.openAudioMixer() },
-                    onRecord = { vm.openVoiceRecorder() },
-                    onCamera = { vm.openCameraCapture() },
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 8.dp)
-                )
-            }
         }
 
         PlaybackControlBar(
@@ -747,15 +743,11 @@ fun EditorScreen(
                     muteOriginalVideo = audioState.isMuted,
                     onMuteOriginal = { vm.setMuteOriginalVideo(it) },
                     onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
-                    onPickLocalMusic = {
-                        vm.closeAudioMixer()
-                        vm.setPendingAddAsOverlay(false)
-                        vm.setPendingAddAsAudio(true)
-                        mediaPicker.pickAudioMedia.launch("audio/*")
+                    onImportLocalAudio = {
+                        audioPickerLauncher.launch("audio/*")
                     },
-                    onOpenRoyaltyMusic = {
-                        vm.closeAudioMixer()
-                        vm.openRoyaltyMusicDialog()
+                    onOpenRoyaltyFreeMusic = {
+                        showRoyaltyFreeSheet = true
                     },
                     onRemoveTrack = { vm.removeAudioTrack(it) },
                     onVolume = { trackId, vol -> vm.setAudioTrackVolume(trackId, vol) },
@@ -768,6 +760,21 @@ fun EditorScreen(
                 )
             }
         }
+    }
+
+    if (showRoyaltyFreeSheet) {
+        RoyaltyFreeMusicSheet(
+            onClose = { showRoyaltyFreeSheet = false },
+            onSelectSong = { title, filePath, durationMs ->
+                vm.addAudioTrack(
+                    name = title,
+                    uri = filePath,
+                    kind = AudioTrack.Kind.MUSIC,
+                    sourceDurationMs = durationMs
+                )
+                showRoyaltyFreeSheet = false
+            }
+        )
     }
 
     if (state.speedPanelOpen) {
@@ -852,15 +859,10 @@ fun EditorScreen(
                     currentPlayheadMs = state.playerPositionMs,
                     coverFrameMs = state.project?.coverFrameMs,
                     customCoverUri = state.project?.coverCustomUri,
-                    initialCoverText = state.coverText,
-                    initialCoverStyle = state.coverTextStyle,
                     onSelectFrameAtPlayhead = { vm.setCoverFrame(it) },
                     onSelectCustomCover = {
                         mediaPicker.pickSingleMedia.launch("image/*")
                         vm.closeCoverPanel()
-                    },
-                    onSaveCoverWords = { text, style ->
-                        vm.saveCoverWords(text, style)
                     },
                     onClose = { vm.closeCoverPanel() }
                 )
@@ -890,18 +892,12 @@ fun EditorScreen(
     }
 
     if (state.royaltyMusicDialogOpen) {
-        RoyaltyMusicDialog(
-            onSelectTrack = { track ->
-                vm.addRoyaltyTrack(track)
+        RoyaltyFreeMusicSheet(
+            onClose = { vm.closeRoyaltyMusicDialog() },
+            onSelectSong = { title, filePath, durationMs ->
+                vm.addRoyaltyTrack(title, filePath, durationMs)
                 vm.closeRoyaltyMusicDialog()
-            },
-            onUploadLocal = {
-                vm.closeRoyaltyMusicDialog()
-                vm.setPendingAddAsOverlay(false)
-                vm.setPendingAddAsAudio(true)
-                mediaPicker.pickAudioMedia.launch("audio/*")
-            },
-            onClose = { vm.closeRoyaltyMusicDialog() }
+            }
         )
     }
 
@@ -986,12 +982,19 @@ fun EditorScreen(
 fun TopAppBarSection(
     canUndo: Boolean = false,
     canRedo: Boolean = false,
+    resolution: String = "1080P",
+    onSelectResolution: (String) -> Unit = {},
+    isCoverMode: Boolean = true,
+    onToggleCoverMode: () -> Unit = {},
+    onFullscreenToggle: () -> Unit = {},
     onBack: () -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
     onHelp: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
+    var showResolutionDropdown by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1044,63 +1047,94 @@ fun TopAppBarSection(
             }
         }
 
-        // Right side: Pro badge + 1080P dropdown + Export button
+        // Right side: Fit/Cover toggle + Fullscreen + Resolution dropdown + Export button
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Pro Crown Badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF231B38))
-                    .border(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .clickable(onClick = onHelp)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.WorkspacePremium,
-                        contentDescription = "Pro",
-                        tint = Color(0xFFFBBF24),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "Pro",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            // 1080P Resolution Tag
+            // Fit / Cover Mode Toggle Button
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF1B1B26))
-                    .clickable(onClick = onExport)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(8.dp))
+                    .clickable(onClick = onToggleCoverMode)
+                    .padding(horizontal = 7.dp, vertical = 5.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                Text(
+                    text = if (isCoverMode) "COVER" else "FIT",
+                    color = Color(0xFFD1D5DB),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Fullscreen Preview Toggle
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Color(0xFF1B1B26))
+                    .border(1.dp, Color(0xFF2E2E40), CircleShape)
+                    .clickable(onClick = onFullscreenToggle)
+                    .padding(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fullscreen,
+                    contentDescription = "Fullscreen",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Resolution Dropdown
+            Box {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1B1B26))
+                        .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(8.dp))
+                        .clickable { showResolutionDropdown = true }
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
                 ) {
-                    Text(
-                        text = "1080P",
-                        color = Color(0xFFD1D5DB),
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.sp
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Quality",
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(14.dp)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = resolution,
+                            color = Color(0xFFD1D5DB),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Resolution",
+                            tint = Color(0xFF9CA3AF),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showResolutionDropdown,
+                    onDismissRequest = { showResolutionDropdown = false },
+                    modifier = Modifier.background(ApexPalette.BgElevated)
+                ) {
+                    listOf("720P", "1080P", "1440P", "4K").forEach { res ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = res,
+                                    color = if (res == resolution) Color(0xFF8B5CF6) else Color.White,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            onClick = {
+                                onSelectResolution(res)
+                                showResolutionDropdown = false
+                            }
+                        )
+                    }
                 }
             }
 
@@ -1146,10 +1180,10 @@ fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
     chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     overlayClip: MediaClip? = null,
-    resolution: String = "1080P",
-    activeFilterId: String? = null,
-    filterIntensity: Float = 0f,
+    isCoverMode: Boolean = true,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+    activeFilterId: String? = null,
+    filterIntensity: Float = 1.0f,
     playerError: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
@@ -1165,12 +1199,8 @@ fun VideoPreviewArea(
     onEditTextOverlay: ((String) -> Unit)? = null,
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
-    onSelectResolution: (String) -> Unit = {},
-    onFullscreenToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showResolutionDropdown by remember { mutableStateOf(false) }
-    var isCoverMode by remember { mutableStateOf(true) }
     val currentResizeMode = if (isCoverMode) {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     } else {
@@ -1322,116 +1352,6 @@ fun VideoPreviewArea(
                         }
                     }
                 }
-            }
-        }
-
-        // Top-Left Pill: Resolution Dropdown
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .clickable { showResolutionDropdown = true }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = resolution,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            androidx.compose.material3.DropdownMenu(
-                expanded = showResolutionDropdown,
-                onDismissRequest = { showResolutionDropdown = false },
-                modifier = Modifier.background(ApexPalette.BgElevated)
-            ) {
-                listOf("720P", "1080P", "1440P", "4K").forEach { res ->
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = res,
-                                color = if (res == resolution) Color(0xFF8B5CF6) else Color.White,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        onClick = {
-                            onSelectResolution(res)
-                            showResolutionDropdown = false
-                        }
-                    )
-                }
-            }
-        }
-
-        // Top-Right: Active filter / FX status indicator chip, Fit/Cover mode & Fullscreen toggle
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Fit / Cover Mode Toggle Button
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .clickable { isCoverMode = !isCoverMode }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = if (isCoverMode) "COVER" else "FIT",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (activeFilterId != null || activeFxId != null) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = if (activeFxId != null) "FX: ${activeFxId.uppercase()}" else "FILTER",
-                        color = Color(0xFF8B5CF6),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .clickable(onClick = onFullscreenToggle)
-                    .padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Fullscreen,
-                    contentDescription = "Expand",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -1740,16 +1660,6 @@ fun TimelineTrackArea(
                     contentDesc = "Text Track",
                     tint = Color(0xFFA78BFA),
                     onClick = onOpenText
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                // Effects Track Icon
-                TrackSidebarIcon(
-                    icon = Icons.Default.AutoAwesome,
-                    contentDesc = "Effects Track",
-                    tint = Color(0xFF60A5FA),
-                    onClick = onOpenFx
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -2108,153 +2018,21 @@ fun TimelineTrackArea(
 
                     Spacer(Modifier.height(6.dp))
 
-                    // Track 3: Real FX Shaders (10) & Color Grading Presets (12) Track
-                    val fxShaders = remember {
-                        listOf(
-                            "rgb_jitter" to "RGB Jitter",
-                            "vhs" to "VHS Glitch",
-                            "pixel_sort" to "Pixel Sort",
-                            "datamosh" to "Datamosh",
-                            "halftone" to "Halftone",
-                            "neon_edge" to "Neon Edge",
-                            "vignette" to "Vignette",
-                            "film_grain" to "Film Grain",
-                            "thermal_vision" to "Thermal",
-                            "radial_blur" to "Radial Blur"
-                        )
-                    }
-                    val colorPresets = remember {
-                        listOf(
-                            "teal_orange" to "Teal & Orange",
-                            "hollywood" to "Hollywood",
-                            "moody_blockbuster" to "Moody",
-                            "matrix_green" to "Matrix",
-                            "kodak_35mm" to "Kodak 35mm",
-                            "fuji_chrome" to "Fuji Chrome",
-                            "vintage_sepia" to "Vintage Sepia",
-                            "super_8" to "Super 8",
-                            "neon_purple" to "Neon Purple",
-                            "cyan_glow" to "Cyan Glow",
-                            "synthwave_pink" to "Synthwave",
-                            "hdr_filter" to "HDR Ultra"
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(34.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Track Header: Opens full FX / Filter panel
-                        Box(
-                            modifier = Modifier
-                                .height(34.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF3B82F6).copy(alpha = 0.9f))
-                                .clickable(onClick = onOpenFx)
-                                .padding(horizontal = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "FX",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "FX / Grade",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        // Scrollable Row of 10 FX Shaders & 12 Color Presets
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(34.dp)
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 10 Distinct FX Shaders
-                            fxShaders.forEach { (id, label) ->
-                                val isSelected = state.activeFxId == id
-                                Box(
-                                    modifier = Modifier
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            if (isSelected) Color(0xFF00F0FF).copy(alpha = 0.35f)
-                                            else Color(0xFF1E1E2C)
-                                        )
-                                        .border(
-                                            1.dp,
-                                            if (isSelected) Color(0xFF00F0FF) else Color(0xFF2E2E3E),
-                                            RoundedCornerShape(6.dp)
-                                        )
-                                        .clickable { onSelectFx(id) }
-                                        .padding(horizontal = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "⚡ $label",
-                                        color = if (isSelected) Color(0xFF00F0FF) else Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                }
-                            }
-
-                            // 12 Color Grading Presets
-                            colorPresets.forEach { (id, label) ->
-                                val isSelected = state.activeFilterId == id
-                                Box(
-                                    modifier = Modifier
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            if (isSelected) Color(0xFFFF007F).copy(alpha = 0.35f)
-                                            else Color(0xFF1E1E2C)
-                                        )
-                                        .border(
-                                            1.dp,
-                                            if (isSelected) Color(0xFFFF007F) else Color(0xFF2E2E3E),
-                                            RoundedCornerShape(6.dp)
-                                        )
-                                        .clickable { onSelectFilter(id) }
-                                        .padding(horizontal = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "🎨 $label",
-                                        color = if (isSelected) Color(0xFFFF007F) else Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(6.dp))
-
-                    // Track 4: Audio Track with Real Waveform (Matches green pill in reference image)
-                    val audioName = state.project?.audioTracks?.firstOrNull()?.name ?: "Background Music.mp3"
+                    // Track 3: Professional Audio Track (A1) with Synchronized Animated Waveform
+                    val audioTrack = state.project?.audioTracks?.firstOrNull()
+                    val audioName = audioTrack?.name ?: "Background Music.mp3"
+                    val audioDurSec = ((audioTrack?.trimEndMs ?: state.durationMs) / 1000L).coerceAtLeast(1L)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(36.dp)
+                            .height(40.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF10B981).copy(alpha = 0.85f))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFF059669), Color(0xFF10B981))
+                                )
+                            )
+                            .border(1.dp, Color(0xFF34D399).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                             .clickable(onClick = onOpenAudio)
                             .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.CenterStart
@@ -2268,11 +2046,24 @@ fun TimelineTrackArea(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "A1",
+                                        color = Color(0xFFA7F3D0),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                                 Icon(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = "Audio",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Text(
                                     text = audioName,
@@ -2281,21 +2072,38 @@ fun TimelineTrackArea(
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1
                                 )
+                                Text(
+                                    text = "${audioDurSec}s",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 10.sp
+                                )
                             }
 
-                            // Real Visual Waveform Bars inside Audio Pill
+                            // Dynamic Second-by-Second Waveform Bars synced to playhead
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                repeat(28) { i ->
-                                    val hFrac = if (i % 5 == 0) 0.85f else if (i % 3 == 0) 0.6f else if (i % 2 == 0) 0.4f else 0.25f
+                                repeat(36) { i ->
+                                    val barFrac = i / 36f
+                                    val isPlayed = barFrac <= progress
+                                    val hFrac = when {
+                                        i % 6 == 0 -> 0.9f
+                                        i % 4 == 0 -> 0.7f
+                                        i % 3 == 0 -> 0.5f
+                                        i % 2 == 0 -> 0.35f
+                                        else -> 0.2f
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .width(2.dp)
-                                            .height(24.dp * hFrac)
-                                            .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(1.dp))
+                                            .height(26.dp * hFrac)
+                                            .background(
+                                                if (isPlayed) Color.White
+                                                else Color.White.copy(alpha = 0.35f),
+                                                RoundedCornerShape(1.dp)
+                                            )
                                     )
                                 }
                             }

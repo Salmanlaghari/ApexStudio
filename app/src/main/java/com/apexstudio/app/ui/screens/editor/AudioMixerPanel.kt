@@ -73,8 +73,6 @@ fun AudioMixerPanel(
     muteOriginalVideo: Boolean,
     onMuteOriginal: (Boolean) -> Unit,
     onAddTrack: (name: String, uri: String, kind: AudioTrack.Kind) -> Unit,
-    onPickLocalMusic: () -> Unit,
-    onOpenRoyaltyMusic: () -> Unit,
     onRemoveTrack: (trackId: String) -> Unit,
     onVolume: (trackId: String, vol: Float) -> Unit,
     onMute: (trackId: String) -> Unit,
@@ -82,6 +80,8 @@ fun AudioMixerPanel(
     onTrim: (trackId: String, startMs: Long, endMs: Long) -> Unit,
     onFadeIn: (trackId: String, ms: Long) -> Unit,
     onFadeOut: (trackId: String, ms: Long) -> Unit,
+    onImportLocalAudio: () -> Unit = {},
+    onOpenRoyaltyFreeMusic: () -> Unit = {},
     onClose: () -> Unit
 ) {
     Column(
@@ -161,27 +161,16 @@ fun AudioMixerPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(modifier = Modifier.weight(1f)) {
-                AddTrackButton(
-                    label = "+ Local Music",
-                    icon = Icons.Default.MusicNote,
-                    onClick = onPickLocalMusic
-                )
-            }
-            Box(modifier = Modifier.weight(1f)) {
-                AddTrackButton(
-                    label = "+ Free Royalty",
-                    icon = Icons.Default.GraphicEq,
-                    onClick = onOpenRoyaltyMusic
-                )
-            }
-            Box(modifier = Modifier.weight(1f)) {
-                AddTrackButton(
-                    label = "+ SFX",
-                    icon = Icons.Default.Mic,
-                    onClick = { onAddTrack("SFX", "sfx://placeholder", AudioTrack.Kind.SFX) }
-                )
-            }
+            AddTrackButton(
+                label = "Import Local Audio",
+                icon = Icons.Default.MusicNote,
+                onClick = onImportLocalAudio
+            )
+            AddTrackButton(
+                label = "Royalty-Free Library",
+                icon = Icons.Default.GraphicEq,
+                onClick = onOpenRoyaltyFreeMusic
+            )
         }
     }
 }

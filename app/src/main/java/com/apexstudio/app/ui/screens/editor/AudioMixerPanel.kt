@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Mic
@@ -118,7 +119,30 @@ fun AudioMixerPanel(
             color = ApexPalette.TextSecondary,
             fontSize = 12.sp
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
+
+        // --- Top Quick-Access Buttons: Local Audio & Free Royalty Music (Immediately visible at top) ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AddTrackButton(
+                label = "Local Audio",
+                icon = Icons.Default.FolderOpen,
+                accent = ApexPalette.NeonCyan,
+                modifier = Modifier.weight(1f),
+                onClick = onImportLocalAudio
+            )
+            AddTrackButton(
+                label = "Free Royalty Music",
+                icon = Icons.Default.GraphicEq,
+                accent = ApexPalette.NeonPurple,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenRoyaltyFreeMusic
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
 
         // --- Original video audio row (synthetic, no track id) ---
         AudioMixerRow(
@@ -154,23 +178,6 @@ fun AudioMixerPanel(
                     onFadeOut = { onFadeOut(track.id, it) }
                 )
             }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AddTrackButton(
-                label = "Import Local Audio",
-                icon = Icons.Default.MusicNote,
-                onClick = onImportLocalAudio
-            )
-            AddTrackButton(
-                label = "Royalty-Free Library",
-                icon = Icons.Default.GraphicEq,
-                onClick = onOpenRoyaltyFreeMusic
-            )
         }
     }
 }
@@ -316,19 +323,29 @@ private fun FadeField(label: String, ms: Long, accent: Color, onChange: (Long) -
 }
 
 @Composable
-private fun AddTrackButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+private fun AddTrackButton(
+    label: String,
+    icon: ImageVector,
+    accent: Color = ApexPalette.NeonCyan,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(ApexPalette.NeonCyan.copy(alpha = 0.10f))
-            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+            .background(accent.copy(alpha = 0.12f))
+            .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(16.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
-            Text(label, color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(label, color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

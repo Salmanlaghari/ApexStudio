@@ -76,6 +76,7 @@ import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -94,6 +95,7 @@ fun EditorScreen(
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
@@ -357,6 +359,7 @@ fun EditorScreen(
             val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
             val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
             val textOverlays = selectedClip?.textOverlays ?: emptyList()
+            var showUpcomingPreview by remember { mutableStateOf(false) }
 
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
@@ -370,6 +373,9 @@ fun EditorScreen(
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
                 isPlaying = state.isPlaying,
+                onTapVideo = {
+                    showUpcomingPreview = true
+                },
                 onRetryLoad = {
                     exoPlayer?.let { player ->
                         vm.setPlayerError(null)
@@ -416,6 +422,26 @@ fun EditorScreen(
                     selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
                 },
                 modifier = Modifier.fillMaxSize()
+            )
+
+            // Upcoming frames preview overlay triggered on screen tap
+            UpcomingFramesPreviewOverlay(
+                visible = showUpcomingPreview,
+                videoUri = selectedClip?.uri,
+                currentTimeMs = state.playerPositionMs,
+                durationMs = state.durationMs,
+                onSeekTo = { seekPlayerAndState(it) },
+                onPlayPreviewSnippet = {
+                    scope.launch {
+                        if (!state.isPlaying) vm.togglePlay()
+                        delay(3000L)
+                        if (state.isPlaying) vm.togglePlay()
+                    }
+                },
+                onDismiss = { showUpcomingPreview = false },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp)
             )
         }
 
@@ -1199,6 +1225,7 @@ fun VideoPreviewArea(
     onEditTextOverlay: ((String) -> Unit)? = null,
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
+    onTapVideo: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentResizeMode = if (isCoverMode) {
@@ -1212,7 +1239,12 @@ fun VideoPreviewArea(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF12121A))
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp)),
+            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onTapVideo() }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
         if (exoPlayer != null) {
@@ -1576,28 +1608,66 @@ fun TimelineTrackArea(
     val durationMs = state.durationMs.coerceAtLeast(1000L)
     val playheadMs = state.playerPositionMs.coerceIn(0L, durationMs)
 
-    // Real extracted video frames for filmstrip
+    // Per-second extracted video frames for synchronized scrubbing
+    var perSecondThumbnails by remember(activeClip?.id, activeClip?.uri) {
+        mutableStateOf<Map<Int, Bitmap>>(emptyMap())
+    }
     var extractedThumbnails by remember(activeClip?.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
+
     LaunchedEffect(activeClip?.id, activeClip?.uri, activeClip?.trimStartMs, activeClip?.trimEndMs) {
         val uri = activeClip?.uri
         if (uri != null) {
             try {
                 val trimStart = activeClip.trimStartMs
                 val trimEnd = if (activeClip.trimEndMs > trimStart) activeClip.trimEndMs else (activeClip.durationMs).coerceAtLeast(1000L)
-                val frames = ThumbnailExtractor.extractFrames(
+                val map = ThumbnailExtractor.extractPerSecondFrames(
                     context = context,
                     uri = uri,
                     trimStartMs = trimStart,
                     trimEndMs = trimEnd,
                     frameWidthPx = 120,
                     frameHeightPx = 80,
-                    frameCount = 6
+                    maxSeconds = 20
                 )
-                if (frames.isNotEmpty()) {
+                perSecondThumbnails = map
+                if (map.isNotEmpty()) {
+                    extractedThumbnails = map.values.toList()
+                } else {
+                    val frames = ThumbnailExtractor.extractFrames(
+                        context = context,
+                        uri = uri,
+                        trimStartMs = trimStart,
+                        trimEndMs = trimEnd,
+                        frameWidthPx = 120,
+                        frameHeightPx = 80,
+                        frameCount = 6
+                    )
                     extractedThumbnails = frames
                 }
             } catch (e: Exception) {
                 Log.w("TimelineTrackArea", "Thumbnail extraction fallback: ${e.message}")
+            }
+        }
+    }
+
+    // Dynamic Scrub Thumbnail synced to active playhead second
+    val currentSecond = ((playheadMs - (activeClip?.trimStartMs ?: 0L)).coerceAtLeast(0L) / 1000L).toInt()
+    var activeScrubThumbnail by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(currentSecond, activeClip?.uri) {
+        val thumb = perSecondThumbnails[currentSecond]
+        if (thumb != null) {
+            activeScrubThumbnail = thumb
+        } else {
+            val uri = activeClip?.uri
+            if (uri != null) {
+                try {
+                    val frame = com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
+                        context,
+                        uri,
+                        (activeClip.trimStartMs + currentSecond * 1000L).coerceIn(0L, durationMs)
+                    )
+                    if (frame != null) activeScrubThumbnail = frame
+                } catch (_: Exception) {}
             }
         }
     }
@@ -1615,10 +1685,10 @@ fun TimelineTrackArea(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            // --- 1. LEFT TRACK TYPE ICON SIDEBAR (Matches Reference Image) ---
+            // --- 1. LEFT TRACK TYPE ICON SIDEBAR (Clear Distinct Icon + Label + Badge for V2, V1, TXT, FX, A1) ---
             Column(
                 modifier = Modifier
-                    .width(46.dp)
+                    .width(58.dp)
                     .fillMaxHeight()
                     .background(Color(0xFF0C0C14))
                     .border(width = 1.dp, color = Color(0xFF1B1B28)),
@@ -1634,41 +1704,82 @@ fun TimelineTrackArea(
                         .clickable(onClick = onToggleSnapToBeat),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = if (state.snapToBeat) "Snap to Beat: ON" else "Snap to Beat: OFF",
-                        tint = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
-                        modifier = Modifier.size(13.dp)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Straighten,
+                            contentDescription = if (state.snapToBeat) "Snap to Beat: ON" else "Snap to Beat: OFF",
+                            tint = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Text(
+                            text = "SNAP",
+                            color = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(4.dp))
 
-                // Video Track Icon
-                TrackSidebarIcon(
+                // Track 1: V2 (Overlay Video) Icon & Label
+                TrackSidebarCell(
+                    badge = "V2",
+                    label = "Overlay",
+                    icon = Icons.Default.Layers,
+                    tint = Color(0xFF00E5FF),
+                    height = 34.dp,
+                    onClick = onAddMedia
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Track 2: V1 (Main Video) Icon & Label
+                TrackSidebarCell(
+                    badge = "V1",
+                    label = "Video",
                     icon = Icons.Default.Movie,
-                    contentDesc = "Video Track",
-                    tint = Color.White,
+                    tint = Color(0xFF38BDF8),
+                    height = 48.dp,
                     onClick = { activeClip?.let { onSelectClip(it.id) } }
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
 
-                // Text Track Icon
-                TrackSidebarIcon(
+                // Track 3: TXT (Text & Stickers) Icon & Label
+                TrackSidebarCell(
+                    badge = "TXT",
+                    label = "Text",
                     icon = Icons.Default.TextFields,
-                    contentDesc = "Text Track",
-                    tint = Color(0xFFA78BFA),
+                    tint = Color(0xFFA855F7),
+                    height = 34.dp,
                     onClick = onOpenText
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
 
-                // Audio Track Icon
-                TrackSidebarIcon(
-                    icon = Icons.Default.MusicNote,
-                    contentDesc = "Audio Track",
-                    tint = Color(0xFF34D399),
+                // Track 4: FX (Effects & Filters) Icon & Label
+                TrackSidebarCell(
+                    badge = "FX",
+                    label = "Effects",
+                    icon = Icons.Default.AutoAwesome,
+                    tint = Color(0xFFF59E0B),
+                    height = 34.dp,
+                    onClick = onOpenFx
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Track 5: A1 (Audio Track) Icon & Label
+                TrackSidebarCell(
+                    badge = "A1",
+                    label = "Audio",
+                    icon = Icons.Default.GraphicEq,
+                    tint = Color(0xFF10B981),
+                    height = 38.dp,
                     onClick = onOpenAudio
                 )
             }
@@ -1756,28 +1867,94 @@ fun TimelineTrackArea(
 
                     Spacer(Modifier.height(4.dp))
 
-                    // Track 1: Video Filmstrip with Transition buttons between clips + Add button
+                    // Track 1: V2 (Second Video / Overlay / PIP Track)
+                    val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (overlayClip != null) Color(0xFF0C2B38) else Color(0xFF0E141D))
+                            .border(
+                                width = 1.dp,
+                                color = if (overlayClip != null) Color(0xFF00E5FF).copy(alpha = 0.7f) else Color(0xFF00E5FF).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                if (overlayClip != null) onSelectClip(overlayClip.id) else onAddMedia()
+                            }
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (overlayClip != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF00E5FF).copy(alpha = 0.3f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text("V2", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Icon(Icons.Default.Layers, contentDescription = "Overlay", tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
+                                Text(
+                                    text = overlayClip.name.ifEmpty { "PIP Video Overlay" },
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "${overlayClip.durationMs / 1000L}s",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(14.dp))
+                                Text(
+                                    text = "+ Add Video / PIP Overlay (V2)",
+                                    color = Color(0xFF67E8F9),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Track 2: V1 Main Video Filmstrip Track with Per-Second Scrubbing Thumbnails
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Clips Filmstrip Row
-                        val displayClips = if (clips.isNotEmpty()) clips else listOf(
-                            MediaClip(
-                                id = "clip_default",
-                                name = "Main Video",
-                                uri = "",
-                                durationMs = durationMs,
-                                trimStartMs = 0L,
-                                trimEndMs = durationMs
+                        val displayClips = clips.filter { it.type == ClipType.VIDEO }.ifEmpty {
+                            activeClip?.let { listOf(it) } ?: listOf(
+                                MediaClip(
+                                    id = "default_clip",
+                                    uri = "",
+                                    name = "Sample Video",
+                                    durationMs = durationMs,
+                                    trimEndMs = durationMs
+                                )
                             )
-                        )
+                        }
 
                         displayClips.forEachIndexed { index, clip ->
                             val isSelected = clip.id == activeClip?.id
-                            // Video Clip Filmstrip Box
+                            val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
+                            val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 14)
+
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
@@ -1792,47 +1969,62 @@ fun TimelineTrackArea(
                                     .clickable { onSelectClip(clip.id) }
                                     .padding(2.dp)
                             ) {
-                                if (extractedThumbnails.isNotEmpty() && isSelected) {
-                                    Row(modifier = Modifier.fillMaxSize()) {
-                                        extractedThumbnails.forEach { bmp ->
-                                            Image(
-                                                bitmap = bmp.asImageBitmap(),
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .fillMaxHeight()
-                                                    .padding(horizontal = 0.5.dp)
-                                                    .clip(RoundedCornerShape(3.dp))
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Row(modifier = Modifier.fillMaxSize()) {
-                                        repeat(5) { idx ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .fillMaxHeight()
-                                                    .padding(horizontal = 0.5.dp)
-                                                    .background(
-                                                        Brush.linearGradient(
-                                                            listOf(
-                                                                Color(0xFF1E1B4B + idx * 0x040306),
-                                                                Color(0xFF311042 + idx * 0x030205)
-                                                            )
-                                                        ),
-                                                        RoundedCornerShape(3.dp)
-                                                    ),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Movie,
-                                                    contentDescription = null,
-                                                    tint = Color.White.copy(alpha = 0.2f),
-                                                    modifier = Modifier.size(12.dp)
+                                // Filmstrip divided into synchronized per-second slices
+                                Row(modifier = Modifier.fillMaxSize()) {
+                                    for (sec in 0 until totalSec) {
+                                        val isActiveSec = isSelected && sec == currentSecond
+                                        val frameBmp = perSecondThumbnails[sec]
+                                            ?: extractedThumbnails.getOrNull(sec % extractedThumbnails.size.coerceAtLeast(1))
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .padding(horizontal = 0.5.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(
+                                                    if (isActiveSec) Color(0xFF0284C7).copy(alpha = 0.35f)
+                                                    else Color(0xFF1E1B4B + (sec % 4) * 0x050408)
                                                 )
+                                                .border(
+                                                    width = if (isActiveSec) 1.5.dp else 0.dp,
+                                                    color = if (isActiveSec) Color(0xFF38BDF8) else Color.Transparent,
+                                                    shape = RoundedCornerShape(3.dp)
+                                                )
+                                        ) {
+                                            if (frameBmp != null) {
+                                                Image(
+                                                    bitmap = frameBmp.asImageBitmap(),
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Movie,
+                                                        contentDescription = null,
+                                                        tint = Color.White.copy(alpha = 0.2f),
+                                                        modifier = Modifier.size(10.dp)
+                                                    )
+                                                }
                                             }
+
+                                            // Second indicator tag at bottom of frame slice
+                                            Text(
+                                                text = "${sec}s",
+                                                color = if (isActiveSec) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.6f),
+                                                fontSize = 7.sp,
+                                                fontWeight = if (isActiveSec) FontWeight.Bold else FontWeight.Normal,
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomStart)
+                                                    .padding(1.dp)
+                                                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(2.dp))
+                                                    .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -1851,25 +2043,7 @@ fun TimelineTrackArea(
                                         .padding(horizontal = 3.dp, vertical = 1.dp)
                                 )
 
-                                // Trim Handles when selected
-                                if (isSelected) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.CenterStart)
-                                            .width(4.dp)
-                                            .fillMaxHeight(0.6f)
-                                            .background(Color.White, RoundedCornerShape(2.dp))
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.CenterEnd)
-                                            .width(4.dp)
-                                            .fillMaxHeight(0.6f)
-                                            .background(Color.White, RoundedCornerShape(2.dp))
-                                    )
-                                }
-
-                                // Keyframe Diamonds rendered on Clip
+                                // Keyframe Diamonds on Clip
                                 if (clip.keyframes.keyframes.isNotEmpty()) {
                                     BoxWithConstraints(modifier = Modifier.matchParentSize()) {
                                         val boxWidth = maxWidth
@@ -1879,24 +2053,24 @@ fun TimelineTrackArea(
                                             val kfX = (boxWidth.value * frac).dp
                                             Box(
                                                 modifier = Modifier
-                                                    .offset(x = (kfX - 5.dp).coerceAtLeast(0.dp), y = 26.dp)
-                                                    .size(10.dp)
-                                                    .graphicsLayer { rotationZ = 45f }
-                                                    .background(ApexPalette.NeonCyan, RoundedCornerShape(2.dp))
-                                                    .border(1.dp, Color.White, RoundedCornerShape(2.dp))
-                                                    .clickable { onScrub(clip.trimStartMs + kf.timeMs) }
+                                                    .offset(x = (kfX - 4.dp).coerceAtLeast(0.dp), y = 24.dp)
+                                                .size(8.dp)
+                                                .graphicsLayer { rotationZ = 45f }
+                                                .background(ApexPalette.NeonCyan, RoundedCornerShape(2.dp))
+                                                .border(1.dp, Color.White, RoundedCornerShape(2.dp))
+                                                .clickable { onScrub(clip.trimStartMs + kf.timeMs) }
                                             )
                                         }
                                     }
                                 }
                             }
 
-                            // Transition Button between adjacent clips [ ⟐ ]
+                            // Transition Button between adjacent clips
                             if (index < displayClips.lastIndex) {
                                 Spacer(Modifier.width(4.dp))
                                 Box(
                                     modifier = Modifier
-                                        .size(24.dp)
+                                        .size(22.dp)
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(Color(0xFF262638))
                                         .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(6.dp))
@@ -1907,7 +2081,7 @@ fun TimelineTrackArea(
                                         imageVector = Icons.Default.Shuffle,
                                         contentDescription = "Transition",
                                         tint = Color(0xFF60A5FA),
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
                                 Spacer(Modifier.width(4.dp))
@@ -1919,7 +2093,7 @@ fun TimelineTrackArea(
                         // Add Media "+" Button
                         Box(
                             modifier = Modifier
-                                .size(28.dp)
+                                .size(26.dp)
                                 .clip(CircleShape)
                                 .background(Color.White)
                                 .clickable(onClick = onAddMedia),
@@ -1929,110 +2103,184 @@ fun TimelineTrackArea(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add Media",
                                 tint = Color.Black,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
 
-                    // Track 2: Text Pill Track (Matches purple pill in reference image)
+                    // Track 3: Text & Stickers Overlay Track (TXT / STK)
                     val textOverlays = activeClip?.textOverlays ?: emptyList()
-                    val textLabel = textOverlays.firstOrNull()?.text ?: "Create Without Limits"
+                    val allStickers = (state.project?.stickers ?: emptyList()) + (activeClip?.stickers ?: emptyList())
+                    val hasTextOrSticker = textOverlays.isNotEmpty() || allStickers.isNotEmpty()
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(34.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF8B5CF6).copy(alpha = 0.85f))
+                            .background(if (hasTextOrSticker) Color(0xFF581C87).copy(alpha = 0.85f) else Color(0xFF140E24))
+                            .border(
+                                width = 1.dp,
+                                color = if (hasTextOrSticker) Color(0xFFA855F7).copy(alpha = 0.7f) else Color(0xFFA855F7).copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
                             .clickable(onClick = onOpenText)
                             .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.TextFields,
-                                contentDescription = "Text",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = textLabel,
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1
-                            )
-                        }
-                    }
-
-                    // Track 2.5: Stickers Track
-                    val allStickers = (state.project?.stickers ?: emptyList()) + (activeClip?.stickers ?: emptyList())
-                    if (allStickers.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFEC4899).copy(alpha = 0.85f))
-                                .clickable(onClick = onOpenStickers)
-                                .padding(horizontal = 10.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
+                        if (hasTextOrSticker) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.EmojiEmotions,
-                                    contentDescription = "Stickers",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
                                 ) {
-                                    allStickers.take(6).forEach { sticker ->
-                                        Text(
-                                            text = sticker.symbolOrUri,
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                    if (allStickers.size > 6) {
-                                        Text(
-                                            text = "+${allStickers.size - 6}",
-                                            color = Color.White,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                    Text("TXT", color = Color(0xFFE9D5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.TextFields,
+                                    contentDescription = "Text",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                val label = textOverlays.firstOrNull()?.text ?: "Text Overlay"
+                                Text(
+                                    text = label,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                                if (allStickers.isNotEmpty()) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        allStickers.take(4).forEach { sticker ->
+                                            Text(text = sticker.symbolOrUri, fontSize = 12.sp)
+                                        }
                                     }
                                 }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(14.dp))
+                                Text(
+                                    text = "+ Add Text or Stickers (TXT)",
+                                    color = Color(0xFFD8B4FE),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
 
-                    // Track 3: Professional Audio Track (A1) with Synchronized Animated Waveform
+                    // Track 4: FX (Effects & Filters Track)
+                    val hasFx = state.activeFxId != null || state.activeFilterId != null || state.chromaKeySettings.enabled
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (hasFx) Color(0xFF78350F).copy(alpha = 0.85f) else Color(0xFF1E1408))
+                            .border(
+                                width = 1.dp,
+                                color = if (hasFx) Color(0xFFF59E0B).copy(alpha = 0.7f) else Color(0xFFF59E0B).copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(onClick = onOpenFx)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (hasFx) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text("FX", color = Color(0xFFFDE68A), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "FX",
+                                    tint = Color(0xFFFBBF24),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                val fxLabel = when {
+                                    state.activeFxId != null -> "FX: ${state.activeFxId!!.uppercase()}"
+                                    state.activeFilterId != null -> "FILTER: ${state.activeFilterId!!.uppercase()}"
+                                    else -> "CHROMA KEY (3D)"
+                                }
+                                Text(
+                                    text = fxLabel,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(Color.Black.copy(alpha = 0.4f))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "${(state.fxIntensity * 100).toInt()}%",
+                                        color = Color(0xFFFDE68A),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(14.dp))
+                                Text(
+                                    text = "+ Add Visual FX & Filters (FX)",
+                                    color = Color(0xFFFDE68A),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Track 5: A1 (Audio Track)
                     val audioTrack = state.project?.audioTracks?.firstOrNull()
                     val audioName = audioTrack?.name ?: "Background Music.mp3"
                     val audioDurSec = ((audioTrack?.trimEndMs ?: state.durationMs) / 1000L).coerceAtLeast(1L)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(40.dp)
+                            .height(38.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(Color(0xFF059669), Color(0xFF10B981))
+                                    listOf(Color(0xFF047857), Color(0xFF059669))
                                 )
                             )
-                            .border(1.dp, Color(0xFF34D399).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                             .clickable(onClick = onOpenAudio)
                             .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.CenterStart
@@ -2060,7 +2308,7 @@ fun TimelineTrackArea(
                                     )
                                 }
                                 Icon(
-                                    imageVector = Icons.Default.MusicNote,
+                                    imageVector = Icons.Default.GraphicEq,
                                     contentDescription = "Audio",
                                     tint = Color.White,
                                     modifier = Modifier.size(15.dp)
@@ -2085,20 +2333,20 @@ fun TimelineTrackArea(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                repeat(36) { i ->
-                                    val barFrac = i / 36f
+                                repeat(32) { i ->
+                                    val barFrac = i / 32f
                                     val isPlayed = barFrac <= progress
                                     val hFrac = when {
-                                        i % 6 == 0 -> 0.9f
-                                        i % 4 == 0 -> 0.7f
-                                        i % 3 == 0 -> 0.5f
-                                        i % 2 == 0 -> 0.35f
+                                        i % 6 == 0 -> 0.85f
+                                        i % 4 == 0 -> 0.65f
+                                        i % 3 == 0 -> 0.45f
+                                        i % 2 == 0 -> 0.3f
                                         else -> 0.2f
                                     }
                                     Box(
                                         modifier = Modifier
                                             .width(2.dp)
-                                            .height(26.dp * hFrac)
+                                            .height(24.dp * hFrac)
                                             .background(
                                                 if (isPlayed) Color.White
                                                 else Color.White.copy(alpha = 0.35f),
@@ -2111,7 +2359,7 @@ fun TimelineTrackArea(
                     }
                 }
 
-                // --- UNIFIED VERTICAL PLAYHEAD LINE WITH TIMESTAMP BADGE ---
+                // --- UNIFIED VERTICAL PLAYHEAD LINE WITH TIMESTAMP BADGE & DYNAMIC PER-SECOND SCRUB THUMBNAIL ---
                 val headX = (containerWidth.value * progress).dp
                 Box(
                     modifier = Modifier
@@ -2121,22 +2369,57 @@ fun TimelineTrackArea(
                         .background(Color.White)
                 )
 
-                // Timestamp Badge at the top of the playhead (Matches reference image, e.g. 00:15)
-                Box(
-                    modifier = Modifier
-                        .offset(x = (headX - 18.dp).coerceAtLeast(0.dp), y = 0.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.White)
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = TimeFormat.msToShort(playheadMs),
-                        color = Color.Black,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
+                // Floating Active Scrub Thumbnail Card right above playhead badge
+                if (activeScrubThumbnail != null) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = (headX - 26.dp).coerceIn(0.dp, (containerWidth.value - 54).dp), y = 0.dp)
+                            .size(52.dp, 30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.Black)
+                            .border(1.5.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    ) {
+                        Image(
+                            bitmap = activeScrubThumbnail!!.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.8f))
+                                .padding(vertical = 0.5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = TimeFormat.msToShort(playheadMs),
+                                color = Color(0xFF38BDF8),
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                } else {
+                    // Timestamp Badge at the top of the playhead (Matches reference image, e.g. 00:15)
+                    Box(
+                        modifier = Modifier
+                            .offset(x = (headX - 18.dp).coerceAtLeast(0.dp), y = 0.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.White)
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = TimeFormat.msToShort(playheadMs),
+                            color = Color.Black,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }
@@ -2451,26 +2734,62 @@ private fun QuickActionSquareCard(
 }
 
 @Composable
-private fun TrackSidebarIcon(
+private fun TrackSidebarCell(
+    badge: String,
+    label: String,
     icon: ImageVector,
-    contentDesc: String,
     tint: Color,
+    height: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161624))
-            .clickable(onClick = onClick),
+            .fillMaxWidth()
+            .height(height)
+            .padding(horizontal = 2.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF141420))
+            .border(0.5.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDesc,
-            tint = tint,
-            modifier = Modifier.size(18.dp)
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(tint.copy(alpha = 0.25f))
+                        .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                ) {
+                    Text(
+                        text = badge,
+                        color = tint,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 7.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
+            )
+        }
     }
 }
 

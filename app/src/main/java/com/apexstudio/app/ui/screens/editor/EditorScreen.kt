@@ -498,6 +498,15 @@ fun EditorScreen(
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
         )
 
+        // Elevate all 14 Adjust features to the top right below the video player preview
+        TopAdjustBar(
+            adjustments = state.adjustments,
+            onOpenAdjustPanel = { vm.openAdjustmentsPanel() },
+            onUpdate = { vm.updateAdjustments(it) },
+            onResetAll = { vm.resetAllAdjustments() },
+            modifier = Modifier.fillMaxWidth()
+        )
+
         val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
         val hasKeyframeAtPlayhead = activeClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
         val clipList = state.project?.clips ?: emptyList()
@@ -651,11 +660,16 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.3f))
+                .background(Color.Black.copy(alpha = 0.5f))
                 .clickable { vm.closeAdjustmentsPanel() },
-            contentAlignment = Alignment.BottomCenter
+            contentAlignment = Alignment.TopCenter
         ) {
-            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 54.dp, start = 8.dp, end = 8.dp)
+                    .clickable(enabled = false) {}
+            ) {
                 AdjustPanel(
                     adjustments = state.adjustments,
                     onUpdate = { vm.updateAdjustments(it) },

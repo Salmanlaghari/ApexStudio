@@ -294,6 +294,16 @@ class EditorViewModel(
         if (clipId != null && template.isSlowMotion) {
             setClipSpeed(clipId, targetSpeed)
         }
+        if (template.bpm > 0) {
+            setAudioBpm(template.bpm)
+        }
+        if (template.royaltyTrackId.isNotEmpty() && context != null) {
+            val track = com.apexstudio.app.data.audio.FreeRoyaltyMusic.CATALOG.firstOrNull { it.id == template.royaltyTrackId }
+            if (track != null) {
+                val file = com.apexstudio.app.data.audio.FreeRoyaltyMusic.getTrackFile(context, track)
+                addRoyaltyTrack(track.title, file.absolutePath, track.durationMs)
+            }
+        }
         persistTransmissionTemplate(id = template.id, transitionType = template.transitionType,
             transitionDurationMs = template.transitionDurationMs)
     }

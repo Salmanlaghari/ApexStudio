@@ -1833,16 +1833,13 @@ fun TimelineTrackArea(
                             .weight(1f)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(3.dp))
-                            .background(if (state.magneticSnapping || state.snapToBeat) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF151520))
-                            .clickable(onClick = {
-                                onToggleMagneticSnapping()
-                                onToggleSnapToBeat()
-                            }),
+                            .background(if (state.magneticSnapping) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF151520))
+                            .clickable(onClick = onToggleMagneticSnapping),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "SNAP",
-                            color = if (state.magneticSnapping || state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            color = if (state.magneticSnapping) ApexPalette.NeonCyan else Color(0xFF6B7280),
                             fontSize = 7.5.sp,
                             fontWeight = FontWeight.Bold
                         )

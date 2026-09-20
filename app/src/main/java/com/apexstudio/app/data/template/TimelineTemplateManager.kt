@@ -348,7 +348,14 @@ class TimelineTemplateManager(private val context: Context) {
                     previewAccentArgb = o.optLong("previewAccentArgb", 0xFF6E5BFFL),
                     tags = o.optJSONArray("tags")?.let { tagsArr ->
                         (0 until tagsArr.length()).map { tagsArr.getString(it) }
-                    } ?: emptyList()
+                    } ?: emptyList(),
+                    isSlowMotion = o.optBoolean("isSlowMotion", false),
+                    playbackSpeed = o.optDouble("playbackSpeed", 1.0).toFloat(),
+                    speedLabel = o.optString("speedLabel", "1.0x"),
+                    royaltyTrackId = o.optString("royaltyTrackId", ""),
+                    musicTitle = o.optString("musicTitle", ""),
+                    musicGenre = o.optString("musicGenre", ""),
+                    bpm = o.optInt("bpm", 120)
                 )
             )
         }

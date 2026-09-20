@@ -42,5 +42,9 @@ data class TransmissionTemplate(
     val tags: List<String> = emptyList(),
     val isSlowMotion: Boolean = false,
     val playbackSpeed: Float = 1.0f,
-    val speedLabel: String = "1.0x"
+    val speedLabel: String = "1.0x",
+    val royaltyTrackId: String = "",
+    val musicTitle: String = "",
+    val musicGenre: String = "",
+    val bpm: Int = 120
 )

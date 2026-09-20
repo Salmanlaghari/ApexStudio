@@ -39,6 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -200,7 +201,7 @@ fun EditorScreen(
     LaunchedEffect(exoPlayer, state.playbackSpeed) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            val speed = state.playbackSpeed.coerceIn(0.25f, 4.0f)
+            val speed = state.playbackSpeed.coerceIn(0.1f, 10.0f)
             player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set playback speed", e)
@@ -497,6 +498,15 @@ fun EditorScreen(
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
         )
 
+        // Elevate all 14 Adjust features to the top right below the video player preview
+        TopAdjustBar(
+            adjustments = state.adjustments,
+            onOpenAdjustPanel = { vm.openAdjustmentsPanel() },
+            onUpdate = { vm.updateAdjustments(it) },
+            onResetAll = { vm.resetAllAdjustments() },
+            modifier = Modifier.fillMaxWidth()
+        )
+
         val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
         val hasKeyframeAtPlayhead = activeClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
         val clipList = state.project?.clips ?: emptyList()
@@ -531,10 +541,12 @@ fun EditorScreen(
         TimelineTrackArea(
             state = state,
             onScrub = { targetMs ->
-                val snapped = if (state.snapToBeat) vm.findNearestBeat(targetMs) else targetMs
+                val snapped = vm.findMagneticSnapPoint(targetMs)
                 seekPlayerAndState(snapped)
             },
             onToggleSnapToBeat = { vm.toggleSnapToBeat() },
+            onToggleMagneticSnapping = { vm.toggleMagneticSnapping() },
+            onToggleRippleEdit = { vm.toggleRippleEdit() },
             onSelectClip = { vm.selectClip(it) },
             onSelectFx = { fxId -> vm.selectFx(fxId, intensity = 0.85f) },
             onSelectFilter = { filterId -> vm.selectFilter(filterId, intensity = 0.85f) },
@@ -648,11 +660,16 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.3f))
+                .background(Color.Black.copy(alpha = 0.5f))
                 .clickable { vm.closeAdjustmentsPanel() },
-            contentAlignment = Alignment.BottomCenter
+            contentAlignment = Alignment.TopCenter
         ) {
-            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 54.dp, start = 8.dp, end = 8.dp)
+                    .clickable(enabled = false) {}
+            ) {
                 AdjustPanel(
                     adjustments = state.adjustments,
                     onUpdate = { vm.updateAdjustments(it) },
@@ -844,9 +861,27 @@ fun EditorScreen(
             contentAlignment = Alignment.BottomCenter
         ) {
             Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-                SpeedControlSheet(
+                val currentClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
+                SpeedRampPanel(
+                    selectedClipId = state.selectedClipId,
                     currentSpeed = state.playbackSpeed,
-                    onSpeedChange = { vm.setPlaybackSpeed(it) },
+                    activeClipSpeed = currentClip?.speedMultiplier ?: state.playbackSpeed,
+                    opticalFlowEnabled = state.opticalFlowMotionBlur,
+                    opticalFlowIntensity = state.opticalFlowBlurIntensity,
+                    onSelectPreset = { preset ->
+                        vm.setPlaybackSpeed(preset.multiplier)
+                        state.selectedClipId?.let { cid -> vm.setClipSpeed(cid, preset.multiplier) }
+                    },
+                    onCustomSpeed = { speed ->
+                        vm.setPlaybackSpeed(speed)
+                        state.selectedClipId?.let { cid -> vm.setClipSpeed(cid, speed) }
+                    },
+                    onToggleOpticalFlow = { enabled ->
+                        vm.setOpticalFlowMotionBlur(enabled)
+                    },
+                    onChangeOpticalFlowIntensity = { intensity ->
+                        vm.setOpticalFlowMotionBlur(state.opticalFlowMotionBlur, intensity)
+                    },
                     onClose = { vm.closeSpeedPanel() }
                 )
             }
@@ -1663,6 +1698,8 @@ fun TimelineTrackArea(
     state: com.apexstudio.app.presentation.state.EditorState,
     onScrub: (Long) -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
+    onToggleMagneticSnapping: () -> Unit = {},
+    onToggleRippleEdit: () -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
     onSelectFx: (String) -> Unit = {},
     onSelectFilter: (String) -> Unit = {},
@@ -1782,29 +1819,43 @@ fun TimelineTrackArea(
                     .border(width = 1.dp, color = Color(0xFF1B1B28)),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top header / ruler height spacer: Beat Snap Toggle Button
-                Box(
+                // Top header / ruler height spacer: Magnetic Snapping & Ripple Edit Toggle Buttons
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(24.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (state.snapToBeat) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color.Transparent)
-                        .clickable(onClick = onToggleSnapToBeat),
-                    contentAlignment = Alignment.Center
+                        .padding(horizontal = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (state.magneticSnapping) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF151520))
+                            .clickable(onClick = onToggleMagneticSnapping),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Straighten,
-                            contentDescription = if (state.snapToBeat) "Snap to Beat: ON" else "Snap to Beat: OFF",
-                            tint = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
-                            modifier = Modifier.size(11.dp)
-                        )
                         Text(
                             text = "SNAP",
-                            color = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            color = if (state.magneticSnapping) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (state.rippleEditEnabled) Color(0xFFF59E0B).copy(alpha = 0.25f) else Color(0xFF151520))
+                            .clickable(onClick = onToggleRippleEdit),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "RPL",
+                            color = if (state.rippleEditEnabled) Color(0xFFFBBF24) else Color(0xFF6B7280),
                             fontSize = 7.5.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -1917,6 +1968,27 @@ fun TimelineTrackArea(
                 val containerWidth = maxWidth
                 val progress = (playheadMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
 
+                // Beat-Sync Vertical Alignment Guide Lines
+                if (state.snapToBeat && state.beatMarkersMs.isNotEmpty()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        for (beatMs in state.beatMarkersMs) {
+                            if (beatMs in 0L..durationMs) {
+                                val beatX = (beatMs.toFloat() / durationMs.toFloat()) * size.width
+                                drawLine(
+                                    color = Color(0xFF00E5FF).copy(alpha = 0.22f),
+                                    start = Offset(beatX, 24.dp.toPx()),
+                                    end = Offset(beatX, size.height),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1935,16 +2007,22 @@ fun TimelineTrackArea(
                                 }
                             }
                     ) {
-                        // Visual Beat Markers on Ruler
+                        // Visual Diamond Beat Markers on Ruler
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             if (state.beatMarkersMs.isNotEmpty()) {
                                 for (beatMs in state.beatMarkersMs) {
                                     if (beatMs in 0L..durationMs) {
                                         val beatX = (beatMs.toFloat() / durationMs.toFloat()) * size.width
-                                        drawCircle(
-                                            color = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFFF59E0B),
-                                            radius = 2.5f,
-                                            center = Offset(beatX, size.height - 3f)
+                                        val diamondPath = Path().apply {
+                                            moveTo(beatX, size.height - 11f)
+                                            lineTo(beatX + 4.5f, size.height - 6f)
+                                            lineTo(beatX, size.height - 1f)
+                                            lineTo(beatX - 4.5f, size.height - 6f)
+                                            close()
+                                        }
+                                        drawPath(
+                                            path = diamondPath,
+                                            color = if (state.snapToBeat) ApexPalette.NeonCyan else Color(0xFFF59E0B)
                                         )
                                     }
                                 }
@@ -2031,6 +2109,27 @@ fun TimelineTrackArea(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
+                            }
+                        }
+
+                        // Keyframe Diamonds on V2 Overlay Track
+                        if (overlayClip != null && overlayClip.keyframes.keyframes.isNotEmpty()) {
+                            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+                                val boxWidth = maxWidth
+                                val effDur = (overlayClip.trimEndMs - overlayClip.trimStartMs).coerceAtLeast(1000L)
+                                overlayClip.keyframes.keyframes.forEach { kf ->
+                                    val frac = (kf.timeMs.toFloat() / effDur.toFloat()).coerceIn(0f, 1f)
+                                    val kfX = (boxWidth.value * frac).dp
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(x = (kfX - 4.dp).coerceAtLeast(0.dp), y = 18.dp)
+                                            .size(8.dp)
+                                            .graphicsLayer { rotationZ = 45f }
+                                            .background(Color(0xFF00E5FF), RoundedCornerShape(2.dp))
+                                            .border(1.dp, Color.White, RoundedCornerShape(2.dp))
+                                            .clickable { onScrub(overlayClip.trimStartMs + kf.timeMs) }
+                                    )
+                                }
                             }
                         }
 
@@ -2517,30 +2616,45 @@ fun TimelineTrackArea(
                                 )
                             }
 
-                            // Dynamic Second-by-Second Waveform Bars synced to playhead
+                            // Precision Waveform Rendering with Dynamic Amplitude & Beat Sync
+                            val waveform = state.audioWaveform
+                            val barCount = 48
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                repeat(32) { i ->
-                                    val barFrac = i / 32f
+                                repeat(barCount) { i ->
+                                    val barFrac = i.toFloat() / barCount.toFloat()
                                     val isPlayed = barFrac <= progress
-                                    val hFrac = when {
-                                        i % 6 == 0 -> 0.85f
-                                        i % 4 == 0 -> 0.65f
-                                        i % 3 == 0 -> 0.45f
-                                        i % 2 == 0 -> 0.3f
-                                        else -> 0.2f
+                                    val sampleIdx = if (waveform.isNotEmpty()) (barFrac * (waveform.size - 1)).toInt() else 0
+                                    val rawAmp = if (waveform.isNotEmpty() && sampleIdx in waveform.indices) {
+                                        waveform[sampleIdx].coerceIn(0.12f, 1.0f)
+                                    } else {
+                                        when {
+                                            i % 8 == 0 -> 0.95f
+                                            i % 6 == 0 -> 0.8f
+                                            i % 4 == 0 -> 0.65f
+                                            i % 3 == 0 -> 0.45f
+                                            i % 2 == 0 -> 0.35f
+                                            else -> 0.2f
+                                        }
+                                    }
+                                    val isBeat = state.snapToBeat && state.beatMarkersMs.any { beatMs ->
+                                        val beatFrac = beatMs.toFloat() / durationMs.toFloat()
+                                        kotlin.math.abs(beatFrac - barFrac) < (1.2f / barCount)
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .width(2.dp)
-                                            .height(24.dp * hFrac)
+                                            .width(2.5.dp)
+                                            .height(28.dp * rawAmp)
                                             .background(
-                                                if (isPlayed) Color.White
-                                                else Color.White.copy(alpha = 0.35f),
-                                                RoundedCornerShape(1.dp)
+                                                color = when {
+                                                    isBeat -> Color(0xFF00E5FF)
+                                                    isPlayed -> Color.White
+                                                    else -> Color(0xFF34D399).copy(alpha = 0.65f)
+                                                },
+                                                shape = RoundedCornerShape(1.dp)
                                             )
                                     )
                                 }

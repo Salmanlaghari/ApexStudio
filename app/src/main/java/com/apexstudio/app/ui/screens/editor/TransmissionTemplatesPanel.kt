@@ -118,6 +118,8 @@ fun TransmissionTemplatesPanel(
                     secondary = Color(0xFF0E1116),
                     icon = iconForTemplate(template),
                     speedBadge = if (template.isSlowMotion) (if (template.speedLabel.isNotBlank()) template.speedLabel else "${template.playbackSpeed}x Slow-Mo") else null,
+                    musicTitle = if (template.musicTitle.isNotBlank()) template.musicTitle else null,
+                    bpm = if (template.bpm > 0) template.bpm else null,
                     selected = activeTemplateId == template.id,
                     onClick = { onTemplateApplied(template.id) }
                 )
@@ -134,6 +136,8 @@ private fun TransmissionTemplateTile(
     secondary: Color,
     icon: ImageVector,
     speedBadge: String? = null,
+    musicTitle: String? = null,
+    bpm: Int? = null,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -202,6 +206,15 @@ private fun TransmissionTemplateTile(
             fontWeight = FontWeight.Medium,
             maxLines = 1
         )
+        if (musicTitle != null) {
+            Text(
+                "🎵 $musicTitle",
+                color = ApexPalette.NeonCyan,
+                fontSize = 7.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
     }
 }
 

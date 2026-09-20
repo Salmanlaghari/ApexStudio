@@ -114,6 +114,7 @@ dependencies {
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
+  implementation("com.google.mlkit:face-detection:16.1.7")
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)

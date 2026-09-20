@@ -369,6 +369,9 @@ fun EditorScreen(
                 adjustments = state.adjustments,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
+                activeArFilterId = state.activeArFilterId,
+                arFilterIntensity = state.arFilterIntensity,
+                arFilterCustomText = state.arFilterCustomText,
                 playerError = state.playerError,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
@@ -390,6 +393,31 @@ fun EditorScreen(
                     }
                 },
                 modifier = Modifier.fillMaxSize()
+            )
+
+            // Floating Left Quick Tool Rail (AR Face, Effects, Filters, 3D Chroma, Adjust, Text)
+            LeftToolRail(
+                onArFilters = { vm.openArFilterPanel() },
+                onEffects = { vm.openFxPanel() },
+                onFilters = { vm.openFilterPanel() },
+                onAdjust = { vm.openAdjustmentsPanel() },
+                onChromaKey = { vm.openChromaKeyPanel() },
+                onText = { vm.openTextPanel() },
+                onSticker = { vm.openStickerPanel() },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 6.dp)
+            )
+
+            // Floating Right Quick Tool Rail (Add Media, Audio Mixer, Voice Record, Camera)
+            RightToolRail(
+                onAdd = { showAddMediaMenu = true },
+                onAudio = { vm.openAudioMixer() },
+                onRecord = { vm.openVoiceRecorder() },
+                onCamera = { vm.openCameraCapture() },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 6.dp)
             )
 
             // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
@@ -525,6 +553,9 @@ fun EditorScreen(
             onOpenVoice = { vm.openVoiceRecorder() },
             onOpenAnimation = { vm.setKeyframePanelOpen(true) },
             onOpenTransition = { vm.openTransmissionTemplatesPanel() },
+            onOpenChromaKey = { vm.openChromaKeyPanel() },
+            onOpenArFilters = { vm.openArFilterPanel() },
+            onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -537,6 +568,7 @@ fun EditorScreen(
             onStickers = { vm.openStickerPanel() },
             onEffects = { vm.openFxPanel() },
             onFilters = { vm.openFilterPanel() },
+            onArFilters = { vm.openArFilterPanel() },
             onAdjust = { vm.openAdjustmentsPanel() }
         )
     }
@@ -866,7 +898,31 @@ fun EditorScreen(
             Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
                 CameraCapturePanel(
                     onCapturePicked = { meta -> vm.onMediaPicked(meta) },
+                    selectedArFilterId = state.activeArFilterId,
+                    onSelectArFilter = { vm.selectArFilter(it) },
                     onClose = { vm.closeCameraCapture() }
+                )
+            }
+        }
+    }
+
+    if (state.arFilterPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeArFilterPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                ArFilterPanel(
+                    activeFilterId = state.activeArFilterId,
+                    intensity = state.arFilterIntensity,
+                    customText = state.arFilterCustomText,
+                    onFilterSelected = { vm.selectArFilter(it) },
+                    onIntensityChange = { vm.setArFilterIntensity(it) },
+                    onCustomTextChange = { vm.setArFilterCustomText(it) },
+                    onClose = { vm.closeArFilterPanel() }
                 )
             }
         }
@@ -1210,6 +1266,9 @@ fun VideoPreviewArea(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
     filterIntensity: Float = 1.0f,
+    activeArFilterId: String? = null,
+    arFilterIntensity: Float = 0.85f,
+    arFilterCustomText: String = "",
     playerError: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
@@ -1296,6 +1355,17 @@ fun VideoPreviewArea(
             FxPreviewOverlay(
                 fxId = activeFxId,
                 intensity = fxIntensity,
+                isPlaying = isPlaying,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Live AR/AI Face & Festival Filter Overlay
+        if (activeArFilterId != null && arFilterIntensity > 0f) {
+            ArFaceFilterOverlay(
+                filterId = activeArFilterId,
+                intensity = arFilterIntensity,
+                customText = arFilterCustomText,
                 isPlaying = isPlaying,
                 modifier = Modifier.fillMaxSize()
             )
@@ -1392,6 +1462,7 @@ fun VideoPreviewArea(
 // Left Tool Rail floating over video preview
 @Composable
 fun LeftToolRail(
+    onArFilters: () -> Unit = {},
     onEffects: () -> Unit = {},
     onFilters: () -> Unit = {},
     onAdjust: () -> Unit = {},
@@ -1405,9 +1476,10 @@ fun LeftToolRail(
             .clip(RoundedCornerShape(12.dp))
             .background(Color.Black.copy(alpha = 0.55f))
             .padding(vertical = 8.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        RailItem(Icons.Default.FaceRetouchingNatural, "AR Face", onArFilters)
         RailItem(Icons.Default.AutoAwesome, "Effects", onEffects)
         RailItem(Icons.Default.FilterAlt, "Filters", onFilters)
         RailItem(Icons.Default.Tune, "Adjust", onAdjust)
@@ -1576,6 +1648,15 @@ fun PlaybackControlBar(
     }
 }
 
+enum class SelectedLayerType {
+    NONE,
+    OVERLAY_V2,
+    VIDEO_V1,
+    TEXT_TXT,
+    FX_LAYER,
+    AUDIO_A1
+}
+
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 @Composable
 fun TimelineTrackArea(
@@ -1600,6 +1681,9 @@ fun TimelineTrackArea(
     onOpenVoice: () -> Unit = {},
     onOpenAnimation: () -> Unit = {},
     onOpenTransition: () -> Unit = {},
+    onOpenChromaKey: () -> Unit = {},
+    onOpenArFilters: () -> Unit = {},
+    onOpenRoyaltyMusic: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1607,6 +1691,10 @@ fun TimelineTrackArea(
     val activeClip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
     val durationMs = state.durationMs.coerceAtLeast(1000L)
     val playheadMs = state.playerPositionMs.coerceIn(0L, durationMs)
+
+    var selectedLayer by remember { mutableStateOf(SelectedLayerType.NONE) }
+    val timelineScrollState = rememberScrollState()
+    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 6.0f)
 
     // Per-second extracted video frames for synchronized scrubbing
     var perSecondThumbnails by remember(activeClip?.id, activeClip?.uri) {
@@ -1688,7 +1776,7 @@ fun TimelineTrackArea(
             // --- 1. LEFT TRACK TYPE ICON SIDEBAR (Clear Distinct Icon + Label + Badge for V2, V1, TXT, FX, A1) ---
             Column(
                 modifier = Modifier
-                    .width(58.dp)
+                    .width(64.dp)
                     .fillMaxHeight()
                     .background(Color(0xFF0C0C14))
                     .border(width = 1.dp, color = Color(0xFF1B1B28)),
@@ -1723,7 +1811,7 @@ fun TimelineTrackArea(
                     }
                 }
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
 
                 // Track 1: V2 (Overlay Video) Icon & Label
                 TrackSidebarCell(
@@ -1731,11 +1819,14 @@ fun TimelineTrackArea(
                     label = "Overlay",
                     icon = Icons.Default.Layers,
                     tint = Color(0xFF00E5FF),
-                    height = 34.dp,
-                    onClick = onAddMedia
+                    height = 44.dp,
+                    isSelected = selectedLayer == SelectedLayerType.OVERLAY_V2,
+                    onClick = {
+                        selectedLayer = if (selectedLayer == SelectedLayerType.OVERLAY_V2) SelectedLayerType.NONE else SelectedLayerType.OVERLAY_V2
+                    }
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
 
                 // Track 2: V1 (Main Video) Icon & Label
                 TrackSidebarCell(
@@ -1743,11 +1834,15 @@ fun TimelineTrackArea(
                     label = "Video",
                     icon = Icons.Default.Movie,
                     tint = Color(0xFF38BDF8),
-                    height = 48.dp,
-                    onClick = { activeClip?.let { onSelectClip(it.id) } }
+                    height = 58.dp,
+                    isSelected = selectedLayer == SelectedLayerType.VIDEO_V1,
+                    onClick = {
+                        selectedLayer = if (selectedLayer == SelectedLayerType.VIDEO_V1) SelectedLayerType.NONE else SelectedLayerType.VIDEO_V1
+                        activeClip?.let { onSelectClip(it.id) }
+                    }
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
 
                 // Track 3: TXT (Text & Stickers) Icon & Label
                 TrackSidebarCell(
@@ -1755,11 +1850,14 @@ fun TimelineTrackArea(
                     label = "Text",
                     icon = Icons.Default.TextFields,
                     tint = Color(0xFFA855F7),
-                    height = 34.dp,
-                    onClick = onOpenText
+                    height = 42.dp,
+                    isSelected = selectedLayer == SelectedLayerType.TEXT_TXT,
+                    onClick = {
+                        selectedLayer = if (selectedLayer == SelectedLayerType.TEXT_TXT) SelectedLayerType.NONE else SelectedLayerType.TEXT_TXT
+                    }
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
 
                 // Track 4: FX (Effects & Filters) Icon & Label
                 TrackSidebarCell(
@@ -1767,11 +1865,14 @@ fun TimelineTrackArea(
                     label = "Effects",
                     icon = Icons.Default.AutoAwesome,
                     tint = Color(0xFFF59E0B),
-                    height = 34.dp,
-                    onClick = onOpenFx
+                    height = 42.dp,
+                    isSelected = selectedLayer == SelectedLayerType.FX_LAYER,
+                    onClick = {
+                        selectedLayer = if (selectedLayer == SelectedLayerType.FX_LAYER) SelectedLayerType.NONE else SelectedLayerType.FX_LAYER
+                    }
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
 
                 // Track 5: A1 (Audio Track) Icon & Label
                 TrackSidebarCell(
@@ -1779,8 +1880,11 @@ fun TimelineTrackArea(
                     label = "Audio",
                     icon = Icons.Default.GraphicEq,
                     tint = Color(0xFF10B981),
-                    height = 38.dp,
-                    onClick = onOpenAudio
+                    height = 44.dp,
+                    isSelected = selectedLayer == SelectedLayerType.AUDIO_A1,
+                    onClick = {
+                        selectedLayer = if (selectedLayer == SelectedLayerType.AUDIO_A1) SelectedLayerType.NONE else SelectedLayerType.AUDIO_A1
+                    }
                 )
             }
 
@@ -1865,25 +1969,27 @@ fun TimelineTrackArea(
                         }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
 
                     // Track 1: V2 (Second Video / Overlay / PIP Track)
                     val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
+                    val isV2Selected = selectedLayer == SelectedLayerType.OVERLAY_V2
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
+                            .height(44.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (overlayClip != null) Color(0xFF0C2B38) else Color(0xFF0E141D))
+                            .background(if (isV2Selected) Color(0xFF0F2633) else if (overlayClip != null) Color(0xFF0C2B38) else Color(0xFF0E141D))
                             .border(
-                                width = 1.dp,
-                                color = if (overlayClip != null) Color(0xFF00E5FF).copy(alpha = 0.7f) else Color(0xFF00E5FF).copy(alpha = 0.25f),
+                                width = if (isV2Selected) 2.dp else 1.dp,
+                                color = if (isV2Selected) Color(0xFFFFD700) else if (overlayClip != null) Color(0xFF00E5FF).copy(alpha = 0.7f) else Color(0xFF00E5FF).copy(alpha = 0.25f),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
+                                selectedLayer = if (isV2Selected) SelectedLayerType.NONE else SelectedLayerType.OVERLAY_V2
                                 if (overlayClip != null) onSelectClip(overlayClip.id) else onAddMedia()
                             }
-                            .padding(horizontal = 10.dp),
+                            .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         if (overlayClip != null) {
@@ -1927,15 +2033,31 @@ fun TimelineTrackArea(
                                 )
                             }
                         }
+
+                        if (isV2Selected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .size(width = 4.dp, height = 28.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(width = 4.dp, height = 28.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
 
                     // Track 2: V1 Main Video Filmstrip Track with Per-Second Scrubbing Thumbnails
+                    val isV1LayerSelected = selectedLayer == SelectedLayerType.VIDEO_V1
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
+                            .height(58.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val displayClips = clips.filter { it.type == ClipType.VIDEO }.ifEmpty {
@@ -1951,7 +2073,7 @@ fun TimelineTrackArea(
                         }
 
                         displayClips.forEachIndexed { index, clip ->
-                            val isSelected = clip.id == activeClip?.id
+                            val isClipActive = clip.id == activeClip?.id
                             val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
                             val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 14)
 
@@ -1962,17 +2084,20 @@ fun TimelineTrackArea(
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFF1A1A28))
                                     .border(
-                                        width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) Color(0xFF38BDF8) else Color(0xFF2A2A3C),
+                                        width = if (isV1LayerSelected || isClipActive) 2.dp else 1.dp,
+                                        color = if (isV1LayerSelected) Color(0xFFFFD700) else if (isClipActive) Color(0xFF38BDF8) else Color(0xFF2A2A3C),
                                         shape = RoundedCornerShape(8.dp)
                                     )
-                                    .clickable { onSelectClip(clip.id) }
+                                    .clickable {
+                                        selectedLayer = if (isV1LayerSelected) SelectedLayerType.NONE else SelectedLayerType.VIDEO_V1
+                                        onSelectClip(clip.id)
+                                    }
                                     .padding(2.dp)
                             ) {
                                 // Filmstrip divided into synchronized per-second slices
                                 Row(modifier = Modifier.fillMaxSize()) {
                                     for (sec in 0 until totalSec) {
-                                        val isActiveSec = isSelected && sec == currentSecond
+                                        val isActiveSec = isClipActive && sec == currentSecond
                                         val frameBmp = perSecondThumbnails[sec]
                                             ?: extractedThumbnails.getOrNull(sec % extractedThumbnails.size.coerceAtLeast(1))
 
@@ -2027,6 +2152,22 @@ fun TimelineTrackArea(
                                             )
                                         }
                                     }
+                                }
+
+                                // Selection Grip Handles on active V1 layer
+                                if (isV1LayerSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .size(width = 4.dp, height = 36.dp)
+                                            .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .size(width = 4.dp, height = 36.dp)
+                                            .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                                    )
                                 }
 
                                 // Speed chip at top-left
@@ -2108,26 +2249,30 @@ fun TimelineTrackArea(
                         }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
 
                     // Track 3: Text & Stickers Overlay Track (TXT / STK)
                     val textOverlays = activeClip?.textOverlays ?: emptyList()
                     val allStickers = (state.project?.stickers ?: emptyList()) + (activeClip?.stickers ?: emptyList())
                     val hasTextOrSticker = textOverlays.isNotEmpty() || allStickers.isNotEmpty()
+                    val isTxtSelected = selectedLayer == SelectedLayerType.TEXT_TXT
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
+                            .height(42.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (hasTextOrSticker) Color(0xFF581C87).copy(alpha = 0.85f) else Color(0xFF140E24))
+                            .background(if (isTxtSelected) Color(0xFF3B0764) else if (hasTextOrSticker) Color(0xFF581C87).copy(alpha = 0.85f) else Color(0xFF140E24))
                             .border(
-                                width = 1.dp,
-                                color = if (hasTextOrSticker) Color(0xFFA855F7).copy(alpha = 0.7f) else Color(0xFFA855F7).copy(alpha = 0.3f),
+                                width = if (isTxtSelected) 2.dp else 1.dp,
+                                color = if (isTxtSelected) Color(0xFFFFD700) else if (hasTextOrSticker) Color(0xFFA855F7).copy(alpha = 0.7f) else Color(0xFFA855F7).copy(alpha = 0.3f),
                                 shape = RoundedCornerShape(8.dp)
                             )
-                            .clickable(onClick = onOpenText)
-                            .padding(horizontal = 10.dp),
+                            .clickable {
+                                selectedLayer = if (isTxtSelected) SelectedLayerType.NONE else SelectedLayerType.TEXT_TXT
+                                onOpenText()
+                            }
+                            .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         if (hasTextOrSticker) {
@@ -2182,25 +2327,45 @@ fun TimelineTrackArea(
                                 )
                             }
                         }
+
+                        if (isTxtSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .size(width = 4.dp, height = 26.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(width = 4.dp, height = 26.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
 
                     // Track 4: FX (Effects & Filters Track)
                     val hasFx = state.activeFxId != null || state.activeFilterId != null || state.chromaKeySettings.enabled
+                    val isFxSelected = selectedLayer == SelectedLayerType.FX_LAYER
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
+                            .height(42.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (hasFx) Color(0xFF78350F).copy(alpha = 0.85f) else Color(0xFF1E1408))
+                            .background(if (isFxSelected) Color(0xFF451A03) else if (hasFx) Color(0xFF78350F).copy(alpha = 0.85f) else Color(0xFF1E1408))
                             .border(
-                                width = 1.dp,
-                                color = if (hasFx) Color(0xFFF59E0B).copy(alpha = 0.7f) else Color(0xFFF59E0B).copy(alpha = 0.3f),
+                                width = if (isFxSelected) 2.dp else 1.dp,
+                                color = if (isFxSelected) Color(0xFFFFD700) else if (hasFx) Color(0xFFF59E0B).copy(alpha = 0.7f) else Color(0xFFF59E0B).copy(alpha = 0.3f),
                                 shape = RoundedCornerShape(8.dp)
                             )
-                            .clickable(onClick = onOpenFx)
-                            .padding(horizontal = 10.dp),
+                            .clickable {
+                                selectedLayer = if (isFxSelected) SelectedLayerType.NONE else SelectedLayerType.FX_LAYER
+                                onOpenFx()
+                            }
+                            .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         if (hasFx) {
@@ -2262,27 +2427,52 @@ fun TimelineTrackArea(
                                 )
                             }
                         }
+
+                        if (isFxSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .size(width = 4.dp, height = 26.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(width = 4.dp, height = 26.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
 
                     // Track 5: A1 (Audio Track)
                     val audioTrack = state.project?.audioTracks?.firstOrNull()
                     val audioName = audioTrack?.name ?: "Background Music.mp3"
                     val audioDurSec = ((audioTrack?.trimEndMs ?: state.durationMs) / 1000L).coerceAtLeast(1L)
+                    val isAudioSelected = selectedLayer == SelectedLayerType.AUDIO_A1
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .height(44.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(Color(0xFF047857), Color(0xFF059669))
+                                    if (isAudioSelected) listOf(Color(0xFF065F46), Color(0xFF047857))
+                                    else listOf(Color(0xFF047857), Color(0xFF059669))
                                 )
                             )
-                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .clickable(onClick = onOpenAudio)
-                            .padding(horizontal = 10.dp),
+                            .border(
+                                width = if (isAudioSelected) 2.dp else 1.dp,
+                                color = if (isAudioSelected) Color(0xFFFFD700) else Color(0xFF10B981).copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                selectedLayer = if (isAudioSelected) SelectedLayerType.NONE else SelectedLayerType.AUDIO_A1
+                                onOpenAudio()
+                            }
+                            .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Row(
@@ -2356,6 +2546,21 @@ fun TimelineTrackArea(
                                 }
                             }
                         }
+
+                        if (isAudioSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .size(width = 4.dp, height = 28.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .size(width = 4.dp, height = 28.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
                     }
                 }
 
@@ -2426,50 +2631,271 @@ fun TimelineTrackArea(
 
         Spacer(Modifier.height(4.dp))
 
-        // --- 3. CAPCUT QUICK ACTION TOOLBAR (Row of 6 square cards from reference image) ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            QuickActionSquareCard(
-                icon = Icons.Default.ContentCut,
-                label = "Split",
-                onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
-            )
+        // --- 3. CONTEXTUAL INLINE LAYER EDITING TOOLBAR (Adapts on Layer Tap) ---
+        if (selectedLayer != SelectedLayerType.NONE) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+            ) {
+                // Layer Info & Deselect Strip
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 3.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFD700))
+                        )
+                        Text(
+                            text = "LAYER SELECTED: ${selectedLayer.name.replace('_', ' ')}",
+                            color = Color(0xFFFFD700),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
-            QuickActionSquareCard(
-                icon = Icons.Default.Tune,
-                label = "Trim",
-                onClick = onOpenTrim
-            )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF2A2A3C))
+                            .clickable { selectedLayer = SelectedLayerType.NONE }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "✕ Deselect",
+                            color = Color(0xFFE5E7EB),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
 
-            QuickActionSquareCard(
-                icon = Icons.Default.Speed,
-                label = "Speed",
-                onClick = onOpenSpeed
-            )
+                // Layer-Specific Contextual Action Cards
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when (selectedLayer) {
+                        SelectedLayerType.VIDEO_V1 -> {
+                            QuickActionSquareCard(
+                                icon = Icons.Default.ContentCut,
+                                label = "Split",
+                                onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Tune,
+                                label = "Trim",
+                                onClick = onOpenTrim
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Speed,
+                                label = "Speed",
+                                onClick = onOpenSpeed
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.VolumeUp,
+                                label = "Volume",
+                                onClick = onOpenAudio
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.AutoAwesome,
+                                label = "Effects",
+                                onClick = onOpenFx
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Layers,
+                                label = "Animation",
+                                onClick = onOpenAnimation
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.ContentCopy,
+                                label = "Duplicate",
+                                onClick = { activeClip?.let { onDuplicateClip(it.id) } }
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.DeleteOutline,
+                                label = "Delete",
+                                tint = ApexPalette.NeonPink,
+                                onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                            )
+                        }
 
-            QuickActionSquareCard(
-                icon = Icons.Default.VolumeUp,
-                label = "Volume",
-                onClick = onOpenAudio
-            )
+                        SelectedLayerType.OVERLAY_V2 -> {
+                            QuickActionSquareCard(
+                                icon = Icons.Default.ContentCut,
+                                label = "Split",
+                                onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Layers,
+                                label = "3D Chroma",
+                                tint = Color(0xFF00E5FF),
+                                onClick = onOpenChromaKey
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.AutoAwesome,
+                                label = "Animation",
+                                onClick = onOpenAnimation
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.AddPhotoAlternate,
+                                label = "Replace",
+                                onClick = onAddMedia
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.DeleteOutline,
+                                label = "Delete",
+                                tint = ApexPalette.NeonPink,
+                                onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                            )
+                        }
 
-            QuickActionSquareCard(
-                icon = Icons.Default.Layers,
-                label = "Animation",
-                onClick = onOpenAnimation
-            )
+                        SelectedLayerType.TEXT_TXT -> {
+                            QuickActionSquareCard(
+                                icon = Icons.Default.TextFields,
+                                label = "Edit Text",
+                                tint = Color(0xFFA855F7),
+                                onClick = onOpenText
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Palette,
+                                label = "Styles",
+                                tint = Color(0xFFA855F7),
+                                onClick = onOpenText
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.EmojiEmotions,
+                                label = "Stickers",
+                                tint = Color(0xFFEC4899),
+                                onClick = onOpenStickers
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.ContentCopy,
+                                label = "Duplicate",
+                                onClick = { activeClip?.let { onDuplicateClip(it.id) } }
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.DeleteOutline,
+                                label = "Delete",
+                                tint = ApexPalette.NeonPink,
+                                onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                            )
+                        }
 
-            QuickActionSquareCard(
-                icon = Icons.Default.DeleteOutline,
-                label = "Delete",
-                tint = ApexPalette.NeonPink,
-                onClick = { activeClip?.let { onDeleteClip(it.id) } }
-            )
+                        SelectedLayerType.FX_LAYER -> {
+                            QuickActionSquareCard(
+                                icon = Icons.Default.AutoAwesome,
+                                label = "Visual FX",
+                                tint = Color(0xFFF59E0B),
+                                onClick = onOpenFx
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.FaceRetouchingNatural,
+                                label = "AR Face",
+                                tint = Color(0xFF10B981),
+                                onClick = onOpenArFilters
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Refresh,
+                                label = "Reset FX",
+                                onClick = { onSelectFx("") }
+                            )
+                        }
+
+                        SelectedLayerType.AUDIO_A1 -> {
+                            QuickActionSquareCard(
+                                icon = Icons.Default.LibraryMusic,
+                                label = "Audio Mix",
+                                tint = Color(0xFF10B981),
+                                onClick = onOpenAudio
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.MusicNote,
+                                label = "Royalty Music",
+                                tint = Color(0xFF34D399),
+                                onClick = onOpenRoyaltyMusic
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.VolumeUp,
+                                label = "Volume",
+                                onClick = onOpenAudio
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.Mic,
+                                label = "Record",
+                                onClick = onOpenVoice
+                            )
+                            QuickActionSquareCard(
+                                icon = Icons.Default.DeleteOutline,
+                                label = "Delete",
+                                tint = ApexPalette.NeonPink,
+                                onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                            )
+                        }
+
+                        SelectedLayerType.NONE -> {}
+                    }
+                }
+            }
+        } else {
+            // Default CapCut quick action toolbar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                QuickActionSquareCard(
+                    icon = Icons.Default.ContentCut,
+                    label = "Split",
+                    onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
+                )
+
+                QuickActionSquareCard(
+                    icon = Icons.Default.Tune,
+                    label = "Trim",
+                    onClick = onOpenTrim
+                )
+
+                QuickActionSquareCard(
+                    icon = Icons.Default.Speed,
+                    label = "Speed",
+                    onClick = onOpenSpeed
+                )
+
+                QuickActionSquareCard(
+                    icon = Icons.Default.VolumeUp,
+                    label = "Volume",
+                    onClick = onOpenAudio
+                )
+
+                QuickActionSquareCard(
+                    icon = Icons.Default.Layers,
+                    label = "Animation",
+                    onClick = onOpenAnimation
+                )
+
+                QuickActionSquareCard(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    tint = ApexPalette.NeonPink,
+                    onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                )
+            }
         }
     }
 }
@@ -2740,6 +3166,7 @@ private fun TrackSidebarCell(
     icon: ImageVector,
     tint: Color,
     height: androidx.compose.ui.unit.Dp,
+    isSelected: Boolean = false,
     onClick: () -> Unit
 ) {
     Box(
@@ -2748,8 +3175,12 @@ private fun TrackSidebarCell(
             .height(height)
             .padding(horizontal = 2.dp, vertical = 1.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF141420))
-            .border(0.5.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+            .background(if (isSelected) tint.copy(alpha = 0.25f) else Color(0xFF141420))
+            .border(
+                width = if (isSelected) 1.5.dp else 0.5.dp,
+                color = if (isSelected) tint else tint.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(6.dp)
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center
@@ -2765,12 +3196,12 @@ private fun TrackSidebarCell(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(2.dp))
-                        .background(tint.copy(alpha = 0.25f))
+                        .background(if (isSelected) tint else tint.copy(alpha = 0.25f))
                         .padding(horizontal = 2.dp, vertical = 0.5.dp)
                 ) {
                     Text(
                         text = badge,
-                        color = tint,
+                        color = if (isSelected) Color.Black else tint,
                         fontSize = 7.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -2778,15 +3209,15 @@ private fun TrackSidebarCell(
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = tint,
+                    tint = if (isSelected) tint else tint.copy(alpha = 0.9f),
                     modifier = Modifier.size(11.dp)
                 )
             }
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.85f),
+                color = if (isSelected) tint else Color.White.copy(alpha = 0.85f),
                 fontSize = 7.5.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1
             )
         }
@@ -2876,7 +3307,7 @@ fun SpeedControlSheet(
     }
 }
 
-// === 5. BOTTOM EDIT TOOLBAR (Matches 7 tabs in reference image) ===
+// === 5. BOTTOM EDIT TOOLBAR ===
 @Composable
 fun BottomEditToolbar(
     onEdit: () -> Unit = {},
@@ -2885,6 +3316,7 @@ fun BottomEditToolbar(
     onStickers: () -> Unit = {},
     onEffects: () -> Unit = {},
     onFilters: () -> Unit = {},
+    onArFilters: () -> Unit = {},
     onAdjust: () -> Unit = {}
 ) {
     val items = listOf(
@@ -2894,6 +3326,7 @@ fun BottomEditToolbar(
         EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
         EditToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
         EditToolItem("Filters", Icons.Default.FilterAlt, onClick = onFilters),
+        EditToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFilters),
         EditToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
     )
 

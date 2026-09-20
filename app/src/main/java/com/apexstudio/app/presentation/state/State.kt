@@ -124,7 +124,11 @@ data class EditorState(
     val coverTextStyle: String = "BOLD_TITLE",
     val chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     val chromaKeyPanelOpen: Boolean = false,
-    val royaltyMusicDialogOpen: Boolean = false
+    val royaltyMusicDialogOpen: Boolean = false,
+    val arFilterPanelOpen: Boolean = false,
+    val activeArFilterId: String? = null,
+    val arFilterIntensity: Float = 0.85f,
+    val arFilterCustomText: String = "Happy Ganesh Chaturthi"
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

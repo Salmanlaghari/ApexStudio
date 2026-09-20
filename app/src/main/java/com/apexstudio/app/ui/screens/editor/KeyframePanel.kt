@@ -46,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -458,7 +460,14 @@ fun KeyframePanel(
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.EFFECT) {
                     KeyframeSliderRow(
-                        label = "Effect Intensity",
+                        label = "Light Shift",
+                        value = activeKeyframe.filterIntensity,
+                        range = 0f..2f,
+                        color = Color(0xFFFBBF24),
+                        onValueChange = { onUpdate(activeKeyframe.copy(filterIntensity = it)) }
+                    )
+                    KeyframeSliderRow(
+                        label = "FX Intensity",
                         value = activeKeyframe.effectIntensity,
                         range = 0f..1f,
                         color = Color(0xFFF59E0B),
@@ -486,13 +495,68 @@ fun KeyframePanel(
                                 .padding(horizontal = 6.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = curve.name.lowercase().replace('_', ' '),
+                                text = if (curve == KeyframeCurve.BEZIER) "Bezier Curve" else curve.name.lowercase().replace('_', ' '),
                                 color = if (active) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
                                 fontSize = 9.sp,
                                 fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     }
+                }
+
+                // Interactive Bezier / Easing Curve Visualizer Preview
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF13131F))
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+                        // Grid lines
+                        drawLine(
+                            color = Color(0xFF2E2E3E),
+                            start = Offset(0f, h / 2f),
+                            end = Offset(w, h / 2f),
+                            strokeWidth = 1f
+                        )
+                        // Curve Path
+                        val path = Path()
+                        val steps = 60
+                        for (i in 0..steps) {
+                            val t = i.toFloat() / steps.toFloat()
+                            val eased = when (activeKeyframe.curve) {
+                                KeyframeCurve.LINEAR -> t
+                                KeyframeCurve.EASE_IN -> t * t
+                                KeyframeCurve.EASE_OUT -> 1f - (1f - t) * (1f - t)
+                                KeyframeCurve.EASE_IN_OUT -> if (t < 0.5f) 2f * t * t else 1f - 2f * (1f - t) * (1f - t)
+                                KeyframeCurve.BEZIER -> t * t * (3f - 2f * t)
+                                KeyframeCurve.HOLD -> if (t < 1f) 0f else 1f
+                            }
+                            val px = t * w
+                            val py = h - (eased * h)
+                            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                        }
+                        drawPath(
+                            path = path,
+                            color = ApexPalette.NeonCyan,
+                            style = Stroke(width = 2.5f)
+                        )
+                        // Start and End keyframe dots
+                        drawCircle(color = Color.White, radius = 4f, center = Offset(0f, h))
+                        drawCircle(color = ApexPalette.NeonCyan, radius = 4f, center = Offset(w, 0f))
+                    }
+                    Text(
+                        text = "Smooth Bezier Easing: ${activeKeyframe.curve.name}",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 9.sp,
+                        modifier = Modifier.align(Alignment.TopStart)
+                    )
                 }
             }
         } else {

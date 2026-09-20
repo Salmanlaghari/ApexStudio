@@ -731,7 +731,7 @@ class EditorViewModel(
     fun closeAudioMixer() = _state.update { it.copy(audioMixerOpen = false) }
     fun openSpeedPanel() = _state.update { it.copy(speedPanelOpen = true) }
     fun closeSpeedPanel() = _state.update { it.copy(speedPanelOpen = false) }
-    fun setPlaybackSpeed(speed: Float) = _state.update { it.copy(playbackSpeed = speed.coerceIn(0.25f, 8f)) }
+    fun setPlaybackSpeed(speed: Float) = _state.update { it.copy(playbackSpeed = speed.coerceIn(0.1f, 10f)) }
 
     fun openFxPanel() = _state.update { it.copy(fxPanelOpen = true) }
     fun closeFxPanel() = _state.update { it.copy(fxPanelOpen = false) }
@@ -945,6 +945,55 @@ class EditorViewModel(
         _state.update { it.copy(snapToBeat = next) }
     }
 
+    fun toggleMagneticSnapping() {
+        val next = !_state.value.magneticSnapping
+        _state.update { it.copy(magneticSnapping = next) }
+    }
+
+    fun toggleRippleEdit() {
+        val next = !_state.value.rippleEditEnabled
+        _state.update { it.copy(rippleEditEnabled = next) }
+    }
+
+    fun setOpticalFlowMotionBlur(enabled: Boolean, intensity: Float = _state.value.opticalFlowBlurIntensity) {
+        _state.update { it.copy(opticalFlowMotionBlur = enabled, opticalFlowBlurIntensity = intensity.coerceIn(0f, 1f)) }
+    }
+
+    fun setSpeedRampCurvePreset(preset: String) {
+        _state.update { it.copy(speedRampCurvePreset = preset) }
+    }
+
+    /**
+     * Magnetically snaps [timeMs] to adjacent cut points, keyframes, or beat drop markers
+     * if within [snapThresholdMs].
+     */
+    fun findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 150L): Long {
+        if (!_state.value.magneticSnapping) {
+            return if (_state.value.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
+        }
+        val candidates = mutableListOf<Long>()
+        val project = _state.value.project
+        if (project != null) {
+            var accMs = 0L
+            candidates.add(0L)
+            for (clip in project.clips) {
+                val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(100L)
+                accMs += clipDur
+                candidates.add(accMs)
+                // Add keyframes
+                for (kf in clip.keyframes.keyframes) {
+                    candidates.add(accMs - clipDur + kf.timeMs)
+                }
+            }
+        }
+        if (_state.value.snapToBeat) {
+            candidates.addAll(_state.value.beatMarkersMs)
+        }
+        if (candidates.isEmpty()) return timeMs
+        val closest = candidates.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
+        return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
+    }
+
     fun findNearestBeat(timeMs: Long, snapThresholdMs: Long = 180L): Long {
         if (!_state.value.snapToBeat) return timeMs
         val beats = _state.value.beatMarkersMs
@@ -1081,7 +1130,7 @@ class EditorViewModel(
     }
 
     fun setClipSpeed(clipId: String, multiplier: Float) {
-        val clamped = multiplier.coerceIn(SpeedPreset.QUARTER.multiplier, SpeedPreset.FAST.multiplier)
+        val clamped = multiplier.coerceIn(0.1f, 10f)
         updateClip(clipId) { it.copy(speedMultiplier = clamped) }
         val selectedSpeed = clamped
         _state.update { it.copy(playbackSpeed = selectedSpeed) }
@@ -1091,8 +1140,8 @@ class EditorViewModel(
         updateClip(clipId) { it.copy(speedCurve = curve) }
 
     fun setClipSpeedRamp(clipId: String, start: Float, end: Float) {
-        val s = start.coerceIn(0.25f, 8f)
-        val e = end.coerceIn(0.25f, 8f)
+        val s = start.coerceIn(0.1f, 10f)
+        val e = end.coerceIn(0.1f, 10f)
         updateClip(clipId) { it.copy(rampStartSpeed = s, rampEndSpeed = e, speedCurve = SpeedCurve.RAMP) }
     }
 

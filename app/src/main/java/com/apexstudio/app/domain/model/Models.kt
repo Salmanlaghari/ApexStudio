@@ -242,6 +242,7 @@ enum class KeyframeCurve {
     EASE_IN,
     EASE_OUT,
     EASE_IN_OUT,
+    BEZIER,
     HOLD
 }
 
@@ -326,6 +327,7 @@ data class KeyframeTrack(
         KeyframeCurve.EASE_IN -> t * t
         KeyframeCurve.EASE_OUT -> 1.0 - (1.0 - t) * (1.0 - t)
         KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t)
+        KeyframeCurve.BEZIER -> t * t * (3.0 - 2.0 * t) // Smoothstep cubic Bezier easing
         KeyframeCurve.HOLD -> 0.0 // first keyframe value until the next one
     }
 

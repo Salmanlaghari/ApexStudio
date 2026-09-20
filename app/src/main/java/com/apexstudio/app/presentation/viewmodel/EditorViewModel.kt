@@ -657,6 +657,14 @@ class EditorViewModel(
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
+    fun openArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = true) }
+    fun closeArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = false) }
+    fun selectArFilter(id: String?, intensity: Float = 0.85f) = _state.update {
+        it.copy(activeArFilterId = id, arFilterIntensity = intensity.coerceIn(0f, 1f))
+    }
+    fun setArFilterIntensity(v: Float) = _state.update { it.copy(arFilterIntensity = v.coerceIn(0f, 1f)) }
+    fun setArFilterCustomText(text: String) = _state.update { it.copy(arFilterCustomText = text) }
+
     fun ensureFilterThumbnails() {
         val ctx = context ?: return
         if (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading) return

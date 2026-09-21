@@ -258,26 +258,33 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     FxPreset.DUST_SCRATCHES, FxPreset.FILM_DAMAGE -> Icons.Default.Grain
 
     FxPreset.VHS, FxPreset.SCANLINES, FxPreset.CRT_PHOSPHOR,
-    FxPreset.INTERLACED, FxPreset.HALFTONE, FxPreset.OIL_PAINT,
-    FxPreset.EMBOSS_RELIEF -> Icons.Default.Texture
+    FxPreset.INTERLACED,    FxPreset.HALFTONE, FxPreset.OIL_PAINT,
+    FxPreset.EMBOSS_RELIEF, FxPreset.COMIC_DOTS -> Icons.Default.Texture
 
     FxPreset.GLITCH, FxPreset.STROBE, FxPreset.BAD_TV,
     FxPreset.RGB_JITTER, FxPreset.DATAMOSH, FxPreset.SPARKLE,
-    FxPreset.EDGE_NEON -> Icons.Default.Bolt
+    FxPreset.EDGE_NEON, FxPreset.EDGE_GLOW, FxPreset.LIGHTNING_AURA,
+    FxPreset.GLITCH_RGB_DISPLACE, FxPreset.HOLOGRAM_GLITCH -> Icons.Default.Bolt
 
-    FxPreset.PIXELATE, FxPreset.PIXEL_SORT, FxPreset.DIGITAL_DROP -> Icons.Default.GridOn
+    FxPreset.PIXELATE, FxPreset.PIXEL_SORT, FxPreset.DIGITAL_DROP,
+    FxPreset.MATRIX_RAIN, FxPreset.GLITCH_BLOCK, FxPreset.NEON_WIREFRAME -> Icons.Default.GridOn
 
     FxPreset.CHROMATIC, FxPreset.PRISM, FxPreset.BLEACH_BYPASS,
     FxPreset.TECHNICOLOR_STRIP, FxPreset.CROSS_PROCESS, FxPreset.SOLARIZE,
     FxPreset.POSTERIZE, FxPreset.THERMAL_VISION, FxPreset.NIGHT_VISION,
-    FxPreset.INVERT_FX, FxPreset.KALEIDOSCOPE -> Icons.Default.Layers
+    FxPreset.INVERT_FX, FxPreset.KALEIDOSCOPE, FxPreset.MIRROR_SPLIT,
+    FxPreset.CRYSTAL_FACET, FxPreset.COLOR_ISOLATION -> Icons.Default.Layers
 
     FxPreset.SOFT_BLUR, FxPreset.GLOW_DIFFUSE, FxPreset.RADIAL_BLUR,
-    FxPreset.TILT_SHIFT, FxPreset.SPIN_BLUR -> Icons.Default.BlurOn
+    FxPreset.TILT_SHIFT, FxPreset.SPIN_BLUR, FxPreset.WATER_RIPPLE,
+    FxPreset.HEATWAVE_WARP, FxPreset.DOUBLE_EXPOSURE -> Icons.Default.BlurOn
 
     FxPreset.SHAKE, FxPreset.MOTION_STREAK, FxPreset.GHOSTING,
     FxPreset.CAMERA_WOBBLE, FxPreset.WHIP_PAN_FX,
-    FxPreset.SKETCH_LINES -> Icons.Default.Timeline
+    FxPreset.SKETCH_LINES, FxPreset.HEART_BEAT, FxPreset.VERTIGO_DOLLY,
+    FxPreset.GHOST_TRAIL, FxPreset.SPEED_LINES, FxPreset.BLACK_HOLE_WARP,
+    FxPreset.FIRE_EMBER, FxPreset.FILM_BURN, FxPreset.SUPER_8_WARM,
+    FxPreset.SEPIA_FLICKER, FxPreset.SHIMMER_STAR -> Icons.Default.Timeline
 }
 
 private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
@@ -337,4 +344,30 @@ private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
     FxPreset.EMBOSS_RELIEF -> listOf(Color(0xFF90A4AE), Color(0xFF455A64))
     FxPreset.INVERT_FX -> listOf(Color(0xFF000000), Color(0xFFFFFFFF))
     FxPreset.KALEIDOSCOPE -> listOf(Color(0xFFAA00FF), Color(0xFF00B0FF))
+
+    // 24 New CapCut Presets
+    FxPreset.HEART_BEAT -> listOf(Color(0xFFFF1744), Color(0xFF880E4F))
+    FxPreset.EDGE_GLOW -> listOf(Color(0xFF00E5FF), Color(0xFF00B0FF))
+    FxPreset.SHIMMER_STAR -> listOf(Color(0xFFFFD54F), Color(0xFFFFF9C4))
+    FxPreset.VERTIGO_DOLLY -> listOf(Color(0xFF7C4DFF), Color(0xFF311B92))
+    FxPreset.LIGHTNING_AURA -> listOf(Color(0xFF00E5FF), Color(0xFF7C4DFF))
+    FxPreset.FIRE_EMBER -> listOf(Color(0xFFFF6D00), Color(0xFFFFD600))
+    FxPreset.CRYSTAL_FACET -> listOf(Color(0xFF00E5FF), Color(0xFFE040FB))
+    FxPreset.DOUBLE_EXPOSURE -> listOf(Color(0xFF90CAF9), Color(0xFFCE93D8))
+    FxPreset.MATRIX_RAIN -> listOf(Color(0xFF00E676), Color(0xFF1B5E20))
+    FxPreset.GLITCH_RGB_DISPLACE -> listOf(Color(0xFFFF1744), Color(0xFF00E5FF))
+    FxPreset.GLITCH_BLOCK -> listOf(Color(0xFFFFAB00), Color(0xFF3E2723))
+    FxPreset.HOLOGRAM_GLITCH -> listOf(Color(0xFF00E5FF), Color(0xFF004D40))
+    FxPreset.FILM_BURN -> listOf(Color(0xFFFF3D00), Color(0xFFFFAB00))
+    FxPreset.SUPER_8_WARM -> listOf(Color(0xFFFF8F00), Color(0xFF4E342E))
+    FxPreset.SEPIA_FLICKER -> listOf(Color(0xFF8D6E63), Color(0xFF212121))
+    FxPreset.WATER_RIPPLE -> listOf(Color(0xFF29B6F6), Color(0xFF01579B))
+    FxPreset.GHOST_TRAIL -> listOf(Color(0xFFB388FF), Color(0xFF311B92))
+    FxPreset.HEATWAVE_WARP -> listOf(Color(0xFFFF7043), Color(0xFFD84315))
+    FxPreset.SPEED_LINES -> listOf(Color(0xFFECEFF1), Color(0xFF263238))
+    FxPreset.BLACK_HOLE_WARP -> listOf(Color(0xFF6A1B9A), Color(0xFF000000))
+    FxPreset.MIRROR_SPLIT -> listOf(Color(0xFFAB47BC), Color(0xFF26C6DA))
+    FxPreset.NEON_WIREFRAME -> listOf(Color(0xFFE040FB), Color(0xFF1A237E))
+    FxPreset.COMIC_DOTS -> listOf(Color(0xFFFFEB3B), Color(0xFFD50000))
+    FxPreset.COLOR_ISOLATION -> listOf(Color(0xFFFF1744), Color(0xFF616161))
 }

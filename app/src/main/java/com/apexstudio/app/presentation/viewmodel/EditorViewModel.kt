@@ -1660,6 +1660,34 @@ class EditorViewModel(
         }
     }
 
+    fun setClipTimelineOffset(clipId: String, offsetMs: Long) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.map {
+                if (it.id == clipId) it.copy(timelineOffsetMs = offsetMs.coerceAtLeast(0L))
+                else it
+            }
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
+    fun shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.map {
+                if (it.id == clipId) {
+                    val newOffset = (it.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+                    it.copy(timelineOffsetMs = newOffset)
+                } else it
+            }
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
     private fun pushUndo() {
         val current = _state.value.project?.clips ?: return
         undoStack.addLast(current)

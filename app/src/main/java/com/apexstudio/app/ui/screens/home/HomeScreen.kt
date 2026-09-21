@@ -65,11 +65,11 @@ fun HomeScreen(
         val saved = projectRepo.loadAllNow()
         projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
 
-        val loadedTemplates = withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             val mgr = TimelineTemplateManager(context)
-            mgr.loadTransmissionTemplates()
+            val loadedTemplates = mgr.loadTransmissionTemplates()
+            templates = loadedTemplates
         }
-        templates = loadedTemplates
     }
 
     val mediaPicker = remember { MediaPickerHelper(context) }

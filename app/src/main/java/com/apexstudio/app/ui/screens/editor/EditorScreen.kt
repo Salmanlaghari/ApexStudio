@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -362,6 +365,21 @@ fun EditorScreen(
             val textOverlays = selectedClip?.textOverlays ?: emptyList()
             var showUpcomingPreview by remember { mutableStateOf(false) }
 
+            // Auto-hide screen controls: hidden by default, visible for 2s on video screen tap
+            var screenControlsVisible by remember { mutableStateOf(false) }
+            var hideControlsJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+            fun triggerScreenControls() {
+                screenControlsVisible = true
+                showUpcomingPreview = true
+                hideControlsJob?.cancel()
+                hideControlsJob = scope.launch {
+                    kotlinx.coroutines.delay(2000L)
+                    screenControlsVisible = false
+                    showUpcomingPreview = false
+                }
+            }
+
             VideoPreviewArea(
                 exoPlayer = exoPlayer,
                 chromaKeySettings = state.chromaKeySettings,
@@ -378,7 +396,7 @@ fun EditorScreen(
                 fxIntensity = state.fxIntensity,
                 isPlaying = state.isPlaying,
                 onTapVideo = {
-                    showUpcomingPreview = true
+                    triggerScreenControls()
                 },
                 onRetryLoad = {
                     exoPlayer?.let { player ->
@@ -396,30 +414,69 @@ fun EditorScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Floating Left Quick Tool Rail (AR Face, Effects, Filters, 3D Chroma, Adjust, Text)
-            LeftToolRail(
-                onArFilters = { vm.openArFilterPanel() },
-                onEffects = { vm.openFxPanel() },
-                onFilters = { vm.openFilterPanel() },
-                onAdjust = { vm.openAdjustmentsPanel() },
-                onChromaKey = { vm.openChromaKeyPanel() },
-                onText = { vm.openTextPanel() },
-                onSticker = { vm.openStickerPanel() },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 6.dp)
+            val controlsAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (screenControlsVisible) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(250),
+                label = "controlsAlpha"
             )
 
-            // Floating Right Quick Tool Rail (Add Media, Audio Mixer, Voice Record, Camera)
-            RightToolRail(
-                onAdd = { showAddMediaMenu = true },
-                onAudio = { vm.openAudioMixer() },
-                onRecord = { vm.openVoiceRecorder() },
-                onCamera = { vm.openCameraCapture() },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 6.dp)
-            )
+            // Auto-hiding Floating Left Quick Tool Rail (AR Face, Effects, Filters, 3D Chroma, Adjust, Text)
+            if (controlsAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 6.dp)
+                        .graphicsLayer { alpha = controlsAlpha }
+                ) {
+                    LeftToolRail(
+                        onArFilters = { vm.openArFilterPanel() },
+                        onEffects = { vm.openFxPanel() },
+                        onFilters = { vm.openFilterPanel() },
+                        onAdjust = { vm.openAdjustmentsPanel() },
+                        onChromaKey = { vm.openChromaKeyPanel() },
+                        onText = { vm.openTextPanel() },
+                        onSticker = { vm.openStickerPanel() }
+                    )
+                }
+            }
+
+            // Auto-hiding Floating Right Quick Tool Rail (Add Media, Audio Mixer, Voice Record, Camera)
+            if (controlsAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 6.dp)
+                        .graphicsLayer { alpha = controlsAlpha }
+                ) {
+                    RightToolRail(
+                        onAdd = { showAddMediaMenu = true },
+                        onAudio = { vm.openAudioMixer() },
+                        onRecord = { vm.openVoiceRecorder() },
+                        onCamera = { vm.openCameraCapture() }
+                    )
+                }
+            }
+
+            // Screen Controls Auto-hide Indicator Badge
+            if (controlsAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .graphicsLayer { alpha = controlsAlpha }
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "⚡ Tap screen to show controls • Auto-hiding in 2s",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
 
             // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
             ScreenWordingObjects(
@@ -556,6 +613,11 @@ fun EditorScreen(
             onDeleteClip = { clipId -> vm.deleteClip(clipId) },
             onMoveClipLeft = { clipId -> vm.moveClipLeft(clipId) },
             onMoveClipRight = { clipId -> vm.moveClipRight(clipId) },
+            onShiftClipOffset = { clipId, deltaMs -> vm.shiftClipTimelineOffset(clipId, deltaMs) },
+            onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
+            onZoomIn = { vm.zoomInTimeline() },
+            onZoomOut = { vm.zoomOutTimeline() },
+            onResetZoom = { vm.setTimelineZoom(1.0f) },
             onOpenSpeed = { vm.openSpeedPanel() },
             onOpenAudio = { vm.openAudioMixer() },
             onOpenTrim = { vm.openTrimPanel() },
@@ -1709,6 +1771,11 @@ fun TimelineTrackArea(
     onDeleteClip: (clipId: String) -> Unit = {},
     onMoveClipLeft: (clipId: String) -> Unit = {},
     onMoveClipRight: (clipId: String) -> Unit = {},
+    onShiftClipOffset: (clipId: String, deltaMs: Long) -> Unit = { _, _ -> },
+    onSetClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
+    onZoomIn: () -> Unit = {},
+    onZoomOut: () -> Unit = {},
+    onResetZoom: () -> Unit = {},
     onOpenSpeed: () -> Unit = {},
     onOpenAudio: () -> Unit = {},
     onOpenTrim: () -> Unit = {},
@@ -1731,7 +1798,10 @@ fun TimelineTrackArea(
 
     var selectedLayer by remember { mutableStateOf(SelectedLayerType.NONE) }
     val timelineScrollState = rememberScrollState()
-    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 6.0f)
+    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 8.0f)
+    val durationSec = (durationMs / 1000L).coerceAtLeast(1L).toInt()
+    val baseSecondWidthDp = 52.dp
+    val secondWidthDp = (baseSecondWidthDp * zoomFactor).coerceIn(26.dp, 240.dp)
 
     // Per-second extracted video frames for synchronized scrubbing
     var perSecondThumbnails by remember(activeClip?.id, activeClip?.uri) {
@@ -1752,7 +1822,7 @@ fun TimelineTrackArea(
                     trimEndMs = trimEnd,
                     frameWidthPx = 120,
                     frameHeightPx = 80,
-                    maxSeconds = 20
+                    maxSeconds = 60
                 )
                 perSecondThumbnails = map
                 if (map.isNotEmpty()) {
@@ -1813,17 +1883,66 @@ fun TimelineTrackArea(
             // --- 1. LEFT TRACK TYPE ICON SIDEBAR (Clear Distinct Icon + Label + Badge for V2, V1, TXT, FX, A1) ---
             Column(
                 modifier = Modifier
-                    .width(64.dp)
+                    .width(66.dp)
                     .fillMaxHeight()
                     .background(Color(0xFF0C0C14))
                     .border(width = 1.dp, color = Color(0xFF1B1B28)),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top header / ruler height spacer: Magnetic Snapping & Ripple Edit Toggle Buttons
+                // Zoom Controls Bar in Header (+, -, Fit)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(24.dp)
+                        .height(20.dp)
+                        .padding(horizontal = 2.dp, vertical = 1.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(0xFF1E1E2E))
+                            .clickable(onClick = onZoomOut),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("-", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(0xFF151522))
+                            .clickable(onClick = onResetZoom),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1fx", zoomFactor),
+                            color = ApexPalette.NeonCyan,
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(0xFF1E1E2E))
+                            .clickable(onClick = onZoomIn),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Snap & Ripple Toggle Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
                         .padding(horizontal = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1833,14 +1952,17 @@ fun TimelineTrackArea(
                             .weight(1f)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(3.dp))
-                            .background(if (state.magneticSnapping) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF151520))
-                            .clickable(onClick = onToggleMagneticSnapping),
+                            .background(if (state.magneticSnapping || state.snapToBeat) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF151520))
+                            .clickable(onClick = {
+                                onToggleMagneticSnapping()
+                                onToggleSnapToBeat()
+                            }),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "SNAP",
-                            color = if (state.magneticSnapping) ApexPalette.NeonCyan else Color(0xFF6B7280),
-                            fontSize = 7.5.sp,
+                            color = if (state.magneticSnapping || state.snapToBeat) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            fontSize = 7.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1856,7 +1978,7 @@ fun TimelineTrackArea(
                         Text(
                             text = "RPL",
                             color = if (state.rippleEditEnabled) Color(0xFFFBBF24) else Color(0xFF6B7280),
-                            fontSize = 7.5.sp,
+                            fontSize = 7.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -2848,6 +2970,33 @@ fun TimelineTrackArea(
                         }
 
                         SelectedLayerType.OVERLAY_V2 -> {
+                            val ovClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
+                            if (ovClip != null) {
+                                QuickActionSquareCard(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    label = "Push -1s",
+                                    tint = Color(0xFF00E5FF),
+                                    onClick = { onShiftClipOffset(ovClip.id, -1000L) }
+                                )
+                                QuickActionSquareCard(
+                                    icon = Icons.AutoMirrored.Filled.ArrowForward,
+                                    label = "Push +1s",
+                                    tint = Color(0xFF00E5FF),
+                                    onClick = { onShiftClipOffset(ovClip.id, 1000L) }
+                                )
+                                QuickActionSquareCard(
+                                    icon = Icons.Default.NearMe,
+                                    label = "To Playhead",
+                                    tint = Color(0xFFFFD700),
+                                    onClick = { onSetClipOffset(ovClip.id, playheadMs) }
+                                )
+                                QuickActionSquareCard(
+                                    icon = Icons.Default.SwapVert,
+                                    label = "Swap V1",
+                                    tint = Color(0xFF38BDF8),
+                                    onClick = { onMoveClipLeft(ovClip.id) }
+                                )
+                            }
                             QuickActionSquareCard(
                                 icon = Icons.Default.ContentCut,
                                 label = "Split",

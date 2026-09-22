@@ -115,26 +115,17 @@ fun SpeedRampPanel(
         )
         Spacer(Modifier.height(10.dp))
 
-        // Preset Chips including 0.1x and 10x
-        val extendedPresets = listOf(
-            "0.1x" to 0.1f,
-            "0.25x" to 0.25f,
-            "0.5x" to 0.5f,
-            "1x" to 1.0f,
-            "2x" to 2.0f,
-            "4x" to 4.0f,
-            "8x" to 8.0f,
-            "10x" to 10.0f
-        )
+        // Preset Chips backed by SpeedPreset enum
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(extendedPresets) { (label, mult) ->
-                val selected = kotlin.math.abs(sliderValue - mult) < 0.05f
+            items(SpeedPreset.values()) { preset ->
+                val selected = kotlin.math.abs(sliderValue - preset.multiplier) < 0.05f
                 SpeedPresetChip(
-                    label = label,
+                    label = preset.label,
                     selected = selected,
                     onClick = {
-                        sliderValue = mult
-                        onCustomSpeed(mult)
+                        sliderValue = preset.multiplier
+                        onSelectPreset(preset)
+                        onCustomSpeed(preset.multiplier)
                     }
                 )
             }

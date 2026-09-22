@@ -7,11 +7,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -62,8 +70,22 @@ fun ExportScreen(
     // `.clickable { }` that did nothing.
     val selectedResolution = export.settings.resolution
     val selectedFps = export.settings.frameRate.toFloat()
+    val selectedBitrate = export.settings.bitrateMbps.toFloat()
+    val selectedCodec = export.settings.codec
+    val activePresetId = export.settings.activePresetId
     val activeFxId = editorState.activeFxId
 
+    if (export.isPresetSaveDialogOpen) {
+        SavePresetDialog(
+            initialName = "$selectedResolution ${selectedFps.toInt()}fps ${selectedBitrate.toInt()}Mbps",
+            onConfirm = { name ->
+                vm.saveCurrentAsCustomPreset(name)
+            },
+            onDismiss = {
+                vm.closePresetSaveDialog()
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -81,9 +103,54 @@ fun ExportScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                SectionLabel("EXPORT PRESETS")
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { vm.openPresetSaveDialog() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.BookmarkAdd,
+                        contentDescription = "Save Preset",
+                        tint = ApexPalette.NeonCyan,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Save Preset",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(export.presets, key = { it.id }) { preset ->
+                    ExportPresetCard(
+                        preset = preset,
+                        selected = preset.id == activePresetId,
+                        onSelect = { vm.applyExportPreset(preset) },
+                        onDelete = if (preset.isCustom) {
+                            { vm.deleteCustomPreset(preset.id) }
+                        } else null
+                    )
+                }
+            }
+
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fxList) { fx ->
@@ -139,7 +206,7 @@ fun ExportScreen(
                                 sub = sub,
                                 selected = selectedResolution == label,
                                 onClick = {
-                                    vm.updateExport { it.copy(resolution = label) }
+                                    vm.updateExport { it.copy(resolution = label, activePresetId = null) }
                                 },
                                 modifier = Modifier.weight(1f)
                             )
@@ -164,7 +231,7 @@ fun ExportScreen(
                         Slider(
                             value = selectedFps,
                             onValueChange = { v ->
-                                vm.updateExport { it.copy(frameRate = v.toInt()) }
+                                vm.updateExport { it.copy(frameRate = v.toInt(), activePresetId = null) }
                             },
                             valueRange = 30f..120f,
                             steps = 2,
@@ -204,7 +271,7 @@ fun ExportScreen(
                                         RoundedCornerShape(6.dp)
                                     )
                                     .clickable {
-                                        vm.updateExport { it.copy(frameRate = f.toInt()) }
+                                        vm.updateExport { it.copy(frameRate = f.toInt(), activePresetId = null) }
                                     }
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
                                 contentAlignment = Alignment.Center
@@ -221,47 +288,114 @@ fun ExportScreen(
                 }
             }
 
-            SectionLabel("BITRATE & QUALITY")
+            SectionLabel("BITRATE & CODEC")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // The gauge now drives off the live export
-                    // progress (was hardcoded 0.78f so it never
-                    // changed once the export started). When
-                    // export.progress == 0f and isExporting is
-                    // false we leave the gauge blank rather than
-                    // showing a misleading "0%" before the user
-                    // taps the button.
-                    GaugeArc(
-                        progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
-                        modifier = Modifier.size(56.dp)
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        GaugeArc(
+                            progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (export.isExporting) "Exporting…"
+                                else if (export.progress > 0f) "Export Complete"
+                                else "Estimated File Size",
+                                color = ApexPalette.TextTertiary,
+                                fontSize = 9.sp
+                            )
+                            val estDurationSec = ((editorState.project?.clips?.sumOf { (it.trimEndMs.takeIf { t -> t > 0 } ?: it.durationMs) - it.trimStartMs } ?: 30000L) / 1000f).coerceAtLeast(1f)
+                            val estSizeMb = (estDurationSec * selectedBitrate / 8f)
+                            val formattedSize = if (estSizeMb >= 1000f) String.format("%.2f GB", estSizeMb / 1024f) else String.format("%.1f MB", estSizeMb)
+                            Text(
+                                formattedSize,
+                                color = ApexPalette.TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                "${selectedBitrate.toInt()} Mbps • $selectedCodec",
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Target Bitrate: ${selectedBitrate.toInt()} Mbps",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (export.isExporting) "Exporting…"
-                            else if (export.progress > 0f) "Export Complete"
-                            else "Estimated File Size",
+                            "5M",
                             color = ApexPalette.TextTertiary,
-                            fontSize = 9.sp
-                        )
-                        Text(
-                            "1.8 GB",
-                            color = ApexPalette.TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            "120 Mbps • H.265",
-                            color = ApexPalette.NeonCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        Slider(
+                            value = selectedBitrate,
+                            onValueChange = { v ->
+                                vm.updateExport { it.copy(bitrateMbps = v.toInt(), activePresetId = null) }
+                            },
+                            valueRange = 5f..150f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = ApexPalette.NeonCyan,
+                                activeTrackColor = ApexPalette.NeonCyan,
+                                inactiveTrackColor = ApexPalette.BgElevated
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                        )
+                        Text(
+                            "150M",
+                            color = ApexPalette.TextTertiary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        for (codec in listOf("H.264", "H.265")) {
+                            val sel = selectedCodec == codec
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (sel) ApexPalette.NeonPurple.copy(alpha = 0.2f)
+                                        else ApexPalette.BgElevated
+                                    )
+                                    .border(
+                                        if (sel) 1.dp else 0.dp,
+                                        ApexPalette.NeonPurple,
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable {
+                                        vm.updateExport { it.copy(codec = codec, activePresetId = null) }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    codec,
+                                    color = if (sel) ApexPalette.NeonPurple else ApexPalette.TextPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -417,6 +551,8 @@ fun ExportScreen(
                     vm.startExport(
                         resolution = selectedResolution,
                         fps = selectedFps.toInt(),
+                        bitrateMbps = selectedBitrate.toInt(),
+                        codec = selectedCodec,
                         quality = "high"
                     )
                 },
@@ -434,7 +570,7 @@ fun ExportScreen(
                 Text(
                     if (export.isExporting)
                         "Exporting… ${(export.progress * 100).toInt()}%"
-                    else "Export $selectedResolution @ ${selectedFps.toInt()}fps",
+                    else "Export $selectedResolution @ ${selectedFps.toInt()}fps (${selectedBitrate.toInt()}M $selectedCodec)",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp
@@ -629,3 +765,174 @@ private fun GaugeArc(progress: Float, modifier: Modifier = Modifier) {
         )
     }
 }
+
+@Composable
+private fun ExportPresetCard(
+    preset: com.apexstudio.app.domain.model.ExportPreset,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onDelete: (() -> Unit)? = null
+) {
+    Box(
+        modifier = Modifier
+            .width(160.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
+                else ApexPalette.BgElevated
+            )
+            .border(
+                if (selected) 1.5.dp else 1.dp,
+                if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onSelect)
+            .padding(10.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    preset.name,
+                    color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                if (preset.isCustom && onDelete != null) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete preset",
+                        tint = ApexPalette.Danger.copy(alpha = 0.8f),
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { onDelete() }
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (selected) ApexPalette.NeonCyan else ApexPalette.BgDeep)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        preset.resolution,
+                        color = if (selected) ApexPalette.BgDeep else ApexPalette.TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(ApexPalette.BgDeep)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "${preset.frameRate}fps",
+                        color = ApexPalette.NeonPurple,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(ApexPalette.BgDeep)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "${preset.bitrateMbps}M",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (preset.isCustom) "Custom User Preset" else preset.codec,
+                color = ApexPalette.TextTertiary,
+                fontSize = 8.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun SavePresetDialog(
+    initialName: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var presetName by remember { mutableStateOf(initialName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "Save Export Preset",
+                color = ApexPalette.TextPrimary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Store current resolution, frame rate, and bitrate settings for one-tap rendering later.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp
+                )
+                OutlinedTextField(
+                    value = presetName,
+                    onValueChange = { presetName = it },
+                    label = { Text("Preset Name", fontSize = 11.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ApexPalette.NeonCyan,
+                        unfocusedBorderColor = ApexPalette.BorderGlass,
+                        focusedLabelColor = ApexPalette.NeonCyan,
+                        focusedTextColor = ApexPalette.TextPrimary,
+                        unfocusedTextColor = ApexPalette.TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(presetName) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ApexPalette.NeonCyan,
+                    contentColor = ApexPalette.BgDeep
+                )
+            ) {
+                Text("Save Preset", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ApexPalette.BgElevated,
+                    contentColor = ApexPalette.TextSecondary
+                )
+            ) {
+                Text("Cancel", fontSize = 12.sp)
+            }
+        },
+        containerColor = ApexPalette.BgSurface
+    )
+}
+

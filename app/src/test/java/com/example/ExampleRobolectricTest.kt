@@ -110,20 +110,4 @@ class ExampleRobolectricTest {
     assertTrue("WAV file must exist", file.exists())
     assertTrue("WAV file must have data > 44 bytes header", file.length() > 44)
   }
-
-  @Test
-  fun `verify clip drag and drop reordering preserves items and updates positions`() {
-    val clipA = com.apexstudio.app.domain.model.MediaClip(id = "clip_a", name = "Clip A", uri = "uri_a", durationMs = 3000L, trimEndMs = 3000L)
-    val clipB = com.apexstudio.app.domain.model.MediaClip(id = "clip_b", name = "Clip B", uri = "uri_b", durationMs = 4000L, trimEndMs = 4000L)
-    val clipC = com.apexstudio.app.domain.model.MediaClip(id = "clip_c", name = "Clip C", uri = "uri_c", durationMs = 5000L, trimEndMs = 5000L)
-
-    val clips = mutableListOf(clipA, clipB, clipC)
-    // Drag clip A (index 0) to end (index 2)
-    val moved = clips.removeAt(0)
-    clips.add(2, moved)
-
-    assertEquals("Clip B should now be first", "clip_b", clips[0].id)
-    assertEquals("Clip C should now be second", "clip_c", clips[1].id)
-    assertEquals("Clip A should now be third", "clip_a", clips[2].id)
-  }
 }

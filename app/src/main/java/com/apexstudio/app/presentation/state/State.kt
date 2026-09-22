@@ -30,6 +30,8 @@ data class EditorState(
     // Defaults to the full frame. When cropMode is true, the overlay is
     // drawn and the user can drag the handles / pick an aspect preset.
     val cropMode: Boolean = false,
+    val cropPanelOpen: Boolean = false,
+    val isControlsVisible: Boolean = true,
     val cropAspect: CropAspect = CropAspect.FREE,
     val cropRect: CropRect = CropRect.Full,
     // Filter panel state. activeFilterId == null means "no filter"
@@ -204,7 +206,9 @@ data class ExportState(
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,
-    val isExportEngineReady: Boolean = false
+    val isExportEngineReady: Boolean = false,
+    val presets: List<com.apexstudio.app.domain.model.ExportPreset> = com.apexstudio.app.domain.model.ExportPreset.DefaultPresets,
+    val isPresetSaveDialogOpen: Boolean = false
 )
 
 data class ColorToolState(

@@ -619,6 +619,7 @@ fun EditorScreen(
             onZoomIn = { vm.zoomInTimeline() },
             onZoomOut = { vm.zoomOutTimeline() },
             onResetZoom = { vm.setTimelineZoom(1.0f) },
+            onSetZoom = { zoom -> vm.setTimelineZoom(zoom) },
             onOpenSpeed = { vm.openSpeedPanel() },
             onOpenAudio = { vm.openAudioMixer() },
             onOpenTrim = { vm.openTrimPanel() },
@@ -1777,6 +1778,7 @@ fun TimelineTrackArea(
     onZoomIn: () -> Unit = {},
     onZoomOut: () -> Unit = {},
     onResetZoom: () -> Unit = {},
+    onSetZoom: (Float) -> Unit = {},
     onOpenSpeed: () -> Unit = {},
     onOpenAudio: () -> Unit = {},
     onOpenTrim: () -> Unit = {},
@@ -1799,7 +1801,7 @@ fun TimelineTrackArea(
 
     var selectedLayer by remember { mutableStateOf(SelectedLayerType.NONE) }
     val timelineScrollState = rememberScrollState()
-    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 8.0f)
+    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 10.0f)
     val durationSec = (durationMs / 1000L).coerceAtLeast(1L).toInt()
     val baseSecondWidthDp = 52.dp
     val secondWidthDp = (baseSecondWidthDp * zoomFactor).coerceIn(26.dp, 240.dp)
@@ -1889,7 +1891,7 @@ fun TimelineTrackArea(
             onDuplicateClip = onDuplicateClip,
             onDeleteClip = onDeleteClip,
             onZoomChange = { newZoom ->
-                if (newZoom > zoomFactor) onZoomIn() else onZoomOut()
+                onSetZoom(newZoom)
             },
             perSecondThumbnails = perSecondThumbnails,
             modifier = Modifier

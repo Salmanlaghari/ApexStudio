@@ -1319,12 +1319,12 @@ class EditorViewModel(
     }
 
     fun setTimelineZoom(zoom: Float) {
-        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 6.0f)) }
+        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 10.0f)) }
     }
 
     fun zoomInTimeline() {
         val current = _state.value.timelineZoom
-        setTimelineZoom((current + 0.5f).coerceAtMost(6.0f))
+        setTimelineZoom((current + 0.5f).coerceAtMost(10.0f))
     }
 
     fun zoomOutTimeline() {

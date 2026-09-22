@@ -74,7 +74,7 @@ fun AdjustPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp, topStart = 16.dp, topEnd = 16.dp))
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(
                 Brush.verticalGradient(
                     listOf(
@@ -88,9 +88,9 @@ fun AdjustPanel(
                 Brush.horizontalGradient(
                     listOf(ApexPalette.NeonCyan.copy(alpha = 0.4f), ApexPalette.NeonAmber.copy(alpha = 0.4f))
                 ),
-                RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp, topStart = 16.dp, topEnd = 16.dp)
+                RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             )
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         // TOP HEADER: Title + Active status + Reset All + Close
         Row(

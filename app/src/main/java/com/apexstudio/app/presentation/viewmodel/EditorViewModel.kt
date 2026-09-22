@@ -1360,6 +1360,20 @@ class EditorViewModel(
         persistProject()
     }
 
+    fun reorderClips(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            if (fromIndex !in p.clips.indices || toIndex !in p.clips.indices) return@update s
+            val updated = p.clips.toMutableList()
+            val item = updated.removeAt(fromIndex)
+            updated.add(toIndex, item)
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
     fun applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
         val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
         pushUndo()

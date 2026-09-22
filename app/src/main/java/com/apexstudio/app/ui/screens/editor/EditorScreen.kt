@@ -724,12 +724,11 @@ fun EditorScreen(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
                 .clickable { vm.closeAdjustmentsPanel() },
-            contentAlignment = Alignment.TopCenter
+            contentAlignment = Alignment.BottomCenter
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 54.dp, start = 8.dp, end = 8.dp)
                     .clickable(enabled = false) {}
             ) {
                 AdjustPanel(

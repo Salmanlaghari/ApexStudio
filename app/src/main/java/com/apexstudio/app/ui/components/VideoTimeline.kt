@@ -9,11 +9,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -52,6 +55,7 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +78,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -94,7 +99,11 @@ import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -142,11 +151,23 @@ fun VideoTimeline(
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
     val safePlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
-    val effectiveZoom = timelineZoom.coerceIn(0.5f, 5.0f)
+    val effectiveZoom = timelineZoom.coerceIn(0.5f, 10.0f)
 
-    // Scaling: dp per second based on zoom factor
-    val secondWidthDp = (54.dp * effectiveZoom).coerceIn(24.dp, 240.dp)
+    // Scaling: dp per second based on zoom factor (scales up to 540dp/sec for frame-level editing)
+    val secondWidthDp = (54.dp * effectiveZoom).coerceIn(24.dp, 540.dp)
     val msToDp = secondWidthDp.value / 1000f
+
+    // Pinch-to-zoom interactive state
+    var isPinchZooming by remember { mutableStateOf(false) }
+    var activeZoomDisplay by remember { mutableFloatStateOf(effectiveZoom) }
+    var showZoomHud by remember { mutableStateOf(false) }
+    var hudDismissJob by remember { mutableStateOf<Job?>(null) }
+
+    LaunchedEffect(timelineZoom) {
+        if (!isPinchZooming) {
+            activeZoomDisplay = effectiveZoom
+        }
+    }
 
     // Total content width calculation
     val timelineWidthDp = maxOf(
@@ -190,29 +211,92 @@ fun VideoTimeline(
     ) {
         // --- 1. PINNED LEFT TRACK HEADER SIDEBAR ---
         TimelineLeftSidebar(
-            zoomFactor = effectiveZoom,
+            zoomFactor = activeZoomDisplay,
             isAudioMuted = isAudioMuted,
             isOverlayVisible = isOverlayVisible,
-            onZoomIn = { onZoomChange((effectiveZoom + 0.5f).coerceAtMost(5.0f)) },
-            onZoomOut = { onZoomChange((effectiveZoom - 0.5f).coerceAtLeast(0.5f)) },
+            onZoomIn = {
+                val next = (activeZoomDisplay + 0.5f).coerceAtMost(10.0f)
+                activeZoomDisplay = next
+                onZoomChange(next)
+                showZoomHud = true
+                hudDismissJob?.cancel()
+                hudDismissJob = coroutineScope.launch { delay(1200); showZoomHud = false }
+            },
+            onZoomOut = {
+                val prev = (activeZoomDisplay - 0.5f).coerceAtLeast(0.5f)
+                activeZoomDisplay = prev
+                onZoomChange(prev)
+                showZoomHud = true
+                hudDismissJob?.cancel()
+                hudDismissJob = coroutineScope.launch { delay(1200); showZoomHud = false }
+            },
+            onResetZoom = {
+                activeZoomDisplay = 1.0f
+                onZoomChange(1.0f)
+                showZoomHud = true
+                hudDismissJob?.cancel()
+                hudDismissJob = coroutineScope.launch { delay(1200); showZoomHud = false }
+            },
             onToggleAudioMute = { isAudioMuted = !isAudioMuted },
             onToggleOverlayVisible = { isOverlayVisible = !isOverlayVisible },
             onAddVideo = { onAddMedia(ClipType.VIDEO) },
             onAddOverlay = { onAddMedia(ClipType.OVERLAY) }
         )
 
-        // --- 2. HORIZONTALLY SCROLLABLE TIMELINE CANVAS ---
+        // --- 2. TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .horizontalScroll(scrollState)
+                .pointerInput(effectiveZoom) {
+                    detectTimelinePinchZoom(
+                        onPinchStart = {
+                            isPinchZooming = true
+                            activeZoomDisplay = effectiveZoom
+                            hudDismissJob?.cancel()
+                            showZoomHud = true
+                        },
+                        onPinchZoom = { centroidX, zoomRatio ->
+                            val oldZoom = activeZoomDisplay
+                            val targetZoom = (oldZoom * zoomRatio).coerceIn(0.5f, 10.0f)
+                            if (abs(targetZoom - oldZoom) > 0.003f) {
+                                activeZoomDisplay = targetZoom
+                                onZoomChange(targetZoom)
+
+                                // Maintain anchor point under pinch centroid
+                                val oldMsToPx = (54f * oldZoom) / 1000f * density.density
+                                if (oldMsToPx > 0f) {
+                                    val timeAtCentroidMs = ((scrollState.value + centroidX) / oldMsToPx).coerceAtLeast(0f)
+                                    val newMsToPx = (54f * targetZoom) / 1000f * density.density
+                                    val desiredScroll = (timeAtCentroidMs * newMsToPx - centroidX).roundToInt().coerceAtLeast(0)
+                                    coroutineScope.launch {
+                                        scrollState.scrollTo(desiredScroll)
+                                    }
+                                }
+                            }
+                        },
+                        onPinchEnd = {
+                            isPinchZooming = false
+                            hudDismissJob?.cancel()
+                            hudDismissJob = coroutineScope.launch {
+                                delay(1200)
+                                showZoomHud = false
+                            }
+                        }
+                    )
+                }
         ) {
+            // Horizontally Scrollable Timeline Canvas
             Box(
                 modifier = Modifier
-                    .width(timelineWidthDp)
-                    .fillMaxHeight()
+                    .fillMaxSize()
+                    .horizontalScroll(scrollState)
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(timelineWidthDp)
+                        .fillMaxHeight()
+                ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -339,7 +423,26 @@ fun VideoTimeline(
                 )
             }
         }
+
+        // Floating Zoom HUD & Frame Precision indicator overlay
+        if (showZoomHud || isPinchZooming) {
+            TimelineZoomHud(
+                zoom = activeZoomDisplay,
+                onResetZoom = {
+                    activeZoomDisplay = 1.0f
+                    onZoomChange(1.0f)
+                    showZoomHud = true
+                    hudDismissJob?.cancel()
+                    hudDismissJob = coroutineScope.launch { delay(1200); showZoomHud = false }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 4.dp)
+                    .zIndex(30f)
+            )
+        }
     }
+}
 }
 
 /**
@@ -405,6 +508,7 @@ private fun TimelineLeftSidebar(
     isOverlayVisible: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    onResetZoom: () -> Unit = {},
     onToggleAudioMute: () -> Unit,
     onToggleOverlayVisible: () -> Unit,
     onAddVideo: () -> Unit,
@@ -445,7 +549,10 @@ private fun TimelineLeftSidebar(
                 text = "${String.format(java.util.Locale.US, "%.1f", zoomFactor)}x",
                 color = ApexPalette.NeonCyan,
                 fontSize = 9.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .clickable(onClick = onResetZoom)
             )
             Box(
                 modifier = Modifier
@@ -608,17 +715,50 @@ private fun TimelineTimeRuler(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val h = size.height
 
-            // Render sub-second and second tick marks
+            // Render frame-level, sub-second and second tick marks
             for (sec in 0..totalSec + 2) {
-                val secXPx = (sec * 1000L * msToDp).dp.toPx()
+                val secStartMs = sec * 1000L
+                val secXPx = (secStartMs * msToDp).dp.toPx()
 
-                // Half-second tick
-                val halfXPx = ((sec * 1000L + 500L) * msToDp).dp.toPx()
+                // High zoom: 30fps individual frame ticks (every ~33.3ms)
+                if (secondWidthDp >= 320.dp) {
+                    for (f in 1..29) {
+                        if (f % 5 != 0) {
+                            val fMs = secStartMs + (f * 33.33f).toLong()
+                            val fXPx = (fMs * msToDp).dp.toPx()
+                            drawLine(
+                                color = Color(0xFF1E2638),
+                                start = Offset(fXPx, h - 3f),
+                                end = Offset(fXPx, h),
+                                strokeWidth = 1f
+                            )
+                        }
+                    }
+                }
+
+                // Medium-high zoom: 5-frame ticks (every ~166.7ms)
+                if (secondWidthDp >= 140.dp) {
+                    for (f5 in 1..5) {
+                        if (f5 != 3) { // 3 is half-second (15 frames)
+                            val fMs = secStartMs + (f5 * 166.7f).toLong()
+                            val fXPx = (fMs * msToDp).dp.toPx()
+                            drawLine(
+                                color = Color(0xFF2C384E),
+                                start = Offset(fXPx, h - 5.5f),
+                                end = Offset(fXPx, h),
+                                strokeWidth = 1f
+                            )
+                        }
+                    }
+                }
+
+                // Half-second tick (15 frames at 30fps)
+                val halfXPx = ((secStartMs + 500L) * msToDp).dp.toPx()
                 drawLine(
-                    color = Color(0xFF263042),
-                    start = Offset(halfXPx, h - 6f),
+                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.6f) else Color(0xFF263042),
+                    start = Offset(halfXPx, h - if (secondWidthDp >= 180.dp) 8f else 6f),
                     end = Offset(halfXPx, h),
-                    strokeWidth = 1f
+                    strokeWidth = if (secondWidthDp >= 180.dp) 1.5f else 1f
                 )
 
                 // Full second tick
@@ -646,10 +786,10 @@ private fun TimelineTimeRuler(
             }
         }
 
-        // Time labels every few seconds based on zoom
+        // Time labels based on zoom factor
         val stepSec = when {
-            secondWidthDp > 80.dp -> 1
-            secondWidthDp > 40.dp -> 2
+            secondWidthDp > 60.dp -> 1
+            secondWidthDp > 35.dp -> 2
             else -> 5
         }
 
@@ -666,11 +806,29 @@ private fun TimelineTimeRuler(
                 ) {
                     Text(
                         text = TimeFormat.msToShort(sec * 1000L),
-                        color = Color(0xFF64748B),
+                        color = Color(0xFF94A3B8),
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                // If zoomed in to frame level, show half-second / 15-frame label
+                if (secondWidthDp >= 240.dp) {
+                    val halfOffsetDp = ((sec * 1000L + 500L) * msToDp).dp
+                    Box(
+                        modifier = Modifier
+                            .offset(x = halfOffsetDp)
+                            .padding(start = 2.dp, top = 3.dp)
+                    ) {
+                        Text(
+                            text = ":15f",
+                            color = ApexPalette.NeonCyan.copy(alpha = 0.7f),
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
@@ -1217,5 +1375,141 @@ private fun TimelinePlayhead(
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
+    }
+}
+
+/**
+ * Dedicated Pinch-to-Zoom gesture detector for the VideoTimeline viewport.
+ *
+ * Uses [PointerEventPass.Initial] to detect 2-pointer multi-touch pinch gestures before
+ * single-finger child gestures (such as clip dragging, trimming, or ruler scrubbing) consume them.
+ *
+ * Automatically computes centroid X position and pinch zoom ratio, consuming the multi-touch
+ * pointers to guarantee smooth scaling and anchoring without triggering unwanted child taps/drags.
+ */
+private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTimelinePinchZoom(
+    onPinchStart: () -> Unit,
+    onPinchZoom: (centroidX: Float, zoomRatio: Float) -> Unit,
+    onPinchEnd: () -> Unit
+) {
+    awaitEachGesture {
+        var isPinching = false
+        var previousDistance = 0f
+
+        while (true) {
+            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+            val activePointers = event.changes.filter { it.pressed }
+
+            if (activePointers.size >= 2) {
+                val p1 = activePointers[0].position
+                val p2 = activePointers[1].position
+                val currentDistance = hypot(p1.x - p2.x, p1.y - p2.y)
+                val centroidX = (p1.x + p2.x) / 2f
+
+                if (!isPinching) {
+                    if (currentDistance > 15f) {
+                        isPinching = true
+                        previousDistance = currentDistance
+                        onPinchStart()
+                        activePointers.forEach { it.consume() }
+                    }
+                } else {
+                    if (previousDistance > 0f) {
+                        val zoomRatio = currentDistance / previousDistance
+                        if (abs(zoomRatio - 1f) > 0.001f) {
+                            onPinchZoom(centroidX, zoomRatio)
+                        }
+                    }
+                    previousDistance = currentDistance
+                    activePointers.forEach { it.consume() }
+                }
+            } else {
+                if (isPinching) {
+                    isPinching = false
+                    previousDistance = 0f
+                    onPinchEnd()
+                }
+            }
+
+            if (activePointers.isEmpty()) {
+                if (isPinching) {
+                    isPinching = false
+                    previousDistance = 0f
+                    onPinchEnd()
+                }
+                break
+            }
+        }
+    }
+}
+
+/**
+ * Floating Zoom HUD badge displaying current scale and frame editing precision level.
+ */
+@Composable
+private fun TimelineZoomHud(
+    zoom: Float,
+    onResetZoom: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val precisionLabel = when {
+        zoom >= 6.0f -> "Frame Precision (30fps)"
+        zoom >= 3.0f -> "Fine Sub-Second"
+        zoom >= 1.5f -> "Detailed View"
+        zoom <= 0.8f -> "Overview"
+        else -> "Standard View"
+    }
+
+    Surface(
+        modifier = modifier
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp)),
+        color = Color(0xF00F131D),
+        border = BorderStroke(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(ApexPalette.NeonCyan)
+            )
+
+            Text(
+                text = "${String.format(java.util.Locale.US, "%.1f", zoom)}x",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Text(
+                text = precisionLabel,
+                color = ApexPalette.NeonCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            if (abs(zoom - 1.0f) > 0.05f) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF1E2536))
+                        .clickable(onClick = onResetZoom)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "1.0x",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
     }
 }

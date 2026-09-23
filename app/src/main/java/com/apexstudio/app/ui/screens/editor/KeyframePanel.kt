@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -401,76 +403,143 @@ fun KeyframePanel(
                 Spacer(Modifier.height(8.dp))
 
                 // Sliders based on selected tab
-                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.POSITION) {
-                    KeyframeSliderRow(
-                        label = "Position X",
-                        value = activeKeyframe.translateX,
-                        range = -1f..1f,
-                        color = ApexPalette.NeonCyan,
-                        onValueChange = { onUpdate(activeKeyframe.copy(translateX = it)) }
-                    )
-                    KeyframeSliderRow(
-                        label = "Position Y",
-                        value = activeKeyframe.translateY,
-                        range = -1f..1f,
-                        color = ApexPalette.NeonCyan,
-                        onValueChange = { onUpdate(activeKeyframe.copy(translateY = it)) }
-                    )
-                }
-
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.SCALE) {
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "Scale",
                         value = activeKeyframe.scale,
-                        range = 0.1f..3f,
+                        range = 0.1f..4.0f,
+                        unit = "x",
                         color = ApexPalette.TrackVideo,
+                        quickChips = listOf(
+                            0.5f to "0.5x",
+                            1.0f to "1.0x (Norm)",
+                            1.25f to "1.25x",
+                            1.5f to "1.5x",
+                            2.0f to "2.0x",
+                            3.0f to "3.0x"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(scale = it)) }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.ROTATION) {
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "Rotation",
                         value = activeKeyframe.rotationDeg,
-                        range = -180f..180f,
+                        range = -360f..360f,
+                        unit = "°",
                         color = ApexPalette.NeonPurple,
+                        quickChips = listOf(
+                            -180f to "-180°",
+                            -90f to "-90°",
+                            0f to "0° (Reset)",
+                            90f to "90°",
+                            180f to "180°",
+                            360f to "360°"
+                        ),
+                        step = 5f,
+                        defaultValue = 0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(rotationDeg = it)) }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.OPACITY) {
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "Opacity",
                         value = activeKeyframe.opacity,
                         range = 0f..1f,
+                        unit = "%",
+                        displayMultiplier = 100f,
                         color = ApexPalette.NeonEmerald,
+                        quickChips = listOf(
+                            0f to "0% (Fade)",
+                            0.25f to "25%",
+                            0.5f to "50%",
+                            0.75f to "75%",
+                            1.0f to "100% (Solid)"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(opacity = it)) }
                     )
                 }
 
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.POSITION) {
+                    EnhancedKeyframeSlider(
+                        label = "Position X",
+                        value = activeKeyframe.translateX,
+                        range = -1f..1f,
+                        unit = "",
+                        color = ApexPalette.NeonCyan,
+                        quickChips = listOf(
+                            -0.5f to "Left",
+                            0f to "Center",
+                            0.5f to "Right"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 0f,
+                        onValueChange = { onUpdate(activeKeyframe.copy(translateX = it)) }
+                    )
+                    EnhancedKeyframeSlider(
+                        label = "Position Y",
+                        value = activeKeyframe.translateY,
+                        range = -1f..1f,
+                        unit = "",
+                        color = ApexPalette.NeonCyan,
+                        quickChips = listOf(
+                            -0.5f to "Top",
+                            0f to "Center",
+                            0.5f to "Bottom"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 0f,
+                        onValueChange = { onUpdate(activeKeyframe.copy(translateY = it)) }
+                    )
+                }
+
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.VOLUME) {
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "Volume",
                         value = activeKeyframe.volume,
                         range = 0f..1f,
+                        unit = "%",
+                        displayMultiplier = 100f,
                         color = Color(0xFF10B981),
+                        quickChips = listOf(
+                            0f to "Mute",
+                            0.5f to "50%",
+                            1.0f to "100%"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(volume = it)) }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.EFFECT) {
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "Light Shift",
                         value = activeKeyframe.filterIntensity,
                         range = 0f..2f,
+                        unit = "x",
                         color = Color(0xFFFBBF24),
+                        quickChips = listOf(0f to "Off", 1f to "Normal", 1.5f to "High"),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(filterIntensity = it)) }
                     )
-                    KeyframeSliderRow(
+                    EnhancedKeyframeSlider(
                         label = "FX Intensity",
                         value = activeKeyframe.effectIntensity,
                         range = 0f..1f,
+                        unit = "%",
+                        displayMultiplier = 100f,
                         color = Color(0xFFF59E0B),
+                        quickChips = listOf(0f to "0%", 0.5f to "50%", 1f to "100%"),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
                         onValueChange = { onUpdate(activeKeyframe.copy(effectIntensity = it)) }
                     )
                 }
@@ -571,33 +640,143 @@ fun KeyframePanel(
 }
 
 @Composable
-private fun KeyframeSliderRow(
+private fun EnhancedKeyframeSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    unit: String = "",
+    displayMultiplier: Float = 1f,
     color: Color,
+    quickChips: List<Pair<Float, String>> = emptyList(),
+    step: Float = 0.05f,
+    defaultValue: Float = 1f,
     onValueChange: (Float) -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text(label, color = ApexPalette.TextSecondary, fontSize = 11.sp, modifier = Modifier.width(72.dp))
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                thumbColor = color,
-                activeTrackColor = color,
-                inactiveTrackColor = ApexPalette.BorderGlass
-            ),
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = String.format("%.2f", value),
-            color = ApexPalette.TextPrimary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.width(42.dp)
-        )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+    ) {
+        // Label + Decrement + Slider + Increment + Value + Reset
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = label,
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.width(68.dp)
+            )
+
+            // Step Nudge -
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1E2232))
+                    .border(1.dp, Color(0xFF2E344A), RoundedCornerShape(4.dp))
+                    .clickable {
+                        val next = (value - step).coerceIn(range.start, range.endInclusive)
+                        onValueChange(next)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Step Down", tint = Color(0xFFCBD5E1), modifier = Modifier.size(12.dp))
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = range,
+                colors = SliderDefaults.colors(
+                    thumbColor = color,
+                    activeTrackColor = color,
+                    inactiveTrackColor = ApexPalette.BorderGlass
+                ),
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(Modifier.width(4.dp))
+
+            // Step Nudge +
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1E2232))
+                    .border(1.dp, Color(0xFF2E344A), RoundedCornerShape(4.dp))
+                    .clickable {
+                        val next = (value + step).coerceIn(range.start, range.endInclusive)
+                        onValueChange(next)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Step Up", tint = Color(0xFFCBD5E1), modifier = Modifier.size(12.dp))
+            }
+
+            Spacer(Modifier.width(6.dp))
+
+            // Formatted Value Display
+            val formatted = if (displayMultiplier != 1f) {
+                "${(value * displayMultiplier).toInt()}$unit"
+            } else if (unit == "°") {
+                "${value.toInt()}$unit"
+            } else {
+                "${String.format(java.util.Locale.US, "%.2f", value)}$unit"
+            }
+            Text(
+                text = formatted,
+                color = color,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                modifier = Modifier.width(46.dp)
+            )
+
+            // Reset to Default button
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .clickable { onValueChange(defaultValue) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = Color(0xFF64748B), modifier = Modifier.size(13.dp))
+            }
+        }
+
+        // Quick Preset Chips
+        if (quickChips.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 68.dp, top = 2.dp, bottom = 4.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                quickChips.forEach { (chipVal, chipLabel) ->
+                    val isChipActive = kotlin.math.abs(value - chipVal) < 0.02f
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isChipActive) color.copy(alpha = 0.25f) else Color(0xFF161924))
+                            .border(1.dp, if (isChipActive) color else Color(0xFF262C3E), RoundedCornerShape(4.dp))
+                            .clickable { onValueChange(chipVal) }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = chipLabel,
+                            color = if (isChipActive) color else Color(0xFF94A3B8),
+                            fontSize = 9.sp,
+                            fontWeight = if (isChipActive) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        }
     }
 }

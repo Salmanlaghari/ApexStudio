@@ -349,6 +349,7 @@ fun VideoTimeline(
                         transitions = transitions,
                         onOpenTransition = onOpenTransition,
                         onSelectClip = onSelectClip,
+                        onSeekToKeyframe = onScrub,
                         onClipBoundsMeasured = { idx, leftPx, widthPx ->
                             clipLayoutBounds[idx] = Pair(leftPx, widthPx)
                         },
@@ -985,6 +986,7 @@ private fun TimelineVideoTrack(
     transitions: List<ClipTransition> = emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     onSelectClip: (String) -> Unit,
+    onSeekToKeyframe: ((Long) -> Unit)? = null,
     onClipBoundsMeasured: (index: Int, leftPx: Float, widthPx: Float) -> Unit,
     onDragStart: (MediaClip) -> Unit,
     onDrag: (deltaX: Float) -> Unit,
@@ -1150,6 +1152,33 @@ private fun TimelineVideoTrack(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text("REORDER", color = Color.Black, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+
+                    // Keyframe Diamond Markers Strip along bottom of clip
+                    val clipKeyframes = clip.keyframes.keyframes
+                    if (clipKeyframes.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .align(Alignment.BottomCenter)
+                                .background(Color.Black.copy(alpha = 0.45f))
+                        ) {
+                            clipKeyframes.forEach { kf ->
+                                val fraction = ((kf.timeMs - clip.timelineOffsetMs).toFloat() / clipDur.toFloat()).coerceIn(0f, 1f)
+                                val isNearPlayhead = kotlin.math.abs(kf.timeMs - playheadMs) <= 150L
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .offset(x = (clipWidth * fraction) - 4.dp)
+                                        .size(8.dp)
+                                        .graphicsLayer { rotationZ = 45f }
+                                        .background(if (isNearPlayhead) ApexPalette.NeonCyan else Color(0xFFFFD700))
+                                        .border(0.5.dp, Color.Black, RoundedCornerShape(1.dp))
+                                        .clickable { onSeekToKeyframe?.invoke(kf.timeMs) }
+                                )
+                            }
                         }
                     }
                 }

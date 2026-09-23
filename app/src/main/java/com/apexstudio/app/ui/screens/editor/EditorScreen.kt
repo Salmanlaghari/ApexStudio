@@ -363,6 +363,10 @@ fun EditorScreen(
         ) {
             val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
                 ?: state.project?.clips?.firstOrNull()
+            val animatedTransform = remember(selectedClip, state.playerPositionMs) {
+                selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
+                    ?: com.apexstudio.app.domain.model.AnimatedTransform.Identity
+            }
             val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
             val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
             val textOverlays = selectedClip?.textOverlays ?: emptyList()
@@ -400,6 +404,7 @@ fun EditorScreen(
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
                 isPlaying = state.isPlaying,
+                animatedTransform = animatedTransform,
                 onTapVideo = {
                     triggerScreenControls()
                 },
@@ -656,6 +661,7 @@ fun EditorScreen(
 
         BottomEditToolbar(
             onEdit = { vm.openTrimPanel() },
+            onKeyframes = { vm.setKeyframePanelOpen(true) },
             onAudio = { vm.openAudioMixer() },
             onText = { vm.openTextPanel() },
             onStickers = { vm.openStickerPanel() },
@@ -1459,6 +1465,7 @@ fun VideoPreviewArea(
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
     isPlaying: Boolean = false,
+    animatedTransform: com.apexstudio.app.domain.model.AnimatedTransform = com.apexstudio.app.domain.model.AnimatedTransform.Identity,
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
     selectedTextOverlayId: String? = null,
     currentTimeMs: Long = 0L,
@@ -1491,71 +1498,117 @@ fun VideoPreviewArea(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (exoPlayer != null) {
-            AndroidView(
-                factory = { ctx ->
-                    val pv = android.view.LayoutInflater.from(ctx)
-                        .inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView
-                    pv.apply {
-                        useController = false
-                        resizeMode = currentResizeMode
-                        player = exoPlayer
-                    }
-                },
-                update = { view ->
-                    view.player = exoPlayer
-                    view.resizeMode = currentResizeMode
-                },
+        // Video Clip Layer with Keyframe Animations (Scale, Rotation, Opacity, Position)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = animatedTransform.scale
+                    scaleY = animatedTransform.scale
+                    rotationZ = animatedTransform.rotationDeg
+                    alpha = animatedTransform.opacity.coerceIn(0f, 1f)
+                    translationX = animatedTransform.translateX * size.width * 0.5f
+                    translationY = animatedTransform.translateY * size.height * 0.5f
+                }
+        ) {
+            if (exoPlayer != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        val pv = android.view.LayoutInflater.from(ctx)
+                            .inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView
+                        pv.apply {
+                            useController = false
+                            resizeMode = currentResizeMode
+                            player = exoPlayer
+                        }
+                    },
+                    update = { view ->
+                        view.player = exoPlayer
+                        view.resizeMode = currentResizeMode
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Placeholder video frame thumbnail render
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
+                        )
+                    )
+                }
+            }
+
+            // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
+            FilterPreviewOverlay(
+                filterId = activeFilterId,
+                intensity = filterIntensity,
+                adjustments = adjustments,
+                compareMode = lutCompareMode,
+                splitPosition = lutCompareSplitPosition,
                 modifier = Modifier.fillMaxSize()
             )
-        } else {
-            // Placeholder video frame thumbnail render
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
-                    )
+
+            // Real-time 3D Chroma Key Live Overlay
+            if (chromaKeySettings.enabled) {
+                ChromaKeyPreviewOverlay(
+                    settings = chromaKeySettings,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
+            if (activeFxId != null && fxIntensity > 0f) {
+                FxPreviewOverlay(
+                    fxId = activeFxId,
+                    intensity = fxIntensity,
+                    isPlaying = isPlaying,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Live AR/AI Face & Festival Filter Overlay
+            if (activeArFilterId != null && arFilterIntensity > 0f) {
+                ArFaceFilterOverlay(
+                    filterId = activeArFilterId,
+                    intensity = arFilterIntensity,
+                    customText = arFilterCustomText,
+                    isPlaying = isPlaying,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
 
-        // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
-        FilterPreviewOverlay(
-            filterId = activeFilterId,
-            intensity = filterIntensity,
-            adjustments = adjustments,
-            compareMode = lutCompareMode,
-            splitPosition = lutCompareSplitPosition,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Real-time 3D Chroma Key Live Overlay
-        if (chromaKeySettings.enabled) {
-            ChromaKeyPreviewOverlay(
-                settings = chromaKeySettings,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
-        if (activeFxId != null && fxIntensity > 0f) {
-            FxPreviewOverlay(
-                fxId = activeFxId,
-                intensity = fxIntensity,
-                isPlaying = isPlaying,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // Live AR/AI Face & Festival Filter Overlay
-        if (activeArFilterId != null && arFilterIntensity > 0f) {
-            ArFaceFilterOverlay(
-                filterId = activeArFilterId,
-                intensity = arFilterIntensity,
-                customText = arFilterCustomText,
-                isPlaying = isPlaying,
-                modifier = Modifier.fillMaxSize()
-            )
+        // Keyframe HUD Badge when active transform is non-identity
+        if (animatedTransform != com.apexstudio.app.domain.model.AnimatedTransform.Identity) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .graphicsLayer { rotationZ = 45f }
+                            .background(ApexPalette.NeonCyan)
+                    )
+                    Text(
+                        text = "KF: ${String.format(java.util.Locale.US, "%.2fx", animatedTransform.scale)} | ${animatedTransform.rotationDeg.toInt()}° | ${(animatedTransform.opacity * 100).toInt()}%",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
         }
 
         // Picture-in-Picture Overlay Media Preview (Video / Image Overlay)
@@ -2391,6 +2444,36 @@ fun TimelineQuickActionBar(
                     modifier = Modifier.size(15.dp)
                 )
             }
+
+            // Open Keyframe Studio Curves
+            Box(
+                modifier = Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF1E2235))
+                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                    .clickable(onClick = onOpenKeyframes)
+                    .padding(horizontal = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Animation,
+                        contentDescription = "Keyframe Studio",
+                        tint = ApexPalette.NeonCyan,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "Curves",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
 
         // Center: Split & Reorder buttons
@@ -2701,6 +2784,7 @@ fun SpeedControlSheet(
 @Composable
 fun BottomEditToolbar(
     onEdit: () -> Unit = {},
+    onKeyframes: () -> Unit = {},
     onAudio: () -> Unit = {},
     onText: () -> Unit = {},
     onStickers: () -> Unit = {},
@@ -2711,6 +2795,7 @@ fun BottomEditToolbar(
 ) {
     val items = listOf(
         EditToolItem("Edit", Icons.Default.ContentCut, isActive = true, onClick = onEdit),
+        EditToolItem("Keyframe", Icons.Default.Animation, onClick = onKeyframes),
         EditToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
         EditToolItem("Text", Icons.Default.TextFields, onClick = onText),
         EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
@@ -2725,8 +2810,8 @@ fun BottomEditToolbar(
             .fillMaxWidth()
             .height(54.dp)
             .background(Color(0xFF0C0C14))
-            .border(width = 1.dp, color = Color(0xFF1F1F2E)),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+            .border(width = 1.dp, color = Color(0xFF1F1F2E))
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically
     ) {
         items.forEach { item ->
@@ -2734,7 +2819,7 @@ fun BottomEditToolbar(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier
-                    .weight(1f)
+                    .width(62.dp)
                     .fillMaxHeight()
                     .clickable(onClick = item.onClick)
             ) {

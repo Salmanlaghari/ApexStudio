@@ -172,4 +172,81 @@ class ExampleRobolectricTest {
     assertTrue("Thumbnails must contain raw video frame key (null)", thumbnails.containsKey(null))
     assertTrue("Thumbnails must contain at least 50 filtered presets", thumbnails.size >= 50)
   }
+
+  @Test
+  fun `verify keyframe animation system adjusts scale rotation and opacity over time`() {
+    val kfStart = com.apexstudio.app.domain.model.Keyframe(
+      id = "kf_start",
+      timeMs = 1000L,
+      scale = 1.0f,
+      rotationDeg = 0f,
+      opacity = 1.0f,
+      curve = com.apexstudio.app.domain.model.KeyframeCurve.LINEAR
+    )
+    val kfEnd = com.apexstudio.app.domain.model.Keyframe(
+      id = "kf_end",
+      timeMs = 2000L,
+      scale = 2.0f,
+      rotationDeg = 90f,
+      opacity = 0.2f,
+      curve = com.apexstudio.app.domain.model.KeyframeCurve.LINEAR
+    )
+
+    val track = com.apexstudio.app.domain.model.KeyframeTrack(listOf(kfStart, kfEnd)).sorted()
+
+    // Test before start
+    val t0 = track.interpolateAt(500L)
+    assertEquals(1.0f, t0.scale, 0.01f)
+    assertEquals(0f, t0.rotationDeg, 0.01f)
+    assertEquals(1.0f, t0.opacity, 0.01f)
+
+    // Test midpoint (1500ms)
+    val tMid = track.interpolateAt(1500L)
+    assertEquals(1.5f, tMid.scale, 0.05f)
+    assertEquals(45f, tMid.rotationDeg, 0.5f)
+    assertEquals(0.6f, tMid.opacity, 0.05f)
+
+    // Test at end (2000ms)
+    val tEnd = track.interpolateAt(2000L)
+    assertEquals(2.0f, tEnd.scale, 0.01f)
+    assertEquals(90f, tEnd.rotationDeg, 0.01f)
+    assertEquals(0.2f, tEnd.opacity, 0.01f)
+
+    // Test after end
+    val tAfter = track.interpolateAt(2500L)
+    assertEquals(2.0f, tAfter.scale, 0.01f)
+    assertEquals(90f, tAfter.rotationDeg, 0.01f)
+    assertEquals(0.2f, tAfter.opacity, 0.01f)
+  }
+
+  @Test
+  fun `verify animation presets generate valid scale rotation and opacity keyframe tracks`() {
+    // Zoom In preset
+    val zoomInTrack = com.apexstudio.app.data.animation.AnimationPresets.createTrack(
+      com.apexstudio.app.data.animation.AnimationPresetType.ZOOM_IN,
+      startMs = 0L,
+      durationMs = 1000L
+    )
+    assertEquals(2, zoomInTrack.keyframes.size)
+    assertTrue("Start scale must be smaller than end scale", zoomInTrack.keyframes.first().scale < zoomInTrack.keyframes.last().scale)
+
+    // Rotate preset
+    val rotateTrack = com.apexstudio.app.data.animation.AnimationPresets.createTrack(
+      com.apexstudio.app.data.animation.AnimationPresetType.ROTATE,
+      startMs = 0L,
+      durationMs = 1000L
+    )
+    assertEquals(2, rotateTrack.keyframes.size)
+    assertEquals(-180f, rotateTrack.keyframes.first().rotationDeg, 0.1f)
+    assertEquals(0f, rotateTrack.keyframes.last().rotationDeg, 0.1f)
+
+    // Fade In preset
+    val fadeInTrack = com.apexstudio.app.data.animation.AnimationPresets.createTrack(
+      com.apexstudio.app.data.animation.AnimationPresetType.FADE_IN,
+      startMs = 0L,
+      durationMs = 1000L
+    )
+    assertEquals(0f, fadeInTrack.keyframes.first().opacity, 0.01f)
+    assertEquals(1f, fadeInTrack.keyframes.last().opacity, 0.01f)
+  }
 }

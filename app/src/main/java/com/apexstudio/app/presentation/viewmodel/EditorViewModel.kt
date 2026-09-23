@@ -1555,8 +1555,17 @@ class EditorViewModel(
 
     fun applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
         val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
         pushUndo()
-        val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, 0L, 1000L)
+        val playhead = _state.value.playerPositionMs
+        val clipDuration = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(600L)
+        val animDuration = minOf(1200L, clipDuration)
+        val startMs = if (playhead >= clip.timelineOffsetMs && playhead < clip.timelineOffsetMs + clipDuration) {
+            playhead
+        } else {
+            clip.timelineOffsetMs
+        }
+        val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, startMs, animDuration)
         updateClip(clipId) { it.copy(keyframes = track) }
     }
 

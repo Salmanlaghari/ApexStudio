@@ -73,33 +73,7 @@ enum class FxPreset(val id: String, val label: String, val category: String = "T
     OIL_PAINT("oil_paint", "Oil Paint", "Stylize & Art"),
     EMBOSS_RELIEF("emboss_relief", "Emboss Relief", "Stylize & Art"),
     INVERT_FX("invert_fx", "Invert FX", "Stylize & Art"),
-    KALEIDOSCOPE("kaleidoscope", "Kaleidoscope", "Stylize & Art"),
-
-    // 6. CapCut Viral & Special FX (20+ New Presets)
-    HEART_BEAT("heart_beat", "Heart Beat", "Trending"),
-    EDGE_GLOW("edge_glow", "Edge Glow", "Trending"),
-    SHIMMER_STAR("shimmer_star", "Star Shimmer", "Trending"),
-    VERTIGO_DOLLY("vertigo_dolly", "Vertigo Zoom", "Trending"),
-    LIGHTNING_AURA("lightning_aura", "Lightning", "Light & Optics"),
-    FIRE_EMBER("fire_ember", "Fire Ember", "Light & Optics"),
-    CRYSTAL_FACET("crystal_facet", "Diamond Facet", "Light & Optics"),
-    DOUBLE_EXPOSURE("double_exposure", "Dream Fog", "Light & Optics"),
-    MATRIX_RAIN("matrix_rain", "Matrix Code", "Glitch & Digital"),
-    GLITCH_RGB_DISPLACE("glitch_rgb_displace", "RGB Slice", "Glitch & Digital"),
-    GLITCH_BLOCK("glitch_block", "Macroblock", "Glitch & Digital"),
-    HOLOGRAM_GLITCH("hologram_glitch", "Hologram", "Glitch & Digital"),
-    FILM_BURN("film_burn", "Film Burn", "Retro & Film"),
-    SUPER_8_WARM("super_8_warm", "Super 8mm", "Retro & Film"),
-    SEPIA_FLICKER("sepia_flicker", "1920s Silent", "Retro & Film"),
-    WATER_RIPPLE("water_ripple", "Water Ripple", "Blur & Motion"),
-    GHOST_TRAIL("ghost_trail", "Ghost Clone", "Blur & Motion"),
-    HEATWAVE_WARP("heatwave_warp", "Heatwave", "Blur & Motion"),
-    SPEED_LINES("speed_lines", "Speed Lines", "Blur & Motion"),
-    BLACK_HOLE_WARP("black_hole_warp", "Vortex Swirl", "Blur & Motion"),
-    MIRROR_SPLIT("mirror_split", "Mirror 4-Way", "Stylize & Art"),
-    NEON_WIREFRAME("neon_wireframe", "Cyber Grid", "Stylize & Art"),
-    COMIC_DOTS("comic_dots", "Pop Comic", "Stylize & Art"),
-    COLOR_ISOLATION("color_isolation", "Color Splash", "Stylize & Art");
+    KALEIDOSCOPE("kaleidoscope", "Kaleidoscope", "Stylize & Art");
 
     companion object {
         fun byId(id: String?): FxPreset? = values().firstOrNull { it.id == id }

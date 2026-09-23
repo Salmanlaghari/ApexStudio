@@ -77,6 +77,8 @@ class EditorViewModel(
     private val colorGradingEngine = ColorGradingEngine()
     private val projectRepository: ProjectRepository? = context?.let { ProjectRepository(it) }
     private val timelineTemplateManager = context?.let { TimelineTemplateManager(it) }
+    private val exportPresetRepository: com.apexstudio.app.data.repository.ExportPresetRepository? =
+        context?.let { com.apexstudio.app.data.repository.ExportPresetRepository(it) }
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
@@ -85,6 +87,7 @@ class EditorViewModel(
         loadLuts()
         loadTransmissionTemplates()
         loadAudioState()
+        loadExportPresets()
         // Mirror the engine's real export progress into the VM state
         // the Export screen renders (progress %, output uri, error).
         exportEngine?.exportState?.let { engineState ->
@@ -743,6 +746,10 @@ class EditorViewModel(
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }
+    fun openCropPanel() = _state.update { it.copy(cropPanelOpen = true, cropMode = true) }
+    fun closeCropPanel() = _state.update { it.copy(cropPanelOpen = false, cropMode = false) }
+    fun setControlsVisible(visible: Boolean) = _state.update { it.copy(isControlsVisible = visible) }
+    fun toggleControlsVisibility() = _state.update { it.copy(isControlsVisible = !it.isControlsVisible) }
     fun setCropRect(rect: CropRect) = _state.update { it.copy(cropRect = rect) }
     fun applyCropAspect(aspect: CropAspect) {
         _state.update { s ->
@@ -1037,9 +1044,78 @@ class EditorViewModel(
         _export.update { it.copy(settings = upd(it.settings)) }
     }
 
+    private fun loadExportPresets() {
+        val repo = exportPresetRepository ?: return
+        viewModelScope.launch {
+            repo.loadPresets().collect { presetList ->
+                _export.update { it.copy(presets = presetList) }
+            }
+        }
+    }
+
+    fun applyExportPreset(preset: com.apexstudio.app.domain.model.ExportPreset) {
+        _export.update {
+            it.copy(
+                settings = it.settings.copy(
+                    resolution = preset.resolution,
+                    frameRate = preset.frameRate,
+                    bitrateMbps = preset.bitrateMbps,
+                    codec = preset.codec,
+                    activePresetId = preset.id
+                )
+            )
+        }
+    }
+
+    fun openPresetSaveDialog() = _export.update { it.copy(isPresetSaveDialogOpen = true) }
+    fun closePresetSaveDialog() = _export.update { it.copy(isPresetSaveDialogOpen = false) }
+
+    fun saveCurrentAsCustomPreset(name: String) {
+        val currentSettings = _export.value.settings
+        val newPreset = com.apexstudio.app.domain.model.ExportPreset(
+            id = "preset_custom_${System.currentTimeMillis()}",
+            name = name.ifBlank { "Custom ${currentSettings.resolution} ${currentSettings.frameRate}fps" },
+            resolution = currentSettings.resolution,
+            frameRate = currentSettings.frameRate,
+            bitrateMbps = currentSettings.bitrateMbps,
+            codec = currentSettings.codec,
+            isCustom = true,
+            description = "${currentSettings.resolution} ${currentSettings.frameRate}fps • ${currentSettings.bitrateMbps} Mbps • ${currentSettings.codec}"
+        )
+        val repo = exportPresetRepository
+        if (repo != null) {
+            viewModelScope.launch {
+                repo.saveCustomPreset(newPreset)
+                applyExportPreset(newPreset)
+                closePresetSaveDialog()
+            }
+        } else {
+            _export.update {
+                it.copy(
+                    presets = listOf(newPreset) + it.presets,
+                    isPresetSaveDialogOpen = false
+                )
+            }
+            applyExportPreset(newPreset)
+        }
+    }
+
+    fun deleteCustomPreset(presetId: String) {
+        val repo = exportPresetRepository
+        if (repo != null) {
+            viewModelScope.launch {
+                repo.deleteCustomPreset(presetId)
+            }
+        } else {
+            _export.update { it.copy(presets = it.presets.filterNot { p -> p.id == presetId }) }
+        }
+    }
+
     fun startExport(
         resolution: String = _export.value.settings.resolution,
         fps: Int = _export.value.settings.frameRate,
+        bitrateMbps: Int = _export.value.settings.bitrateMbps,
+        codec: String = _export.value.settings.codec,
         quality: String = _export.value.settings.quality.label.lowercase()
     ) {
         val s = _state.value
@@ -1068,6 +1144,8 @@ class EditorViewModel(
                 resolution = resolution,
                 fps = fps,
                 quality = quality,
+                bitrateMbps = bitrateMbps,
+                codec = codec,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
                 adjustments = s.adjustments,
@@ -1498,12 +1576,12 @@ class EditorViewModel(
     }
 
     fun setTimelineZoom(zoom: Float) {
-        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 10.0f)) }
+        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 6.0f)) }
     }
 
     fun zoomInTimeline() {
         val current = _state.value.timelineZoom
-        setTimelineZoom((current + 0.5f).coerceAtMost(10.0f))
+        setTimelineZoom((current + 0.5f).coerceAtMost(6.0f))
     }
 
     fun zoomOutTimeline() {
@@ -1534,20 +1612,6 @@ class EditorViewModel(
             val updated = p.clips.toMutableList()
             val item = updated.removeAt(index)
             updated.add(index + 1, item)
-            s.copy(project = p.copy(clips = updated))
-        }
-        persistProject()
-    }
-
-    fun reorderClips(fromIndex: Int, toIndex: Int) {
-        if (fromIndex == toIndex) return
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            if (fromIndex !in p.clips.indices || toIndex !in p.clips.indices) return@update s
-            val updated = p.clips.toMutableList()
-            val item = updated.removeAt(fromIndex)
-            updated.add(toIndex, item)
             s.copy(project = p.copy(clips = updated))
         }
         persistProject()
@@ -1826,6 +1890,29 @@ class EditorViewModel(
         persistProject()
     }
 
+    fun pushOverlayToMainVideoTrack(overlayClipId: String) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val overlay = p.clips.firstOrNull { it.id == overlayClipId } ?: return@update s
+            val updatedClips = p.clips.map {
+                if (it.id == overlayClipId) {
+                    it.copy(type = ClipType.VIDEO, trackIndex = 0)
+                } else it
+            }
+            val newDur = updatedClips.filter { it.type == ClipType.VIDEO }
+                .sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
+                .coerceAtLeast(s.durationMs)
+            s.copy(
+                project = p.copy(clips = updatedClips, durationMs = newDur),
+                durationMs = newDur,
+                selectedClipId = overlayClipId,
+                overlayClipId = if (s.overlayClipId == overlayClipId) null else s.overlayClipId
+            )
+        }
+        persistProject()
+    }
+
     fun addClipToTrack(type: ClipType, trackIndex: Int) {
         val ctx = context ?: return
         viewModelScope.launch {
@@ -1860,34 +1947,6 @@ class EditorViewModel(
             }
             persistProject()
         }
-    }
-
-    fun setClipTimelineOffset(clipId: String, offsetMs: Long) {
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updated = p.clips.map {
-                if (it.id == clipId) it.copy(timelineOffsetMs = offsetMs.coerceAtLeast(0L))
-                else it
-            }
-            s.copy(project = p.copy(clips = updated))
-        }
-        persistProject()
-    }
-
-    fun shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val updated = p.clips.map {
-                if (it.id == clipId) {
-                    val newOffset = (it.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
-                    it.copy(timelineOffsetMs = newOffset)
-                } else it
-            }
-            s.copy(project = p.copy(clips = updated))
-        }
-        persistProject()
     }
 
     private fun pushUndo() {

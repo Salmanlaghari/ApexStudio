@@ -80,6 +80,8 @@ class ExportEngine(private val context: Context) {
         val resolution: String = "1080p",
         val fps: Int = 60,
         val quality: String = "high",
+        val bitrateMbps: Int = 18,
+        val codec: String = "H.265",
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
@@ -268,8 +270,8 @@ class ExportEngine(private val context: Context) {
                     .setEffects(Effects(audioProcessors, videoEffects))
                     .build()
 
-                // 8. Configure Hardware Encoder Factory based on target resolution
-                val transformer = buildHardwareTransformer(config.resolution, outputFile)
+                // 8. Configure Hardware Encoder Factory based on target resolution & bitrate preset
+                val transformer = buildHardwareTransformer(config.resolution, outputFile, config.bitrateMbps, config.codec)
                 this@ExportEngine.transformer = transformer
 
                 startProgressTracking(transformer)
@@ -323,11 +325,21 @@ class ExportEngine(private val context: Context) {
         }
     }
 
-    private fun buildHardwareTransformer(resolution: String, outputFile: File): Transformer {
-        val targetBitrate = when (resolution.lowercase()) {
-            "4k", "2160p" -> 50_000_000
-            "720p" -> 6_000_000
-            else -> 18_000_000 // 1080p
+    private fun buildHardwareTransformer(
+        resolution: String,
+        outputFile: File,
+        customBitrateMbps: Int? = null,
+        codec: String = "H.265"
+    ): Transformer {
+        val targetBitrate = if (customBitrateMbps != null && customBitrateMbps > 0) {
+            customBitrateMbps * 1_000_000
+        } else {
+            when (resolution.lowercase()) {
+                "8k", "4320p" -> 100_000_000
+                "4k", "2160p" -> 50_000_000
+                "720p" -> 6_000_000
+                else -> 18_000_000 // 1080p
+            }
         }
 
         val encoderSettings = VideoEncoderSettings.Builder()

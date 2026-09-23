@@ -77,10 +77,19 @@ class TransitionGlEffect(
                 glProgram.setFloatUniform("uProgress", progress)
                 val typeCode = when (transitionType) {
                     TransitionEngine.Companion.TransitionType.CROSS_DISSOLVE -> 0
-                    TransitionEngine.Companion.TransitionType.WIPE -> 1
+                    TransitionEngine.Companion.TransitionType.WIPE,
+                    TransitionEngine.Companion.TransitionType.WIPE_RIGHT,
+                    TransitionEngine.Companion.TransitionType.WIPE_UP,
+                    TransitionEngine.Companion.TransitionType.WIPE_DOWN,
+                    TransitionEngine.Companion.TransitionType.CLOCK_WIPE -> 1
                     TransitionEngine.Companion.TransitionType.ZOOM_BLUR -> 2
-                    TransitionEngine.Companion.TransitionType.SLIDE -> 3
+                    TransitionEngine.Companion.TransitionType.SLIDE,
+                    TransitionEngine.Companion.TransitionType.SLIDE_RIGHT,
+                    TransitionEngine.Companion.TransitionType.SLIDE_UP -> 3
                     TransitionEngine.Companion.TransitionType.GLITCH -> 4
+                    TransitionEngine.Companion.TransitionType.FADE_BLACK -> 5
+                    TransitionEngine.Companion.TransitionType.FADE_WHITE -> 6
+                    TransitionEngine.Companion.TransitionType.LIGHT_LEAK -> 7
                 }
                 glProgram.setFloatUniform("uType", typeCode.toFloat())
                 glProgram.bindAttributesAndUniforms()
@@ -142,12 +151,26 @@ class TransitionGlEffect(
                         } else {
                             gl_FragColor = texture2D(uTexSampler, slideUv);
                         }
-                    } else {
+                    } else if (uType < 4.5) {
                         // Glitch
                         float slice = floor(uv.y * 32.0);
                         float displace = sin(slice * 13.0 + p * 10.0) * 0.04 * p;
                         vec4 gCol = texture2D(uTexSampler, uv + vec2(displace, 0.0));
                         gl_FragColor = gCol;
+                    } else if (uType < 5.5) {
+                        // Fade to black
+                        float alpha = 1.0 - smoothstep(0.0, 1.0, p);
+                        gl_FragColor = vec4(col.rgb * alpha, col.a);
+                    } else if (uType < 6.5) {
+                        // Fade to white / flash
+                        vec3 white = vec3(1.0, 1.0, 1.0);
+                        float flash = sin(p * 3.14159265);
+                        gl_FragColor = vec4(mix(col.rgb, white, flash), col.a);
+                    } else {
+                        // Light leak
+                        float flare = sin(p * 3.14159265);
+                        vec3 flareCol = vec3(1.0, 0.75, 0.4) * flare * 0.8;
+                        gl_FragColor = vec4(col.rgb + flareCol, col.a);
                     }
                 }
             """.trimIndent()

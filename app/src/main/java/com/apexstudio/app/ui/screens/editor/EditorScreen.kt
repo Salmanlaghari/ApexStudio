@@ -628,7 +628,19 @@ fun EditorScreen(
             onOpenFx = { vm.openFxPanel() },
             onOpenVoice = { vm.openVoiceRecorder() },
             onOpenAnimation = { vm.setKeyframePanelOpen(true) },
-            onOpenTransition = { vm.openTransmissionTemplatesPanel() },
+            onOpenTransition = {
+                val clips = state.project?.clips ?: emptyList()
+                if (clips.size >= 2) {
+                    val selIndex = clips.indexOfFirst { it.id == state.selectedClipId }
+                    val fromIdx = if (selIndex in 0 until clips.size - 1) selIndex else 0
+                    vm.openTransitionPicker(clips[fromIdx].id, clips[fromIdx + 1].id)
+                } else {
+                    vm.openTransmissionTemplatesPanel()
+                }
+            },
+            onOpenClipTransition = { fromId, toId ->
+                vm.openTransitionPicker(fromId, toId)
+            },
             onOpenChromaKey = { vm.openChromaKeyPanel() },
             onOpenArFilters = { vm.openArFilterPanel() },
             onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
@@ -782,6 +794,48 @@ fun EditorScreen(
                     activeTemplateId = state.project?.lastTransmissionTemplateId,
                     onTemplateApplied = { vm.applyTransmissionTemplate(it) },
                     onClose = { vm.closeTransmissionTemplatesPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.transitionPickerOpen) {
+        val fromClip = state.project?.clips?.firstOrNull { it.id == state.transitionPickerFromClipId }
+        val toClip = state.project?.clips?.firstOrNull { it.id == state.transitionPickerToClipId }
+        val currentTransition = state.project?.transitions?.firstOrNull {
+            it.fromClipId == state.transitionPickerFromClipId && it.toClipId == state.transitionPickerToClipId
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { vm.closeTransitionPicker() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                TransitionPickerSheet(
+                    fromClip = fromClip,
+                    toClip = toClip,
+                    currentTransition = currentTransition,
+                    onApplyTransition = { type, durMs ->
+                        val fId = state.transitionPickerFromClipId
+                        val tId = state.transitionPickerToClipId
+                        if (fId != null && tId != null) {
+                            vm.applyTransition(fId, tId, type, durMs)
+                        }
+                    },
+                    onApplyToAll = { type, durMs ->
+                        vm.applyTransitionToAll(type, durMs)
+                    },
+                    onRemoveTransition = {
+                        val fId = state.transitionPickerFromClipId
+                        val tId = state.transitionPickerToClipId
+                        if (fId != null && tId != null) {
+                            vm.removeTransition(fId, tId)
+                        }
+                    },
+                    onClose = { vm.closeTransitionPicker() }
                 )
             }
         }
@@ -1788,6 +1842,7 @@ fun TimelineTrackArea(
     onOpenVoice: () -> Unit = {},
     onOpenAnimation: () -> Unit = {},
     onOpenTransition: () -> Unit = {},
+    onOpenClipTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     onOpenChromaKey: () -> Unit = {},
     onOpenArFilters: () -> Unit = {},
     onOpenRoyaltyMusic: () -> Unit = {},
@@ -1892,6 +1947,9 @@ fun TimelineTrackArea(
             onDeleteClip = onDeleteClip,
             onZoomChange = { newZoom ->
                 onSetZoom(newZoom)
+            },
+            onOpenTransition = { fromId, toId ->
+                onOpenClipTransition(fromId, toId)
             },
             perSecondThumbnails = perSecondThumbnails,
             modifier = Modifier

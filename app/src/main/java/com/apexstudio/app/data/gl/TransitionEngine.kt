@@ -35,7 +35,33 @@ class TransitionEngine {
             WIPE("wipe"),
             ZOOM_BLUR("zoom"),
             SLIDE("slide"),
-            GLITCH("glitch")
+            GLITCH("glitch"),
+            FADE_BLACK("fade_black"),
+            FADE_WHITE("fade_white"),
+            WIPE_RIGHT("wipe_right"),
+            WIPE_UP("wipe_up"),
+            WIPE_DOWN("wipe_down"),
+            CLOCK_WIPE("clock_wipe"),
+            SLIDE_RIGHT("slide_right"),
+            SLIDE_UP("slide_up"),
+            LIGHT_LEAK("light_leak");
+
+            companion object {
+                fun fromId(id: String?): TransitionType {
+                    if (id == null) return CROSS_DISSOLVE
+                    return values().firstOrNull { it.id.equals(id, ignoreCase = true) }
+                        ?: when (id.lowercase()) {
+                            "cross_dissolve", "dissolve" -> CROSS_DISSOLVE
+                            "wipe_left" -> WIPE
+                            "flash", "dip_white" -> FADE_WHITE
+                            "dip_black" -> FADE_BLACK
+                            "zoom_push" -> ZOOM_BLUR
+                            "slide_left" -> SLIDE
+                            "radial_wipe" -> CLOCK_WIPE
+                            else -> CROSS_DISSOLVE
+                        }
+                }
+            }
         }
 
         enum class DynamicEffectType(val id: String) {
@@ -142,6 +168,82 @@ void main() {
             base.b = b;
         }
         fragColor = base;
+    } 
+    else if (uType == 5) {
+        // Fade to Black / Dip to Black
+        if (p < 0.5) {
+            fragColor = mix(texture(uTexA, uv), vec4(0.0, 0.0, 0.0, 1.0), p * 2.0);
+        } else {
+            fragColor = mix(vec4(0.0, 0.0, 0.0, 1.0), texture(uTexB, uv), (p - 0.5) * 2.0);
+        }
+    } 
+    else if (uType == 6) {
+        // Fade to White / Flash
+        if (p < 0.5) {
+            fragColor = mix(texture(uTexA, uv), vec4(1.0, 1.0, 1.0, 1.0), p * 2.0);
+        } else {
+            fragColor = mix(vec4(1.0, 1.0, 1.0, 1.0), texture(uTexB, uv), (p - 0.5) * 2.0);
+        }
+    } 
+    else if (uType == 7) {
+        // Wipe Right
+        float softness = 0.08;
+        float edge = (1.0 - p) * (1.0 + softness * 2.0) - softness;
+        float factor = smoothstep(edge - softness, edge + softness, 1.0 - uv.x);
+        vec4 colA = texture(uTexA, uv);
+        vec4 colB = texture(uTexB, uv);
+        fragColor = mix(colB, colA, factor);
+    } 
+    else if (uType == 8) {
+        // Wipe Up
+        float softness = 0.08;
+        float edge = p * (1.0 + softness * 2.0) - softness;
+        float factor = smoothstep(edge - softness, edge + softness, uv.y);
+        vec4 colA = texture(uTexA, uv);
+        vec4 colB = texture(uTexB, uv);
+        fragColor = mix(colB, colA, factor);
+    } 
+    else if (uType == 9) {
+        // Wipe Down
+        float softness = 0.08;
+        float edge = (1.0 - p) * (1.0 + softness * 2.0) - softness;
+        float factor = smoothstep(edge - softness, edge + softness, 1.0 - uv.y);
+        vec4 colA = texture(uTexA, uv);
+        vec4 colB = texture(uTexB, uv);
+        fragColor = mix(colB, colA, factor);
+    } 
+    else if (uType == 10) {
+        // Clock Wipe
+        vec2 d = uv - vec2(0.5, 0.5);
+        float angle = (atan(d.y, d.x) + 3.14159265) / (2.0 * 3.14159265);
+        fragColor = (angle <= p) ? texture(uTexB, uv) : texture(uTexA, uv);
+    } 
+    else if (uType == 11) {
+        // Slide Right
+        vec2 uvA = uv - vec2(p, 0.0);
+        vec2 uvB = uv + vec2(1.0 - p, 0.0);
+        if (uv.x > p) {
+            fragColor = texture(uTexA, uvA);
+        } else {
+            fragColor = texture(uTexB, uvB);
+        }
+    } 
+    else if (uType == 12) {
+        // Slide Up
+        vec2 uvA = uv + vec2(0.0, p);
+        vec2 uvB = uv - vec2(0.0, 1.0 - p);
+        if (uv.y < 1.0 - p) {
+            fragColor = texture(uTexA, uvA);
+        } else {
+            fragColor = texture(uTexB, uvB);
+        }
+    } 
+    else if (uType == 13) {
+        // Light Leak Burst
+        vec4 base = mix(texture(uTexA, uv), texture(uTexB, uv), p);
+        float flare = sin(p * 3.14159265);
+        vec3 flareCol = vec3(1.0, 0.75, 0.4) * flare * 0.85;
+        fragColor = vec4(base.rgb + flareCol, base.a);
     } 
     else {
         fragColor = mix(texture(uTexA, uv), texture(uTexB, uv), p);
@@ -385,6 +487,15 @@ void main() {
             TransitionType.ZOOM_BLUR -> 2
             TransitionType.SLIDE -> 3
             TransitionType.GLITCH -> 4
+            TransitionType.FADE_BLACK -> 5
+            TransitionType.FADE_WHITE -> 6
+            TransitionType.WIPE_RIGHT -> 7
+            TransitionType.WIPE_UP -> 8
+            TransitionType.WIPE_DOWN -> 9
+            TransitionType.CLOCK_WIPE -> 10
+            TransitionType.SLIDE_RIGHT -> 11
+            TransitionType.SLIDE_UP -> 12
+            TransitionType.LIGHT_LEAK -> 13
         }
         GLES30.glUniform1i(uTypeLoc, typeInt)
 

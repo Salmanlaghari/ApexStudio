@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Title
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ZoomIn
@@ -93,9 +94,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ClipTransition
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -143,6 +146,8 @@ fun VideoTimeline(
     onDuplicateClip: (clipId: String) -> Unit = {},
     onDeleteClip: (clipId: String) -> Unit = {},
     onZoomChange: (Float) -> Unit = {},
+    transitions: List<ClipTransition> = emptyList(),
+    onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -341,6 +346,8 @@ fun VideoTimeline(
                         draggingClipId = draggingClipId,
                         dragAccumulatedOffsetPx = dragAccumulatedOffsetPx,
                         targetDropIndex = targetDropIndex,
+                        transitions = transitions,
+                        onOpenTransition = onOpenTransition,
                         onSelectClip = onSelectClip,
                         onClipBoundsMeasured = { idx, leftPx, widthPx ->
                             clipLayoutBounds[idx] = Pair(leftPx, widthPx)
@@ -460,6 +467,8 @@ fun VideoTimeline(
     onDeleteClip: (clipId: String) -> Unit,
     onZoomChange: (Float) -> Unit,
     perSecondThumbnails: Map<Int, Bitmap> = emptyMap(),
+    transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
+    onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val clips = state.project?.clips ?: emptyList()
@@ -490,6 +499,8 @@ fun VideoTimeline(
         onDuplicateClip = onDuplicateClip,
         onDeleteClip = onDeleteClip,
         onZoomChange = onZoomChange,
+        transitions = transitions,
+        onOpenTransition = onOpenTransition,
         modifier = modifier
     )
 }
@@ -971,6 +982,8 @@ private fun TimelineVideoTrack(
     draggingClipId: String?,
     dragAccumulatedOffsetPx: Float,
     targetDropIndex: Int,
+    transitions: List<ClipTransition> = emptyList(),
+    onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     onSelectClip: (String) -> Unit,
     onClipBoundsMeasured: (index: Int, leftPx: Float, widthPx: Float) -> Unit,
     onDragStart: (MediaClip) -> Unit,
@@ -1139,6 +1152,18 @@ private fun TimelineVideoTrack(
                             Text("REORDER", color = Color.Black, fontSize = 8.sp, fontWeight = FontWeight.Black)
                         }
                     }
+                }
+
+                // Transition Junction between this clip and the next clip
+                if (index < videoClips.size - 1) {
+                    val nextClip = videoClips[index + 1]
+                    val junctionTransition = transitions.firstOrNull {
+                        it.fromClipId == clip.id && it.toClipId == nextClip.id
+                    }
+                    TimelineTransitionJunctionBadge(
+                        transition = junctionTransition,
+                        onClick = { onOpenTransition(clip.id, nextClip.id) }
+                    )
                 }
             }
 
@@ -1513,3 +1538,77 @@ private fun TimelineZoomHud(
         }
     }
 }
+
+/**
+ * Interactive Transition Junction Button between adjacent video clips on the timeline.
+ */
+@Composable
+private fun TimelineTransitionJunctionBadge(
+    transition: ClipTransition?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasTransition = transition != null
+    val transDef = remember(transition?.type) {
+        TransitionLibrary.getById(transition?.type)
+    }
+
+    Box(
+        modifier = modifier
+            .width(if (hasTransition) 36.dp else 26.dp)
+            .height(42.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (hasTransition) Color(0xFF1E1A33)
+                else Color(0xFF141824)
+            )
+            .border(
+                width = if (hasTransition) 1.5.dp else 1.dp,
+                color = if (hasTransition) ApexPalette.NeonCyan else Color(0xFF2E384D),
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (hasTransition) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = transDef?.icon ?: Icons.Default.Transform,
+                    contentDescription = transDef?.name ?: "Transition",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = transDef?.badgeText?.take(4) ?: "TRN",
+                    color = Color.White,
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Transform,
+                    contentDescription = "Add Transition",
+                    tint = Color(0xFF64748B),
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(
+                    "+",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+

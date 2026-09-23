@@ -133,7 +133,11 @@ data class EditorState(
     val arFilterPanelOpen: Boolean = false,
     val activeArFilterId: String? = null,
     val arFilterIntensity: Float = 0.85f,
-    val arFilterCustomText: String = "Happy Ganesh Chaturthi"
+    val arFilterCustomText: String = "Happy Ganesh Chaturthi",
+    // Clip-to-Clip Transitions Bottom Sheet
+    val transitionPickerOpen: Boolean = false,
+    val transitionPickerFromClipId: String? = null,
+    val transitionPickerToClipId: String? = null
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

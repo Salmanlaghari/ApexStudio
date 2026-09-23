@@ -342,6 +342,116 @@ class EditorViewModel(
      */
     fun openTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = true) }
 
+    // -------------------------------------------------------------
+    // Clip-to-Clip Video Transitions Management
+    // -------------------------------------------------------------
+
+    /**
+     * Open the Transition Picker bottom sheet for the junction between [fromClipId] and [toClipId].
+     */
+    fun openTransitionPicker(fromClipId: String, toClipId: String) {
+        _state.update {
+            it.copy(
+                transitionPickerOpen = true,
+                transitionPickerFromClipId = fromClipId,
+                transitionPickerToClipId = toClipId
+            )
+        }
+    }
+
+    /**
+     * Close the Transition Picker bottom sheet.
+     */
+    fun closeTransitionPicker() {
+        _state.update {
+            it.copy(
+                transitionPickerOpen = false,
+                transitionPickerFromClipId = null,
+                transitionPickerToClipId = null
+            )
+        }
+    }
+
+    /**
+     * Apply or update a transition between [fromClipId] and [toClipId].
+     */
+    fun applyTransition(fromClipId: String, toClipId: String, type: String, durationMs: Long = 500L) {
+        val proj = _state.value.project ?: return
+        val existing = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
+        val newTransition = ClipTransition(
+            fromClipId = fromClipId,
+            toClipId = toClipId,
+            type = type,
+            durationMs = durationMs
+        )
+        val updatedTransitions = existing + newTransition
+        val updatedProject = proj.copy(
+            transitions = updatedTransitions,
+            lastTransitionType = type,
+            lastTransitionDurationMs = durationMs
+        )
+        _state.update {
+            it.copy(
+                project = updatedProject,
+                lastTransitionType = type,
+                lastTransitionDurationMs = durationMs
+            )
+        }
+        persistProject()
+    }
+
+    /**
+     * Apply the specified transition across all clip junctions in the timeline.
+     */
+    fun applyTransitionToAll(type: String, durationMs: Long = 500L) {
+        val proj = _state.value.project ?: return
+        val clips = proj.clips
+        if (clips.size < 2) return
+
+        val newTransitions = mutableListOf<ClipTransition>()
+        for (i in 0 until clips.size - 1) {
+            newTransitions.add(
+                ClipTransition(
+                    fromClipId = clips[i].id,
+                    toClipId = clips[i + 1].id,
+                    type = type,
+                    durationMs = durationMs
+                )
+            )
+        }
+        val updatedProject = proj.copy(
+            transitions = newTransitions,
+            lastTransitionType = type,
+            lastTransitionDurationMs = durationMs
+        )
+        _state.update {
+            it.copy(
+                project = updatedProject,
+                lastTransitionType = type,
+                lastTransitionDurationMs = durationMs
+            )
+        }
+        persistProject()
+    }
+
+    /**
+     * Remove the transition between [fromClipId] and [toClipId].
+     */
+    fun removeTransition(fromClipId: String, toClipId: String) {
+        val proj = _state.value.project ?: return
+        val updatedTransitions = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
+        val updatedProject = proj.copy(transitions = updatedTransitions)
+        _state.update { it.copy(project = updatedProject) }
+        persistProject()
+    }
+
+    /**
+     * Query transition between two clips if one exists.
+     */
+    fun getTransitionBetween(fromClipId: String, toClipId: String): ClipTransition? {
+        return _state.value.project?.transitions?.firstOrNull { it.fromClipId == fromClipId && it.toClipId == toClipId }
+    }
+
     // Phase D: PiP overlay preview. setOverlayTransform persists the
     // (x, y, scale, opacity) tuple so a pinch-zoom doesn't get clobbered
     // by unrelated state recompositions. setOverlayClip registers /

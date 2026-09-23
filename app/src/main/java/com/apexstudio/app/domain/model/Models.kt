@@ -166,6 +166,7 @@ data class Project(
     // restart.
     val lastTransitionType: String? = null,
     val lastTransitionDurationMs: Long = 500L,
+    val transitions: List<ClipTransition> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val coverFrameMs: Long? = null,
     val coverCustomUri: String? = null

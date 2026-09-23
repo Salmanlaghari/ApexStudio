@@ -15,7 +15,6 @@ data class MediaClip(
     val thumbnail: String? = null,
     val trackIndex: Int = 0,
     val type: ClipType = ClipType.VIDEO,
-    val timelineOffsetMs: Long = 0L,
     // Speed ramping: speedMultiplier is the per-clip playback rate
     // (0.25 slow-mo → 8 fast-forward). The user picks one of the
     // SpeedPreset values OR a custom value via the speed panel.
@@ -125,12 +124,14 @@ enum class SpeedCurve {
 }
 
 enum class SpeedPreset(val label: String, val multiplier: Float) {
+    SLOW_MO("0.1x", 0.1f),
     QUARTER("0.25x", 0.25f),
     HALF("0.5x", 0.5f),
     NORMAL("1x", 1f),
     DOUBLE("2x", 2f),
     QUAD("4x", 4f),
-    FAST("8x", 8f);
+    FAST("8x", 8f),
+    HYPER("10x", 10f);
 
     companion object {
         fun nearest(value: Float): SpeedPreset =
@@ -222,7 +223,11 @@ data class Keyframe(
     val volume: Float = 1f,
     val effectIntensity: Float = 1f,
     val filterIntensity: Float = 1f,
-    val curve: KeyframeCurve = KeyframeCurve.LINEAR
+    val curve: KeyframeCurve = KeyframeCurve.LINEAR,
+    val handleInX: Float = 0.42f,
+    val handleInY: Float = 0.0f,
+    val handleOutX: Float = 0.58f,
+    val handleOutY: Float = 1.0f
 ) {
     companion object {
         fun identity(timeMs: Long, id: String = java.util.UUID.randomUUID().toString()) =
@@ -310,7 +315,7 @@ data class KeyframeTrack(
     private fun interpolatePair(a: Keyframe, b: Keyframe, t: Long): AnimatedTransform {
         val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
         val raw = ((t - a.timeMs).toDouble() / span.toDouble()).coerceIn(0.0, 1.0)
-        val eased = ease(raw, b.curve)
+        val eased = ease(raw, b.curve, b.handleInX.toDouble(), b.handleInY.toDouble(), b.handleOutX.toDouble(), b.handleOutY.toDouble())
         return AnimatedTransform(
             translateX = lerp(a.translateX, b.translateX, eased),
             translateY = lerp(a.translateY, b.translateY, eased),
@@ -323,13 +328,67 @@ data class KeyframeTrack(
         )
     }
 
-    private fun ease(t: Double, curve: KeyframeCurve): Double = when (curve) {
+    private fun ease(
+        t: Double,
+        curve: KeyframeCurve,
+        p1x: Double = 0.42,
+        p1y: Double = 0.0,
+        p2x: Double = 0.58,
+        p2y: Double = 1.0
+    ): Double = when (curve) {
         KeyframeCurve.LINEAR -> t
         KeyframeCurve.EASE_IN -> t * t
         KeyframeCurve.EASE_OUT -> 1.0 - (1.0 - t) * (1.0 - t)
         KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t)
-        KeyframeCurve.BEZIER -> t * t * (3.0 - 2.0 * t) // Smoothstep cubic Bezier easing
+        KeyframeCurve.BEZIER -> solveCubicBezier(t, p1x, p1y, p2x, p2y)
         KeyframeCurve.HOLD -> 0.0 // first keyframe value until the next one
+    }
+
+    /**
+     * Solves parametric cubic Bezier curve for given parameter [x] where:
+     * P0 = (0,0), P1 = (p1x, p1y), P2 = (p2x, p2y), P3 = (1,1).
+     * Solves x(u) = x for u via Newton-Raphson / bisection, then computes y(u).
+     */
+    private fun solveCubicBezier(
+        x: Double,
+        p1x: Double,
+        p1y: Double,
+        p2x: Double,
+        p2y: Double
+    ): Double {
+        if (x <= 0.0) return 0.0
+        if (x >= 1.0) return 1.0
+
+        fun sampleCurveX(u: Double): Double =
+            3.0 * (1.0 - u) * (1.0 - u) * u * p1x + 3.0 * (1.0 - u) * u * u * p2x + u * u * u
+
+        fun sampleCurveY(u: Double): Double =
+            3.0 * (1.0 - u) * (1.0 - u) * u * p1y + 3.0 * (1.0 - u) * u * u * p2y + u * u * u
+
+        fun sampleDerivativeX(u: Double): Double =
+            3.0 * (1.0 - u) * (1.0 - u) * p1x + 6.0 * (1.0 - u) * u * (p2x - p1x) + 3.0 * u * u * (1.0 - p2x)
+
+        var u = x
+        for (i in 0 until 8) {
+            val currentX = sampleCurveX(u) - x
+            if (kotlin.math.abs(currentX) < 1e-5) return sampleCurveY(u)
+            val dX = sampleDerivativeX(u)
+            if (kotlin.math.abs(dX) < 1e-6) break
+            u -= currentX / dX
+            u = u.coerceIn(0.0, 1.0)
+        }
+
+        // Fallback bisection if Newton-Raphson diverges
+        var low = 0.0
+        var high = 1.0
+        u = x
+        while (low < high && (high - low) > 1e-4) {
+            val currentX = sampleCurveX(u)
+            if (kotlin.math.abs(currentX - x) < 1e-4) break
+            if (x > currentX) low = u else high = u
+            u = (high + low) * 0.5
+        }
+        return sampleCurveY(u).coerceIn(0.0, 1.0)
     }
 
     private fun lerp(a: Float, b: Float, t: Double): Float =
@@ -366,10 +425,13 @@ data class LutPreset(
 )
 
 data class ExportSettings(
-    val resolution: String = "8K Ultra HD",
+    val resolution: String = "1080p",
     val frameRate: Int = 60,
     val quality: ExportQuality = ExportQuality.HIGH,
-    val estimatedSizeGb: Float = 1.8f
+    val estimatedSizeGb: Float = 1.8f,
+    val bitrateMbps: Int = 18,
+    val codec: String = "H.265",
+    val activePresetId: String? = null
 )
 
 enum class ExportQuality(val label: String) {

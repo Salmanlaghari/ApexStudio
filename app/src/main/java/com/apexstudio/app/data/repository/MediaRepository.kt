@@ -22,11 +22,22 @@ object MediaRepository {
             resolution = "4K", fps = 60,
             clips = listOf(
                 MediaClip("c1", "MTN_HIKE_001.mp4", "asset://video1",
-                    durationMs = 234_000L, trimEndMs = 234_000L, trackIndex = 0,
+                    durationMs = 120_000L, trimEndMs = 120_000L, trackIndex = 0,
+                    type = ClipType.VIDEO),
+                MediaClip("c1_b", "MTN_SUMMIT_002.mp4", "asset://video1",
+                    durationMs = 114_000L, trimEndMs = 114_000L, trackIndex = 0,
                     type = ClipType.VIDEO),
                 MediaClip("c2", "Overlay_FX.mp4", "asset://overlay",
                     durationMs = 180_000L, trimStartMs = 12_000L, trimEndMs = 180_000L,
                     trackIndex = 1, type = ClipType.OVERLAY)
+            ),
+            transitions = listOf(
+                ClipTransition(
+                    fromClipId = "c1",
+                    toClipId = "c1_b",
+                    type = "cross_dissolve",
+                    durationMs = 800L
+                )
             ),
             audioTracks = listOf(
                 AudioTrack("a1", "BGM_Track.wav", "asset://bgm", volume = 0.7f),

@@ -11,6 +11,7 @@ import com.apexstudio.app.data.engine.ColorGradingProcessor
 import com.apexstudio.app.data.engine.RealEffectsProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -125,5 +126,50 @@ class ExampleRobolectricTest {
     assertEquals("Clip B should now be first", "clip_b", clips[0].id)
     assertEquals("Clip C should now be second", "clip_c", clips[1].id)
     assertEquals("Clip A should now be third", "clip_a", clips[2].id)
+  }
+
+  @Test
+  fun `verify GpuImageLutEngine builds filter chain and manages tracks`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val engine = com.apexstudio.app.data.filter.GpuImageLutEngine(context)
+
+    // Verify LutTargetTrack enum values
+    val tracks = com.apexstudio.app.presentation.state.LutTargetTrack.values()
+    assertEquals(4, tracks.size)
+    assertTrue(tracks.any { it.shortBadge == "ALL" })
+    assertTrue(tracks.any { it.shortBadge == "V1" })
+    assertTrue(tracks.any { it.shortBadge == "V2" })
+    assertTrue(tracks.any { it.shortBadge == "CLIP" })
+
+    // Build GPUImageFilter chain with secondary grading (contrast, saturation, temperature)
+    val filterChain = engine.buildFilter(
+      preset = null,
+      intensity = 1.0f,
+      contrast = 1.2f,
+      saturation = 1.1f,
+      temperatureK = 6500f,
+      tint = 10f
+    )
+    assertNotNull("Filter chain must not be null", filterChain)
+  }
+
+  @Test
+  fun `verify LutThumbnailPreviewGallery generation and view modes`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val viewModes = com.apexstudio.app.presentation.state.LutGalleryViewMode.values()
+    assertEquals(2, viewModes.size)
+    assertTrue(viewModes.contains(com.apexstudio.app.presentation.state.LutGalleryViewMode.GRID))
+    assertTrue(viewModes.contains(com.apexstudio.app.presentation.state.LutGalleryViewMode.STRIP))
+
+    // Verify dynamic thumbnail generation from sample video frame
+    val sampleFrame = com.apexstudio.app.data.filter.FilterThumbnailGenerator.createGenericPreviewBitmap(context)
+    val manifest = com.apexstudio.app.data.filter.LutFilterEngine(context).manifest
+    val thumbnails = com.apexstudio.app.data.filter.FilterThumbnailGenerator.generateDynamicThumbnails(
+      context = context,
+      source = sampleFrame,
+      manifest = manifest
+    )
+    assertTrue("Thumbnails must contain raw video frame key (null)", thumbnails.containsKey(null))
+    assertTrue("Thumbnails must contain at least 50 filtered presets", thumbnails.size >= 50)
   }
 }

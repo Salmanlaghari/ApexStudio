@@ -777,6 +777,52 @@ class EditorViewModel(
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
+    // Professional Color Grading LUTs Panel (GPUImage-powered)
+    fun openColorGradingLutPanel() {
+        _state.update { it.copy(colorGradingLutPanelOpen = true) }
+        ensureFilterThumbnails()
+    }
+    fun closeColorGradingLutPanel() = _state.update { it.copy(colorGradingLutPanelOpen = false) }
+    fun setLutTargetTrack(target: LutTargetTrack) = _state.update { it.copy(lutTargetTrack = target) }
+    fun toggleLutFavorite(lutId: String) = _state.update {
+        val current = it.lutFavoriteIds
+        val updated = if (current.contains(lutId)) current - lutId else current + lutId
+        it.copy(lutFavoriteIds = updated)
+    }
+    fun toggleLutCompareMode() = _state.update { it.copy(lutCompareMode = !it.lutCompareMode) }
+    fun setLutCompareSplitPosition(split: Float) = _state.update {
+        it.copy(lutCompareSplitPosition = split.coerceIn(0f, 1f))
+    }
+    fun setLutContrast(value: Float) = _state.update { it.copy(lutContrast = value.coerceIn(0.5f, 2.0f)) }
+    fun setLutSaturation(value: Float) = _state.update { it.copy(lutSaturation = value.coerceIn(0f, 2.0f)) }
+    fun setLutTemperature(value: Float) = _state.update { it.copy(lutTemperature = value.coerceIn(2000f, 9000f)) }
+    fun setLutTint(value: Float) = _state.update { it.copy(lutTint = value.coerceIn(-100f, 100f)) }
+    fun resetLutGrading() = _state.update {
+        it.copy(
+            activeFilterId = null,
+            filterIntensity = 1.0f,
+            lutContrast = 1.0f,
+            lutSaturation = 1.0f,
+            lutTemperature = 5000f,
+            lutTint = 0f,
+            lutCompareMode = false
+        )
+    }
+    fun importCustomCubeLut(name: String, inputStream: java.io.InputStream): com.apexstudio.app.data.filter.FilterPreset? {
+        val ctx = context ?: return null
+        val engine = com.apexstudio.app.data.filter.GpuImageLutEngine(ctx)
+        val preset = engine.importCustomCube(name, inputStream)
+        if (preset != null) {
+            _state.update { it.copy(customImportedLuts = it.customImportedLuts + preset) }
+            setActiveFilter(preset.id)
+        }
+        return preset
+    }
+
+    fun setLutGalleryViewMode(mode: com.apexstudio.app.presentation.state.LutGalleryViewMode) = _state.update {
+        it.copy(lutGalleryViewMode = mode)
+    }
+
     fun openArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = true) }
     fun closeArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = false) }
     fun selectArFilter(id: String?, intensity: Float = 0.85f) = _state.update {
@@ -786,8 +832,12 @@ class EditorViewModel(
     fun setArFilterCustomText(text: String) = _state.update { it.copy(arFilterCustomText = text) }
 
     fun ensureFilterThumbnails() {
+        refreshFilterThumbnailsFromVideo(force = false)
+    }
+
+    fun refreshFilterThumbnailsFromVideo(force: Boolean = true) {
         val ctx = context ?: return
-        if (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading) return
+        if (!force && (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading)) return
         val manifest = try {
             com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
         } catch (e: Exception) {
@@ -795,26 +845,45 @@ class EditorViewModel(
             return
         }
         _state.update { it.copy(filterThumbnailsLoading = true) }
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val activeClipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
-                val cachedThumb = activeClipId?.let { _thumbnails.value[it]?.firstOrNull()?.second }
-                val composeMap = if (cachedThumb != null) {
-                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateDynamicThumbnails(ctx, cachedThumb, manifest)
-                } else {
-                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateWithGenericImage(ctx, manifest)
+                val currentTime = _state.value.currentTimeMs
+                val activeClip = _state.value.selectedClipId?.let { id ->
+                    _state.value.project?.clips?.firstOrNull { it.id == id }
+                } ?: _state.value.project?.clips?.firstOrNull()
+
+                var frameBitmap: android.graphics.Bitmap? = null
+                if (activeClip != null && activeClip.uri.isNotBlank()) {
+                    try {
+                        val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                            .resolvePlayableUri(ctx, activeClip.uri).toString()
+                        val clipRelativeTime = (currentTime - activeClip.timelineOffsetMs + activeClip.trimStartMs)
+                            .coerceIn(activeClip.trimStartMs, activeClip.trimEndMs)
+                        frameBitmap = com.apexstudio.app.data.media.VideoThumbnailExtractor
+                            .extractFrame(ctx, playableUri, clipRelativeTime)
+                    } catch (e: Exception) {
+                        Log.w("EditorViewModel", "Failed to extract active video frame at playhead", e)
+                    }
                 }
+
+                if (frameBitmap == null && activeClip != null) {
+                    frameBitmap = _thumbnails.value[activeClip.id]?.firstOrNull()?.second
+                }
+
+                val baseFrame = frameBitmap ?: com.apexstudio.app.data.filter.FilterThumbnailGenerator.createGenericPreviewBitmap(ctx)
+
+                val composeMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateDynamicThumbnails(ctx, baseFrame, manifest, _state.value.customImportedLuts)
+
                 _state.update {
                     it.copy(
                         filterThumbnails = composeMap,
                         filterThumbnailsLoading = false
                     )
                 }
-                Log.d("EditorViewModel", "Generated ${composeMap.size} filter thumbnails")
+                Log.d("EditorViewModel", "Generated ${composeMap.size} video-frame filter thumbnails")
             } catch (e: Exception) {
-                Log.e("EditorViewModel", "Generic filter thumbnail generation failed", e)
+                Log.e("EditorViewModel", "Video frame filter thumbnail generation failed", e)
                 _state.update { it.copy(filterThumbnailsLoading = false) }
             }
         }

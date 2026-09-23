@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import com.apexstudio.app.domain.model.VideoAdjustments
 
 /**
@@ -20,14 +22,15 @@ import com.apexstudio.app.domain.model.VideoAdjustments
  * (brightness, contrast, temperature, tint, saturation, vignette) without touching
  * the underlying OpenGL/TextureView surface.
  *
- * This completely eliminates the Android 12+ RenderEffect bug where video
- * disappears or turns black upon applying a filter or transmission template.
+ * Supports A/B Split Screen comparison between raw footage and the color-graded result.
  */
 @Composable
 fun FilterPreviewOverlay(
     filterId: String?,
     intensity: Float,
     adjustments: VideoAdjustments,
+    compareMode: Boolean = false,
+    splitPosition: Float = 0.5f,
     modifier: Modifier = Modifier
 ) {
     val clampedIntensity = intensity.coerceIn(0f, 1f)
@@ -36,7 +39,27 @@ fun FilterPreviewOverlay(
 
     if (!hasFilter && !hasAdjust) return
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .drawWithContent {
+                if (compareMode) {
+                    val splitX = size.width * splitPosition.coerceIn(0f, 1f)
+                    clipRect(left = splitX, top = 0f, right = size.width, bottom = size.height) {
+                        this@drawWithContent.drawContent()
+                    }
+                    // Draw vertical divider line
+                    drawLine(
+                        color = Color.White,
+                        start = Offset(splitX, 0f),
+                        end = Offset(splitX, size.height),
+                        strokeWidth = 2.5f
+                    )
+                } else {
+                    drawContent()
+                }
+            }
+    ) {
         // 1. Filter Preset Color Grading
         if (hasFilter && filterId != null) {
             FilterGradeLayer(filterId = filterId, intensity = clampedIntensity)

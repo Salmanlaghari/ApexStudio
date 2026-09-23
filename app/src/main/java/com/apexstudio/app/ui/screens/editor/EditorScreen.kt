@@ -211,8 +211,11 @@ fun EditorScreen(
         }
     }
 
-    val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId) {
-        state.activeFilterId?.let { id -> filterEngine.manifest.filters.firstOrNull { it.id == id } }
+    val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts) {
+        state.activeFilterId?.let { id ->
+            filterEngine.manifest.filters.firstOrNull { it.id == id }
+                ?: state.customImportedLuts.firstOrNull { it.id == id }
+        }
     }
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
@@ -388,6 +391,8 @@ fun EditorScreen(
                 adjustments = state.adjustments,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
+                lutCompareMode = state.lutCompareMode,
+                lutCompareSplitPosition = state.lutCompareSplitPosition,
                 activeArFilterId = state.activeArFilterId,
                 arFilterIntensity = state.arFilterIntensity,
                 arFilterCustomText = state.arFilterCustomText,
@@ -708,25 +713,51 @@ fun EditorScreen(
         }
     }
 
-    if (state.filterPanelOpen) {
+    if (state.filterPanelOpen || state.colorGradingLutPanelOpen) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.3f))
-                .clickable { vm.closeFilterPanel() },
+                .background(Color.Black.copy(alpha = 0.35f))
+                .clickable {
+                    vm.closeFilterPanel()
+                    vm.closeColorGradingLutPanel()
+                },
             contentAlignment = Alignment.BottomCenter
         ) {
             Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-                FilterPanel(
+                ColorGradingLutPanel(
                     manifest = filterEngine.manifest,
                     activeFilterId = state.activeFilterId,
                     intensity = state.filterIntensity,
-                    activeCategory = state.filterCategory,
+                    targetTrack = state.lutTargetTrack,
+                    compareMode = state.lutCompareMode,
+                    splitPosition = state.lutCompareSplitPosition,
+                    favoriteIds = state.lutFavoriteIds,
+                    customLuts = state.customImportedLuts,
+                    contrast = state.lutContrast,
+                    saturation = state.lutSaturation,
+                    temperatureK = state.lutTemperature,
+                    tint = state.lutTint,
                     thumbnails = state.filterThumbnails,
-                    onCategoryChange = { vm.setFilterCategory(it) },
-                    onFilterSelected = { vm.setActiveFilter(it) },
+                    galleryViewMode = state.lutGalleryViewMode,
+                    isLoadingThumbnails = state.filterThumbnailsLoading,
+                    onGalleryViewModeChange = { vm.setLutGalleryViewMode(it) },
+                    onRefreshThumbnails = { vm.refreshFilterThumbnailsFromVideo(force = true) },
+                    onSelectFilter = { vm.setActiveFilter(it) },
                     onIntensityChange = { vm.setFilterIntensity(it) },
-                    onClose = { vm.closeFilterPanel() }
+                    onTargetTrackChange = { vm.setLutTargetTrack(it) },
+                    onToggleFavorite = { vm.toggleLutFavorite(it) },
+                    onToggleCompare = { vm.toggleLutCompareMode() },
+                    onSplitPositionChange = { vm.setLutCompareSplitPosition(it) },
+                    onContrastChange = { vm.setLutContrast(it) },
+                    onSaturationChange = { vm.setLutSaturation(it) },
+                    onTemperatureChange = { vm.setLutTemperature(it) },
+                    onTintChange = { vm.setLutTint(it) },
+                    onReset = { vm.resetLutGrading() },
+                    onClose = {
+                        vm.closeFilterPanel()
+                        vm.closeColorGradingLutPanel()
+                    }
                 )
             }
         }
@@ -1418,6 +1449,8 @@ fun VideoPreviewArea(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
     filterIntensity: Float = 1.0f,
+    lutCompareMode: Boolean = false,
+    lutCompareSplitPosition: Float = 0.5f,
     activeArFilterId: String? = null,
     arFilterIntensity: Float = 0.85f,
     arFilterCustomText: String = "",
@@ -1491,6 +1524,8 @@ fun VideoPreviewArea(
             filterId = activeFilterId,
             intensity = filterIntensity,
             adjustments = adjustments,
+            compareMode = lutCompareMode,
+            splitPosition = lutCompareSplitPosition,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -1633,7 +1668,7 @@ fun LeftToolRail(
     ) {
         RailItem(Icons.Default.FaceRetouchingNatural, "AR Face", onArFilters)
         RailItem(Icons.Default.AutoAwesome, "Effects", onEffects)
-        RailItem(Icons.Default.FilterAlt, "Filters", onFilters)
+        RailItem(Icons.Default.Palette, "LUTs", onFilters)
         RailItem(Icons.Default.Tune, "Adjust", onAdjust)
         RailItem(Icons.Default.Layers, "3D Chroma", onChromaKey)
         RailItem(Icons.Default.TextFields, "Text", onText)
@@ -2680,7 +2715,7 @@ fun BottomEditToolbar(
         EditToolItem("Text", Icons.Default.TextFields, onClick = onText),
         EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
         EditToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-        EditToolItem("Filters", Icons.Default.FilterAlt, onClick = onFilters),
+        EditToolItem("LUTs", Icons.Default.Palette, onClick = onFilters),
         EditToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFilters),
         EditToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
     )

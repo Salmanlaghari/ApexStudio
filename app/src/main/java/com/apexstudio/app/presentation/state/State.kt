@@ -137,7 +137,19 @@ data class EditorState(
     // Clip-to-Clip Transitions Bottom Sheet
     val transitionPickerOpen: Boolean = false,
     val transitionPickerFromClipId: String? = null,
-    val transitionPickerToClipId: String? = null
+    val transitionPickerToClipId: String? = null,
+    // Professional Color Grading LUTs Panel (GPUImage-powered)
+    val colorGradingLutPanelOpen: Boolean = false,
+    val lutTargetTrack: LutTargetTrack = LutTargetTrack.ALL_TRACKS,
+    val lutCompareMode: Boolean = false,
+    val lutCompareSplitPosition: Float = 0.5f,
+    val lutFavoriteIds: Set<String> = emptySet(),
+    val customImportedLuts: List<com.apexstudio.app.data.filter.FilterPreset> = emptyList(),
+    val lutContrast: Float = 1.0f,
+    val lutSaturation: Float = 1.0f,
+    val lutTemperature: Float = 5000f,
+    val lutTint: Float = 0f,
+    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.GRID
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the
@@ -263,3 +275,17 @@ data class AudioStudioState(
     val bassBoostEnabled: Boolean = false,
     val bassBoostStrength: Short = 0
 )
+
+/** Target layer / track to receive color grading LUT application */
+enum class LutTargetTrack(val id: String, val label: String, val shortBadge: String) {
+    ALL_TRACKS("all", "All Video Tracks", "ALL"),
+    TRACK_V1("v1", "Main Video (V1)", "V1"),
+    TRACK_V2("v2", "Overlay (V2)", "V2"),
+    SELECTED_CLIP("clip", "Active Clip", "CLIP")
+}
+
+/** Display mode for the LUTs preview gallery */
+enum class LutGalleryViewMode {
+    GRID,     // Responsive multi-column thumbnail preview gallery
+    STRIP     // Compact horizontal carousel strip
+}

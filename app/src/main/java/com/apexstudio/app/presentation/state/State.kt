@@ -30,8 +30,6 @@ data class EditorState(
     // Defaults to the full frame. When cropMode is true, the overlay is
     // drawn and the user can drag the handles / pick an aspect preset.
     val cropMode: Boolean = false,
-    val cropPanelOpen: Boolean = false,
-    val isControlsVisible: Boolean = true,
     val cropAspect: CropAspect = CropAspect.FREE,
     val cropRect: CropRect = CropRect.Full,
     // Filter panel state. activeFilterId == null means "no filter"
@@ -77,6 +75,11 @@ data class EditorState(
     val selectedTextOverlayId: String? = null,
     // Set to true while the Trim & Set Points bottom sheet is open.
     val trimPanelOpen: Boolean = false,
+    // Media3 Transformer trimming execution state
+    val isTransformerTrimming: Boolean = false,
+    val transformerTrimProgress: Float = 0f,
+    val transformerTrimMessage: String? = null,
+    val transformerTrimError: String? = null,
     // Set to true while the Transmission Templates bottom sheet is open.
     // Selecting a template from the chip strip drives the LUT + FX +
     // intensity state, which the preview GL pipeline re-reads on the
@@ -222,9 +225,7 @@ data class ExportState(
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,
-    val isExportEngineReady: Boolean = false,
-    val presets: List<com.apexstudio.app.domain.model.ExportPreset> = com.apexstudio.app.domain.model.ExportPreset.DefaultPresets,
-    val isPresetSaveDialogOpen: Boolean = false
+    val isExportEngineReady: Boolean = false
 )
 
 data class ColorToolState(

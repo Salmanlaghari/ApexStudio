@@ -597,11 +597,6 @@ fun KeyframePanel(
                         // Curve Path
                         val path = Path()
                         val steps = 60
-                        val p1x = activeKeyframe.handleInX
-                        val p1y = activeKeyframe.handleInY
-                        val p2x = activeKeyframe.handleOutX
-                        val p2y = activeKeyframe.handleOutY
-
                         for (i in 0..steps) {
                             val t = i.toFloat() / steps.toFloat()
                             val eased = when (activeKeyframe.curve) {
@@ -609,11 +604,7 @@ fun KeyframePanel(
                                 KeyframeCurve.EASE_IN -> t * t
                                 KeyframeCurve.EASE_OUT -> 1f - (1f - t) * (1f - t)
                                 KeyframeCurve.EASE_IN_OUT -> if (t < 0.5f) 2f * t * t else 1f - 2f * (1f - t) * (1f - t)
-                                KeyframeCurve.BEZIER -> {
-                                    // Parametric cubic Bezier evaluation
-                                    val u = t
-                                    (3f * (1f - u) * (1f - u) * u * p1y + 3f * (1f - u) * u * u * p2y + u * u * u).coerceIn(0f, 1f)
-                                }
+                                KeyframeCurve.BEZIER -> t * t * (3f - 2f * t)
                                 KeyframeCurve.HOLD -> if (t < 1f) 0f else 1f
                             }
                             val px = t * w
@@ -625,24 +616,12 @@ fun KeyframePanel(
                             color = ApexPalette.NeonCyan,
                             style = Stroke(width = 2.5f)
                         )
-                        // If BEZIER curve, draw control handle lines and points
-                        if (activeKeyframe.curve == KeyframeCurve.BEZIER) {
-                            val cp1 = Offset(p1x * w, h - (p1y * h))
-                            val cp2 = Offset(p2x * w, h - (p2y * h))
-                            drawLine(color = Color(0xFFF59E0B).copy(alpha = 0.5f), start = Offset(0f, h), end = cp1, strokeWidth = 1.5f)
-                            drawLine(color = Color(0xFFF59E0B).copy(alpha = 0.5f), start = Offset(w, 0f), end = cp2, strokeWidth = 1.5f)
-                            drawCircle(color = Color(0xFFF59E0B), radius = 3.5f, center = cp1)
-                            drawCircle(color = Color(0xFFF59E0B), radius = 3.5f, center = cp2)
-                        }
                         // Start and End keyframe dots
                         drawCircle(color = Color.White, radius = 4f, center = Offset(0f, h))
                         drawCircle(color = ApexPalette.NeonCyan, radius = 4f, center = Offset(w, 0f))
                     }
                     Text(
-                        text = if (activeKeyframe.curve == KeyframeCurve.BEZIER)
-                            "Cubic Bezier: (${"%.2f".format(activeKeyframe.handleInX)}, ${"%.2f".format(activeKeyframe.handleInY)}) → (${"%.2f".format(activeKeyframe.handleOutX)}, ${"%.2f".format(activeKeyframe.handleOutY)})"
-                        else
-                            "Curve: ${activeKeyframe.curve.name.lowercase().replace('_', ' ')}",
+                        text = "Smooth Bezier Easing: ${activeKeyframe.curve.name}",
                         color = ApexPalette.TextSecondary,
                         fontSize = 9.sp,
                         modifier = Modifier.align(Alignment.TopStart)

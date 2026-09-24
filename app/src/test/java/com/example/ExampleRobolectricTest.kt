@@ -12,6 +12,7 @@ import com.apexstudio.app.data.engine.RealEffectsProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -248,5 +249,78 @@ class ExampleRobolectricTest {
     )
     assertEquals(0f, fadeInTrack.keyframes.first().opacity, 0.01f)
     assertEquals(1f, fadeInTrack.keyframes.last().opacity, 0.01f)
+  }
+
+  @Test
+  fun `verify TimeFormat parses user input timestamps to milliseconds accurately`() {
+    // Seconds as string
+    assertEquals(4500L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("4.5"))
+    assertEquals(12000L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("12"))
+
+    // MM:SS format
+    assertEquals(90000L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("01:30"))
+    assertEquals(5000L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("00:05"))
+
+    // MM:SS.cs format
+    assertEquals(4500L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("00:04.50"))
+    assertEquals(65200L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("01:05.20"))
+
+    // HH:MM:SS format
+    assertEquals(3665000L, com.apexstudio.app.util.TimeFormat.parseTimeToMs("01:01:05"))
+
+    // Invalid format handling
+    assertNull(com.apexstudio.app.util.TimeFormat.parseTimeToMs(""))
+    assertNull(com.apexstudio.app.util.TimeFormat.parseTimeToMs("invalid_time"))
+  }
+
+  @Test
+  fun `verify Media3VideoTrimmer trims video with custom start and end timestamps`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val trimmer = com.apexstudio.app.data.trim.Media3VideoTrimmer(context)
+
+    // Test rejection of negative or sub-minimum duration
+    val invalidRequest = com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimRequest(
+      inputUri = "sample",
+      startMs = 2000L,
+      endMs = 2050L // duration 50ms < MIN_CLIP_DURATION_MS (100ms)
+    )
+    var errorEncountered = false
+    trimmer.trimVideo(invalidRequest).collect { result ->
+      if (result is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Error) {
+        errorEncountered = true
+        assertTrue(result.message.contains("too short"))
+      }
+    }
+    assertTrue("Trim with duration < 100ms must emit error", errorEncountered)
+
+    // Test valid trimming request execution
+    val validRequest = com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimRequest(
+      inputUri = "sample",
+      startMs = 1000L,
+      endMs = 4000L,
+      clipId = "test_clip"
+    )
+
+    var hasProgress = false
+    var successResult: com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Success? = null
+    trimmer.trimVideo(validRequest).collect { result ->
+      when (result) {
+        is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Progress -> {
+          hasProgress = true
+          assertTrue("Progress must be between 0 and 1", result.progress in 0f..1f)
+        }
+        is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Success -> {
+          successResult = result
+        }
+        is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Error -> {}
+      }
+    }
+
+    assertNotNull("Trim operation must succeed", successResult)
+    assertEquals(3000L, successResult?.durationMs)
+    assertEquals(1000L, successResult?.startMs)
+    assertEquals(4000L, successResult?.endMs)
+    assertEquals("test_clip", successResult?.clipId)
+    assertTrue("Output URI must not be empty", !successResult?.outputUri.isNullOrEmpty())
   }
 }

@@ -817,6 +817,13 @@ class EditorViewModel(
         }
     }
 
+    fun applyColorProfilePreset(profileId: String, intensity: Float = 1.0f) {
+        val profile = com.apexstudio.app.data.filter.GpuColorProfiles.findById(profileId)
+        if (profile != null) {
+            setGpuFilterConfig(profile.applyWithIntensity(intensity))
+        }
+    }
+
     fun toggleGpuFilterCompareMode() = _state.update { it.copy(gpuFilterCompareMode = !it.gpuFilterCompareMode) }
 
     fun setGpuFilterSplitPosition(split: Float) = _state.update {

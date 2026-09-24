@@ -68,10 +68,13 @@ data class GpuFilterConfig(
     val gamma: Float = 1.0f,           // 0.2 .. 3.0
     val highlights: Float = 1.0f,      // 0.0 .. 1.0
     val shadows: Float = 0f,           // 0.0 .. 1.0
-    val vibrance: Float = 0f           // -1.0 .. 1.0
+    val vibrance: Float = 0f,          // -1.0 .. 1.0
+    val activeProfileId: String? = null,
+    val profileIntensity: Float = 1.0f
 ) {
     val isDefault: Boolean
-        get() = filterPresetId == null &&
+        get() = activeProfileId == null &&
+                filterPresetId == null &&
                 stylisticEffect == StylisticEffectType.NONE &&
                 brightness == 0f &&
                 contrast == 1.0f &&

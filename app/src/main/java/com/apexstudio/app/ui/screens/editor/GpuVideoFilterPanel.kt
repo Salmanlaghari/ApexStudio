@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.filter.GpuColorProfile
+import com.apexstudio.app.data.filter.GpuColorProfiles
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.domain.model.MediaClip
@@ -214,9 +216,9 @@ fun GpuVideoFilterPanel(
                 onClick = { onTabSelected(0) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Stylistic Effects", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.FilterVintage, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("Presets", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -227,9 +229,9 @@ fun GpuVideoFilterPanel(
                 onClick = { onTabSelected(1) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Color Grading", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("Stylistic", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -240,9 +242,22 @@ fun GpuVideoFilterPanel(
                 onClick = { onTabSelected(2) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.MovieFilter, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("3D LUT Looks", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("Grading", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                selectedContentColor = ApexPalette.NeonCyan,
+                unselectedContentColor = ApexPalette.TextSecondary
+            )
+            Tab(
+                selected = selectedTab == 3,
+                onClick = { onTabSelected(3) },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.MovieFilter, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("3D LUTs", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -251,9 +266,206 @@ fun GpuVideoFilterPanel(
         }
 
         // ==========================================
-        // TAB 0: STYLISTIC EFFECTS (GPU SHADERS)
+        // TAB 0: PRESET FILTER GALLERY (COLOR PROFILES)
         // ==========================================
         if (selectedTab == 0) {
+            var profileCategoryFilter by remember { mutableStateOf("All") }
+            val profileCategories = GpuColorProfiles.CATEGORIES
+
+            // Category Filter Pills
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                profileCategories.forEach { cat ->
+                    val isSelected = profileCategoryFilter == cat
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                else ApexPalette.BgElevated
+                            )
+                            .border(
+                                1.dp,
+                                if (isSelected) ApexPalette.NeonCyan
+                                else ApexPalette.BorderGlass,
+                                RoundedCornerShape(20.dp)
+                            )
+                            .clickable { profileCategoryFilter = cat }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            cat,
+                            color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            val activeProfile = GpuColorProfiles.findById(config.activeProfileId)
+
+            // Active Profile Hero Adjustment Card
+            if (activeProfile != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(activeProfile.gradientColors.first()).copy(alpha = 0.35f),
+                                    Color(activeProfile.gradientColors.last()).copy(alpha = 0.2f),
+                                    ApexPalette.BgElevated
+                                )
+                            )
+                        )
+                        .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(16.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(activeProfile.iconEmoji, fontSize = 22.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        activeProfile.name,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(ApexPalette.NeonCyan.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            activeProfile.category.uppercase(),
+                                            color = ApexPalette.NeonCyan,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    activeProfile.description,
+                                    color = ApexPalette.TextSecondary,
+                                    fontSize = 11.sp,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                onConfigChange(GpuFilterConfig())
+                            },
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(ApexPalette.BgGlass)
+                        ) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear Preset", tint = ApexPalette.TextTertiary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    // Master Profile Intensity Slider
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Preset Strength", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("${(config.profileIntensity * 100).toInt()}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                        Slider(
+                            value = config.profileIntensity,
+                            onValueChange = { newIntensity ->
+                                onConfigChange(activeProfile.applyWithIntensity(newIntensity))
+                            },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = ApexPalette.NeonCyan,
+                                activeTrackColor = ApexPalette.NeonCyan,
+                                inactiveTrackColor = ApexPalette.BgBase
+                            ),
+                            modifier = Modifier.fillMaxWidth().height(26.dp)
+                        )
+                    }
+
+                    // Shortcut to Fine Tune in Color Grading Tab
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = { onTabSelected(2) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Fine-Tune in Grading Tab", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            // Filtered Profiles List
+            val filteredProfiles = remember(profileCategoryFilter) {
+                if (profileCategoryFilter == "All") GpuColorProfiles.ALL
+                else GpuColorProfiles.ALL.filter { it.category == profileCategoryFilter }
+            }
+
+            // Grid of Preset Profiles (2 columns)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                filteredProfiles.chunked(2).forEach { rowProfiles ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        rowProfiles.forEach { profile ->
+                            val isSelected = config.activeProfileId == profile.id
+                            GpuColorProfileCard(
+                                profile = profile,
+                                isSelected = isSelected,
+                                onClick = {
+                                    if (isSelected) {
+                                        onConfigChange(GpuFilterConfig())
+                                    } else {
+                                        onConfigChange(profile.applyWithIntensity(1.0f))
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (rowProfiles.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // TAB 1: STYLISTIC EFFECTS (GPU SHADERS)
+        // ==========================================
+        if (selectedTab == 1) {
             // Category Filter Pills
             Row(
                 modifier = Modifier
@@ -421,9 +633,9 @@ fun GpuVideoFilterPanel(
         }
 
         // ==========================================
-        // TAB 1: PARAMETRIC COLOR GRADING
+        // TAB 2: PARAMETRIC COLOR GRADING
         // ==========================================
-        if (selectedTab == 1) {
+        if (selectedTab == 2) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -513,9 +725,9 @@ fun GpuVideoFilterPanel(
         }
 
         // ==========================================
-        // TAB 2: 3D LUT LOOKS & PRESETS
+        // TAB 3: 3D LUT LOOKS & PRESETS
         // ==========================================
-        if (selectedTab == 2) {
+        if (selectedTab == 3) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // LUT Intensity Slider
                 if (config.filterPresetId != null) {
@@ -790,3 +1002,113 @@ private fun getEffectIcon(effect: StylisticEffectType): androidx.compose.ui.grap
         StylisticEffectType.INVERT -> Icons.Default.InvertColors
     }
 }
+
+@Composable
+private fun GpuColorProfileCard(
+    profile: GpuColorProfile,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (isSelected) ApexPalette.BgElevated
+                else ApexPalette.BgBase
+            )
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable(onClick = onClick)
+            .testTag("gpu_profile_${profile.id}")
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Gradient Header Tile
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(68.dp)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color(profile.gradientColors.first()),
+                                Color(profile.gradientColors.last())
+                            )
+                        )
+                    )
+                    .padding(8.dp)
+            ) {
+                // Icon Emoji
+                Text(
+                    profile.iconEmoji,
+                    fontSize = 24.sp,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                )
+
+                // Category Tag
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        profile.category,
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Selected Checkmark Badge
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.NeonCyan),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Active",
+                            tint = Color.Black,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
+            // Description info
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    profile.name,
+                    color = if (isSelected) ApexPalette.NeonCyan else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(
+                    profile.description,
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 2,
+                    lineHeight = 13.sp
+                )
+            }
+        }
+    }
+}
+

@@ -40,6 +40,14 @@ data class EditorState(
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
     val filterCategory: String = "beauty_hd",
+    // GPUImage Real-Time Video Filtering Interface state
+    val gpuFilterPanelOpen: Boolean = false,
+    val activeGpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    val gpuFilterPreviewBitmap: android.graphics.Bitmap? = null,
+    val isGpuFilterProcessing: Boolean = false,
+    val gpuFilterCompareMode: Boolean = false,
+    val gpuFilterSplitPosition: Float = 0.5f,
+    val gpuFilterSelectedTab: Int = 0, // 0: Stylistic Effects, 1: Color Grading, 2: LUT Presets
     // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
     // Populated asynchronously when a clip is loaded; the FilterPanel
     // shows these instead of gradient color blocks.

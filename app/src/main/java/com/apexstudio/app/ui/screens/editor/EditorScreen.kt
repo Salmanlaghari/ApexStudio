@@ -395,6 +395,9 @@ fun EditorScreen(
                 adjustments = state.adjustments,
                 activeFilterId = state.activeFilterId,
                 filterIntensity = state.filterIntensity,
+                gpuFilterConfig = state.activeGpuFilterConfig,
+                gpuFilterCompareMode = state.gpuFilterCompareMode,
+                gpuFilterSplitPosition = state.gpuFilterSplitPosition,
                 lutCompareMode = state.lutCompareMode,
                 lutCompareSplitPosition = state.lutCompareSplitPosition,
                 activeArFilterId = state.activeArFilterId,
@@ -725,6 +728,40 @@ fun EditorScreen(
                     onClearTransformerStatus = { vm.clearTransformerTrimStatus() },
                     onExport = onExport,
                     onClose = { vm.closeTrimPanel() }
+                )
+            }
+        }
+    }
+
+    if (state.gpuFilterPanelOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable { vm.closeGpuFilterPanel() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                val activeClip = state.selectedClipId?.let { id ->
+                    state.project?.clips?.firstOrNull { it.id == id }
+                } ?: state.project?.clips?.firstOrNull()
+
+                GpuVideoFilterPanel(
+                    selectedClip = activeClip,
+                    config = state.activeGpuFilterConfig,
+                    manifest = filterEngine.manifest,
+                    selectedTab = state.gpuFilterSelectedTab,
+                    compareMode = state.gpuFilterCompareMode,
+                    splitPosition = state.gpuFilterSplitPosition,
+                    lutThumbnails = state.filterThumbnails,
+                    onTabSelected = { vm.setGpuFilterSelectedTab(it) },
+                    onConfigChange = { vm.setGpuFilterConfig(it) },
+                    onToggleCompare = { vm.toggleGpuFilterCompareMode() },
+                    onSplitPositionChange = { vm.setGpuFilterSplitPosition(it) },
+                    onApplyToClip = { vm.applyGpuFilterToSelectedClip() },
+                    onApplyToAllClips = { vm.applyGpuFilterToAllClips() },
+                    onReset = { vm.resetGpuFilter() },
+                    onClose = { vm.closeGpuFilterPanel() }
                 )
             }
         }
@@ -1466,6 +1503,9 @@ fun VideoPreviewArea(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
     filterIntensity: Float = 1.0f,
+    gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    gpuFilterCompareMode: Boolean = false,
+    gpuFilterSplitPosition: Float = 0.5f,
     lutCompareMode: Boolean = false,
     lutCompareSplitPosition: Float = 0.5f,
     activeArFilterId: String? = null,
@@ -1557,6 +1597,14 @@ fun VideoPreviewArea(
                 adjustments = adjustments,
                 compareMode = lutCompareMode,
                 splitPosition = lutCompareSplitPosition,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Live Real-Time GPUImage Filter & Stylistic Effects Overlay
+            GpuVideoFilterOverlay(
+                config = gpuFilterConfig,
+                compareMode = gpuFilterCompareMode,
+                splitPosition = gpuFilterSplitPosition,
                 modifier = Modifier.fillMaxSize()
             )
 

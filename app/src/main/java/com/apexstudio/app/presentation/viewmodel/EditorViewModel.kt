@@ -731,7 +731,13 @@ class EditorViewModel(
         it.copy(zoomLevel = target)
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
-    fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
+    fun selectClip(id: String?) = _state.update { state ->
+        val clip = id?.let { clipId -> state.project?.clips?.firstOrNull { it.id == clipId } }
+        state.copy(
+            selectedClipId = id,
+            activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        )
+    }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
@@ -770,10 +776,91 @@ class EditorViewModel(
     fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
 
     fun openFilterPanel() {
-        _state.update { it.copy(filterPanelOpen = true) }
+        openGpuFilterPanel()
+    }
+    fun closeFilterPanel() = closeGpuFilterPanel()
+
+    // Real-Time GPUImage Video Filtering Studio
+    fun openGpuFilterPanel() {
+        val selectedClip = _state.value.selectedClipId?.let { id ->
+            _state.value.project?.clips?.firstOrNull { it.id == id }
+        } ?: _state.value.project?.clips?.firstOrNull()
+
+        val clipConfig = selectedClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        _state.update {
+            it.copy(
+                gpuFilterPanelOpen = true,
+                activeGpuFilterConfig = clipConfig,
+                filterPanelOpen = false,
+                colorGradingLutPanelOpen = false
+            )
+        }
         ensureFilterThumbnails()
     }
-    fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
+
+    fun closeGpuFilterPanel() = _state.update { it.copy(gpuFilterPanelOpen = false) }
+
+    fun setGpuFilterConfig(config: com.apexstudio.app.data.filter.GpuFilterConfig) {
+        _state.update { state ->
+            val updatedClips = state.project?.clips?.map { clip ->
+                if (clip.id == state.selectedClipId) {
+                    clip.copy(gpuFilterConfig = config)
+                } else clip
+            } ?: emptyList()
+
+            state.copy(
+                activeGpuFilterConfig = config,
+                activeFilterId = config.filterPresetId,
+                filterIntensity = config.filterIntensity,
+                project = state.project?.copy(clips = updatedClips)
+            )
+        }
+    }
+
+    fun toggleGpuFilterCompareMode() = _state.update { it.copy(gpuFilterCompareMode = !it.gpuFilterCompareMode) }
+
+    fun setGpuFilterSplitPosition(split: Float) = _state.update {
+        it.copy(gpuFilterSplitPosition = split.coerceIn(0.05f, 0.95f))
+    }
+
+    fun setGpuFilterSelectedTab(tab: Int) = _state.update { it.copy(gpuFilterSelectedTab = tab) }
+
+    fun applyGpuFilterToSelectedClip() {
+        val activeConfig = _state.value.activeGpuFilterConfig
+        val selectedId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
+        if (selectedId != null) {
+            _state.update { state ->
+                val updatedClips = state.project?.clips?.map { clip ->
+                    if (clip.id == selectedId) clip.copy(gpuFilterConfig = activeConfig) else clip
+                } ?: emptyList()
+                state.copy(
+                    project = state.project?.copy(clips = updatedClips),
+                    gpuFilterPanelOpen = false
+                )
+            }
+        } else {
+            closeGpuFilterPanel()
+        }
+    }
+
+    fun applyGpuFilterToAllClips() {
+        val activeConfig = _state.value.activeGpuFilterConfig
+        _state.update { state ->
+            val updatedClips = state.project?.clips?.map { clip ->
+                clip.copy(gpuFilterConfig = activeConfig)
+            } ?: emptyList()
+            state.copy(
+                project = state.project?.copy(clips = updatedClips),
+                gpuFilterPanelOpen = false
+            )
+        }
+    }
+
+    fun resetGpuFilter() {
+        val defaultConfig = com.apexstudio.app.data.filter.GpuFilterConfig()
+        setGpuFilterConfig(defaultConfig)
+    }
+
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }

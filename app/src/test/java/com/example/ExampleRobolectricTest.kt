@@ -323,4 +323,66 @@ class ExampleRobolectricTest {
     assertEquals("test_clip", successResult?.clipId)
     assertTrue("Output URI must not be empty", !successResult?.outputUri.isNullOrEmpty())
   }
+
+  @Test
+  fun `verify GPUImage filter group builds stylistic effects and color grading correctly`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val engine = com.apexstudio.app.data.filter.GpuVideoFilterEngine(context)
+
+    // Test default configuration produces non-empty group
+    val defaultConfig = com.apexstudio.app.data.filter.GpuFilterConfig()
+    assertTrue("Default config should be default", defaultConfig.isDefault)
+    val defaultGroup = engine.buildFilterGroup(defaultConfig)
+    assertNotNull("Filter group must be created", defaultGroup)
+    assertEquals(1, defaultGroup.filters.size)
+
+    // Test complex grading + stylistic effect (e.g. Vignette + Temperature + Exposure + Contrast)
+    val styledConfig = com.apexstudio.app.data.filter.GpuFilterConfig(
+      stylisticEffect = com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE,
+      stylisticIntensity = 0.8f,
+      temperature = 6500f,
+      exposure = 0.5f,
+      contrast = 1.3f,
+      saturation = 1.2f
+    )
+    assertTrue("Styled config must not be default", !styledConfig.isDefault)
+
+    val styledGroup = engine.buildFilterGroup(styledConfig)
+    assertNotNull("Styled filter group must be created", styledGroup)
+    assertTrue("Styled filter group should contain multiple chained filters", styledGroup.filters.size >= 4)
+
+    // Verify all StylisticEffectType enum values are constructible
+    for (effect in com.apexstudio.app.data.filter.StylisticEffectType.values()) {
+      val testConfig = com.apexstudio.app.data.filter.GpuFilterConfig(
+        stylisticEffect = effect,
+        stylisticIntensity = 0.75f,
+        effectParam = 0.5f
+      )
+      val group = engine.buildFilterGroup(testConfig)
+      assertNotNull("Effect ${effect.name} should generate valid filter group", group)
+    }
+  }
+
+  @Test
+  fun `verify GPUImage split comparison generation`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val engine = com.apexstudio.app.data.filter.GpuVideoFilterEngine(context)
+
+    val sourceBitmap = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888)
+    for (x in 0 until 40) {
+      for (y in 0 until 40) {
+        sourceBitmap.setPixel(x, y, AndroidColor.rgb(120, 160, 200))
+      }
+    }
+
+    val config = com.apexstudio.app.data.filter.GpuFilterConfig(
+      stylisticEffect = com.apexstudio.app.data.filter.StylisticEffectType.SEPIA,
+      stylisticIntensity = 1.0f
+    )
+
+    val splitBitmap = engine.generateSplitComparison(sourceBitmap, config, splitXFraction = 0.5f)
+    assertNotNull("Split comparison bitmap should not be null", splitBitmap)
+    assertEquals(40, splitBitmap.width)
+    assertEquals(40, splitBitmap.height)
+  }
 }

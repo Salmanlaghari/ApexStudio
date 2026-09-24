@@ -37,7 +37,8 @@ data class MediaClip(
     // export (TextOverlayGlEffect) render the text at exactly the
     // same relative position and size.
     val textOverlays: List<TextOverlay> = emptyList(),
-    val stickers: List<StickerOverlay> = emptyList()
+    val stickers: List<StickerOverlay> = emptyList(),
+    val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig()
 )
 
 /**

@@ -385,4 +385,68 @@ class ExampleRobolectricTest {
     assertEquals(40, splitBitmap.width)
     assertEquals(40, splitBitmap.height)
   }
+
+  @Test
+  fun `verify GPUColorProfiles catalog contains Vintage BW and Cinematic profiles`() {
+    val allProfiles = com.apexstudio.app.data.filter.GpuColorProfiles.ALL
+    assertTrue("Color profiles catalog must have multiple presets", allProfiles.size >= 10)
+
+    val vintage = com.apexstudio.app.data.filter.GpuColorProfiles.findById("profile_vintage")
+    assertNotNull("Vintage profile must exist", vintage)
+    assertEquals("Vintage", vintage?.name)
+    assertEquals("Vintage", vintage?.category)
+    assertTrue("Vintage profile should have warm color temperature > 5000K", (vintage?.config?.temperature ?: 0f) > 5000f)
+
+    val bw = com.apexstudio.app.data.filter.GpuColorProfiles.findById("profile_bw")
+    assertNotNull("B&W profile must exist", bw)
+    assertEquals("B&W", bw?.name)
+    assertEquals("B&W", bw?.category)
+    assertEquals("B&W must have zero saturation for true monochrome", 0.0f, bw?.config?.saturation ?: 1.0f, 0.001f)
+
+    val cinematic = com.apexstudio.app.data.filter.GpuColorProfiles.findById("profile_cinematic")
+    assertNotNull("Cinematic profile must exist", cinematic)
+    assertEquals("Cinematic", cinematic?.name)
+    assertEquals("Cinematic", cinematic?.category)
+    assertEquals("Cinematic must have Vignette stylistic effect", com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE, cinematic?.config?.stylisticEffect)
+    assertTrue("Cinematic should have boosted contrast", (cinematic?.config?.contrast ?: 0f) > 1.2f)
+
+    val categories = com.apexstudio.app.data.filter.GpuColorProfiles.CATEGORIES
+    assertTrue("Categories must contain All", categories.contains("All"))
+    assertTrue("Categories must contain Cinematic", categories.contains("Cinematic"))
+    assertTrue("Categories must contain Vintage", categories.contains("Vintage"))
+    assertTrue("Categories must contain B&W", categories.contains("B&W"))
+  }
+
+  @Test
+  fun `verify GpuColorProfile intensity blending scales parameters accurately`() {
+    val cinematic = com.apexstudio.app.data.filter.GpuColorProfiles.CINEMATIC
+    val fullConfig = cinematic.applyWithIntensity(1.0f)
+    assertEquals(cinematic.config.contrast, fullConfig.contrast, 0.01f)
+    assertEquals(cinematic.config.stylisticIntensity, fullConfig.stylisticIntensity, 0.01f)
+    assertEquals(1.0f, fullConfig.profileIntensity, 0.01f)
+
+    val halfConfig = cinematic.applyWithIntensity(0.5f)
+    assertEquals(0.5f, halfConfig.profileIntensity, 0.01f)
+    val expectedContrast = 1.0f + (cinematic.config.contrast - 1.0f) * 0.5f
+    assertEquals(expectedContrast, halfConfig.contrast, 0.01f)
+    assertEquals(cinematic.config.stylisticIntensity * 0.5f, halfConfig.stylisticIntensity, 0.01f)
+
+    val zeroConfig = cinematic.applyWithIntensity(0.0f)
+    assertEquals(1.0f, zeroConfig.contrast, 0.01f)
+    assertEquals(1.0f, zeroConfig.saturation, 0.01f)
+    assertEquals(5000f, zeroConfig.temperature, 0.01f)
+    assertEquals(0.0f, zeroConfig.stylisticIntensity, 0.01f)
+  }
+
+  @Test
+  fun `verify GpuVideoFilterEngine builds filter pipeline for all GpuColorProfiles`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val engine = com.apexstudio.app.data.filter.GpuVideoFilterEngine(context)
+
+    for (profile in com.apexstudio.app.data.filter.GpuColorProfiles.ALL) {
+      val filterGroup = engine.buildFilterGroup(profile.config)
+      assertNotNull("Filter group for profile ${profile.name} must be generated", filterGroup)
+    }
+  }
 }
+

@@ -47,7 +47,7 @@ data class EditorState(
     val isGpuFilterProcessing: Boolean = false,
     val gpuFilterCompareMode: Boolean = false,
     val gpuFilterSplitPosition: Float = 0.5f,
-    val gpuFilterSelectedTab: Int = 0, // 0: Stylistic Effects, 1: Color Grading, 2: LUT Presets
+    val gpuFilterSelectedTab: Int = 0, // 0: Preset Gallery, 1: Stylistic Effects, 2: Color Grading, 3: LUT Presets
     // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
     // Populated asynchronously when a clip is loaded; the FilterPanel
     // shows these instead of gradient color blocks.

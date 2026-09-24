@@ -110,41 +110,44 @@ object FilterThumbnailGenerator {
     }
 
     /**
-     * Generate real-time live preview thumbnails of the source frame for all presets.
-     * Completes in <10ms for all 77 presets.
+     * Generate real-time live preview thumbnails of the source video frame for all presets.
+     * Completes in <10ms for all 70+ presets.
      */
     suspend fun generateDynamicThumbnails(
         context: Context,
         source: Bitmap,
-        manifest: FilterManifest
+        manifest: FilterManifest,
+        customPresets: List<FilterPreset> = emptyList()
     ): Map<String?, ImageBitmap> = withContext(Dispatchers.Default) {
         val result = mutableMapOf<String?, ImageBitmap>()
 
-        // 1. Center crop and scale source frame to thumbnail size
+        // 1. Center crop and scale source video frame to thumbnail size
         val baseThumb = centerCropAndScale(source, THUMB_SIZE)
         result[null] = baseThumb.asImageBitmap()
 
-        // 2. Apply each filter preset instantly using Android hardware ColorMatrix
+        // 2. Aggregate all presets to ensure no preset is skipped
+        val allPresets = (manifest.filters + manifest.categories.flatMap { it.filters } + customPresets)
+            .distinctBy { it.id }
+
+        // 3. Apply each filter preset instantly using Android hardware ColorMatrix
         //    for 60fps non-blocking rendering. Preserves high contrast and true color grading.
         val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        for (category in manifest.categories) {
-            for (preset in category.filters) {
-                // Option B: check custom thumbnail first
-                val custom = FilterThumbnailAssetHandler.getCustomThumbnail(context, preset.id)
-                if (custom != null) {
-                    result[preset.id] = custom
-                    continue
-                }
-
-                // Ultra-fast hardware matrix rendering (<0.05ms per filter)
-                val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(outBmp)
-                val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
-                fallbackPaint.colorFilter = ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(baseThumb, 0f, 0f, fallbackPaint)
-                fallbackPaint.colorFilter = null
-                result[preset.id] = outBmp.asImageBitmap()
+        for (preset in allPresets) {
+            // Option B: check custom thumbnail first
+            val custom = FilterThumbnailAssetHandler.getCustomThumbnail(context, preset.id)
+            if (custom != null) {
+                result[preset.id] = custom
+                continue
             }
+
+            // Ultra-fast hardware matrix rendering (<0.05ms per filter)
+            val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(outBmp)
+            val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
+            fallbackPaint.colorFilter = ColorMatrixColorFilter(cm)
+            canvas.drawBitmap(baseThumb, 0f, 0f, fallbackPaint)
+            fallbackPaint.colorFilter = null
+            result[preset.id] = outBmp.asImageBitmap()
         }
 
         Log.d(TAG, "Generated ${result.size} dynamic filter thumbnails in real-time")

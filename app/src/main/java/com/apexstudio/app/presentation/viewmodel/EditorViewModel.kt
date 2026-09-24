@@ -75,10 +75,9 @@ class EditorViewModel(
     private val exportEngine = context?.let { ExportEngine(it) }
     private val audioEngine = context?.let { AudioEngine(it) }
     private val colorGradingEngine = ColorGradingEngine()
+    private val media3VideoTrimmer = context?.let { com.apexstudio.app.data.trim.Media3VideoTrimmer(it) }
     private val projectRepository: ProjectRepository? = context?.let { ProjectRepository(it) }
     private val timelineTemplateManager = context?.let { TimelineTemplateManager(it) }
-    private val exportPresetRepository: com.apexstudio.app.data.repository.ExportPresetRepository? =
-        context?.let { com.apexstudio.app.data.repository.ExportPresetRepository(it) }
 
     init {
         Log.d("ApexTrace", "EditorViewModel.init start")
@@ -87,7 +86,6 @@ class EditorViewModel(
         loadLuts()
         loadTransmissionTemplates()
         loadAudioState()
-        loadExportPresets()
         // Mirror the engine's real export progress into the VM state
         // the Export screen renders (progress %, output uri, error).
         exportEngine?.exportState?.let { engineState ->
@@ -344,6 +342,116 @@ class EditorViewModel(
      * the open/close pattern used by [openFilterPanel] / [openFxPanel].
      */
     fun openTransmissionTemplatesPanel() = _state.update { it.copy(transmissionPanelOpen = true) }
+
+    // -------------------------------------------------------------
+    // Clip-to-Clip Video Transitions Management
+    // -------------------------------------------------------------
+
+    /**
+     * Open the Transition Picker bottom sheet for the junction between [fromClipId] and [toClipId].
+     */
+    fun openTransitionPicker(fromClipId: String, toClipId: String) {
+        _state.update {
+            it.copy(
+                transitionPickerOpen = true,
+                transitionPickerFromClipId = fromClipId,
+                transitionPickerToClipId = toClipId
+            )
+        }
+    }
+
+    /**
+     * Close the Transition Picker bottom sheet.
+     */
+    fun closeTransitionPicker() {
+        _state.update {
+            it.copy(
+                transitionPickerOpen = false,
+                transitionPickerFromClipId = null,
+                transitionPickerToClipId = null
+            )
+        }
+    }
+
+    /**
+     * Apply or update a transition between [fromClipId] and [toClipId].
+     */
+    fun applyTransition(fromClipId: String, toClipId: String, type: String, durationMs: Long = 500L) {
+        val proj = _state.value.project ?: return
+        val existing = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
+        val newTransition = ClipTransition(
+            fromClipId = fromClipId,
+            toClipId = toClipId,
+            type = type,
+            durationMs = durationMs
+        )
+        val updatedTransitions = existing + newTransition
+        val updatedProject = proj.copy(
+            transitions = updatedTransitions,
+            lastTransitionType = type,
+            lastTransitionDurationMs = durationMs
+        )
+        _state.update {
+            it.copy(
+                project = updatedProject,
+                lastTransitionType = type,
+                lastTransitionDurationMs = durationMs
+            )
+        }
+        persistProject()
+    }
+
+    /**
+     * Apply the specified transition across all clip junctions in the timeline.
+     */
+    fun applyTransitionToAll(type: String, durationMs: Long = 500L) {
+        val proj = _state.value.project ?: return
+        val clips = proj.clips
+        if (clips.size < 2) return
+
+        val newTransitions = mutableListOf<ClipTransition>()
+        for (i in 0 until clips.size - 1) {
+            newTransitions.add(
+                ClipTransition(
+                    fromClipId = clips[i].id,
+                    toClipId = clips[i + 1].id,
+                    type = type,
+                    durationMs = durationMs
+                )
+            )
+        }
+        val updatedProject = proj.copy(
+            transitions = newTransitions,
+            lastTransitionType = type,
+            lastTransitionDurationMs = durationMs
+        )
+        _state.update {
+            it.copy(
+                project = updatedProject,
+                lastTransitionType = type,
+                lastTransitionDurationMs = durationMs
+            )
+        }
+        persistProject()
+    }
+
+    /**
+     * Remove the transition between [fromClipId] and [toClipId].
+     */
+    fun removeTransition(fromClipId: String, toClipId: String) {
+        val proj = _state.value.project ?: return
+        val updatedTransitions = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
+        val updatedProject = proj.copy(transitions = updatedTransitions)
+        _state.update { it.copy(project = updatedProject) }
+        persistProject()
+    }
+
+    /**
+     * Query transition between two clips if one exists.
+     */
+    fun getTransitionBetween(fromClipId: String, toClipId: String): ClipTransition? {
+        return _state.value.project?.transitions?.firstOrNull { it.fromClipId == fromClipId && it.toClipId == toClipId }
+    }
 
     // Phase D: PiP overlay preview. setOverlayTransform persists the
     // (x, y, scale, opacity) tuple so a pinch-zoom doesn't get clobbered
@@ -623,7 +731,13 @@ class EditorViewModel(
         it.copy(zoomLevel = target)
     }
     fun selectTool(t: EditorTool) = _state.update { it.copy(selectedTool = t) }
-    fun selectClip(id: String?) = _state.update { it.copy(selectedClipId = id) }
+    fun selectClip(id: String?) = _state.update { state ->
+        val clip = id?.let { clipId -> state.project?.clips?.firstOrNull { it.id == clipId } }
+        state.copy(
+            selectedClipId = id,
+            activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        )
+    }
     fun setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
     fun setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
     fun setPlayerReady(ready: Boolean) = _state.update { it.copy(isPlayerReady = ready) }
@@ -636,10 +750,6 @@ class EditorViewModel(
     fun setVideoSize(width: Int, height: Int) = _state.update { it.copy(videoWidth = width, videoHeight = height) }
 
     fun setCropMode(enabled: Boolean) = _state.update { it.copy(cropMode = enabled) }
-    fun openCropPanel() = _state.update { it.copy(cropPanelOpen = true, cropMode = true) }
-    fun closeCropPanel() = _state.update { it.copy(cropPanelOpen = false, cropMode = false) }
-    fun setControlsVisible(visible: Boolean) = _state.update { it.copy(isControlsVisible = visible) }
-    fun toggleControlsVisibility() = _state.update { it.copy(isControlsVisible = !it.isControlsVisible) }
     fun setCropRect(rect: CropRect) = _state.update { it.copy(cropRect = rect) }
     fun applyCropAspect(aspect: CropAspect) {
         _state.update { s ->
@@ -666,13 +776,140 @@ class EditorViewModel(
     fun resetCrop() = _state.update { it.copy(cropRect = CropRect.Full, cropAspect = CropAspect.FREE) }
 
     fun openFilterPanel() {
-        _state.update { it.copy(filterPanelOpen = true) }
+        openGpuFilterPanel()
+    }
+    fun closeFilterPanel() = closeGpuFilterPanel()
+
+    // Real-Time GPUImage Video Filtering Studio
+    fun openGpuFilterPanel() {
+        val selectedClip = _state.value.selectedClipId?.let { id ->
+            _state.value.project?.clips?.firstOrNull { it.id == id }
+        } ?: _state.value.project?.clips?.firstOrNull()
+
+        val clipConfig = selectedClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        _state.update {
+            it.copy(
+                gpuFilterPanelOpen = true,
+                activeGpuFilterConfig = clipConfig,
+                filterPanelOpen = false,
+                colorGradingLutPanelOpen = false
+            )
+        }
         ensureFilterThumbnails()
     }
-    fun closeFilterPanel() = _state.update { it.copy(filterPanelOpen = false) }
+
+    fun closeGpuFilterPanel() = _state.update { it.copy(gpuFilterPanelOpen = false) }
+
+    fun setGpuFilterConfig(config: com.apexstudio.app.data.filter.GpuFilterConfig) {
+        _state.update { state ->
+            val updatedClips = state.project?.clips?.map { clip ->
+                if (clip.id == state.selectedClipId) {
+                    clip.copy(gpuFilterConfig = config)
+                } else clip
+            } ?: emptyList()
+
+            state.copy(
+                activeGpuFilterConfig = config,
+                activeFilterId = config.filterPresetId,
+                filterIntensity = config.filterIntensity,
+                project = state.project?.copy(clips = updatedClips)
+            )
+        }
+    }
+
+    fun toggleGpuFilterCompareMode() = _state.update { it.copy(gpuFilterCompareMode = !it.gpuFilterCompareMode) }
+
+    fun setGpuFilterSplitPosition(split: Float) = _state.update {
+        it.copy(gpuFilterSplitPosition = split.coerceIn(0.05f, 0.95f))
+    }
+
+    fun setGpuFilterSelectedTab(tab: Int) = _state.update { it.copy(gpuFilterSelectedTab = tab) }
+
+    fun applyGpuFilterToSelectedClip() {
+        val activeConfig = _state.value.activeGpuFilterConfig
+        val selectedId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
+        if (selectedId != null) {
+            _state.update { state ->
+                val updatedClips = state.project?.clips?.map { clip ->
+                    if (clip.id == selectedId) clip.copy(gpuFilterConfig = activeConfig) else clip
+                } ?: emptyList()
+                state.copy(
+                    project = state.project?.copy(clips = updatedClips),
+                    gpuFilterPanelOpen = false
+                )
+            }
+        } else {
+            closeGpuFilterPanel()
+        }
+    }
+
+    fun applyGpuFilterToAllClips() {
+        val activeConfig = _state.value.activeGpuFilterConfig
+        _state.update { state ->
+            val updatedClips = state.project?.clips?.map { clip ->
+                clip.copy(gpuFilterConfig = activeConfig)
+            } ?: emptyList()
+            state.copy(
+                project = state.project?.copy(clips = updatedClips),
+                gpuFilterPanelOpen = false
+            )
+        }
+    }
+
+    fun resetGpuFilter() {
+        val defaultConfig = com.apexstudio.app.data.filter.GpuFilterConfig()
+        setGpuFilterConfig(defaultConfig)
+    }
+
     fun setFilterCategory(id: String) = _state.update { it.copy(filterCategory = id) }
     fun setActiveFilter(id: String?) = _state.update { it.copy(activeFilterId = id) }
     fun setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
+
+    // Professional Color Grading LUTs Panel (GPUImage-powered)
+    fun openColorGradingLutPanel() {
+        _state.update { it.copy(colorGradingLutPanelOpen = true) }
+        ensureFilterThumbnails()
+    }
+    fun closeColorGradingLutPanel() = _state.update { it.copy(colorGradingLutPanelOpen = false) }
+    fun setLutTargetTrack(target: LutTargetTrack) = _state.update { it.copy(lutTargetTrack = target) }
+    fun toggleLutFavorite(lutId: String) = _state.update {
+        val current = it.lutFavoriteIds
+        val updated = if (current.contains(lutId)) current - lutId else current + lutId
+        it.copy(lutFavoriteIds = updated)
+    }
+    fun toggleLutCompareMode() = _state.update { it.copy(lutCompareMode = !it.lutCompareMode) }
+    fun setLutCompareSplitPosition(split: Float) = _state.update {
+        it.copy(lutCompareSplitPosition = split.coerceIn(0f, 1f))
+    }
+    fun setLutContrast(value: Float) = _state.update { it.copy(lutContrast = value.coerceIn(0.5f, 2.0f)) }
+    fun setLutSaturation(value: Float) = _state.update { it.copy(lutSaturation = value.coerceIn(0f, 2.0f)) }
+    fun setLutTemperature(value: Float) = _state.update { it.copy(lutTemperature = value.coerceIn(2000f, 9000f)) }
+    fun setLutTint(value: Float) = _state.update { it.copy(lutTint = value.coerceIn(-100f, 100f)) }
+    fun resetLutGrading() = _state.update {
+        it.copy(
+            activeFilterId = null,
+            filterIntensity = 1.0f,
+            lutContrast = 1.0f,
+            lutSaturation = 1.0f,
+            lutTemperature = 5000f,
+            lutTint = 0f,
+            lutCompareMode = false
+        )
+    }
+    fun importCustomCubeLut(name: String, inputStream: java.io.InputStream): com.apexstudio.app.data.filter.FilterPreset? {
+        val ctx = context ?: return null
+        val engine = com.apexstudio.app.data.filter.GpuImageLutEngine(ctx)
+        val preset = engine.importCustomCube(name, inputStream)
+        if (preset != null) {
+            _state.update { it.copy(customImportedLuts = it.customImportedLuts + preset) }
+            setActiveFilter(preset.id)
+        }
+        return preset
+    }
+
+    fun setLutGalleryViewMode(mode: com.apexstudio.app.presentation.state.LutGalleryViewMode) = _state.update {
+        it.copy(lutGalleryViewMode = mode)
+    }
 
     fun openArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = true) }
     fun closeArFilterPanel() = _state.update { it.copy(arFilterPanelOpen = false) }
@@ -683,8 +920,12 @@ class EditorViewModel(
     fun setArFilterCustomText(text: String) = _state.update { it.copy(arFilterCustomText = text) }
 
     fun ensureFilterThumbnails() {
+        refreshFilterThumbnailsFromVideo(force = false)
+    }
+
+    fun refreshFilterThumbnailsFromVideo(force: Boolean = true) {
         val ctx = context ?: return
-        if (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading) return
+        if (!force && (_state.value.filterThumbnails.isNotEmpty() || _state.value.filterThumbnailsLoading)) return
         val manifest = try {
             com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest
         } catch (e: Exception) {
@@ -692,26 +933,45 @@ class EditorViewModel(
             return
         }
         _state.update { it.copy(filterThumbnailsLoading = true) }
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val activeClipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id
-                val cachedThumb = activeClipId?.let { _thumbnails.value[it]?.firstOrNull()?.second }
-                val composeMap = if (cachedThumb != null) {
-                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateDynamicThumbnails(ctx, cachedThumb, manifest)
-                } else {
-                    com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                        .generateWithGenericImage(ctx, manifest)
+                val currentTime = _state.value.currentTimeMs
+                val activeClip = _state.value.selectedClipId?.let { id ->
+                    _state.value.project?.clips?.firstOrNull { it.id == id }
+                } ?: _state.value.project?.clips?.firstOrNull()
+
+                var frameBitmap: android.graphics.Bitmap? = null
+                if (activeClip != null && activeClip.uri.isNotBlank()) {
+                    try {
+                        val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                            .resolvePlayableUri(ctx, activeClip.uri).toString()
+                        val clipRelativeTime = (currentTime - activeClip.timelineOffsetMs + activeClip.trimStartMs)
+                            .coerceIn(activeClip.trimStartMs, activeClip.trimEndMs)
+                        frameBitmap = com.apexstudio.app.data.media.VideoThumbnailExtractor
+                            .extractFrame(ctx, playableUri, clipRelativeTime)
+                    } catch (e: Exception) {
+                        Log.w("EditorViewModel", "Failed to extract active video frame at playhead", e)
+                    }
                 }
+
+                if (frameBitmap == null && activeClip != null) {
+                    frameBitmap = _thumbnails.value[activeClip.id]?.firstOrNull()?.second
+                }
+
+                val baseFrame = frameBitmap ?: com.apexstudio.app.data.filter.FilterThumbnailGenerator.createGenericPreviewBitmap(ctx)
+
+                val composeMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
+                    .generateDynamicThumbnails(ctx, baseFrame, manifest, _state.value.customImportedLuts)
+
                 _state.update {
                     it.copy(
                         filterThumbnails = composeMap,
                         filterThumbnailsLoading = false
                     )
                 }
-                Log.d("EditorViewModel", "Generated ${composeMap.size} filter thumbnails")
+                Log.d("EditorViewModel", "Generated ${composeMap.size} video-frame filter thumbnails")
             } catch (e: Exception) {
-                Log.e("EditorViewModel", "Generic filter thumbnail generation failed", e)
+                Log.e("EditorViewModel", "Video frame filter thumbnail generation failed", e)
                 _state.update { it.copy(filterThumbnailsLoading = false) }
             }
         }
@@ -865,78 +1125,9 @@ class EditorViewModel(
         _export.update { it.copy(settings = upd(it.settings)) }
     }
 
-    private fun loadExportPresets() {
-        val repo = exportPresetRepository ?: return
-        viewModelScope.launch {
-            repo.loadPresets().collect { presetList ->
-                _export.update { it.copy(presets = presetList) }
-            }
-        }
-    }
-
-    fun applyExportPreset(preset: com.apexstudio.app.domain.model.ExportPreset) {
-        _export.update {
-            it.copy(
-                settings = it.settings.copy(
-                    resolution = preset.resolution,
-                    frameRate = preset.frameRate,
-                    bitrateMbps = preset.bitrateMbps,
-                    codec = preset.codec,
-                    activePresetId = preset.id
-                )
-            )
-        }
-    }
-
-    fun openPresetSaveDialog() = _export.update { it.copy(isPresetSaveDialogOpen = true) }
-    fun closePresetSaveDialog() = _export.update { it.copy(isPresetSaveDialogOpen = false) }
-
-    fun saveCurrentAsCustomPreset(name: String) {
-        val currentSettings = _export.value.settings
-        val newPreset = com.apexstudio.app.domain.model.ExportPreset(
-            id = "preset_custom_${System.currentTimeMillis()}",
-            name = name.ifBlank { "Custom ${currentSettings.resolution} ${currentSettings.frameRate}fps" },
-            resolution = currentSettings.resolution,
-            frameRate = currentSettings.frameRate,
-            bitrateMbps = currentSettings.bitrateMbps,
-            codec = currentSettings.codec,
-            isCustom = true,
-            description = "${currentSettings.resolution} ${currentSettings.frameRate}fps • ${currentSettings.bitrateMbps} Mbps • ${currentSettings.codec}"
-        )
-        val repo = exportPresetRepository
-        if (repo != null) {
-            viewModelScope.launch {
-                repo.saveCustomPreset(newPreset)
-                applyExportPreset(newPreset)
-                closePresetSaveDialog()
-            }
-        } else {
-            _export.update {
-                it.copy(
-                    presets = listOf(newPreset) + it.presets,
-                    isPresetSaveDialogOpen = false
-                )
-            }
-            applyExportPreset(newPreset)
-        }
-    }
-
-    fun deleteCustomPreset(presetId: String) {
-        val repo = exportPresetRepository
-        if (repo != null) {
-            viewModelScope.launch {
-                repo.deleteCustomPreset(presetId)
-            }
-        } else {
-            _export.update { it.copy(presets = it.presets.filterNot { p -> p.id == presetId }) }
-        }
-    }
-
     fun startExport(
         resolution: String = _export.value.settings.resolution,
         fps: Int = _export.value.settings.frameRate,
-        bitrateMbps: Int = _export.value.settings.bitrateMbps,
-        codec: String = _export.value.settings.codec,
         quality: String = _export.value.settings.quality.label.lowercase()
     ) {
         val s = _state.value
@@ -965,8 +1156,6 @@ class EditorViewModel(
                 resolution = resolution,
                 fps = fps,
                 quality = quality,
-                bitrateMbps = bitrateMbps,
-                codec = codec,
                 filterPreset = filterPreset,
                 filterIntensity = s.filterIntensity,
                 adjustments = s.adjustments,
@@ -1397,12 +1586,12 @@ class EditorViewModel(
     }
 
     fun setTimelineZoom(zoom: Float) {
-        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 6.0f)) }
+        _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 10.0f)) }
     }
 
     fun zoomInTimeline() {
         val current = _state.value.timelineZoom
-        setTimelineZoom((current + 0.5f).coerceAtMost(6.0f))
+        setTimelineZoom((current + 0.5f).coerceAtMost(10.0f))
     }
 
     fun zoomOutTimeline() {
@@ -1438,10 +1627,33 @@ class EditorViewModel(
         persistProject()
     }
 
+    fun reorderClips(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            if (fromIndex !in p.clips.indices || toIndex !in p.clips.indices) return@update s
+            val updated = p.clips.toMutableList()
+            val item = updated.removeAt(fromIndex)
+            updated.add(toIndex, item)
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
     fun applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
         val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
         pushUndo()
-        val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, 0L, 1000L)
+        val playhead = _state.value.playerPositionMs
+        val clipDuration = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(600L)
+        val animDuration = minOf(1200L, clipDuration)
+        val startMs = if (playhead >= clip.timelineOffsetMs && playhead < clip.timelineOffsetMs + clipDuration) {
+            playhead
+        } else {
+            clip.timelineOffsetMs
+        }
+        val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, startMs, animDuration)
         updateClip(clipId) { it.copy(keyframes = track) }
     }
 
@@ -1596,6 +1808,121 @@ class EditorViewModel(
         trimClip(clipId, 0L, clip.durationMs)
     }
 
+    /**
+     * Executes real hardware-accelerated video trimming on the selected clip using AndroidX Media3 Transformer.
+     * Uses MediaItem.ClippingConfiguration with the requested start and end timestamps.
+     */
+    fun trimClipWithMedia3Transformer(
+        clipId: String,
+        startMs: Long,
+        endMs: Long,
+        replaceInTimeline: Boolean = true,
+        onComplete: ((String) -> Unit)? = null
+    ) {
+        val trimmer = media3VideoTrimmer ?: return
+        val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+
+        _state.update {
+            it.copy(
+                isTransformerTrimming = true,
+                transformerTrimProgress = 0f,
+                transformerTrimMessage = "Preparing Media3 Transformer cut...",
+                transformerTrimError = null
+            )
+        }
+
+        viewModelScope.launch {
+            val request = com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimRequest(
+                inputUri = clip.uri,
+                startMs = startMs,
+                endMs = endMs,
+                clipId = clipId
+            )
+            trimmer.trimVideo(request).collect { result ->
+                when (result) {
+                    is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Progress -> {
+                        _state.update {
+                            it.copy(
+                                isTransformerTrimming = true,
+                                transformerTrimProgress = result.progress,
+                                transformerTrimMessage = "Trimming clip via Media3 Transformer (${(result.progress * 100).toInt()}%)..."
+                            )
+                        }
+                    }
+                    is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Success -> {
+                        pushUndo()
+                        if (replaceInTimeline) {
+                            // Update the existing clip with the newly trimmed file and reset trim offsets to 0..duration
+                            updateClip(clipId) { c ->
+                                c.copy(
+                                    uri = result.outputUri,
+                                    durationMs = result.durationMs,
+                                    trimStartMs = 0L,
+                                    trimEndMs = result.durationMs
+                                )
+                            }
+                        } else {
+                            // Add as new trimmed clip to timeline
+                            val newClip = clip.copy(
+                                id = "clip_${System.currentTimeMillis()}_trimmed",
+                                uri = result.outputUri,
+                                durationMs = result.durationMs,
+                                trimStartMs = 0L,
+                                trimEndMs = result.durationMs
+                            )
+                            _state.update { s ->
+                                val p = s.project ?: return@update s
+                                val updatedClips = p.clips + newClip
+                                val newDuration = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+                                s.copy(
+                                    project = p.copy(clips = updatedClips, durationMs = newDuration),
+                                    durationMs = newDuration
+                                )
+                            }
+                            persistProject()
+                        }
+                        _state.update {
+                            it.copy(
+                                isTransformerTrimming = false,
+                                transformerTrimProgress = 1f,
+                                transformerTrimMessage = "Clip trimmed successfully with Media3 Transformer!"
+                            )
+                        }
+                        onComplete?.invoke(result.outputUri)
+                    }
+                    is com.apexstudio.app.data.trim.Media3VideoTrimmer.TrimResult.Error -> {
+                        _state.update {
+                            it.copy(
+                                isTransformerTrimming = false,
+                                transformerTrimError = result.message
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun cancelMedia3Trim() {
+        media3VideoTrimmer?.cancelActiveTrim()
+        _state.update {
+            it.copy(
+                isTransformerTrimming = false,
+                transformerTrimProgress = 0f,
+                transformerTrimMessage = null
+            )
+        }
+    }
+
+    fun clearTransformerTrimStatus() {
+        _state.update {
+            it.copy(
+                transformerTrimMessage = null,
+                transformerTrimError = null
+            )
+        }
+    }
+
     fun splitClip(clipId: String, atMs: Long) {
         pushUndo()
         _state.update { s ->
@@ -1702,29 +2029,6 @@ class EditorViewModel(
         persistProject()
     }
 
-    fun pushOverlayToMainVideoTrack(overlayClipId: String) {
-        pushUndo()
-        _state.update { s ->
-            val p = s.project ?: return@update s
-            val overlay = p.clips.firstOrNull { it.id == overlayClipId } ?: return@update s
-            val updatedClips = p.clips.map {
-                if (it.id == overlayClipId) {
-                    it.copy(type = ClipType.VIDEO, trackIndex = 0)
-                } else it
-            }
-            val newDur = updatedClips.filter { it.type == ClipType.VIDEO }
-                .sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
-                .coerceAtLeast(s.durationMs)
-            s.copy(
-                project = p.copy(clips = updatedClips, durationMs = newDur),
-                durationMs = newDur,
-                selectedClipId = overlayClipId,
-                overlayClipId = if (s.overlayClipId == overlayClipId) null else s.overlayClipId
-            )
-        }
-        persistProject()
-    }
-
     fun addClipToTrack(type: ClipType, trackIndex: Int) {
         val ctx = context ?: return
         viewModelScope.launch {
@@ -1759,6 +2063,34 @@ class EditorViewModel(
             }
             persistProject()
         }
+    }
+
+    fun setClipTimelineOffset(clipId: String, offsetMs: Long) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.map {
+                if (it.id == clipId) it.copy(timelineOffsetMs = offsetMs.coerceAtLeast(0L))
+                else it
+            }
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
+    }
+
+    fun shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
+        pushUndo()
+        _state.update { s ->
+            val p = s.project ?: return@update s
+            val updated = p.clips.map {
+                if (it.id == clipId) {
+                    val newOffset = (it.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+                    it.copy(timelineOffsetMs = newOffset)
+                } else it
+            }
+            s.copy(project = p.copy(clips = updated))
+        }
+        persistProject()
     }
 
     private fun pushUndo() {

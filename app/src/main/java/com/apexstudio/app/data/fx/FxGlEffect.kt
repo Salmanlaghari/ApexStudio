@@ -180,6 +180,32 @@ class FxGlEffect(
             FxPreset.EMBOSS_RELIEF -> embossReliefShader()
             FxPreset.INVERT_FX -> invertFxShader()
             FxPreset.KALEIDOSCOPE -> kaleidoscopeShader()
+
+            // 6. CapCut Viral & Special FX (20+ New Presets)
+            FxPreset.HEART_BEAT -> heartBeatShader()
+            FxPreset.EDGE_GLOW -> edgeGlowShader()
+            FxPreset.SHIMMER_STAR -> shimmerStarShader()
+            FxPreset.VERTIGO_DOLLY -> vertigoDollyShader()
+            FxPreset.LIGHTNING_AURA -> lightningAuraShader()
+            FxPreset.FIRE_EMBER -> fireEmberShader()
+            FxPreset.CRYSTAL_FACET -> crystalFacetShader()
+            FxPreset.DOUBLE_EXPOSURE -> doubleExposureShader()
+            FxPreset.MATRIX_RAIN -> matrixRainShader()
+            FxPreset.GLITCH_RGB_DISPLACE -> glitchRgbDisplaceShader()
+            FxPreset.GLITCH_BLOCK -> glitchBlockShader()
+            FxPreset.HOLOGRAM_GLITCH -> hologramGlitchShader()
+            FxPreset.FILM_BURN -> filmBurnShader()
+            FxPreset.SUPER_8_WARM -> super8WarmShader()
+            FxPreset.SEPIA_FLICKER -> sepiaFlickerShader()
+            FxPreset.WATER_RIPPLE -> waterRippleShader()
+            FxPreset.GHOST_TRAIL -> ghostTrailShader()
+            FxPreset.HEATWAVE_WARP -> heatwaveWarpShader()
+            FxPreset.SPEED_LINES -> speedLinesShader()
+            FxPreset.BLACK_HOLE_WARP -> blackHoleWarpShader()
+            FxPreset.MIRROR_SPLIT -> mirrorSplitShader()
+            FxPreset.NEON_WIREFRAME -> neonWireframeShader()
+            FxPreset.COMIC_DOTS -> comicDotsShader()
+            FxPreset.COLOR_ISOLATION -> colorIsolationShader()
         }
 
         /** Shared precision / varyings / uniforms for the FX shaders. */
@@ -923,6 +949,346 @@ class FxGlEffect(
                 vec4 col = texture2D(uTexSampler, clamp(kUv, 0.0, 1.0));
                 vec4 orig = texture2D(uTexSampler, vTextureCoord);
                 gl_FragColor = mix(orig, col, uIntensity);
+            }
+        """.trimIndent()
+
+        // --- 24 CAPCUT-STYLE VIRAL VIDEO EFFECTS ---
+
+        private fun heartBeatShader(): String = """
+            $HEADER
+            void main() {
+                float pulse = pow(max(0.0, sin(uTime * 4.5)), 6.0) * 0.12 * uIntensity;
+                vec2 center = vec2(0.5, 0.5);
+                vec2 uv = (vTextureCoord - center) * (1.0 - pulse) + center;
+                vec2 redOffset = vec2(pulse * 0.06, 0.0);
+                vec4 colR = texture2D(uTexSampler, clamp(uv + redOffset, 0.0, 1.0));
+                vec4 colG = texture2D(uTexSampler, clamp(uv, 0.0, 1.0));
+                vec4 colB = texture2D(uTexSampler, clamp(uv - redOffset, 0.0, 1.0));
+                vec4 finalCol = vec4(colR.r, colG.g, colB.b, colG.a);
+                finalCol.rgb += vec3(0.08, 0.01, 0.03) * pulse * 8.0;
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, finalCol, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun edgeGlowShader(): String = """
+            $HEADER
+            void main() {
+                vec2 step = uTexel * 2.0;
+                vec3 c = texture2D(uTexSampler, vTextureCoord).rgb;
+                vec3 l = texture2D(uTexSampler, vTextureCoord - vec2(step.x, 0.0)).rgb;
+                vec3 r = texture2D(uTexSampler, vTextureCoord + vec2(step.x, 0.0)).rgb;
+                vec3 u = texture2D(uTexSampler, vTextureCoord - vec2(0.0, step.y)).rgb;
+                vec3 d = texture2D(uTexSampler, vTextureCoord + vec2(0.0, step.y)).rgb;
+                vec3 diff = abs(r - l) + abs(d - u);
+                float edge = length(diff);
+                vec3 neon = vec3(0.0, 0.9, 1.0) * edge * 2.5 * uIntensity;
+                gl_FragColor = vec4(c + neon, 1.0);
+            }
+        """.trimIndent()
+
+        private fun shimmerStarShader(): String = """
+            $HEADER
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                float sparkle = 0.0;
+                vec2 grid = fract(vTextureCoord * 12.0) - 0.5;
+                float d = length(grid);
+                float crossRay = smoothstep(0.03, 0.0, abs(grid.x)) * smoothstep(0.3, 0.0, abs(grid.y))
+                               + smoothstep(0.03, 0.0, abs(grid.y)) * smoothstep(0.3, 0.0, abs(grid.x));
+                float rotPhase = sin(uTime * 3.0 + vTextureCoord.x * 20.0);
+                if (lum > 0.65 && rotPhase > 0.3) {
+                    sparkle = crossRay * (lum - 0.65) * 4.0;
+                }
+                color.rgb += vec3(1.0, 0.95, 0.8) * sparkle * uIntensity;
+                gl_FragColor = color;
+            }
+        """.trimIndent()
+
+        private fun vertigoDollyShader(): String = """
+            $HEADER
+            void main() {
+                vec2 uv = vTextureCoord - vec2(0.5, 0.5);
+                float cycle = sin(uTime * 2.2);
+                float zoom = 1.0 + cycle * 0.28 * uIntensity;
+                float dist = length(uv);
+                float warp = 1.0 + dist * dist * cycle * 0.5 * uIntensity;
+                vec2 nuv = uv * zoom * warp + vec2(0.5, 0.5);
+                vec4 warped = texture2D(uTexSampler, clamp(nuv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, warped, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun lightningAuraShader(): String = """
+            $HEADER
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                float noiseVal = fract(sin(dot(vTextureCoord * 40.0 + vec2(uTime * 15.0), vec2(12.9898, 78.233))) * 43758.5453);
+                float bolt = smoothstep(0.96, 1.0, noiseVal) * step(0.65, fract(uTime * 3.0));
+                vec3 electric = vec3(0.5, 0.8, 1.0) * bolt * 2.5 * uIntensity;
+                color.rgb += electric;
+                gl_FragColor = color;
+            }
+        """.trimIndent()
+
+        private fun fireEmberShader(): String = """
+            $HEADER
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Warm flame gradient near bottom
+                float flameGrad = (1.0 - vTextureCoord.y) * 0.35 * uIntensity;
+                color.r += flameGrad * 1.2;
+                color.g += flameGrad * 0.45;
+                // Rising spark particles
+                vec2 pCoord = vec2(vTextureCoord.x * 25.0, vTextureCoord.y * 20.0 + uTime * 6.0);
+                float sparkNoise = fract(sin(dot(floor(pCoord), vec2(12.9898, 78.233))) * 43758.5453);
+                float spark = smoothstep(0.92, 1.0, sparkNoise) * (1.0 - fract(pCoord.y));
+                color.rgb += vec3(1.0, 0.6, 0.1) * spark * 2.0 * uIntensity;
+                gl_FragColor = color;
+            }
+        """.trimIndent()
+
+        private fun crystalFacetShader(): String = """
+            $HEADER
+            void main() {
+                vec2 center = vec2(0.5, 0.5);
+                vec2 delta = vTextureCoord - center;
+                float angle = atan(delta.y, delta.x);
+                float radius = length(delta);
+                float sides = 8.0;
+                float slice = 6.28318 / sides;
+                float facetAngle = floor(angle / slice + 0.5) * slice;
+                vec2 facetUv = vec2(cos(facetAngle), sin(facetAngle)) * radius * 0.85 + center;
+                vec4 facetCol = texture2D(uTexSampler, clamp(facetUv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                facetCol.rgb += vec3(0.1, 0.2, 0.3) * sin(facetAngle * 3.0);
+                gl_FragColor = mix(orig, facetCol, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun doubleExposureShader(): String = """
+            $HEADER
+            void main() {
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                vec2 ghostUv = vTextureCoord + vec2(sin(uTime * 0.8) * 0.05, cos(uTime * 0.6) * 0.04);
+                vec4 ghost = texture2D(uTexSampler, clamp(ghostUv, 0.0, 1.0));
+                vec3 screenBlended = 1.0 - (1.0 - orig.rgb) * (1.0 - ghost.rgb * 0.6);
+                gl_FragColor = vec4(mix(orig.rgb, screenBlended, uIntensity), orig.a);
+            }
+        """.trimIndent()
+
+        private fun matrixRainShader(): String = """
+            $HEADER
+            void main() {
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                vec2 grid = vec2(floor(vTextureCoord.x * 60.0), floor((vTextureCoord.y + uTime * 0.8) * 40.0));
+                float randVal = fract(sin(dot(grid, vec2(12.9898, 78.233))) * 43758.5453);
+                float stream = step(0.75, randVal) * 0.45;
+                vec3 matrixTint = vec3(orig.r * 0.3, orig.g * 1.3 + stream, orig.b * 0.3);
+                gl_FragColor = vec4(mix(orig.rgb, matrixTint, uIntensity), orig.a);
+            }
+        """.trimIndent()
+
+        private fun glitchRgbDisplaceShader(): String = """
+            $HEADER
+            void main() {
+                float sliceY = floor(vTextureCoord.y * 30.0);
+                float rnd = fract(sin(sliceY + floor(uTime * 14.0)) * 43758.5453);
+                float shift = step(0.85, rnd) * (rnd - 0.5) * 0.08 * uIntensity;
+                float r = texture2D(uTexSampler, clamp(vTextureCoord + vec2(shift + 0.015 * uIntensity, 0.0), 0.0, 1.0)).r;
+                float g = texture2D(uTexSampler, clamp(vTextureCoord + vec2(shift, 0.0), 0.0, 1.0)).g;
+                float b = texture2D(uTexSampler, clamp(vTextureCoord + vec2(shift - 0.015 * uIntensity, 0.0), 0.0, 1.0)).b;
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, vec4(r, g, b, orig.a), uIntensity);
+            }
+        """.trimIndent()
+
+        private fun glitchBlockShader(): String = """
+            $HEADER
+            void main() {
+                vec2 blockSize = vec2(0.04, 0.04);
+                vec2 blockId = floor(vTextureCoord / blockSize);
+                float blockRand = fract(sin(dot(blockId, vec2(12.9898, 78.233)) + floor(uTime * 8.0)) * 43758.5453);
+                vec2 displacedUv = vTextureCoord;
+                if (blockRand > 0.82) {
+                    displacedUv += vec2((blockRand - 0.5) * 0.12 * uIntensity, 0.0);
+                }
+                vec4 col = texture2D(uTexSampler, clamp(displacedUv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, col, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun hologramGlitchShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                float scanline = sin(vTextureCoord.y * 500.0 + uTime * 20.0) * 0.15;
+                float flicker = 0.9 + 0.1 * sin(uTime * 40.0);
+                vec3 holo = vec3(col.r * 0.2, col.g * 0.85 + scanline, col.b * 1.2 + scanline) * flicker;
+                gl_FragColor = vec4(mix(col.rgb, holo, uIntensity), col.a);
+            }
+        """.trimIndent()
+
+        private fun filmBurnShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                float burnShape = sin(vTextureCoord.x * 6.0 + uTime * 2.0) * cos(vTextureCoord.y * 4.0 - uTime);
+                float burnEdge = smoothstep(0.2, 0.8, burnShape * (1.0 - vTextureCoord.x));
+                vec3 burnColor = mix(vec3(1.0, 0.2, 0.0), vec3(1.0, 0.8, 0.1), burnEdge);
+                col.rgb += burnColor * burnEdge * 1.5 * uIntensity;
+                gl_FragColor = col;
+            }
+        """.trimIndent()
+
+        private fun super8WarmShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                // Warm golden tone
+                vec3 warm = vec3(col.r * 1.2 + 0.08, col.g * 1.05 + 0.04, col.b * 0.75);
+                // Circular 8mm vignette
+                float d = distance(vTextureCoord, vec2(0.5, 0.5));
+                float vig = smoothstep(0.4, 0.75, d);
+                warm *= (1.0 - vig * 0.6);
+                gl_FragColor = vec4(mix(col.rgb, warm, uIntensity), col.a);
+            }
+        """.trimIndent()
+
+        private fun sepiaFlickerShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                float gray = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+                vec3 sepia = vec3(gray * 1.2, gray * 0.95, gray * 0.75);
+                float flicker = 0.88 + 0.12 * sin(uTime * 30.0 + fract(sin(uTime * 123.4) * 43758.5));
+                sepia *= flicker;
+                gl_FragColor = vec4(mix(col.rgb, sepia, uIntensity), col.a);
+            }
+        """.trimIndent()
+
+        private fun waterRippleShader(): String = """
+            $HEADER
+            void main() {
+                vec2 c = vec2(0.5, 0.5);
+                vec2 delta = vTextureCoord - c;
+                float dist = length(delta);
+                float wave = sin(dist * 40.0 - uTime * 6.0) * 0.02 * uIntensity;
+                vec2 rippleUv = vTextureCoord + normalize(delta) * wave;
+                vec4 col = texture2D(uTexSampler, clamp(rippleUv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, col, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun ghostTrailShader(): String = """
+            $HEADER
+            void main() {
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                vec2 center = vec2(0.5, 0.5);
+                vec2 uv1 = (vTextureCoord - center) * 1.05 + center;
+                vec2 uv2 = (vTextureCoord - center) * 1.10 + center;
+                vec4 g1 = texture2D(uTexSampler, clamp(uv1, 0.0, 1.0));
+                vec4 g2 = texture2D(uTexSampler, clamp(uv2, 0.0, 1.0));
+                vec3 blended = orig.rgb * 0.6 + g1.rgb * 0.25 + g2.rgb * 0.15;
+                gl_FragColor = vec4(mix(orig.rgb, blended, uIntensity), orig.a);
+            }
+        """.trimIndent()
+
+        private fun heatwaveWarpShader(): String = """
+            $HEADER
+            void main() {
+                float warpX = sin(vTextureCoord.y * 35.0 + uTime * 5.0) * 0.015 * uIntensity;
+                float warpY = cos(vTextureCoord.x * 25.0 + uTime * 4.0) * 0.01 * uIntensity;
+                vec2 warpedUv = vTextureCoord + vec2(warpX, warpY);
+                vec4 col = texture2D(uTexSampler, clamp(warpedUv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, col, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun speedLinesShader(): String = """
+            $HEADER
+            void main() {
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                vec2 delta = vTextureCoord - vec2(0.5, 0.5);
+                float angle = atan(delta.y, delta.x);
+                float dist = length(delta);
+                float lines = step(0.65, fract(sin(angle * 35.0 + uTime * 8.0) * 43758.5453));
+                float mask = smoothstep(0.2, 0.65, dist);
+                vec3 finalCol = mix(orig.rgb, vec3(1.0, 1.0, 1.0), lines * mask * 0.8 * uIntensity);
+                gl_FragColor = vec4(finalCol, orig.a);
+            }
+        """.trimIndent()
+
+        private fun blackHoleWarpShader(): String = """
+            $HEADER
+            void main() {
+                vec2 delta = vTextureCoord - vec2(0.5, 0.5);
+                float dist = length(delta);
+                float angle = atan(delta.y, delta.x);
+                float twist = (1.0 - smoothstep(0.0, 0.6, dist)) * 3.14159 * uIntensity;
+                float newAngle = angle + twist;
+                vec2 warpedUv = vec2(cos(newAngle), sin(newAngle)) * dist + vec2(0.5, 0.5);
+                vec4 col = texture2D(uTexSampler, clamp(warpedUv, 0.0, 1.0));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, col, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun mirrorSplitShader(): String = """
+            $HEADER
+            void main() {
+                vec2 uv = abs(vTextureCoord - vec2(0.5, 0.5));
+                vec4 mirrored = texture2D(uTexSampler, uv + vec2(0.25, 0.25));
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                gl_FragColor = mix(orig, mirrored, uIntensity);
+            }
+        """.trimIndent()
+
+        private fun neonWireframeShader(): String = """
+            $HEADER
+            void main() {
+                vec4 orig = texture2D(uTexSampler, vTextureCoord);
+                if (vTextureCoord.y > 0.5) {
+                    float depth = (vTextureCoord.y - 0.5) * 2.0;
+                    float z = 1.0 / max(0.01, depth);
+                    float gridX = abs(fract((vTextureCoord.x - 0.5) * z * 8.0) - 0.5);
+                    float gridY = abs(fract(z * 4.0 - uTime * 3.0) - 0.5);
+                    float wire = smoothstep(0.4, 0.48, max(gridX, gridY));
+                    vec3 cyberNeon = vec3(0.9, 0.0, 1.0) * wire * uIntensity;
+                    orig.rgb += cyberNeon;
+                }
+                gl_FragColor = orig;
+            }
+        """.trimIndent()
+
+        private fun comicDotsShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                vec2 dotCoord = fract(vTextureCoord * 75.0) - 0.5;
+                float lum = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+                float radius = (1.0 - lum) * 0.55;
+                float ink = step(radius, length(dotCoord));
+                vec3 popColor = floor(col.rgb * 4.0) / 4.0 * ink;
+                gl_FragColor = vec4(mix(col.rgb, popColor, uIntensity), col.a);
+            }
+        """.trimIndent()
+
+        private fun colorIsolationShader(): String = """
+            $HEADER
+            void main() {
+                vec4 col = texture2D(uTexSampler, vTextureCoord);
+                float gray = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+                // Isolate vibrant warm reds & pinks
+                float isRed = max(0.0, col.r - max(col.g, col.b));
+                float mask = smoothstep(0.12, 0.35, isRed);
+                vec3 isolated = mix(vec3(gray), col.rgb, mask);
+                gl_FragColor = vec4(mix(col.rgb, isolated, uIntensity), col.a);
             }
         """.trimIndent()
     }

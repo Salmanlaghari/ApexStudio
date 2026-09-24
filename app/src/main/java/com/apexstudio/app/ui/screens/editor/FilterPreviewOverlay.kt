@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import com.apexstudio.app.domain.model.VideoAdjustments
 
 /**
@@ -20,14 +22,15 @@ import com.apexstudio.app.domain.model.VideoAdjustments
  * (brightness, contrast, temperature, tint, saturation, vignette) without touching
  * the underlying OpenGL/TextureView surface.
  *
- * This completely eliminates the Android 12+ RenderEffect bug where video
- * disappears or turns black upon applying a filter or transmission template.
+ * Supports A/B Split Screen comparison between raw footage and the color-graded result.
  */
 @Composable
 fun FilterPreviewOverlay(
     filterId: String?,
     intensity: Float,
     adjustments: VideoAdjustments,
+    compareMode: Boolean = false,
+    splitPosition: Float = 0.5f,
     modifier: Modifier = Modifier
 ) {
     val clampedIntensity = intensity.coerceIn(0f, 1f)
@@ -36,7 +39,27 @@ fun FilterPreviewOverlay(
 
     if (!hasFilter && !hasAdjust) return
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .drawWithContent {
+                if (compareMode) {
+                    val splitX = size.width * splitPosition.coerceIn(0f, 1f)
+                    clipRect(left = splitX, top = 0f, right = size.width, bottom = size.height) {
+                        this@drawWithContent.drawContent()
+                    }
+                    // Draw vertical divider line
+                    drawLine(
+                        color = Color.White,
+                        start = Offset(splitX, 0f),
+                        end = Offset(splitX, size.height),
+                        strokeWidth = 2.5f
+                    )
+                } else {
+                    drawContent()
+                }
+            }
+    ) {
         // 1. Filter Preset Color Grading
         if (hasFilter && filterId != null) {
             FilterGradeLayer(filterId = filterId, intensity = clampedIntensity)
@@ -203,11 +226,23 @@ private fun FilterGradeLayer(filterId: String, intensity: Float) {
 
 @Composable
 private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
-    // 1. Exposure / Brightness (-100..100)
+    // 1. Exposure (-1..1)
+    if (adjustments.exposure != 0f) {
+        val exp = adjustments.exposure.coerceIn(-1f, 1f)
+        val color = if (exp > 0f) Color.White else Color.Black
+        val alpha = (kotlin.math.abs(exp) * 0.40f).coerceIn(0f, 0.70f)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(color.copy(alpha = alpha))
+        )
+    }
+
+    // 2. Brightness (-1..1)
     if (adjustments.brightness != 0f) {
-        val b = adjustments.brightness / 100f
+        val b = adjustments.brightness.coerceIn(-1f, 1f)
         val color = if (b > 0f) Color.White else Color.Black
-        val alpha = (kotlin.math.abs(b) * 0.45f).coerceIn(0f, 0.7f)
+        val alpha = (kotlin.math.abs(b) * 0.35f).coerceIn(0f, 0.65f)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -215,11 +250,116 @@ private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
         )
     }
 
-    // 2. Temperature (-100..100: Warm vs Cool)
+    // 3. Contrast (0..2, default 1.0)
+    if (adjustments.contrast != 1f) {
+        val cDiff = adjustments.contrast - 1f
+        if (cDiff > 0f) {
+            // High contrast: darken shadows, brighten highlights via dual gradient
+            val alpha = (cDiff * 0.30f).coerceIn(0f, 0.5f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = alpha * 0.5f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = alpha)
+                            )
+                        )
+                    )
+            )
+        } else {
+            // Low contrast: wash out with subtle neutral gray
+            val alpha = (kotlin.math.abs(cDiff) * 0.35f).coerceIn(0f, 0.6f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF808080).copy(alpha = alpha))
+            )
+        }
+    }
+
+    // 4. Saturation (0..2, default 1.0)
+    if (adjustments.saturation != 1f) {
+        val sDiff = adjustments.saturation - 1f
+        if (sDiff < 0f) {
+            // Desaturation: gray overlay
+            val alpha = (kotlin.math.abs(sDiff) * 0.75f).coerceIn(0f, 0.85f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF757575).copy(alpha = alpha))
+            )
+        } else {
+            // High saturation: vibrant cyan-magenta tint
+            val alpha = (sDiff * 0.22f).coerceIn(0f, 0.45f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                Color(0xFFFF0055).copy(alpha = alpha * 0.5f),
+                                Color(0xFF00E5FF).copy(alpha = alpha * 0.5f)
+                            )
+                        )
+                    )
+            )
+        }
+    }
+
+    // 5. Brilliance (-1..1)
+    if (adjustments.brilliance != 0f) {
+        val br = adjustments.brilliance.coerceIn(-1f, 1f)
+        val alpha = (kotlin.math.abs(br) * 0.32f).coerceIn(0f, 0.55f)
+        val color = if (br > 0f) Color(0xFFFFF7E6) else Color(0xFF1E1E24)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(color.copy(alpha = alpha))
+        )
+    }
+
+    // 6. Highlights (-1..1)
+    if (adjustments.highlights != 0f) {
+        val h = adjustments.highlights.coerceIn(-1f, 1f)
+        val alpha = (kotlin.math.abs(h) * 0.38f).coerceIn(0f, 0.60f)
+        val color = if (h > 0f) Color.White else Color(0xFF333333)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to color.copy(alpha = alpha),
+                        0.7f to Color.Transparent
+                    )
+                )
+        )
+    }
+
+    // 7. Shadows (-1..1)
+    if (adjustments.shadows != 0f) {
+        val sh = adjustments.shadows.coerceIn(-1f, 1f)
+        val alpha = (kotlin.math.abs(sh) * 0.40f).coerceIn(0f, 0.65f)
+        val color = if (sh > 0f) Color(0xFF4A4A4A) else Color.Black
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.3f to Color.Transparent,
+                        1f to color.copy(alpha = alpha)
+                    )
+                )
+        )
+    }
+
+    // 8. Temperature (-1..1: Warm vs Cool)
     if (adjustments.temperature != 0f) {
-        val t = adjustments.temperature / 100f
+        val t = adjustments.temperature.coerceIn(-1f, 1f)
         val color = if (t > 0f) Color(0xFFFF8C00) else Color(0xFF00BFFF)
-        val alpha = (kotlin.math.abs(t) * 0.32f).coerceIn(0f, 0.6f)
+        val alpha = (kotlin.math.abs(t) * 0.32f).coerceIn(0f, 0.60f)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -227,11 +367,11 @@ private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
         )
     }
 
-    // 3. Tint (-100..100: Magenta vs Green)
+    // 9. Tint (-1..1: Magenta vs Green)
     if (adjustments.tint != 0f) {
-        val tint = adjustments.tint / 100f
+        val tint = adjustments.tint.coerceIn(-1f, 1f)
         val color = if (tint > 0f) Color(0xFFFF007F) else Color(0xFF00FF7F)
-        val alpha = (kotlin.math.abs(tint) * 0.28f).coerceIn(0f, 0.5f)
+        val alpha = (kotlin.math.abs(tint) * 0.28f).coerceIn(0f, 0.50f)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -239,21 +379,89 @@ private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
         )
     }
 
-    // 4. Vignette (0..100)
+    // 10. HDR+ (0..1)
+    if (adjustments.hdr > 0f) {
+        val hdr = adjustments.hdr.coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            Color(0xFFFFFAED).copy(alpha = 0.30f * hdr),
+                            Color(0xFF00E5FF).copy(alpha = 0.15f * hdr),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+    }
+
+    // 11. Sharpness (0..1)
+    if (adjustments.sharpness > 0f) {
+        val sh = adjustments.sharpness.coerceIn(0f, 1f)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // High frequency fine edge contrast accent
+            drawLine(
+                color = Color.White.copy(alpha = 0.15f * sh),
+                start = Offset(0f, 0f),
+                end = Offset(size.width, size.height),
+                strokeWidth = 1f
+            )
+        }
+    }
+
+    // 12. Fade (0..1)
+    if (adjustments.fade > 0f) {
+        val f = adjustments.fade.coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF2C2C34).copy(alpha = 0.45f * f))
+        )
+    }
+
+    // 13. Vignette (0..1)
     if (adjustments.vignette > 0f) {
-        val v = (adjustments.vignette / 100f).coerceIn(0f, 1f)
+        val v = adjustments.vignette.coerceIn(0f, 1f)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0.40f to Color.Transparent,
-                            0.75f to Color.Black.copy(alpha = 0.45f * v),
+                            0.35f to Color.Transparent,
+                            0.70f to Color.Black.copy(alpha = 0.45f * v),
                             1.00f to Color.Black.copy(alpha = 0.90f * v)
                         )
                     )
                 )
         )
+    }
+
+    // 14. Film Grain (0..1)
+    if (adjustments.grain > 0f) {
+        val g = adjustments.grain.coerceIn(0f, 1f)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val step = 8f
+            val alpha = (0.18f * g).coerceIn(0f, 0.35f)
+            val w = size.width
+            val h = size.height
+            var y = 0f
+            var flip = false
+            while (y < h) {
+                var x = if (flip) step / 2f else 0f
+                while (x < w) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = alpha),
+                        radius = 0.9f,
+                        center = Offset(x, y)
+                    )
+                    x += step
+                }
+                y += step
+                flip = !flip
+            }
+        }
     }
 }

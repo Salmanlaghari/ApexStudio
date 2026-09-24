@@ -30,8 +30,6 @@ data class EditorState(
     // Defaults to the full frame. When cropMode is true, the overlay is
     // drawn and the user can drag the handles / pick an aspect preset.
     val cropMode: Boolean = false,
-    val cropPanelOpen: Boolean = false,
-    val isControlsVisible: Boolean = true,
     val cropAspect: CropAspect = CropAspect.FREE,
     val cropRect: CropRect = CropRect.Full,
     // Filter panel state. activeFilterId == null means "no filter"
@@ -42,6 +40,14 @@ data class EditorState(
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
     val filterCategory: String = "beauty_hd",
+    // GPUImage Real-Time Video Filtering Interface state
+    val gpuFilterPanelOpen: Boolean = false,
+    val activeGpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    val gpuFilterPreviewBitmap: android.graphics.Bitmap? = null,
+    val isGpuFilterProcessing: Boolean = false,
+    val gpuFilterCompareMode: Boolean = false,
+    val gpuFilterSplitPosition: Float = 0.5f,
+    val gpuFilterSelectedTab: Int = 0, // 0: Stylistic Effects, 1: Color Grading, 2: LUT Presets
     // Generated 1:1 filter preview thumbnails (filter ID → ImageBitmap).
     // Populated asynchronously when a clip is loaded; the FilterPanel
     // shows these instead of gradient color blocks.
@@ -77,6 +83,11 @@ data class EditorState(
     val selectedTextOverlayId: String? = null,
     // Set to true while the Trim & Set Points bottom sheet is open.
     val trimPanelOpen: Boolean = false,
+    // Media3 Transformer trimming execution state
+    val isTransformerTrimming: Boolean = false,
+    val transformerTrimProgress: Float = 0f,
+    val transformerTrimMessage: String? = null,
+    val transformerTrimError: String? = null,
     // Set to true while the Transmission Templates bottom sheet is open.
     // Selecting a template from the chip strip drives the LUT + FX +
     // intensity state, which the preview GL pipeline re-reads on the
@@ -135,7 +146,23 @@ data class EditorState(
     val arFilterPanelOpen: Boolean = false,
     val activeArFilterId: String? = null,
     val arFilterIntensity: Float = 0.85f,
-    val arFilterCustomText: String = "Happy Ganesh Chaturthi"
+    val arFilterCustomText: String = "Happy Ganesh Chaturthi",
+    // Clip-to-Clip Transitions Bottom Sheet
+    val transitionPickerOpen: Boolean = false,
+    val transitionPickerFromClipId: String? = null,
+    val transitionPickerToClipId: String? = null,
+    // Professional Color Grading LUTs Panel (GPUImage-powered)
+    val colorGradingLutPanelOpen: Boolean = false,
+    val lutTargetTrack: LutTargetTrack = LutTargetTrack.ALL_TRACKS,
+    val lutCompareMode: Boolean = false,
+    val lutCompareSplitPosition: Float = 0.5f,
+    val lutFavoriteIds: Set<String> = emptySet(),
+    val customImportedLuts: List<com.apexstudio.app.data.filter.FilterPreset> = emptyList(),
+    val lutContrast: Float = 1.0f,
+    val lutSaturation: Float = 1.0f,
+    val lutTemperature: Float = 5000f,
+    val lutTint: Float = 0f,
+    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.GRID
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the
@@ -206,9 +233,7 @@ data class ExportState(
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,
-    val isExportEngineReady: Boolean = false,
-    val presets: List<com.apexstudio.app.domain.model.ExportPreset> = com.apexstudio.app.domain.model.ExportPreset.DefaultPresets,
-    val isPresetSaveDialogOpen: Boolean = false
+    val isExportEngineReady: Boolean = false
 )
 
 data class ColorToolState(
@@ -263,3 +288,17 @@ data class AudioStudioState(
     val bassBoostEnabled: Boolean = false,
     val bassBoostStrength: Short = 0
 )
+
+/** Target layer / track to receive color grading LUT application */
+enum class LutTargetTrack(val id: String, val label: String, val shortBadge: String) {
+    ALL_TRACKS("all", "All Video Tracks", "ALL"),
+    TRACK_V1("v1", "Main Video (V1)", "V1"),
+    TRACK_V2("v2", "Overlay (V2)", "V2"),
+    SELECTED_CLIP("clip", "Active Clip", "CLIP")
+}
+
+/** Display mode for the LUTs preview gallery */
+enum class LutGalleryViewMode {
+    GRID,     // Responsive multi-column thumbnail preview gallery
+    STRIP     // Compact horizontal carousel strip
+}

@@ -72,6 +72,45 @@ object TimeFormat {
         val cs = ((ms.coerceAtLeast(0) % 1000) / 10).toInt()
         return "%02d:%02d.%02d".format(m, s, cs)
     }
+
+    /**
+     * Parses user input timestamps into milliseconds.
+     * Supports seconds ("4.5", "12"), MM:SS ("01:23"), MM:SS.ss ("00:04.50"), or HH:MM:SS.
+     */
+    fun parseTimeToMs(input: String): Long? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+
+        trimmed.toDoubleOrNull()?.let { sec ->
+            return (sec * 1000.0).toLong()
+        }
+
+        val parts = trimmed.split(":")
+        try {
+            when (parts.size) {
+                1 -> return (parts[0].toDouble() * 1000.0).toLong()
+                2 -> {
+                    val m = parts[0].toLong()
+                    val sDouble = parts[1].toDouble()
+                    return (m * 60_000L) + (sDouble * 1000.0).toLong()
+                }
+                3 -> {
+                    val p0 = parts[0].toLong()
+                    val p1 = parts[1].toLong()
+                    val p2Double = parts[2].toDouble()
+                    return (p0 * 3600_000L) + (p1 * 60_000L) + (p2Double * 1000.0).toLong()
+                }
+                4 -> {
+                    val h = parts[0].toLong()
+                    val m = parts[1].toLong()
+                    val s = parts[2].toLong()
+                    val f = parts[3].toLong()
+                    return (h * 3600_000L) + (m * 60_000L) + (s * 1000L) + (f * 1000L / 60L)
+                }
+            }
+        } catch (ignored: Exception) {}
+        return null
+    }
 }
 
 object Fps {

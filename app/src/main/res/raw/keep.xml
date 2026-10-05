@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep LUT assets from resource shrinking.
+     FilterManifest loads them via dynamically built paths ("luts/$file")
+     which the shrinker cannot trace statically. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="assets/luts/*" />

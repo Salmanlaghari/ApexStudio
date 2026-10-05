@@ -1,21 +1,44 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ApexStudio ProGuard rules
+# Targeted rules only — most libraries bundle their own ProGuard rules.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep line numbers for crash reports
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# --- kotlinx-serialization (official R8 full-mode rules) ---
+-keepattributes *Annotation*, InnerClasses, Signature
+-dontwarn kotlinx.serialization.**
+-keepclassmembers class kotlinx.serialization.json.** { *; }
+# Keep serializer entry points: Companion objects and generated $serializer classes
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1> {
+    static <1>$Companion Companion;
+}
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1>$<2> {
+    kotlinx.serialization.KSerializer serializer(...);
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# --- GPUImage (pre-2020 AAR, JNI-backed — R8 cannot verify JNI name binding) ---
+# GPUImageFilter hierarchy is instantiated directly and bound via JNI by class/method name
+-keep class jp.co.cyberagent.android.gpuimage.** { *; }
+-dontwarn jp.co.cyberagent.android.gpuimage.**
+
+# --- Native methods ---
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# --- Enums (used in serialization) ---
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# --- Parcelable ---
+-keep class * implements android.os.Parcelable {
+    public static final android.os.Parcelable$Creator *;
+}
+
+# --- LUT assets (loaded via dynamic paths — keep from resource shrinking) ---
+-keepres "assets/luts/*"

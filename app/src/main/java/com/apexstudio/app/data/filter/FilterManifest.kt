@@ -31,17 +31,55 @@ data class FilterManifest(
 
     companion object {
         /**
+         * Static registry of LUT presets scanned from `assets/luts/` at startup.
+         * Initialized via [initialize] — call from Application.onCreate().
+         */
+        private val staticRegistry = mutableMapOf<String, FilterPreset>()
+
+        /**
+         * Scans `assets/luts/` for `.cube` files and builds the static registry.
+         * Call once from Application.onCreate(). Safe to call multiple times.
+         */
+        fun initialize(context: android.content.Context) {
+            if (staticRegistry.isNotEmpty()) return
+            try {
+                val luts = context.assets.list("luts") ?: return
+                for (file in luts) {
+                    if (!file.endsWith(".cube", ignoreCase = true)) continue
+                    val id = file.removeSuffix(".cube").removeSuffix(".CUBE")
+                    val name = id.split("_", "-").joinToString(" ") { word ->
+                        word.replaceFirstChar { it.uppercase() }
+                    }
+                    // Categorize by filename prefix (e.g. "vintage_xxx" → Vintage)
+                    val category = when {
+                        id.startsWith("vintage", ignoreCase = true) -> "Vintage"
+                        id.startsWith("bw", ignoreCase = true) ||
+                        id.startsWith("blackwhite", ignoreCase = true) ||
+                        id.startsWith("mono", ignoreCase = true) -> "Black & White"
+                        id.startsWith("cinematic", ignoreCase = true) -> "Cinematic"
+                        id.startsWith("warm", ignoreCase = true) -> "Warm"
+                        id.startsWith("cool", ignoreCase = true) -> "Cool"
+                        else -> "General"
+                    }
+                    staticRegistry[id] = FilterPreset(
+                        id = id,
+                        name = name,
+                        category = category,
+                        asset = "luts/$file"
+                    )
+                }
+                android.util.Log.i("FilterManifest", "Scanned ${staticRegistry.size} LUT presets from assets")
+            } catch (e: Exception) {
+                android.util.Log.w("FilterManifest", "LUT scan failed", e)
+            }
+        }
+
+        /**
          * Static lookup used by `TimelineTemplateManager.mapTemplateToComposition`.
          *
-         * `FilterManifest` is a `data class` populated per-instance (typically from JSON),
-         * but `TimelineTemplateManager` invokes a class-level lookup by id — without
-         * an instance context. This companion accessor provides a stable compile-time
-         * entry point and returns `null` when the id is not present in the in-memory
-         * catalog. Callers already null-check the result, so this is safe.
-         *
-         * TODO (follow-up PR): wire this to scan `assets/luts/` for `.cube` LUTs at startup and
-         * build a full `Map<String, FilterPreset>` so the 73 bundled LUTs resolve here.
+         * Returns the preset from the static registry (populated by [initialize]),
+         * or null if not found. Callers already null-check the result.
          */
-        fun presetById(id: String): FilterPreset? = null
+        fun presetById(id: String): FilterPreset? = staticRegistry[id]
     }
 }

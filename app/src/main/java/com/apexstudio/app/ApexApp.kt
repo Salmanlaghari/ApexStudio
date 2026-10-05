@@ -19,6 +19,13 @@ class ApexApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // Scan bundled LUTs so FilterManifest.presetById() resolves template filters.
+        try {
+            com.apexstudio.app.data.filter.FilterManifest.initialize(this)
+        } catch (e: Exception) {
+            Log.w("ApexApp", "LUT registry init failed", e)
+        }
+
         // If the previous run died (native signal bypasses the JVM handler), the
         // CrashMarker file still holds the last operation it was performing.
         // Surface it as a crash log so the diagnostics screen can show the exact step.

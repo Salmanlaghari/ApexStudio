@@ -1,28 +1,30 @@
 # ApexStudio ProGuard rules
-# Targeted rules only — libraries (Media3, Coil, Compose, DataStore, Firebase)
-# bundle their own ProGuard rules; blanket -keep defeats R8 shrinking.
+# Targeted rules only — most libraries bundle their own ProGuard rules.
 
 # Keep line numbers for crash reports
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# --- kotlinx-serialization ---
-# Keep the serialization infrastructure
+# --- kotlinx-serialization (official R8 full-mode rules) ---
 -keepattributes *Annotation*, InnerClasses, Signature
 -dontwarn kotlinx.serialization.**
 -keepclassmembers class kotlinx.serialization.json.** { *; }
-# Keep serializer() methods so R8 doesn't remove them
--keepclasseswithmembernames class * {
+# Keep serializer entry points: Companion objects and generated $serializer classes
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1> {
+    static <1>$Companion Companion;
+}
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1>$<2> {
     kotlinx.serialization.KSerializer serializer(...);
 }
-# Keep @Serializable classes but allow R8 to shrink unused members.
-# Only the fields actually serialized need keeping — the annotation
-# processor generates the serializer which R8 tracks.
--keep @kotlinx.serialization.Serializable class com.apexstudio.app.** {
-    <fields>;
-}
 
-# --- Native methods (GPUImage, etc.) ---
+# --- GPUImage (pre-2020 AAR, JNI-backed — R8 cannot verify JNI name binding) ---
+# GPUImageFilter hierarchy is instantiated directly and bound via JNI by class/method name
+-keep class jp.co.cyberagent.android.gpuimage.** { *; }
+-dontwarn jp.co.cyberagent.android.gpuimage.**
+
+# --- Native methods ---
 -keepclasseswithmembernames class * {
     native <methods>;
 }
@@ -37,3 +39,6 @@
 -keep class * implements android.os.Parcelable {
     public static final android.os.Parcelable$Creator *;
 }
+
+# --- LUT assets (loaded via dynamic paths — keep from resource shrinking) ---
+-keepres "assets/luts/*"

@@ -32,42 +32,51 @@ data class FilterManifest(
     companion object {
         /**
          * Static registry of LUT presets scanned from `assets/luts/` at startup.
+         * Thread-safe: ConcurrentHashMap for safe read/write across threads.
          * Initialized via [initialize] — call from Application.onCreate().
          */
-        private val staticRegistry = mutableMapOf<String, FilterPreset>()
+        private val staticRegistry = java.util.concurrent.ConcurrentHashMap<String, FilterPreset>()
+        @Volatile
+        private var initialized = false
 
         /**
          * Scans `assets/luts/` for `.cube` files and builds the static registry.
-         * Call once from Application.onCreate(). Safe to call multiple times.
+         * Call once from Application.onCreate(). Thread-safe and idempotent.
          */
+        @Synchronized
         fun initialize(context: android.content.Context) {
-            if (staticRegistry.isNotEmpty()) return
+            if (initialized) return
             try {
                 val luts = context.assets.list("luts") ?: return
+                val tempMap = mutableMapOf<String, FilterPreset>()
                 for (file in luts) {
                     if (!file.endsWith(".cube", ignoreCase = true)) continue
-                    val id = file.removeSuffix(".cube").removeSuffix(".CUBE")
-                    val name = id.split("_", "-").joinToString(" ") { word ->
+                    // Case-insensitive suffix removal (Kilo: removeSuffix is case-sensitive)
+                    val id = file.replace(Regex("\\.cube$", RegexOption.IGNORE_CASE), "")
+                    val name = id.split("_", "-", ".").joinToString(" ") { word ->
                         word.replaceFirstChar { it.uppercase() }
                     }
-                    // Categorize by filename prefix (e.g. "vintage_xxx" → Vintage)
+                    // Categorize by checking if genre token appears anywhere in id
+                    val lowerId = id.lowercase()
                     val category = when {
-                        id.startsWith("vintage", ignoreCase = true) -> "Vintage"
-                        id.startsWith("bw", ignoreCase = true) ||
-                        id.startsWith("blackwhite", ignoreCase = true) ||
-                        id.startsWith("mono", ignoreCase = true) -> "Black & White"
-                        id.startsWith("cinematic", ignoreCase = true) -> "Cinematic"
-                        id.startsWith("warm", ignoreCase = true) -> "Warm"
-                        id.startsWith("cool", ignoreCase = true) -> "Cool"
+                        "vintage" in lowerId -> "Vintage"
+                        "bw" in lowerId || "blackwhite" in lowerId ||
+                        "mono" in lowerId || "noir" in lowerId -> "Black & White"
+                        "cinematic" in lowerId || "film" in lowerId -> "Cinematic"
+                        "warm" in lowerId -> "Warm"
+                        "cool" in lowerId -> "Cool"
                         else -> "General"
                     }
-                    staticRegistry[id] = FilterPreset(
+                    tempMap[id] = FilterPreset(
                         id = id,
                         name = name,
                         category = category,
                         asset = "luts/$file"
                     )
                 }
+                // Atomic publish: only mark initialized after full successful scan
+                staticRegistry.putAll(tempMap)
+                initialized = true
                 android.util.Log.i("FilterManifest", "Scanned ${staticRegistry.size} LUT presets from assets")
             } catch (e: Exception) {
                 android.util.Log.w("FilterManifest", "LUT scan failed", e)

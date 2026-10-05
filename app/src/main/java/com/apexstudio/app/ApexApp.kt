@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.crashlog.CrashLog
+import com.apexstudio.app.data.filter.FilterManifest
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -20,11 +21,8 @@ class ApexApp : Application() {
         super.onCreate()
 
         // Scan bundled LUTs so FilterManifest.presetById() resolves template filters.
-        try {
-            com.apexstudio.app.data.filter.FilterManifest.initialize(this)
-        } catch (e: Exception) {
-            Log.w("ApexApp", "LUT registry init failed", e)
-        }
+        // initialize() handles its own exceptions internally.
+        FilterManifest.initialize(this)
 
         // If the previous run died (native signal bypasses the JVM handler), the
         // CrashMarker file still holds the last operation it was performing.

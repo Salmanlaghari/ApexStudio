@@ -1,57 +1,39 @@
 # ApexStudio ProGuard rules
+# Targeted rules only — libraries (Media3, Coil, Compose, DataStore, Firebase)
+# bundle their own ProGuard rules; blanket -keep defeats R8 shrinking.
 
 # Keep line numbers for crash reports
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
 # --- kotlinx-serialization ---
-# Keep generated serializers
--keepattributes *Annotation*, InnerClasses
--dontnote kotlinx.serialization.AnnotationsKt
+# Keep the serialization infrastructure
+-keepattributes *Annotation*, InnerClasses, Signature
+-dontwarn kotlinx.serialization.**
 -keepclassmembers class kotlinx.serialization.json.** { *; }
+# Keep serializer() methods so R8 doesn't remove them
 -keepclasseswithmembernames class * {
     kotlinx.serialization.KSerializer serializer(...);
 }
-# Keep serializable data classes (Project, MediaClip, etc.)
--keep @kotlinx.serialization.Serializable class com.apexstudio.app.** { *; }
--keepclassmembers @kotlinx.serialization.Serializable class com.apexstudio.app.** { *; }
+# Keep @Serializable classes but allow R8 to shrink unused members.
+# Only the fields actually serialized need keeping — the annotation
+# processor generates the serializer which R8 tracks.
+-keep @kotlinx.serialization.Serializable class com.apexstudio.app.** {
+    <fields>;
+}
 
-# --- AndroidX Media3 (ExoPlayer, Transformer) ---
--keep class androidx.media3.** { *; }
--dontwarn androidx.media3.**
--keepclassmembers class androidx.media3.** { *; }
-
-# --- Coil (image loading) ---
--keep class coil.** { *; }
--dontwarn coil.**
-
-# --- DataStore ---
--keep class androidx.datastore.** { *; }
-
-# --- Compose ---
--dontwarn androidx.compose.**
--keep class androidx.compose.** { *; }
-
-# --- Firebase (if used) ---
--keep class com.google.firebase.** { *; }
--dontwarn com.google.firebase.**
-
-# --- GPUImage ---
--keep class jp.co.cyberagent.android.gpuimage.** { *; }
--dontwarn jp.co.cyberagent.android.gpuimage.**
-
-# Keep native methods
+# --- Native methods (GPUImage, etc.) ---
 -keepclasseswithmembernames class * {
     native <methods>;
 }
 
-# Keep enums
+# --- Enums (used in serialization) ---
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# Keep Parcelable
+# --- Parcelable ---
 -keep class * implements android.os.Parcelable {
     public static final android.os.Parcelable$Creator *;
 }

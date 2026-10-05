@@ -1,0 +1,257 @@
+package com.apexstudio.app.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.data.media.VideoThumbnailExtractor
+import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+
+internal fun EditorViewModel.loadProject() {
+    viewModelScope.launch {
+        // Prefer the persistent DataStore copy over the in-memory
+        // MediaRepository stub. The two stay in sync because every
+        // mutation auto-saves back to DataStore.
+        val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
+        val p = projectId?.let { id -> projects.firstOrNull { it.id == id } }
+            ?: projects.firstOrNull()
+        if (p == null) {
+            _state.update { it.copy(project = null, durationMs = 0L) }
+            return@launch
+        }
+
+        val sampleUri = context?.let { ctx ->
+            try {
+                com.apexstudio.app.data.media.SampleVideoGenerator.getOrCreateSampleVideo(ctx)
+            } catch (_: Exception) { null }
+        }
+        val ctx = context
+        val validClips = p.clips.map { clip ->
+            if (ctx != null) {
+                val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
+                clip.copy(uri = resolvedUri)
+            } else if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
+                if (sampleUri != null) clip.copy(uri = sampleUri) else clip
+            } else clip
+        }
+        val effectiveClips = if (validClips.isEmpty() && sampleUri != null) {
+            listOf(
+                MediaClip(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = "Sample_V1.mp4",
+                    uri = sampleUri,
+                    durationMs = 10_000L,
+                    trimStartMs = 0L,
+                    trimEndMs = 10_000L,
+                    type = ClipType.VIDEO,
+                    trackIndex = 0
+                )
+            )
+        } else validClips
+        val updatedP = p.copy(
+            clips = effectiveClips,
+            durationMs = effectiveClips.maxOfOrNull { it.trimEndMs } ?: p.durationMs
+        )
+
+        val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
+            ?: updatedP.clips.firstOrNull()?.id
+        _state.update {
+            it.copy(
+                project = updatedP,
+                durationMs = updatedP.durationMs,
+                canUndo = false, canRedo = false,
+                selectedClipId = it.selectedClipId ?: firstClipId,
+                isPlaying = firstClipId != null
+            )
+        }
+
+        // Auto-apply the project's last transmission template so
+        // the user opens to the look they had last time. Runs
+        // after [loadTransmissionTemplates] because we need the
+        // catalog to be in the StateFlow before we can resolve
+        // the template by id. Falls back silently if the saved
+        // id no longer matches a live template (e.g. the
+        // template was removed from the catalog).
+        val savedTemplateId = updatedP.lastTransmissionTemplateId
+        if (savedTemplateId != null) {
+            val template = _transmissionTemplates.value.firstOrNull { it.id == savedTemplateId }
+            if (template != null) {
+                applyTransmissionTemplateInternal(template, persistProjectId = null)
+            } else {
+                Log.w("EditorViewModel", "Saved transmission template '$savedTemplateId' not found in catalog — skipping auto-apply")
+            }
+        }
+    }
+}
+
+
+internal fun EditorViewModel.loadLuts() {
+    _luts.value = repo.loadLutPresets()
+    _transitions.value = repo.loadTransitionPresets()
+    _fx.value = repo.loadFxPresets()
+}
+
+
+internal fun EditorViewModel.loadTransmissionTemplates() {
+    val mgr = timelineTemplateManager ?: run {
+        Log.w("EditorViewModel", "TimelineTemplateManager unavailable — transmission catalog empty")
+        return
+    }
+    try {
+        val raw = mgr.loadTransmissionTemplatesRaw()
+        val stats = mgr.parseTransmissionTemplatesWithStats(raw)
+        _transmissionTemplates.value = stats.templates
+        if (stats.skippedCount > 0) {
+            Log.w(
+                "EditorViewModel",
+                "transmission_templates.json: ${stats.skippedCount} entries skipped " +
+                    "(unknown LUT or FX id) — ids: ${stats.skippedIds.joinToString()}"
+            )
+        }
+    } catch (e: Exception) {
+        Log.w("EditorViewModel", "loadTransmissionTemplates failed", e)
+        _transmissionTemplates.value = emptyList()
+    }
+}
+
+
+internal fun EditorViewModel.loadAudioState() {
+    _audio.update { it.copy(tracks = repo.loadProjects().first().audioTracks) }
+}
+
+
+fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker.MediaMetadata>, replace: Boolean = false) {
+    viewModelScope.launch {
+        val s = _state.value
+        // Phase D: read the pendingAddAsOverlay flag from state so
+        // the picker's callback can route the result through either
+        // the regular video path or the overlay path. Phase E: audio
+        // picks land in the A1 lane; the timeline's existing filter
+        // `it.type == ClipType.AUDIO` routes them correctly without
+        // any extra re-tagging.
+        val asOverlay = s.pendingAddAsOverlay
+        val newClips = mediaList.mapNotNull { meta ->
+            val resolvedMeta = if (context != null) {
+                meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
+            } else meta
+            val created = mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
+            // Phase D: when the user picked from the "Overlay clip"
+            // entry point, re-tag the clip as OVERLAY + trackIndex 1
+            // and register it as the active overlay. A new overlay
+            // replaces any prior one (single-overlay v1 limit).
+            if (asOverlay && created != null) {
+                created.copy(
+                    type = ClipType.OVERLAY,
+                    trackIndex = 1
+                )
+            } else created
+        }
+        val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
+
+        val updatedClips = existingClips + newClips
+        val updatedProject = s.project?.copy(clips = updatedClips)
+        val maxDuration = updatedClips.maxOfOrNull { it.durationMs } ?: s.durationMs
+
+        // Immediate state update so video preview loads in 0ms without delay
+        _state.update {
+            it.copy(
+                project = updatedProject,
+                durationMs = maxDuration,
+                pickedMedia = mediaList,
+                isMediaPickerOpen = false,
+                selectedClipId = when {
+                    replace -> newClips.firstOrNull()?.id
+                    it.selectedClipId != null -> it.selectedClipId
+                    else -> newClips.firstOrNull()?.id
+                },
+                isPlaying = true,
+                // Phase D: register the freshly added overlay so the
+                // preview layer starts rendering it immediately.
+                overlayClipId = if (asOverlay) {
+                    newClips.firstOrNull()?.id ?: it.overlayClipId
+                } else it.overlayClipId,
+                overlayTransform = if (asOverlay) {
+                    com.apexstudio.app.presentation.state.OverlayTransform.Identity
+                } else it.overlayTransform,
+                pendingAddAsOverlay = false,
+                pendingAddAsAudio = false
+            )
+        }
+        persistProject()
+
+        val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO } ?: updatedClips.firstOrNull()
+        // Asynchronously analyze audio waveform in background without blocking video preview
+        if (firstVideo != null && context != null) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val wf = mediaAnalyzer?.analyzeAudioWaveform(
+                        firstVideo.uri, context,
+                        sampleCount = 200,
+                        trimStartMs = firstVideo.trimStartMs,
+                        trimEndMs = firstVideo.trimEndMs
+                    )?.samples ?: FloatArray(0)
+                    if (wf.isNotEmpty()) {
+                        _state.update { it.copy(audioWaveform = wf) }
+                    }
+                } catch (e: Exception) {
+                    Log.w("EditorViewModel", "Waveform analysis failed", e)
+                }
+            }
+        }
+
+        for (clip in newClips) {
+            if (clip.type == ClipType.VIDEO && context != null) {
+                loadClipThumbnails(clip)
+            }
+        }
+    }
+}
+
+
+internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
+    val ctx = context ?: return
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val playableUri = com.apexstudio.app.data.media.MediaUriResolver
+                .resolvePlayableUri(ctx, clip.uri).toString()
+            val thumbs = VideoThumbnailExtractor.extractStrip(
+                context = ctx,
+                videoUri = playableUri,
+                durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L),
+                count = 8
+            )
+            _thumbnails.update { current ->
+                current + (clip.id to thumbs)
+            }
+        } catch (e: Exception) {
+            Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
+        }
+    }
+}
+
+
+fun EditorViewModel.flushProject() = persistProject()
+
+
+internal fun EditorViewModel.persistProject() {
+    val snapshot = _state.value.project ?: return
+    val repo = projectRepository ?: return
+    viewModelScope.launch {
+        try {
+            repo.saveProject(snapshot)
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "Auto-save failed", e)
+        }
+    }
+}
+
+
+fun EditorViewModel.analyzeAudio(uri: String) {
+    viewModelScope.launch {
+        val data = mediaAnalyzer?.analyzeAudioWaveform(uri, context ?: return@launch)
+        data?.samples?.let { setWaveformSamples(it) }
+    }
+}

@@ -117,4 +117,4 @@ class EditorViewModel(
         exportEngine?.release()
         colorGradingEngine.release()
     }
-}}
+}

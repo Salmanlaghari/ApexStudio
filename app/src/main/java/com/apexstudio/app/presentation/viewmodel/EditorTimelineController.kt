@@ -600,6 +600,34 @@ fun EditorViewModel.deleteClip(clipId: String) {
 }
 
 
+/**
+ * Deletes multiple clips in a single operation: one undo entry, one state
+ * update, one project persist. Prefer this over calling [deleteClip] in a
+ * loop for multi-select bulk delete.
+ */
+fun EditorViewModel.deleteClips(clipIds: Set<String>) {
+    if (clipIds.isEmpty()) return
+    pushUndo()
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val updated = p.clips.filterNot { it.id in clipIds }
+        val newSelected = if (s.selectedClipId in clipIds) updated.firstOrNull()?.id else s.selectedClipId
+        val newDur = updated.maxOfOrNull { it.trimEndMs - it.trimStartMs } ?: 0L
+        s.copy(
+            project = p.copy(clips = updated, durationMs = newDur),
+            durationMs = newDur,
+            selectedClipId = newSelected,
+            // Deleting the active overlay clip clears the transform too,
+            // otherwise the preview layer would keep trying to render a
+            // non-existent overlay's PlayerView.
+            overlayClipId = if (s.overlayClipId in clipIds) null else s.overlayClipId,
+            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform
+        )
+    }
+    persistProject()
+}
+
+
 fun EditorViewModel.moveClipToTrack(clipId: String, newType: ClipType, newTrackIndex: Int) {
     pushUndo()
     _state.update { s ->
@@ -687,4 +715,76 @@ internal fun EditorViewModel.pushUndo() {
     if (undoStack.size > 50) undoStack.removeFirst()
     redoStack.clear()
     _state.update { it.copy(canUndo = true, canRedo = false) }
+}
+
+
+/**
+ * Toggles a keyframe at the current playhead position for the given clip.
+ * If a keyframe exists within 150ms of the playhead it is removed, otherwise
+ * one is added using the interpolated transform at the playhead.
+ */
+fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val playheadMs = _state.value.playerPositionMs
+    val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
+    if (existingKf != null) {
+        removeKeyframe(clipId, existingKf.id)
+    } else {
+        addKeyframe(clipId, playheadMs, clip.keyframes.interpolateAt(playheadMs))
+    }
+}
+
+
+/**
+ * Moves a clip keyframe to a new timeline position (from diamond drag on the timeline).
+ */
+fun EditorViewModel.moveKeyframe(clipId: String, keyframeId: String, newTimeMs: Long) {
+    updateKeyframe(clipId, keyframeId) { it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) }
+}
+
+
+/**
+ * Toggles a text-overlay keyframe at the current playhead position.
+ */
+fun EditorViewModel.toggleTextKeyframeAtPlayhead(clipId: String, overlayId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val overlay = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
+    val playheadMs = _state.value.playerPositionMs
+    val existingKf = overlay.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
+    if (existingKf != null) {
+        updateTextOverlay(clipId, overlayId) { ov ->
+            ov.copy(keyframes = KeyframeTrack(ov.keyframes.keyframes.filter { it.id != existingKf.id }))
+        }
+    } else {
+        val t = overlay.keyframes.interpolateAt(playheadMs)
+        val kf = Keyframe(
+            id = java.util.UUID.randomUUID().toString(),
+            timeMs = playheadMs,
+            translateX = t.translateX,
+            translateY = t.translateY,
+            scale = t.scale,
+            rotationDeg = t.rotationDeg,
+            opacity = t.opacity
+        )
+        updateTextOverlay(clipId, overlayId) { ov ->
+            val without = ov.keyframes.keyframes.filter { it.timeMs != playheadMs }
+            ov.copy(keyframes = KeyframeTrack(without + kf).sorted())
+        }
+    }
+}
+
+
+/**
+ * Moves a text-overlay keyframe to a new timeline position (from diamond drag).
+ */
+fun EditorViewModel.moveTextKeyframe(clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) {
+    updateTextOverlay(clipId, overlayId) { ov ->
+        ov.copy(
+            keyframes = KeyframeTrack(
+                ov.keyframes.keyframes.map {
+                    if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
+                }
+            ).sorted()
+        )
+    }
 }

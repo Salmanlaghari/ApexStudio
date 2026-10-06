@@ -12,6 +12,7 @@ import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -104,7 +105,35 @@ class ExportEngine(private val context: Context) {
         val reverbPreset: Short = 0,
         val echoEnabled: Boolean = false,
         val bassBoostEnabled: Boolean = false,
-        val bassBoostStrength: Short = 0
+        val bassBoostStrength: Short = 0,
+        // Picture-in-Picture overlays: composited in the export to match preview.
+        val pipOverlays: List<PipOverlayConfig> = emptyList()
+    )
+
+    /**
+     * Configuration for one Picture-in-Picture overlay in the export.
+     * The overlay video is composited over the main video at [offsetMs] on the
+     * export timeline, scaled to [widthFraction] of the output width and placed
+     * in the bottom-end corner (matching the preview's BottomEnd PiP box).
+     */
+    data class PipOverlayConfig(
+        val uri: String,
+        val offsetMs: Long = 0L,
+        val trimStartMs: Long = 0L,
+        val trimEndMs: Long = Long.MAX_VALUE,
+        val widthFraction: Float = 0.25f,
+        val marginFraction: Float = 0.03f,
+        val opacity: Float = 1f
+    )
+
+    /**
+     * One audio source for [startAudioExport]: a media URI plus its trim range
+     * (in ms, relative to the source media).
+     */
+    data class AudioExportSource(
+        val uri: String,
+        val trimStartMs: Long = 0L,
+        val trimEndMs: Long = 0L
     )
 
     /**
@@ -138,15 +167,28 @@ class ExportEngine(private val context: Context) {
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
 
-                // TODO(PHASE_D_EXPORT): Picture-in-Picture overlays are
-                // rendered in the preview (EditorScreen.OverlayLayer) but
-                // not yet in the export. The Transformer pipeline here
-                // accepts a single EditedMediaItem + inputUri — compositing
-                // a second overlay clip needs EditedMediaItemSequence +
-                // MediaItem instances for the V2 clip + an OverlayEffect
-                // that reads its MediaItem as a GL texture. Track this
-                // work as a follow-up so preview ↔ export stay in sync.
-                //
+                // Picture-in-Picture overlays: composite each overlay clip as a true
+                // PiP in the export, matching the preview's bottom-end corner placement.
+                // Each overlay gets its own GlEffect instance (chained like text overlays).
+                config.pipOverlays.forEach { pip ->
+                    try {
+                        videoEffects.add(
+                            com.apexstudio.app.data.effect.PipOverlayGlEffect(
+                                context = context,
+                                overlayUri = pip.uri,
+                                offsetMs = pip.offsetMs,
+                                trimStartMs = pip.trimStartMs,
+                                trimEndMs = pip.trimEndMs,
+                                widthFraction = pip.widthFraction,
+                                marginFraction = pip.marginFraction,
+                                opacity = pip.opacity
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "PiP overlay effect creation failed for ${pip.uri}", e)
+                    }
+                }
+
                 // Audio Studio Effects pipeline (Pitch, Volume, Channel Mixing)
                 val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
@@ -281,6 +323,152 @@ class ExportEngine(private val context: Context) {
                         isExporting = false,
                         progress = 0f,
                         error = e.message ?: "Export failed"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds a fresh list of audio processors (pitch, volume, speed) from the
+     * export config. Processors are stateful, so callers must build a new
+     * list per media item instead of sharing instances.
+     */
+    private fun buildExportAudioProcessors(
+        config: ExportConfig
+    ): MutableList<androidx.media3.common.audio.AudioProcessor> {
+        val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+
+        // Audio Pitch Adjustment via SonicAudioProcessor
+        if (config.pitchSemitones != 0f) {
+            val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
+            val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
+                setPitch(pitchFactor)
+            }
+            audioProcessors.add(sonic)
+        }
+
+        // Volume / Gain adjustment via ChannelMixingMatrix
+        if (config.volume != 1f) {
+            val clampedVol = config.volume.coerceIn(0f, 2f)
+            val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
+                /* inputChannelCount = */ 2,
+                /* outputChannelCount = */ 2,
+                /* coefficients = */ floatArrayOf(
+                    clampedVol, 0f,
+                    0f, clampedVol
+                )
+            )
+            val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
+            channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
+            audioProcessors.add(channelMixingProcessor)
+        }
+
+        // Speed change affects audio too.
+        if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
+            val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
+                override fun getSpeed(timeUs: Long): Float = config.clipSpeed
+                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
+                    androidx.media3.common.C.TIME_UNSET
+            }
+            val speedPair = Effects.createExperimentalSpeedChangingEffect(constantProvider)
+            audioProcessors.add(speedPair.first)
+        }
+        return audioProcessors
+    }
+
+    /**
+     * Exports the project's audio as a standalone AAC (.m4a) file: every
+     * timeline clip's audio plus all unmuted extra audio tracks (music /
+     * voiceover), concatenated in timeline order. Reuses the audio pipeline
+     * (pitch, volume, channel mixing) from the video export; video is removed
+     * via [EditedMediaItem.Builder.setRemoveVideo].
+     *
+     * Note: sources are concatenated into a single sequence, not
+     * simultaneously mixed — an extra music track plays after the clips'
+     * audio rather than underneath it. Per-source trim ranges are honored via
+     * each item's clipping configuration.
+     */
+    fun startAudioExport(
+        sources: List<AudioExportSource>,
+        config: ExportConfig,
+        outputFileName: String = "apex_studio_audio.m4a"
+    ) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
+                if (sources.isEmpty()) {
+                    throw IllegalArgumentException("No audio sources to export")
+                }
+
+                val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+                outputDir.mkdirs()
+                val outputFile = File(outputDir, outputFileName)
+
+                val editedItems = sources.map { src ->
+                    val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
+                    if (src.trimStartMs > 0L || (src.trimEndMs > 0L && src.trimEndMs > src.trimStartMs)) {
+                        val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
+                        if (src.trimStartMs > 0L) {
+                            clippingBuilder.setStartPositionMs(src.trimStartMs)
+                        }
+                        if (src.trimEndMs > src.trimStartMs) {
+                            clippingBuilder.setEndPositionMs(src.trimEndMs)
+                        }
+                        mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
+                    }
+                    // Fresh audio processors per item — processors are stateful
+                    // and must not be shared across sequence items.
+                    EditedMediaItem.Builder(mediaItemBuilder.build())
+                        .setRemoveVideo(true)
+                        .setEffects(Effects(buildExportAudioProcessors(config), emptyList()))
+                        .build()
+                }
+                val composition = Composition.Builder(
+                    EditedMediaItemSequence(editedItems)
+                ).build()
+
+                val transformer = Transformer.Builder(context)
+                    .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+                    .addListener(object : Transformer.Listener {
+                        override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                            progressJob?.cancel()
+                            mainHandler.post {
+                                _exportState.value = ExportProgressState(
+                                    isExporting = false,
+                                    progress = 1f,
+                                    outputUri = Uri.fromFile(outputFile).toString()
+                                )
+                            }
+                        }
+
+                        override fun onError(
+                            composition: Composition,
+                            exportResult: ExportResult,
+                            exportException: ExportException
+                        ) {
+                            progressJob?.cancel()
+                            mainHandler.post {
+                                _exportState.value = ExportProgressState(
+                                    isExporting = false,
+                                    progress = 0f,
+                                    error = exportException.message ?: "Audio export failed"
+                                )
+                            }
+                        }
+                    })
+                    .build()
+                this@ExportEngine.transformer = transformer
+
+                startProgressTracking(transformer)
+                transformer.start(composition, outputFile.absolutePath)
+            } catch (e: Exception) {
+                Log.e(TAG, "startAudioExport failed", e)
+                mainHandler.post {
+                    _exportState.value = ExportProgressState(
+                        isExporting = false,
+                        progress = 0f,
+                        error = e.message ?: "Audio export failed"
                     )
                 }
             }

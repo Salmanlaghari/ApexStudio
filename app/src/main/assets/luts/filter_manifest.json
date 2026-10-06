@@ -15,7 +15,15 @@
         "thriller_blue",
         "romance_warm",
         "golden_hour_glow",
-        "crimson_dusk"
+        "crimson_dusk",
+        "cine_warm",
+        "cine_cold",
+        "cine_drama",
+        "cine_teal_orange",
+        "cine_teal_orange_2",
+        "cine_vibrant",
+        "cine_bright",
+        "cine_natural"
       ]
     },
     {
@@ -673,6 +681,54 @@
       "name": "Desert Gold",
       "category": "Food & Landscape",
       "asset": "luts/desert_gold.cube"
+    },
+    {
+      "id": "cine_warm",
+      "name": "Cine Warm",
+      "category": "Cinematic",
+      "asset": "luts/cine_warm.cube"
+    },
+    {
+      "id": "cine_cold",
+      "name": "Cine Cold",
+      "category": "Cinematic",
+      "asset": "luts/cine_cold.cube"
+    },
+    {
+      "id": "cine_drama",
+      "name": "Cine Drama",
+      "category": "Cinematic",
+      "asset": "luts/cine_drama.cube"
+    },
+    {
+      "id": "cine_teal_orange",
+      "name": "Cine Teal & Orange",
+      "category": "Cinematic",
+      "asset": "luts/cine_teal_orange.cube"
+    },
+    {
+      "id": "cine_teal_orange_2",
+      "name": "Cine Teal & Orange 2",
+      "category": "Cinematic",
+      "asset": "luts/cine_teal_orange_2.cube"
+    },
+    {
+      "id": "cine_vibrant",
+      "name": "Cine Vibrant",
+      "category": "Cinematic",
+      "asset": "luts/cine_vibrant.cube"
+    },
+    {
+      "id": "cine_bright",
+      "name": "Cine Bright",
+      "category": "Cinematic",
+      "asset": "luts/cine_bright.cube"
+    },
+    {
+      "id": "cine_natural",
+      "name": "Cine Natural",
+      "category": "Cinematic",
+      "asset": "luts/cine_natural.cube"
     }
   ]
 }

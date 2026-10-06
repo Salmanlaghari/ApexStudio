@@ -442,6 +442,37 @@ fun ExportScreen(
                 )
             }
         }
+
+        // Standalone audio export: AAC (.m4a) from the project's audio.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .height(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF1A2233))
+                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .clickable(enabled = !export.isExporting) {
+                    vm.startAudioExport()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.AudioFile,
+                    null,
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Export Audio (AAC)",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
     }
 }
 

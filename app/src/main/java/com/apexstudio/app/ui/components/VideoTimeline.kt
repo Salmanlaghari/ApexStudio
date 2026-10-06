@@ -95,6 +95,7 @@ import androidx.compose.ui.zIndex
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ClipTransition
+import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
@@ -148,7 +149,16 @@ fun VideoTimeline(
     onZoomChange: (Float) -> Unit = {},
     transitions: List<ClipTransition> = emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Pro-timeline interactions (all optional; default no-op keeps legacy behavior).
+    onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
+    onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
+    onDeleteClips: (Set<String>) -> Unit = {},
+    // Keyframe layer interactions.
+    onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
@@ -207,10 +217,20 @@ fun VideoTimeline(
     var isAudioMuted by remember { mutableStateOf(false) }
     var isOverlayVisible by remember { mutableStateOf(true) }
 
+    // Multi-select state (pro timeline): select several clips, then move/delete together.
+    var multiSelectMode by remember { mutableStateOf(false) }
+    var multiSelectedIds by remember { mutableStateOf(setOf<String>()) }
+
+    // Snap indicator: true when the playhead sits on (or within threshold of) a beat marker
+    // while snap-to-beat is enabled — shown as a badge on the playhead.
+    val snapThresholdMs = 200L
+    val isPlayheadSnapped = snapToBeat &&
+        beatMarkersMs.any { kotlin.math.abs(it - safePlayheadMs) <= snapThresholdMs }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(260.dp)
+            .height(300.dp)
             .background(Color(0xFF090B10))
             .border(1.dp, Color(0xFF171B26))
     ) {
@@ -321,7 +341,7 @@ fun VideoTimeline(
                             .height(28.dp)
                     )
 
-                    // TRACK 1: V2 (Overlay / PIP / Text / Stickers)
+                    // TRACK 1: V2 (Overlay / PIP / Text / Stickers) — two lanes
                     TimelineOverlayTrack(
                         clips = clips.filter { it.type == ClipType.OVERLAY },
                         textOverlays = textOverlays,
@@ -331,9 +351,16 @@ fun VideoTimeline(
                         isVisible = isOverlayVisible,
                         onSelectClip = onSelectClip,
                         onAddOverlay = { onAddMedia(ClipType.OVERLAY) },
+                        onMoveClipOffset = onMoveClipOffset,
+                        onSeekToKeyframe = onScrub,
+                        onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
+                        onMoveKeyframe = onMoveKeyframe,
+                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+                        onMoveTextKeyframe = onMoveTextKeyframe,
+                        allClips = clips,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .height(96.dp)
                     )
 
                     // TRACK 2: V1 (Main Video Track with Drag-and-Drop Reordering)
@@ -390,6 +417,53 @@ fun VideoTimeline(
                             targetDropIndex = -1
                         },
                         onAddClip = { onAddMedia(ClipType.VIDEO) },
+                        multiSelectMode = multiSelectMode,
+                        multiSelectedIds = multiSelectedIds,
+                        onToggleMultiSelect = { clipId ->
+                            multiSelectedIds = if (clipId in multiSelectedIds) {
+                                multiSelectedIds - clipId
+                            } else {
+                                multiSelectedIds + clipId
+                            }
+                        },
+                        onTrimClip = onTrimClip,
+                        onReorderByDrag = { clipId, deltaX ->
+                            // Direct finger-drag reorder for the selected clip (no long-press needed).
+                            if (draggingClipId == null) {
+                                draggingClipId = clipId
+                                dragAccumulatedOffsetPx = 0f
+                                targetDropIndex = videoClips.indexOfFirst { it.id == clipId }
+                            }
+                            dragAccumulatedOffsetPx += deltaX
+                            val origIdx = videoClips.indexOfFirst { it.id == clipId }
+                            if (origIdx != -1) {
+                                val currentBound = clipLayoutBounds[origIdx]
+                                if (currentBound != null) {
+                                    val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
+                                    var newIdx = origIdx
+                                    clipLayoutBounds.forEach { (idx, bounds) ->
+                                        val clipCenter = bounds.first + (bounds.second / 2f)
+                                        if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
+                                            newIdx = idx
+                                        } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
+                                            newIdx = idx
+                                        }
+                                    }
+                                    targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
+                                }
+                            }
+                        },
+                        onReorderByDragEnd = {
+                            val clipId = draggingClipId
+                            val origIdx = videoClips.indexOfFirst { it.id == clipId }
+                            if (clipId != null && origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
+                                onReorderClips(origIdx, targetDropIndex)
+                            }
+                            draggingClipId = null
+                            dragAccumulatedOffsetPx = 0f
+                            targetDropIndex = -1
+                        },
+                        onMoveKeyframe = onMoveKeyframe,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
@@ -400,9 +474,15 @@ fun VideoTimeline(
                         activeFxId = activeFxId,
                         durationMs = safeDurationMs,
                         msToDp = msToDp,
+                        fxKeyframes = videoClips.firstOrNull { it.id == selectedClipId }?.keyframes?.keyframes
+                            ?: emptyList(),
+                        onSeekToKeyframe = onScrub,
+                        onToggleKeyframeAtPlayhead = {
+                            selectedClipId?.let { onToggleKeyframeAtPlayhead(it) }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(28.dp)
+                            .height(36.dp)
                     )
 
                     // TRACK 4: A1 (Audio Waveform Track)
@@ -427,7 +507,8 @@ fun VideoTimeline(
                     playheadX = playheadXDp,
                     playheadMs = safePlayheadMs,
                     onScrub = onScrub,
-                    msToDp = msToDp
+                    msToDp = msToDp,
+                    isSnapped = isPlayheadSnapped
                 )
             }
         }
@@ -448,6 +529,75 @@ fun VideoTimeline(
                     .padding(top = 4.dp)
                     .zIndex(30f)
             )
+        }
+
+        // Multi-select toggle (pro timeline): tap to enter/exit multi-select mode.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 4.dp, end = 8.dp)
+                .zIndex(30f)
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(if (multiSelectMode) Color(0xFFFFB300) else Color(0xFF1A1E2A))
+                .border(1.dp, Color(0xFF3A415A), CircleShape)
+                .clickable {
+                    multiSelectMode = !multiSelectMode
+                    if (!multiSelectMode) multiSelectedIds = emptySet()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (multiSelectMode) "✓" else "▣",
+                color = if (multiSelectMode) Color.Black else Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Multi-select action bar: bulk delete + done.
+        if (multiSelectMode) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp)
+                    .zIndex(30f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFF141824).copy(alpha = 0.95f))
+                    .border(1.dp, Color(0xFFFFB300), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "${multiSelectedIds.size} selected",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (multiSelectedIds.isNotEmpty()) {
+                    Text(
+                        text = "Delete",
+                        color = Color(0xFFFF6B6B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            onDeleteClips(multiSelectedIds)
+                            multiSelectedIds = emptySet()
+                        }
+                    )
+                }
+                Text(
+                    text = "Done",
+                    color = Color(0xFFFFB300),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable {
+                        multiSelectMode = false
+                        multiSelectedIds = emptySet()
+                    }
+                )
+            }
         }
     }
 }
@@ -470,7 +620,14 @@ fun VideoTimeline(
     perSecondThumbnails: Map<Int, Bitmap> = emptyMap(),
     transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
+    onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
+    onDeleteClips: (Set<String>) -> Unit = {},
+    onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
@@ -502,7 +659,14 @@ fun VideoTimeline(
         onZoomChange = onZoomChange,
         transitions = transitions,
         onOpenTransition = onOpenTransition,
-        modifier = modifier
+        modifier = modifier,
+        onTrimClip = onTrimClip,
+        onMoveClipOffset = onMoveClipOffset,
+        onDeleteClips = onDeleteClips,
+        onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
+        onMoveKeyframe = onMoveKeyframe,
+        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+        onMoveTextKeyframe = onMoveTextKeyframe
     )
 }
 
@@ -817,7 +981,9 @@ private fun TimelineTimeRuler(
                         .padding(start = 2.dp, top = 2.dp)
                 ) {
                     Text(
-                        text = TimeFormat.msToShort(sec * 1000L),
+                        // Pro timecode (HH:MM:SS:FF) at high zoom; compact short form otherwise.
+                        text = if (secondWidthDp >= 180.dp) TimeFormat.msToTimecode(sec * 1000L, includeFrames = true)
+                        else TimeFormat.msToShort(sec * 1000L),
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
@@ -834,7 +1000,7 @@ private fun TimelineTimeRuler(
                             .padding(start = 2.dp, top = 3.dp)
                     ) {
                         Text(
-                            text = ":15f",
+                            text = TimeFormat.msToTimecode(sec * 1000L + 500L, includeFrames = true).takeLast(3),
                             color = ApexPalette.NeonCyan.copy(alpha = 0.7f),
                             fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,
@@ -849,6 +1015,11 @@ private fun TimelineTimeRuler(
 
 /**
  * Overlay Track (V2: Picture-in-Picture videos, text titles, and stickers).
+ *
+ * Pro layout with two lanes:
+ * - Lane 1: overlay clips positioned by timelineOffsetMs (absolute), finger-drag to move,
+ *   each with a keyframe diamond strip (tap = seek, drag = move, "+" = toggle at playhead).
+ * - Lane 2: text overlays positioned by startMs, each with its own keyframe lane.
  */
 @Composable
 private fun TimelineOverlayTrack(
@@ -860,15 +1031,21 @@ private fun TimelineOverlayTrack(
     isVisible: Boolean,
     onSelectClip: (String) -> Unit,
     onAddOverlay: () -> Unit,
+    onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
+    onSeekToKeyframe: (Long) -> Unit = {},
+    onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    allClips: List<MediaClip> = emptyList(),
     modifier: Modifier = Modifier
 ) {
-    Box(
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF0F1420))
             .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(6.dp))
-            .padding(horizontal = 4.dp, vertical = 3.dp),
-        contentAlignment = Alignment.CenterStart
+            .padding(horizontal = 4.dp, vertical = 3.dp)
     ) {
         if (!isVisible) {
             Text(
@@ -877,94 +1054,260 @@ private fun TimelineOverlayTrack(
                 fontSize = 10.sp,
                 modifier = Modifier.padding(start = 8.dp)
             )
-            return@Box
+            return@Column
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Overlay Video Clips
+        // Lane 1: Overlay Video Clips — absolutely positioned by timelineOffsetMs, draggable.
+        Box(modifier = Modifier.fillMaxWidth().height(52.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
-                val clipWidth = maxOf((clipDur * msToDp).dp, 48.dp)
+                val clipWidthDp = maxOf((clipDur * msToDp).dp, 48.dp)
+                val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
+                var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
+                var isDragging by remember(clip.id) { mutableStateOf(false) }
 
-                Box(
+                Column(
                     modifier = Modifier
-                        .width(clipWidth)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF0C2B38))
-                        .border(
-                            width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.NeonCyan.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(4.dp)
-                        )
-                        .clickable { onSelectClip(clip.id) }
-                        .padding(horizontal = 6.dp),
-                    contentAlignment = Alignment.CenterStart
+                        .offset(x = clipOffsetDp)
+                        .width(clipWidthDp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Box(
+                        modifier = Modifier
+                            .width(clipWidthDp)
+                            .height(32.dp)
+                            .graphicsLayer { translationX = dragDx }
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                if (isSelected) Color(0xFF0B3B48)
+                                else if (isDragging) Color(0xFF134A5C)
+                                else Color(0xFF0C2B38)
+                            )
+                            .border(
+                                width = if (isSelected || isDragging) 1.5.dp else 1.dp,
+                                color = if (isSelected || isDragging) ApexPalette.NeonCyan
+                                else ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                            .pointerInput(clip.id) {
+                                detectDragGestures(
+                                    onDragStart = { isDragging = true },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragDx += dragAmount.x
+                                    },
+                                    onDragEnd = {
+                                        val deltaMs = (dragDx / msToDp).toLong()
+                                        val newOffset = (clip.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+                                        dragDx = 0f
+                                        isDragging = false
+                                        if (newOffset != clip.timelineOffsetMs) {
+                                            onMoveClipOffset(clip.id, newOffset)
+                                        }
+                                    },
+                                    onDragCancel = { dragDx = 0f; isDragging = false }
+                                )
+                            }
+                            .clickable { onSelectClip(clip.id) }
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Icon(Icons.Default.Layers, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
-                        Text(
-                            clip.name.ifEmpty { "PIP Video" },
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Layers, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
+                            Text(
+                                clip.name.ifEmpty { "PIP Video" },
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
                     }
+
+                    // Keyframe diamond strip for this overlay clip (timeline-global keyframes,
+                    // positioned relative to the clip's offset).
+                    KeyframeDiamondStrip(
+                        keyframes = clip.keyframes.keyframes,
+                        spanStartMs = clip.timelineOffsetMs,
+                        spanDurationMs = clipDur,
+                        stripWidthDp = clipWidthDp,
+                        msToDp = msToDp,
+                        onSeekToKeyframe = onSeekToKeyframe,
+                        onMoveKeyframe = { kfId, newTimeMs -> onMoveKeyframe(clip.id, kfId, newTimeMs) },
+                        onAddAtPlayhead = { onToggleKeyframeAtPlayhead(clip.id) },
+                        accentColor = ApexPalette.NeonCyan,
+                        modifier = Modifier.height(18.dp)
+                    )
                 }
             }
 
-            // Text Overlays
-            textOverlays.forEach { textOverlay ->
-                Box(
-                    modifier = Modifier
-                        .height(26.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFF2A1538))
-                        .border(1.dp, ApexPalette.NeonPink.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(Icons.Default.Title, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(11.dp))
-                        Text(
-                            textOverlay.text.ifEmpty { "Title" },
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-
-            // Empty state placeholder
-            if (clips.isEmpty() && textOverlays.isEmpty()) {
+            // Empty state placeholder for the clip lane.
+            if (clips.isEmpty()) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
                         .clickable(onClick = onAddOverlay)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .align(Alignment.CenterStart),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
                     Text(
-                        "+ Add PIP / Text Overlay (V2)",
+                        "+ Add PIP (V2)",
                         color = Color(0xFF67E8F9),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+        }
+
+        // Lane 2: Text Overlays — positioned by startMs, with their own keyframe lane.
+        if (textOverlays.isNotEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().height(36.dp)) {
+                textOverlays.forEach { textOverlay ->
+                    val ownerClipId = allClips.firstOrNull { c -> c.textOverlays.any { it.id == textOverlay.id } }?.id
+                    val ovStartMs = textOverlay.startMs.coerceAtLeast(0L)
+                    val ovEndMs = if (textOverlay.endMs == Long.MAX_VALUE) ovStartMs + 3000L else textOverlay.endMs
+                    val ovDur = (ovEndMs - ovStartMs).coerceAtLeast(500L)
+                    val ovWidthDp = maxOf((ovDur * msToDp).dp, 40.dp)
+                    val ovOffsetDp = (ovStartMs * msToDp).dp
+
+                    Column(
+                        modifier = Modifier
+                            .offset(x = ovOffsetDp)
+                            .width(ovWidthDp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(ovWidthDp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF2A1538))
+                                .border(1.dp, ApexPalette.NeonPink.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(Icons.Default.Title, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(11.dp))
+                                Text(
+                                    textOverlay.text.ifEmpty { "Title" },
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        KeyframeDiamondStrip(
+                            keyframes = textOverlay.keyframes.keyframes,
+                            spanStartMs = ovStartMs,
+                            spanDurationMs = ovDur,
+                            stripWidthDp = ovWidthDp,
+                            msToDp = msToDp,
+                            onSeekToKeyframe = onSeekToKeyframe,
+                            onMoveKeyframe = { kfId, newTimeMs ->
+                                if (ownerClipId != null) onMoveTextKeyframe(ownerClipId, textOverlay.id, kfId, newTimeMs)
+                            },
+                            onAddAtPlayhead = {
+                                if (ownerClipId != null) onToggleTextKeyframeAtPlayhead(ownerClipId, textOverlay.id)
+                            },
+                            accentColor = ApexPalette.NeonPink,
+                            modifier = Modifier.height(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shared keyframe diamond strip: shows diamond markers for [keyframes] positioned
+ * within [spanStartMs, spanStartMs + spanDurationMs].
+ * - Tap a diamond: seek to that keyframe.
+ * - Drag a diamond: move the keyframe (committed on release via [onMoveKeyframe]).
+ * - Tap the "+" chip: toggle a keyframe at the current playhead position.
+ */
+@Composable
+private fun KeyframeDiamondStrip(
+    keyframes: List<Keyframe>,
+    spanStartMs: Long,
+    spanDurationMs: Long,
+    stripWidthDp: Dp,
+    msToDp: Float,
+    onSeekToKeyframe: (Long) -> Unit,
+    onMoveKeyframe: (keyframeId: String, newTimeMs: Long) -> Unit,
+    onAddAtPlayhead: () -> Unit,
+    accentColor: Color,
+    showAddButton: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .width(stripWidthDp)
+            .background(Color(0xFF080A10).copy(alpha = 0.6f))
+    ) {
+        val spanDur = spanDurationMs.coerceAtLeast(1L)
+        keyframes.forEach { kf ->
+            val frac = ((kf.timeMs - spanStartMs).toFloat() / spanDur.toFloat()).coerceIn(0f, 1f)
+            var dragDx by remember(kf.id) { mutableFloatStateOf(0f) }
+            var isDragging by remember(kf.id) { mutableStateOf(false) }
+            val diamondXdp = (frac * stripWidthDp.value).dp - 5.dp
+
+            Box(
+                modifier = Modifier
+                    .offset(x = diamondXdp)
+                    .size(10.dp)
+                    .graphicsLayer {
+                        translationX = dragDx
+                        rotationZ = 45f
+                    }
+                    .background(
+                        if (isDragging) Color.White else accentColor,
+                        RoundedCornerShape(2.dp)
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(2.dp))
+                    .pointerInput(kf.id) {
+                        detectDragGestures(
+                            onDragStart = { isDragging = true },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragDx += dragAmount.x
+                            },
+                            onDragEnd = {
+                                val deltaMs = (dragDx / msToDp).toLong()
+                                val newTimeMs = (kf.timeMs + deltaMs).coerceIn(spanStartMs, spanStartMs + spanDur)
+                                dragDx = 0f
+                                isDragging = false
+                                if (newTimeMs != kf.timeMs) onMoveKeyframe(kf.id, newTimeMs)
+                            },
+                            onDragCancel = { dragDx = 0f; isDragging = false }
+                        )
+                    }
+                    .clickable { onSeekToKeyframe(kf.timeMs) }
+            ) {}
+        }
+
+        // "+" chip to toggle a keyframe at the playhead.
+        if (showAddButton) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(accentColor.copy(alpha = 0.25f))
+                    .border(1.dp, accentColor, CircleShape)
+                    .clickable(onClick = onAddAtPlayhead),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -992,8 +1335,26 @@ private fun TimelineVideoTrack(
     onDrag: (deltaX: Float) -> Unit,
     onDragEnd: () -> Unit,
     onAddClip: () -> Unit,
+    multiSelectMode: Boolean = false,
+    multiSelectedIds: Set<String> = emptySet(),
+    onToggleMultiSelect: (String) -> Unit = {},
+    onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
+    onReorderByDrag: (clipId: String, deltaX: Float) -> Unit = { _, _ -> },
+    onReorderByDragEnd: () -> Unit = {},
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    // Timeline-global start offset for each V1 clip (keyframes are timeline-global).
+    val clipTimelineStarts = remember(videoClips) {
+        val starts = mutableListOf<Long>()
+        var acc = 0L
+        videoClips.forEach { c ->
+            starts.add(acc)
+            acc += (c.trimEndMs - c.trimStartMs).coerceAtLeast(0L)
+        }
+        starts
+    }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -1009,7 +1370,13 @@ private fun TimelineVideoTrack(
             videoClips.forEachIndexed { index, clip ->
                 val isSelected = clip.id == selectedClipId
                 val isBeingDragged = clip.id == draggingClipId
-                val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+                val isMultiSelected = clip.id in multiSelectedIds
+                // Live trim preview (updated during grip drag, committed on release).
+                var trimPreviewStart by remember(clip.id) { mutableStateOf<Long?>(null) }
+                var trimPreviewEnd by remember(clip.id) { mutableStateOf<Long?>(null) }
+                val effTrimStart = trimPreviewStart ?: clip.trimStartMs
+                val effTrimEnd = trimPreviewEnd ?: clip.trimEndMs
+                val clipDur = (effTrimEnd - effTrimStart).coerceAtLeast(500L)
                 val clipWidth = maxOf((clipDur * msToDp).dp, 64.dp)
 
                 // Drop target indicator before this clip
@@ -1044,12 +1411,33 @@ private fun TimelineVideoTrack(
                             }
                         }
                         .clip(RoundedCornerShape(6.dp))
-                        .background(if (isSelected) Color(0xFF1E1A33) else Color(0xFF151824))
+                        .background(
+                            if (isMultiSelected) Color(0xFF3A2E00)
+                            else if (isSelected) Color(0xFF1E1A33)
+                            else Color(0xFF151824)
+                        )
                         .border(
-                            width = if (isBeingDragged) 2.5.dp else if (isSelected) 2.dp else 1.dp,
-                            color = if (isBeingDragged) ApexPalette.NeonCyan else if (isSelected) Color(0xFFFFD700) else Color(0xFF2E384D),
+                            width = if (isBeingDragged) 2.5.dp else if (isSelected || isMultiSelected) 2.dp else 1.dp,
+                            color = if (isBeingDragged) ApexPalette.NeonCyan
+                            else if (isMultiSelected) Color(0xFFFFB300)
+                            else if (isSelected) Color(0xFFFFD700)
+                            else Color(0xFF2E384D),
                             shape = RoundedCornerShape(6.dp)
                         )
+                        .pointerInput(clip.id, isSelected) {
+                            // Direct finger-drag reorder for the selected clip (no long-press needed).
+                            // Long-press drag (below) remains as the discoverable alternative.
+                            if (isSelected && !multiSelectMode) {
+                                detectDragGestures(
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onReorderByDrag(clip.id, dragAmount.x)
+                                    },
+                                    onDragEnd = { onReorderByDragEnd() },
+                                    onDragCancel = { onReorderByDragEnd() }
+                                )
+                            }
+                        }
                         .pointerInput(clip.id) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { onDragStart(clip) },
@@ -1061,7 +1449,10 @@ private fun TimelineVideoTrack(
                                 onDragCancel = { onDragEnd() }
                             )
                         }
-                        .clickable { onSelectClip(clip.id) }
+                        .clickable {
+                            if (multiSelectMode) onToggleMultiSelect(clip.id)
+                            else onSelectClip(clip.id)
+                        }
                 ) {
                     // Synchronized Filmstrip frames
                     val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 8)
@@ -1126,20 +1517,108 @@ private fun TimelineVideoTrack(
                         }
                     }
 
-                    // Trim Grips on active clip
-                    if (isSelected) {
+                    // Trim Grips on active clip — draggable to trim start/end.
+                    if (isSelected && !multiSelectMode) {
+                        var trimDragAccumX by remember(clip.id) { mutableFloatStateOf(0f) }
+                        // Left grip: trim start
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
-                                .size(width = 4.dp, height = 32.dp)
-                                .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
-                        )
+                                .size(width = 16.dp, height = 44.dp)
+                                .pointerInput(clip.id) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            trimDragAccumX = 0f
+                                            trimPreviewStart = clip.trimStartMs
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            trimDragAccumX += dragAmount.x
+                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val end = trimPreviewEnd ?: clip.trimEndMs
+                                            trimPreviewStart = (clip.trimStartMs + deltaMs)
+                                                .coerceIn(0L, (end - 100L).coerceAtLeast(0L))
+                                        },
+                                        onDragEnd = {
+                                            val s = trimPreviewStart ?: clip.trimStartMs
+                                            val e = trimPreviewEnd ?: clip.trimEndMs
+                                            trimPreviewStart = null
+                                            trimPreviewEnd = null
+                                            if (s != clip.trimStartMs || e != clip.trimEndMs) {
+                                                onTrimClip(clip.id, s, e)
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            trimPreviewStart = null
+                                            trimPreviewEnd = null
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 5.dp, height = 36.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
+                        // Right grip: trim end
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .size(width = 4.dp, height = 32.dp)
-                                .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
-                        )
+                                .size(width = 16.dp, height = 44.dp)
+                                .pointerInput(clip.id) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            trimDragAccumX = 0f
+                                            trimPreviewEnd = clip.trimEndMs
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            trimDragAccumX += dragAmount.x
+                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val start = trimPreviewStart ?: clip.trimStartMs
+                                            trimPreviewEnd = (clip.trimEndMs + deltaMs)
+                                                .coerceIn(start + 100L, Long.MAX_VALUE)
+                                        },
+                                        onDragEnd = {
+                                            val s = trimPreviewStart ?: clip.trimStartMs
+                                            val e = trimPreviewEnd ?: clip.trimEndMs
+                                            trimPreviewStart = null
+                                            trimPreviewEnd = null
+                                            if (s != clip.trimStartMs || e != clip.trimEndMs) {
+                                                onTrimClip(clip.id, s, e)
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            trimPreviewStart = null
+                                            trimPreviewEnd = null
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 5.dp, height = 36.dp)
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+
+                    // Multi-select checkmark badge
+                    if (isMultiSelected) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFB300)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("✓", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
 
                     // Drag Indicator Glow Pill when dragging
@@ -1155,31 +1634,27 @@ private fun TimelineVideoTrack(
                         }
                     }
 
-                    // Keyframe Diamond Markers Strip along bottom of clip
+                    // Keyframe Diamond Markers Strip along bottom of clip.
+                    // Keyframes are timeline-global; position relative to this clip's timeline start.
                     val clipKeyframes = clip.keyframes.keyframes
                     if (clipKeyframes.isNotEmpty()) {
-                        Box(
+                        val clipStartMs = clipTimelineStarts.getOrElse(index) { 0L }
+                        KeyframeDiamondStrip(
+                            keyframes = clipKeyframes,
+                            spanStartMs = clipStartMs,
+                            spanDurationMs = clipDur,
+                            stripWidthDp = clipWidth,
+                            msToDp = msToDp,
+                            onSeekToKeyframe = { ms -> onSeekToKeyframe?.invoke(ms) },
+                            onMoveKeyframe = { kfId, newTimeMs -> onMoveKeyframe(clip.id, kfId, newTimeMs) },
+                            onAddAtPlayhead = {},
+                            accentColor = Color(0xFFFFD700),
+                            showAddButton = false,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(12.dp)
                                 .align(Alignment.BottomCenter)
-                                .background(Color.Black.copy(alpha = 0.45f))
-                        ) {
-                            clipKeyframes.forEach { kf ->
-                                val fraction = ((kf.timeMs - clip.timelineOffsetMs).toFloat() / clipDur.toFloat()).coerceIn(0f, 1f)
-                                val isNearPlayhead = kotlin.math.abs(kf.timeMs - playheadMs) <= 150L
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.CenterStart)
-                                        .offset(x = (clipWidth * fraction) - 4.dp)
-                                        .size(8.dp)
-                                        .graphicsLayer { rotationZ = 45f }
-                                        .background(if (isNearPlayhead) ApexPalette.NeonCyan else Color(0xFFFFD700))
-                                        .border(0.5.dp, Color.Black, RoundedCornerShape(1.dp))
-                                        .clickable { onSeekToKeyframe?.invoke(kf.timeMs) }
-                                )
-                            }
-                        }
+                        )
                     }
                 }
 
@@ -1234,6 +1709,9 @@ private fun TimelineFxTrack(
     activeFxId: String?,
     durationMs: Long,
     msToDp: Float,
+    fxKeyframes: List<Keyframe> = emptyList(),
+    onSeekToKeyframe: (Long) -> Unit = {},
+    onToggleKeyframeAtPlayhead: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -1241,44 +1719,90 @@ private fun TimelineFxTrack(
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFF121018))
             .border(1.dp, Color(0xFF262033), RoundedCornerShape(4.dp))
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        contentAlignment = Alignment.CenterStart
+            .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
-        if (activeFxId != null) {
+        Column(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(ApexPalette.NeonAmber.copy(alpha = 0.35f), ApexPalette.NeonPurple.copy(alpha = 0.35f))
-                        )
-                    )
-                    .border(1.dp, ApexPalette.NeonAmber, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp),
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = ApexPalette.NeonAmber, modifier = Modifier.size(11.dp))
+                if (activeFxId != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(ApexPalette.NeonAmber.copy(alpha = 0.35f), ApexPalette.NeonPurple.copy(alpha = 0.35f))
+                                )
+                            )
+                            .border(1.dp, ApexPalette.NeonAmber, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = ApexPalette.NeonAmber, modifier = Modifier.size(11.dp))
+                            Text(
+                                "FX: ${activeFxId.replace("_", " ").uppercase()}",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
                     Text(
-                        "FX: ${activeFxId.replace("_", " ").uppercase()}",
-                        color = Color.White,
+                        "No Master FX Active",
+                        color = Color(0xFF475569),
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
+                        modifier = Modifier.padding(start = 6.dp)
                     )
                 }
             }
-        } else {
-            Text(
-                "No Master FX Active",
-                color = Color(0xFF475569),
-                fontSize = 9.sp,
-                modifier = Modifier.padding(start = 6.dp)
-            )
+
+            // Keyframe lane for the selected clip (drives filter/effect intensity).
+            // Tap "+" to toggle a keyframe at the playhead; tap a diamond to seek.
+            if (fxKeyframes.isNotEmpty()) {
+                val trackWidthDp = (durationMs * msToDp).dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .background(Color(0xFF080A10).copy(alpha = 0.6f))
+                ) {
+                    fxKeyframes.forEach { kf ->
+                        val frac = (kf.timeMs.toFloat() / durationMs.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                        val diamondXdp = (frac * trackWidthDp.value).dp - 4.dp
+                        Box(
+                            modifier = Modifier
+                                .offset(x = diamondXdp)
+                                .size(8.dp)
+                                .graphicsLayer { rotationZ = 45f }
+                                .background(ApexPalette.NeonAmber, RoundedCornerShape(1.dp))
+                                .border(0.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(1.dp))
+                                .clickable { onSeekToKeyframe(kf.timeMs) }
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.NeonAmber.copy(alpha = 0.25f))
+                            .border(1.dp, ApexPalette.NeonAmber, CircleShape)
+                            .clickable(onClick = onToggleKeyframeAtPlayhead),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }
@@ -1400,6 +1924,7 @@ private fun TimelinePlayhead(
     playheadMs: Long,
     onScrub: (Long) -> Unit,
     msToDp: Float,
+    isSnapped: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -1408,22 +1933,22 @@ private fun TimelinePlayhead(
             .width(2.dp)
             .fillMaxHeight()
             .zIndex(200f)
-            .background(Color.White)
+            .background(if (isSnapped) ApexPalette.NeonCyan else Color.White)
     )
 
-    // Floating Playhead Timestamp Badge at top
+    // Floating Playhead Timestamp Badge at top (cyan + snap glyph when snapped to a beat)
     Box(
         modifier = Modifier
             .offset(x = (playheadX - 22.dp).coerceAtLeast(0.dp), y = 0.dp)
             .zIndex(210f)
             .clip(RoundedCornerShape(5.dp))
-            .background(Color.White)
+            .background(if (isSnapped) ApexPalette.NeonCyan else Color.White)
             .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(5.dp))
             .padding(horizontal = 5.dp, vertical = 1.5.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = TimeFormat.msToShort(playheadMs),
+            text = (if (isSnapped) "◈ " else "") + TimeFormat.msToShort(playheadMs),
             color = Color.Black,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,

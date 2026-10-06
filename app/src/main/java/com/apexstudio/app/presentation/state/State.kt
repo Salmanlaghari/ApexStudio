@@ -162,7 +162,7 @@ data class EditorState(
     val lutSaturation: Float = 1.0f,
     val lutTemperature: Float = 5000f,
     val lutTint: Float = 0f,
-    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.GRID
+    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.STRIP
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

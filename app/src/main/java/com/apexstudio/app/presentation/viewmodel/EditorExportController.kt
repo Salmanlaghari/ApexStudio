@@ -44,6 +44,23 @@ fun EditorViewModel.startExport(
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
+    // Picture-in-Picture overlays: composite overlay clips in the export.
+    val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
+        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+        .map { ov ->
+            ExportEngine.PipOverlayConfig(
+                uri = ov.uri,
+                offsetMs = ov.timelineOffsetMs,
+                trimStartMs = ov.trimStartMs,
+                trimEndMs = ov.trimEndMs,
+                opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
+            )
+        }
+    // Transition: apply the project's chosen transition type in the export
+    // (not just a timeline badge — actually rendered via TransitionGlEffect).
+    val transitionType = s.project?.lastTransitionType?.let { typeStr ->
+        com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
+    }
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
@@ -68,7 +85,10 @@ fun EditorViewModel.startExport(
             reverbPreset = audioSt.reverbPreset,
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
-            bassBoostStrength = audioSt.bassBoostStrength
+            bassBoostStrength = audioSt.bassBoostStrength,
+            pipOverlays = pipOverlays,
+            transitionType = transitionType,
+            transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
         )
     )
 }
@@ -82,3 +102,57 @@ fun EditorViewModel.setExportProgress(p: Float) = _export.update {
 fun EditorViewModel.setExportOutputUri(uri: String?) = _export.update { it.copy(outputUri = uri) }
 
 fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(error = error) }
+
+
+/**
+ * Exports the project's audio as a standalone AAC (.m4a) file: every
+ * timeline clip's audio plus all unmuted extra audio tracks (music /
+ * voiceover), concatenated in timeline order. Reuses the audio pipeline
+ * (pitch, volume, speed) from the video export.
+ */
+fun EditorViewModel.startAudioExport(
+    outputFileName: String = "apex_studio_audio.m4a"
+) {
+    val s = _state.value
+    val engine = exportEngine ?: return
+    _export.update { it.copy(isExporting = true, progress = 0f) }
+
+    val audioSt = _audio.value
+    val clips = s.project?.clips?.filter { it.type == ClipType.VIDEO } ?: emptyList()
+    // Every audio source in the project: all video clips in timeline order,
+    // then any unmuted extra audio tracks (music / voiceover).
+    val sources = buildList {
+        clips.forEach { clip ->
+            add(
+                ExportEngine.AudioExportSource(
+                    uri = clip.uri,
+                    trimStartMs = clip.trimStartMs,
+                    trimEndMs = clip.trimEndMs
+                )
+            )
+        }
+        audioSt.tracks.filter { !it.isMuted }.forEach { track ->
+            add(
+                ExportEngine.AudioExportSource(
+                    uri = track.uri,
+                    trimStartMs = track.trimStartMs,
+                    trimEndMs = track.trimEndMs
+                )
+            )
+        }
+    }
+    if (sources.isEmpty()) {
+        _export.update { it.copy(isExporting = false, progress = 0f) }
+        return
+    }
+    val speed = clips.firstOrNull()?.speedMultiplier ?: s.playbackSpeed
+    engine.startAudioExport(
+        sources,
+        ExportEngine.ExportConfig(
+            pitchSemitones = audioSt.pitchSemitones,
+            volume = if (audioSt.isMuted) 0f else audioSt.volume,
+            clipSpeed = speed
+        ),
+        outputFileName
+    )
+}

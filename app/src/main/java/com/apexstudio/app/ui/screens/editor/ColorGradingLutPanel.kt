@@ -171,7 +171,7 @@ fun ColorGradingLutPanel(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Color Grading & LUTs",
+                            "Color Grading & Filters",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
@@ -185,7 +185,7 @@ fun ColorGradingLutPanel(
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                "3D LUTs",
+                                "Filters",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
@@ -574,7 +574,7 @@ fun ColorGradingLutPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "LUT Intensity",
+                "Filter Intensity",
                 color = ApexPalette.TextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold

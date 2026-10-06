@@ -170,7 +170,14 @@ data class Project(
     val transitions: List<ClipTransition> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val coverFrameMs: Long? = null,
-    val coverCustomUri: String? = null
+    val coverCustomUri: String? = null,
+    /**
+     * Auto-detected source video aspect ratio (width / height).
+     * Set automatically when the first video clip is added; null means
+     * "not detected yet" (falls back to 16:9). Used to set the preview
+     * frame and export output ratio without manual user setup.
+     */
+    val videoAspectRatio: Float? = null
 )
 
 @Serializable

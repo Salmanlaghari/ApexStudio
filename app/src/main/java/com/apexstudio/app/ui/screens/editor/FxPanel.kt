@@ -48,6 +48,8 @@ fun FxPanel(
     intensity: Float,
     onFxSelected: (String?) -> Unit,
     onIntensityChange: (Float) -> Unit,
+    speed: Float = 1f,
+    onSpeedChange: (Float) -> Unit = {},
     onKeyframesClick: (() -> Unit)? = null,
     onClose: () -> Unit
 ) {
@@ -162,6 +164,40 @@ fun FxPanel(
                 inactiveTrackColor = ApexPalette.BgElevated
             )
         )
+
+        // Speed control, only for animated (time-driven) presets.
+        val activePreset = FxPreset.byId(activeFxId)
+        if (activePreset?.isAnimated == true) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Speed",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "${String.format("%.1f", speed)}x",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Slider(
+                value = speed,
+                onValueChange = onSpeedChange,
+                valueRange = 0.1f..4f,
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonCyan,
+                    activeTrackColor = ApexPalette.NeonCyan,
+                    inactiveTrackColor = ApexPalette.BgElevated
+                )
+            )
+        }
 
         if (onKeyframesClick != null) {
             Spacer(Modifier.height(4.dp))
@@ -284,7 +320,11 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     FxPreset.SKETCH_LINES, FxPreset.HEART_BEAT, FxPreset.VERTIGO_DOLLY,
     FxPreset.GHOST_TRAIL, FxPreset.SPEED_LINES, FxPreset.BLACK_HOLE_WARP,
     FxPreset.FIRE_EMBER, FxPreset.FILM_BURN, FxPreset.SUPER_8_WARM,
-    FxPreset.SEPIA_FLICKER, FxPreset.SHIMMER_STAR -> Icons.Default.Timeline
+    FxPreset.SEPIA_FLICKER, FxPreset.SHIMMER_STAR, FxPreset.PULSE_BEAT -> Icons.Default.Timeline
+
+    FxPreset.HUE_CYCLE, FxPreset.GRADIENT_SWEEP -> Icons.Default.Layers
+
+    FxPreset.LIGHT_LEAK_SWEEP -> Icons.Default.CenterFocusWeak
 }
 
 private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
@@ -370,4 +410,10 @@ private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
     FxPreset.NEON_WIREFRAME -> listOf(Color(0xFFE040FB), Color(0xFF1A237E))
     FxPreset.COMIC_DOTS -> listOf(Color(0xFFFFEB3B), Color(0xFFD50000))
     FxPreset.COLOR_ISOLATION -> listOf(Color(0xFFFF1744), Color(0xFF616161))
+
+    // Animated colour filters
+    FxPreset.HUE_CYCLE -> listOf(Color(0xFFFF0000), Color(0xFF00E5FF))
+    FxPreset.PULSE_BEAT -> listOf(Color(0xFFFF5252), Color(0xFF880E4F))
+    FxPreset.GRADIENT_SWEEP -> listOf(Color(0xFF00E5FF), Color(0xFFFF00FF))
+    FxPreset.LIGHT_LEAK_SWEEP -> listOf(Color(0xFFFFB74D), Color(0xFFE65100))
 }

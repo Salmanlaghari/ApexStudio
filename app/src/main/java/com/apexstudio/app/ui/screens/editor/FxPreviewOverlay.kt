@@ -26,11 +26,13 @@ fun FxPreviewOverlay(
     fxId: String?,
     intensity: Float,
     isPlaying: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    speed: Float = 1f
 ) {
     if (fxId == null || intensity <= 0f) return
 
     val clampedIntensity = intensity.coerceIn(0f, 1f)
+    val clampedSpeed = speed.coerceIn(0.1f, 4f)
 
     // Running animation time ticker for dynamic FX (VHS roll, grain flicker, glitch jitter)
     val infiniteTransition = rememberInfiniteTransition(label = "fx_time")
@@ -43,6 +45,23 @@ fun FxPreviewOverlay(
         ),
         label = "fx_anim"
     )
+
+    // Wall-clock ticker for animated colour filters (0 → 3600s over an
+    // hour, so long previews never show a visible loop jump). Driven by
+    // real time so it animates whether the player is playing or paused.
+    var tSec by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(isPlaying) {
+        val start = System.nanoTime()
+        var last = 0f
+        while (true) {
+            val elapsed = (System.nanoTime() - start) / 1_000_000_000f
+            // Advance by wall-clock delta scaled by speed; wrap at 1h.
+            val delta = (elapsed - last).coerceAtLeast(0f)
+            last = elapsed
+            tSec = (tSec + delta * clampedSpeed) % 3600f
+            kotlinx.coroutines.delay(50)
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         when (fxId) {
@@ -402,6 +421,86 @@ fun FxPreviewOverlay(
                         .fillMaxSize()
                         .background(Color(0xFF1A0A2A).copy(alpha = 0.12f * clampedIntensity))
                 )
+            }
+
+            // --- Animated colour filters (Snapchat-style) ---
+            "hue_cycle" -> {
+                // Approximate the shader's hue rotation with a BlendMode.Hue
+                // overlay whose colour cycles over time.
+                val hue = (tSec * 90f) % 360f // 90°/s at 1x, matches shader
+                val cycleColor = Color.hsv(hue, 0.85f, 1f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(cycleColor.copy(alpha = 0.55f * clampedIntensity))
+                )
+            }
+
+            "pulse_beat" -> {
+                // Warm grade throbbing on a 100 BPM beat envelope.
+                val beatPhase = (tSec * 100f / 60f * 2f * Math.PI.toFloat()) % (2f * Math.PI.toFloat())
+                val beat = Math.pow(Math.max(0f, kotlin.math.sin(beatPhase)).toDouble(), 4.0).toFloat()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Color(0xFFFF6B35).copy(alpha = beat * 0.28f * clampedIntensity)
+                        )
+                )
+            }
+
+            "gradient_sweep" -> {
+                // Cyan→magenta wash band sweeping diagonally (seamless loop).
+                val t = (tSec * 0.22f) % 1f
+                val pos = t * 1.8f - 0.4f
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    // Draw the diagonal band as a rotated rect approximation:
+                    // use a linear gradient whose stops slide with `pos`.
+                    val bandCenter = pos * (w + h) / 2f
+                    val bandWidth = 0.28f * (w + h) / 2f
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                ((bandCenter - bandWidth) / (w + h)).coerceIn(0f, 1f) to Color.Transparent,
+                                (bandCenter / (w + h)).coerceIn(0f, 1f) to Color(
+                                    0xFF00E5FF
+                                ).copy(alpha = 0.65f * clampedIntensity),
+                                ((bandCenter + bandWidth) / (w + h)).coerceIn(0f, 1f) to Color.Transparent,
+                                1f to Color.Transparent
+                            ),
+                            start = Offset(0f, 0f),
+                            end = Offset(w, h)
+                        ),
+                        size = size
+                    )
+                }
+            }
+
+            "light_leak_sweep" -> {
+                // Warm amber leak sweeping left→right with a breathe.
+                val t = (tSec * 0.18f) % 1f
+                val pos = t * 1.9f - 0.45f
+                val breathe = 0.72f + 0.28f * kotlin.math.sin(tSec * 2.6f)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val cx = pos * w
+                    val radius = 0.45f * w
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0f to Color(0xFFFF9E40).copy(alpha = 0.55f * clampedIntensity * breathe),
+                                1f to Color.Transparent
+                            ),
+                            center = Offset(cx, h * 0.35f),
+                            radius = radius
+                        ),
+                        size = size
+                    )
+                }
             }
         }
     }

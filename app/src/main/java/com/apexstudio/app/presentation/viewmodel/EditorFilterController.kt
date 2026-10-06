@@ -298,6 +298,8 @@ fun EditorViewModel.setActiveFx(id: String?) = _state.update { it.copy(activeFxI
 
 fun EditorViewModel.setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
 
+fun EditorViewModel.setFxSpeed(v: Float) = _state.update { it.copy(fxSpeed = v.coerceIn(0.1f, 4f)) }
+
 fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) = _state.update {
     it.copy(activeFxId = id, fxIntensity = intensity.coerceIn(0f, 1f))
 }

@@ -65,9 +65,12 @@ data class EditorState(
     val keyframePanelOpen: Boolean = false,
     // Real-time FX (VHS, Glitch, Grain, …). activeFxId == null means
     // no FX; intensity is the 0..1 slider exposed in the FX panel.
+    // fxSpeed (0.1–4x) drives the animation rate of time-based
+    // (Snapchat-style) presets like Hue Cycle.
     val fxPanelOpen: Boolean = false,
     val activeFxId: String? = null,
     val fxIntensity: Float = 1f,
+    val fxSpeed: Float = 1f,
     // Transition hint applied by the Transmission panel ("One-tap LUT
     // + FX + transition presets"). Currently the project has no
     // per-clip transition model, so this is a project-level hint —

@@ -79,6 +79,11 @@ fun EditorScreen(
 
     mediaPicker.registerLaunchers()
 
+    // Load the persisted editor layout choice (New contextual vs Classic backup).
+    LaunchedEffect(Unit) {
+        vm.loadEditorLayoutPref()
+    }
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.flow.combine(
             mediaPicker.pickedMedia,
@@ -86,7 +91,16 @@ fun EditorScreen(
         ) { meta, gen -> meta to gen }
             .collect { (metadataList, _) ->
                 if (metadataList.isNotEmpty()) {
-                    vm.onMediaPicked(metadataList, replace = false)
+                    val s = vm.state.value
+                    when {
+                        // CapCut-style Replace flow: swap the selected clip/track
+                        // media instead of adding new media to the timeline.
+                        s.pendingReplaceClipId != null ->
+                            vm.replaceClipMedia(s.pendingReplaceClipId!!, metadataList.first())
+                        s.pendingReplaceAudioTrackId != null ->
+                            vm.replaceAudioTrackMedia(s.pendingReplaceAudioTrackId!!, metadataList.first())
+                        else -> vm.onMediaPicked(metadataList, replace = false)
+                    }
                 }
             }
     }
@@ -168,6 +182,16 @@ fun EditorScreen(
             player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set playback speed", e)
+        }
+    }
+
+    // Per-clip Volume tool: live preview gain follows the selected clip's volume.
+    LaunchedEffect(exoPlayer, currentSelectedClip?.id, currentSelectedClip?.volume) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        try {
+            player.volume = (currentSelectedClip?.volume ?: 1f).coerceIn(0f, 2f)
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "Failed to set clip volume", e)
         }
     }
 
@@ -504,12 +528,20 @@ fun EditorScreen(
             )
         }
 
+        // CapCut transport row: the keyframe diamond appears next to the
+        // undo/redo arrows only while a clip is explicitly selected.
+        val kfClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        val hasKeyframeAtPlayhead =
+            kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
+
         PlaybackControlBar(
             currentTimeMs = state.playerPositionMs,
             totalDurationMs = state.durationMs,
             isPlaying = state.isPlaying,
             canUndo = state.canUndo,
             canRedo = state.canRedo,
+            showKeyframeButton = !state.useClassicEditorLayout && kfClip != null,
+            hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
             onTogglePlay = { vm.togglePlay() },
             onPrev = {
                 val clips = state.project?.clips ?: emptyList()
@@ -525,6 +557,9 @@ fun EditorScreen(
             },
             onUndo = { vm.undo() },
             onRedo = { vm.redo() },
+            onToggleKeyframe = {
+                kfClip?.let { vm.toggleKeyframeAtPlayheadFor(it.id) }
+            },
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
         )
 
@@ -538,7 +573,6 @@ fun EditorScreen(
         )
 
         val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
-        val hasKeyframeAtPlayhead = activeClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
         val clipList = state.project?.clips ?: emptyList()
         val currentClipIdx = clipList.indexOfFirst { it.id == activeClip?.id }
 
@@ -627,21 +661,19 @@ fun EditorScreen(
             onOpenChromaKey = { vm.openChromaKeyPanel() },
             onOpenArFilters = { vm.openArFilterPanel() },
             onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
+            onSelectAudioTrack = { vm.selectAudioTrack(it) },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         )
 
-        BottomEditToolbar(
-            onEdit = { vm.openTrimPanel() },
-            onKeyframes = { vm.setKeyframePanelOpen(true) },
-            onAudio = { vm.openAudioMixer() },
-            onText = { vm.openTextPanel() },
-            onStickers = { vm.openStickerPanel() },
-            onEffects = { vm.openFxPanel() },
-            onFilters = { vm.openFilterPanel() },
-            onArFilters = { vm.openArFilterPanel() },
-            onAdjust = { vm.openAdjustmentsPanel() }
+        // Editor layout: New contextual toolbar (default) vs Classic legacy
+        // backup — extracted to EditorBottomToolbarSection to keep this
+        // composable under the JVM 64KB method limit.
+        EditorBottomToolbarSection(
+            state = state,
+            vm = vm,
+            mediaPicker = mediaPicker
         )
     }
 
@@ -1008,6 +1040,12 @@ fun EditorScreen(
             }
         }
     }
+
+    // Volume + Fade sheets — extracted to overlay composables to keep this
+    // composable under the JVM 64KB method limit.
+    ClipVolumeSheetOverlay(state = state, vm = vm)
+    AudioFadeSheetOverlay(state = state, vm = vm)
+
 
     if (showRoyaltyFreeSheet) {
         RoyaltyFreeMusicSheet(

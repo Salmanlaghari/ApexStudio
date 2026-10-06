@@ -21,8 +21,11 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -40,7 +43,9 @@ import com.apexstudio.app.ui.theme.ApexPalette
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onOpenDiagnostics: () -> Unit
+    onOpenDiagnostics: () -> Unit,
+    classicEditorLayout: Boolean = false,
+    onClassicEditorLayoutChange: (Boolean) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -83,6 +88,36 @@ fun SettingsScreen(
                     subtitle = "Manage cache and projects",
                     tint = ApexPalette.NeonCyan,
                     onClick = { }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        GlassCard(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            cornerRadius = 22.dp
+        ) {
+            Column {
+                Text(
+                    "Editor",
+                    color = ApexPalette.TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                SettingsToggleRow(
+                    icon = Icons.Default.Tune,
+                    title = "Classic editor layout",
+                    subtitle = if (classicEditorLayout)
+                        "Old toolbar design (backup)"
+                    else
+                        "New contextual toolbar (CapCut-style)",
+                    tint = ApexPalette.NeonCyan,
+                    checked = classicEditorLayout,
+                    onCheckedChange = onClassicEditorLayoutChange
                 )
             }
         }
@@ -171,6 +206,60 @@ private fun SettingsRow(
             Icons.Default.ChevronRight, null,
             tint = ApexPalette.TextTertiary,
             modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    tint: Color,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(ApexPalette.BgElevated.copy(alpha = 0.5f))
+            .clickable(onClick = { onCheckedChange(!checked) })
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    Brush.linearGradient(listOf(tint, tint.copy(alpha = 0.5f)))
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = ApexPalette.BgDeep, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = ApexPalette.TextPrimary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                subtitle,
+                color = ApexPalette.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = ApexPalette.NeonCyan,
+                checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
+            )
         )
     }
 }

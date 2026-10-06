@@ -134,6 +134,8 @@ fun VideoTimeline(
     playheadMs: Long,
     timelineZoom: Float = 1.0f,
     selectedClipId: String? = null,
+    selectedAudioTrackId: String? = null,
+    onSelectAudioTrack: (String) -> Unit = {},
     isPlaying: Boolean = false,
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
@@ -495,6 +497,8 @@ fun VideoTimeline(
                         beatMarkersMs = beatMarkersMs,
                         snapToBeat = snapToBeat,
                         playheadMs = safePlayheadMs,
+                        selectedAudioTrackId = selectedAudioTrackId,
+                        onSelectAudioTrack = onSelectAudioTrack,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(44.dp)
@@ -628,6 +632,7 @@ fun VideoTimeline(
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    onSelectAudioTrack: (String) -> Unit = {},
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
@@ -666,7 +671,9 @@ fun VideoTimeline(
         onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
         onMoveKeyframe = onMoveKeyframe,
         onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
-        onMoveTextKeyframe = onMoveTextKeyframe
+        onMoveTextKeyframe = onMoveTextKeyframe,
+        selectedAudioTrackId = state.selectedAudioTrackId,
+        onSelectAudioTrack = onSelectAudioTrack
     )
 }
 
@@ -1085,7 +1092,9 @@ private fun TimelineOverlayTrack(
                             )
                             .border(
                                 width = if (isSelected || isDragging) 1.5.dp else 1.dp,
-                                color = if (isSelected || isDragging) ApexPalette.NeonCyan
+                                // CapCut-style: selected clip gets a white border.
+                                color = if (isSelected) Color.White
+                                else if (isDragging) ApexPalette.NeonCyan
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(4.dp)
                             )
@@ -1420,7 +1429,8 @@ private fun TimelineVideoTrack(
                             width = if (isBeingDragged) 2.5.dp else if (isSelected || isMultiSelected) 2.dp else 1.dp,
                             color = if (isBeingDragged) ApexPalette.NeonCyan
                             else if (isMultiSelected) Color(0xFFFFB300)
-                            else if (isSelected) Color(0xFFFFD700)
+                            // CapCut-style: selected clip gets a white border.
+                            else if (isSelected) Color.White
                             else Color(0xFF2E384D),
                             shape = RoundedCornerShape(6.dp)
                         )
@@ -1820,16 +1830,31 @@ private fun TimelineAudioTrack(
     beatMarkersMs: List<Long>,
     snapToBeat: Boolean,
     playheadMs: Long,
+    selectedAudioTrackId: String? = null,
+    onSelectAudioTrack: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val activeTrack = audioTracks.firstOrNull()
     val audioName = activeTrack?.name ?: "Master Audio"
+    // CapCut-style: tapping the A1 lane selects the active audio track,
+    // switching the bottom toolbar to audio tools; selected = white border.
+    val isAudioSelected = activeTrack != null && activeTrack.id == selectedAudioTrackId
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(if (isMuted) Color(0xFF141A18) else Color(0xFF0D1C18))
-            .border(1.dp, if (isMuted) Color(0xFF1E2E28) else ApexPalette.NeonEmerald.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+            .border(
+                width = if (isAudioSelected) 2.dp else 1.dp,
+                color = if (isAudioSelected) Color.White
+                else if (isMuted) Color(0xFF1E2E28)
+                else ApexPalette.NeonEmerald.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(enabled = activeTrack != null) {
+                val t = activeTrack
+                if (t != null) onSelectAudioTrack(t.id)
+            }
             .padding(horizontal = 6.dp, vertical = 3.dp),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -1890,7 +1915,9 @@ private fun TimelineAudioTrack(
                         }
                     }
 
-                    val isBeat = snapToBeat && beatMarkersMs.any { beatMs ->
+                    // Beat markers (from the Beats tool) render as cyan bars
+                    // whenever markers exist — independent of snap-to-beat.
+                    val isBeat = beatMarkersMs.any { beatMs ->
                         val beatFrac = beatMs.toFloat() / durationMs.toFloat()
                         kotlin.math.abs(beatFrac - barFrac) < (1.2f / barCount)
                     }

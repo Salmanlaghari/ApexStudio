@@ -42,6 +42,8 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
     val clip = id?.let { clipId -> state.project?.clips?.firstOrNull { it.id == clipId } }
     state.copy(
         selectedClipId = id,
+        // CapCut-style single selection: picking a clip clears the audio-lane selection.
+        selectedAudioTrackId = if (id != null) null else state.selectedAudioTrackId,
         activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
     )
 }

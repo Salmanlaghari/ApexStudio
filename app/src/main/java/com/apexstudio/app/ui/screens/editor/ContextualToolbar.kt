@@ -33,8 +33,8 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * CapCut-style contextual bottom toolbar.
  *
  * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → global tools (Edit, Audio, Text, Effects, Stickers)
- * - Video clip selected → clip tools (Adjust, Replace, Speed, Volume, Animation, Delete)
+ * - Nothing selected → global tools (Edit, Audio, Text, Effects, Filters, Stickers, Lenses)
+ * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
  * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
  *
  * A collapse chevron as the first item deselects and returns to global tools.
@@ -73,6 +73,10 @@ fun ContextualBottomToolbar(
     onText: () -> Unit = {},
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
+    // Global tools (B1/B2): Lenses opens the Camera Kit lens browser,
+    // Filters opens the GPU filter gallery directly.
+    onLenses: () -> Unit = {},
+    onFilters: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
     onReplace: () -> Unit = {},
@@ -100,16 +104,19 @@ fun ContextualBottomToolbar(
             CtxToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
             CtxToolItem("Text", Icons.Default.TextFields, onClick = onText),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-            CtxToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers)
+            CtxToolItem("Filters", Icons.Default.Palette, onClick = onFilters),
+            CtxToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
+            CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses)
         )
         ToolbarSelectionKind.VIDEO -> listOf(
+            // Keyframe tab: opens the keyframe editor (diamonds + curves)
+            // so keyframes can be added/edited immediately on selection.
+            CtxToolItem("Keyframe", Icons.Default.Diamond, ApexPalette.NeonCyan, onAnimation),
             CtxToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust),
             CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
             CtxToolItem("Speed", Icons.Default.Speed, onClick = onSpeed),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
-            // Keyframe tab: opens the keyframe editor (diamonds + curves)
-            // so keyframes can be added/edited immediately on selection.
-            CtxToolItem("Keyframe", Icons.Default.Diamond, onClick = onAnimation),
+            // Second entry point into the same keyframe/animation panel.
+            CtxToolItem("Animation", Icons.Default.AutoAwesome, onClick = onAnimation),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
         )
         ToolbarSelectionKind.AUDIO -> listOf(
@@ -376,6 +383,8 @@ fun EditorBottomToolbarSection(
         onText = { vm.openTextPanel() },
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
+        onLenses = { vm.openLensesPanel() },
+        onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
         onReplace = {
             when (toolbarKind) {

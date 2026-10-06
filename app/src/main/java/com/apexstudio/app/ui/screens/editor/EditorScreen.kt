@@ -79,6 +79,11 @@ fun EditorScreen(
 
     mediaPicker.registerLaunchers()
 
+    // Load the persisted editor layout choice (New contextual vs Classic backup).
+    LaunchedEffect(Unit) {
+        vm.loadEditorLayoutPref()
+    }
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.flow.combine(
             mediaPicker.pickedMedia,
@@ -86,7 +91,16 @@ fun EditorScreen(
         ) { meta, gen -> meta to gen }
             .collect { (metadataList, _) ->
                 if (metadataList.isNotEmpty()) {
-                    vm.onMediaPicked(metadataList, replace = false)
+                    val s = vm.state.value
+                    when {
+                        // CapCut-style Replace flow: swap the selected clip/track
+                        // media instead of adding new media to the timeline.
+                        s.pendingReplaceClipId != null ->
+                            vm.replaceClipMedia(s.pendingReplaceClipId!!, metadataList.first())
+                        s.pendingReplaceAudioTrackId != null ->
+                            vm.replaceAudioTrackMedia(s.pendingReplaceAudioTrackId!!, metadataList.first())
+                        else -> vm.onMediaPicked(metadataList, replace = false)
+                    }
                 }
             }
     }
@@ -168,6 +182,16 @@ fun EditorScreen(
             player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set playback speed", e)
+        }
+    }
+
+    // Per-clip Volume tool: live preview gain follows the selected clip's volume.
+    LaunchedEffect(exoPlayer, currentSelectedClip?.id, currentSelectedClip?.volume) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        try {
+            player.volume = (currentSelectedClip?.volume ?: 1f).coerceIn(0f, 2f)
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "Failed to set clip volume", e)
         }
     }
 
@@ -504,12 +528,20 @@ fun EditorScreen(
             )
         }
 
+        // CapCut transport row: the keyframe diamond appears next to the
+        // undo/redo arrows only while a clip is explicitly selected.
+        val kfClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        val hasKeyframeAtPlayhead =
+            kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
+
         PlaybackControlBar(
             currentTimeMs = state.playerPositionMs,
             totalDurationMs = state.durationMs,
             isPlaying = state.isPlaying,
             canUndo = state.canUndo,
             canRedo = state.canRedo,
+            showKeyframeButton = !state.useClassicEditorLayout && kfClip != null,
+            hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
             onTogglePlay = { vm.togglePlay() },
             onPrev = {
                 val clips = state.project?.clips ?: emptyList()
@@ -525,6 +557,9 @@ fun EditorScreen(
             },
             onUndo = { vm.undo() },
             onRedo = { vm.redo() },
+            onToggleKeyframe = {
+                kfClip?.let { vm.toggleKeyframeAtPlayheadFor(it.id) }
+            },
             onFullscreenToggle = { vm.toggleFullscreenPreview() }
         )
 
@@ -538,7 +573,6 @@ fun EditorScreen(
         )
 
         val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
-        val hasKeyframeAtPlayhead = activeClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
         val clipList = state.project?.clips ?: emptyList()
         val currentClipIdx = clipList.indexOfFirst { it.id == activeClip?.id }
 
@@ -627,22 +661,105 @@ fun EditorScreen(
             onOpenChromaKey = { vm.openChromaKeyPanel() },
             onOpenArFilters = { vm.openArFilterPanel() },
             onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
+            onSelectAudioTrack = { vm.selectAudioTrack(it) },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         )
 
-        BottomEditToolbar(
+        // Editor layout: New contextual toolbar (default) vs Classic legacy
+        // backup (old BottomEditToolbar) — switchable from Settings.
+        // The old UI code is preserved, not deleted.
+        if (state.useClassicEditorLayout) {
+            BottomEditToolbar(
+                onEdit = { vm.openTrimPanel() },
+                onKeyframes = { vm.setKeyframePanelOpen(true) },
+                onAudio = { vm.openAudioMixer() },
+                onText = { vm.openTextPanel() },
+                onStickers = { vm.openStickerPanel() },
+                onEffects = { vm.openFxPanel() },
+                onFilters = { vm.openFilterPanel() },
+                onArFilters = { vm.openArFilterPanel() },
+                onAdjust = { vm.openAdjustmentsPanel() }
+            )
+        } else {
+            // CapCut-style contextual bottom toolbar: the tool set follows the
+            // current selection (nothing / video clip / audio), updating instantly.
+            val toolbarKind = resolveToolbarSelection(state)
+            val selectedAudioTrack = state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
+            ContextualBottomToolbar(
+            selectionKind = toolbarKind,
+            // Global tools (nothing selected)
             onEdit = { vm.openTrimPanel() },
-            onKeyframes = { vm.setKeyframePanelOpen(true) },
             onAudio = { vm.openAudioMixer() },
             onText = { vm.openTextPanel() },
-            onStickers = { vm.openStickerPanel() },
             onEffects = { vm.openFxPanel() },
-            onFilters = { vm.openFilterPanel() },
-            onArFilters = { vm.openArFilterPanel() },
-            onAdjust = { vm.openAdjustmentsPanel() }
+            onStickers = { vm.openStickerPanel() },
+            // Video-clip tools
+            onAdjust = { vm.openAdjustmentsPanel() },
+            onReplace = {
+                when (toolbarKind) {
+                    ToolbarSelectionKind.VIDEO -> {
+                        val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                        if (clip != null) {
+                            vm.setPendingReplaceClip(clip.id)
+                            // Overlays can be images — allow both; video clips stay video-only.
+                            val request = if (clip.type == ClipType.OVERLAY) {
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                            } else {
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            }
+                            mediaPicker.pickMultipleMedia.launch(request)
+                        }
+                    }
+                    ToolbarSelectionKind.AUDIO -> {
+                        // Audio clip selected → replace clip; audio lane selected → replace track.
+                        val audioClip = state.project?.clips?.firstOrNull {
+                            it.id == state.selectedClipId && (it.type == ClipType.AUDIO || it.type == ClipType.SFX)
+                        }
+                        when {
+                            audioClip != null -> {
+                                vm.setPendingReplaceClip(audioClip.id)
+                                mediaPicker.pickAudioMedia.launch("audio/*")
+                            }
+                            selectedAudioTrack != null -> {
+                                vm.setPendingReplaceAudioTrack(selectedAudioTrack.id)
+                                mediaPicker.pickAudioMedia.launch("audio/*")
+                            }
+                        }
+                    }
+                    ToolbarSelectionKind.NONE -> {}
+                }
+            },
+            onSpeed = { vm.openSpeedPanel() },
+            onVolume = { vm.openClipVolumeSheet() },
+            onAnimation = { vm.setKeyframePanelOpen(true) },
+            onDelete = {
+                when (toolbarKind) {
+                    ToolbarSelectionKind.VIDEO ->
+                        state.selectedClipId?.let { vm.deleteClip(it); vm.clearSelection() }
+                    ToolbarSelectionKind.AUDIO -> {
+                        val audioClip = state.project?.clips?.firstOrNull {
+                            it.id == state.selectedClipId && (it.type == ClipType.AUDIO || it.type == ClipType.SFX)
+                        }
+                        when {
+                            audioClip != null -> { vm.deleteClip(audioClip.id); vm.clearSelection() }
+                            selectedAudioTrack != null -> { vm.removeAudioTrack(selectedAudioTrack.id); vm.clearSelection() }
+                        }
+                    }
+                    ToolbarSelectionKind.NONE -> {}
+                }
+            },
+            // Audio tools
+            onFade = { vm.openAudioFadeSheet() },
+            onBeats = {
+                selectedAudioTrack?.let { vm.toggleBeatsForTrack(it.id) }
+            },
+            beatsActive = state.beatSourceTrackId != null && state.beatMarkersMs.isNotEmpty(),
+            beatsAnalyzing = state.beatsAnalyzing,
+            onCollapse = { vm.clearSelection() }
         )
+        }
     }
 
     // Modal Overlays
@@ -1005,6 +1122,73 @@ fun EditorScreen(
                     onFadeOut = { trackId, ms -> vm.setAudioTrackFadeOut(trackId, ms) },
                     onClose = { vm.closeAudioMixer() }
                 )
+            }
+        }
+    }
+
+    // CapCut-style Volume sheet: per-clip gain for video clips (0..200%),
+    // track gain for the selected audio track (0..100%). Real in preview + export.
+    if (state.clipVolumeSheetOpen) {
+        val toolbarKindForSheet = resolveToolbarSelection(state)
+        val volClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        val volTrack = state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeClipVolumeSheet() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                when {
+                    toolbarKindForSheet == ToolbarSelectionKind.VIDEO && volClip != null -> {
+                        ClipVolumeSheet(
+                            title = "Volume — ${volClip.name}",
+                            volume = volClip.volume,
+                            maxVolume = 2f,
+                            onVolumeChange = { vm.setClipVolume(volClip.id, it) },
+                            onClose = { vm.closeClipVolumeSheet() }
+                        )
+                    }
+                    toolbarKindForSheet == ToolbarSelectionKind.AUDIO && volTrack != null -> {
+                        ClipVolumeSheet(
+                            title = "Volume — ${volTrack.name}",
+                            volume = volTrack.volume,
+                            maxVolume = 1f,
+                            onVolumeChange = { vm.setAudioTrackVolumeFull(volTrack.id, it) },
+                            onClose = { vm.closeClipVolumeSheet() }
+                        )
+                    }
+                    else -> {
+                        // Selection was lost while the sheet was open — dismiss it.
+                        androidx.compose.runtime.LaunchedEffect(Unit) { vm.closeClipVolumeSheet() }
+                    }
+                }
+            }
+        }
+    }
+
+    // CapCut-style Fade sheet for the selected audio track.
+    if (state.audioFadeSheetOpen) {
+        val fadeTrack = state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { vm.closeAudioFadeSheet() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                if (fadeTrack != null) {
+                    AudioFadeSheet(
+                        track = fadeTrack,
+                        onFadeInChange = { vm.setAudioTrackFadeIn(fadeTrack.id, it) },
+                        onFadeOutChange = { vm.setAudioTrackFadeOut(fadeTrack.id, it) },
+                        onClose = { vm.closeAudioFadeSheet() }
+                    )
+                } else {
+                    androidx.compose.runtime.LaunchedEffect(Unit) { vm.closeAudioFadeSheet() }
+                }
             }
         }
     }

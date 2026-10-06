@@ -162,7 +162,27 @@ data class EditorState(
     val lutSaturation: Float = 1.0f,
     val lutTemperature: Float = 5000f,
     val lutTint: Float = 0f,
-    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.STRIP
+    val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.STRIP,
+    // CapCut-style contextual toolbar selection. selectedAudioTrackId
+    // tracks the tapped A1 audio lane; it is mutually exclusive with
+    // selectedClipId (one selection at a time, like CapCut).
+    val selectedAudioTrackId: String? = null,
+    // Replace flow: when non-null, the next media-picker result swaps
+    // the media of this clip / audio track instead of adding new media.
+    val pendingReplaceClipId: String? = null,
+    val pendingReplaceAudioTrackId: String? = null,
+    // Beats: energy-based beat detection for the selected audio track.
+    // beatMarkersMs are shown on the audio lane; beatSourceTrackId
+    // records which track produced them (re-tap Beats to clear).
+    val beatsAnalyzing: Boolean = false,
+    val beatSourceTrackId: String? = null,
+    // Volume / Fade bottom sheets for the contextual toolbar.
+    val clipVolumeSheetOpen: Boolean = false,
+    val audioFadeSheetOpen: Boolean = false,
+    // Editor layout backup: false = New contextual toolbar (default),
+    // true = Classic legacy UI (old BottomEditToolbar + original transport
+    // row). Switchable from Settings; persisted in DataStore.
+    val useClassicEditorLayout: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

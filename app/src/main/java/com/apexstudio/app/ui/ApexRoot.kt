@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
 import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
@@ -30,6 +31,16 @@ fun ApexRoot() {
     var projectId by remember { mutableStateOf<String?>(null) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var showExportSettings by remember { mutableStateOf(false) }
+    // Editor layout backup toggle (New contextual vs Classic old UI),
+    // persisted in DataStore and shared with the editor screen.
+    var classicEditorLayout by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        try {
+            classicEditorLayout = kotlinx.coroutines.flow.first(
+                com.apexstudio.app.data.settings.EditorLayoutPrefs(context).classicEditorLayout
+            )
+        } catch (_: Exception) { }
+    }
 
     Column(
         modifier = Modifier
@@ -41,7 +52,17 @@ fun ApexRoot() {
                 when (overlay) {
                     is Overlay.Settings -> SettingsScreen(
                         onBack = { overlay = null },
-                        onOpenDiagnostics = { overlay = Overlay.Diagnostics }
+                        onOpenDiagnostics = { overlay = Overlay.Diagnostics },
+                        classicEditorLayout = classicEditorLayout,
+                        onClassicEditorLayoutChange = { classic ->
+                            classicEditorLayout = classic
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                try {
+                                    com.apexstudio.app.data.settings.EditorLayoutPrefs(context)
+                                        .setClassicEditorLayout(classic)
+                                } catch (_: Exception) { }
+                            }
+                        }
                     )
                     is Overlay.Diagnostics -> CrashDiagnosticsScreen(
                         onBack = { overlay = null }

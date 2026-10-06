@@ -108,7 +108,12 @@ fun SpeedControlSheet(
     }
 }
 
-// === 5. BOTTOM EDIT TOOLBAR ===
+// === 5. BOTTOM EDIT TOOLBAR — LEGACY / CLASSIC BACKUP ===
+// This is the ORIGINAL pre-contextual editor toolbar, preserved as the
+// "Classic" layout backup. It is NOT deleted: Settings → "Editor layout"
+// lets the user switch between the New contextual toolbar
+// (ContextualBottomToolbar) and this Classic one. Default is New.
+// Do not remove — it is the restore point for the old design.
 @Composable
 fun BottomEditToolbar(
     onEdit: () -> Unit = {},

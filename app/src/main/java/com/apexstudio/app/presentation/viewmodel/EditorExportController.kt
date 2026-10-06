@@ -80,7 +80,10 @@ fun EditorViewModel.startExport(
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
-            volume = if (audioSt.isMuted) 0f else audioSt.volume,
+            // Per-clip Volume tool: the clip's own gain multiplies the
+            // global audio volume, so what the user hears in the preview
+            // is exactly what bakes into the export.
+            volume = (selected?.volume ?: 1f) * (if (audioSt.isMuted) 0f else audioSt.volume),
             reverbEnabled = audioSt.reverbEnabled,
             reverbPreset = audioSt.reverbPreset,
             echoEnabled = audioSt.echoEnabled,

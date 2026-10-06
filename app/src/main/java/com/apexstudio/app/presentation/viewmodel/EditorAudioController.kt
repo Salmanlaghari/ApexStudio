@@ -357,3 +357,124 @@ fun EditorViewModel.updateAudioTrackVolume(trackId: String, volume: Float) {
     }
     persistProject()
 }
+
+
+/**
+ * CapCut-style Beats: energy/onset-based beat detection for an audio track.
+ *
+ * Tapping "Beats" in the contextual toolbar decodes the track's amplitude
+ * envelope (via [MediaAnalyzer]), runs onset detection + tempo estimation,
+ * and stores beat markers that render on the audio lane and drive
+ * snap-to-beat. Tapping again clears the markers.
+ */
+fun EditorViewModel.toggleBeatsForTrack(trackId: String) {
+    val s = _state.value
+    if (s.beatSourceTrackId == trackId && s.beatMarkersMs.isNotEmpty()) {
+        // Toggle off: clear markers.
+        _state.update { it.copy(beatMarkersMs = emptyList(), beatSourceTrackId = null) }
+        return
+    }
+    val track = s.project?.audioTracks?.firstOrNull { it.id == trackId }
+        ?: _audio.value.tracks.firstOrNull { it.id == trackId }
+        ?: return
+    val ctx = context ?: return
+    _state.update { it.copy(beatsAnalyzing = true) }
+    viewModelScope.launch {
+        try {
+            val data = mediaAnalyzer?.analyzeAudioWaveform(
+                uri = track.uri,
+                context = ctx,
+                sampleCount = 1500,
+                trimStartMs = track.trimStartMs,
+                trimEndMs = track.trimEndMs
+            )
+            val beats = if (data != null && data.samples.isNotEmpty()) {
+                computeBeatGrid(data.samples, data.durationMs)
+            } else {
+                // Fallback: BPM grid from the current BPM setting.
+                val interval = (60_000.0 / _audio.value.bpm.coerceIn(60, 240)).toLong()
+                val total = track.trimEndMs.coerceAtLeast(10_000L)
+                generateSequence(0L) { it + interval }.takeWhile { it <= total }.toList()
+            }
+            _state.update {
+                it.copy(
+                    beatMarkersMs = beats,
+                    beatSourceTrackId = trackId,
+                    snapToBeat = true,
+                    beatsAnalyzing = false
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("EditorViewModel", "Beat detection failed: ${e.message}")
+            _state.update { it.copy(beatsAnalyzing = false) }
+        }
+    }
+}
+
+/**
+ * Pure beat-grid computation, unit-testable without Android.
+ *
+ * [envelope] is a normalised 0..1 amplitude envelope over [durationMs].
+ * Steps: onset novelty (positive differences) → tempo via autocorrelation
+ * of the novelty in the 60..200 BPM band → beat grid anchored on the
+ * strongest early onset, snapped to nearby onsets.
+ */
+fun computeBeatGrid(envelope: FloatArray, durationMs: Long): List<Long> {
+    if (envelope.size < 32 || durationMs <= 0L) return emptyList()
+    val n = envelope.size
+    // 1. Onset novelty: positive first difference of the envelope.
+    val novelty = FloatArray(n)
+    for (i in 1 until n) {
+        val d = envelope[i] - envelope[i - 1]
+        novelty[i] = if (d > 0f) d else 0f
+    }
+    val mean = novelty.average().toFloat()
+    val std = kotlin.math.sqrt(novelty.map { (it - mean) * (it - mean) }.average()).toFloat()
+    val onsetThreshold = mean + 0.6f * std
+    val onsetIdx = (0 until n).filter { novelty[it] > onsetThreshold }
+    if (onsetIdx.size < 4) return emptyList()
+
+    // 2. Tempo estimation: autocorrelate novelty for lags = 60..200 BPM.
+    val msPerBucket = durationMs.toDouble() / n
+    var bestLag = -1
+    var bestScore = 0.0
+    val minLagBuckets = (60_000.0 / 200 / msPerBucket).toInt().coerceAtLeast(2)
+    val maxLagBuckets = (60_000.0 / 60 / msPerBucket).toInt().coerceAtMost(n / 2)
+    for (lag in minLagBuckets..maxLagBuckets) {
+        var score = 0.0
+        var i = 0
+        while (i + lag < n) {
+            score += novelty[i] * novelty[i + lag]
+            i++
+        }
+        if (score > bestScore) {
+            bestScore = score
+            bestLag = lag
+        }
+    }
+    if (bestLag <= 0) return emptyList()
+    val beatIntervalMs = (bestLag * msPerBucket).toLong().coerceAtLeast(200L)
+
+    // 3. Anchor: strongest onset in the first two beat intervals.
+    val anchorSearchEnd = (2 * bestLag).coerceAtMost(n - 1)
+    val anchorIdx = (0..anchorSearchEnd).maxByOrNull { novelty[it] } ?: 0
+    val anchorMs = (anchorIdx * msPerBucket).toLong()
+
+    // 4. Grid + snap each beat to the nearest strong onset (±1 interval/4).
+    val snapWindow = (bestLag / 4).coerceAtLeast(1)
+    val beats = mutableListOf<Long>()
+    var t = anchorMs
+    while (t <= durationMs) {
+        val bucket = (t / msPerBucket).toInt().coerceIn(0, n - 1)
+        val lo = (bucket - snapWindow).coerceAtLeast(0)
+        val hi = (bucket + snapWindow).coerceAtMost(n - 1)
+        val snapped = (lo..hi).maxByOrNull { novelty[it] } ?: bucket
+        if (novelty[snapped] > onsetThreshold * 0.5f) {
+            beats.add((snapped * msPerBucket).toLong())
+        } else {
+            beats.add(t)
+        }
+        t += beatIntervalMs
+    }
+    return beats.distinct().sorted()
+}

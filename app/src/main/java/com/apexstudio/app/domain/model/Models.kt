@@ -27,6 +27,10 @@ data class MediaClip(
     val speedCurve: SpeedCurve = SpeedCurve.LINEAR,
     val rampStartSpeed: Float = 1f,
     val rampEndSpeed: Float = 1f,
+    // Per-clip audio gain (0 = silent, 1 = original, up to 2 = boosted).
+    // Applied to the ExoPlayer preview of this clip and multiplied into
+    // the export audio volume, so the Volume tool is real in both.
+    val volume: Float = 1f,
     // Animated transform track — empty by default. When populated
     // by the Keyframe panel, the GL effect applies the interpolated
     // translate / scale / rotation / opacity on every preview frame

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -18,9 +19,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
-// === 3. PLAYBACK CONTROL BAR ===
+// === 3. PLAYBACK CONTROL BAR (CapCut transport layout) ===
+// Center: Prev / Play-Pause / Next. Right cluster: Undo, Redo,
+// Keyframe diamond (+) — visible only while a clip is selected,
+// exactly like CapCut — then Fullscreen.
 @Composable
 fun PlaybackControlBar(
     currentTimeMs: Long = 4370L,
@@ -28,11 +33,14 @@ fun PlaybackControlBar(
     isPlaying: Boolean = false,
     canUndo: Boolean = false,
     canRedo: Boolean = false,
+    showKeyframeButton: Boolean = false,
+    hasKeyframeAtPlayhead: Boolean = false,
     onTogglePlay: () -> Unit = {},
     onPrev: () -> Unit = {},
     onNext: () -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
+    onToggleKeyframe: () -> Unit = {},
     onFullscreenToggle: () -> Unit = {}
 ) {
     Row(
@@ -92,7 +100,7 @@ fun PlaybackControlBar(
             )
         }
 
-        // Right Icons: Undo, Redo, Fullscreen
+        // Right Icons: Undo, Redo, Keyframe diamond (on selection), Fullscreen
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -114,6 +122,35 @@ fun PlaybackControlBar(
                     .size(20.dp)
                     .clickable(enabled = canRedo, onClick = onRedo)
             )
+
+            // CapCut-style keyframe diamond: appears next to the arrows
+            // only while a clip is selected; adds a REAL keyframe at the
+            // playhead via toggleKeyframeAtPlayheadFor.
+            if (showKeyframeButton) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.25f)
+                            else Color.Transparent
+                        )
+                        .border(
+                            1.dp,
+                            if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color(0xFF6B7280),
+                            RoundedCornerShape(6.dp)
+                        )
+                        .clickable(onClick = onToggleKeyframe),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Diamond,
+                        contentDescription = if (hasKeyframeAtPlayhead) "Remove keyframe at playhead" else "Add keyframe at playhead",
+                        tint = if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
 
             Icon(
                 imageVector = Icons.Default.Fullscreen,

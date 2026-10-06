@@ -74,6 +74,7 @@ fun TimelineTrackArea(
     onOpenChromaKey: () -> Unit = {},
     onOpenArFilters: () -> Unit = {},
     onOpenRoyaltyMusic: () -> Unit = {},
+    onSelectAudioTrack: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -187,6 +188,10 @@ fun TimelineTrackArea(
             onMoveKeyframe = onMoveKeyframe,
             onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
             onMoveTextKeyframe = onMoveTextKeyframe,
+            onSelectAudioTrack = { trackId ->
+                selectedLayer = SelectedLayerType.AUDIO_A1
+                onSelectAudioTrack(trackId)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)

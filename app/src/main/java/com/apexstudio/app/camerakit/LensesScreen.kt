@@ -1,7 +1,11 @@
 package com.apexstudio.app.camerakit
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.view.ViewStub
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,7 +37,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.core.app.ActivityCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -96,14 +102,47 @@ fun LensesScreen(
                     PackageManager.PERMISSION_GRANTED
             )
         }
+        // True when the user denied with "Don't ask again": the system launcher will
+        // keep returning false, so offer a Settings shortcut instead of looping.
+        var permanentlyDenied by remember { mutableStateOf(false) }
+        val activity = remember { context as? Activity }
+        fun refreshPermission() {
+            hasPermission = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasPermission) permanentlyDenied = false
+        }
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
-        ) { granted -> hasPermission = granted }
+        ) { granted ->
+            hasPermission = granted
+            if (!granted) {
+                // shouldShowRequestPermissionRationale is false on first ask AND on
+                // permanent denial; we're past the first ask here, so false means
+                // the user checked "Don't ask again".
+                val showRationale = activity?.let {
+                    ActivityCompat.shouldShowRequestPermissionRationale(
+                        it, Manifest.permission.CAMERA
+                    )
+                } ?: true
+                permanentlyDenied = !showRationale
+            }
+        }
 
         AppTopBar(title = "Snap Lenses", onBack = onBack)
 
         when {
             !deviceSupported -> UnsupportedDeviceMessage()
+            permanentlyDenied -> CameraPermissionPermanentlyDenied(
+                onOpenSettings = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                },
+                onRetry = { refreshPermission() }
+            )
             !hasPermission -> CameraPermissionPrompt(
                 onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) }
             )
@@ -122,6 +161,9 @@ private fun CameraKitPreview(viewModel: LensesViewModel) {
     val selectedId by viewModel.selectedId.collectAsStateWithLifecycle()
     val applying by viewModel.applying.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val startError by manager.startError.collectAsStateWithLifecycle()
+    // Session-start failures are fatal for the preview; surface them in the same banner.
+    val visibleError = startError ?: error
 
     DisposableEffect(Unit) {
         onDispose {
@@ -164,7 +206,7 @@ private fun CameraKitPreview(viewModel: LensesViewModel) {
                 .background(Color.Black.copy(alpha = 0.55f))
                 .padding(vertical = 10.dp)
         ) {
-            if (error != null) {
+            if (visibleError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -172,13 +214,16 @@ private fun CameraKitPreview(viewModel: LensesViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = error.orEmpty(),
+                        text = visibleError.orEmpty(),
                         color = ApexPalette.Danger,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = { viewModel.dismissError() },
+                        onClick = {
+                            viewModel.dismissError()
+                            manager.dismissStartError()
+                        },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -334,6 +379,24 @@ private fun CameraPermissionPrompt(onRequest: () -> Unit) {
         body = "ApexStudio needs camera permission to show the AR lens preview.",
         action = {
             Button(onClick = onRequest) { Text("Grant camera permission") }
+        }
+    )
+}
+
+@Composable
+private fun CameraPermissionPermanentlyDenied(
+    onOpenSettings: () -> Unit,
+    onRetry: () -> Unit
+) {
+    CenteredMessage(
+        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(48.dp)) },
+        title = "Camera permission blocked",
+        body = "You selected \"Don't ask again\". Enable the camera in app Settings to use AR lenses.",
+        action = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onOpenSettings) { Text("Open Settings") }
+                OutlinedButton(onClick = onRetry) { Text("Try Again") }
+            }
         }
     )
 }

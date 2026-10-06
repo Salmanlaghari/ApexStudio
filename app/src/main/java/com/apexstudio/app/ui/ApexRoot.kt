@@ -37,9 +37,8 @@ fun ApexRoot() {
     var classicEditorLayout by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         try {
-            classicEditorLayout = first(
-                com.apexstudio.app.data.settings.EditorLayoutPrefs(context).classicEditorLayout
-            )
+            classicEditorLayout = com.apexstudio.app.data.settings.EditorLayoutPrefs(context)
+                .classicEditorLayout.first()
         } catch (_: Exception) { }
     }
 

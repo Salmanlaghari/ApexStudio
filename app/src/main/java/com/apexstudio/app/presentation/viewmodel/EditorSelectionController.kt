@@ -176,9 +176,8 @@ fun EditorViewModel.loadEditorLayoutPref() {
     viewModelScope.launch {
         val ctx = context ?: return@launch
         try {
-            val classic = first(
-                com.apexstudio.app.data.settings.EditorLayoutPrefs(ctx).classicEditorLayout
-            )
+            val classic = com.apexstudio.app.data.settings.EditorLayoutPrefs(ctx)
+                .classicEditorLayout.first()
             _state.update { it.copy(useClassicEditorLayout = classic) }
         } catch (e: Exception) {
             android.util.Log.w("EditorViewModel", "Failed to load editor layout: ${e.message}")

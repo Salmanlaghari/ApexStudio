@@ -351,6 +351,37 @@ private fun DiscoverTab(
                         }
                     }
                 }
+                // A failed "load more" keeps the loaded tracks visible; surface
+                // the failure inline so it isn't silently swallowed.
+                if (uiState.error != null && uiState.tracks.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF141420))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                uiState.error ?: "Couldn't load more",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "Retry",
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { controller.retry() }
+                                    .padding(4.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

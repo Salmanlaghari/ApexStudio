@@ -85,7 +85,8 @@ object TextFontRegistry {
         val base = when (key.lowercase()) {
             "serif" -> Typeface.SERIF
             "monospace", "mono" -> Typeface.MONOSPACE
-            "cursive", "script" -> Typeface.CURSIVE
+            // No framework CURSIVE constant — the bundled "script"
+            // font (Great Vibes) covers the script look.
             else -> Typeface.SANS_SERIF
         }
         val style = when {

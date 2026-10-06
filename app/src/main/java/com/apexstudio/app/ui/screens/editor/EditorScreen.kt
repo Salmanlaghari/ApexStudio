@@ -430,6 +430,7 @@ fun EditorScreen(
     VoiceRecorderOverlay(state = state, vm = vm)
     CameraCaptureOverlay(state = state, vm = vm)
     ArFilterPanelOverlay(state = state, vm = vm)
+    LensesPanelOverlay(state = state, vm = vm)
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     HelpDialogOverlay(state = state, vm = vm)

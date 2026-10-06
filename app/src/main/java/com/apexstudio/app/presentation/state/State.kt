@@ -68,6 +68,9 @@ data class EditorState(
     // fxSpeed (0.1–4x) drives the animation rate of time-based
     // (Snapchat-style) presets like Hue Cycle.
     val fxPanelOpen: Boolean = false,
+    // Set to true while the Snap Camera Kit Lenses overlay is open inside
+    // the editor (full-screen; editor state is preserved).
+    val lensesPanelOpen: Boolean = false,
     val activeFxId: String? = null,
     val fxIntensity: Float = 1f,
     val fxSpeed: Float = 1f,

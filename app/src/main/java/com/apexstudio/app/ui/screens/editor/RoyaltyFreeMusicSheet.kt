@@ -78,7 +78,9 @@ val ROYALTY_FREE_LIBRARY = listOf(
 /**
  * Royalty-free music library sheet with three tabs:
  * - **Discover**: 500k+ real Creative-Commons tracks via the Jamendo API
- *   (search, genre tags, streaming preview, download → timeline).
+ *   (search, genre tags, streaming preview, download → timeline). This tab is
+ *   only shown when a Jamendo client ID is configured; end users never see
+ *   the developer setup card.
  * - **Offline**: built-in on-device synthesized tracks (no network needed).
  * - **Import**: pick an audio file from the device into the audio track.
  *
@@ -101,7 +103,7 @@ fun RoyaltyFreeMusicSheet(
         onDispose { controller.release() }
     }
 
-    // Initial catalog load for the default Discover tab.
+    // Initial catalog load (no-op when no Jamendo client ID is configured).
     LaunchedEffect(Unit) {
         controller.load()
     }
@@ -164,7 +166,13 @@ fun RoyaltyFreeMusicSheet(
 
         Spacer(Modifier.height(12.dp))
 
-        // Tabs
+        // Tabs — the Discover tab is hidden entirely when no Jamendo client
+        // ID is configured, so end users never see the developer setup card.
+        val visibleTabs = remember(uiState.apiConfigured) {
+            MusicLibraryTab.entries.filter {
+                it != MusicLibraryTab.DISCOVER || uiState.apiConfigured
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -173,7 +181,7 @@ fun RoyaltyFreeMusicSheet(
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            MusicLibraryTab.entries.forEach { tab ->
+            visibleTabs.forEach { tab ->
                 val selected = uiState.tab == tab
                 Box(
                     modifier = Modifier
@@ -202,16 +210,29 @@ fun RoyaltyFreeMusicSheet(
 
         Box(modifier = Modifier.weight(1f)) {
             when (uiState.tab) {
-                MusicLibraryTab.DISCOVER -> DiscoverTab(
-                    controller = controller,
-                    uiState = uiState,
-                    onAddTrack = { track ->
-                        controller.downloadAndAdd(track) { title, path, durationMs ->
-                            onSelectSong(title, path, durationMs)
+                // Belt-and-braces: Discover is hidden from the tab row and the
+                // controller coerces any DISCOVER selection to OFFLINE, but if
+                // this state ever holds DISCOVER anyway, show Offline rather
+                // than the developer setup card.
+                MusicLibraryTab.DISCOVER -> if (uiState.apiConfigured) {
+                    DiscoverTab(
+                        controller = controller,
+                        uiState = uiState,
+                        onAddTrack = { track ->
+                            controller.downloadAndAdd(track) { title, path, durationMs ->
+                                onSelectSong(title, path, durationMs)
+                                onClose()
+                            }
+                        }
+                    )
+                } else {
+                    OfflineTab(
+                        onSelectSong = { title, filePath, durationMs ->
+                            onSelectSong(title, filePath, durationMs)
                             onClose()
                         }
-                    }
-                )
+                    )
+                }
                 MusicLibraryTab.OFFLINE -> OfflineTab(
                     onSelectSong = { title, filePath, durationMs ->
                         onSelectSong(title, filePath, durationMs)

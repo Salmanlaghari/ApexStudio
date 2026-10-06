@@ -161,7 +161,6 @@ fun VideoTimeline(
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
-    onSelectAudioTrack: (String) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()

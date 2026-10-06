@@ -45,8 +45,14 @@ class JamendoMusicApi(
         query(mapOf("search" to query, "order" to "popularity_total"), page)
     }
 
+    /**
+     * Genre browse. Implemented via full-text [search]: Jamendo's documented
+     * tag-filter parameter name is not stable across doc revisions, while
+     * `search` reliably matches genre tags (the API indexes tags in
+     * full-text search).
+     */
     suspend fun byTag(tag: String, page: Int = 0): MusicSearchPage = withContext(Dispatchers.IO) {
-        query(mapOf("tag" to tag, "order" to "popularity_total"), page)
+        query(mapOf("search" to tag, "order" to "popularity_total"), page)
     }
 
     private fun query(extra: Map<String, String>, page: Int): MusicSearchPage {

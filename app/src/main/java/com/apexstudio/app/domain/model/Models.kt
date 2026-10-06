@@ -443,6 +443,14 @@ data class VideoAdjustments(
                 grain == 0f
 }
 
+/**
+ * Minimum sticker crop-rect edge as a fraction of the source bitmap.
+ * Shared by the interactive crop editor ([com.apexstudio.app.ui.screens.editor.StickerCanvas])
+ * and [StickerOverlay.sanitizedCrop] so the preview and the export can
+ * never disagree on the smallest allowed crop.
+ */
+const val STICKER_CROP_MIN_FRACTION = 0.05f
+
 @Serializable
 data class StickerOverlay(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -484,15 +492,16 @@ data class StickerOverlay(
 
     /** Crop fractions sanitised into a valid rect (left < right, top < bottom, 0..1). */
     fun sanitizedCrop(): FloatArray {
-        val l = cropLeft.coerceIn(0f, 0.99f)
-        val t = cropTop.coerceIn(0f, 0.99f)
-        val r = cropRight.coerceIn(0.01f, 1f)
-        val b = cropBottom.coerceIn(0.01f, 1f)
+        val min = STICKER_CROP_MIN_FRACTION
+        val l = cropLeft.coerceIn(0f, 1f - min)
+        val t = cropTop.coerceIn(0f, 1f - min)
+        val r = cropRight.coerceIn(min, 1f)
+        val b = cropBottom.coerceIn(min, 1f)
         return floatArrayOf(
-            minOf(l, r - 0.01f),
-            minOf(t, b - 0.01f),
-            maxOf(r, l + 0.01f),
-            maxOf(b, t + 0.01f)
+            minOf(l, r - min),
+            minOf(t, b - min),
+            maxOf(r, l + min),
+            maxOf(b, t + min)
         )
     }
 }

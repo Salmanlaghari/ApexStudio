@@ -38,7 +38,13 @@ data class StickerEntry(
     val assetUri: String,
     val name: String,
     val category: String,
-    val tags: List<String>
+    val tags: List<String>,
+    /**
+     * Lower-cased "name + category + tags" string, pre-computed once in
+     * [StickerPack.parseManifest] so [StickerPack.search] doesn't rebuild
+     * it for every entry on every keystroke.
+     */
+    val searchHaystack: String = ""
 ) {
     /** `file:///android_asset/...` URI usable by image loaders. */
     val previewUri: String get() = "file:///android_asset/$assetUri"
@@ -63,7 +69,12 @@ object StickerPack {
                 assetUri = "$ASSETS_DIR/${e.file}",
                 name = e.name,
                 category = e.category,
-                tags = e.tags
+                tags = e.tags,
+                searchHaystack = buildString {
+                    append(e.name.lowercase()).append(' ')
+                    append(e.category.lowercase()).append(' ')
+                    e.tags.forEach { append(it.lowercase()).append(' ') }
+                }
             )
         }
     }
@@ -91,12 +102,7 @@ object StickerPack {
         val tokens = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (tokens.isEmpty()) return entries
         return entries.filter { entry ->
-            val haystack = buildString {
-                append(entry.name.lowercase()).append(' ')
-                append(entry.category.lowercase()).append(' ')
-                entry.tags.forEach { append(it.lowercase()).append(' ') }
-            }
-            tokens.all { it in haystack }
+            tokens.all { it in entry.searchHaystack }
         }
     }
 

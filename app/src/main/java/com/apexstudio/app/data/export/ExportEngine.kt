@@ -303,13 +303,18 @@ class ExportEngine(private val context: Context) {
                                 )
                             )
                         } else {
-                            // Legacy emoji sticker: rendered as text (unchanged).
+                            // Legacy emoji sticker: rendered as text. The size
+                            // factor converts the sticker's sizeScale into a
+                            // TextOverlay sizeScale so the export font size
+                            // matches the preview's emoji font size exactly
+                            // (see StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR).
                             val overlay = TextOverlay(
                                 id = sticker.id,
                                 text = sticker.symbolOrUri,
                                 x = sticker.x,
                                 y = sticker.y,
-                                sizeScale = sticker.sizeScale * 1.5f,
+                                sizeScale = sticker.sizeScale *
+                                    com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
                                 startMs = sticker.startMs,
                                 endMs = sticker.endMs
                             )

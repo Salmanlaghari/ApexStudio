@@ -16,8 +16,12 @@ class StickerImageCache(context: Context) {
 
     private val appContext = context.applicationContext
 
-    private val cache = object : LruCache<String, Bitmap>(MAX_ENTRIES) {
-        override fun sizeOf(key: String, value: Bitmap): Int = 1
+    // Byte-based budget: a 512×512 RGBA sticker is ~1 MB, so the cache
+    // holds roughly MAX_SIZE_KB worth of decoded PNGs instead of a fixed
+    // entry count that could balloon on large bitmaps.
+    private val cache = object : LruCache<String, Bitmap>(MAX_SIZE_KB) {
+        override fun sizeOf(key: String, value: Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
     }
 
     /**
@@ -42,6 +46,7 @@ class StickerImageCache(context: Context) {
     fun evictAll() = cache.evictAll()
 
     companion object {
-        private const val MAX_ENTRIES = 24
+        /** Decoded-bitmap budget for the cache (kilobytes). */
+        private const val MAX_SIZE_KB = 8 * 1024
     }
 }

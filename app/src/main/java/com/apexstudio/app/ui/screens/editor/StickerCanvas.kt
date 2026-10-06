@@ -62,8 +62,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
+import com.apexstudio.app.domain.model.STICKER_CROP_MIN_FRACTION
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.hypot
@@ -273,7 +275,16 @@ private fun StickerItem(
                                 onRotateSticker(s.id, rotation, false)
                             }
                         }
+                    } catch (e: CancellationException) {
+                        // External cancellation (parent consumed the gesture,
+                        // system interrupt, or the item left composition):
+                        // fall through to finally so partial transforms that
+                        // were already applied live still get persisted.
+                        throw e
                     } finally {
+                        // gestureActive is only true after onGesture ran, i.e.
+                        // a transform was actually applied — nothing to
+                        // persist when the gesture was cancelled before that.
                         if (gestureActive) {
                             onStickerGestureEnd(latest.id)
                         }
@@ -314,7 +325,9 @@ private fun StickerItem(
             // Rotation / opacity come from the outer graphicsLayer.
             Text(
                 text = latest.symbolOrUri.ifBlank { "▦" },
-                fontSize = with(density) { (sidePx * 0.62f).toSp() },
+                fontSize = with(density) {
+                    (sidePx * StickerSpriteRenderer.EMOJI_FONT_FRACTION).toSp()
+                },
                 modifier = Modifier.align(Alignment.Center)
             )
         }
@@ -500,7 +513,17 @@ private fun StickerCropEditor(
         }
     }.value
 
-    var crop by remember(sticker.id) { mutableStateOf(sticker.sanitizedCrop()) }
+    // Keyed on the sticker's crop fractions (not just its id) so the
+    // editor re-syncs when the crop changes externally (undo/redo,
+    // project load). Local drags only touch `crop`, never the sticker,
+    // so they can't reset mid-gesture.
+    var crop by remember(
+        sticker.id,
+        sticker.cropLeft,
+        sticker.cropTop,
+        sticker.cropRight,
+        sticker.cropBottom
+    ) { mutableStateOf(sticker.sanitizedCrop()) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -651,8 +674,6 @@ private fun StickerCropEditor(
     }
 }
 
-private const val CROP_MIN = 0.05f
-
 /** Which crop-rect corner (0=TL, 1=TR, 2=BL, 3=BR) is near [pos], or null. */
 private fun nearestCropCorner(
     pos: Offset,
@@ -687,11 +708,12 @@ internal fun moveCropCorner(
     fx: Float,
     fy: Float
 ): FloatArray {
+    val min = STICKER_CROP_MIN_FRACTION
     val (l, t, r, b) = listOf(crop[0], crop[1], crop[2], crop[3])
     return when (corner) {
-        0 -> floatArrayOf(fx.coerceIn(0f, r - CROP_MIN), fy.coerceIn(0f, b - CROP_MIN), r, b)
-        1 -> floatArrayOf(l, fy.coerceIn(0f, b - CROP_MIN), fx.coerceIn(l + CROP_MIN, 1f), b)
-        2 -> floatArrayOf(fx.coerceIn(0f, r - CROP_MIN), t, r, fy.coerceIn(t + CROP_MIN, 1f))
-        else -> floatArrayOf(l, t, fx.coerceIn(l + CROP_MIN, 1f), fy.coerceIn(t + CROP_MIN, 1f))
+        0 -> floatArrayOf(fx.coerceIn(0f, r - min), fy.coerceIn(0f, b - min), r, b)
+        1 -> floatArrayOf(l, fy.coerceIn(0f, b - min), fx.coerceIn(l + min, 1f), b)
+        2 -> floatArrayOf(fx.coerceIn(0f, r - min), t, r, fy.coerceIn(t + min, 1f))
+        else -> floatArrayOf(l, t, fx.coerceIn(l + min, 1f), fy.coerceIn(t + min, 1f))
     }
 }

@@ -37,6 +37,7 @@ import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerPack
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 private const val ALL_CATEGORY = "All"
@@ -233,8 +234,13 @@ private fun StickerCell(
 ) {
     var bitmap by remember(entry.id) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(entry.id) {
-        bitmap = withContext(Dispatchers.IO) { imageCache.get(entry.assetUri) }
+    LaunchedEffect(entry.id, entry.assetUri) {
+        // Decode off the main thread; ensureActive() drops the result if
+        // the cell left composition mid-decode (fast scroll / category
+        // switch) so we never write state to a disposed composition.
+        val decoded = withContext(Dispatchers.IO) { imageCache.get(entry.assetUri) }
+        ensureActive()
+        bitmap = decoded
     }
 
     Box(

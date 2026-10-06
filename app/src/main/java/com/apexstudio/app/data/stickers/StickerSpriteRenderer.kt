@@ -26,6 +26,22 @@ object StickerSpriteRenderer {
     /** Sticker box side as a fraction of the frame height at sizeScale = 1. */
     const val BASE_STICKER_FRACTION = 0.30f
 
+    /** Legacy emoji font size as a fraction of the sticker box side. */
+    const val EMOJI_FONT_FRACTION = 0.62f
+
+    /**
+     * Converts a sticker [StickerOverlay.sizeScale] into a
+     * [com.apexstudio.app.domain.model.TextOverlay.sizeScale] for legacy
+     * emoji stickers, so the export's font size
+     * (`TextSpriteRenderer.BASE_FONT_FRACTION` × frame height) equals the
+     * preview's emoji font size (`EMOJI_FONT_FRACTION` × sticker box side):
+     * (0.30 × 0.62) / 0.07 ≈ 2.66. Keeps emoji WYSIWYG between preview
+     * and export instead of the old unexplained 1.5× heuristic.
+     */
+    const val EMOJI_TEXT_SIZE_FACTOR: Float =
+        BASE_STICKER_FRACTION * EMOJI_FONT_FRACTION /
+            com.apexstudio.app.data.text.TextSpriteRenderer.BASE_FONT_FRACTION
+
     /**
      * Destination square (in canvas px) for the sticker box.
      * Pure geometry — shared by the preview Canvas and the export path.

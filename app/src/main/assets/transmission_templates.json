@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "32 Production-ready cinematic templates with bundled 3D LUTs, visual FX shaders, transitions, speed ramps, and royalty-free music.",
+  "description": "33 Production-ready cinematic templates with bundled 3D LUTs, visual FX shaders, transitions, speed ramps, and royalty-free music.",
   "templates": [
     {
       "id": "golden_hour_voyage",
@@ -897,6 +897,35 @@
       "musicTitle": "Neon Laser Festival Rave",
       "musicGenre": "EDM Festival",
       "bpm": 150
+    },
+    {
+      "id": "aurora_kaleidoscope",
+      "name": "Aurora Kaleidoscope Dawn",
+      "description": "Prismatic dawn grade with a kaleidoscope shimmer — arctic aurora tones folding into sunrise.",
+      "resolution": "1080p",
+      "fps": 60,
+      "aspectRatio": "16:9",
+      "filterId": "epic_dawn",
+      "filterIntensity": 0.9,
+      "fxPresetId": "kaleidoscope",
+      "fxIntensity": 0.55,
+      "transitionType": "zoom",
+      "transitionDurationMs": 600,
+      "defaultIntensity": 1.0,
+      "previewAccentArgb": 4282376368,
+      "tags": [
+        "psychedelic",
+        "aurora",
+        "dawn",
+        "prism"
+      ],
+      "isSlowMotion": false,
+      "playbackSpeed": 1.0,
+      "speedLabel": "1.0x",
+      "royaltyTrackId": "track_synthwave",
+      "musicTitle": "Aurora Prism Drift",
+      "musicGenre": "Synthwave",
+      "bpm": 118
     }
   ]
 }

@@ -39,6 +39,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.components.templates.TemplateArtHeader
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.Dispatchers
@@ -323,15 +324,7 @@ private fun DashboardTemplateCard(
         modifier = Modifier
             .width(220.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accentColor.copy(alpha = 0.25f),
-                        ApexPalette.BgSurface.copy(alpha = 0.95f),
-                        ApexPalette.BgDeep
-                    )
-                )
-            )
+            .background(ApexPalette.BgSurface.copy(alpha = 0.97f))
             .border(
                 1.dp,
                 Brush.linearGradient(
@@ -339,9 +332,19 @@ private fun DashboardTemplateCard(
                 ),
                 RoundedCornerShape(16.dp)
             )
-            .padding(12.dp)
     ) {
         Column {
+            // Distinct animated preview artwork: unique layout geometry
+            // per template (not just an accent tint), with the template
+            // name overlaid at its designed placement.
+            TemplateArtHeader(
+                template = template,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
+            )
+
+            Column(modifier = Modifier.padding(12.dp)) {
             // Header: resolution + aspect ratio + speed badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -513,6 +516,7 @@ private fun DashboardTemplateCard(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
             }
         }
     }

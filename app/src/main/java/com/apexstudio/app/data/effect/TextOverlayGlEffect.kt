@@ -13,6 +13,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import com.apexstudio.app.data.text.TextAnimEngine
+import com.apexstudio.app.data.text.TextFontRegistry
 import com.apexstudio.app.data.text.TextSpriteRenderer
 import com.apexstudio.app.domain.model.TextOverlay
 
@@ -26,6 +28,11 @@ import com.apexstudio.app.domain.model.TextOverlay
  * the same [TextSpriteRenderer] geometry, the exported caption sits
  * at exactly the position and size the user dragged it to on screen.
  *
+ * Animated captions (intro presets, outros, loops) are re-rasterised
+ * through [TextAnimEngine] whenever the animation state changes
+ * between frames, so the MP4 bakes exactly what the live preview
+ * showed. Static captions keep the old single-upload fast path.
+ *
  * Multiple captions = multiple effect instances appended to the
  * effect chain (each composites its own sprite on top of the output
  * of the previous one).
@@ -38,6 +45,8 @@ class TextOverlayGlEffect(
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
+        // Make sure bundled OFL fonts resolve inside the renderer.
+        TextFontRegistry.init(context)
         return TextOverlayShaderProgram(context, overlay, aspectRatio, useHdr)
     }
 
@@ -45,12 +54,14 @@ class TextOverlayGlEffect(
     private class TextOverlayShaderProgram(
         context: Context,
         private val overlay: TextOverlay,
-        aspectRatio: Float,
+        private val aspectRatio: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
         private val glProgram: GlProgram
         private val overlayTexId: IntArray = intArrayOf(0)
+        private val animated: Boolean = TextAnimEngine.isAnimated(overlay)
+        private var lastStateKey: Any? = null
 
         init {
             glProgram = try {
@@ -76,16 +87,18 @@ class TextOverlayGlEffect(
             // Rasterise + upload the caption sprite (best effort — a
             // blank caption or upload failure leaves overlayTexId = 0
             // and drawFrame falls back to a video pass-through).
-            if (!overlay.text.isBlank()) {
+            // Static captions upload once here; animated ones upload
+            // per animation-state change in drawFrame.
+            if (!overlay.text.isBlank() && !animated) {
                 try {
-                    uploadSprite(overlay, aspectRatio)
+                    uploadSprite(overlay, aspectRatio, timeMs = null)
                 } catch (e: Exception) {
                     Log.w(TAG, "Text overlay sprite upload failed (${overlay.text})", e)
                 }
             }
         }
 
-        private fun uploadSprite(overlay: TextOverlay, aspect: Float) {
+        private fun spriteSize(aspect: Float): Pair<Int, Int> {
             // Sprite canvas: same aspect as the video, long edge
             // capped so a 4K source doesn't need a 33 MB texture just
             // to place a caption. Font size / position are normalised
@@ -93,11 +106,25 @@ class TextOverlayGlEffect(
             // independent.
             val longEdge = 1600
             val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            val (w, h) = if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+            return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+        }
 
-            val bitmap = TextSpriteRenderer.render(listOf(overlay), w, h)
+        private fun uploadSprite(overlay: TextOverlay, aspect: Float, timeMs: Long?) {
+            val (w, h) = spriteSize(aspect)
+            val states = if (timeMs != null) {
+                mapOf(overlay.id to TextAnimEngine.compute(overlay, timeMs, forExport = true))
+            } else {
+                emptyMap()
+            }
+            val bitmap = TextSpriteRenderer.render(listOf(overlay), w, h, states = states)
             val tex = IntArray(1)
             try {
+                // Drop the previous frame's texture before uploading
+                // the new animation state.
+                if (overlayTexId[0] != 0) {
+                    GLES20.glDeleteTextures(1, overlayTexId, 0)
+                    overlayTexId[0] = 0
+                }
                 GLES20.glGenTextures(1, tex, 0)
                 GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
@@ -121,7 +148,21 @@ class TextOverlayGlEffect(
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
-                val isVisible = (overlayTexId[0] != 0) && (timeMs >= overlay.startMs && timeMs <= overlay.endMs)
+                val inWindow = timeMs >= overlay.startMs && timeMs <= overlay.endMs
+                // Animated captions: re-rasterise only when the
+                // animation state actually changed since last frame.
+                if (animated && inWindow && !overlay.text.isBlank()) {
+                    try {
+                        val key = TextAnimEngine.stateKey(overlay, timeMs)
+                        if (key != lastStateKey) {
+                            uploadSprite(overlay, aspectRatio, timeMs)
+                            lastStateKey = key
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Text overlay animation frame failed (${overlay.text})", e)
+                    }
+                }
+                val isVisible = (overlayTexId[0] != 0) && inWindow
                 val overlayId = if (isVisible) overlayTexId[0] else inputTexId
                 glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)
                 glProgram.bindAttributesAndUniforms()

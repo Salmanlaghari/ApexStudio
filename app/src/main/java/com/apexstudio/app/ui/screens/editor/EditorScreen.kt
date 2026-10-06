@@ -84,6 +84,11 @@ fun EditorScreen(
         vm.loadEditorLayoutPref()
     }
 
+    // Make bundled OFL text fonts available to the preview + export renderers.
+    LaunchedEffect(Unit) {
+        com.apexstudio.app.data.text.TextFontRegistry.init(context)
+    }
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.flow.combine(
             mediaPicker.pickedMedia,
@@ -991,9 +996,34 @@ fun EditorScreen(
                             vm.setTextOverlayShadow(textClip.id, activeOverlayId, shadow)
                         }
                     },
+                    onAlignChange = { align ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayAlign(textClip.id, activeOverlayId, align)
+                        }
+                    },
+                    onLetterSpacingChange = { spacing ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayLetterSpacing(textClip.id, activeOverlayId, spacing)
+                        }
+                    },
+                    onGradientChange = { gradient ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayGradient(textClip.id, activeOverlayId, gradient)
+                        }
+                    },
                     onAnimDurationChange = { dur ->
                         if (textClip != null && activeOverlayId != null) {
                             vm.setTextOverlayAnimDuration(textClip.id, activeOverlayId, dur)
+                        }
+                    },
+                    onOutroChange = { outro ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayOutro(textClip.id, activeOverlayId, outro)
+                        }
+                    },
+                    onOutroDurationChange = { dur ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayOutroDuration(textClip.id, activeOverlayId, dur)
                         }
                     },
                     onDuplicate = { overlayId ->

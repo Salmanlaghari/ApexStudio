@@ -564,11 +564,11 @@ class ExportEngine(private val context: Context) {
                     )
                 }
                 CoroutineScope(Dispatchers.IO).launch {
+                    val mixedFile = File(
+                        outputFile.parentFile,
+                        outputFile.nameWithoutExtension + "_music.mp4"
+                    )
                     try {
-                        val mixedFile = File(
-                            outputFile.parentFile,
-                            outputFile.nameWithoutExtension + "_music.mp4"
-                        )
                         val result = MusicExportMixer.mixMusicIntoVideo(
                             context, outputFile, musicMixTracks, mixedFile
                         )
@@ -577,6 +577,11 @@ class ExportEngine(private val context: Context) {
                             "Music mix done: ${result.mixedTracks} mixed, " +
                                 "${result.skippedTracks} skipped"
                         )
+                        // The pre-mix file is now redundant: remove it so each
+                        // export leaves exactly one video on disk.
+                        if (!outputFile.delete()) {
+                            Log.w(TAG, "Could not delete intermediate export file")
+                        }
                         mainHandler.post {
                             _exportState.value = ExportProgressState(
                                 isExporting = false,
@@ -586,6 +591,10 @@ class ExportEngine(private val context: Context) {
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Music mix failed; keeping video without music mix", e)
+                        // Don't leave a partial/corrupt _music.mp4 behind.
+                        if (mixedFile.exists() && !mixedFile.delete()) {
+                            Log.w(TAG, "Could not delete partial mixed file")
+                        }
                         mainHandler.post {
                             _exportState.value = ExportProgressState(
                                 isExporting = false,

@@ -7,6 +7,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +49,8 @@ class MusicLibraryController(
 
     private var previewPlayer: ExoPlayer? = null
     private var currentPage = 0
+    /** Last page we *attempted* (success or not) — drives retry() without duplication. */
+    private var lastAttemptedPage = 0
     private var currentQuery: String? = null
     private var currentTag: String? = null
     private var loadJob: Job? = null
@@ -104,7 +107,10 @@ class MusicLibraryController(
 
     fun retry() {
         _state.update { it.copy(error = null, isOffline = false) }
-        fetchPage(currentPage, append = currentPage > 0)
+        // Retry the *attempted* page: after a failed load-more, currentPage
+        // still points at the last success, so retrying it with append=true
+        // would duplicate every track. lastAttemptedPage is the failed page.
+        fetchPage(lastAttemptedPage, append = lastAttemptedPage > 0)
     }
 
     fun setTab(tab: MusicLibraryTab) {
@@ -115,6 +121,7 @@ class MusicLibraryController(
     private fun fetchPage(page: Int, append: Boolean) {
         loadJob?.cancel()
         if (!api.isConfigured) return
+        lastAttemptedPage = page
         _state.update {
             it.copy(
                 isLoading = !append,
@@ -142,6 +149,11 @@ class MusicLibraryController(
                         error = null
                     )
                 }
+            } catch (e: CancellationException) {
+                // A cancelled loadJob (e.g. fast typing in search) must not
+                // surface as an error: rethrow so it never touches the state
+                // of the replacement fetch.
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Music catalog fetch failed", e)
                 val offline = (e as? java.io.IOException)?.message

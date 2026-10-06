@@ -44,6 +44,12 @@ object MusicExportMixer {
     private const val WINDOW_FRAMES = 2048
     private const val AAC_BITRATE = 128_000
 
+    /**
+     * Max stereo 44.1 kHz frames addressable in a 32-bit WAV:
+     * (2^31 - 1 - 36 header bytes) / 4 bytes per frame ≈ 3.4 hours.
+     */
+    private const val MAX_WAV_FRAMES = (Int.MAX_VALUE - 36) / (CHANNELS * 2)
+
     data class MixResult(
         val outputFile: File,
         val mixedTracks: Int,
@@ -102,6 +108,15 @@ object MusicExportMixer {
         val videoDurationUs = if (vFormat.containsKey(MediaFormat.KEY_DURATION)) {
             vFormat.getLong(MediaFormat.KEY_DURATION)
         } else 0L
+        // Bail before burning decode/mix CPU on a mix that could never fit
+        // in the 32-bit WAV intermediate (only checkable when the video
+        // duration is known; otherwise the mix stops at source exhaustion).
+        if (videoDurationUs > 0) {
+            val durationCapFrames = ((videoDurationUs / 1_000_000.0) * SAMPLE_RATE).toLong()
+            require(durationCapFrames <= MAX_WAV_FRAMES) {
+                "Music mix too long for the WAV intermediate (~3.4h max)"
+            }
+        }
         val durationCapFrames = if (videoDurationUs > 0) {
             ((videoDurationUs / 1_000_000.0) * SAMPLE_RATE).toLong()
         } else Long.MAX_VALUE
@@ -249,13 +264,12 @@ object MusicExportMixer {
                 if (allDone) break
             }
 
-            // Rewrite the header with the real data size.
-            raf.seek(0)
-            // WAV sizes are 32-bit; a >6.7h timeline can't be represented —
-            // fail fast (the caller falls back to the unmixed export).
-            require(totalFrames <= Int.MAX_VALUE / (CHANNELS * 2)) {
+            // Rewrite the header with the real data size. The 36 bytes of
+            // header must fit in the 32-bit size field too, hence MAX_WAV_FRAMES.
+            require(totalFrames <= MAX_WAV_FRAMES) {
                 "Mixed audio exceeds WAV size limits"
             }
+            raf.seek(0)
             raf.write(wavHeader((totalFrames * CHANNELS * 2).toInt()))
         }
     }
@@ -300,7 +314,11 @@ object MusicExportMixer {
             val frames = mutableListOf<EncodedFrame>()
             var outFormat: MediaFormat? = null
             val info = MediaCodec.BufferInfo()
-            var ptsUs = 0L
+            // Derive every PTS from the cumulative frame count: per-chunk
+            // integer division would otherwise accumulate ~1µs of drift per
+            // chunk against the copied video track's original timestamps.
+            var totalFramesIn = 0L
+            fun framePtsUs() = (totalFramesIn * 1_000_000L) / SAMPLE_RATE
 
             RandomAccessFile(wavFile, "r").use { raf ->
                 raf.seek(44) // skip WAV header
@@ -314,7 +332,7 @@ object MusicExportMixer {
                             if (ib == null || ib.remaining() < CHANNELS * 2) {
                                 // No usable input buffer right now; try again next lap.
                                 if (ib != null) {
-                                    encoder.queueInputBuffer(inIdx, 0, 0, ptsUs, 0)
+                                    encoder.queueInputBuffer(inIdx, 0, 0, framePtsUs(), 0)
                                 }
                             } else {
                                 // Whole PCM frames only — a torn frame would
@@ -323,15 +341,15 @@ object MusicExportMixer {
                                 val n = raf.read(chunk, 0, want)
                                 if (n <= 0) {
                                     encoder.queueInputBuffer(
-                                        inIdx, 0, 0, ptsUs,
+                                        inIdx, 0, 0, framePtsUs(),
                                         MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                     )
                                     inputDone = true
                                 } else {
                                     ib.put(chunk, 0, n)
                                     val framesIn = n / (CHANNELS * 2)
-                                    encoder.queueInputBuffer(inIdx, 0, n, ptsUs, 0)
-                                    ptsUs += (framesIn * 1_000_000L) / SAMPLE_RATE
+                                    encoder.queueInputBuffer(inIdx, 0, n, framePtsUs(), 0)
+                                    totalFramesIn += framesIn
                                 }
                             }
                         }
@@ -416,11 +434,14 @@ object MusicExportMixer {
             muxer.start()
 
             // Size the sample buffer from the track's max input size when
-            // declared — 4K keyframes can exceed a small fixed buffer.
+            // declared — 4K keyframes can exceed a small fixed buffer — but
+            // cap it: extractors can report absurd values that would OOM.
             val maxInputSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
                 videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
             } else 0
-            val vBuf = ByteBuffer.allocate(maxOf(8 * 1024 * 1024, maxInputSize))
+            val vBuf = ByteBuffer.allocate(
+                maxOf(8 * 1024 * 1024, min(maxInputSize, 64 * 1024 * 1024))
+            )
             val vInfo = MediaCodec.BufferInfo()
             var audioIdx = 0
 

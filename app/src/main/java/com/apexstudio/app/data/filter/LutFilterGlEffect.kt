@@ -326,6 +326,79 @@ object LutBitmapCache {
         cache.clear()
     }
 
+    /**
+     * Synchronous peek at the cached [LutTexture] for [presetId].
+     * Returns null if the LUT hasn't been loaded yet (e.g. thumbnails
+     * not generated). Used by the live preview overlay to derive a
+     * real-LUT-based grade without blocking the UI thread.
+     */
+    fun peek(presetId: String): LutTexture? = cache[presetId]
+
+    /**
+     * Trilinear sample of a single RGB color through the LUT.
+     * Returns FloatArray(r, g, b) in 0..1. Uses the same split +
+     * half-texel math as the GL shader and [applyToBitmap].
+     */
+    fun sample(texture: LutTexture, r: Float, g: Float, b: Float): FloatArray {
+        val s = texture.size
+        val sMax = (s - 1).toFloat()
+        val strip = texture.pixels
+        val sw = texture.width // = s*s
+
+        fun tapPixel(x: Int, y: Int): Int = strip[y * sw + x]
+
+        val rF = r.coerceIn(0f, 1f) * sMax
+        val gF = g.coerceIn(0f, 1f) * sMax
+        val bIdx = b.coerceIn(0f, 1f) * sMax
+        val bLow = kotlin.math.floor(bIdx).toInt().coerceIn(0, s - 1)
+        val bHigh = (bLow + 1).coerceAtMost(s - 1)
+        val bT = bIdx - bLow
+        val yLo = rF.toInt().coerceIn(0, s - 1)
+        val yHi = (yLo + 1).coerceAtMost(s - 1)
+        val yT = rF - yLo
+        val gLo = gF.toInt().coerceIn(0, s - 1)
+        val gHi = (gLo + 1).coerceAtMost(s - 1)
+        val gT = gF - gLo
+
+        fun lerpC(c0: Int, c1: Int, t: Float): FloatArray {
+            val r0 = ((c0 ushr 16) and 0xff) / 255f
+            val g0 = ((c0 ushr 8) and 0xff) / 255f
+            val b0 = (c0 and 0xff) / 255f
+            val r1 = ((c1 ushr 16) and 0xff) / 255f
+            val g1 = ((c1 ushr 8) and 0xff) / 255f
+            val b1 = (c1 and 0xff) / 255f
+            return floatArrayOf(
+                r0 + (r1 - r0) * t,
+                g0 + (g1 - g0) * t,
+                b0 + (b1 - b0) * t
+            )
+        }
+
+        fun tap(bOff: Int, xLo: Int, xHi: Int, yIdx: Int): FloatArray {
+            val p00 = tapPixel(bOff + xLo, yIdx)
+            val p01 = tapPixel(bOff + xHi, yIdx)
+            val p10 = tapPixel(bOff + xLo, (yIdx + 1).coerceAtMost(s - 1))
+            val p11 = tapPixel(bOff + xHi, (yIdx + 1).coerceAtMost(s - 1))
+            val gBlend0 = lerpC(p00, p01, gT)
+            val gBlend1 = lerpC(p10, p11, gT)
+            return floatArrayOf(
+                gBlend0[0] + (gBlend1[0] - gBlend0[0]) * yT,
+                gBlend0[1] + (gBlend1[1] - gBlend0[1]) * yT,
+                gBlend0[2] + (gBlend1[2] - gBlend0[2]) * yT
+            )
+        }
+
+        val baseLo = bLow * s
+        val baseHi = bHigh * s
+        val lowB = tap(baseLo, gLo, gHi, yLo)
+        val highB = tap(baseHi, gLo, gHi, yLo)
+        return floatArrayOf(
+            lowB[0] + (highB[0] - lowB[0]) * bT,
+            lowB[1] + (highB[1] - lowB[1]) * bT,
+            lowB[2] + (highB[2] - lowB[2]) * bT
+        )
+    }
+
     private fun readLutFromAssets(context: Context, preset: FilterPreset): FloatArray? {
         return try {
             context.assets.open(preset.asset).use { input ->

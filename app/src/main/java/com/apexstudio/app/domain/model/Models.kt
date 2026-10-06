@@ -3,6 +3,7 @@ package com.apexstudio.app.domain.model
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
+import kotlin.math.pow
 
 @Serializable
 data class MediaClip(
@@ -247,13 +248,21 @@ enum class KeyframeCurve {
      * implementation would back these with an ML spline, but the math
      * here is the same `easeOutCubic` / `easeInOutQuad` family every
      * editor uses.
+     *
+     * SPRING / OVERSHOOT give the buttery CapCut/TikTok feel: springy
+     * entrances with a soft overshoot settle, like CapCut's "Spring"
+     * and "Bounce" combo animations.
      */
     LINEAR,
     EASE_IN,
     EASE_OUT,
     EASE_IN_OUT,
     BEZIER,
-    HOLD
+    HOLD,
+    /** Damped spring oscillation that settles at 1.0 — CapCut "Spring" feel. */
+    SPRING,
+    /** Ease-out with a single overshoot past 1.0 — CapCut "Pop/Bounce" feel. */
+    OVERSHOOT,
 }
 
 /**
@@ -339,6 +348,17 @@ data class KeyframeTrack(
         KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t)
         KeyframeCurve.BEZIER -> t * t * (3.0 - 2.0 * t) // Smoothstep cubic Bezier easing
         KeyframeCurve.HOLD -> 0.0 // first keyframe value until the next one
+        // CapCut-style easeOutBack: overshoots past 1.0 then settles — buttery pop feel.
+        KeyframeCurve.OVERSHOOT -> {
+            val c1 = 1.70158
+            val c3 = c1 + 1.0
+            1.0 + c3 * (t - 1.0).pow(3.0) + c1 * (t - 1.0).pow(2.0)
+        }
+        // Damped spring: oscillates and settles at 1.0 — CapCut "Spring" entrance feel.
+        KeyframeCurve.SPRING -> {
+            if (t <= 0.0) 0.0 else if (t >= 1.0) 1.0
+            else 1.0 - kotlin.math.exp(-6.0 * t) * kotlin.math.cos(11.0 * t)
+        }
     }
 
     private fun lerp(a: Float, b: Float, t: Double): Float =

@@ -6,8 +6,14 @@ import com.apexstudio.app.domain.model.KeyframeTrack
 import java.util.UUID
 
 /**
- * 15 Professional Animation Presets (Zoom In, Zoom Out, Slide Left, Slide Right,
- * Slide Up, Slide Down, Rotate, Bounce, Shake, Fade In, Fade Out, Pop, Pulse, Spin, Blur In/Out).
+ * 24 Professional Animation Presets — CapCut/TikTok style.
+ *
+ * Base presets: Zoom In/Out, Slide ×4, Rotate, Bounce, Shake, Fade ×2,
+ * Pop, Pulse, Spin, Blur ×2.
+ *
+ * Combo presets (CapCut "Combo" style in/out animations): Zoom+Fade,
+ * Slide+Bounce, Pop+Fade, Spin+Zoom, Slide+Fade, Bounce+Fade,
+ * Spring entrances with buttery overshoot.
  *
  * Each preset generates real, mathematically interpolated [KeyframeTrack] instances with
  * accurate timestamps and curves that render both in live preview and final video export.
@@ -28,7 +34,16 @@ enum class AnimationPresetType(val displayName: String, val category: String) {
     PULSE("Pulse", "Loop"),
     SPIN("Spin", "Motion"),
     BLUR_IN("Blur In", "In"),
-    BLUR_OUT("Blur Out", "Out")
+    BLUR_OUT("Blur Out", "Out"),
+    // CapCut-style combo presets
+    SPRING_IN("Spring In", "Combo"),
+    ZOOM_FADE_IN("Zoom + Fade In", "Combo"),
+    ZOOM_FADE_OUT("Zoom + Fade Out", "Combo"),
+    SLIDE_BOUNCE_LEFT("Slide Bounce ←", "Combo"),
+    SLIDE_BOUNCE_RIGHT("Slide Bounce →", "Combo"),
+    POP_FADE_IN("Pop Fade In", "Combo"),
+    SPIN_ZOOM_IN("Spin Zoom In", "Combo"),
+    SLIDE_FADE_UP("Rise Fade Up", "Combo"),
 }
 
 object AnimationPresets {
@@ -118,8 +133,7 @@ object AnimationPresets {
 
             AnimationPresetType.POP -> listOf(
                 Keyframe(UUID.randomUUID().toString(), startMs, scale = 0.1f, opacity = 0.2f, curve = KeyframeCurve.EASE_OUT),
-                Keyframe(UUID.randomUUID().toString(), midMs, scale = 1.25f, opacity = 1.0f, curve = KeyframeCurve.EASE_IN_OUT),
-                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.LINEAR)
+                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.OVERSHOOT)
             )
 
             AnimationPresetType.PULSE -> listOf(
@@ -141,6 +155,47 @@ object AnimationPresets {
             AnimationPresetType.BLUR_OUT -> listOf(
                 Keyframe(UUID.randomUUID().toString(), startMs, scale = 1.0f, opacity = 1.0f, effectIntensity = 0.0f, curve = KeyframeCurve.EASE_IN),
                 Keyframe(UUID.randomUUID().toString(), endMs, scale = 0.9f, opacity = 0.0f, effectIntensity = 1.0f, curve = KeyframeCurve.LINEAR)
+            )
+
+            // ---- CapCut-style combo presets ----
+            AnimationPresetType.SPRING_IN -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, scale = 0.3f, opacity = 0.0f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.SPRING)
+            )
+
+            AnimationPresetType.ZOOM_FADE_IN -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, scale = 0.6f, opacity = 0.0f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.EASE_IN_OUT)
+            )
+
+            AnimationPresetType.ZOOM_FADE_OUT -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.EASE_IN),
+                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.5f, opacity = 0.0f, curve = KeyframeCurve.EASE_IN_OUT)
+            )
+
+            AnimationPresetType.SLIDE_BOUNCE_LEFT -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, translateX = 1.0f, opacity = 0.6f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, translateX = 0.0f, opacity = 1.0f, curve = KeyframeCurve.OVERSHOOT)
+            )
+
+            AnimationPresetType.SLIDE_BOUNCE_RIGHT -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, translateX = -1.0f, opacity = 0.6f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, translateX = 0.0f, opacity = 1.0f, curve = KeyframeCurve.OVERSHOOT)
+            )
+
+            AnimationPresetType.POP_FADE_IN -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, scale = 0.2f, opacity = 0.0f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.OVERSHOOT)
+            )
+
+            AnimationPresetType.SPIN_ZOOM_IN -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, rotationDeg = -90f, scale = 0.4f, opacity = 0.3f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, rotationDeg = 0f, scale = 1.0f, opacity = 1.0f, curve = KeyframeCurve.OVERSHOOT)
+            )
+
+            AnimationPresetType.SLIDE_FADE_UP -> listOf(
+                Keyframe(UUID.randomUUID().toString(), startMs, translateY = 0.5f, opacity = 0.0f, curve = KeyframeCurve.EASE_OUT),
+                Keyframe(UUID.randomUUID().toString(), endMs, translateY = 0.0f, opacity = 1.0f, curve = KeyframeCurve.EASE_IN_OUT)
             )
         }
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -12,6 +13,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
+import com.apexstudio.app.data.filter.LutBitmapCache
+import com.apexstudio.app.data.filter.LutPreviewSampler
 import com.apexstudio.app.domain.model.VideoAdjustments
 
 /**
@@ -74,6 +77,68 @@ fun FilterPreviewOverlay(
 
 @Composable
 private fun FilterGradeLayer(filterId: String, intensity: Float) {
+    // Real-LUT-derived preview grade.
+    //
+    // The old implementation used hand-written gradient overlays per filter
+    // family, which never matched the actual filter. Now the grade is sampled
+    // from the filter's REAL 3D LUT (the same .cube used at export), so the
+    // preview shows the filter's true color cast, contrast and desaturation.
+    val lutGrade = remember(filterId) {
+        LutBitmapCache.peek(filterId)?.let { LutPreviewSampler.sampleGrade(it) }
+    }
+
+    if (lutGrade != null) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val k = intensity.coerceIn(0f, 1f)
+            // 1. True midtone color cast of the LUT.
+            drawRect(
+                color = lutGrade.midCast,
+                alpha = (k * (0.35f + 0.55f * lutGrade.strength)).coerceIn(0f, 0.92f),
+                blendMode = BlendMode.Color
+            )
+            // 2. Shadow / highlight split-tone from the real LUT.
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        lutGrade.highlightCast.copy(alpha = (k * 0.30f * lutGrade.strength).coerceIn(0f, 0.5f)),
+                        lutGrade.midCast.copy(alpha = 0f),
+                        lutGrade.shadowCast.copy(alpha = (k * 0.30f * lutGrade.strength).coerceIn(0f, 0.5f))
+                    )
+                ),
+                blendMode = BlendMode.Color
+            )
+            // 3. Desaturation the LUT actually applies.
+            if (lutGrade.desaturation > 0.05f) {
+                drawRect(
+                    color = Color.Gray,
+                    alpha = (k * lutGrade.desaturation * 0.85f).coerceIn(0f, 0.85f),
+                    blendMode = BlendMode.Saturation
+                )
+            }
+            // 4. Contrast the LUT actually applies.
+            if (kotlin.math.abs(lutGrade.contrast) > 0.05f) {
+                drawRect(
+                    color = if (lutGrade.contrast > 0) Color.Black else Color.White,
+                    alpha = (k * kotlin.math.abs(lutGrade.contrast) * 0.35f).coerceIn(0f, 0.35f),
+                    blendMode = BlendMode.Overlay
+                )
+            }
+        }
+    } else {
+        // LUT not cached yet (thumbnails still generating) — fall back to the
+        // generic hand-tuned washes so something sensible shows immediately.
+        LegacyFilterGradeWash(filterId = filterId, intensity = intensity)
+    }
+}
+
+
+/**
+ * Fallback preview wash used only when the filter's LUT has not been
+ * cached yet (thumbnails still generating). The primary path samples
+ * the real LUT via [LutPreviewSampler].
+ */
+@Composable
+private fun LegacyFilterGradeWash(filterId: String, intensity: Float) {
     when {
         // --- B&W / Monochrome ---
         filterId in listOf(

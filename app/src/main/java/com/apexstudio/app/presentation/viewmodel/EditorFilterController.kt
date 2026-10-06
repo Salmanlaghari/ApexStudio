@@ -217,12 +217,14 @@ fun EditorViewModel.refreshFilterThumbnailsFromVideo(force: Boolean = true) {
             } ?: _state.value.project?.clips?.firstOrNull()
 
             var frameBitmap: android.graphics.Bitmap? = null
+            var frameTimeMs: Long = 0L
             if (activeClip != null && activeClip.uri.isNotBlank()) {
                 try {
                     val playableUri = com.apexstudio.app.data.media.MediaUriResolver
                         .resolvePlayableUri(ctx, activeClip.uri).toString()
                     val clipRelativeTime = (currentTime - activeClip.timelineOffsetMs + activeClip.trimStartMs)
                         .coerceIn(activeClip.trimStartMs, activeClip.trimEndMs)
+                    frameTimeMs = clipRelativeTime
                     frameBitmap = com.apexstudio.app.data.media.VideoThumbnailExtractor
                         .extractFrame(ctx, playableUri, clipRelativeTime)
                 } catch (e: Exception) {
@@ -236,8 +238,12 @@ fun EditorViewModel.refreshFilterThumbnailsFromVideo(force: Boolean = true) {
 
             val baseFrame = frameBitmap ?: com.apexstudio.app.data.filter.FilterThumbnailGenerator.createGenericPreviewBitmap(ctx)
 
+            // Cache key: same clip + same second -> reuse real-LUT thumbnails instantly
+            val cacheKey = if (frameBitmap != null && activeClip != null) {
+                "${activeClip.id}@${frameTimeMs / 1000}"
+            } else null
             val composeMap = com.apexstudio.app.data.filter.FilterThumbnailGenerator
-                .generateDynamicThumbnails(ctx, baseFrame, manifest, _state.value.customImportedLuts)
+                .generateDynamicThumbnails(ctx, baseFrame, manifest, _state.value.customImportedLuts, cacheKey)
 
             _state.update {
                 it.copy(

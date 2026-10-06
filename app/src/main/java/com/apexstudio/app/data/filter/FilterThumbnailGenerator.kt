@@ -9,6 +9,9 @@ import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlin.math.min
 
@@ -35,6 +38,18 @@ object FilterThumbnailGenerator {
 
     @Volatile
     private var cachedGenericThumbnails: Map<String?, ImageBitmap>? = null
+
+    /** Cache for real-LUT dynamic thumbnails, keyed by source-frame identity. */
+    @Volatile
+    private var cachedDynamicThumbnails: Map<String?, ImageBitmap>? = null
+    @Volatile
+    private var cachedDynamicKey: String? = null
+
+    /** Drop the dynamic thumbnail cache (e.g. when LUT assets change). */
+    fun invalidateDynamicCache() {
+        cachedDynamicThumbnails = null
+        cachedDynamicKey = null
+    }
 
     /**
      * Create a photographic reference image featuring real portrait photo with skin tones,
@@ -110,47 +125,82 @@ object FilterThumbnailGenerator {
     }
 
     /**
-     * Generate real-time live preview thumbnails of the source video frame for all presets.
-     * Completes in <10ms for all 70+ presets.
+     * Generate real preview thumbnails of the source video frame for all presets,
+     * applying each preset's ACTUAL 3D LUT (via [LutBitmapCache], the same math
+     * the GPU preview shader runs) — CapCut-style true previews, not approximations.
+     *
+     * Results are cached per [cacheKey] (e.g. "$clipId@${timestampSec}"); repeat
+     * calls with the same key return instantly without re-rendering.
+     * Falls back to the fast ColorMatrix approximation only when a preset's
+     * .cube asset is missing or malformed.
      */
     suspend fun generateDynamicThumbnails(
         context: Context,
         source: Bitmap,
         manifest: FilterManifest,
-        customPresets: List<FilterPreset> = emptyList()
+        customPresets: List<FilterPreset> = emptyList(),
+        cacheKey: String? = null
     ): Map<String?, ImageBitmap> = withContext(Dispatchers.Default) {
-        val result = mutableMapOf<String?, ImageBitmap>()
+        if (cacheKey != null && cacheKey == cachedDynamicKey) {
+            cachedDynamicThumbnails?.let { return@withContext it }
+        }
 
         // 1. Center crop and scale source video frame to thumbnail size
         val baseThumb = centerCropAndScale(source, THUMB_SIZE)
+        val result = mutableMapOf<String?, ImageBitmap>()
         result[null] = baseThumb.asImageBitmap()
 
         // 2. Aggregate all presets to ensure no preset is skipped
         val allPresets = (manifest.filters + manifest.categories.flatMap { it.filters } + customPresets)
             .distinctBy { it.id }
 
-        // 3. Apply each filter preset instantly using Android hardware ColorMatrix
-        //    for 60fps non-blocking rendering. Preserves high contrast and true color grading.
+        // 3. Render each preset with its REAL LUT in parallel. LutBitmapCache
+        //    memoizes loaded LUT textures, so repeat renders are cheap.
         val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        for (preset in allPresets) {
-            // Option B: check custom thumbnail first
-            val custom = FilterThumbnailAssetHandler.getCustomThumbnail(context, preset.id)
-            if (custom != null) {
-                result[preset.id] = custom
-                continue
+        coroutineScope {
+            val jobs = allPresets.map { preset ->
+                async {
+                    // Option B: check custom thumbnail first
+                    val custom = FilterThumbnailAssetHandler.getCustomThumbnail(context, preset.id)
+                    if (custom != null) {
+                        return@async preset.id to custom
+                    }
+                    // Real LUT path first — true CapCut-style preview
+                    val texture = try {
+                        LutBitmapCache.getOrLoad(context, preset)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "LUT load failed for ${preset.id}, using matrix fallback", e)
+                        null
+                    }
+                    val bmp = if (texture != null) {
+                        try {
+                            LutBitmapCache.applyToBitmap(baseThumb, texture, 1f)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "LUT apply failed for ${preset.id}, using matrix fallback", e)
+                            null
+                        }
+                    } else null
+                    val finalBmp = bmp ?: run {
+                        // Fallback: fast hardware ColorMatrix approximation
+                        val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(outBmp)
+                        val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
+                        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                        paint.colorFilter = ColorMatrixColorFilter(cm)
+                        canvas.drawBitmap(baseThumb, 0f, 0f, paint)
+                        outBmp
+                    }
+                    preset.id to finalBmp.asImageBitmap()
+                }
             }
-
-            // Ultra-fast hardware matrix rendering (<0.05ms per filter)
-            val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(outBmp)
-            val cm = FilterColorMatrix.getAndroidColorMatrix(preset.id, 1f)
-            fallbackPaint.colorFilter = ColorMatrixColorFilter(cm)
-            canvas.drawBitmap(baseThumb, 0f, 0f, fallbackPaint)
-            fallbackPaint.colorFilter = null
-            result[preset.id] = outBmp.asImageBitmap()
+            jobs.awaitAll().forEach { (id, img) -> result[id] = img }
         }
 
-        Log.d(TAG, "Generated ${result.size} dynamic filter thumbnails in real-time")
+        if (cacheKey != null) {
+            cachedDynamicThumbnails = result
+            cachedDynamicKey = cacheKey
+        }
+        Log.d(TAG, "Generated ${result.size} real-LUT filter thumbnails (key=$cacheKey)")
         result
     }
 

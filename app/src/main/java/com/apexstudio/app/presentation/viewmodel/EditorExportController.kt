@@ -95,7 +95,9 @@ fun EditorViewModel.startExport(
             // Royalty-free music library: mix every unmuted timeline audio
             // track (downloaded Jamendo tracks, built-in tracks, device
             // imports) over the exported audio — see MusicExportMixer.
-            musicMixTracks = audioSt.tracks.filter { !it.isMuted }
+            // project.audioTracks is the same list the live preview plays,
+            // so the export matches what the user hears.
+            musicMixTracks = (s.project?.audioTracks ?: emptyList()).filter { !it.isMuted }
         )
     )
 }

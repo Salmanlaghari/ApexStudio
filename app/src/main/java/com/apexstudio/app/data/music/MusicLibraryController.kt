@@ -44,7 +44,15 @@ class MusicLibraryController(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val _state = MutableStateFlow(MusicLibraryUiState(apiConfigured = api.isConfigured))
+    private val _state = MutableStateFlow(
+        MusicLibraryUiState(
+            // Without a Jamendo client ID the Discover tab is hidden from end
+            // users (they must never see the developer setup card), so the
+            // sheet defaults to the Offline tab instead of Discover.
+            tab = if (api.isConfigured) MusicLibraryTab.DISCOVER else MusicLibraryTab.OFFLINE,
+            apiConfigured = api.isConfigured
+        )
+    )
     val state: StateFlow<MusicLibraryUiState> = _state.asStateFlow()
 
     private var previewPlayer: ExoPlayer? = null
@@ -114,8 +122,16 @@ class MusicLibraryController(
     }
 
     fun setTab(tab: MusicLibraryTab) {
-        _state.update { it.copy(tab = tab) }
-        if (tab == MusicLibraryTab.DISCOVER) load()
+        // The Discover tab is unreachable without a configured API key: end
+        // users must never land on (or even see) the developer setup card, so
+        // any attempt to select it degrades to the Offline tab.
+        val effective = if (tab == MusicLibraryTab.DISCOVER && !api.isConfigured) {
+            MusicLibraryTab.OFFLINE
+        } else {
+            tab
+        }
+        _state.update { it.copy(tab = effective) }
+        if (effective == MusicLibraryTab.DISCOVER) load()
     }
 
     private fun fetchPage(page: Int, append: Boolean) {

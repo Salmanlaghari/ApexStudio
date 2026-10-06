@@ -51,6 +51,11 @@ fun TimelineTrackArea(
     onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onShiftClipOffset: (clipId: String, deltaMs: Long) -> Unit = { _, _ -> },
     onSetClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
+    onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
+    onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onZoomIn: () -> Unit = {},
     onZoomOut: () -> Unit = {},
     onResetZoom: () -> Unit = {},
@@ -174,6 +179,13 @@ fun TimelineTrackArea(
                 onOpenClipTransition(fromId, toId)
             },
             perSecondThumbnails = perSecondThumbnails,
+            onTrimClip = onTrimClip,
+            onMoveClipOffset = onSetClipOffset,
+            onDeleteClips = { ids -> ids.forEach { onDeleteClip(it) } },
+            onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
+            onMoveKeyframe = onMoveKeyframe,
+            onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+            onMoveTextKeyframe = onMoveTextKeyframe,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)

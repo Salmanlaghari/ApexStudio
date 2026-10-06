@@ -88,7 +88,7 @@ fun TransmissionTemplatesPanel(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "One-tap LUT + FX + transition presets.",
+            "One-tap Filter + FX + transition presets.",
             color = ApexPalette.TextSecondary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium

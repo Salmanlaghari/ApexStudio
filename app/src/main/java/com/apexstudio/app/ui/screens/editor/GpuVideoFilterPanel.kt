@@ -257,7 +257,7 @@ fun GpuVideoFilterPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.MovieFilter, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("3D LUTs", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Filters", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -744,7 +744,7 @@ fun GpuVideoFilterPanel(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("LUT Grade Intensity", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Filter Intensity", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             Text("${(config.filterIntensity * 100).toInt()}%", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         Slider(

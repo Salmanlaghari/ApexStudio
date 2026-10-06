@@ -41,7 +41,7 @@ fun LeftToolRail(
     ) {
         RailItem(Icons.Default.FaceRetouchingNatural, "AR Face", onArFilters)
         RailItem(Icons.Default.AutoAwesome, "Effects", onEffects)
-        RailItem(Icons.Default.Palette, "LUTs", onFilters)
+        RailItem(Icons.Default.Palette, "Filters", onFilters)
         RailItem(Icons.Default.Tune, "Adjust", onAdjust)
         RailItem(Icons.Default.Layers, "3D Chroma", onChromaKey)
         RailItem(Icons.Default.TextFields, "Text", onText)

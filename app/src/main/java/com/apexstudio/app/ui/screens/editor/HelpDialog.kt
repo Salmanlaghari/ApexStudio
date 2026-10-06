@@ -79,7 +79,7 @@ fun HelpDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 HelpSection("Multi-Track Timeline", "Drag playhead to scrub. Tap clip to select. Pinch timeline to zoom in/out. Use the junction (+) button between clips to apply transitions.")
-                HelpSection("3D LUT Filters & FX", "Choose from 70+ Hollywood film LUTs and real-time GPU effects (VHS, Glitch, RGB Split). Adjust intensity in real time.")
+                HelpSection("Filters & FX", "Choose from 98+ film filters and real-time GPU effects (VHS, Glitch, RGB Split). Adjust intensity in real time.")
                 HelpSection("Video Adjustments", "Precision controls for Brightness, Contrast, Saturation, Exposure, Highlights, Shadows, Temp, Tint, Sharpness, Vignette & Grain.")
                 HelpSection("Keyframe Animation", "Pin keyframes on the timeline to animate position, scale, rotation, and opacity smoothly across clips.")
                 HelpSection("Text & Stickers", "Add real timeline layers for captions and stickers. Pinch to resize/rotate and drag on video preview to reposition.")

@@ -44,6 +44,18 @@ fun EditorViewModel.startExport(
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
+    // Picture-in-Picture overlays: composite overlay clips in the export.
+    val pipOverlays = (s.project?.clips ?: emptyList())
+        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+        .map { ov ->
+            ExportEngine.ExportConfig.PipOverlayConfig(
+                uri = ov.uri,
+                offsetMs = ov.timelineOffsetMs,
+                trimStartMs = ov.trimStartMs,
+                trimEndMs = ov.trimEndMs,
+                opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
+            )
+        }
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
@@ -68,7 +80,8 @@ fun EditorViewModel.startExport(
             reverbPreset = audioSt.reverbPreset,
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
-            bassBoostStrength = audioSt.bassBoostStrength
+            bassBoostStrength = audioSt.bassBoostStrength,
+            pipOverlays = pipOverlays
         )
     )
 }
@@ -82,3 +95,33 @@ fun EditorViewModel.setExportProgress(p: Float) = _export.update {
 fun EditorViewModel.setExportOutputUri(uri: String?) = _export.update { it.copy(outputUri = uri) }
 
 fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(error = error) }
+
+
+/**
+ * Exports the project's audio as a standalone AAC (.m4a) file.
+ * Reuses the audio pipeline (pitch, volume, speed) from the video export.
+ */
+fun EditorViewModel.startAudioExport(
+    outputFileName: String = "apex_studio_audio.m4a"
+) {
+    val s = _state.value
+    val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
+        ?: s.project?.clips?.firstOrNull()
+    val inputUri = selected?.uri ?: return
+    val engine = exportEngine ?: return
+    _export.update { it.copy(isExporting = true, progress = 0f) }
+
+    val audioSt = _audio.value
+    val speed = selected?.speedMultiplier ?: s.playbackSpeed
+    engine.startAudioExport(
+        inputUri,
+        ExportEngine.ExportConfig(
+            trimStartMs = selected?.trimStartMs ?: 0L,
+            trimEndMs = selected?.trimEndMs ?: 0L,
+            pitchSemitones = audioSt.pitchSemitones,
+            volume = if (audioSt.isMuted) 0f else audioSt.volume,
+            clipSpeed = speed
+        ),
+        outputFileName
+    )
+}

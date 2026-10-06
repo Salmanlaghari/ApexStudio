@@ -589,6 +589,15 @@ fun EditorScreen(
             onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },
             onShiftClipOffset = { clipId, deltaMs -> vm.shiftClipTimelineOffset(clipId, deltaMs) },
             onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
+            onTrimClip = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
+            onToggleKeyframeAtPlayhead = { clipId -> vm.toggleKeyframeAtPlayheadFor(clipId) },
+            onMoveKeyframe = { clipId, kfId, newTimeMs -> vm.moveKeyframe(clipId, kfId, newTimeMs) },
+            onToggleTextKeyframeAtPlayhead = { clipId, overlayId ->
+                vm.toggleTextKeyframeAtPlayhead(clipId, overlayId)
+            },
+            onMoveTextKeyframe = { clipId, overlayId, kfId, newTimeMs ->
+                vm.moveTextKeyframe(clipId, overlayId, kfId, newTimeMs)
+            },
             onZoomIn = { vm.zoomInTimeline() },
             onZoomOut = { vm.zoomOutTimeline() },
             onResetZoom = { vm.setTimelineZoom(1.0f) },

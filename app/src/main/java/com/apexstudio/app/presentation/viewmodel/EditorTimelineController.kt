@@ -688,3 +688,75 @@ internal fun EditorViewModel.pushUndo() {
     redoStack.clear()
     _state.update { it.copy(canUndo = true, canRedo = false) }
 }
+
+
+/**
+ * Toggles a keyframe at the current playhead position for the given clip.
+ * If a keyframe exists within 150ms of the playhead it is removed, otherwise
+ * one is added using the interpolated transform at the playhead.
+ */
+fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val playheadMs = _state.value.playerPositionMs
+    val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
+    if (existingKf != null) {
+        removeKeyframe(clipId, existingKf.id)
+    } else {
+        addKeyframe(clipId, playheadMs, clip.keyframes.interpolateAt(playheadMs))
+    }
+}
+
+
+/**
+ * Moves a clip keyframe to a new timeline position (from diamond drag on the timeline).
+ */
+fun EditorViewModel.moveKeyframe(clipId: String, keyframeId: String, newTimeMs: Long) {
+    updateKeyframe(clipId, keyframeId) { it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) }
+}
+
+
+/**
+ * Toggles a text-overlay keyframe at the current playhead position.
+ */
+fun EditorViewModel.toggleTextKeyframeAtPlayhead(clipId: String, overlayId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val overlay = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
+    val playheadMs = _state.value.playerPositionMs
+    val existingKf = overlay.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
+    if (existingKf != null) {
+        updateTextOverlay(clipId, overlayId) { ov ->
+            ov.copy(keyframes = KeyframeTrack(ov.keyframes.keyframes.filter { it.id != existingKf.id }))
+        }
+    } else {
+        val t = overlay.keyframes.interpolateAt(playheadMs)
+        val kf = Keyframe(
+            id = java.util.UUID.randomUUID().toString(),
+            timeMs = playheadMs,
+            translateX = t.translateX,
+            translateY = t.translateY,
+            scale = t.scale,
+            rotationDeg = t.rotationDeg,
+            opacity = t.opacity
+        )
+        updateTextOverlay(clipId, overlayId) { ov ->
+            val without = ov.keyframes.keyframes.filter { it.timeMs != playheadMs }
+            ov.copy(keyframes = KeyframeTrack(without + kf).sorted())
+        }
+    }
+}
+
+
+/**
+ * Moves a text-overlay keyframe to a new timeline position (from diamond drag).
+ */
+fun EditorViewModel.moveTextKeyframe(clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) {
+    updateTextOverlay(clipId, overlayId) { ov ->
+        ov.copy(
+            keyframes = KeyframeTrack(
+                ov.keyframes.keyframes.map {
+                    if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
+                }
+            ).sorted()
+        )
+    }
+}

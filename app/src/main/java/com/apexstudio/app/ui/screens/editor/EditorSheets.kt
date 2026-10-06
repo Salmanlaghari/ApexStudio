@@ -128,7 +128,7 @@ fun BottomEditToolbar(
         EditToolItem("Text", Icons.Default.TextFields, onClick = onText),
         EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
         EditToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-        EditToolItem("LUTs", Icons.Default.Palette, onClick = onFilters),
+        EditToolItem("Filters", Icons.Default.Palette, onClick = onFilters),
         EditToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFilters),
         EditToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
     )

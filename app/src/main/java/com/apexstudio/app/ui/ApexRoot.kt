@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
+import com.apexstudio.app.camerakit.LensesScreen
 import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
 import com.apexstudio.app.ui.screens.colortools.ColorStudioScreen
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
@@ -96,6 +97,9 @@ fun ApexRoot() {
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "edit" },
                             onExport = { showExportSettings = true }
+                        )
+                        "lenses" -> LensesScreen(
+                            onBack = { currentTab = "home" }
                         )
                     }
                 }

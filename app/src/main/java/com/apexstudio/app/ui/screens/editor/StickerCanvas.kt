@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -43,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -213,7 +215,7 @@ private fun StickerItem(
     val density = LocalDensity.current
     val latest by rememberUpdatedState(sticker)
 
-    val imageBitmap = produceState(
+    val imageBitmap = produceState<ImageBitmap?>(
         initialValue = null,
         sticker.id, sticker.assetPath
     ) {
@@ -244,41 +246,39 @@ private fun StickerItem(
                 alpha = sticker.opacity.coerceIn(0f, 1f)
             }
             .pointerInput(sticker.id) {
-                var gestureActive = false
-                detectTransformGestures(
-                    onGesture = { _, pan, zoom, rotation ->
-                        if (!gestureActive) {
+                // detectTransformGestures has no end callback, so re-arm it
+                // in a loop and persist once per completed gesture.
+                while (true) {
+                    var gestureActive = false
+                    try {
+                        detectTransformGestures { _, pan, zoom, rotation ->
                             gestureActive = true
-                            // Selecting on first touch keeps drag / pinch
-                            // working even when another sticker is selected.
+                            val s = latest
+                            if (pan != Offset.Zero) {
+                                onMoveSticker(
+                                    s.id,
+                                    pan.x / canvasWpx,
+                                    pan.y / canvasHpx,
+                                    false
+                                )
+                            }
+                            if (zoom != 1f) {
+                                onScaleSticker(
+                                    s.id,
+                                    (s.sizeScale * zoom).coerceIn(0.1f, 8f),
+                                    false
+                                )
+                            }
+                            if (rotation != 0f) {
+                                onRotateSticker(s.id, rotation, false)
+                            }
                         }
-                        val s = latest
-                        if (pan != Offset.Zero) {
-                            onMoveSticker(
-                                s.id,
-                                pan.x / canvasWpx,
-                                pan.y / canvasHpx,
-                                false
-                            )
-                        }
-                        if (zoom != 1f) {
-                            onScaleSticker(
-                                s.id,
-                                (s.sizeScale * zoom).coerceIn(0.1f, 8f),
-                                false
-                            )
-                        }
-                        if (rotation != 0f) {
-                            onRotateSticker(s.id, rotation, false)
-                        }
-                    },
-                    onGestureEnd = {
+                    } finally {
                         if (gestureActive) {
-                            gestureActive = false
                             onStickerGestureEnd(latest.id)
                         }
                     }
-                )
+                }
             }
     ) {
         val img = imageBitmap
@@ -489,7 +489,7 @@ private fun StickerCropEditor(
     onCancel: () -> Unit
 ) {
     val density = LocalDensity.current
-    val imageBitmap = produceState(
+    val imageBitmap = produceState<ImageBitmap?>(
         initialValue = null,
         sticker.id, sticker.assetPath
     ) {

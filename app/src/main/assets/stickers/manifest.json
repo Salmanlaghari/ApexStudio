@@ -1,0 +1,1111 @@
+{
+  "version": 1,
+  "pack": "Twemoji",
+  "license": "CC-BY 4.0",
+  "attribution": "Emoji artwork from Twemoji (https://twemoji.twitter.com), Copyright 2020 Twitter, Inc and other contributors, licensed under CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+  "stickers": [
+    {
+      "id": "red-heart",
+      "file": "love/red-heart.png",
+      "name": "Red Heart",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "red",
+        "like",
+        "romantic",
+        "valentine"
+      ]
+    },
+    {
+      "id": "sparkling-heart",
+      "file": "love/sparkling-heart.png",
+      "name": "Sparkling Heart",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "sparkle",
+        "romantic",
+        "cute"
+      ]
+    },
+    {
+      "id": "two-hearts",
+      "file": "love/two-hearts.png",
+      "name": "Two Hearts",
+      "category": "love",
+      "tags": [
+        "love",
+        "hearts",
+        "cute",
+        "romance",
+        "couple"
+      ]
+    },
+    {
+      "id": "heart-with-arrow",
+      "file": "love/heart-with-arrow.png",
+      "name": "Heart With Arrow",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "arrow",
+        "cupid",
+        "valentine"
+      ]
+    },
+    {
+      "id": "heart-with-ribbon",
+      "file": "love/heart-with-ribbon.png",
+      "name": "Heart With Ribbon",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "ribbon",
+        "gift",
+        "valentine"
+      ]
+    },
+    {
+      "id": "beating-heart",
+      "file": "love/beating-heart.png",
+      "name": "Beating Heart",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "beat",
+        "pulse",
+        "romantic"
+      ]
+    },
+    {
+      "id": "kiss-mark",
+      "file": "love/kiss-mark.png",
+      "name": "Kiss Mark",
+      "category": "love",
+      "tags": [
+        "kiss",
+        "love",
+        "lips",
+        "romantic"
+      ]
+    },
+    {
+      "id": "heart-eyes-face",
+      "file": "love/heart-eyes-face.png",
+      "name": "Heart Eyes Face",
+      "category": "love",
+      "tags": [
+        "love",
+        "face",
+        "smile",
+        "heart",
+        "eyes",
+        "cute",
+        "crush"
+      ]
+    },
+    {
+      "id": "couple-with-heart",
+      "file": "love/couple-with-heart.png",
+      "name": "Couple With Heart",
+      "category": "love",
+      "tags": [
+        "couple",
+        "love",
+        "romance",
+        "together"
+      ]
+    },
+    {
+      "id": "growing-heart",
+      "file": "love/growing-heart.png",
+      "name": "Growing Heart",
+      "category": "love",
+      "tags": [
+        "love",
+        "heart",
+        "growing",
+        "pink"
+      ]
+    },
+    {
+      "id": "grinning-face",
+      "file": "happy/grinning-face.png",
+      "name": "Grinning Face",
+      "category": "happy",
+      "tags": [
+        "happy",
+        "smile",
+        "grin",
+        "laugh",
+        "face"
+      ]
+    },
+    {
+      "id": "beaming-face",
+      "file": "happy/beaming-face.png",
+      "name": "Beaming Face",
+      "category": "happy",
+      "tags": [
+        "happy",
+        "smile",
+        "grin",
+        "teeth",
+        "face"
+      ]
+    },
+    {
+      "id": "rofl-face",
+      "file": "happy/rofl-face.png",
+      "name": "Rofl Face",
+      "category": "happy",
+      "tags": [
+        "funny",
+        "laugh",
+        "lol",
+        "rofl",
+        "happy",
+        "face"
+      ]
+    },
+    {
+      "id": "cool-sunglasses",
+      "file": "happy/cool-sunglasses.png",
+      "name": "Cool Sunglasses",
+      "category": "happy",
+      "tags": [
+        "cool",
+        "smile",
+        "sunglasses",
+        "swag",
+        "happy",
+        "face"
+      ]
+    },
+    {
+      "id": "star-struck",
+      "file": "happy/star-struck.png",
+      "name": "Star Struck",
+      "category": "happy",
+      "tags": [
+        "amazed",
+        "star",
+        "eyes",
+        "wow",
+        "happy",
+        "face"
+      ]
+    },
+    {
+      "id": "partying-face",
+      "file": "happy/partying-face.png",
+      "name": "Partying Face",
+      "category": "happy",
+      "tags": [
+        "party",
+        "celebrate",
+        "happy",
+        "face",
+        "fun"
+      ]
+    },
+    {
+      "id": "smiling-face",
+      "file": "happy/smiling-face.png",
+      "name": "Smiling Face",
+      "category": "happy",
+      "tags": [
+        "happy",
+        "smile",
+        "cute",
+        "face",
+        "blush"
+      ]
+    },
+    {
+      "id": "zany-face",
+      "file": "happy/zany-face.png",
+      "name": "Zany Face",
+      "category": "happy",
+      "tags": [
+        "crazy",
+        "funny",
+        "silly",
+        "face",
+        "happy"
+      ]
+    },
+    {
+      "id": "smiling-with-hearts",
+      "file": "happy/smiling-with-hearts.png",
+      "name": "Smiling With Hearts",
+      "category": "happy",
+      "tags": [
+        "love",
+        "smile",
+        "hearts",
+        "face",
+        "cute",
+        "happy"
+      ]
+    },
+    {
+      "id": "hugging-face",
+      "file": "happy/hugging-face.png",
+      "name": "Hugging Face",
+      "category": "happy",
+      "tags": [
+        "hug",
+        "happy",
+        "smile",
+        "face",
+        "love"
+      ]
+    },
+    {
+      "id": "crying-face",
+      "file": "sad/crying-face.png",
+      "name": "Crying Face",
+      "category": "sad",
+      "tags": [
+        "sad",
+        "cry",
+        "tear",
+        "face",
+        "emotional"
+      ]
+    },
+    {
+      "id": "loudly-crying",
+      "file": "sad/loudly-crying.png",
+      "name": "Loudly Crying",
+      "category": "sad",
+      "tags": [
+        "sad",
+        "sob",
+        "cry",
+        "tears",
+        "face"
+      ]
+    },
+    {
+      "id": "pensive-face",
+      "file": "sad/pensive-face.png",
+      "name": "Pensive Face",
+      "category": "sad",
+      "tags": [
+        "sad",
+        "thinking",
+        "pensive",
+        "face"
+      ]
+    },
+    {
+      "id": "disappointed-face",
+      "file": "sad/disappointed-face.png",
+      "name": "Disappointed Face",
+      "category": "sad",
+      "tags": [
+        "sad",
+        "disappointed",
+        "face"
+      ]
+    },
+    {
+      "id": "sad-relieved-face",
+      "file": "sad/sad-relieved-face.png",
+      "name": "Sad Relieved Face",
+      "category": "sad",
+      "tags": [
+        "sad",
+        "relieved",
+        "face",
+        "sweat"
+      ]
+    },
+    {
+      "id": "sleepy-face",
+      "file": "sad/sleepy-face.png",
+      "name": "Sleepy Face",
+      "category": "sad",
+      "tags": [
+        "tired",
+        "sleepy",
+        "face",
+        "sad"
+      ]
+    },
+    {
+      "id": "weary-face",
+      "file": "sad/weary-face.png",
+      "name": "Weary Face",
+      "category": "sad",
+      "tags": [
+        "tired",
+        "exhausted",
+        "weary",
+        "sad",
+        "face"
+      ]
+    },
+    {
+      "id": "pleading-face",
+      "file": "sad/pleading-face.png",
+      "name": "Pleading Face",
+      "category": "sad",
+      "tags": [
+        "please",
+        "sad",
+        "puppy",
+        "eyes",
+        "face"
+      ]
+    },
+    {
+      "id": "broken-heart",
+      "file": "sad/broken-heart.png",
+      "name": "Broken Heart",
+      "category": "sad",
+      "tags": [
+        "heartbreak",
+        "sad",
+        "broken",
+        "heart"
+      ]
+    },
+    {
+      "id": "party-popper",
+      "file": "party/party-popper.png",
+      "name": "Party Popper",
+      "category": "party",
+      "tags": [
+        "party",
+        "celebrate",
+        "confetti",
+        "popper",
+        "fun"
+      ]
+    },
+    {
+      "id": "confetti-ball",
+      "file": "party/confetti-ball.png",
+      "name": "Confetti Ball",
+      "category": "party",
+      "tags": [
+        "party",
+        "confetti",
+        "celebrate",
+        "fun"
+      ]
+    },
+    {
+      "id": "birthday-cake",
+      "file": "party/birthday-cake.png",
+      "name": "Birthday Cake",
+      "category": "party",
+      "tags": [
+        "birthday",
+        "cake",
+        "party",
+        "celebrate"
+      ]
+    },
+    {
+      "id": "cheers-mugs",
+      "file": "party/cheers-mugs.png",
+      "name": "Cheers Mugs",
+      "category": "party",
+      "tags": [
+        "cheers",
+        "beer",
+        "drink",
+        "party",
+        "friends"
+      ]
+    },
+    {
+      "id": "tropical-drink",
+      "file": "party/tropical-drink.png",
+      "name": "Tropical Drink",
+      "category": "party",
+      "tags": [
+        "drink",
+        "cocktail",
+        "party",
+        "vacation"
+      ]
+    },
+    {
+      "id": "dancing-person",
+      "file": "party/dancing-person.png",
+      "name": "Dancing Person",
+      "category": "party",
+      "tags": [
+        "dance",
+        "party",
+        "fun",
+        "music"
+      ]
+    },
+    {
+      "id": "musical-notes",
+      "file": "party/musical-notes.png",
+      "name": "Musical Notes",
+      "category": "party",
+      "tags": [
+        "music",
+        "party",
+        "notes",
+        "song",
+        "dance"
+      ]
+    },
+    {
+      "id": "gold-medal",
+      "file": "party/gold-medal.png",
+      "name": "Gold Medal",
+      "category": "party",
+      "tags": [
+        "winner",
+        "gold",
+        "medal",
+        "first",
+        "champion"
+      ]
+    },
+    {
+      "id": "star",
+      "file": "party/star.png",
+      "name": "Star",
+      "category": "party",
+      "tags": [
+        "star",
+        "gold",
+        "favorite"
+      ]
+    },
+    {
+      "id": "balloon",
+      "file": "party/balloon.png",
+      "name": "Balloon",
+      "category": "party",
+      "tags": [
+        "party",
+        "balloon",
+        "birthday",
+        "celebrate"
+      ]
+    },
+    {
+      "id": "fire",
+      "file": "fire/fire.png",
+      "name": "Fire",
+      "category": "fire",
+      "tags": [
+        "fire",
+        "hot",
+        "lit",
+        "flame"
+      ]
+    },
+    {
+      "id": "collision",
+      "file": "fire/collision.png",
+      "name": "Collision",
+      "category": "fire",
+      "tags": [
+        "boom",
+        "explosion",
+        "collision",
+        "pow"
+      ]
+    },
+    {
+      "id": "anger-symbol",
+      "file": "fire/anger-symbol.png",
+      "name": "Anger Symbol",
+      "category": "fire",
+      "tags": [
+        "angry",
+        "rage",
+        "mad",
+        "red"
+      ]
+    },
+    {
+      "id": "high-voltage",
+      "file": "fire/high-voltage.png",
+      "name": "High Voltage",
+      "category": "fire",
+      "tags": [
+        "electric",
+        "lightning",
+        "energy",
+        "bolt"
+      ]
+    },
+    {
+      "id": "hundred-points",
+      "file": "fire/hundred-points.png",
+      "name": "Hundred Points",
+      "category": "fire",
+      "tags": [
+        "hundred",
+        "100",
+        "perfect",
+        "fire"
+      ]
+    },
+    {
+      "id": "light-bulb",
+      "file": "fire/light-bulb.png",
+      "name": "Light Bulb",
+      "category": "fire",
+      "tags": [
+        "idea",
+        "bulb",
+        "light",
+        "smart"
+      ]
+    },
+    {
+      "id": "flexed-biceps",
+      "file": "fire/flexed-biceps.png",
+      "name": "Flexed Biceps",
+      "category": "fire",
+      "tags": [
+        "strong",
+        "muscle",
+        "gym",
+        "power"
+      ]
+    },
+    {
+      "id": "rocket",
+      "file": "fire/rocket.png",
+      "name": "Rocket",
+      "category": "fire",
+      "tags": [
+        "rocket",
+        "launch",
+        "space",
+        "fast"
+      ]
+    },
+    {
+      "id": "sparkles",
+      "file": "fire/sparkles.png",
+      "name": "Sparkles",
+      "category": "fire",
+      "tags": [
+        "sparkle",
+        "shine",
+        "glitter",
+        "magic"
+      ]
+    },
+    {
+      "id": "panda",
+      "file": "animals/panda.png",
+      "name": "Panda",
+      "category": "animals",
+      "tags": [
+        "panda",
+        "bear",
+        "cute",
+        "animal"
+      ]
+    },
+    {
+      "id": "unicorn",
+      "file": "animals/unicorn.png",
+      "name": "Unicorn",
+      "category": "animals",
+      "tags": [
+        "unicorn",
+        "magic",
+        "fantasy",
+        "cute",
+        "animal"
+      ]
+    },
+    {
+      "id": "frog",
+      "file": "animals/frog.png",
+      "name": "Frog",
+      "category": "animals",
+      "tags": [
+        "frog",
+        "cute",
+        "animal",
+        "green"
+      ]
+    },
+    {
+      "id": "chipmunk",
+      "file": "animals/chipmunk.png",
+      "name": "Chipmunk",
+      "category": "animals",
+      "tags": [
+        "chipmunk",
+        "squirrel",
+        "animal",
+        "cute"
+      ]
+    },
+    {
+      "id": "cat-face",
+      "file": "animals/cat-face.png",
+      "name": "Cat Face",
+      "category": "animals",
+      "tags": [
+        "cat",
+        "cute",
+        "animal",
+        "face",
+        "pet"
+      ]
+    },
+    {
+      "id": "dog-face",
+      "file": "animals/dog-face.png",
+      "name": "Dog Face",
+      "category": "animals",
+      "tags": [
+        "dog",
+        "cute",
+        "animal",
+        "face",
+        "pet"
+      ]
+    },
+    {
+      "id": "hear-no-evil",
+      "file": "animals/hear-no-evil.png",
+      "name": "Hear No Evil",
+      "category": "animals",
+      "tags": [
+        "monkey",
+        "cute",
+        "animal",
+        "hear",
+        "no",
+        "evil"
+      ]
+    },
+    {
+      "id": "speak-no-evil",
+      "file": "animals/speak-no-evil.png",
+      "name": "Speak No Evil",
+      "category": "animals",
+      "tags": [
+        "monkey",
+        "cute",
+        "animal",
+        "speak",
+        "no",
+        "evil"
+      ]
+    },
+    {
+      "id": "pizza",
+      "file": "food/pizza.png",
+      "name": "Pizza",
+      "category": "food",
+      "tags": [
+        "pizza",
+        "food",
+        "slice",
+        "yum"
+      ]
+    },
+    {
+      "id": "burger",
+      "file": "food/burger.png",
+      "name": "Burger",
+      "category": "food",
+      "tags": [
+        "burger",
+        "food",
+        "fast",
+        "yum"
+      ]
+    },
+    {
+      "id": "soft-ice-cream",
+      "file": "food/soft-ice-cream.png",
+      "name": "Soft Ice Cream",
+      "category": "food",
+      "tags": [
+        "ice",
+        "cream",
+        "dessert",
+        "sweet",
+        "yum"
+      ]
+    },
+    {
+      "id": "doughnut",
+      "file": "food/doughnut.png",
+      "name": "Doughnut",
+      "category": "food",
+      "tags": [
+        "donut",
+        "dessert",
+        "sweet",
+        "food"
+      ]
+    },
+    {
+      "id": "watermelon",
+      "file": "food/watermelon.png",
+      "name": "Watermelon",
+      "category": "food",
+      "tags": [
+        "watermelon",
+        "fruit",
+        "summer",
+        "food"
+      ]
+    },
+    {
+      "id": "red-apple",
+      "file": "food/red-apple.png",
+      "name": "Red Apple",
+      "category": "food",
+      "tags": [
+        "apple",
+        "fruit",
+        "food",
+        "healthy"
+      ]
+    },
+    {
+      "id": "cherries",
+      "file": "food/cherries.png",
+      "name": "Cherries",
+      "category": "food",
+      "tags": [
+        "cherry",
+        "fruit",
+        "food",
+        "cute"
+      ]
+    },
+    {
+      "id": "strawberry",
+      "file": "food/strawberry.png",
+      "name": "Strawberry",
+      "category": "food",
+      "tags": [
+        "strawberry",
+        "fruit",
+        "food",
+        "cute"
+      ]
+    },
+    {
+      "id": "thumbs-up",
+      "file": "hands/thumbs-up.png",
+      "name": "Thumbs Up",
+      "category": "hands",
+      "tags": [
+        "thumbs",
+        "up",
+        "like",
+        "good",
+        "yes"
+      ]
+    },
+    {
+      "id": "clapping-hands",
+      "file": "hands/clapping-hands.png",
+      "name": "Clapping Hands",
+      "category": "hands",
+      "tags": [
+        "clap",
+        "applause",
+        "praise",
+        "hands"
+      ]
+    },
+    {
+      "id": "raising-hands",
+      "file": "hands/raising-hands.png",
+      "name": "Raising Hands",
+      "category": "hands",
+      "tags": [
+        "hands",
+        "up",
+        "celebrate",
+        "praise",
+        "hooray"
+      ]
+    },
+    {
+      "id": "victory-hand",
+      "file": "hands/victory-hand.png",
+      "name": "Victory Hand",
+      "category": "hands",
+      "tags": [
+        "victory",
+        "peace",
+        "hand",
+        "v"
+      ]
+    },
+    {
+      "id": "rock-horns",
+      "file": "hands/rock-horns.png",
+      "name": "Rock Horns",
+      "category": "hands",
+      "tags": [
+        "rock",
+        "metal",
+        "horns",
+        "hand"
+      ]
+    },
+    {
+      "id": "ok-hand",
+      "file": "hands/ok-hand.png",
+      "name": "Ok Hand",
+      "category": "hands",
+      "tags": [
+        "ok",
+        "perfect",
+        "hand",
+        "gesture"
+      ]
+    },
+    {
+      "id": "praying-hands",
+      "file": "hands/praying-hands.png",
+      "name": "Praying Hands",
+      "category": "hands",
+      "tags": [
+        "pray",
+        "thanks",
+        "please",
+        "hands"
+      ]
+    },
+    {
+      "id": "open-hands",
+      "file": "hands/open-hands.png",
+      "name": "Open Hands",
+      "category": "hands",
+      "tags": [
+        "open",
+        "hands",
+        "hug",
+        "welcome"
+      ]
+    },
+    {
+      "id": "fingers-crossed",
+      "file": "hands/fingers-crossed.png",
+      "name": "Fingers Crossed",
+      "category": "hands",
+      "tags": [
+        "fingers",
+        "crossed",
+        "luck",
+        "hope"
+      ]
+    },
+    {
+      "id": "sun-face",
+      "file": "nature/sun-face.png",
+      "name": "Sun Face",
+      "category": "nature",
+      "tags": [
+        "sun",
+        "smile",
+        "face",
+        "weather"
+      ]
+    },
+    {
+      "id": "crescent-moon",
+      "file": "nature/crescent-moon.png",
+      "name": "Crescent Moon",
+      "category": "nature",
+      "tags": [
+        "moon",
+        "night",
+        "crescent"
+      ]
+    },
+    {
+      "id": "sun-behind-cloud",
+      "file": "nature/sun-behind-cloud.png",
+      "name": "Sun Behind Cloud",
+      "category": "nature",
+      "tags": [
+        "weather",
+        "sun",
+        "cloud"
+      ]
+    },
+    {
+      "id": "sun",
+      "file": "nature/sun.png",
+      "name": "Sun",
+      "category": "nature",
+      "tags": [
+        "sun",
+        "weather",
+        "sunny",
+        "day"
+      ]
+    },
+    {
+      "id": "rainbow",
+      "file": "nature/rainbow.png",
+      "name": "Rainbow",
+      "category": "nature",
+      "tags": [
+        "rainbow",
+        "weather",
+        "colorful"
+      ]
+    },
+    {
+      "id": "snowflake",
+      "file": "nature/snowflake.png",
+      "name": "Snowflake",
+      "category": "nature",
+      "tags": [
+        "snow",
+        "winter",
+        "cold",
+        "weather"
+      ]
+    },
+    {
+      "id": "snow-cloud",
+      "file": "nature/snow-cloud.png",
+      "name": "Snow Cloud",
+      "category": "nature",
+      "tags": [
+        "snow",
+        "cloud",
+        "winter",
+        "weather"
+      ]
+    },
+    {
+      "id": "thunderstorm",
+      "file": "nature/thunderstorm.png",
+      "name": "Thunderstorm",
+      "category": "nature",
+      "tags": [
+        "storm",
+        "lightning",
+        "rain",
+        "weather"
+      ]
+    },
+    {
+      "id": "gem-stone",
+      "file": "luxury/gem-stone.png",
+      "name": "Gem Stone",
+      "category": "luxury",
+      "tags": [
+        "gem",
+        "diamond",
+        "rich",
+        "luxury"
+      ]
+    },
+    {
+      "id": "money-bag",
+      "file": "luxury/money-bag.png",
+      "name": "Money Bag",
+      "category": "luxury",
+      "tags": [
+        "money",
+        "cash",
+        "rich",
+        "dollar"
+      ]
+    },
+    {
+      "id": "money-with-wings",
+      "file": "luxury/money-with-wings.png",
+      "name": "Money With Wings",
+      "category": "luxury",
+      "tags": [
+        "money",
+        "cash",
+        "rich",
+        "flying"
+      ]
+    },
+    {
+      "id": "money-mouth-face",
+      "file": "luxury/money-mouth-face.png",
+      "name": "Money Mouth Face",
+      "category": "luxury",
+      "tags": [
+        "money",
+        "rich",
+        "face",
+        "dollar"
+      ]
+    },
+    {
+      "id": "crown",
+      "file": "luxury/crown.png",
+      "name": "Crown",
+      "category": "luxury",
+      "tags": [
+        "crown",
+        "king",
+        "queen",
+        "royal",
+        "luxury"
+      ]
+    },
+    {
+      "id": "ring",
+      "file": "luxury/ring.png",
+      "name": "Ring",
+      "category": "luxury",
+      "tags": [
+        "ring",
+        "diamond",
+        "wedding",
+        "luxury"
+      ]
+    },
+    {
+      "id": "bomb",
+      "file": "luxury/bomb.png",
+      "name": "Bomb",
+      "category": "luxury",
+      "tags": [
+        "bomb",
+        "explosion"
+      ]
+    },
+    {
+      "id": "bell",
+      "file": "luxury/bell.png",
+      "name": "Bell",
+      "category": "luxury",
+      "tags": [
+        "bell",
+        "notification",
+        "subscribe"
+      ]
+    }
+  ]
+}

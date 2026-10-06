@@ -1,0 +1,4 @@
+Sticker pack source: Twemoji (https://twemoji.twitter.com)
+Copyright 2020 Twitter, Inc and other contributors.
+Licensed under CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+Rasterized at 512px from Twemoji v13.1.0 SVGs by ApexStudio.

@@ -504,6 +504,16 @@ fun EditorScreen(
                 onSizeScaleChange = { id, scale ->
                     selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
                 },
+                // Sticker canvas editing (feature/sticker-library)
+                selectedStickerId = state.selectedStickerId,
+                onSelectSticker = { vm.selectSticker(it) },
+                onMoveSticker = { id, dx, dy, persist -> vm.moveSticker(id, dx, dy, persist) },
+                onScaleSticker = { id, scale, persist -> vm.setStickerSizeScale(id, scale, persist) },
+                onRotateSticker = { id, dDeg, persist -> vm.rotateSticker(id, dDeg, persist) },
+                onStickerGestureEnd = { id -> vm.updateSticker(id) { it } },
+                onRemoveSticker = { vm.removeSticker(it) },
+                onCropSticker = { id, l, t, r, b -> vm.setStickerCrop(id, l, t, r, b) },
+                onCutoutSticker = { id, shape -> vm.setStickerCutout(id, shape) },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -1108,7 +1118,7 @@ fun EditorScreen(
         ) {
             Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
                 StickerPanel(
-                    onAddSticker = { symbol, cat, name -> vm.addStickerOverlay(symbol, cat, name) },
+                    onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath, cat, name) },
                     onClose = { vm.closeStickerPanel() }
                 )
             }

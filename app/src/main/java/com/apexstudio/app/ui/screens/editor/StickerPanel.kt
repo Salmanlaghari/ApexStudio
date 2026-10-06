@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,51 +12,69 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.stickers.StickerEntry
+import com.apexstudio.app.data.stickers.StickerImageCache
+import com.apexstudio.app.data.stickers.StickerPack
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-data class StickerCategory(
-    val id: String,
-    val name: String,
-    val items: List<String>
-)
+private const val ALL_CATEGORY = "All"
 
-private val STICKER_CATEGORIES = listOf(
-    StickerCategory("emoji", "Emoji", listOf("🔥", "⚡", "✨", "💥", "❤️", "😍", "🎉", "👑", "🚀", "💯", "😎", "🍿")),
-    StickerCategory("3d", "3D", listOf("💎", "🔮", "🏆", "🎲", "🛸", "👾", "🤖", "⭐", "🌟", "💡")),
-    StickerCategory("shapes", "Shapes", listOf("⭕", "⏹️", "🔺", "🔷", "🟩", "⭐", "🖤", "🤍", "🌐", "🏁")),
-    StickerCategory("arrows", "Arrows", listOf("➡️", "⬅️", "⬆️", "⬇️", "↗️", "↘️", "🔄", "🔁", "⚡", "🎯")),
-    StickerCategory("social", "Social", listOf("👍", "💬", "🔔", "📸", "🎥", "🎬", "📍", "📢", "💬", "❤️")),
-    StickerCategory("love", "Love", listOf("❤️", "💖", "💕", "💘", "🌹", "💌", "💝", "💋", "🌸", "💐")),
-    StickerCategory("travel", "Travel", listOf("✈️", "🏖️", "🏔️", "🗺️", "🗼", "🗽", "⛺", "🧳", "🌅", "🌋")),
-    StickerCategory("gaming", "Gaming", listOf("🎮", "🕹️", "👾", "🎯", "🏆", "⚔️", "🛡️", "🔥", "⚡", "👑")),
-    StickerCategory("reaction", "Reaction", listOf("😱", "🤯", "🥳", "🥺", "🥶", "🥸", "🤡", "👻", "👽", "💩")),
-    StickerCategory("decorative", "Decorative", listOf("✨", "💫", "🎨", "🎭", "🎗️", "🎀", "🎈", "🎁", "🪄", "🔮"))
-)
-
+/**
+ * Searchable sticker library picker.
+ *
+ * Shows the bundled openly-licensed PNG pack (`assets/stickers/`, Twemoji
+ * CC-BY 4.0 — attribution in the footer). Typing in the search field
+ * filters stickers by name / tags / category; category chips narrow the
+ * grid further. Tapping a sticker adds it to the project canvas and
+ * selects it so the user can immediately drag / resize it.
+ */
 @Composable
 fun StickerPanel(
-    onAddSticker: (symbol: String, category: String, name: String) -> Unit,
+    onAddSticker: (assetPath: String, category: String, name: String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedCategory by remember { mutableStateOf("emoji") }
-    val activeCategory = STICKER_CATEGORIES.firstOrNull { it.id == selectedCategory } ?: STICKER_CATEGORIES.first()
+    val context = LocalContext.current
+    val imageCache = remember { StickerImageCache(context) }
+    val entries = remember { StickerPack.load(context) }
+    val categories = remember(entries) { listOf(ALL_CATEGORY) + StickerPack.categories(entries) }
+    val attribution = remember { StickerPack.attribution(context) }
+
+    var query by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
+
+    val filtered = remember(entries, query, selectedCategory) {
+        val byCategory = if (selectedCategory == ALL_CATEGORY) entries
+        else entries.filter { it.category == selectedCategory }
+        StickerPack.search(byCategory, query)
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(300.dp)
+            .height(400.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
@@ -67,7 +86,7 @@ fun StickerPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Stickers & Elements",
+                "Sticker Library",
                 color = ApexPalette.TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
@@ -86,13 +105,49 @@ fun StickerPanel(
 
         Spacer(Modifier.height(10.dp))
 
+        // Tag-based search
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search stickers… (e.g. love, fire, cat)", fontSize = 12.sp, color = ApexPalette.TextSecondary) },
+            leadingIcon = {
+                Icon(Icons.Default.Search, contentDescription = "Search", tint = ApexPalette.TextSecondary, modifier = Modifier.size(18.dp))
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Clear",
+                        tint = ApexPalette.TextSecondary,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { query = "" }
+                    )
+                }
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { }),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = ApexPalette.TextPrimary,
+                unfocusedTextColor = ApexPalette.TextPrimary,
+                focusedBorderColor = ApexPalette.NeonCyan,
+                unfocusedBorderColor = ApexPalette.BorderGlass,
+                cursorColor = ApexPalette.NeonCyan
+            ),
+            textStyle = TextStyle(fontSize = 13.sp)
+        )
+
+        Spacer(Modifier.height(8.dp))
+
         // Category tabs
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(STICKER_CATEGORIES) { cat ->
-                val isSelected = cat.id == selectedCategory
+            items(categories) { cat ->
+                val isSelected = cat == selectedCategory
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -105,11 +160,11 @@ fun StickerPanel(
                             if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                             RoundedCornerShape(8.dp)
                         )
-                        .clickable { selectedCategory = cat.id }
+                        .clickable { selectedCategory = cat }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
-                        cat.name,
+                        cat.replaceFirstChar { it.uppercase() },
                         color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
@@ -118,34 +173,95 @@ fun StickerPanel(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
-        // Sticker Grid
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(5),
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(activeCategory.items) { item ->
-                Box(
-                    modifier = Modifier
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(ApexPalette.BgBase)
-                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                        .clickable {
-                            onAddSticker(item, activeCategory.name, "Sticker_$item")
-                            onClose()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        item,
-                        fontSize = 26.sp
+        // Sticker grid
+        if (filtered.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (entries.isEmpty()) "Sticker pack failed to load"
+                    else "No stickers match \"$query\"",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(5),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filtered, key = { it.id }) { entry ->
+                    StickerCell(
+                        entry = entry,
+                        imageCache = imageCache,
+                        onClick = { onAddSticker(entry.assetUri, entry.category, entry.name) }
                     )
                 }
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // License attribution (required by CC-BY 4.0)
+        Text(
+            text = attribution,
+            color = ApexPalette.TextSecondary.copy(alpha = 0.75f),
+            fontSize = 9.sp,
+            maxLines = 2
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { imageCache.evictAll() }
+    }
+}
+
+@Composable
+private fun StickerCell(
+    entry: StickerEntry,
+    imageCache: StickerImageCache,
+    onClick: () -> Unit
+) {
+    var bitmap by remember(entry.id) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(entry.id) {
+        bitmap = withContext(Dispatchers.IO) { imageCache.get(entry.assetUri) }
+    }
+
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        val bmp = bitmap
+        if (bmp != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = entry.name,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.5f)
+                    .clip(CircleShape)
+                    .background(ApexPalette.BgElevated)
+            )
         }
     }
 }

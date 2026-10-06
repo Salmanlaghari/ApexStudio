@@ -443,6 +443,14 @@ data class VideoAdjustments(
                 grain == 0f
 }
 
+/**
+ * Minimum sticker crop-rect edge as a fraction of the source bitmap.
+ * Shared by the interactive crop editor ([com.apexstudio.app.ui.screens.editor.StickerCanvas])
+ * and [StickerOverlay.sanitizedCrop] so the preview and the export can
+ * never disagree on the smallest allowed crop.
+ */
+const val STICKER_CROP_MIN_FRACTION = 0.05f
+
 @Serializable
 data class StickerOverlay(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -456,7 +464,44 @@ data class StickerOverlay(
     val opacity: Float = 1f,
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE,
-    val keyframes: KeyframeTrack = KeyframeTrack()
+    val keyframes: KeyframeTrack = KeyframeTrack(),
+    /**
+     * Bundled PNG sticker from `assets/stickers/` (e.g. "love/red-heart.png"),
+     * loaded via [com.apexstudio.app.data.stickers.StickerPack]. Null means
+     * this is a legacy emoji sticker rendered from [symbolOrUri] as text.
+     * Default-null keeps old saved projects deserialising unchanged.
+     */
+    val assetPath: String? = null,
+    // Rect crop of the source bitmap, as fractions (0..1) of the bitmap.
+    // (0,0,1,1) = no crop. Applied by the preview Canvas and the export
+    // GL sprite renderer, so WYSIWYG holds in both places.
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 1f,
+    val cropBottom: Float = 1f,
+    /**
+     * Shape mask applied on top of the crop: "NONE" (default), "RECT",
+     * "OVAL". Only meaningful for PNG stickers.
+     */
+    val cutoutShape: String = "NONE"
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+
+    /** True for bundled PNG stickers (asset library), false for legacy emoji stickers. */
+    fun isPngSticker(): Boolean = !assetPath.isNullOrBlank()
+
+    /** Crop fractions sanitised into a valid rect (left < right, top < bottom, 0..1). */
+    fun sanitizedCrop(): FloatArray {
+        val min = STICKER_CROP_MIN_FRACTION
+        val l = cropLeft.coerceIn(0f, 1f - min)
+        val t = cropTop.coerceIn(0f, 1f - min)
+        val r = cropRight.coerceIn(min, 1f)
+        val b = cropBottom.coerceIn(min, 1f)
+        return floatArrayOf(
+            minOf(l, r - min),
+            minOf(t, b - min),
+            maxOf(r, l + min),
+            maxOf(b, t + min)
+        )
+    }
 }

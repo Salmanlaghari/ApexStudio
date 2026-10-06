@@ -2,7 +2,6 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -12,8 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,49 +38,40 @@ fun ScreenWordingObjects(
     onDuplicateTextOverlay: ((String) -> Unit)? = null,
     onEditTextOverlay: ((String) -> Unit)? = null,
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
+    // Sticker canvas editing (feature/sticker-library). All default null
+    // so existing callers keep compiling; the editor passes real handlers.
+    selectedStickerId: String? = null,
+    onSelectSticker: ((String?) -> Unit)? = null,
+    onMoveSticker: ((String, Float, Float, Boolean) -> Unit)? = null,
+    onScaleSticker: ((String, Float, Boolean) -> Unit)? = null,
+    onRotateSticker: ((String, Float, Boolean) -> Unit)? = null,
+    onStickerGestureEnd: ((String) -> Unit)? = null,
+    onRemoveSticker: ((String) -> Unit)? = null,
+    onCropSticker: ((String, Float, Float, Float, Float) -> Unit)? = null,
+    onCutoutSticker: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier) {
         val screenW = maxWidth
         val screenH = maxHeight
 
-        // 1. Draggable & Resizable Screen Stickers
-        for (sticker in stickers) {
-            if (!sticker.isActiveAt(currentTimeMs)) continue
-
-            val kf = if (sticker.keyframes.keyframes.isNotEmpty()) sticker.keyframes.interpolateAt(currentTimeMs) else null
-            var offsetX by remember(sticker.id) { mutableFloatStateOf(sticker.x) }
-            var offsetY by remember(sticker.id) { mutableFloatStateOf(sticker.y) }
-            var scale by remember(sticker.id) { mutableFloatStateOf(sticker.sizeScale) }
-
-            Box(
-                modifier = Modifier
-                    .offset(
-                        x = screenW * (offsetX + (kf?.translateX ?: 0f)) - 20.dp,
-                        y = screenH * (offsetY + (kf?.translateY ?: 0f)) - 20.dp
-                    )
-                    .graphicsLayer {
-                        scaleX = scale * (kf?.scale ?: 1f)
-                        scaleY = scale * (kf?.scale ?: 1f)
-                        rotationZ = sticker.rotationDeg + (kf?.rotationDeg ?: 0f)
-                        alpha = sticker.opacity * (kf?.opacity ?: 1f)
-                    }
-                    .pointerInput(sticker.id) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(0.3f, 4f)
-                            val newX = (offsetX + pan.x / size.width.toFloat()).coerceIn(0f, 1f)
-                            val newY = (offsetY + pan.y / size.height.toFloat()).coerceIn(0f, 1f)
-                            offsetX = newX
-                            offsetY = newY
-                        }
-                    }
-            ) {
-                Text(
-                    text = sticker.symbolOrUri,
-                    fontSize = 32.sp
-                )
-            }
-        }
+        // 1. Interactive sticker canvas: tap-select, drag-move,
+        // pinch-resize/rotate, corner handles, crop UI, cutout masks.
+        // Sticker edits are no-ops when the editor didn't pass handlers.
+        StickerCanvas(
+            stickers = stickers,
+            selectedStickerId = selectedStickerId,
+            currentTimeMs = currentTimeMs,
+            onSelectSticker = { onSelectSticker?.invoke(it) },
+            onMoveSticker = { id, dx, dy, persist -> onMoveSticker?.invoke(id, dx, dy, persist) },
+            onScaleSticker = { id, scale, persist -> onScaleSticker?.invoke(id, scale, persist) },
+            onRotateSticker = { id, dDeg, persist -> onRotateSticker?.invoke(id, dDeg, persist) },
+            onStickerGestureEnd = { onStickerGestureEnd?.invoke(it) },
+            onRemoveSticker = { onRemoveSticker?.invoke(it) },
+            onCropSticker = { id, l, t, r, b -> onCropSticker?.invoke(id, l, t, r, b) },
+            onCutoutSticker = { id, shape -> onCutoutSticker?.invoke(id, shape) },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // 2. Interactive Animated Text Overlays (Screen Positioned)
         for (overlay in textOverlays) {

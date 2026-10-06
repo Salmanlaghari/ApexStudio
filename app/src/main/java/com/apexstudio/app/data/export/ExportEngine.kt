@@ -293,16 +293,33 @@ class ExportEngine(private val context: Context) {
                         videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                     }
                     config.stickers.forEach { sticker ->
-                        val overlay = TextOverlay(
-                            id = sticker.id,
-                            text = sticker.symbolOrUri,
-                            x = sticker.x,
-                            y = sticker.y,
-                            sizeScale = sticker.sizeScale * 1.5f,
-                            startMs = sticker.startMs,
-                            endMs = sticker.endMs
-                        )
-                        videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                        if (sticker.isPngSticker()) {
+                            // Bundled PNG sticker: rasterised with crop / cutout /
+                            // rotation / opacity and composited as a GL sprite so
+                            // the export matches the editor preview exactly.
+                            videoEffects.add(
+                                com.apexstudio.app.data.effect.StickerGlEffect(
+                                    context, sticker, aspect
+                                )
+                            )
+                        } else {
+                            // Legacy emoji sticker: rendered as text. The size
+                            // factor converts the sticker's sizeScale into a
+                            // TextOverlay sizeScale so the export font size
+                            // matches the preview's emoji font size exactly
+                            // (see StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR).
+                            val overlay = TextOverlay(
+                                id = sticker.id,
+                                text = sticker.symbolOrUri,
+                                x = sticker.x,
+                                y = sticker.y,
+                                sizeScale = sticker.sizeScale *
+                                    com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
+                                startMs = sticker.startMs,
+                                endMs = sticker.endMs
+                            )
+                            videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                        }
                     }
                 }
 

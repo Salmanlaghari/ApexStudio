@@ -107,7 +107,11 @@ class ExportEngine(private val context: Context) {
         val bassBoostEnabled: Boolean = false,
         val bassBoostStrength: Short = 0,
         // Picture-in-Picture overlays: composited in the export to match preview.
-        val pipOverlays: List<PipOverlayConfig> = emptyList()
+        val pipOverlays: List<PipOverlayConfig> = emptyList(),
+        // Timeline music: unmuted extra audio tracks are decoded and mixed over
+        // the exported audio after the Transformer pass (see MusicExportMixer),
+        // so added music is actually audible in the exported video. Empty = no-op.
+        val musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
     )
 
     /**
@@ -293,16 +297,33 @@ class ExportEngine(private val context: Context) {
                         videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                     }
                     config.stickers.forEach { sticker ->
-                        val overlay = TextOverlay(
-                            id = sticker.id,
-                            text = sticker.symbolOrUri,
-                            x = sticker.x,
-                            y = sticker.y,
-                            sizeScale = sticker.sizeScale * 1.5f,
-                            startMs = sticker.startMs,
-                            endMs = sticker.endMs
-                        )
-                        videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                        if (sticker.isPngSticker()) {
+                            // Bundled PNG sticker: rasterised with crop / cutout /
+                            // rotation / opacity and composited as a GL sprite so
+                            // the export matches the editor preview exactly.
+                            videoEffects.add(
+                                com.apexstudio.app.data.effect.StickerGlEffect(
+                                    context, sticker, aspect
+                                )
+                            )
+                        } else {
+                            // Legacy emoji sticker: rendered as text. The size
+                            // factor converts the sticker's sizeScale into a
+                            // TextOverlay sizeScale so the export font size
+                            // matches the preview's emoji font size exactly
+                            // (see StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR).
+                            val overlay = TextOverlay(
+                                id = sticker.id,
+                                text = sticker.symbolOrUri,
+                                x = sticker.x,
+                                y = sticker.y,
+                                sizeScale = sticker.sizeScale *
+                                    com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
+                                startMs = sticker.startMs,
+                                endMs = sticker.endMs
+                            )
+                            videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                        }
                     }
                 }
 
@@ -311,7 +332,9 @@ class ExportEngine(private val context: Context) {
                     .build()
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
-                val transformer = buildHardwareTransformer(config.resolution, outputFile)
+                val transformer = buildHardwareTransformer(
+                    config.resolution, outputFile, config.musicMixTracks
+                )
                 this@ExportEngine.transformer = transformer
 
                 startProgressTracking(transformer)
@@ -511,7 +534,11 @@ class ExportEngine(private val context: Context) {
         }
     }
 
-    private fun buildHardwareTransformer(resolution: String, outputFile: File): Transformer {
+    private fun buildHardwareTransformer(
+        resolution: String,
+        outputFile: File,
+        musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+    ): Transformer {
         val targetBitrate = when (resolution.lowercase()) {
             "4k", "2160p" -> 50_000_000
             "720p" -> 6_000_000
@@ -534,12 +561,65 @@ class ExportEngine(private val context: Context) {
         val transformerListener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                 progressJob?.cancel()
+                if (musicMixTracks.isEmpty()) {
+                    mainHandler.post {
+                        _exportState.value = ExportProgressState(
+                            isExporting = false,
+                            progress = 1f,
+                            outputUri = Uri.fromFile(outputFile).toString()
+                        )
+                    }
+                    return
+                }
+                // Music mix pass: decode the exported audio + timeline music
+                // tracks, mix, and remux. Runs on IO; the export still reports
+                // success (without the mix) if this step ever fails.
                 mainHandler.post {
                     _exportState.value = ExportProgressState(
-                        isExporting = false,
-                        progress = 1f,
-                        outputUri = Uri.fromFile(outputFile).toString()
+                        isExporting = true,
+                        progress = 0.97f
                     )
+                }
+                CoroutineScope(Dispatchers.IO).launch {
+                    val mixedFile = File(
+                        outputFile.parentFile,
+                        outputFile.nameWithoutExtension + "_music.mp4"
+                    )
+                    try {
+                        val result = MusicExportMixer.mixMusicIntoVideo(
+                            context, outputFile, musicMixTracks, mixedFile
+                        )
+                        Log.i(
+                            TAG,
+                            "Music mix done: ${result.mixedTracks} mixed, " +
+                                "${result.skippedTracks} skipped"
+                        )
+                        // The pre-mix file is now redundant: remove it so each
+                        // export leaves exactly one video on disk.
+                        if (!outputFile.delete()) {
+                            Log.w(TAG, "Could not delete intermediate export file")
+                        }
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(mixedFile).toString()
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Music mix failed; keeping video without music mix", e)
+                        // Don't leave a partial/corrupt _music.mp4 behind.
+                        if (mixedFile.exists() && !mixedFile.delete()) {
+                            Log.w(TAG, "Could not delete partial mixed file")
+                        }
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(outputFile).toString()
+                            )
+                        }
+                    }
                 }
             }
 

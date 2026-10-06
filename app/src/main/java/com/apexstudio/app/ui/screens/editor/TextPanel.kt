@@ -1,6 +1,11 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,23 +18,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.text.TextAnimEngine
 import com.apexstudio.app.data.text.TextPreset
 import com.apexstudio.app.data.text.TextPresetEngine
 import com.apexstudio.app.domain.model.TextOverlay
@@ -49,18 +57,38 @@ data class TextAnimationOption(
 
 val TEXT_ANIMATIONS = listOf(
     TextAnimationOption("NONE", "None", "Static subtitle"),
+    TextAnimationOption("FADE_IN", "Fade In", "Smooth opacity dissolve"),
+    TextAnimationOption("SLIDE_UP", "Slide Up", "Rises from below with fade"),
+    TextAnimationOption("TYPEWRITER", "Typewriter", "Letter by letter reveal"),
+    TextAnimationOption("POP_SPRING", "Pop Spring", "Springy overshoot zoom-in"),
+    TextAnimationOption("BLUR_IN", "Blur In", "Sharpens out of a blur"),
+    TextAnimationOption("SLIDE_BOUNCE", "Slide Bounce", "Bouncy rise with overshoot"),
+    TextAnimationOption("PULSE", "Pulse Loop", "Rhythmic breathing scale"),
+    TextAnimationOption("BOUNCE", "Bounce Loop", "Playful vertical hop"),
     TextAnimationOption("3D_FLIP_X", "3D Flip X", "3D perspective tumble on horizontal axis"),
     TextAnimationOption("3D_ROTATE_Y", "3D Spin Y", "3D door swing on vertical axis"),
     TextAnimationOption("3D_DEPTH_WARP", "3D Depth Warp", "Extrudes from deep 3D horizon"),
     TextAnimationOption("3D_SWING", "3D Swing", "Dynamic pendulum in 3D perspective"),
     TextAnimationOption("3D_TUMBLE", "3D Cube Tumble", "Dual-axis tumbling 3D effect"),
-    TextAnimationOption("3D_ISOMETRIC", "3D Isometric", "Angled 3D isometric depth"),
-    TextAnimationOption("FADE", "Fade In", "Smooth opacity dissolve"),
-    TextAnimationOption("POP", "Pop & Bounce", "Dynamic spring zoom-in"),
-    TextAnimationOption("TYPEWRITER", "Typewriter", "Letter by letter reveal"),
-    TextAnimationOption("SLIDE_UP", "Slide Up", "Motion slide from bottom"),
-    TextAnimationOption("PULSE", "Pulse Loop", "Rhythmic breathing scale"),
-    TextAnimationOption("BOUNCE", "Bounce", "Playful vertical spring")
+    TextAnimationOption("3D_ISOMETRIC", "3D Isometric", "Angled 3D isometric depth")
+)
+
+/** Exit animations, timed at the END of the text layer's window. */
+val TEXT_OUTRO_ANIMATIONS = listOf(
+    TextAnimationOption("NONE", "None", "Cuts out instantly"),
+    TextAnimationOption("FADE_OUT", "Fade Out", "Smooth opacity dissolve"),
+    TextAnimationOption("SLIDE_DOWN", "Slide Down", "Sinks down while fading"),
+    TextAnimationOption("SHRINK", "Shrink", "Scales down to a point")
+)
+
+/** Gradient fill presets (start → end ARGB), shown in the Text panel. */
+val TEXT_GRADIENTS: List<Triple<String, Long, Long>> = listOf(
+    Triple("Gold", 0xFFFFD700L, 0xFFFF8C00L),
+    Triple("Sunset", 0xFFFF512FL, 0xFFDD2476L),
+    Triple("Ocean", 0xFF00E5FFL, 0xFF2979FFL),
+    Triple("Mint", 0xFF1DE9B6L, 0xFF00B0FFL),
+    Triple("Violet", 0xFFAA00FFL, 0xFFFF00E5L),
+    Triple("Ember", 0xFFFFEA00L, 0xFFFF3D00L)
 )
 
 @Composable
@@ -76,7 +104,12 @@ fun TextPanel(
     onFontFamilyChange: (String) -> Unit = {},
     onStyleChange: (isBold: Boolean, isItalic: Boolean) -> Unit = { _, _ -> },
     onShadowChange: (Long?) -> Unit = {},
+    onAlignChange: (String) -> Unit = {},
+    onLetterSpacingChange: (Float) -> Unit = {},
+    onGradientChange: (Pair<Long, Long>?) -> Unit = {},
     onAnimDurationChange: (Long) -> Unit = {},
+    onOutroChange: (String) -> Unit = {},
+    onOutroDurationChange: (Long) -> Unit = {},
     onDuplicate: (String) -> Unit = {},
     onDelete: (String) -> Unit,
     onApplyPreset: (TextPreset) -> Unit = {},
@@ -256,7 +289,8 @@ fun TextPanel(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
+
 
                 // Numerical Font Size Control with - and + buttons and slider (CapCut style)
                 val currentSizeSp = (20f * selected.sizeScale).toInt()
@@ -338,42 +372,72 @@ fun TextPanel(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Font Family & Weight Row
+                // Bundled OFL font picker — chips render in the actual
+                // typeface so WYSIWYG matches the exported video.
+                Text(
+                    "Font",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TEXT_FONT_OPTIONS.chunked(3).forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            row.forEach { (fontKey, fontLabel) ->
+                                val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
+                                val chipFont = rememberTextFontFamily(fontKey, selected.isBold, selected.isItalic)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                            else ApexPalette.BgElevated
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { onFontFamilyChange(fontKey) }
+                                        .padding(horizontal = 6.dp, vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        fontLabel,
+                                        color = if (isSel) ApexPalette.NeonCyan else Color.White,
+                                        fontSize = 13.sp,
+                                        fontFamily = chipFont,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            // Pad short rows so chips keep their width
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Bold / Italic toggles
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        "Font",
+                        "Style",
                         color = ApexPalette.TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "sans" to "Sans",
-                            "serif" to "Serif",
-                            "monospace" to "Mono",
-                            "cursive" to "Script"
-                        ).forEach { (fontKey, fontLabel) ->
-                            val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSel) ApexPalette.NeonCyan else ApexPalette.BgElevated)
-                                    .clickable { onFontFamilyChange(fontKey) }
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    fontLabel,
-                                    color = if (isSel) Color(0xFF0A0E1A) else Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        }
-
                         // Bold toggle
                         Box(
                             modifier = Modifier
@@ -515,6 +579,126 @@ fun TextPanel(
 
                 Spacer(Modifier.height(10.dp))
 
+                // Text alignment relative to the anchor point
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Align",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("LEFT" to "Left", "CENTER" to "Center", "RIGHT" to "Right").forEach { (key, label) ->
+                            val sel = selected.textAlign.equals(key, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .clickable { onAlignChange(key) }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (sel) ApexPalette.NeonCyan else Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Letter spacing slider
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Spacing",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    Slider(
+                        value = selected.letterSpacingEm.coerceIn(-0.1f, 0.5f),
+                        onValueChange = onLetterSpacingChange,
+                        valueRange = -0.1f..0.5f,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = ApexPalette.NeonCyan,
+                            activeTrackColor = ApexPalette.NeonCyan,
+                            inactiveTrackColor = ApexPalette.BgElevated
+                        )
+                    )
+                    Text(
+                        String.format("%.2f", selected.letterSpacingEm),
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 6.dp).width(34.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Gradient fill presets
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Gradient",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            val sel = selected.gradientStartArgb == null
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .clickable { onGradientChange(null) }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text("None", color = if (sel) ApexPalette.NeonCyan else Color.White, fontSize = 10.sp)
+                            }
+                        }
+                        items(TEXT_GRADIENTS) { (label, start, end) ->
+                            val sel = selected.gradientStartArgb == start && selected.gradientEndArgb == end
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                            listOf(Color(start.toInt()), Color(end.toInt()))
+                                        )
+                                    )
+                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .clickable { onGradientChange(start to end) }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    label,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        shadow = Shadow(color = Color.Black, offset = Offset(1f, 1f), blurRadius = 3f)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
                 // Quick Duplicate and Delete Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -558,61 +742,41 @@ fun TextPanel(
 
             TextPanelTab.ANIMATION -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // --- 3D Text Animation Live Demo Card ---
-                    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "3d_demo_trans")
-                    val demoProgress by infiniteTransition.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 1f,
-                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                            animation = androidx.compose.animation.core.tween(
-                                durationMillis = selected.animationDurationMs.toInt().coerceIn(600, 2500),
-                                easing = androidx.compose.animation.core.LinearEasing
-                            ),
-                            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-                        ),
-                        label = "demo_prog"
-                    )
-
-                    var demoRotX = 0f
-                    var demoRotY = 0f
-                    var demoScale = 1f
-                    when (selected.animationType.uppercase()) {
-                        "3D_FLIP_X", "FLIP_3D_X" -> {
-                            demoRotX = (1f - demoProgress) * 90f
-                            demoScale = 0.7f + 0.3f * demoProgress
-                        }
-                        "3D_ROTATE_Y", "ROTATE_3D_Y" -> {
-                            demoRotY = (1f - demoProgress) * 90f
-                            demoScale = 0.7f + 0.3f * demoProgress
-                        }
-                        "3D_DEPTH_WARP", "DEPTH_WARP" -> {
-                            demoScale = 0.2f + 0.8f * (demoProgress * demoProgress)
-                            demoRotX = (1f - demoProgress) * 35f
-                            demoRotY = (1f - demoProgress) * -25f
-                        }
-                        "3D_SWING", "SWING_3D" -> {
-                            val swing = kotlin.math.sin((demoProgress * kotlin.math.PI * 2.0)).toFloat()
-                            demoRotY = swing * 40f
-                        }
-                        "3D_TUMBLE", "TUMBLE_3D" -> {
-                            demoRotX = demoProgress * 180f
-                            demoRotY = demoProgress * 180f
-                            demoScale = 0.6f + 0.4f * demoProgress
-                        }
-                        "3D_ISOMETRIC", "ISOMETRIC_3D" -> {
-                            demoRotX = 25f
-                            demoRotY = -25f + demoProgress * 15f
-                            demoScale = 0.9f + 0.1f * demoProgress
-                        }
-                        else -> {
-                            demoScale = 0.85f + 0.15f * demoProgress
-                        }
+                    // --- Live intro → hold → outro demo, driven by the
+                    // same TextAnimEngine that powers the preview layer
+                    // and the export bake. ---
+                    val demoDensity = LocalDensity.current
+                    val demoOverlay = remember(selected) {
+                        selected.copy(
+                            startMs = 0L,
+                            endMs = DEMO_CYCLE_MS,
+                            animationDurationMs = selected.animationDurationMs.coerceIn(200L, 1200L),
+                            outroAnimationDurationMs = selected.outroAnimationDurationMs.coerceIn(150L, 1200L)
+                        )
                     }
+                    val demoTransition = rememberInfiniteTransition(label = "text_anim_demo")
+                    val demoTimeMs by demoTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = DEMO_CYCLE_MS.toFloat(),
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = DEMO_CYCLE_MS.toInt(),
+                                easing = LinearEasing
+                            ),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "demo_time"
+                    )
+                    val demoState = TextAnimEngine.compute(demoOverlay, demoTimeMs.toLong())
+                    val demoText = demoState.charsToShow
+                        ?.let { demoOverlay.text.take(it.coerceIn(0, demoOverlay.text.length)) }
+                        ?: demoOverlay.text
+                    val demoFont = rememberTextFontFamily(selected.fontFamily, selected.isBold, selected.isItalic)
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(84.dp)
+                            .height(92.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color(0xFF0D0D18))
                             .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
@@ -628,14 +792,14 @@ fun TextPanel(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "3D LIVE PREVIEW",
+                                    text = "LIVE PREVIEW",
                                     color = ApexPalette.NeonCyan,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
-                                    text = selected.animationType,
+                                    text = "${selected.animationType} → ${selected.outroAnimationType}",
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Medium
@@ -645,13 +809,21 @@ fun TextPanel(
                             Box(
                                 modifier = Modifier
                                     .graphicsLayer {
-                                        rotationX = demoRotX
-                                        rotationY = demoRotY
-                                        scaleX = demoScale
-                                        scaleY = demoScale
-                                        cameraDistance = 16f * density
+                                        alpha = demoState.alpha
+                                        rotationX = demoState.rotXDeg
+                                        rotationY = demoState.rotYDeg
+                                        rotationZ = demoState.rotZDeg
+                                        scaleX = demoState.scaleX
+                                        scaleY = demoState.scaleY
+                                        translationY = demoState.transYFrac * with(demoDensity) { 92.dp.toPx() }
+                                        cameraDistance = 16f * demoDensity.density
                                         shadowElevation = 8f
                                     }
+                                    .then(
+                                        if (demoState.blurFrac > 0f && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                            Modifier.blur(with(demoDensity) { (demoState.blurFrac * 92.dp.toPx()).toDp() })
+                                        } else Modifier
+                                    )
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(
                                         if (selected.bgArgb != null) Color(selected.bgArgb.toInt())
@@ -660,27 +832,28 @@ fun TextPanel(
                                     .padding(horizontal = 14.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = selected.text.ifBlank { "3D TITLE DEMO" },
+                                    text = demoText.ifBlank { "TITLE DEMO" },
                                     color = Color(selected.colorArgb.toInt()),
                                     fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = demoFont
                                 )
                             }
                             Spacer(Modifier.weight(1f))
                         }
                     }
 
-                    // Animation Duration Slider
+                    // Intro duration slider
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Speed",
+                            "Intro speed",
                             color = ApexPalette.TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.width(44.dp)
+                            modifier = Modifier.width(64.dp)
                         )
                         Slider(
                             value = (selected.animationDurationMs / 1000f).coerceIn(0.2f, 2.5f),
@@ -694,7 +867,7 @@ fun TextPanel(
                             )
                         )
                         Text(
-                            "${String.format("%.1fs", selected.animationDurationMs / 1000f)}",
+                            String.format("%.1fs", selected.animationDurationMs / 1000f),
                             color = ApexPalette.NeonCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -703,56 +876,67 @@ fun TextPanel(
                     }
 
                     Text(
-                        "In & Loop Animations",
+                        "Intro (entrance)",
                         color = ApexPalette.NeonCyan,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
 
                     TEXT_ANIMATIONS.forEach { opt ->
-                        val isSel = selected.animationType.equals(opt.id, ignoreCase = true)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                                    else ApexPalette.BgElevated
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .clickable { onAnimationChange(opt.id) }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        opt.label,
-                                        color = if (isSel) ApexPalette.NeonCyan else Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        opt.desc,
-                                        color = ApexPalette.TextTertiary,
-                                        fontSize = 10.sp
-                                    )
-                                }
-                                if (isSel) {
-                                    Icon(
-                                        Icons.Default.Check, null,
-                                        tint = ApexPalette.NeonCyan,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
+                        val isSel = TextAnimEngine.normalizeIntro(selected.animationType) == opt.id
+                        AnimationOptionRow(
+                            opt = opt,
+                            isSelected = isSel,
+                            onClick = { onAnimationChange(opt.id) }
+                        )
+                    }
+
+                    // Outro duration slider
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Outro speed",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.width(64.dp)
+                        )
+                        Slider(
+                            value = (selected.outroAnimationDurationMs / 1000f).coerceIn(0.15f, 2.5f),
+                            onValueChange = { onOutroDurationChange((it * 1000L).toLong()) },
+                            valueRange = 0.15f..2.5f,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = ApexPalette.NeonCyan,
+                                activeTrackColor = ApexPalette.NeonCyan,
+                                inactiveTrackColor = ApexPalette.BgElevated
+                            )
+                        )
+                        Text(
+                            String.format("%.1fs", selected.outroAnimationDurationMs / 1000f),
+                            color = ApexPalette.NeonCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+
+                    Text(
+                        "Outro (exit)",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    TEXT_OUTRO_ANIMATIONS.forEach { opt ->
+                        val isSel = selected.outroAnimationType.equals(opt.id, ignoreCase = true)
+                        AnimationOptionRow(
+                            opt = opt,
+                            isSelected = isSel,
+                            onClick = { onOutroChange(opt.id) }
+                        )
                     }
                 }
             }
@@ -818,6 +1002,58 @@ fun TextPanel(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+private const val DEMO_CYCLE_MS = 2600L
+
+@Composable
+private fun AnimationOptionRow(
+    opt: TextAnimationOption,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
+                else ApexPalette.BgElevated
+            )
+            .border(
+                1.dp,
+                if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                RoundedCornerShape(10.dp)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    opt.label,
+                    color = if (isSelected) ApexPalette.NeonCyan else Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    opt.desc,
+                    color = ApexPalette.TextTertiary,
+                    fontSize = 10.sp
+                )
+            }
+            if (isSelected) {
+                Icon(
+                    Icons.Default.Check, null,
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }

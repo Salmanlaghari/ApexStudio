@@ -12,6 +12,20 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Royalty-free music library (Jamendo API): the free client ID is read from the
+// JAMENDO_CLIENT_ID env var first, then from local.properties (same key).
+// Get a free key at https://developer.jamendo.com/ — see README "Music library".
+// Empty when unset: the app then shows the built-in offline tracks + device import.
+fun musicApiKey(name: String): String {
+  System.getenv(name)?.takeIf { it.isNotBlank() }?.let { return it }
+  val props = Properties()
+  val local = rootProject.file("local.properties")
+  if (local.exists()) {
+    local.inputStream().use { props.load(it) }
+  }
+  return props.getProperty(name, "")
+}
+
 android {
   namespace = "com.apexstudio.app"
   compileSdk = 36
@@ -43,6 +57,8 @@ android {
       .replace("\\", "\\\\")
       .replace("\"", "\\\"")
     buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"$escapedToken\"")
+    // Royalty-free music library: free Jamendo API client ID (empty = offline mode).
+    buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
 
   signingConfigs {

@@ -139,6 +139,28 @@ fun EditorViewModel.setTextOverlayAnimDuration(clipId: String, overlayId: String
     updateTextOverlay(clipId, overlayId) { it.copy(animationDurationMs = durationMs) }
 
 
+fun EditorViewModel.setTextOverlayOutro(clipId: String, overlayId: String, outroType: String) =
+    updateTextOverlay(clipId, overlayId) { it.copy(outroAnimationType = outroType) }
+
+
+fun EditorViewModel.setTextOverlayOutroDuration(clipId: String, overlayId: String, durationMs: Long) =
+    updateTextOverlay(clipId, overlayId) { it.copy(outroAnimationDurationMs = durationMs) }
+
+
+fun EditorViewModel.setTextOverlayAlign(clipId: String, overlayId: String, align: String) =
+    updateTextOverlay(clipId, overlayId) { it.copy(textAlign = align) }
+
+
+fun EditorViewModel.setTextOverlayLetterSpacing(clipId: String, overlayId: String, spacingEm: Float) =
+    updateTextOverlay(clipId, overlayId) { it.copy(letterSpacingEm = spacingEm.coerceIn(-0.1f, 0.5f)) }
+
+
+fun EditorViewModel.setTextOverlayGradient(clipId: String, overlayId: String, gradient: Pair<Long, Long>?) =
+    updateTextOverlay(clipId, overlayId) {
+        it.copy(gradientStartArgb = gradient?.first, gradientEndArgb = gradient?.second)
+    }
+
+
 fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
@@ -189,6 +211,107 @@ fun EditorViewModel.updateStickerTiming(stickerId: String, startMs: Long, endMs:
             if (it.id == stickerId) it.copy(startMs = startMs, endMs = endMs) else it
         }
         s.copy(project = p.copy(stickers = updated))
+    }
+    persistProject()
+}
+
+
+// ---- Sticker library + canvas editing (feature/sticker-library) ----
+
+/**
+ * Generic project-sticker updater. [persist] = false during an active
+ * drag / pinch gesture (state still updates live for the preview);
+ * callers persist once the gesture ends.
+ */
+fun EditorViewModel.updateSticker(
+    stickerId: String,
+    persist: Boolean = true,
+    transform: (StickerOverlay) -> StickerOverlay
+) {
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        // Stickers live at project level (library adds) and can also be
+        // attached to individual clips; update wherever the id is found.
+        s.copy(
+            project = p.copy(
+                stickers = p.stickers.map { if (it.id == stickerId) transform(it) else it },
+                clips = p.clips.map { clip ->
+                    if (clip.stickers.any { it.id == stickerId }) {
+                        clip.copy(stickers = clip.stickers.map {
+                            if (it.id == stickerId) transform(it) else it
+                        })
+                    } else clip
+                }
+            )
+        )
+    }
+    if (persist) persistProject()
+}
+
+fun EditorViewModel.moveSticker(stickerId: String, dx: Float, dy: Float, persist: Boolean = true) =
+    updateSticker(stickerId, persist) {
+        it.copy(
+            x = (it.x + dx).coerceIn(0f, 1f),
+            y = (it.y + dy).coerceIn(0f, 1f)
+        )
+    }
+
+fun EditorViewModel.setStickerSizeScale(stickerId: String, scale: Float, persist: Boolean = true) =
+    updateSticker(stickerId, persist) { it.copy(sizeScale = scale.coerceIn(0.1f, 8f)) }
+
+fun EditorViewModel.rotateSticker(stickerId: String, deltaDeg: Float, persist: Boolean = true) =
+    updateSticker(stickerId, persist) {
+        it.copy(rotationDeg = (it.rotationDeg + deltaDeg) % 360f)
+    }
+
+fun EditorViewModel.removeSticker(stickerId: String) {
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val cleared = s.copy(
+            project = p.copy(
+                stickers = p.stickers.filterNot { it.id == stickerId },
+                clips = p.clips.map { clip ->
+                    clip.copy(stickers = clip.stickers.filterNot { it.id == stickerId })
+                }
+            )
+        )
+        if (s.selectedStickerId == stickerId) cleared.copy(selectedStickerId = null) else cleared
+    }
+    persistProject()
+}
+
+fun EditorViewModel.setStickerCrop(
+    stickerId: String,
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float
+) = updateSticker(stickerId) {
+    it.copy(cropLeft = left, cropTop = top, cropRight = right, cropBottom = bottom)
+}
+
+fun EditorViewModel.setStickerCutout(stickerId: String, shape: String) =
+    updateSticker(stickerId) { it.copy(cutoutShape = shape) }
+
+/** Add a bundled PNG sticker from the library to the project canvas. */
+fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: String) {
+    val newSticker = StickerOverlay(
+        symbolOrUri = "",
+        category = category,
+        name = name,
+        assetPath = assetPath,
+        x = 0.5f,
+        y = 0.5f,
+        sizeScale = 1f,
+        opacity = 1f
+    )
+    _state.update { st ->
+        val proj = st.project ?: return@update st
+        st.copy(
+            project = proj.copy(stickers = proj.stickers + newSticker),
+            selectedStickerId = newSticker.id,
+            stickerPanelOpen = false
+        )
     }
     persistProject()
 }

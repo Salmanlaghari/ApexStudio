@@ -1,6 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
-import androidx.compose.animation.core.*
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,25 +19,32 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.text.TextAnimEngine
+import com.apexstudio.app.data.text.TextFontRegistry
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
  * Professional CapCut-style interactive, draggable, resizable, and animated text overlay.
+ *
+ * Animation state comes from [TextAnimEngine] — the same math the
+ * export path ([TextOverlayGlEffect]) uses, so the live preview and
+ * the baked MP4 match, including intro presets, outros and loops.
  */
 @Composable
 fun AnimatedTextOverlayView(
@@ -58,6 +65,7 @@ fun AnimatedTextOverlayView(
     var posX by remember(overlay.id) { mutableFloatStateOf(overlay.x) }
     var posY by remember(overlay.id) { mutableFloatStateOf(overlay.y) }
     var currentScale by remember(overlay.id, overlay.sizeScale) { mutableFloatStateOf(overlay.sizeScale) }
+    var textWidthPx by remember(overlay.id) { mutableFloatStateOf(0f) }
 
     val density = LocalDensity.current
     val containerWidthPx = with(density) { containerWidth.toPx() }.coerceAtLeast(1f)
@@ -69,22 +77,8 @@ fun AnimatedTextOverlayView(
         currentScale = overlay.sizeScale
     }
 
-    // Animation progress calculation
-    val animDuration = overlay.animationDurationMs.coerceAtLeast(200L)
-    val elapsed = (currentTimeMs - overlay.startMs).coerceAtLeast(0L)
-    val progress = (elapsed.toFloat() / animDuration.toFloat()).coerceIn(0f, 1f)
-
-    // Running pulse animation for looping types
-    val infiniteTransition = rememberInfiniteTransition(label = "text_loop")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
+    // Shared animation math — identical to what export bakes.
+    val anim = TextAnimEngine.compute(overlay, currentTimeMs)
 
     // Compute keyframe interpolation if keyframes are defined
     val kfTransform = if (overlay.keyframes.keyframes.isNotEmpty()) {
@@ -94,102 +88,58 @@ fun AnimatedTextOverlayView(
     }
 
     // Compute animated attributes
-    var displayAlpha = overlay.opacity * (kfTransform?.opacity ?: 1f)
-    var scaleAnim = currentScale * (kfTransform?.scale ?: 1f)
-    var offsetXAnim = (kfTransform?.translateX ?: 0f) * containerWidthPx
-    var offsetYAnim = (kfTransform?.translateY ?: 0f) * containerHeightPx
-    var rotationAnim = overlay.rotationDeg + (kfTransform?.rotationDeg ?: 0f)
-    var rotationXAnim = 0f
-    var rotationYAnim = 0f
-    var cameraDistAnim = 16f * density.density
-    var displayText = overlay.text
+    val displayAlpha = (overlay.opacity * (kfTransform?.opacity ?: 1f) * anim.alpha).coerceIn(0f, 1f)
+    val scaleXAnim = currentScale * (kfTransform?.scale ?: 1f) * anim.scaleX
+    val scaleYAnim = currentScale * (kfTransform?.scale ?: 1f) * anim.scaleY
+    val offsetXPx = (kfTransform?.translateX ?: 0f) * containerWidthPx + anim.transXFrac * containerWidthPx
+    val offsetYPx = (kfTransform?.translateY ?: 0f) * containerHeightPx + anim.transYFrac * containerHeightPx
+    val rotationZAnim = overlay.rotationDeg + (kfTransform?.rotationDeg ?: 0f) + anim.rotZDeg
+    val cameraDistAnim = 16f * density.density
+    val displayText = anim.charsToShow?.let { overlay.text.take(it.coerceIn(0, overlay.text.length)) }
+        ?: overlay.text
 
-    when (overlay.animationType.uppercase()) {
-        "FADE" -> {
-            displayAlpha *= progress
-        }
-        "POP" -> {
-            val easeOutBack = progress * progress * (2.7f * progress - 1.7f)
-            scaleAnim *= (0.3f + 0.7f * easeOutBack.coerceIn(0f, 1.15f))
-            displayAlpha *= progress.coerceIn(0f, 1f)
-        }
-        "TYPEWRITER" -> {
-            val totalChars = overlay.text.length
-            val charsToShow = (totalChars * progress).toInt().coerceIn(0, totalChars)
-            displayText = overlay.text.take(charsToShow)
-        }
-        "SLIDE_UP" -> {
-            offsetYAnim += (1f - progress) * 35f
-            displayAlpha *= progress
-        }
-        "PULSE" -> {
-            scaleAnim *= pulseScale
-        }
-        "BOUNCE" -> {
-            val bounceVal = kotlin.math.sin(progress * kotlin.math.PI * 3.0).toFloat()
-            offsetYAnim += bounceVal * -12f
-        }
-        "3D_FLIP_X", "FLIP_3D_X" -> {
-            val rotProgress = (1f - progress).coerceIn(0f, 1f)
-            rotationXAnim = rotProgress * 90f
-            scaleAnim *= (0.6f + 0.4f * progress)
-            displayAlpha *= progress
-        }
-        "3D_ROTATE_Y", "ROTATE_3D_Y" -> {
-            val rotProgress = (1f - progress).coerceIn(0f, 1f)
-            rotationYAnim = rotProgress * 90f
-            scaleAnim *= (0.6f + 0.4f * progress)
-            displayAlpha *= progress
-        }
-        "3D_DEPTH_WARP", "DEPTH_WARP" -> {
-            val warp = progress * progress
-            scaleAnim *= (0.15f + 0.85f * warp)
-            rotationXAnim = (1f - progress) * 35f
-            rotationYAnim = (1f - progress) * -25f
-            displayAlpha *= progress
-        }
-        "3D_SWING", "SWING_3D" -> {
-            val swing = kotlin.math.sin(progress * kotlin.math.PI.toFloat() * 2.5f) * (1f - progress)
-            rotationYAnim = swing * 45f
-            rotationAnim += swing * 15f
-        }
-        "3D_TUMBLE", "TUMBLE_3D" -> {
-            val rotProgress = (1f - progress).coerceIn(0f, 1f)
-            rotationXAnim = rotProgress * 120f
-            rotationYAnim = rotProgress * 120f
-            scaleAnim *= (0.4f + 0.6f * progress)
-            displayAlpha *= progress
-        }
-        "3D_ISOMETRIC", "ISOMETRIC_3D" -> {
-            rotationXAnim = 25f
-            rotationYAnim = -25f
-            scaleAnim *= (0.7f + 0.3f * progress)
-            displayAlpha *= progress
-        }
-        else -> {
-            // Default: keyframe transform attributes already applied
+    // LEFT pins the block's left edge at the anchor, RIGHT the right
+    // edge; CENTER keeps the classic centred behaviour. The content
+    // box is centred on the anchor by layout, so shift it by half the
+    // measured text width to move the correct edge onto the anchor.
+    val alignShiftDp = with(density) {
+        when (overlay.textAlign.uppercase()) {
+            "LEFT" -> (textWidthPx / 2f).toDp()
+            "RIGHT" -> (-textWidthPx / 2f).toDp()
+            else -> 0.dp
         }
     }
+    val offsetXDp = with(density) { offsetXPx.toDp() }
+    val offsetYDp = with(density) { offsetYPx.toDp() }
 
-    val fontFam = when (overlay.fontFamily.lowercase()) {
-        "serif" -> FontFamily.Serif
-        "monospace" -> FontFamily.Monospace
-        "cursive", "script" -> FontFamily.Cursive
-        else -> FontFamily.Default
+    // Bundled OFL fonts ship real bold/italic faces, so the typeface
+    // already carries the weight — don't double up with synthetic
+    // Compose styling. System families still use B/I styling.
+    val isBundledFont = remember(overlay.fontFamily) {
+        TextFontRegistry.find(overlay.fontFamily)?.regularAsset != null
     }
+    val fontFam = rememberTextFontFamily(overlay.fontFamily, overlay.isBold, overlay.isItalic)
 
     val textColor = Color(overlay.colorArgb.toInt())
     val shadow = overlay.shadowColorArgb?.let {
         Shadow(color = Color(it.toInt()), offset = Offset(2f, 2f), blurRadius = 4f)
     }
+    val gradientBrush = run {
+        val s = overlay.gradientStartArgb
+        val e = overlay.gradientEndArgb
+        if (s != null && e != null) {
+            Brush.verticalGradient(listOf(Color(s.toInt()), Color(e.toInt())))
+        } else null
+    }
 
-    val fontSizeSp = (20f * scaleAnim).coerceIn(10f, 80f)
+    val fontSizeSp = (20f * ((scaleXAnim + scaleYAnim) / 2f)).coerceIn(10f, 80f)
+    val blurDp = with(density) { (anim.blurFrac * containerHeightPx).toDp() }
 
     Box(
         modifier = modifier
             .offset(
-                x = containerWidth * posX - 48.dp + containerWidth * (kfTransform?.translateX ?: 0f),
-                y = containerHeight * posY - 24.dp + (containerHeight * (kfTransform?.translateY ?: 0f)) + offsetYAnim.dp
+                x = containerWidth * posX - 48.dp + offsetXDp + alignShiftDp,
+                y = containerHeight * posY - 24.dp + offsetYDp
             )
             .pointerInput(overlay.id) {
                 detectDragGestures { change, dragAmount ->
@@ -217,14 +167,19 @@ fun AnimatedTextOverlayView(
             modifier = Modifier
                 .graphicsLayer {
                     alpha = displayAlpha
-                    rotationX = rotationXAnim
-                    rotationY = rotationYAnim
-                    rotationZ = rotationAnim
-                    scaleX = scaleAnim
-                    scaleY = scaleAnim
+                    rotationX = anim.rotXDeg
+                    rotationY = anim.rotYDeg
+                    rotationZ = rotationZAnim
+                    scaleX = scaleXAnim
+                    scaleY = scaleYAnim
                     cameraDistance = cameraDistAnim
-                    shadowElevation = if (rotationXAnim != 0f || rotationYAnim != 0f) 8f else 0f
+                    shadowElevation = if (anim.rotXDeg != 0f || anim.rotYDeg != 0f) 8f else 0f
                 }
+                .then(
+                    if (anim.blurFrac > 0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Modifier.blur(blurDp)
+                    } else Modifier
+                )
                 .clip(RoundedCornerShape(8.dp))
                 .background(
                     if (overlay.bgArgb != null) Color(overlay.bgArgb.toInt())
@@ -239,12 +194,17 @@ fun AnimatedTextOverlayView(
         ) {
             Text(
                 text = displayText.ifEmpty { " " },
-                color = textColor,
+                color = if (gradientBrush == null) textColor else Color.Unspecified,
                 fontSize = fontSizeSp.sp,
-                fontWeight = if (overlay.isBold) FontWeight.Bold else FontWeight.Normal,
-                fontStyle = if (overlay.isItalic) FontStyle.Italic else FontStyle.Normal,
+                fontWeight = if (!isBundledFont && overlay.isBold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (!isBundledFont && overlay.isItalic) FontStyle.Italic else FontStyle.Normal,
                 fontFamily = fontFam,
-                style = TextStyle(shadow = shadow)
+                style = TextStyle(
+                    brush = gradientBrush,
+                    shadow = shadow,
+                    letterSpacing = overlay.letterSpacingEm.coerceIn(-0.2f, 1f).sp
+                ),
+                onTextLayout = { textWidthPx = it.size.width.toFloat() }
             )
         }
 

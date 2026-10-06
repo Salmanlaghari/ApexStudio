@@ -84,6 +84,11 @@ fun EditorScreen(
         vm.loadEditorLayoutPref()
     }
 
+    // Make bundled OFL text fonts available to the preview + export renderers.
+    LaunchedEffect(Unit) {
+        com.apexstudio.app.data.text.TextFontRegistry.init(context)
+    }
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.flow.combine(
             mediaPicker.pickedMedia,
@@ -504,6 +509,16 @@ fun EditorScreen(
                 onSizeScaleChange = { id, scale ->
                     selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
                 },
+                // Sticker canvas editing (feature/sticker-library)
+                selectedStickerId = state.selectedStickerId,
+                onSelectSticker = { vm.selectSticker(it) },
+                onMoveSticker = { id, dx, dy, persist -> vm.moveSticker(id, dx, dy, persist) },
+                onScaleSticker = { id, scale, persist -> vm.setStickerSizeScale(id, scale, persist) },
+                onRotateSticker = { id, dDeg, persist -> vm.rotateSticker(id, dDeg, persist) },
+                onStickerGestureEnd = { id -> vm.updateSticker(id) { it } },
+                onRemoveSticker = { vm.removeSticker(it) },
+                onCropSticker = { id, l, t, r, b -> vm.setStickerCrop(id, l, t, r, b) },
+                onCutoutSticker = { id, shape -> vm.setStickerCutout(id, shape) },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -981,9 +996,34 @@ fun EditorScreen(
                             vm.setTextOverlayShadow(textClip.id, activeOverlayId, shadow)
                         }
                     },
+                    onAlignChange = { align ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayAlign(textClip.id, activeOverlayId, align)
+                        }
+                    },
+                    onLetterSpacingChange = { spacing ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayLetterSpacing(textClip.id, activeOverlayId, spacing)
+                        }
+                    },
+                    onGradientChange = { gradient ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayGradient(textClip.id, activeOverlayId, gradient)
+                        }
+                    },
                     onAnimDurationChange = { dur ->
                         if (textClip != null && activeOverlayId != null) {
                             vm.setTextOverlayAnimDuration(textClip.id, activeOverlayId, dur)
+                        }
+                    },
+                    onOutroChange = { outro ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayOutro(textClip.id, activeOverlayId, outro)
+                        }
+                    },
+                    onOutroDurationChange = { dur ->
+                        if (textClip != null && activeOverlayId != null) {
+                            vm.setTextOverlayOutroDuration(textClip.id, activeOverlayId, dur)
                         }
                     },
                     onDuplicate = { overlayId ->
@@ -1108,7 +1148,7 @@ fun EditorScreen(
         ) {
             Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
                 StickerPanel(
-                    onAddSticker = { symbol, cat, name -> vm.addStickerOverlay(symbol, cat, name) },
+                    onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath, cat, name) },
                     onClose = { vm.closeStickerPanel() }
                 )
             }
@@ -1224,6 +1264,12 @@ fun EditorScreen(
             onSelectSong = { title, filePath, durationMs ->
                 vm.addRoyaltyTrack(title, filePath, durationMs)
                 vm.closeRoyaltyMusicDialog()
+            },
+            // Device import: reuse the existing MediaStore audio picker; the
+            // picked file lands on the audio track via audioPickerLauncher.
+            onImportAudio = {
+                vm.closeRoyaltyMusicDialog()
+                audioPickerLauncher.launch("audio/*")
             }
         )
     }

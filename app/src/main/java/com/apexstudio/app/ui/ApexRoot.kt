@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
@@ -36,7 +37,7 @@ fun ApexRoot() {
     var classicEditorLayout by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         try {
-            classicEditorLayout = kotlinx.coroutines.flow.first(
+            classicEditorLayout = first(
                 com.apexstudio.app.data.settings.EditorLayoutPrefs(context).classicEditorLayout
             )
         } catch (_: Exception) { }

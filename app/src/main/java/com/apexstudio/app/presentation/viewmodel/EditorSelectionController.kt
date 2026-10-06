@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -175,7 +176,7 @@ fun EditorViewModel.loadEditorLayoutPref() {
     viewModelScope.launch {
         val ctx = context ?: return@launch
         try {
-            val classic = kotlinx.coroutines.flow.first(
+            val classic = first(
                 com.apexstudio.app.data.settings.EditorLayoutPrefs(ctx).classicEditorLayout
             )
             _state.update { it.copy(useClassicEditorLayout = classic) }

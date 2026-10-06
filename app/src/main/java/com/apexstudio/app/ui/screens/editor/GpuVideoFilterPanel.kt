@@ -432,32 +432,26 @@ fun GpuVideoFilterPanel(
                 else GpuColorProfiles.ALL.filter { it.category == profileCategoryFilter }
             }
 
-            // Grid of Preset Profiles (2 columns)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                filteredProfiles.chunked(2).forEach { rowProfiles ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        rowProfiles.forEach { profile ->
-                            val isSelected = config.activeProfileId == profile.id
-                            GpuColorProfileCard(
-                                profile = profile,
-                                isSelected = isSelected,
-                                onClick = {
-                                    if (isSelected) {
-                                        onConfigChange(GpuFilterConfig())
-                                    } else {
-                                        onConfigChange(profile.applyWithIntensity(1.0f))
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        if (rowProfiles.size == 1) {
-                            Spacer(Modifier.weight(1f))
-                        }
-                    }
+            // Horizontal scrollable strip of Preset Profiles (video stays visible above)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(horizontal = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(filteredProfiles, key = { it.id }) { profile ->
+                    val isSelected = config.activeProfileId == profile.id
+                    GpuColorProfileCard(
+                        profile = profile,
+                        isSelected = isSelected,
+                        onClick = {
+                            if (isSelected) {
+                                onConfigChange(GpuFilterConfig())
+                            } else {
+                                onConfigChange(profile.applyWithIntensity(1.0f))
+                            }
+                        },
+                        modifier = Modifier.width(140.dp)
+                    )
                 }
             }
         }

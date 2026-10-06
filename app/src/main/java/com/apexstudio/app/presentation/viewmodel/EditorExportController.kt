@@ -56,6 +56,11 @@ fun EditorViewModel.startExport(
                 opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
             )
         }
+    // Transition: apply the project's chosen transition type in the export
+    // (not just a timeline badge — actually rendered via TransitionGlEffect).
+    val transitionType = s.project?.lastTransitionType?.let { typeStr ->
+        com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
+    }
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
@@ -81,7 +86,9 @@ fun EditorViewModel.startExport(
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
             bassBoostStrength = audioSt.bassBoostStrength,
-            pipOverlays = pipOverlays
+            pipOverlays = pipOverlays,
+            transitionType = transitionType,
+            transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
         )
     )
 }

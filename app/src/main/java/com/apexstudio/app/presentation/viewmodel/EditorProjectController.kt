@@ -200,6 +200,25 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                     Log.w("EditorViewModel", "Waveform analysis failed", e)
                 }
             }
+            // Auto-detect source video aspect ratio (16:9, 9:16, 1:1, 4:5, etc.)
+            // so preview + export match the source without manual setup.
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val ratio = detectVideoAspectRatio(context!!, firstVideo.uri)
+                    if (ratio != null && ratio > 0) {
+                        _state.update { st ->
+                            val proj = st.project
+                            if (proj != null && proj.videoAspectRatio == null) {
+                                st.copy(project = proj.copy(videoAspectRatio = ratio))
+                            } else st
+                        }
+                        persistProject()
+                        Log.d("EditorViewModel", "Auto-detected video aspect ratio: $ratio")
+                    }
+                } catch (e: Exception) {
+                    Log.w("EditorViewModel", "Aspect ratio detection failed", e)
+                }
+            }
         }
 
         for (clip in newClips) {
@@ -253,5 +272,37 @@ fun EditorViewModel.analyzeAudio(uri: String) {
     viewModelScope.launch {
         val data = mediaAnalyzer?.analyzeAudioWaveform(uri, context ?: return@launch)
         data?.samples?.let { setWaveformSamples(it) }
+    }
+}
+
+
+/**
+ * Detects the source video's aspect ratio (width / height) using
+ * MediaMetadataRetriever. Returns null if detection fails.
+ * Handles rotation metadata (90/270° swaps width/height).
+ */
+internal fun detectVideoAspectRatio(context: android.content.Context, uri: String): Float? {
+    val retriever = android.media.MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(context, android.net.Uri.parse(uri))
+        val w = retriever.extractMetadata(
+            android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+        )?.toIntOrNull() ?: 0
+        val h = retriever.extractMetadata(
+            android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+        )?.toIntOrNull() ?: 0
+        val rotation = retriever.extractMetadata(
+            android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+        )?.toIntOrNull() ?: 0
+        if (w > 0 && h > 0) {
+            // 90° or 270° rotation swaps dimensions.
+            val (ew, eh) = if (rotation == 90 || rotation == 270) h to w else w to h
+            ew.toFloat() / eh.toFloat()
+        } else null
+    } catch (e: Exception) {
+        android.util.Log.w("EditorViewModel", "detectVideoAspectRatio failed for $uri", e)
+        null
+    } finally {
+        try { retriever.release() } catch (_: Exception) {}
     }
 }

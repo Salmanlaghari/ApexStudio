@@ -49,6 +49,9 @@ class CameraKitSessionManager(context: Context) {
     /** Toggles between the front and back camera while the preview is running. */
     fun flipCamera() {
         frontCamera = !frontCamera
+        // Stop the current preview before restarting it on the other camera so
+        // CameraX doesn't hold two camera sessions (resource leak).
+        runCatching { imageProcessorSource?.stopPreview() }
         imageProcessorSource?.startPreview(frontCamera)
     }
 

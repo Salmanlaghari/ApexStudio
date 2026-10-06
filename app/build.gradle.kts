@@ -36,7 +36,13 @@ android {
         }.getProperty("SNAP_CAMERA_KIT_TOKEN")
       }
       ?: ""
-    buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"${snapCameraKitToken.replace("\"", "")}\"")
+    // Escape every character that is special inside a Java string literal so the
+    // token survives verbatim into the generated BuildConfig field.
+    // (In Java source only backslash and the quote need escaping; '$' is literal.)
+    val escapedToken = snapCameraKitToken
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+    buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"$escapedToken\"")
   }
 
   signingConfigs {

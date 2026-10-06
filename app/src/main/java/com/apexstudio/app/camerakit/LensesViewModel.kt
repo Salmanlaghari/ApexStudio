@@ -1,6 +1,7 @@
 package com.apexstudio.app.camerakit
 
 import androidx.lifecycle.ViewModel
+import android.util.Log
 import com.snap.camerakit.Session
 import com.snap.camerakit.lenses.LensesComponent
 import com.snap.camerakit.lenses.apply
@@ -33,6 +34,9 @@ fun LensesComponent.Lens.toLensItem(): LensItem = LensItem(
  * applies/clears lenses on the bound session.
  */
 class LensesViewModel : ViewModel() {
+    private companion object {
+        const val TAG = "LensesViewModel"
+    }
     private val _lenses = MutableStateFlow<List<LensItem>>(emptyList())
     val lenses: StateFlow<List<LensItem>> = _lenses.asStateFlow()
 
@@ -62,8 +66,10 @@ class LensesViewModel : ViewModel() {
                 LensesComponent.Repository.QueryCriteria.Available(CameraKitConfig.DEMO_LENS_GROUP_ID)
             ) { result ->
                 when (result) {
-                    is LensesComponent.Repository.Result.None ->
+                    is LensesComponent.Repository.Result.None -> {
+                        _lenses.value = emptyList()
                         _error.value = "No lenses found for this lens group."
+                    }
                     else -> result.whenHasSome { lensList ->
                         lensById = lensList.associateBy { it.id }
                         _lenses.value = lensList.map { it.toLensItem() }
@@ -80,8 +86,16 @@ class LensesViewModel : ViewModel() {
     fun applyLens(id: String) {
         val lens = lensById[id] ?: return
         _applying.value = true
+        // A null processor means the session is gone: the apply callback would never
+        // fire, so reset the flag and report the failure here instead of hanging.
+        val processor = session?.lenses?.processor
+        if (processor == null) {
+            _applying.value = false
+            _error.value = "Lens failed to apply: no active camera session"
+            return
+        }
         try {
-            session?.lenses?.processor?.apply(lens) { success ->
+            processor.apply(lens) { success ->
                 _applying.value = false
                 if (success) {
                     _selectedId.value = id
@@ -100,8 +114,11 @@ class LensesViewModel : ViewModel() {
     fun clearLens() {
         try {
             session?.lenses?.processor?.clear()
-        } catch (_: Throwable) { }
-        _selectedId.value = null
+            _selectedId.value = null
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to clear lens", t)
+            _error.value = "Could not remove lens: ${t.message}"
+        }
     }
 
     fun dismissError() {

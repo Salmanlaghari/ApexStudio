@@ -415,7 +415,12 @@ object MusicExportMixer {
             val aOut = muxer.addTrack(audioFormat)
             muxer.start()
 
-            val vBuf = ByteBuffer.allocate(4 * 1024 * 1024)
+            // Size the sample buffer from the track's max input size when
+            // declared — 4K keyframes can exceed a small fixed buffer.
+            val maxInputSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+            } else 0
+            val vBuf = ByteBuffer.allocate(maxOf(8 * 1024 * 1024, maxInputSize))
             val vInfo = MediaCodec.BufferInfo()
             var audioIdx = 0
 

@@ -49,7 +49,7 @@ private val SAMPLE_MEDIA_LIBRARY = listOf(
     SampleMediaItem("2", "Urban_Street_Night.mp4", 18_000L, ClipType.VIDEO, Icons.Default.Movie),
     SampleMediaItem("3", "Sunset_Beach_4K.mp4", 15_000L, ClipType.VIDEO, Icons.Default.Movie),
     SampleMediaItem("4", "Drone_Mountain_View.mp4", 22_000L, ClipType.VIDEO, Icons.Default.Movie),
-    SampleMediaItem("5", "Portrait_Model_Shoot.jpg", 5_000L, ClipType.VIDEO, Icons.Default.Photo),
+    SampleMediaItem("5", "Portrait_Model_Shoot.jpg", 5_000L, ClipType.IMAGE, Icons.Default.Photo),
     SampleMediaItem("6", "Background_Music_Track.mp3", 120_000L, ClipType.AUDIO, Icons.Default.MusicNote),
     SampleMediaItem("7", "Cyberpunk_Synthwave.mp3", 180_000L, ClipType.AUDIO, Icons.Default.MusicNote),
     SampleMediaItem("8", "Transition_Whoosh_SFX.wav", 2_000L, ClipType.SFX, Icons.Default.MusicNote)
@@ -72,7 +72,7 @@ fun MediaLibrarySheet(
         SAMPLE_MEDIA_LIBRARY.filter { item ->
             val catMatch = when (selectedCategory) {
                 "Videos" -> item.type == ClipType.VIDEO
-                "Photos" -> item.type == ClipType.OVERLAY
+                "Photos" -> item.type == ClipType.IMAGE
                 "Audio" -> item.type == ClipType.AUDIO || item.type == ClipType.SFX
                 else -> true
             }

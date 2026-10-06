@@ -165,6 +165,17 @@ fun EditorScreen(
     LaunchedEffect(exoPlayer, state.selectedClipId, currentClipUri) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clip = currentSelectedClip ?: return@LaunchedEffect
+        // Still-image clips are rendered by PhotoClipPreview (Compose),
+        // not ExoPlayer — feeding a JPEG to the player would just error.
+        if (clip.type == ClipType.IMAGE) {
+            try {
+                player.stop()
+                player.clearMediaItems()
+            } catch (_: Exception) {}
+            vm.setPlayerReady(true)
+            vm.setPlayerDuration(clip.durationMs)
+            return@LaunchedEffect
+        }
         val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
         val mediaItem = MediaItem.fromUri(playableUri)
         val currentUri = player.currentMediaItem?.localConfiguration?.uri
@@ -399,6 +410,14 @@ fun EditorScreen(
                 fxSpeed = state.fxSpeed,
                 isPlaying = state.isPlaying,
                 animatedTransform = animatedTransform,
+                // Photo clip (PR F): rendered by PhotoClipPreview with
+                // its edits; null for video clips.
+                photoClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE },
+                photoCropActive = state.photoEditPanelOpen &&
+                        state.photoEditTab == com.apexstudio.app.presentation.state.PhotoEditTab.CROP,
+                onPhotoCropRectChange = { rect ->
+                    currentSelectedClip?.id?.let { vm.setPhotoCrop(it, rect) }
+                },
                 onTapVideo = {
                     triggerScreenControls()
                 },
@@ -858,6 +877,18 @@ fun EditorScreen(
                 )
             }
         }
+    }
+
+    // Photo-editing sheet (PR F): only for the selected IMAGE clip.
+    // Extracted to a separate composable to keep EditorScreen under the
+    // 64KB JVM method limit.
+    val photoEditClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE }
+    if (state.photoEditPanelOpen && photoEditClip != null) {
+        PhotoEditSheet(
+            photoEditClip = photoEditClip,
+            tab = state.photoEditTab,
+            vm = vm
+        )
     }
 
     if (state.fxPanelOpen) {
@@ -1354,3 +1385,45 @@ fun EditorScreen(
     }
 }
 
+
+/**
+ * Photo-editing bottom sheet (PR F). Extracted from [EditorScreen] as a
+ * top-level composable to keep EditorScreen under the 64KB JVM method limit.
+ */
+@Composable
+private fun PhotoEditSheet(
+    photoEditClip: com.apexstudio.app.domain.model.MediaClip,
+    tab: com.apexstudio.app.presentation.state.PhotoEditTab,
+    vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable { vm.closePhotoEditPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = false) {}
+        ) {
+            PhotoEditPanel(
+                photoUri = photoEditClip.uri,
+                settings = photoEditClip.photoEdit,
+                tab = tab,
+                onTabChange = { vm.setPhotoEditTab(it) },
+                onCropAspectPreset = { vm.setPhotoCropAspectPreset(photoEditClip.id, it) },
+                onAdjust = { transform -> vm.updatePhotoAdjustments(photoEditClip.id, transform) },
+                onResetAdjust = { vm.resetPhotoAdjustments(photoEditClip.id) },
+                onFilterSelect = { vm.setPhotoFilter(photoEditClip.id, it) },
+                onFilterIntensity = { vm.setPhotoFilterIntensity(photoEditClip.id, it) },
+                onRotate90 = { vm.rotatePhotoClockwise(photoEditClip.id) },
+                onFlipH = { vm.togglePhotoFlipHorizontal(photoEditClip.id) },
+                onFlipV = { vm.togglePhotoFlipVertical(photoEditClip.id) },
+                onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
+                onClose = { vm.closePhotoEditPanel() }
+            )
+        }
+    }
+}

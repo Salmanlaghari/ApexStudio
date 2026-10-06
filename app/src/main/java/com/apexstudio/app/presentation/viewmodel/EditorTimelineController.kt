@@ -657,6 +657,7 @@ fun EditorViewModel.addClipToTrack(type: ClipType, trackIndex: Int) {
                 ClipType.OVERLAY -> "Overlay_V2.mp4"
                 ClipType.AUDIO -> "Track_A1.mp3"
                 ClipType.SFX -> "Sfx_FX.wav"
+                ClipType.IMAGE -> "Photo_P1.jpg"
             },
             uri = sampleUri,
             durationMs = 10_000L,

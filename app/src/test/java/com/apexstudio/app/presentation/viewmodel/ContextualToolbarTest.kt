@@ -10,6 +10,7 @@ import com.apexstudio.app.ui.screens.editor.ToolbarSelectionKind
 import com.apexstudio.app.ui.screens.editor.resolveToolbarSelection
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,6 +100,21 @@ class ContextualToolbarTest {
         assertEquals(
             ToolbarSelectionKind.AUDIO,
             resolveToolbarSelection(stateWith(clips = listOf(audioClip()), selectedClipId = "aclip1"))
+        )
+    }
+
+    @Test
+    fun `image clip selection resolves to PHOTO`() {
+        val photo = videoClip(id = "photo1").copy(
+            name = "sunset.jpg",
+            uri = "content://photo",
+            durationMs = 3000L,
+            trimEndMs = 3000L,
+            type = ClipType.IMAGE
+        )
+        assertEquals(
+            ToolbarSelectionKind.PHOTO,
+            resolveToolbarSelection(stateWith(clips = listOf(photo), selectedClipId = "photo1"))
         )
     }
 

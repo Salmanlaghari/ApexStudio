@@ -33,6 +33,23 @@ data class MediaMetadata(
 
 class MediaPickerHelper(private val context: Context) {
 
+    companion object {
+        /** Default timeline length for a still-image clip (CapCut-style). */
+        const val DEFAULT_IMAGE_DURATION_MS = 3000L
+
+        /**
+         * Map a MIME type to a [ClipType]. Still images become
+         * [ClipType.IMAGE] so the editor can offer the photo-editing
+         * tools; everything unknown stays VIDEO (previous behaviour).
+         */
+        fun classifyClipType(mimeType: String): ClipType = when {
+            mimeType.startsWith("video/") -> ClipType.VIDEO
+            mimeType.startsWith("audio/") -> ClipType.AUDIO
+            mimeType.startsWith("image/") -> ClipType.IMAGE
+            else -> ClipType.VIDEO
+        }
+    }
+
     // Bump a counter on every successful pick so subscribers see a fresh
     // emission even when the user picks the same file twice in a row
     // (StateFlow conflates equal values, which would otherwise make
@@ -64,7 +81,10 @@ class MediaPickerHelper(private val context: Context) {
             if (uris != null) {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
-                        .filter { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+                        .filter {
+                            it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+                                    it.type == com.apexstudio.app.domain.model.ClipType.IMAGE
+                        }
                     _pickedMedia.emit(metadataList)
                     _pickGeneration.emit(_pickGeneration.value + 1)
                 }
@@ -123,11 +143,12 @@ class MediaPickerHelper(private val context: Context) {
             val name = getFileName(uri)
             val mimeType = context.contentResolver.getType(uri) ?: ""
             retriever.release()
-            val type = if (mimeType.startsWith("video/")) ClipType.VIDEO
-            else if (mimeType.startsWith("audio/")) ClipType.AUDIO
-            else ClipType.VIDEO
+            val type = classifyClipType(mimeType)
             CrashMarker.clear(context)
-            MediaMetadata(uri = uri.toString(), name = name, durationMs = durationMs, width = width, height = height, fps = fps, type = type)
+            // Still images carry no duration — give photo clips a
+            // CapCut-style default still length so they occupy timeline.
+            val safeDuration = if (type == ClipType.IMAGE && durationMs <= 0L) DEFAULT_IMAGE_DURATION_MS else durationMs
+            MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDuration, width = width, height = height, fps = fps, type = type)
         } catch (e: Exception) {
             CrashMarker.clear(context)
             null
@@ -150,10 +171,9 @@ class MediaPickerHelper(private val context: Context) {
                     val dur = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION))
                     val w = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH))
                     val h = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT))
-                    val type = if (mime.startsWith("video/")) ClipType.VIDEO
-                    else if (mime.startsWith("audio/")) ClipType.AUDIO
-                    else ClipType.VIDEO
-                    MediaMetadata(uri = uri.toString(), name = name, durationMs = dur, width = w, height = h, fps = 30, type = type)
+                    val type = classifyClipType(mime)
+                    val safeDur = if (type == ClipType.IMAGE && dur <= 0L) DEFAULT_IMAGE_DURATION_MS else dur
+                    MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDur, width = w, height = h, fps = 30, type = type)
                 } else {
                     null
                 }

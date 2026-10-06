@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
@@ -301,7 +302,12 @@ fun EditorViewModel.setFxIntensity(v: Float) = _state.update { it.copy(fxIntensi
 fun EditorViewModel.setFxSpeed(v: Float) = _state.update { it.copy(fxSpeed = v.coerceIn(0.1f, 4f)) }
 
 fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) = _state.update {
-    it.copy(activeFxId = id, fxIntensity = intensity.coerceIn(0f, 1f))
+    val presetSpeed = FxPreset.byId(id)?.defaultSpeed?.coerceIn(0.1f, 4f)
+    it.copy(
+        activeFxId = id,
+        fxIntensity = intensity.coerceIn(0f, 1f),
+        fxSpeed = presetSpeed ?: it.fxSpeed
+    )
 }
 
 fun EditorViewModel.selectFilter(id: String?, intensity: Float = 0.85f) = _state.update {

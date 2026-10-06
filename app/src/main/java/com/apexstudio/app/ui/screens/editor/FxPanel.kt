@@ -181,7 +181,7 @@ fun FxPanel(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    "${String.format("%.1f", speed)}x",
+                    "${String.format(java.util.Locale.US, "%.1f", speed)}x",
                     color = ApexPalette.NeonCyan,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold

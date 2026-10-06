@@ -50,6 +50,9 @@ fun FxPreviewOverlay(
     // hour, so long previews never show a visible loop jump). Driven by
     // real time so it animates whether the player is playing or paused.
     var tSec by remember { mutableFloatStateOf(0f) }
+    // Read the latest speed inside the running ticker so slider drags take
+    // effect without restarting the coroutine.
+    val currentSpeed by rememberUpdatedState(clampedSpeed)
     LaunchedEffect(isPlaying) {
         val start = System.nanoTime()
         var last = 0f
@@ -58,7 +61,7 @@ fun FxPreviewOverlay(
             // Advance by wall-clock delta scaled by speed; wrap at 1h.
             val delta = (elapsed - last).coerceAtLeast(0f)
             last = elapsed
-            tSec = (tSec + delta * clampedSpeed) % 3600f
+            tSec = (tSec + delta * currentSpeed) % 3600f
             kotlinx.coroutines.delay(50)
         }
     }

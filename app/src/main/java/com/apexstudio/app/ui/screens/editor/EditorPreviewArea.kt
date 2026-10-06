@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -31,6 +32,7 @@ import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
 @Composable
@@ -60,6 +62,7 @@ fun VideoPreviewArea(
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
     selectedTextOverlayId: String? = null,
     currentTimeMs: Long = 0L,
+    durationMs: Long = 0L,
     onSelectTextOverlay: ((String) -> Unit)? = null,
     onMoveTextOverlay: ((id: String, dx: Float, dy: Float) -> Unit)? = null,
     onDeleteTextOverlay: ((String) -> Unit)? = null,
@@ -85,9 +88,9 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF12121A))
-            .border(1.dp, Color(0xFF1F1F2E), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(24.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(24.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }
@@ -195,12 +198,59 @@ fun VideoPreviewArea(
             }
         }
 
+        // Mockup: "REC • 00:20 / 00:25" time pill, top-left inside the preview.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFF3B30))
+                )
+                Text(
+                    text = "REC • ${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+            }
+        }
+
+        // Mockup: "HDR" badge, bottom-right inside the preview.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = "HDR",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
         // Keyframe HUD Badge when active transform is non-identity
         if (animatedTransform != com.apexstudio.app.domain.model.AnimatedTransform.Identity) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Black.copy(alpha = 0.75f))
                     .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))

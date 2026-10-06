@@ -920,6 +920,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             fxSpeed = state.fxSpeed,
             isPlaying = state.isPlaying,
             animatedTransform = animatedTransform,
+            currentTimeMs = state.playerPositionMs,
+            durationMs = state.durationMs,
             // Photo clip (PR F): rendered by PhotoClipPreview with
             // its edits; null for video clips.
             photoClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE },
@@ -1087,33 +1089,21 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     seekPlayerAndState: (Long) -> Unit,
     onOpenAddMediaMenu: () -> Unit
 ) {
-    // CapCut transport row: the keyframe diamond appears next to the
-    // undo/redo arrows only while a clip is explicitly selected.
+    // Mockup transport row: undo + redo (left), BIG blue-gradient play
+    // (center), keyframe diamond+ (always visible in the new layout —
+    // tapping it with no clip selected is a safe no-op), fullscreen.
+    // No time counter / prev-next here: the time pill lives in the preview.
     val kfClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val hasKeyframeAtPlayhead =
         kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
 
     PlaybackControlBar(
-        currentTimeMs = state.playerPositionMs,
-        totalDurationMs = state.durationMs,
         isPlaying = state.isPlaying,
         canUndo = state.canUndo,
         canRedo = state.canRedo,
-        showKeyframeButton = !state.useClassicEditorLayout && kfClip != null,
+        showKeyframeButton = !state.useClassicEditorLayout,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
         onTogglePlay = { vm.togglePlay() },
-        onPrev = {
-            val clips = state.project?.clips ?: emptyList()
-            val current = state.playerPositionMs
-            val prevClip = clips.lastOrNull { it.trimStartMs < current - 500L }
-            seekPlayerAndState(prevClip?.trimStartMs ?: 0L)
-        },
-        onNext = {
-            val clips = state.project?.clips ?: emptyList()
-            val current = state.playerPositionMs
-            val nextClip = clips.firstOrNull { it.trimStartMs > current + 500L }
-            seekPlayerAndState(nextClip?.trimStartMs ?: state.durationMs)
-        },
         onUndo = { vm.undo() },
         onRedo = { vm.redo() },
         onToggleKeyframe = {

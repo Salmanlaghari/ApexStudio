@@ -14,6 +14,9 @@ env:
   # Install the token as the SNAP_CAMERA_KIT_TOKEN repository secret; it is blank for
   # PR builds from forks without the secret (the app then shows a setup message).
   SNAP_CAMERA_KIT_TOKEN: ${{ secrets.SNAP_CAMERA_KIT_TOKEN }}
+  # Jamendo API client ID -> BuildConfig.JAMENDO_CLIENT_ID (Discover music tab).
+  # Install as the JAMENDO_CLIENT_ID repository secret; blank hides the Discover tab.
+  JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
 
 jobs:
   build:

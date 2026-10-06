@@ -251,6 +251,11 @@ object MusicExportMixer {
 
             // Rewrite the header with the real data size.
             raf.seek(0)
+            // WAV sizes are 32-bit; a >6.7h timeline can't be represented —
+            // fail fast (the caller falls back to the unmixed export).
+            require(totalFrames <= Int.MAX_VALUE / (CHANNELS * 2)) {
+                "Mixed audio exceeds WAV size limits"
+            }
             raf.write(wavHeader((totalFrames * CHANNELS * 2).toInt()))
         }
     }

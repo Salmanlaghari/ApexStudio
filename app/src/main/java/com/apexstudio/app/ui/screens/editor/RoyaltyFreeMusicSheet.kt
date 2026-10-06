@@ -101,6 +101,11 @@ fun RoyaltyFreeMusicSheet(
         onDispose { controller.release() }
     }
 
+    // Initial catalog load for the default Discover tab.
+    LaunchedEffect(Unit) {
+        controller.load()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()

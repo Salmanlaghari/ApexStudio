@@ -45,10 +45,10 @@ fun EditorViewModel.startExport(
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
     // Picture-in-Picture overlays: composite overlay clips in the export.
-    val pipOverlays = (s.project?.clips ?: emptyList())
+    val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
         .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
         .map { ov ->
-            ExportEngine.ExportConfig.PipOverlayConfig(
+            ExportEngine.PipOverlayConfig(
                 uri = ov.uri,
                 offsetMs = ov.timelineOffsetMs,
                 trimStartMs = ov.trimStartMs,

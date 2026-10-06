@@ -95,6 +95,7 @@ import androidx.compose.ui.zIndex
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ClipTransition
+import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay

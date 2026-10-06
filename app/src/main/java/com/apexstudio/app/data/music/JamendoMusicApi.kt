@@ -173,9 +173,9 @@ class JamendoMusicApi(
 
         fun parseTotal(json: String): Int {
             return try {
-                val headers = JSONObject(json).optJSONObject("headers")
-                headers?.optJSONObject("results_count")?.optInt("total", 0)
-                    ?: headers?.optInt("results_count", 0)
+                val headers = JSONObject(json).optJSONObject("headers") ?: return 0
+                headers.optJSONObject("results_count")?.optInt("total", 0)
+                    ?: headers.optInt("results_count", 0)
             } catch (_: Exception) {
                 0
             }

@@ -58,11 +58,19 @@ fun PhotoClipPreview(
     val density = LocalDensity.current
 
     // Raw decoded photo (EXIF applied, downscaled for preview).
-    // The old bitmap is NOT recycled here — the edited-pipeline effect below
-    // owns recycling once it has finished reading the old pixels.
     var rawBitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
+    // Edited bitmap (declared early so the uri effect can check it).
+    var edited by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(uri) {
-        rawBitmap = PhotoEditRenderer.loadBitmap(context, uri, maxDim = 1280)
+        val old = rawBitmap
+        val fresh = PhotoEditRenderer.loadBitmap(context, uri, maxDim = 1280)
+        rawBitmap = fresh
+        // Recycle the superseded raw only if the pipeline isn't still
+        // reading it (it isn't — this effect runs before the pipeline
+        // effect sees the new value) and it isn't the displayed frame.
+        if (old != null && old != fresh && old != edited) {
+            try { if (!old.isRecycled) old.recycle() } catch (_: Exception) {}
+        }
     }
 
     // Real LUT texture for the selected filter (loaded once per filter).
@@ -79,15 +87,16 @@ fun PhotoClipPreview(
         }
     }
 
-    // Edited bitmap. In crop mode the crop is withheld so the handles
-    // operate on the full (rotated) photo.
-    var edited by remember { mutableStateOf<Bitmap?>(null) }
+    // In crop mode the crop is withheld so the handles operate on the
+    // full (rotated) photo.
     val effectiveSettings = if (cropActive) settings.copy(crop = null) else settings
     val activeLut = lutTexture.takeIf { lutFilterId == settings.filterId && settings.filterId != null }
     LaunchedEffect(rawBitmap, effectiveSettings, activeLut) {
         val src = rawBitmap
         if (src == null) {
+            val oldEdited = edited
             edited = null
+            try { if (oldEdited != null && !oldEdited.isRecycled) oldEdited.recycle() } catch (_: Exception) {}
         } else {
             val next = withContext(Dispatchers.Default) {
                 try {
@@ -97,20 +106,24 @@ fun PhotoClipPreview(
                 }
             }
             // Re-read current raw: if uri changed mid-processing, src is stale.
-            // Only publish when src is still current; recycle superseded bitmaps
-            // once nothing reads them.
             val currentRaw = rawBitmap
             if (currentRaw == src) {
                 val oldEdited = edited
                 edited = next
+                // Recycle the previous edited frame if it isn't the src
+                // (applyEdits may return src unchanged when no edits apply)
+                // and isn't the new frame.
                 try {
-                    if (oldEdited != null && oldEdited != next && oldEdited != src) oldEdited.recycle()
+                    if (oldEdited != null && oldEdited != next && oldEdited != src &&
+                        !oldEdited.isRecycled
+                    ) oldEdited.recycle()
                 } catch (_: Exception) {}
             } else {
-                // Stale: drop the result, recycle the superseded src if the
-                // newer effect hasn't already taken ownership.
-                try { next?.recycle() } catch (_: Exception) {}
-                try { if (!src.isRecycled) src.recycle() } catch (_: Exception) {}
+                // Stale: drop the result. Never recycle src here — it may be
+                // the bitmap the Canvas is still drawing (edited == src when
+                // no edits were applied). The uri-change effect above owns
+                // recycling superseded raws.
+                try { if (next != null && next != src && !next.isRecycled) next.recycle() } catch (_: Exception) {}
             }
         }
     }

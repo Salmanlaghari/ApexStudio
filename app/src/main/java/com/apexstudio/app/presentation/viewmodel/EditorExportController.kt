@@ -194,9 +194,10 @@ fun EditorViewModel.startPhotoExport(
 ) {
     val engine = exportEngine ?: return
     // Derive the photo still-video resolution from the user-selected export
-    // quality so photo clips match the timeline output (1080p/4K/8K).
+    // quality. Capped at 4K: 8K intermediates (7680px, ~600MB transient)
+    // risk OOM and exceed MediaCodec H.264 limits on most devices.
     val photoMaxDim = when {
-        resolution.contains("8k", ignoreCase = true) || resolution.contains("4320") -> 7680
+        resolution.contains("4320") || resolution.contains("8k", ignoreCase = true) -> 3840
         resolution.contains("4k", ignoreCase = true) || resolution.contains("2160") -> 3840
         resolution.contains("1440") -> 2560
         else -> 1920 // 1080p and below
@@ -267,12 +268,20 @@ fun EditorViewModel.startPhotoExport(
             )
             // Wait for the export to terminate with a proper timeout (30 min cap
             // so a stuck export can't leak the file or the coroutine).
+            // Also break if the export already finished (error/success) before
+            // we observed it active — handles fast-failing exports.
             val completed = kotlinx.coroutines.withTimeoutOrNull(30L * 60L * 1000L) {
                 var sawActive = false
                 while (true) {
                     val st = engine.exportState.value
-                    if (st.isExporting) sawActive = true
-                    else if (sawActive) break
+                    if (st.isExporting) {
+                        sawActive = true
+                    } else if (sawActive) {
+                        break
+                    } else if (st.error != null || st.outputUri != null) {
+                        // Finished (or failed) before we ever saw it active.
+                        break
+                    }
                     delay(500)
                 }
                 true

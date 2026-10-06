@@ -46,17 +46,14 @@ object PhotoEditRenderer {
 
     enum class CropCorner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
-    /**
-     * Clamp a crop rect into the unit square and enforce a minimum
-     * size so the rect can never invert or vanish.
-     */
-    /**
-     * Minimum crop dimension as a fraction of the photo (5%). Prevents the
-     * rect from inverting or vanishing during drags. Callers can pass a
-     * smaller [minSize] for extreme aspect ratios if needed.
-     */
+    /** Minimum crop dimension as a fraction of the photo (5%). */
     const val MIN_CROP_FRACTION = 0.05f
 
+    /**
+     * Clamp a crop rect into the unit square and enforce a minimum
+     * size so the rect can never invert or vanish. Pass a smaller
+     * [minSize] for extreme aspect ratios if needed.
+     */
     fun clampRect(rect: PhotoCropRect, minSize: Float = MIN_CROP_FRACTION): PhotoCropRect {
         var l = rect.left.coerceIn(0f, 1f)
         var t = rect.top.coerceIn(0f, 1f)
@@ -171,9 +168,13 @@ object PhotoEditRenderer {
                 bitmap = scaled
             }
             // Software bitmap: the LUT / sharpen passes touch pixels. If the
-            // copy fails (OOM), return null instead of a potentially
-            // immutable bitmap that would crash downstream Canvas ops.
-            bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            // copy fails (OOM), recycle the decoded bitmap to relieve memory
+            // pressure and return null instead of a potentially immutable
+            // bitmap that would crash downstream Canvas ops.
+            bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: run {
+                try { bitmap.recycle() } catch (_: Exception) {}
+                null
+            }
         } catch (e: Exception) {
             Log.w(TAG, "loadBitmap failed for $uriString", e)
             null

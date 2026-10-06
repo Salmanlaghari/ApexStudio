@@ -30,8 +30,11 @@ object PhotoVideoEncoder {
     private const val I_FRAME_INTERVAL_S = 1
     // Bitrate scales with resolution (~0.5 bits/pixel/frame at 10fps) to avoid
     // generation loss in the intermediate before Transformer re-encodes.
+    // Clamped to 40 Mbps (typical MediaCodec H.264 ceiling).
     private fun bitrateFor(width: Int, height: Int): Int =
-        (width.toLong() * height.toLong() * FRAME_RATE / 2L).toInt().coerceAtLeast(2_000_000)
+        (width.toLong() * height.toLong() * FRAME_RATE / 2L).toInt()
+            .coerceAtLeast(2_000_000)
+            .coerceAtMost(40_000_000)
 
     /**
      * Encode [bitmap] into a temp .mp4 in the app cache dir lasting

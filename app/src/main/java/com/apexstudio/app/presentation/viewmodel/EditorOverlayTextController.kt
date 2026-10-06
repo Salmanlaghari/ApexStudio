@@ -139,6 +139,28 @@ fun EditorViewModel.setTextOverlayAnimDuration(clipId: String, overlayId: String
     updateTextOverlay(clipId, overlayId) { it.copy(animationDurationMs = durationMs) }
 
 
+fun EditorViewModel.setTextOverlayOutro(clipId: String, overlayId: String, outroType: String) =
+    updateTextOverlay(clipId, overlayId) { it.copy(outroAnimationType = outroType) }
+
+
+fun EditorViewModel.setTextOverlayOutroDuration(clipId: String, overlayId: String, durationMs: Long) =
+    updateTextOverlay(clipId, overlayId) { it.copy(outroAnimationDurationMs = durationMs) }
+
+
+fun EditorViewModel.setTextOverlayAlign(clipId: String, overlayId: String, align: String) =
+    updateTextOverlay(clipId, overlayId) { it.copy(textAlign = align) }
+
+
+fun EditorViewModel.setTextOverlayLetterSpacing(clipId: String, overlayId: String, spacingEm: Float) =
+    updateTextOverlay(clipId, overlayId) { it.copy(letterSpacingEm = spacingEm.coerceIn(-0.1f, 0.5f)) }
+
+
+fun EditorViewModel.setTextOverlayGradient(clipId: String, overlayId: String, gradient: Pair<Long, Long>?) =
+    updateTextOverlay(clipId, overlayId) {
+        it.copy(gradientStartArgb = gradient?.first, gradientEndArgb = gradient?.second)
+    }
+
+
 fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return

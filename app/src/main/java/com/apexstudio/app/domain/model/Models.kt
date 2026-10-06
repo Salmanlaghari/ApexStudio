@@ -82,8 +82,21 @@ data class TextOverlay(
     val endMs: Long = Long.MAX_VALUE,
     val animationType: String = "NONE",
     val animationDurationMs: Long = 800L,
+    // Exit animation timed at the END of the overlay's window
+    // (FADE_OUT, SLIDE_DOWN, SHRINK, or NONE).
+    val outroAnimationType: String = "NONE",
+    val outroAnimationDurationMs: Long = 600L,
     val rotationDeg: Float = 0f,
     val opacity: Float = 1f,
+    // Text block alignment relative to the (x, y) anchor:
+    // CENTER keeps the classic behaviour; LEFT pins the block's left
+    // edge at the anchor, RIGHT pins the right edge.
+    val textAlign: String = "CENTER",
+    // Extra letter spacing in em units (-0.2 .. 1.0).
+    val letterSpacingEm: Float = 0f,
+    // Vertical gradient fill: both non-null to enable.
+    val gradientStartArgb: Long? = null,
+    val gradientEndArgb: Long? = null,
     val keyframes: KeyframeTrack = KeyframeTrack()
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
@@ -105,8 +118,14 @@ data class TextOverlay(
             presetId: String? = null,
             animationType: String = "NONE",
             animationDurationMs: Long = 800L,
+            outroAnimationType: String = "NONE",
+            outroAnimationDurationMs: Long = 600L,
             rotationDeg: Float = 0f,
             opacity: Float = 1f,
+            textAlign: String = "CENTER",
+            letterSpacingEm: Float = 0f,
+            gradientStartArgb: Long? = null,
+            gradientEndArgb: Long? = null,
             keyframes: KeyframeTrack = KeyframeTrack()
         ): TextOverlay = TextOverlay(
             id = id, text = text, x = x, y = y, sizeScale = sizeScale,
@@ -114,7 +133,12 @@ data class TextOverlay(
             shadowColorArgb = shadowColorArgb, fontFamily = fontFamily,
             isItalic = isItalic, isBold = isBold, presetId = presetId,
             animationType = animationType, animationDurationMs = animationDurationMs,
-            rotationDeg = rotationDeg, opacity = opacity, keyframes = keyframes
+            outroAnimationType = outroAnimationType,
+            outroAnimationDurationMs = outroAnimationDurationMs,
+            rotationDeg = rotationDeg, opacity = opacity,
+            textAlign = textAlign, letterSpacingEm = letterSpacingEm,
+            gradientStartArgb = gradientStartArgb, gradientEndArgb = gradientEndArgb,
+            keyframes = keyframes
         )
     }
 }

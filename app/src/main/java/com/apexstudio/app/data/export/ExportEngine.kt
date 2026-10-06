@@ -107,7 +107,11 @@ class ExportEngine(private val context: Context) {
         val bassBoostEnabled: Boolean = false,
         val bassBoostStrength: Short = 0,
         // Picture-in-Picture overlays: composited in the export to match preview.
-        val pipOverlays: List<PipOverlayConfig> = emptyList()
+        val pipOverlays: List<PipOverlayConfig> = emptyList(),
+        // Timeline music: unmuted extra audio tracks are decoded and mixed over
+        // the exported audio after the Transformer pass (see MusicExportMixer),
+        // so added music is actually audible in the exported video. Empty = no-op.
+        val musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
     )
 
     /**
@@ -311,7 +315,9 @@ class ExportEngine(private val context: Context) {
                     .build()
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
-                val transformer = buildHardwareTransformer(config.resolution, outputFile)
+                val transformer = buildHardwareTransformer(
+                    config.resolution, outputFile, config.musicMixTracks
+                )
                 this@ExportEngine.transformer = transformer
 
                 startProgressTracking(transformer)
@@ -511,7 +517,11 @@ class ExportEngine(private val context: Context) {
         }
     }
 
-    private fun buildHardwareTransformer(resolution: String, outputFile: File): Transformer {
+    private fun buildHardwareTransformer(
+        resolution: String,
+        outputFile: File,
+        musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+    ): Transformer {
         val targetBitrate = when (resolution.lowercase()) {
             "4k", "2160p" -> 50_000_000
             "720p" -> 6_000_000
@@ -534,12 +544,56 @@ class ExportEngine(private val context: Context) {
         val transformerListener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                 progressJob?.cancel()
+                if (musicMixTracks.isEmpty()) {
+                    mainHandler.post {
+                        _exportState.value = ExportProgressState(
+                            isExporting = false,
+                            progress = 1f,
+                            outputUri = Uri.fromFile(outputFile).toString()
+                        )
+                    }
+                    return
+                }
+                // Music mix pass: decode the exported audio + timeline music
+                // tracks, mix, and remux. Runs on IO; the export still reports
+                // success (without the mix) if this step ever fails.
                 mainHandler.post {
                     _exportState.value = ExportProgressState(
-                        isExporting = false,
-                        progress = 1f,
-                        outputUri = Uri.fromFile(outputFile).toString()
+                        isExporting = true,
+                        progress = 0.97f
                     )
+                }
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val mixedFile = File(
+                            outputFile.parentFile,
+                            outputFile.nameWithoutExtension + "_music.mp4"
+                        )
+                        val result = MusicExportMixer.mixMusicIntoVideo(
+                            context, outputFile, musicMixTracks, mixedFile
+                        )
+                        Log.i(
+                            TAG,
+                            "Music mix done: ${result.mixedTracks} mixed, " +
+                                "${result.skippedTracks} skipped"
+                        )
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(mixedFile).toString()
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Music mix failed; keeping video without music mix", e)
+                        mainHandler.post {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(outputFile).toString()
+                            )
+                        }
+                    }
                 }
             }
 

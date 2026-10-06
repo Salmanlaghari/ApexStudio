@@ -91,7 +91,11 @@ fun EditorViewModel.startExport(
             bassBoostStrength = audioSt.bassBoostStrength,
             pipOverlays = pipOverlays,
             transitionType = transitionType,
-            transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
+            transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L,
+            // Royalty-free music library: mix every unmuted timeline audio
+            // track (downloaded Jamendo tracks, built-in tracks, device
+            // imports) over the exported audio — see MusicExportMixer.
+            musicMixTracks = audioSt.tracks.filter { !it.isMuted }
         )
     )
 }

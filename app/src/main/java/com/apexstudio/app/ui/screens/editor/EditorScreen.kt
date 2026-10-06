@@ -1234,6 +1234,12 @@ fun EditorScreen(
             onSelectSong = { title, filePath, durationMs ->
                 vm.addRoyaltyTrack(title, filePath, durationMs)
                 vm.closeRoyaltyMusicDialog()
+            },
+            // Device import: reuse the existing MediaStore audio picker; the
+            // picked file lands on the audio track via audioPickerLauncher.
+            onImportAudio = {
+                vm.closeRoyaltyMusicDialog()
+                audioPickerLauncher.launch("audio/*")
             }
         )
     }

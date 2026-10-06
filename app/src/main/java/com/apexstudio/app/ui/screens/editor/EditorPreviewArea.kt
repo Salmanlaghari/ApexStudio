@@ -67,6 +67,12 @@ fun VideoPreviewArea(
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onTapVideo: () -> Unit = {},
+    // Photo-clip editing (PR F). When non-null the selected clip is a
+    // still image: it is rendered by PhotoClipPreview with its
+    // PhotoEditSettings instead of the ExoPlayer surface.
+    photoClip: MediaClip? = null,
+    photoCropActive: Boolean = false,
+    onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val currentResizeMode = if (isCoverMode) {
@@ -101,7 +107,17 @@ fun VideoPreviewArea(
                     translationY = animatedTransform.translateY * size.height * 0.5f
                 }
         ) {
-            if (exoPlayer != null) {
+            // Photo clip (PR F): still image rendered with its edits via
+            // the same CPU pipeline the export uses — WYSIWYG.
+            if (photoClip != null) {
+                PhotoClipPreview(
+                    uri = photoClip.uri,
+                    settings = photoClip.photoEdit,
+                    cropActive = photoCropActive,
+                    onCropChange = { onPhotoCropRectChange?.invoke(it) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (exoPlayer != null) {
                 AndroidView(
                     factory = { ctx ->
                         val pv = android.view.LayoutInflater.from(ctx)

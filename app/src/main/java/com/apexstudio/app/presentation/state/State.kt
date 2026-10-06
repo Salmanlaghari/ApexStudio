@@ -121,6 +121,12 @@ data class EditorState(
     val isFullscreenPreview: Boolean = false,
     val adjustments: VideoAdjustments = VideoAdjustments(),
     val adjustmentsPanelOpen: Boolean = false,
+    // Photo-editing tools (PR F): true while the Edit Photo bottom
+    // sheet is open for the selected IMAGE clip; photoEditTab selects
+    // which tool tab is visible (the Crop tab also arms the drag
+    // handles drawn over the preview).
+    val photoEditPanelOpen: Boolean = false,
+    val photoEditTab: PhotoEditTab = PhotoEditTab.CROP,
     val stickerPanelOpen: Boolean = false,
     val voiceRecorderOpen: Boolean = false,
     val cameraCaptureOpen: Boolean = false,
@@ -245,6 +251,14 @@ enum class EditorTool(val label: String) {
     SPLIT("Split"), TRIM("Trim"), KEYFRAME("Keyframe"),
     TRANSITION("Transition"), EFFECTS("Effects"), AUDIO("Audio"),
     TEXT("Text"), COLOR("Color")
+}
+
+/** Tabs of the Edit Photo bottom sheet (PR F). */
+enum class PhotoEditTab(val label: String) {
+    CROP("Crop"),
+    ADJUST("Adjust"),
+    FILTERS("Filters"),
+    ROTATE("Rotate")
 }
 
 data class ExportState(

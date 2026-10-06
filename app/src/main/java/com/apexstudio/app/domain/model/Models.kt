@@ -43,8 +43,110 @@ data class MediaClip(
     // same relative position and size.
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
-    val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig()
+    val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    // Photo-editing tools for IMAGE clips (crop / adjust / LUT filter /
+    // rotate+flip). Stored per-clip so every photo keeps its own edits;
+    // the preview renderer and the export path both read this single
+    // source of truth. Default = untouched photo. Backwards-compatible:
+    // older project JSONs without this field deserialise as default.
+    val photoEdit: PhotoEditSettings = PhotoEditSettings()
 )
+
+/**
+ * Normalised crop rectangle for a photo clip (all values 0..1 in the
+ * *displayed* (post-rotation) image space).
+ *
+ * Null on [PhotoEditSettings.crop] means "full frame" — the rect is
+ * only stored once the user actually crops.
+ */
+@Serializable
+data class PhotoCropRect(
+    val left: Float = 0f,
+    val top: Float = 0f,
+    val right: Float = 1f,
+    val bottom: Float = 1f
+) {
+    fun width(): Float = (right - left).coerceAtLeast(0.01f)
+    fun height(): Float = (bottom - top).coerceAtLeast(0.01f)
+    fun aspect(): Float = width() / height().coerceAtLeast(0.01f)
+
+    fun isFullFrame(): Boolean =
+        left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
+
+    companion object {
+        fun full() = PhotoCropRect(0f, 0f, 1f, 1f)
+
+        /**
+         * Largest centred rect of [targetAspect] (width / height) that
+         * fits inside the unit square — used when the user picks an
+         * aspect preset (1:1, 4:5, 16:9, 9:16, 3:2).
+         */
+        fun centeredForAspect(targetAspect: Float): PhotoCropRect {
+            val aspect = targetAspect.coerceAtLeast(0.01f)
+            return if (aspect >= 1f) {
+                // Wider than tall: full width, centred vertically.
+                val h = (1f / aspect).coerceIn(0.01f, 1f)
+                val t = (1f - h) / 2f
+                PhotoCropRect(0f, t, 1f, t + h)
+            } else {
+                // Taller than wide: full height, centred horizontally.
+                val w = aspect.coerceIn(0.01f, 1f)
+                val l = (1f - w) / 2f
+                PhotoCropRect(l, 0f, l + w, 1f)
+            }
+        }
+    }
+}
+
+/**
+ * All photo-editing state for one IMAGE [MediaClip].
+ *
+ * Render order (identical in the live preview and the export so WYSIWYG
+ * holds): decode (+EXIF) → rotate/flip → crop → sharpen → colour
+ * adjustments → LUT filter.
+ */
+@Serializable
+data class PhotoEditSettings(
+    /** Null = full frame. */
+    val crop: PhotoCropRect? = null,
+    /** Aspect preset id: "free", "1:1", "4:5", "16:9", "9:16", "3:2". */
+    val cropAspectPreset: String? = null,
+    /** Brightness / contrast / saturation / warmth / sharpness. */
+    val adjustments: VideoAdjustments = VideoAdjustments(),
+    /** LUT preset id from the app's filter manifest; null = none. */
+    val filterId: String? = null,
+    val filterIntensity: Float = 1f,
+    /** Quarter-turns clockwise (normalised to 0..3). */
+    val rotationSteps: Int = 0,
+    val flipHorizontal: Boolean = false,
+    val flipVertical: Boolean = false
+) {
+    val normalizedRotationSteps: Int
+        get() = ((rotationSteps % 4) + 4) % 4
+
+    val isDefault: Boolean
+        get() = (crop == null || crop.isFullFrame()) &&
+                adjustments.isDefault &&
+                filterId == null &&
+                normalizedRotationSteps == 0 &&
+                !flipHorizontal &&
+                !flipVertical
+
+    companion object {
+        /** Aspect presets offered by the Crop tool (id → width/height). Null ratio = free. */
+        val ASPECT_PRESETS: List<Pair<String, Float?>> = listOf(
+            "free" to null,
+            "1:1" to 1f,
+            "4:5" to 0.8f,
+            "16:9" to (16f / 9f),
+            "9:16" to (9f / 16f),
+            "3:2" to 1.5f
+        )
+
+        fun aspectRatioForPreset(presetId: String?): Float? =
+            ASPECT_PRESETS.firstOrNull { it.first == presetId }?.second
+    }
+}
 
 /**
  * A text overlay (caption / title) rendered on top of a video clip.
@@ -119,7 +221,7 @@ data class TextOverlay(
     }
 }
 
-enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX }
+enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX, IMAGE }
 
 @Serializable
 enum class SpeedCurve {

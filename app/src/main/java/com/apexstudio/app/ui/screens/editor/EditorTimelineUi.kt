@@ -100,6 +100,19 @@ fun TimelineTrackArea(
         val uri = activeClip?.uri
         if (uri != null) {
             try {
+                // Still-image clips: show the photo itself on the
+                // timeline strip (MediaMetadataRetriever can't pull
+                // frames from a JPEG).
+                if (activeClip?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
+                    val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
+                        context, uri, maxDim = 240
+                    )
+                    if (photo != null) {
+                        perSecondThumbnails = mapOf(0 to photo)
+                        extractedThumbnails = listOf(photo)
+                    }
+                    return@LaunchedEffect
+                }
                 val trimStart = activeClip.trimStartMs
                 val trimEnd = if (activeClip.trimEndMs > trimStart) activeClip.trimEndMs else (activeClip.durationMs).coerceAtLeast(1000L)
                 val map = ThumbnailExtractor.extractPerSecondFrames(

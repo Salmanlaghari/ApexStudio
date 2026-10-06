@@ -160,6 +160,14 @@ class TimelineMediaCache(private val context: Context) {
                     )
                     ClipMedia(waveform = samples, cacheKey = key)
                 }
+                // Still-image clip: decode the photo directly
+                // (MediaMetadataRetriever can't pull frames from a JPEG).
+                com.apexstudio.app.domain.model.ClipType.IMAGE -> {
+                    val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
+                        context, clip.uri, maxDim = frameWidth
+                    )
+                    ClipMedia(frames = listOfNotNull(photo), cacheKey = key)
+                }
             }
             _state.value = _state.value + (clip.id to media)
             // Phase B: race protection. If the desired key for this

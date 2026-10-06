@@ -39,7 +39,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  *
  * A collapse chevron as the first item deselects and returns to global tools.
  */
-enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO }
+enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO }
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
     val project = state.project ?: return ToolbarSelectionKind.NONE
@@ -52,6 +52,8 @@ fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
     return when (clip.type) {
         ClipType.VIDEO, ClipType.OVERLAY -> ToolbarSelectionKind.VIDEO
         ClipType.AUDIO, ClipType.SFX -> ToolbarSelectionKind.AUDIO
+        // Still-image clips get the photo-editing tool set (PR F).
+        ClipType.IMAGE -> ToolbarSelectionKind.PHOTO
     }
 }
 
@@ -83,6 +85,11 @@ fun ContextualBottomToolbar(
     onBeats: () -> Unit = {},
     beatsActive: Boolean = false,
     beatsAnalyzing: Boolean = false,
+    // Photo-clip tools (PR F) — shown when an IMAGE clip is selected.
+    onPhotoCrop: () -> Unit = {},
+    onPhotoAdjust: () -> Unit = {},
+    onPhotoFilters: () -> Unit = {},
+    onPhotoRotate: () -> Unit = {},
     // Collapse (deselect)
     onCollapse: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -115,6 +122,14 @@ fun ContextualBottomToolbar(
                 onBeats
             ),
             CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
+        )
+        // Photo clip selected → real photo-editing tools (PR F).
+        ToolbarSelectionKind.PHOTO -> listOf(
+            CtxToolItem("Crop", Icons.Default.Crop, ApexPalette.NeonCyan, onPhotoCrop),
+            CtxToolItem("Adjust", Icons.Default.Tune, onClick = onPhotoAdjust),
+            CtxToolItem("Filters", Icons.Default.AutoAwesome, onClick = onPhotoFilters),
+            CtxToolItem("Rotate", Icons.Default.RotateRight, onClick = onPhotoRotate),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
         )
     }
@@ -396,6 +411,18 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 ToolbarSelectionKind.NONE -> {}
+                // Photo clip → replace with another still image.
+                ToolbarSelectionKind.PHOTO -> {
+                    val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+                    if (clip != null) {
+                        vm.setPendingReplaceClip(clip.id)
+                        mediaPicker.pickMultipleMedia.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }
+                }
             }
         },
         onSpeed = { vm.openSpeedPanel() },
@@ -404,6 +431,8 @@ fun EditorBottomToolbarSection(
         onDelete = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO ->
+                    state.selectedClipId?.let { vm.deleteClip(it); vm.clearSelection() }
+                ToolbarSelectionKind.PHOTO ->
                     state.selectedClipId?.let { vm.deleteClip(it); vm.clearSelection() }
                 ToolbarSelectionKind.AUDIO -> {
                     val audioClip = state.project?.clips?.firstOrNull {
@@ -425,6 +454,13 @@ fun EditorBottomToolbarSection(
         },
         beatsActive = state.beatSourceTrackId != null && state.beatMarkersMs.isNotEmpty(),
         beatsAnalyzing = state.beatsAnalyzing,
+        // Photo-editing tools (PR F): open the Edit Photo sheet on the
+        // requested tab so the tool appears the moment a photo clip is
+        // selected.
+        onPhotoCrop = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.CROP) },
+        onPhotoAdjust = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.ADJUST) },
+        onPhotoFilters = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.FILTERS) },
+        onPhotoRotate = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.ROTATE) },
         onCollapse = { vm.clearSelection() }
     )
 }

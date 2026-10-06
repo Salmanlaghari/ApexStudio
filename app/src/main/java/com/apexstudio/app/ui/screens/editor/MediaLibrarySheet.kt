@@ -72,7 +72,7 @@ fun MediaLibrarySheet(
         SAMPLE_MEDIA_LIBRARY.filter { item ->
             val catMatch = when (selectedCategory) {
                 "Videos" -> item.type == ClipType.VIDEO
-                "Photos" -> item.type == ClipType.OVERLAY
+                "Photos" -> item.type == ClipType.IMAGE
                 "Audio" -> item.type == ClipType.AUDIO || item.type == ClipType.SFX
                 else -> true
             }

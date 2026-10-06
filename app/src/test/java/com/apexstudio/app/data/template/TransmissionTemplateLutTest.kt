@@ -15,8 +15,8 @@ import org.robolectric.annotation.Config
 /**
  * Guards the LUT ids referenced by `assets/transmission_templates.json`.
  *
- * Templates are graded at runtime through [FilterManifest.presetById] — the
- * static registry scanned from `assets/luts/*.cube`. A template whose
+ * Templates are graded at runtime through [FilterManifest.presetById] -- the
+ * static registry scanned from `assets/luts/[*].cube`. A template whose
  * `filterId` does not resolve there silently loses its signature grade when
  * applied (see `TimelineTemplateManager.mapTemplateToComposition`), so every
  * id referenced by the catalog must exist in the scanned registry.

@@ -1,10 +1,17 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
+import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.photoedit.PhotoEditRenderer
+import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.io.File
 
 
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
@@ -27,6 +34,12 @@ fun EditorViewModel.startExport(
     val s = _state.value
     val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
         ?: s.project?.clips?.firstOrNull()
+    // Photo clip (PR F): bake the edits into a bitmap, encode a still
+    // video, then run the normal export on it.
+    if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
+        startPhotoExport(selected, resolution, fps, quality)
+        return
+    }
     val inputUri = selected?.uri ?: return
     val engine = exportEngine ?: return
     _export.update { it.copy(isExporting = true, progress = 0f) }
@@ -158,4 +171,110 @@ fun EditorViewModel.startAudioExport(
         ),
         outputFileName
     )
+}
+
+/**
+ * Export path for IMAGE clips (PR F).
+ *
+ * A still image cannot go through Media3 Transformer directly, so:
+ *  1. Render the clip's [PhotoEditSettings] (crop / adjust / LUT /
+ *     rotate+flip) into a bitmap with [PhotoEditRenderer] — the exact
+ *     same pipeline the live preview uses, so export is WYSIWYG.
+ *  2. Encode the bitmap as a short H.264 still video with
+ *     [PhotoVideoEncoder] (clip duration, honouring trim).
+ *  3. Run the standard Transformer export on that video so text
+ *     overlays, stickers, FX, transitions and PiP still apply.
+ * The temp video is deleted once the export terminates.
+ */
+fun EditorViewModel.startPhotoExport(
+    clip: MediaClip,
+    resolution: String,
+    fps: Int,
+    quality: String
+) {
+    val engine = exportEngine ?: return
+    val ctx = context ?: return
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
+
+    viewModelScope.launch(Dispatchers.IO) {
+        var tempVideo: File? = null
+        try {
+            val bitmap = PhotoEditRenderer.renderEdited(ctx, clip.uri, clip.photoEdit, maxDim = 2048)
+                ?: throw IllegalStateException("Could not decode photo: ${clip.name}")
+            val trimmedMs = if (clip.trimEndMs > clip.trimStartMs) {
+                clip.trimEndMs - clip.trimStartMs
+            } else {
+                clip.durationMs
+            }
+            tempVideo = PhotoVideoEncoder.encodeStillImage(ctx, bitmap, trimmedMs)
+                ?: throw IllegalStateException("Could not encode photo video")
+            try {
+                bitmap.recycle()
+            } catch (_: Exception) {
+            }
+
+            val s = _state.value
+            val stickers = (s.project?.stickers ?: emptyList()) + clip.stickers
+            val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
+                .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+                .map { ov ->
+                    ExportEngine.PipOverlayConfig(
+                        uri = ov.uri,
+                        offsetMs = ov.timelineOffsetMs,
+                        trimStartMs = ov.trimStartMs,
+                        trimEndMs = ov.trimEndMs,
+                        opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
+                    )
+                }
+            val transitionType = s.project?.lastTransitionType?.let { typeStr ->
+                com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
+            }
+            engine.startExport(
+                android.net.Uri.fromFile(tempVideo).toString(),
+                ExportEngine.ExportConfig(
+                    resolution = resolution,
+                    fps = fps,
+                    quality = quality,
+                    // Photo edits are baked into the frames already.
+                    filterPreset = null,
+                    filterIntensity = 0f,
+                    adjustments = VideoAdjustments(),
+                    cropRect = null,
+                    clipSpeed = clip.speedMultiplier,
+                    keyframes = clip.keyframes,
+                    fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
+                    fxIntensity = s.fxIntensity,
+                    textOverlays = clip.textOverlays,
+                    stickers = stickers,
+                    // Trim is baked into the still-video duration.
+                    trimStartMs = 0L,
+                    trimEndMs = 0L,
+                    // Stills carry no audio.
+                    pitchSemitones = 0f,
+                    volume = 1f,
+                    pipOverlays = pipOverlays,
+                    transitionType = transitionType,
+                    transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
+                )
+            )
+            // Wait for the export to terminate, then clean up the temp
+            // video (30 min cap so a stuck export can't leak the file).
+            val deadline = android.os.SystemClock.elapsedRealtime() + 30L * 60L * 1000L
+            var sawActive = false
+            while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                val st = engine.exportState.value
+                if (st.isExporting) sawActive = true
+                else if (sawActive) break
+                delay(500)
+            }
+        } catch (e: Exception) {
+            Log.e("EditorViewModel", "Photo export failed", e)
+            _export.update { it.copy(isExporting = false, error = e.message) }
+        } finally {
+            try {
+                tempVideo?.delete()
+            } catch (_: Exception) {
+            }
+        }
+    }
 }

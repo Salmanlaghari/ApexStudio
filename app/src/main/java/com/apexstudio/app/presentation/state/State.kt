@@ -39,7 +39,7 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "beauty_hd",
+    val filterCategory: String = "cinematic",
     // GPUImage Real-Time Video Filtering Interface state
     val gpuFilterPanelOpen: Boolean = false,
     val activeGpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),

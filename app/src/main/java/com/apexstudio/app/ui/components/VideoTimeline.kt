@@ -982,7 +982,7 @@ private fun TimelineTimeRuler(
                 ) {
                     Text(
                         // Pro timecode (HH:MM:SS:FF) at high zoom; compact short form otherwise.
-                        text = if (secondWidthDp >= 180.dp) TimeFormat.msToTimecode(sec * 1000L)
+                        text = if (secondWidthDp >= 180.dp) TimeFormat.msToTimecode(sec * 1000L, includeFrames = true)
                         else TimeFormat.msToShort(sec * 1000L),
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp,
@@ -1000,7 +1000,7 @@ private fun TimelineTimeRuler(
                             .padding(start = 2.dp, top = 3.dp)
                     ) {
                         Text(
-                            text = TimeFormat.msToTimecode(sec * 1000L + 500L).takeLast(3),
+                            text = TimeFormat.msToTimecode(sec * 1000L + 500L, includeFrames = true).takeLast(3),
                             color = ApexPalette.NeonCyan.copy(alpha = 0.7f),
                             fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,

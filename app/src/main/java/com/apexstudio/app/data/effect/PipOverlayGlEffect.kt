@@ -223,16 +223,30 @@ class PipOverlayGlEffect(
 
                 // Determine if the PiP should be visible at this timestamp.
                 val timeMs = presentationTimeUs / 1000L
+                // 0-based time since the overlay started on the export timeline —
+                // i.e. the playback position within the trimmed overlay clip.
                 val overlayTimeMs = timeMs - offsetMs
-                val overlayEndMs = if (trimEndMs == Long.MAX_VALUE) Long.MAX_VALUE else trimEndMs
+                // The overlay plays its trimmed [trimStartMs, trimEndMs] range of
+                // the source media, so it is visible for exactly the trimmed
+                // duration starting at offsetMs. overlayTimeMs is 0-based, so it
+                // must NOT be compared against trimStartMs directly.
+                val trimmedDurationMs = when {
+                    trimEndMs == Long.MAX_VALUE -> Long.MAX_VALUE
+                    trimEndMs > trimStartMs -> trimEndMs - trimStartMs
+                    else -> 0L
+                }
+                // Source-media timestamp of the frame to show. The decoder was
+                // seeked to trimStartMs in setupDecoder(), so decoded frames carry
+                // source-media timestamps — the trim offset must be added back.
+                val sourceTimeUs = (overlayTimeMs + trimStartMs) * 1000L
                 val visible = decoderReady &&
-                    overlayTimeMs >= trimStartMs &&
-                    overlayTimeMs < overlayEndMs &&
-                    overlayTimeMs * 1000L < overlayDurationUs
+                    overlayTimeMs >= 0 &&
+                    overlayTimeMs < trimmedDurationMs &&
+                    sourceTimeUs < overlayDurationUs
 
                 var pipTex = 0
                 if (visible) {
-                    pipTex = updateOverlayTexture(overlayTimeMs * 1000L)
+                    pipTex = updateOverlayTexture(sourceTimeUs)
                 }
 
                 if (pipTex != 0) {
@@ -344,6 +358,12 @@ class PipOverlayGlEffect(
         override fun release() {
             super.release()
             releaseDecoder()
+            // The GlProgram created in init{} is a separate GL object from the
+            // parent BaseGlShaderProgram's program — it must be deleted here,
+            // otherwise the shader program leaks on every export.
+            try {
+                glProgram.delete()
+            } catch (_: Exception) {}
             if (pipTextureId != 0) {
                 try {
                     GLES20.glDeleteTextures(1, intArrayOf(pipTextureId), 0)

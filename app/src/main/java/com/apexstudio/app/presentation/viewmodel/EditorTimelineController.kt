@@ -600,6 +600,34 @@ fun EditorViewModel.deleteClip(clipId: String) {
 }
 
 
+/**
+ * Deletes multiple clips in a single operation: one undo entry, one state
+ * update, one project persist. Prefer this over calling [deleteClip] in a
+ * loop for multi-select bulk delete.
+ */
+fun EditorViewModel.deleteClips(clipIds: Set<String>) {
+    if (clipIds.isEmpty()) return
+    pushUndo()
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val updated = p.clips.filterNot { it.id in clipIds }
+        val newSelected = if (s.selectedClipId in clipIds) updated.firstOrNull()?.id else s.selectedClipId
+        val newDur = updated.maxOfOrNull { it.trimEndMs - it.trimStartMs } ?: 0L
+        s.copy(
+            project = p.copy(clips = updated, durationMs = newDur),
+            durationMs = newDur,
+            selectedClipId = newSelected,
+            // Deleting the active overlay clip clears the transform too,
+            // otherwise the preview layer would keep trying to render a
+            // non-existent overlay's PlayerView.
+            overlayClipId = if (s.overlayClipId in clipIds) null else s.overlayClipId,
+            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform
+        )
+    }
+    persistProject()
+}
+
+
 fun EditorViewModel.moveClipToTrack(clipId: String, newType: ClipType, newTrackIndex: Int) {
     pushUndo()
     _state.update { s ->

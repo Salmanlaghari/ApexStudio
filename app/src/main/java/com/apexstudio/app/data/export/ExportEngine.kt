@@ -12,6 +12,7 @@ import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -123,6 +124,16 @@ class ExportEngine(private val context: Context) {
         val widthFraction: Float = 0.25f,
         val marginFraction: Float = 0.03f,
         val opacity: Float = 1f
+    )
+
+    /**
+     * One audio source for [startAudioExport]: a media URI plus its trim range
+     * (in ms, relative to the source media).
+     */
+    data class AudioExportSource(
+        val uri: String,
+        val trimStartMs: Long = 0L,
+        val trimEndMs: Long = 0L
     )
 
     /**
@@ -319,79 +330,103 @@ class ExportEngine(private val context: Context) {
     }
 
     /**
-     * Exports the project's audio (clips + overlay audio + added music) as a
-     * standalone AAC (.m4a) file. Reuses the audio pipeline (pitch, volume,
-     * channel mixing) from the video export; video is removed via
-     * [EditedMediaItem.Builder.setRemoveVideo].
+     * Builds a fresh list of audio processors (pitch, volume, speed) from the
+     * export config. Processors are stateful, so callers must build a new
+     * list per media item instead of sharing instances.
+     */
+    private fun buildExportAudioProcessors(
+        config: ExportConfig
+    ): MutableList<androidx.media3.common.audio.AudioProcessor> {
+        val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+
+        // Audio Pitch Adjustment via SonicAudioProcessor
+        if (config.pitchSemitones != 0f) {
+            val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
+            val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
+                setPitch(pitchFactor)
+            }
+            audioProcessors.add(sonic)
+        }
+
+        // Volume / Gain adjustment via ChannelMixingMatrix
+        if (config.volume != 1f) {
+            val clampedVol = config.volume.coerceIn(0f, 2f)
+            val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
+                /* inputChannelCount = */ 2,
+                /* outputChannelCount = */ 2,
+                /* coefficients = */ floatArrayOf(
+                    clampedVol, 0f,
+                    0f, clampedVol
+                )
+            )
+            val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
+            channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
+            audioProcessors.add(channelMixingProcessor)
+        }
+
+        // Speed change affects audio too.
+        if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
+            val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
+                override fun getSpeed(timeUs: Long): Float = config.clipSpeed
+                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
+                    androidx.media3.common.C.TIME_UNSET
+            }
+            val speedPair = Effects.createExperimentalSpeedChangingEffect(constantProvider)
+            audioProcessors.add(speedPair.first)
+        }
+        return audioProcessors
+    }
+
+    /**
+     * Exports the project's audio as a standalone AAC (.m4a) file: every
+     * timeline clip's audio plus all unmuted extra audio tracks (music /
+     * voiceover), concatenated in timeline order. Reuses the audio pipeline
+     * (pitch, volume, channel mixing) from the video export; video is removed
+     * via [EditedMediaItem.Builder.setRemoveVideo].
+     *
+     * Note: sources are concatenated into a single sequence, not
+     * simultaneously mixed — an extra music track plays after the clips'
+     * audio rather than underneath it. Per-source trim ranges are honored via
+     * each item's clipping configuration.
      */
     fun startAudioExport(
-        inputUri: String,
+        sources: List<AudioExportSource>,
         config: ExportConfig,
         outputFileName: String = "apex_studio_audio.m4a"
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
-
-                val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
-                if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
-                    val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
-                    if (config.trimStartMs > 0L) {
-                        clippingBuilder.setStartPositionMs(config.trimStartMs)
-                    }
-                    if (config.trimEndMs > config.trimStartMs) {
-                        clippingBuilder.setEndPositionMs(config.trimEndMs)
-                    }
-                    mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
+                if (sources.isEmpty()) {
+                    throw IllegalArgumentException("No audio sources to export")
                 }
-                val inputMediaItem = mediaItemBuilder.build()
 
                 val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
-
-                // Audio Pitch Adjustment via SonicAudioProcessor
-                if (config.pitchSemitones != 0f) {
-                    val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
-                    val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
-                        setPitch(pitchFactor)
+                val editedItems = sources.map { src ->
+                    val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
+                    if (src.trimStartMs > 0L || (src.trimEndMs > 0L && src.trimEndMs > src.trimStartMs)) {
+                        val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
+                        if (src.trimStartMs > 0L) {
+                            clippingBuilder.setStartPositionMs(src.trimStartMs)
+                        }
+                        if (src.trimEndMs > src.trimStartMs) {
+                            clippingBuilder.setEndPositionMs(src.trimEndMs)
+                        }
+                        mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
                     }
-                    audioProcessors.add(sonic)
+                    // Fresh audio processors per item — processors are stateful
+                    // and must not be shared across sequence items.
+                    EditedMediaItem.Builder(mediaItemBuilder.build())
+                        .setRemoveVideo(true)
+                        .setEffects(Effects(buildExportAudioProcessors(config), emptyList()))
+                        .build()
                 }
-
-                // Volume / Gain adjustment via ChannelMixingMatrix
-                if (config.volume != 1f) {
-                    val clampedVol = config.volume.coerceIn(0f, 2f)
-                    val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
-                        /* inputChannelCount = */ 2,
-                        /* outputChannelCount = */ 2,
-                        /* coefficients = */ floatArrayOf(
-                            clampedVol, 0f,
-                            0f, clampedVol
-                        )
-                    )
-                    val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
-                    channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
-                    audioProcessors.add(channelMixingProcessor)
-                }
-
-                // Speed change affects audio too.
-                if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
-                    val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
-                        override fun getSpeed(timeUs: Long): Float = config.clipSpeed
-                        override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
-                            androidx.media3.common.C.TIME_UNSET
-                    }
-                    val speedPair = Effects.createExperimentalSpeedChangingEffect(constantProvider)
-                    audioProcessors.add(speedPair.first)
-                }
-
-                val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setRemoveVideo(true)
-                    .setEffects(Effects(audioProcessors, emptyList()))
-                    .build()
+                val composition = Composition.Builder(
+                    EditedMediaItemSequence(editedItems)
+                ).build()
 
                 val transformer = Transformer.Builder(context)
                     .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
@@ -426,7 +461,7 @@ class ExportEngine(private val context: Context) {
                 this@ExportEngine.transformer = transformer
 
                 startProgressTracking(transformer)
-                transformer.start(editedMediaItem, outputFile.absolutePath)
+                transformer.start(composition, outputFile.absolutePath)
             } catch (e: Exception) {
                 Log.e(TAG, "startAudioExport failed", e)
                 mainHandler.post {

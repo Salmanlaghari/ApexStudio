@@ -105,26 +105,50 @@ fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(er
 
 
 /**
- * Exports the project's audio as a standalone AAC (.m4a) file.
- * Reuses the audio pipeline (pitch, volume, speed) from the video export.
+ * Exports the project's audio as a standalone AAC (.m4a) file: every
+ * timeline clip's audio plus all unmuted extra audio tracks (music /
+ * voiceover), concatenated in timeline order. Reuses the audio pipeline
+ * (pitch, volume, speed) from the video export.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"
 ) {
     val s = _state.value
-    val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
-        ?: s.project?.clips?.firstOrNull()
-    val inputUri = selected?.uri ?: return
     val engine = exportEngine ?: return
     _export.update { it.copy(isExporting = true, progress = 0f) }
 
     val audioSt = _audio.value
-    val speed = selected?.speedMultiplier ?: s.playbackSpeed
+    val clips = s.project?.clips?.filter { it.type == ClipType.VIDEO } ?: emptyList()
+    // Every audio source in the project: all video clips in timeline order,
+    // then any unmuted extra audio tracks (music / voiceover).
+    val sources = buildList {
+        clips.forEach { clip ->
+            add(
+                ExportEngine.AudioExportSource(
+                    uri = clip.uri,
+                    trimStartMs = clip.trimStartMs,
+                    trimEndMs = clip.trimEndMs
+                )
+            )
+        }
+        audioSt.tracks.filter { !it.isMuted }.forEach { track ->
+            add(
+                ExportEngine.AudioExportSource(
+                    uri = track.uri,
+                    trimStartMs = track.trimStartMs,
+                    trimEndMs = track.trimEndMs
+                )
+            )
+        }
+    }
+    if (sources.isEmpty()) {
+        _export.update { it.copy(isExporting = false, progress = 0f) }
+        return
+    }
+    val speed = clips.firstOrNull()?.speedMultiplier ?: s.playbackSpeed
     engine.startAudioExport(
-        inputUri,
+        sources,
         ExportEngine.ExportConfig(
-            trimStartMs = selected?.trimStartMs ?: 0L,
-            trimEndMs = selected?.trimEndMs ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
             volume = if (audioSt.isMuted) 0f else audioSt.volume,
             clipSpeed = speed

@@ -584,6 +584,7 @@ fun EditorScreen(
             onSplitClip = { clipId, atMs -> vm.splitClip(clipId, atMs) },
             onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
             onDeleteClip = { clipId -> vm.deleteClip(clipId) },
+            onDeleteClips = { ids -> vm.deleteClips(ids) },
             onMoveClipLeft = { clipId -> vm.moveClipLeft(clipId) },
             onMoveClipRight = { clipId -> vm.moveClipRight(clipId) },
             onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },

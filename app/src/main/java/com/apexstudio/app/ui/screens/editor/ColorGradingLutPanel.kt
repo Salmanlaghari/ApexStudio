@@ -294,6 +294,24 @@ fun ColorGradingLutPanel(
 
             Spacer(Modifier.width(4.dp))
 
+            // White Balance & Tone Fine-Tune Toggle
+            IconButton(
+                onClick = { showFineTuneControls = !showFineTuneControls },
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(if (showFineTuneControls) ApexPalette.NeonPurple.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+            ) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = "White Balance & Tone",
+                    tint = if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.TextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(Modifier.width(4.dp))
+
             // Close Button
             IconButton(
                 onClick = onClose,
@@ -568,107 +586,17 @@ fun ColorGradingLutPanel(
 
         Spacer(Modifier.height(8.dp))
 
-        // --- 6. Intensity Control & Quick Steppers ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Filter Intensity",
-                color = ApexPalette.TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
+        // --- 6. Single slim filter detail strip (replaces the old bulky table) ---
+        // One slim bottom patti: filter name + intensity slider + % + remove.
+        // Video frame stays visible above; no big panel opens on filter tap.
+        if (activeFilterId != null && activePreset != null) {
+            FilterDetailStrip(
+                filterName = activePreset.name,
+                intensity = intensity,
+                onIntensityChange = onIntensityChange,
+                onRemove = { onSelectFilter(null) },
+                onDone = onClose
             )
-            Spacer(Modifier.width(8.dp))
-            Slider(
-                value = intensity,
-                onValueChange = onIntensityChange,
-                valueRange = 0f..1f,
-                enabled = activeFilterId != null,
-                colors = SliderDefaults.colors(
-                    thumbColor = ApexPalette.NeonCyan,
-                    activeTrackColor = ApexPalette.NeonCyan,
-                    inactiveTrackColor = ApexPalette.BorderGlass
-                ),
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "${(intensity * 100).toInt()}%",
-                color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.width(36.dp),
-                textAlign = TextAlign.End
-            )
-        }
-
-        // Quick Preset Chips for Intensity
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf(0.25f, 0.50f, 0.75f, 1.0f).forEach { stepVal ->
-                val isStep = Math.abs(intensity - stepVal) < 0.05f && activeFilterId != null
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (isStep) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                        .border(
-                            0.5.dp,
-                            if (isStep) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                            RoundedCornerShape(6.dp)
-                        )
-                        .clickable(enabled = activeFilterId != null) { onIntensityChange(stepVal) }
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        "${(stepVal * 100).toInt()}%",
-                        color = if (isStep) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            // Toggle secondary adjustments expander
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (showFineTuneControls) ApexPalette.NeonPurple.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                    .border(
-                        0.5.dp,
-                        if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.BorderGlass,
-                        RoundedCornerShape(6.dp)
-                    )
-                    .clickable { showFineTuneControls = !showFineTuneControls }
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Tune,
-                    contentDescription = null,
-                    tint = if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.TextSecondary,
-                    modifier = Modifier.size(12.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "White Balance & Tone",
-                    color = if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.TextSecondary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Icon(
-                    if (showFineTuneControls) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.TextSecondary,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
         }
 
         // --- 7. Secondary Color Adjustments (White Balance, Tone) ---
@@ -747,6 +675,94 @@ fun ColorGradingLutPanel(
                     Text(String.format("%.1fx", saturation), color = ApexPalette.NeonCyan, fontSize = 9.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Single slim filter detail strip — replaces the old bulky intensity table.
+ *
+ * When a filter is tapped, only this slim bottom patti appears:
+ * [filter name] [intensity slider] [%] [remove X] [done ✓].
+ * The video frame stays visible above; no big panel opens.
+ */
+@Composable
+private fun FilterDetailStrip(
+    filterName: String,
+    intensity: Float,
+    onIntensityChange: (Float) -> Unit,
+    onRemove: () -> Unit,
+    onDone: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            filterName,
+            color = ApexPalette.NeonCyan,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(0.9f)
+        )
+        Slider(
+            value = intensity,
+            onValueChange = onIntensityChange,
+            valueRange = 0f..1f,
+            colors = SliderDefaults.colors(
+                thumbColor = ApexPalette.NeonCyan,
+                activeTrackColor = ApexPalette.NeonCyan,
+                inactiveTrackColor = ApexPalette.BorderGlass
+            ),
+            modifier = Modifier.weight(1.4f)
+        )
+        Text(
+            "${(intensity * 100).toInt()}%",
+            color = ApexPalette.NeonCyan,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(38.dp),
+            textAlign = TextAlign.End
+        )
+        Spacer(Modifier.width(4.dp))
+        // Remove filter (back to Original)
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(ApexPalette.BgGlass)
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove filter",
+                tint = ApexPalette.TextSecondary,
+                modifier = Modifier.size(15.dp)
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        // Done
+        IconButton(
+            onClick = onDone,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(ApexPalette.NeonCyan)
+        ) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = "Done",
+                tint = Color.Black,
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }

@@ -23,12 +23,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.*
@@ -150,10 +157,39 @@ fun TransitionPickerSheet(
 
         Spacer(Modifier.height(14.dp))
 
-        // Live Transition Visual Canvas Preview
+        // Live Transition Visual Canvas Preview — uses the REAL end frame of
+        // Clip A and start frame of Clip B so the preview shows what the
+        // transition will actually look like (not gradient placeholders).
+        val context = LocalContext.current
+        var clipABitmap by remember(fromClip?.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        var clipBBitmap by remember(toClip?.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        LaunchedEffect(fromClip?.id, toClip?.id) {
+            clipABitmap = fromClip?.let { clip ->
+                try {
+                    val uri = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(context, clip.uri).toString()
+                    // Last frame of Clip A (what the transition starts from)
+                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
+                        context, uri, (clip.trimEndMs - 100).coerceAtLeast(0)
+                    )
+                } catch (e: Exception) { null }
+            }
+            clipBBitmap = toClip?.let { clip ->
+                try {
+                    val uri = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(context, clip.uri).toString()
+                    // First frame of Clip B (what the transition ends on)
+                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
+                        context, uri, clip.trimStartMs
+                    )
+                } catch (e: Exception) { null }
+            }
+        }
         TransitionLivePreview(
             selectedType = selectedDef.id,
             progress = previewProgress,
+            clipABitmap = clipABitmap,
+            clipBBitmap = clipBBitmap,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(110.dp)
@@ -471,6 +507,8 @@ fun TransitionPickerSheet(
 private fun TransitionLivePreview(
     selectedType: String,
     progress: Float,
+    clipABitmap: android.graphics.Bitmap?,
+    clipBBitmap: android.graphics.Bitmap?,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -484,53 +522,80 @@ private fun TransitionLivePreview(
             val h = size.height
             val p = progress.coerceIn(0f, 1f)
 
-            // Background / Clip A representation: Deep Midnight Gradient
+            // Real clip frames (fall back to gradients while loading).
+            // Clip A = last frame of the outgoing clip, Clip B = first frame
+            // of the incoming clip — so the preview shows the ACTUAL transition.
+            val clipAImage = clipABitmap?.asImageBitmap()
+            val clipBImage = clipBBitmap?.asImageBitmap()
             val clipABrush = Brush.linearGradient(
                 listOf(Color(0xFF1E1B4B), Color(0xFF312E81)),
                 start = Offset.Zero,
                 end = Offset(w, h)
             )
-
-            // Clip B representation: Cyan / Emerald Gradient
             val clipBBrush = Brush.linearGradient(
                 listOf(Color(0xFF065F46), Color(0xFF047857), Color(0xFF0E7490)),
                 start = Offset.Zero,
                 end = Offset(w, h)
             )
 
+            fun drawClipA(alpha: Float = 1f, topLeft: Offset = Offset.Zero, size: Size = Size(w, h)) {
+                if (clipAImage != null) {
+                    drawImage(
+                        image = clipAImage,
+                        dstOffset = IntOffset(topLeft.x.toInt(), topLeft.y.toInt()),
+                        dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                        alpha = alpha
+                    )
+                } else {
+                    drawRect(brush = clipABrush, alpha = alpha, topLeft = topLeft, size = size)
+                }
+            }
+            fun drawClipB(alpha: Float = 1f, topLeft: Offset = Offset.Zero, size: Size = Size(w, h)) {
+                if (clipBImage != null) {
+                    drawImage(
+                        image = clipBImage,
+                        dstOffset = IntOffset(topLeft.x.toInt(), topLeft.y.toInt()),
+                        dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                        alpha = alpha
+                    )
+                } else {
+                    drawRect(brush = clipBBrush, alpha = alpha, topLeft = topLeft, size = size)
+                }
+            }
+
             when (selectedType) {
                 "cross_dissolve", "cross" -> {
-                    drawRect(brush = clipABrush)
-                    drawRect(brush = clipBBrush, alpha = p)
+                    drawClipA()
+                    drawClipB(alpha = p)
                 }
 
                 "fade_black" -> {
                     if (p < 0.5f) {
                         val fadeOut = 1f - (p * 2f)
-                        drawRect(brush = clipABrush, alpha = fadeOut)
+                        drawClipA(alpha = fadeOut)
                     } else {
                         val fadeIn = (p - 0.5f) * 2f
-                        drawRect(brush = clipBBrush, alpha = fadeIn)
+                        drawClipB(alpha = fadeIn)
                     }
                 }
 
                 "fade_white" -> {
                     if (p < 0.5f) {
                         val flash = p * 2f
-                        drawRect(brush = clipABrush)
+                        drawClipA()
                         drawRect(color = Color.White, alpha = flash)
                     } else {
                         val flash = (1f - (p - 0.5f) * 2f)
-                        drawRect(brush = clipBBrush)
+                        drawClipB()
                         drawRect(color = Color.White, alpha = flash)
                     }
                 }
 
                 "wipe_left", "wipe" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     val splitX = w * (1f - p)
                     clipRect(left = splitX, top = 0f, right = w, bottom = h) {
-                        drawRect(brush = clipBBrush)
+                        drawClipB()
                     }
                     drawLine(
                         color = Color(0xFF38BDF8),
@@ -541,10 +606,10 @@ private fun TransitionLivePreview(
                 }
 
                 "wipe_right" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     val splitX = w * p
                     clipRect(left = 0f, top = 0f, right = splitX, bottom = h) {
-                        drawRect(brush = clipBBrush)
+                        drawClipB()
                     }
                     drawLine(
                         color = Color(0xFF38BDF8),
@@ -555,10 +620,10 @@ private fun TransitionLivePreview(
                 }
 
                 "wipe_up" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     val splitY = h * (1f - p)
                     clipRect(left = 0f, top = splitY, right = w, bottom = h) {
-                        drawRect(brush = clipBBrush)
+                        drawClipB()
                     }
                     drawLine(
                         color = Color(0xFFEC4899),
@@ -569,10 +634,10 @@ private fun TransitionLivePreview(
                 }
 
                 "wipe_down" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     val splitY = h * p
                     clipRect(left = 0f, top = 0f, right = w, bottom = splitY) {
-                        drawRect(brush = clipBBrush)
+                        drawClipB()
                     }
                     drawLine(
                         color = Color(0xFFEC4899),
@@ -583,31 +648,41 @@ private fun TransitionLivePreview(
                 }
 
                 "clock_wipe" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     val sweepAngle = p * 360f
-                    drawArc(
-                        brush = clipBBrush,
-                        startAngle = -90f,
-                        sweepAngle = sweepAngle,
-                        useCenter = true,
-                        topLeft = Offset(-w * 0.25f, -h * 0.25f),
-                        size = Size(w * 1.5f, h * 1.5f)
-                    )
+                    // Clip the real Clip B frame to the sweeping arc
+                    clipPath(
+                        Path().apply {
+                            moveTo(w / 2f, h / 2f)
+                            arcTo(
+                                rect = Rect(
+                                    offset = Offset(-w * 0.25f, -h * 0.25f),
+                                    size = Size(w * 1.5f, h * 1.5f)
+                                ),
+                                startAngleDegrees = -90f,
+                                sweepAngleDegrees = sweepAngle,
+                                forceMoveTo = false
+                            )
+                            close()
+                        }
+                    ) {
+                        drawClipB()
+                    }
                 }
 
                 "zoom_blur", "zoom" -> {
                     val scaleA = 1f + p * 0.5f
                     val scaleB = 1.5f - (1f - p) * 0.5f
-                    drawRect(brush = clipABrush, alpha = (1f - p))
-                    drawRect(brush = clipBBrush, alpha = p)
+                    drawClipA(alpha = (1f - p))
+                    drawClipB(alpha = p)
                 }
 
                 "slide_left", "slide" -> {
                     val offsetAX = -w * p
                     val offsetBX = w * (1f - p)
                     clipRect(left = 0f, top = 0f, right = w, bottom = h) {
-                        drawRect(brush = clipABrush, topLeft = Offset(offsetAX, 0f), size = Size(w, h))
-                        drawRect(brush = clipBBrush, topLeft = Offset(offsetBX, 0f), size = Size(w, h))
+                        drawClipA(topLeft = Offset(offsetAX, 0f), size = Size(w, h))
+                        drawClipB(topLeft = Offset(offsetBX, 0f), size = Size(w, h))
                     }
                 }
 
@@ -615,8 +690,8 @@ private fun TransitionLivePreview(
                     val offsetAX = w * p
                     val offsetBX = -w * (1f - p)
                     clipRect(left = 0f, top = 0f, right = w, bottom = h) {
-                        drawRect(brush = clipABrush, topLeft = Offset(offsetAX, 0f), size = Size(w, h))
-                        drawRect(brush = clipBBrush, topLeft = Offset(offsetBX, 0f), size = Size(w, h))
+                        drawClipA(topLeft = Offset(offsetAX, 0f), size = Size(w, h))
+                        drawClipB(topLeft = Offset(offsetBX, 0f), size = Size(w, h))
                     }
                 }
 
@@ -624,13 +699,13 @@ private fun TransitionLivePreview(
                     val offsetAY = -h * p
                     val offsetBY = h * (1f - p)
                     clipRect(left = 0f, top = 0f, right = w, bottom = h) {
-                        drawRect(brush = clipABrush, topLeft = Offset(0f, offsetAY), size = Size(w, h))
-                        drawRect(brush = clipBBrush, topLeft = Offset(0f, offsetBY), size = Size(w, h))
+                        drawClipA(topLeft = Offset(0f, offsetAY), size = Size(w, h))
+                        drawClipB(topLeft = Offset(0f, offsetBY), size = Size(w, h))
                     }
                 }
 
                 "glitch" -> {
-                    drawRect(brush = clipABrush)
+                    drawClipA()
                     if (p > 0.1f) {
                         // Render glitch scanlines & RGB offsets
                         val sliceH = h / 8f
@@ -639,21 +714,21 @@ private fun TransitionLivePreview(
                             val shift = ((i % 3) - 1) * 20f * (1f - kotlin.math.abs(p - 0.5f) * 2f)
                             clipRect(left = 0f, top = sliceY, right = w, bottom = sliceY + sliceH) {
                                 if (i % 2 == 0) {
-                                    drawRect(brush = clipBBrush, topLeft = Offset(shift, 0f), size = Size(w, h))
+                                    drawClipB(topLeft = Offset(shift, 0f), size = Size(w, h))
                                 } else {
-                                    drawRect(brush = clipABrush, topLeft = Offset(-shift, 0f), size = Size(w, h))
+                                    drawClipA(topLeft = Offset(-shift, 0f), size = Size(w, h))
                                 }
                             }
                         }
                     }
                     if (p > 0.6f) {
-                        drawRect(brush = clipBBrush, alpha = (p - 0.6f) * 2.5f)
+                        drawClipB(alpha = (p - 0.6f) * 2.5f)
                     }
                 }
 
                 "light_leak" -> {
-                    drawRect(brush = clipABrush)
-                    drawRect(brush = clipBBrush, alpha = p)
+                    drawClipA()
+                    drawClipB(alpha = p)
                     val flare = kotlin.math.sin(p * PI.toFloat())
                     drawCircle(
                         brush = Brush.radialGradient(
@@ -668,8 +743,8 @@ private fun TransitionLivePreview(
 
                 else -> {
                     // Default cut
-                    if (p < 0.5f) drawRect(brush = clipABrush)
-                    else drawRect(brush = clipBBrush)
+                    if (p < 0.5f) drawClipA()
+                    else drawClipB()
                 }
             }
         }

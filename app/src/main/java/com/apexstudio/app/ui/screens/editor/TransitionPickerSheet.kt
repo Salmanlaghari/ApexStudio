@@ -547,7 +547,7 @@ private fun TransitionLivePreview(
                         alpha = alpha
                     )
                 } else {
-                    drawClipA(alpha = alpha, topLeft = topLeft, size = size)
+                    drawRect(brush = clipABrush, alpha = alpha, topLeft = topLeft, size = size)
                 }
             }
             fun drawClipB(alpha: Float = 1f, topLeft: Offset = Offset.Zero, size: Size = Size(w, h)) {
@@ -559,7 +559,7 @@ private fun TransitionLivePreview(
                         alpha = alpha
                     )
                 } else {
-                    drawClipB(alpha = alpha, topLeft = topLeft, size = size)
+                    drawRect(brush = clipBBrush, alpha = alpha, topLeft = topLeft, size = size)
                 }
             }
 

@@ -170,6 +170,8 @@ fun EditorViewModel.importCustomCubeLut(name: String, inputStream: java.io.Input
     val preset = engine.importCustomCube(name, inputStream)
     if (preset != null) {
         _state.update { it.copy(customImportedLuts = it.customImportedLuts + preset) }
+        // New LUT added: drop cached thumbnails so they regenerate with it.
+        com.apexstudio.app.data.filter.FilterThumbnailGenerator.invalidateDynamicCache()
         setActiveFilter(preset.id)
     }
     return preset

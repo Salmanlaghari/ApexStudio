@@ -83,8 +83,14 @@ private fun FilterGradeLayer(filterId: String, intensity: Float) {
     // family, which never matched the actual filter. Now the grade is sampled
     // from the filter's REAL 3D LUT (the same .cube used at export), so the
     // preview shows the filter's true color cast, contrast and desaturation.
-    val lutGrade = remember(filterId) {
-        LutBitmapCache.peek(filterId)?.let { LutPreviewSampler.sampleGrade(it) }
+    //
+    // peek() is a cheap map lookup done on every composition; the expensive
+    // trilinear sampling runs once per cached texture. If the LUT isn't
+    // cached yet, lutTexture is null and we fall back — the next
+    // recomposition after thumbnails load will pick up the real grade.
+    val lutTexture = LutBitmapCache.peek(filterId)
+    val lutGrade = remember(lutTexture) {
+        lutTexture?.let { LutPreviewSampler.sampleGrade(it) }
     }
 
     if (lutGrade != null) {

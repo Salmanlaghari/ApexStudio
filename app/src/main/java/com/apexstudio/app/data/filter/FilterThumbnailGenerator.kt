@@ -156,7 +156,6 @@ object FilterThumbnailGenerator {
 
         // 3. Render each preset with its REAL LUT in parallel. LutBitmapCache
         //    memoizes loaded LUT textures, so repeat renders are cheap.
-        val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         coroutineScope {
             val jobs = allPresets.map { preset ->
                 async {

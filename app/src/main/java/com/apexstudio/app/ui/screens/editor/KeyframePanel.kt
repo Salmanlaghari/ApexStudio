@@ -64,6 +64,9 @@ import com.apexstudio.app.domain.model.KeyframeCurve
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.pow
 
 enum class KeyframePropertyFilter(val label: String, val color: Color) {
     ALL("All", ApexPalette.NeonCyan),
@@ -606,6 +609,17 @@ fun KeyframePanel(
                                 KeyframeCurve.EASE_IN_OUT -> if (t < 0.5f) 2f * t * t else 1f - 2f * (1f - t) * (1f - t)
                                 KeyframeCurve.BEZIER -> t * t * (3f - 2f * t)
                                 KeyframeCurve.HOLD -> if (t < 1f) 0f else 1f
+                                // CapCut-style easeOutBack: overshoots past 1 then settles.
+                                KeyframeCurve.OVERSHOOT -> {
+                                    val c1 = 1.70158f
+                                    val c3 = c1 + 1f
+                                    1f + c3 * (t - 1f).pow(3) + c1 * (t - 1f).pow(2)
+                                }
+                                // Damped spring: oscillates and settles at 1.
+                                KeyframeCurve.SPRING -> {
+                                    if (t <= 0f) 0f else if (t >= 1f) 1f
+                                    else 1f - exp(-6f * t) * cos(11f * t)
+                                }
                             }
                             val px = t * w
                             val py = h - (eased * h)

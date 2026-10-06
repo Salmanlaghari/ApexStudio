@@ -1,7 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -111,13 +110,14 @@ fun ContextualBottomToolbar(
         ToolbarSelectionKind.VIDEO -> listOf(
             // Keyframe tab: opens the keyframe editor (diamonds + curves)
             // so keyframes can be added/edited immediately on selection.
-            CtxToolItem("Keyframe", Icons.Default.Diamond, ApexPalette.NeonCyan, onAnimation),
+            // Mockup: key (not diamond) icon, cyan.
+            CtxToolItem("Keyframe", Icons.Default.VpnKey, ApexPalette.NeonCyan, onAnimation),
             CtxToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust),
             CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
             CtxToolItem("Speed", Icons.Default.Speed, onClick = onSpeed),
             // Second entry point into the same keyframe/animation panel.
             CtxToolItem("Animation", Icons.Default.AutoAwesome, onClick = onAnimation),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.Danger, onDelete)
         )
         ToolbarSelectionKind.AUDIO -> listOf(
             CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
@@ -141,15 +141,39 @@ fun ContextualBottomToolbar(
         )
     }
 
-    Row(
+    // Mockup: the toolbar sits in a dark rounded container; when a video
+    // clip is selected a cyan "Video clip selected" label with a cyan
+    // divider sits above it.
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(58.dp)
             .background(Color(0xFF0C0C14))
-            .border(width = 1.dp, color = Color(0xFF1F1F2E))
-            .horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (selectionKind == ToolbarSelectionKind.VIDEO) {
+            Text(
+                text = "Video clip selected",
+                color = ApexPalette.NeonCyan,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 8.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(ApexPalette.NeonCyan)
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(ApexPalette.BgElevated)
+                .height(58.dp)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         // CapCut-style collapse chevron when a clip/track is selected.
         if (selectionKind != ToolbarSelectionKind.NONE) {
             Box(
@@ -198,6 +222,7 @@ fun ContextualBottomToolbar(
                     softWrap = false
                 )
             }
+        }
         }
     }
 }

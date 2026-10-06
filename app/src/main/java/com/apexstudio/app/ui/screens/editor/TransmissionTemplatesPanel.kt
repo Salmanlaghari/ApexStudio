@@ -9,29 +9,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CenterFocusWeak
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Gradient
-import androidx.compose.material.icons.filled.MovieFilter
-import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.fx.FxPreset
+import com.apexstudio.app.data.template.TemplateArtCatalog
 import com.apexstudio.app.data.template.TransmissionTemplate
+import com.apexstudio.app.ui.components.templates.TemplateArtwork
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -39,10 +31,12 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * [FxPanel] (rounded top corners, dark surface, neon-cyan accent)
  * so the two sheets feel like siblings.
  *
- * Each tile is the accent colour declared by the template
- * (TransmissionTemplate.previewAccentArgb), making it easy for a
- * user to scan the row and pick the look they want without reading
- * the label.
+ * Each tile renders the template's distinct preview artwork
+ * ([com.apexstudio.app.ui.components.templates.TemplateArtwork]):
+ * unique layout geometry per template, tinted with the template's
+ * accent colour (TransmissionTemplate.previewAccentArgb), so a user
+ * can scan the row and pick the look they want without reading the
+ * label.
  *
  * Selecting a tile calls [onTemplateApplied] with the template id
  * — the EditorViewModel handles the actual LUT + FX + intensity
@@ -104,8 +98,7 @@ fun TransmissionTemplatesPanel(
                     label = "Original",
                     sublabel = "No preset",
                     accent = ApexPalette.BgElevated,
-                    secondary = ApexPalette.BgDeep,
-                    icon = Icons.Default.Restore,
+                    templateId = "original",
                     selected = activeTemplateId == null,
                     onClick = { onTemplateApplied(null) }
                 )
@@ -115,8 +108,7 @@ fun TransmissionTemplatesPanel(
                     label = template.name,
                     sublabel = resolveTransmissionTemplateSublabel(template),
                     accent = Color(template.previewAccentArgb.toULong().toLong()),
-                    secondary = Color(0xFF0E1116),
-                    icon = iconForTemplate(template),
+                    templateId = template.id,
                     speedBadge = if (template.isSlowMotion) (if (template.speedLabel.isNotBlank()) template.speedLabel else "${template.playbackSpeed}x Slow-Mo") else null,
                     musicTitle = if (template.musicTitle.isNotBlank()) template.musicTitle else null,
                     bpm = if (template.bpm > 0) template.bpm else null,
@@ -133,8 +125,7 @@ private fun TransmissionTemplateTile(
     label: String,
     sublabel: String,
     accent: Color,
-    secondary: Color,
-    icon: ImageVector,
+    templateId: String,
     speedBadge: String? = null,
     musicTitle: String? = null,
     bpm: Int? = null,
@@ -161,17 +152,15 @@ private fun TransmissionTemplateTile(
             modifier = Modifier
                 .size(76.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(
-                    Brush.linearGradient(listOf(accent, secondary))
-                )
                 .border(1.dp, ApexPalette.BorderGlass.copy(alpha = 0.7f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.92f),
-                modifier = Modifier.size(28.dp)
+            // Distinct per-template artwork (geometry varies by template,
+            // not just the accent colour) so the picker reads truthfully.
+            TemplateArtwork(
+                spec = TemplateArtCatalog.artFor(templateId),
+                accent = accent,
+                modifier = Modifier.matchParentSize(),
             )
             if (speedBadge != null) {
                 Box(
@@ -216,22 +205,6 @@ private fun TransmissionTemplateTile(
             )
         }
     }
-}
-
-/**
- * Pick a representative glyph for the template's primary effect.
- * Keeps the chip strip readable when the row is wide.
- */
-private fun iconForTemplate(template: TransmissionTemplate): ImageVector = when (template.fxPresetId) {
-    "vhs" -> Icons.Default.MovieFilter
-    "glitch" -> Icons.Default.Bolt
-    "chromatic" -> Icons.Default.Gradient
-    "vignette" -> Icons.Default.CenterFocusWeak
-    "film_grain" -> Icons.Default.Tune
-    "scanlines" -> Icons.Default.Tune
-    "soft_blur" -> Icons.Default.Tune
-    "pixelate" -> Icons.Default.Tune
-    else -> Icons.Default.AutoAwesome
 }
 
 /**

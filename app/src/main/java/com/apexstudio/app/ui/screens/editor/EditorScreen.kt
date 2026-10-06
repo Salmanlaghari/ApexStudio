@@ -216,6 +216,7 @@ fun EditorScreen(
         state.filterIntensity,
         activeFx,
         state.fxIntensity,
+        state.fxSpeed,
         state.adjustments,
         selectedKeyframes
     ) {
@@ -239,7 +240,7 @@ fun EditorScreen(
             if (activeFx != null && state.fxIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.fx.FxGlEffect(
-                        activeFx, state.fxIntensity
+                        activeFx, state.fxIntensity, state.fxSpeed
                     )
                 )
             }
@@ -395,6 +396,7 @@ fun EditorScreen(
                 playerError = state.playerError,
                 activeFxId = state.activeFxId,
                 fxIntensity = state.fxIntensity,
+                fxSpeed = state.fxSpeed,
                 isPlaying = state.isPlaying,
                 animatedTransform = animatedTransform,
                 onTapVideo = {
@@ -872,6 +874,8 @@ fun EditorScreen(
                     intensity = state.fxIntensity,
                     onFxSelected = { vm.setActiveFx(it) },
                     onIntensityChange = { vm.setFxIntensity(it) },
+                    speed = state.fxSpeed,
+                    onSpeedChange = { vm.setFxSpeed(it) },
                     onKeyframesClick = {
                         vm.setKeyframePanelOpen(true)
                         vm.closeFxPanel()

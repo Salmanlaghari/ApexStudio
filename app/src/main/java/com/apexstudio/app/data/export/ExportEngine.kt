@@ -90,6 +90,7 @@ class ExportEngine(private val context: Context) {
             com.apexstudio.app.domain.model.KeyframeTrack(),
         val fxPreset: FxPreset? = null,
         val fxIntensity: Float = 1f,
+        val fxSpeed: Float = 1f,
         val transitionType: TransitionEngine.Companion.TransitionType? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
@@ -254,7 +255,7 @@ class ExportEngine(private val context: Context) {
 
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)
                 if (config.fxPreset != null && config.fxIntensity > 0f) {
-                    videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity))
+                    videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity, config.fxSpeed))
                 }
 
                 // 4. Transitions

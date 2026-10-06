@@ -10,7 +10,13 @@ package com.apexstudio.app.data.fx
  * looks — scanlines, grain, glitch, aberrations — and animate with
  * the frame's presentation time.
  */
-enum class FxPreset(val id: String, val label: String, val category: String = "Trending") {
+enum class FxPreset(
+    val id: String,
+    val label: String,
+    val category: String = "Trending",
+    val isAnimated: Boolean = false,
+    val defaultSpeed: Float = 1f
+) {
     // Trending / Core
     VIGNETTE("vignette", "Vignette", "Trending"),
     FILM_GRAIN("film_grain", "Film Grain", "Retro & Film"),
@@ -99,7 +105,13 @@ enum class FxPreset(val id: String, val label: String, val category: String = "T
     MIRROR_SPLIT("mirror_split", "Mirror 4-Way", "Stylize & Art"),
     NEON_WIREFRAME("neon_wireframe", "Cyber Grid", "Stylize & Art"),
     COMIC_DOTS("comic_dots", "Pop Comic", "Stylize & Art"),
-    COLOR_ISOLATION("color_isolation", "Color Splash", "Stylize & Art");
+    COLOR_ISOLATION("color_isolation", "Color Splash", "Stylize & Art"),
+
+    // 7. Animated colour filters (Snapchat-style, time-driven)
+    HUE_CYCLE("hue_cycle", "Hue Cycle", "Animated", isAnimated = true, defaultSpeed = 1f),
+    PULSE_BEAT("pulse_beat", "Pulse Beat", "Animated", isAnimated = true, defaultSpeed = 1f),
+    GRADIENT_SWEEP("gradient_sweep", "Gradient Sweep", "Animated", isAnimated = true, defaultSpeed = 1f),
+    LIGHT_LEAK_SWEEP("light_leak_sweep", "Light Leak Sweep", "Animated", isAnimated = true, defaultSpeed = 1f);
 
     companion object {
         fun byId(id: String?): FxPreset? = values().firstOrNull { it.id == id }
@@ -107,6 +119,7 @@ enum class FxPreset(val id: String, val label: String, val category: String = "T
         fun categories(): List<String> = listOf(
             "All",
             "Trending",
+            "Animated",
             "Light & Optics",
             "Glitch & Digital",
             "Retro & Film",

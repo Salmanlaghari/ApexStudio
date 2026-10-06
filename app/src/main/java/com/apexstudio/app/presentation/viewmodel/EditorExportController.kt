@@ -72,6 +72,7 @@ fun EditorViewModel.startExport(
             adjustments = s.adjustments,
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
+            fxSpeed = s.fxSpeed,
             clipSpeed = speed,
             keyframes = selected?.keyframes ?: KeyframeTrack(),
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },

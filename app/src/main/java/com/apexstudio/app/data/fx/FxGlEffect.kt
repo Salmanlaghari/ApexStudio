@@ -31,17 +31,19 @@ import androidx.media3.effect.GlShaderProgram
 @UnstableApi
 class FxGlEffect(
     private val preset: FxPreset,
-    private val intensity: Float
+    private val intensity: Float,
+    private val speed: Float = 1f
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return FxShaderProgram(preset, intensity.coerceIn(0f, 1f), useHdr)
+        return FxShaderProgram(preset, intensity.coerceIn(0f, 1f), speed.coerceIn(0.1f, 4f), useHdr)
     }
 
     @UnstableApi
     private class FxShaderProgram(
         private val preset: FxPreset,
         private val intensity: Float,
+        private val speed: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -84,6 +86,11 @@ class FxGlEffect(
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.setFloatUniform("uIntensity", intensity)
                 glProgram.setFloatUniform("uTime", presentationTimeUs / 1_000_000f)
+                // Only animated presets declare uSpeed; setting it on other
+                // shaders would hit a missing-uniform lookup.
+                if (preset.isAnimated) {
+                    glProgram.setFloatUniform("uSpeed", speed)
+                }
                 glProgram.setFloatsUniform(
                     "uTexel",
                     floatArrayOf(
@@ -206,6 +213,12 @@ class FxGlEffect(
             FxPreset.NEON_WIREFRAME -> neonWireframeShader()
             FxPreset.COMIC_DOTS -> comicDotsShader()
             FxPreset.COLOR_ISOLATION -> colorIsolationShader()
+
+            // 7. Animated colour filters (Snapchat-style, time-driven)
+            FxPreset.HUE_CYCLE -> hueCycleShader()
+            FxPreset.PULSE_BEAT -> pulseBeatShader()
+            FxPreset.GRADIENT_SWEEP -> gradientSweepShader()
+            FxPreset.LIGHT_LEAK_SWEEP -> lightLeakSweepShader()
         }
 
         /** Shared precision / varyings / uniforms for the FX shaders. */
@@ -1289,6 +1302,84 @@ class FxGlEffect(
                 float mask = smoothstep(0.12, 0.35, isRed);
                 vec3 isolated = mix(vec3(gray), col.rgb, mask);
                 gl_FragColor = vec4(mix(col.rgb, isolated, uIntensity), col.a);
+            }
+        """.trimIndent()
+
+        // --- 7. Animated colour filters (Snapchat-style, time-driven) ---
+        // Each declares its own `uSpeed` uniform (0.1–4x, 1 = real time)
+        // so the existing shaders stay untouched.
+
+        private fun hueCycleShader(): String = """
+            $HEADER
+            uniform float uSpeed;
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Hue rotates continuously: 90° per second at 1x speed.
+                // Rodrigues' rotation of RGB about the grey axis (1,1,1).
+                float angle = uTime * uSpeed * 1.5708;
+                vec3 k = vec3(0.57735);
+                vec3 c = color.rgb;
+                float cosA = cos(angle);
+                float sinA = sin(angle);
+                vec3 rotated = c * cosA + cross(k, c) * sinA + k * dot(k, c) * (1.0 - cosA);
+                gl_FragColor = vec4(mix(c, rotated, uIntensity), color.a);
+            }
+        """.trimIndent()
+
+        private fun pulseBeatShader(): String = """
+            $HEADER
+            uniform float uSpeed;
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Warm cinematic grade throbbing on a 100 BPM beat envelope
+                // (100 BPM = 10.472 rad/s). Sharpened sine = heartbeat thump.
+                float beat = pow(max(0.0, sin(uTime * uSpeed * 10.472)), 4.0);
+                vec3 warm = color.rgb * vec3(1.18, 1.06, 0.94) + vec3(0.09, 0.035, 0.0);
+                // Slight lift in the shadows so the pulse feels like light.
+                warm += (1.0 - vec3(dot(color.rgb, vec3(0.333)))) * 0.06;
+                vec3 graded = mix(color.rgb, warm, beat);
+                gl_FragColor = vec4(mix(color.rgb, graded, uIntensity), color.a);
+            }
+        """.trimIndent()
+
+        private fun gradientSweepShader(): String = """
+            $HEADER
+            uniform float uSpeed;
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Cyan→magenta wash band sweeping diagonally. fract() keeps
+                // the loop seamless: the band wraps without a visible jump.
+                float t = fract(uTime * uSpeed * 0.22);
+                float d = (vTextureCoord.x + vTextureCoord.y) * 0.5;
+                float pos = t * 1.8 - 0.4;
+                float band = smoothstep(0.28, 0.0, abs(d - pos));
+                band *= band;
+                vec3 wash = mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 0.0, 1.0), vTextureCoord.x);
+                vec3 result = mix(color.rgb, wash, band * 0.65);
+                gl_FragColor = vec4(mix(color.rgb, result, uIntensity), color.a);
+            }
+        """.trimIndent()
+
+        private fun lightLeakSweepShader(): String = """
+            $HEADER
+            uniform float uSpeed;
+            void main() {
+                vec4 color = texture2D(uTexSampler, vTextureCoord);
+                // Warm amber leak sweeping left→right, with a gentle
+                // "breathe" so it feels alive even mid-sweep.
+                float t = fract(uTime * uSpeed * 0.18);
+                float x = vTextureCoord.x;
+                float pos = t * 1.9 - 0.45;
+                float leak = smoothstep(0.45, 0.0, abs(x - pos));
+                leak *= leak;
+                float breathe = 0.72 + 0.28 * sin(uTime * uSpeed * 2.6);
+                vec3 amber = vec3(1.0, 0.55, 0.18) * leak * breathe;
+                vec3 result = color.rgb + amber * 0.85;
+                // Soft top-edge glow (reversed smoothstep is UB in GLSL ES,
+                // so write it as 1.0 - smoothstep).
+                float edge = 1.0 - smoothstep(0.0, 0.7, vTextureCoord.y);
+                result += vec3(1.0, 0.45, 0.1) * edge * 0.35 * breathe;
+                gl_FragColor = vec4(mix(color.rgb, result, uIntensity), color.a);
             }
         """.trimIndent()
     }

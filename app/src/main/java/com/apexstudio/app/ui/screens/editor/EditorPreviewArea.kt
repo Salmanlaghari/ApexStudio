@@ -54,6 +54,7 @@ fun VideoPreviewArea(
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
+    fxSpeed: Float = 1f,
     isPlaying: Boolean = false,
     animatedTransform: com.apexstudio.app.domain.model.AnimatedTransform = com.apexstudio.app.domain.model.AnimatedTransform.Identity,
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
@@ -161,7 +162,8 @@ fun VideoPreviewArea(
                     fxId = activeFxId,
                     intensity = fxIntensity,
                     isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    speed = fxSpeed
                 )
             }
 

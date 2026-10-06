@@ -13,7 +13,9 @@
         "epic_dawn",
         "cinema_teal",
         "thriller_blue",
-        "romance_warm"
+        "romance_warm",
+        "golden_hour_glow",
+        "crimson_dusk"
       ]
     },
     {
@@ -29,7 +31,10 @@
         "film_warm",
         "film_cool",
         "disposable_camera",
-        "vhs_warm"
+        "vhs_warm",
+        "vintage_fade_70s",
+        "sepia_classic",
+        "polaroid_warm"
       ]
     },
     {
@@ -45,7 +50,10 @@
         "laser_grid",
         "chrome_metal",
         "neon_green",
-        "ultraviolet"
+        "ultraviolet",
+        "neon_magenta",
+        "electric_violet",
+        "midnight_drive"
       ]
     },
     {
@@ -61,7 +69,10 @@
         "peachy_glow",
         "porcelain",
         "rose_gold",
-        "clean_white"
+        "clean_white",
+        "rose_blush",
+        "amber_skin",
+        "porcelain_soft"
       ]
     },
     {
@@ -77,7 +88,10 @@
         "ink_wash",
         "graphite",
         "classic_mono",
-        "high_key_mono"
+        "high_key_mono",
+        "noir_ink",
+        "silver_gelatin",
+        "graphite_dark"
       ]
     },
     {
@@ -93,7 +107,10 @@
         "urban_shadow",
         "concrete_gray",
         "subway_light",
-        "rooftop_dusk"
+        "rooftop_dusk",
+        "steel_concrete",
+        "rainy_night",
+        "industrial_ash"
       ]
     },
     {
@@ -109,7 +126,10 @@
         "golden_hour",
         "blue_hour",
         "mountain_air",
-        "desert_sand"
+        "desert_sand",
+        "epic_sunset",
+        "emerald_garden",
+        "desert_gold"
       ]
     }
   ],
@@ -533,6 +553,126 @@
       "name": "Desert Sand",
       "category": "Food & Landscape",
       "asset": "luts/desert_sand.cube"
+    },
+    {
+      "id": "golden_hour_glow",
+      "name": "Golden Hour Glow",
+      "category": "Cinematic",
+      "asset": "luts/golden_hour_glow.cube"
+    },
+    {
+      "id": "crimson_dusk",
+      "name": "Crimson Dusk",
+      "category": "Cinematic",
+      "asset": "luts/crimson_dusk.cube"
+    },
+    {
+      "id": "vintage_fade_70s",
+      "name": "Vintage Fade 70s",
+      "category": "Retro & Film",
+      "asset": "luts/vintage_fade_70s.cube"
+    },
+    {
+      "id": "sepia_classic",
+      "name": "Sepia Classic",
+      "category": "Retro & Film",
+      "asset": "luts/sepia_classic.cube"
+    },
+    {
+      "id": "polaroid_warm",
+      "name": "Polaroid Warm",
+      "category": "Retro & Film",
+      "asset": "luts/polaroid_warm.cube"
+    },
+    {
+      "id": "neon_magenta",
+      "name": "Neon Magenta",
+      "category": "Cyberpunk & Neon",
+      "asset": "luts/neon_magenta.cube"
+    },
+    {
+      "id": "electric_violet",
+      "name": "Electric Violet",
+      "category": "Cyberpunk & Neon",
+      "asset": "luts/electric_violet.cube"
+    },
+    {
+      "id": "midnight_drive",
+      "name": "Midnight Drive",
+      "category": "Cyberpunk & Neon",
+      "asset": "luts/midnight_drive.cube"
+    },
+    {
+      "id": "rose_blush",
+      "name": "Rose Blush",
+      "category": "Portrait & Beauty",
+      "asset": "luts/rose_blush.cube"
+    },
+    {
+      "id": "amber_skin",
+      "name": "Amber Skin",
+      "category": "Portrait & Beauty",
+      "asset": "luts/amber_skin.cube"
+    },
+    {
+      "id": "porcelain_soft",
+      "name": "Porcelain Soft",
+      "category": "Portrait & Beauty",
+      "asset": "luts/porcelain_soft.cube"
+    },
+    {
+      "id": "noir_ink",
+      "name": "Noir Ink",
+      "category": "B&W & Monochromatic",
+      "asset": "luts/noir_ink.cube"
+    },
+    {
+      "id": "silver_gelatin",
+      "name": "Silver Gelatin",
+      "category": "B&W & Monochromatic",
+      "asset": "luts/silver_gelatin.cube"
+    },
+    {
+      "id": "graphite_dark",
+      "name": "Graphite Dark",
+      "category": "B&W & Monochromatic",
+      "asset": "luts/graphite_dark.cube"
+    },
+    {
+      "id": "steel_concrete",
+      "name": "Steel Concrete",
+      "category": "Urban & Moody",
+      "asset": "luts/steel_concrete.cube"
+    },
+    {
+      "id": "rainy_night",
+      "name": "Rainy Night",
+      "category": "Urban & Moody",
+      "asset": "luts/rainy_night.cube"
+    },
+    {
+      "id": "industrial_ash",
+      "name": "Industrial Ash",
+      "category": "Urban & Moody",
+      "asset": "luts/industrial_ash.cube"
+    },
+    {
+      "id": "epic_sunset",
+      "name": "Epic Sunset",
+      "category": "Food & Landscape",
+      "asset": "luts/epic_sunset.cube"
+    },
+    {
+      "id": "emerald_garden",
+      "name": "Emerald Garden",
+      "category": "Food & Landscape",
+      "asset": "luts/emerald_garden.cube"
+    },
+    {
+      "id": "desert_gold",
+      "name": "Desert Gold",
+      "category": "Food & Landscape",
+      "asset": "luts/desert_gold.cube"
     }
   ]
 }

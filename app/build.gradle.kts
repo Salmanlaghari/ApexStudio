@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -17,7 +18,7 @@ plugins {
 // Empty when unset: the app then shows the built-in offline tracks + device import.
 fun musicApiKey(name: String): String {
   System.getenv(name)?.takeIf { it.isNotBlank() }?.let { return it }
-  val props = java.util.Properties()
+  val props = Properties()
   val local = rootProject.file("local.properties")
   if (local.exists()) {
     local.inputStream().use { props.load(it) }

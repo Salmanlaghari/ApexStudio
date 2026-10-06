@@ -161,10 +161,11 @@ class TimelineMediaCache(private val context: Context) {
                     ClipMedia(waveform = samples, cacheKey = key)
                 }
                 // Still-image clip: decode the photo directly
-                // (MediaMetadataRetriever can't pull frames from a JPEG).
+                // (MediaMetadataRetriever can't pull frames from a JPEG),
+                // applying the clip's photo edits for WYSIWYG thumbnails.
                 com.apexstudio.app.domain.model.ClipType.IMAGE -> {
-                    val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
-                        context, clip.uri, maxDim = frameWidth
+                    val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.renderEdited(
+                        context, clip.uri, clip.photoEdit, maxDim = frameWidth
                     )
                     ClipMedia(frames = listOfNotNull(photo), cacheKey = key)
                 }

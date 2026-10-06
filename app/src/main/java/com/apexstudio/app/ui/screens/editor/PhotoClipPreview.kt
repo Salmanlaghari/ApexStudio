@@ -58,13 +58,11 @@ fun PhotoClipPreview(
     val density = LocalDensity.current
 
     // Raw decoded photo (EXIF applied, downscaled for preview).
+    // The old bitmap is NOT recycled here — the edited-pipeline effect below
+    // owns recycling once it has finished reading the old pixels.
     var rawBitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(uri) {
-        val old = rawBitmap
         rawBitmap = PhotoEditRenderer.loadBitmap(context, uri, maxDim = 1280)
-        try {
-            if (old != null && old != rawBitmap) old.recycle()
-        } catch (_: Exception) {}
     }
 
     // Real LUT texture for the selected filter (loaded once per filter).
@@ -98,12 +96,22 @@ fun PhotoClipPreview(
                     null
                 }
             }
-            val old = edited
-            edited = next
-            // Recycle the previous frame now that state points at the new one.
-            try {
-                if (old != null && old != next && old != src) old.recycle()
-            } catch (_: Exception) {}
+            // Re-read current raw: if uri changed mid-processing, src is stale.
+            // Only publish when src is still current; recycle superseded bitmaps
+            // once nothing reads them.
+            val currentRaw = rawBitmap
+            if (currentRaw == src) {
+                val oldEdited = edited
+                edited = next
+                try {
+                    if (oldEdited != null && oldEdited != next && oldEdited != src) oldEdited.recycle()
+                } catch (_: Exception) {}
+            } else {
+                // Stale: drop the result, recycle the superseded src if the
+                // newer effect hasn't already taken ownership.
+                try { next?.recycle() } catch (_: Exception) {}
+                try { if (!src.isRecycled) src.recycle() } catch (_: Exception) {}
+            }
         }
     }
 

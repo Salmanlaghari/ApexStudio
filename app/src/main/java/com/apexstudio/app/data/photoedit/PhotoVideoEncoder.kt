@@ -28,7 +28,10 @@ object PhotoVideoEncoder {
     private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val FRAME_RATE = 10
     private const val I_FRAME_INTERVAL_S = 1
-    private const val BITRATE = 8_000_000
+    // Bitrate scales with resolution (~0.5 bits/pixel/frame at 10fps) to avoid
+    // generation loss in the intermediate before Transformer re-encodes.
+    private fun bitrateFor(width: Int, height: Int): Int =
+        (width.toLong() * height.toLong() * FRAME_RATE / 2L).toInt().coerceAtLeast(2_000_000)
 
     /**
      * Encode [bitmap] into a temp .mp4 in the app cache dir lasting
@@ -52,7 +55,7 @@ object PhotoVideoEncoder {
 
             val format = MediaFormat.createVideoFormat(MIME, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
-                setInteger(MediaFormat.KEY_BIT_RATE, BITRATE)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height))
                 setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_S)
             }
@@ -73,10 +76,10 @@ object PhotoVideoEncoder {
             var framesQueued = 0
             var eosQueued = false
             var iterations = 0
-            // Safety cap: frames + drain slack. The loop always ends at
-            // BUFFER_FLAG_END_OF_STREAM; the cap only guards against a
-            // misbehaving codec spinning forever.
-            val maxIterations = frameCount + 2000
+            // Safety cap: frames + 10% proportional drain slack (min 100).
+            // The loop always ends at BUFFER_FLAG_END_OF_STREAM; the cap
+            // only guards against a misbehaving codec spinning forever.
+            val maxIterations = frameCount + (frameCount / 10).coerceAtLeast(100)
             while (iterations++ < maxIterations) {
                 // Feed input.
                 if (!eosQueued) {

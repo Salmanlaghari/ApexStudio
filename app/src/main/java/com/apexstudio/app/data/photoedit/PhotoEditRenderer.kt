@@ -50,7 +50,14 @@ object PhotoEditRenderer {
      * Clamp a crop rect into the unit square and enforce a minimum
      * size so the rect can never invert or vanish.
      */
-    fun clampRect(rect: PhotoCropRect, minSize: Float = 0.05f): PhotoCropRect {
+    /**
+     * Minimum crop dimension as a fraction of the photo (5%). Prevents the
+     * rect from inverting or vanishing during drags. Callers can pass a
+     * smaller [minSize] for extreme aspect ratios if needed.
+     */
+    const val MIN_CROP_FRACTION = 0.05f
+
+    fun clampRect(rect: PhotoCropRect, minSize: Float = MIN_CROP_FRACTION): PhotoCropRect {
         var l = rect.left.coerceIn(0f, 1f)
         var t = rect.top.coerceIn(0f, 1f)
         var r = rect.right.coerceIn(0f, 1f)
@@ -163,8 +170,10 @@ object PhotoEditRenderer {
                 if (scaled != bitmap) bitmap.recycle()
                 bitmap = scaled
             }
-            // Software bitmap: the LUT / sharpen passes touch pixels.
-            bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: bitmap
+            // Software bitmap: the LUT / sharpen passes touch pixels. If the
+            // copy fails (OOM), return null instead of a potentially
+            // immutable bitmap that would crash downstream Canvas ops.
+            bitmap.copy(Bitmap.Config.ARGB_8888, true)
         } catch (e: Exception) {
             Log.w(TAG, "loadBitmap failed for $uriString", e)
             null

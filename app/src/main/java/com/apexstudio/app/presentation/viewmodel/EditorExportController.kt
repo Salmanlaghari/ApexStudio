@@ -193,13 +193,21 @@ fun EditorViewModel.startPhotoExport(
     quality: String
 ) {
     val engine = exportEngine ?: return
+    // Derive the photo still-video resolution from the user-selected export
+    // quality so photo clips match the timeline output (1080p/4K/8K).
+    val photoMaxDim = when {
+        resolution.contains("8k", ignoreCase = true) || resolution.contains("4320") -> 7680
+        resolution.contains("4k", ignoreCase = true) || resolution.contains("2160") -> 3840
+        resolution.contains("1440") -> 2560
+        else -> 1920 // 1080p and below
+    }
     val ctx = context ?: return
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     viewModelScope.launch(Dispatchers.IO) {
         var tempVideo: File? = null
         try {
-            val bitmap = PhotoEditRenderer.renderEdited(ctx, clip.uri, clip.photoEdit, maxDim = 2048)
+            val bitmap = PhotoEditRenderer.renderEdited(ctx, clip.uri, clip.photoEdit, maxDim = photoMaxDim)
                 ?: throw IllegalStateException("Could not decode photo: ${clip.name}")
             val trimmedMs = if (clip.trimEndMs > clip.trimStartMs) {
                 clip.trimEndMs - clip.trimStartMs
@@ -257,15 +265,25 @@ fun EditorViewModel.startPhotoExport(
                     transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
                 )
             )
-            // Wait for the export to terminate, then clean up the temp
-            // video (30 min cap so a stuck export can't leak the file).
-            val deadline = android.os.SystemClock.elapsedRealtime() + 30L * 60L * 1000L
-            var sawActive = false
-            while (android.os.SystemClock.elapsedRealtime() < deadline) {
-                val st = engine.exportState.value
-                if (st.isExporting) sawActive = true
-                else if (sawActive) break
-                delay(500)
+            // Wait for the export to terminate with a proper timeout (30 min cap
+            // so a stuck export can't leak the file or the coroutine).
+            val completed = kotlinx.coroutines.withTimeoutOrNull(30L * 60L * 1000L) {
+                var sawActive = false
+                while (true) {
+                    val st = engine.exportState.value
+                    if (st.isExporting) sawActive = true
+                    else if (sawActive) break
+                    delay(500)
+                }
+                true
+            }
+            if (completed == null) {
+                Log.w("EditorViewModel", "Photo export timed out after 30 min; cancelling")
+                try {
+                    engine.cancelExport()
+                } catch (_: Exception) {
+                }
+                throw IllegalStateException("Photo export timed out")
             }
         } catch (e: Exception) {
             Log.e("EditorViewModel", "Photo export failed", e)

@@ -99,7 +99,6 @@ fun KeyframePanel(
     onUpdate: (Keyframe) -> Unit,
     onRemove: (String) -> Unit,
     onClear: () -> Unit,
-    onApplyPreset: ((com.apexstudio.app.data.animation.AnimationPresetType) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
@@ -188,41 +187,6 @@ fun KeyframePanel(
                         fontSize = 11.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                     )
-                }
-            }
-        }
-
-        if (onApplyPreset != null) {
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Presets:",
-                    color = ApexPalette.TextTertiary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                com.apexstudio.app.data.animation.AnimationPresetType.values().forEach { preset ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ApexPalette.BgBase)
-                            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                            .clickable { onApplyPreset(preset) }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = preset.name.replace('_', ' ').lowercase().capitalize(),
-                            color = ApexPalette.NeonCyan,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
                 }
             }
         }

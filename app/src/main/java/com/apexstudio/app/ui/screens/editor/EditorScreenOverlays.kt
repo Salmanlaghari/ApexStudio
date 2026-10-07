@@ -753,7 +753,12 @@ fun HelpDialogOverlay(
     HelpDialog(onDismiss = { vm.closeHelpDialog() })
 }
 
-/** Keyframe editor bottom-sheet overlay. */
+/** Keyframe editor bottom-sheet overlay.
+ *
+ * Opens the visually-designed Animation CARDS grid first (Prince: "manual
+ * sliders ki jagah ready-made animation CARDS banao"). The manual slider
+ * panel (Keyframe Studio) is reachable ONLY through the "Customized" card.
+ */
 @Composable
 fun KeyframePanelOverlay(
     state: EditorState,
@@ -763,6 +768,7 @@ fun KeyframePanelOverlay(
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
         ?: state.project?.clips?.firstOrNull()
     val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    var showManualPanel by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -771,36 +777,44 @@ fun KeyframePanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-            KeyframePanel(
-                track = track,
-                playheadMs = state.playerPositionMs,
-                clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
-                canAdd = selectedClip != null,
-                onAdd = { atMs ->
-                    selectedClip?.let {
-                        vm.addKeyframe(it.id, atMs)
-                    }
-                },
-                onUpdate = { kf ->
-                    selectedClip?.let {
-                        vm.updateKeyframe(it.id, kf.id) { _ -> kf }
-                    }
-                },
-                onRemove = { kfId ->
-                    selectedClip?.let {
-                        vm.removeKeyframe(it.id, kfId)
-                    }
-                },
-                onClear = {
-                    selectedClip?.let {
-                        vm.clearKeyframes(it.id)
-                    }
-                },
-                onApplyPreset = { preset ->
-                    vm.applyAnimationPreset(preset)
-                },
-                onClose = { vm.setKeyframePanelOpen(false) }
-            )
+            if (showManualPanel) {
+                KeyframePanel(
+                    track = track,
+                    playheadMs = state.playerPositionMs,
+                    clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
+                    canAdd = selectedClip != null,
+                    onAdd = { atMs ->
+                        selectedClip?.let {
+                            vm.addKeyframe(it.id, atMs)
+                        }
+                    },
+                    onUpdate = { kf ->
+                        selectedClip?.let {
+                            vm.updateKeyframe(it.id, kf.id) { _ -> kf }
+                        }
+                    },
+                    onRemove = { kfId ->
+                        selectedClip?.let {
+                            vm.removeKeyframe(it.id, kfId)
+                        }
+                    },
+                    onClear = {
+                        selectedClip?.let {
+                            vm.clearKeyframes(it.id)
+                        }
+                    },
+                    // Back to the cards grid (manual panel lives only behind "Customized").
+                    onClose = { showManualPanel = false }
+                )
+            } else {
+                KeyframePresetCards(
+                    onApplyPreset = { preset ->
+                        vm.applyAnimationPreset(preset)
+                    },
+                    onOpenCustomized = { showManualPanel = true },
+                    onClose = { vm.setKeyframePanelOpen(false) }
+                )
+            }
         }
     }
 }

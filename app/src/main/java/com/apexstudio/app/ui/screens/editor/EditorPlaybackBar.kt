@@ -39,7 +39,6 @@ fun PlaybackControlBar(
     isPlaying: Boolean = false,
     canUndo: Boolean = false,
     canRedo: Boolean = false,
-    showKeyframeButton: Boolean = false,
     hasKeyframeAtPlayhead: Boolean = false,
     onTogglePlay: () -> Unit = {},
     onUndo: () -> Unit = {},
@@ -108,12 +107,10 @@ fun PlaybackControlBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(28.dp)
         ) {
-            if (showKeyframeButton) {
-                KeyframeDiamondAddButton(
-                    hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
-                    onClick = onToggleKeyframe
-                )
-            }
+            KeyframeDiamondAddButton(
+                hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+                onClick = onToggleKeyframe
+            )
 
             Icon(
                 imageVector = Icons.Default.Fullscreen,

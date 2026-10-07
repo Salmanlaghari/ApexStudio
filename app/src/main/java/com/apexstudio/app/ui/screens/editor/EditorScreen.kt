@@ -79,11 +79,6 @@ fun EditorScreen(
 
     mediaPicker.registerLaunchers()
 
-    // Load the persisted editor layout choice (New contextual vs Classic backup).
-    LaunchedEffect(Unit) {
-        vm.loadEditorLayoutPref()
-    }
-
     // Make bundled OFL text fonts available to the preview + export renderers.
     LaunchedEffect(Unit) {
         com.apexstudio.app.data.text.TextFontRegistry.init(context)
@@ -373,9 +368,8 @@ fun EditorScreen(
             onOpenAddMediaMenu = { showAddMediaMenu = true }
         )
 
-        // Editor layout: New contextual toolbar (default) vs Classic legacy
-        // backup — extracted to EditorBottomToolbarSection to keep this
-        // composable under the JVM 64KB method limit.
+        // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
+        // to keep this composable under the JVM 64KB method limit.
         EditorBottomToolbarSection(
             state = state,
             vm = vm,

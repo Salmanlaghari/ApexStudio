@@ -1,12 +1,9 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -107,81 +104,6 @@ fun SpeedControlSheet(
         }
     }
 }
-
-// === 5. BOTTOM EDIT TOOLBAR — LEGACY / CLASSIC BACKUP ===
-// This is the ORIGINAL pre-contextual editor toolbar, preserved as the
-// "Classic" layout backup. It is NOT deleted: Settings → "Editor layout"
-// lets the user switch between the New contextual toolbar
-// (ContextualBottomToolbar) and this Classic one. Default is New.
-// Do not remove — it is the restore point for the old design.
-@Composable
-fun BottomEditToolbar(
-    onEdit: () -> Unit = {},
-    onKeyframes: () -> Unit = {},
-    onAudio: () -> Unit = {},
-    onText: () -> Unit = {},
-    onStickers: () -> Unit = {},
-    onEffects: () -> Unit = {},
-    onFilters: () -> Unit = {},
-    onArFilters: () -> Unit = {},
-    onAdjust: () -> Unit = {}
-) {
-    val items = listOf(
-        EditToolItem("Edit", Icons.Default.ContentCut, isActive = true, onClick = onEdit),
-        EditToolItem("Keyframe", Icons.Default.Animation, onClick = onKeyframes),
-        EditToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
-        EditToolItem("Text", Icons.Default.TextFields, onClick = onText),
-        EditToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
-        EditToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-        EditToolItem("Filters", Icons.Default.Palette, onClick = onFilters),
-        EditToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFilters),
-        EditToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .background(Color(0xFF0C0C14))
-            .border(width = 1.dp, color = Color(0xFF1F1F2E))
-            .horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        items.forEach { item ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .width(62.dp)
-                    .fillMaxHeight()
-                    .clickable(onClick = item.onClick)
-            ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = item.label,
-                    tint = if (item.isActive) Color(0xFF38BDF8) else Color(0xFF9CA3AF),
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = item.label,
-                    color = if (item.isActive) Color(0xFF38BDF8) else Color(0xFF9CA3AF),
-                    fontSize = 10.sp,
-                    fontWeight = if (item.isActive) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    softWrap = false
-                )
-            }
-        }
-    }
-}
-
-private data class EditToolItem(
-    val label: String,
-    val icon: ImageVector,
-    val isActive: Boolean = false,
-    val onClick: () -> Unit
-)
 
 // Add Media Menu Sheet
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

@@ -374,8 +374,8 @@ private fun FadeSliderRow(
 
 /**
  * Extracted bottom-toolbar section for EditorScreen (keeps the EditorScreen
- * composable under the JVM 64KB method limit). Switches between the Classic
- * legacy toolbar and the New contextual toolbar.
+ * composable under the JVM 64KB method limit). Always renders the
+ * New contextual toolbar.
  */
 @Composable
 fun EditorBottomToolbarSection(
@@ -383,21 +383,6 @@ fun EditorBottomToolbarSection(
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel,
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper
 ) {
-    if (state.useClassicEditorLayout) {
-        // Classic legacy backup (old design, preserved not deleted).
-        BottomEditToolbar(
-            onEdit = { vm.openTrimPanel() },
-            onKeyframes = { vm.setKeyframePanelOpen(true) },
-            onAudio = { vm.openAudioMixer() },
-            onText = { vm.openTextPanel() },
-            onStickers = { vm.openStickerPanel() },
-            onEffects = { vm.openFxPanel() },
-            onFilters = { vm.openFilterPanel() },
-            onArFilters = { vm.openArFilterPanel() },
-            onAdjust = { vm.openAdjustmentsPanel() }
-        )
-        return
-    }
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }

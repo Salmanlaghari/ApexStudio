@@ -190,11 +190,7 @@ data class EditorState(
     val beatSourceTrackId: String? = null,
     // Volume / Fade bottom sheets for the contextual toolbar.
     val clipVolumeSheetOpen: Boolean = false,
-    val audioFadeSheetOpen: Boolean = false,
-    // Editor layout backup: false = New contextual toolbar (default),
-    // true = Classic legacy UI (old BottomEditToolbar + original transport
-    // row). Switchable from Settings; persisted in DataStore.
-    val useClassicEditorLayout: Boolean = false
+    val audioFadeSheetOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

@@ -595,7 +595,10 @@ fun EditorViewModel.deleteClip(clipId: String) {
             // transform too, otherwise the preview layer would keep
             // trying to render a non-existent overlay's PlayerView.
             overlayClipId = if (s.overlayClipId == clipId) null else s.overlayClipId,
-            overlayTransform = if (s.overlayClipId == clipId) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform
+            overlayTransform = if (s.overlayClipId == clipId) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform,
+            // PiP canvas selection must follow the clip: a deleted
+            // overlay cannot stay selected.
+            selectedOverlayClipId = if (s.selectedOverlayClipId == clipId) null else s.selectedOverlayClipId
         )
     }
     persistProject()
@@ -623,7 +626,10 @@ fun EditorViewModel.deleteClips(clipIds: Set<String>) {
             // otherwise the preview layer would keep trying to render a
             // non-existent overlay's PlayerView.
             overlayClipId = if (s.overlayClipId in clipIds) null else s.overlayClipId,
-            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform
+            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform,
+            // PiP canvas selection must follow the clip: a deleted
+            // overlay cannot stay selected.
+            selectedOverlayClipId = if (s.selectedOverlayClipId in clipIds) null else s.selectedOverlayClipId
         )
     }
     persistProject()

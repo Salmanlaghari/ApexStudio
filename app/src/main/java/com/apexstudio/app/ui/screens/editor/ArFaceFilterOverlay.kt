@@ -390,6 +390,68 @@ fun ArFaceFilterOverlay(
                 "ar_temple_lotus" -> {
                     drawLotusTempleAura(w, h, faceCenterX, faceCenterY, clampedIntensity, ticker)
                 }
+
+                // 12. Warm Golden Glow
+                "ar_warm_glow" -> {
+                    // Sun-kissed warm radiance blooming from the face anchor.
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFFD66B).copy(alpha = 0.30f * clampedIntensity),
+                                Color(0xFFFF9E4B).copy(alpha = 0.16f * clampedIntensity),
+                                Color.Transparent
+                            ),
+                            center = Offset(faceCenterX, faceCenterY),
+                            radius = w * 0.45f
+                        ),
+                        size = Size(w, h),
+                        blendMode = BlendMode.Screen
+                    )
+                    // Warm vignette around the edges.
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.55f to Color.Transparent,
+                                1.0f to Color(0xFF7A3A00).copy(alpha = 0.28f * clampedIntensity)
+                            ),
+                            center = Offset(faceCenterX, faceCenterY),
+                            radius = w * 0.62f
+                        ),
+                        size = Size(w, h),
+                        blendMode = BlendMode.Multiply
+                    )
+                }
+
+                // 13. Face Zoom Pulse
+                "ar_face_zoom_pulse" -> {
+                    // Beat-synced pulse rings radiating from the face anchor
+                    // (the export bakes the actual zoom pulse into the frames).
+                    val beat = (0.5f + 0.5f * sin(ticker * Math.PI.toFloat() * 2f))
+                    for (i in 0 until 3) {
+                        val phase = (ticker + i / 3f) % 1f
+                        val ringR = faceRadiusX * 1.1f + phase * faceRadiusX * 1.8f
+                        drawCircle(
+                            color = Color(0xFF00E5FF).copy(alpha = (1f - phase) * 0.45f * clampedIntensity),
+                            radius = ringR,
+                            center = Offset(faceCenterX, faceCenterY),
+                            style = Stroke(width = 2.5f)
+                        )
+                    }
+                    // Centre beat flash.
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.25f * beat * clampedIntensity),
+                                Color.Transparent
+                            ),
+                            center = Offset(faceCenterX, faceCenterY),
+                            radius = faceRadiusX * 1.4f
+                        ),
+                        center = Offset(faceCenterX, faceCenterY),
+                        radius = faceRadiusX * 1.4f,
+                        blendMode = BlendMode.Screen
+                    )
+                }
             }
         }
 

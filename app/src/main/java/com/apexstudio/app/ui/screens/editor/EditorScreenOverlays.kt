@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -275,18 +276,6 @@ fun FxPanelOverlay(
             )
         }
     }
-}
-
-/** Snap Camera Kit Lenses overlay (full-screen inside the editor). */
-@Composable
-fun LensesPanelOverlay(
-    state: EditorState,
-    vm: EditorViewModel
-) {
-    if (!state.lensesPanelOpen) return
-    // LensesScreen is self-contained (own ViewModel); embedding it as an
-    // overlay keeps the editor state alive underneath.
-    com.apexstudio.app.camerakit.LensesScreen(onBack = { vm.closeLensesPanel() })
 }
 
 /** Transmission templates bottom-sheet overlay. */
@@ -765,7 +754,12 @@ fun HelpDialogOverlay(
     HelpDialog(onDismiss = { vm.closeHelpDialog() })
 }
 
-/** Keyframe editor bottom-sheet overlay. */
+/** Keyframe editor bottom-sheet overlay.
+ *
+ * Opens the visually-designed Animation CARDS grid first (Prince: "manual
+ * sliders ki jagah ready-made animation CARDS banao"). The manual slider
+ * panel (Keyframe Studio) is reachable ONLY through the "Customized" card.
+ */
 @Composable
 fun KeyframePanelOverlay(
     state: EditorState,
@@ -775,6 +769,7 @@ fun KeyframePanelOverlay(
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
         ?: state.project?.clips?.firstOrNull()
     val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    var showManualPanel by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -783,36 +778,44 @@ fun KeyframePanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-            KeyframePanel(
-                track = track,
-                playheadMs = state.playerPositionMs,
-                clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
-                canAdd = selectedClip != null,
-                onAdd = { atMs ->
-                    selectedClip?.let {
-                        vm.addKeyframe(it.id, atMs)
-                    }
-                },
-                onUpdate = { kf ->
-                    selectedClip?.let {
-                        vm.updateKeyframe(it.id, kf.id) { _ -> kf }
-                    }
-                },
-                onRemove = { kfId ->
-                    selectedClip?.let {
-                        vm.removeKeyframe(it.id, kfId)
-                    }
-                },
-                onClear = {
-                    selectedClip?.let {
-                        vm.clearKeyframes(it.id)
-                    }
-                },
-                onApplyPreset = { preset ->
-                    vm.applyAnimationPreset(preset)
-                },
-                onClose = { vm.setKeyframePanelOpen(false) }
-            )
+            if (showManualPanel) {
+                KeyframePanel(
+                    track = track,
+                    playheadMs = state.playerPositionMs,
+                    clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
+                    canAdd = selectedClip != null,
+                    onAdd = { atMs ->
+                        selectedClip?.let {
+                            vm.addKeyframe(it.id, atMs)
+                        }
+                    },
+                    onUpdate = { kf ->
+                        selectedClip?.let {
+                            vm.updateKeyframe(it.id, kf.id) { _ -> kf }
+                        }
+                    },
+                    onRemove = { kfId ->
+                        selectedClip?.let {
+                            vm.removeKeyframe(it.id, kfId)
+                        }
+                    },
+                    onClear = {
+                        selectedClip?.let {
+                            vm.clearKeyframes(it.id)
+                        }
+                    },
+                    // Back to the cards grid (manual panel lives only behind "Customized").
+                    onClose = { showManualPanel = false }
+                )
+            } else {
+                KeyframePresetCards(
+                    onApplyPreset = { preset ->
+                        vm.applyAnimationPreset(preset)
+                    },
+                    onOpenCustomized = { showManualPanel = true },
+                    onClose = { vm.setKeyframePanelOpen(false) }
+                )
+            }
         }
     }
 }
@@ -862,7 +865,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     isCoverMode: Boolean,
     currentSelectedClip: MediaClip?,
     seekPlayerAndState: (Long) -> Unit,
-    onOpenAddMediaMenu: () -> Unit
+    onOpenAddMediaMenu: () -> Unit,
+    // Dedicated muted player for the live video PiP overlay. Created and
+    // released by the screen; bound to the active video overlay clip below.
+    overlayPlayer: ExoPlayer? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -878,7 +884,67 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
                 ?: AnimatedTransform.Identity
         }
-        val overlayClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
+        // All overlay clips on the V2 track — the interactive canvas shows
+        // the ones active at the playhead and lets the user edit them.
+        val overlayClips = remember(state.project?.clips) {
+            state.project?.clips?.filter { it.type == ClipType.OVERLAY } ?: emptyList()
+        }
+        // The video overlay clip the shared muted player is bound to:
+        // the first VIDEO overlay active at the playhead.
+        val activeOverlayVideoClip = overlayClips.firstOrNull {
+            it.type == ClipType.VIDEO && it.isOverlayActiveAt(state.playerPositionMs)
+        }
+
+        // Bind the overlay player to the active video overlay clip
+        // (trimmed range, looping, muted). Re-binds when the active
+        // clip changes (including entering/leaving its window).
+        LaunchedEffect(overlayPlayer, activeOverlayVideoClip?.id) {
+            val player = overlayPlayer ?: return@LaunchedEffect
+            val clip = activeOverlayVideoClip
+            if (clip == null) {
+                player.stop()
+                player.clearMediaItems()
+                return@LaunchedEffect
+            }
+            val endMs = clip.trimEndMs.takeIf { it > clip.trimStartMs && it != Long.MAX_VALUE }
+            val item = androidx.media3.common.MediaItem.Builder()
+                .setUri(clip.uri)
+                .setClippingConfiguration(
+                    androidx.media3.common.MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(clip.trimStartMs.coerceAtLeast(0L))
+                        .apply { if (endMs != null) setEndPositionMs(endMs) }
+                        .build()
+                )
+                .build()
+            player.setMediaItem(item)
+            player.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            player.volume = 0f
+            player.prepare()
+            player.pause()
+            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            player.seekTo(rel)
+            if (state.isPlaying) player.play()
+        }
+        // Play/pause the overlay in sync with the main timeline.
+        LaunchedEffect(overlayPlayer, state.isPlaying, activeOverlayVideoClip?.id) {
+            val player = overlayPlayer ?: return@LaunchedEffect
+            if (activeOverlayVideoClip == null) return@LaunchedEffect
+            if (state.isPlaying) player.play() else player.pause()
+        }
+        // Drift correction: after a scrub (or clock drift) the overlay
+        // player is re-seeked to the overlay-relative playhead position.
+        // Cheap long comparisons; only seeks past a deadband.
+        LaunchedEffect(state.playerPositionMs) {
+            val player = overlayPlayer ?: return@LaunchedEffect
+            val clip = activeOverlayVideoClip ?: return@LaunchedEffect
+            if (player.playbackState != androidx.media3.common.Player.STATE_READY) return@LaunchedEffect
+            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            val deadband = if (state.isPlaying) 450L else 120L
+            if (kotlin.math.abs(player.currentPosition - rel) > deadband) {
+                player.seekTo(rel)
+            }
+        }
+
         val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
         val textOverlays = selectedClip?.textOverlays ?: emptyList()
         var showUpcomingPreview by remember { mutableStateOf(false) }
@@ -901,7 +967,22 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         VideoPreviewArea(
             exoPlayer = exoPlayer,
             chromaKeySettings = state.chromaKeySettings,
-            overlayClip = overlayClip,
+            overlayClips = overlayClips,
+            selectedOverlayClipId = state.selectedOverlayClipId,
+            overlayPlayer = overlayPlayer,
+            overlayPlayerClipId = activeOverlayVideoClip?.id,
+            onSelectOverlayClip = { vm.selectOverlayClip(it) },
+            onMoveOverlayClip = { id, dx, dy, persist ->
+                vm.moveOverlayClip(id, dx, dy, persist)
+            },
+            onScaleOverlayClip = { id, scale, persist ->
+                vm.scaleOverlayClip(id, scale, persist)
+            },
+            onRotateOverlayClip = { id, deltaDeg, persist ->
+                vm.rotateOverlayClip(id, deltaDeg, persist)
+            },
+            onOverlayGestureEnd = { vm.persistOverlayClipGesture(it) },
+            onRemoveOverlayClip = { vm.removeOverlayClip(it) },
             isCoverMode = isCoverMode,
             adjustments = state.adjustments,
             activeFilterId = state.activeFilterId,
@@ -1087,7 +1168,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     state: EditorState,
     vm: EditorViewModel,
     seekPlayerAndState: (Long) -> Unit,
-    onOpenAddMediaMenu: () -> Unit
+    onOpenAddMediaMenu: (ClipType) -> Unit
 ) {
     // Mockup transport row: undo + redo (left), BIG blue-gradient play
     // (center), keyframe diamond+ (always visible in the new layout —
@@ -1101,7 +1182,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         isPlaying = state.isPlaying,
         canUndo = state.canUndo,
         canRedo = state.canRedo,
-        showKeyframeButton = !state.useClassicEditorLayout,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
         onTogglePlay = { vm.togglePlay() },
         onUndo = { vm.undo() },

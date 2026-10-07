@@ -1,11 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
-import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.presentation.state.*
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 /**
  * CapCut-style contextual toolbar support: single selection across clips
@@ -154,33 +151,4 @@ fun EditorViewModel.setAudioTrackVolumeFull(trackId: String, volume: Float) {
         })
     }
     persistProject()
-}
-
-/**
- * Editor layout backup (New contextual vs Classic legacy).
- * Persisted in DataStore so the choice survives app restarts.
- */
-fun EditorViewModel.setClassicEditorLayout(classic: Boolean) {
-    _state.update { it.copy(useClassicEditorLayout = classic) }
-    viewModelScope.launch {
-        val ctx = context ?: return@launch
-        try {
-            com.apexstudio.app.data.settings.EditorLayoutPrefs(ctx).setClassicEditorLayout(classic)
-        } catch (e: Exception) {
-            android.util.Log.w("EditorViewModel", "Failed to persist editor layout: ${e.message}")
-        }
-    }
-}
-
-fun EditorViewModel.loadEditorLayoutPref() {
-    viewModelScope.launch {
-        val ctx = context ?: return@launch
-        try {
-            val classic = com.apexstudio.app.data.settings.EditorLayoutPrefs(ctx)
-                .classicEditorLayout.first()
-            _state.update { it.copy(useClassicEditorLayout = classic) }
-        } catch (e: Exception) {
-            android.util.Log.w("EditorViewModel", "Failed to load editor layout: ${e.message}")
-        }
-    }
 }

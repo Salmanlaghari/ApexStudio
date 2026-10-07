@@ -311,17 +311,4 @@ class ContextualToolbarTest {
         assertTrue(computeBeatGrid(FloatArray(0), 8000L).isEmpty())
         assertTrue(computeBeatGrid(FloatArray(800) { 0.5f }, 0L).isEmpty())
     }
-
-    // --- Classic layout backup toggle ---
-
-    @Test
-    fun `setClassicEditorLayout toggles state (default new layout)`() {
-        val vm = EditorViewModel()
-        // Default is the new contextual layout.
-        assertFalse(vm.state.value.useClassicEditorLayout)
-        vm.setClassicEditorLayout(true)
-        assertTrue(vm.state.value.useClassicEditorLayout)
-        vm.setClassicEditorLayout(false)
-        assertFalse(vm.state.value.useClassicEditorLayout)
-    }
 }

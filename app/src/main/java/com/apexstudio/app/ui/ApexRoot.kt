@@ -1,6 +1,5 @@
 package com.apexstudio.app.ui
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,12 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
-import com.apexstudio.app.camerakit.LensesScreen
 import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
 import com.apexstudio.app.ui.screens.colortools.ColorStudioScreen
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
@@ -28,20 +23,10 @@ import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
 @Composable
 fun ApexRoot() {
-    val context = LocalContext.current
     var currentTab by remember { mutableStateOf("home") }
     var projectId by remember { mutableStateOf<String?>(null) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var showExportSettings by remember { mutableStateOf(false) }
-    // Editor layout backup toggle (New contextual vs Classic old UI),
-    // persisted in DataStore and shared with the editor screen.
-    var classicEditorLayout by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        try {
-            classicEditorLayout = com.apexstudio.app.data.settings.EditorLayoutPrefs(context)
-                .classicEditorLayout.first()
-        } catch (_: Exception) { }
-    }
 
     Column(
         modifier = Modifier
@@ -53,17 +38,7 @@ fun ApexRoot() {
                 when (overlay) {
                     is Overlay.Settings -> SettingsScreen(
                         onBack = { overlay = null },
-                        onOpenDiagnostics = { overlay = Overlay.Diagnostics },
-                        classicEditorLayout = classicEditorLayout,
-                        onClassicEditorLayoutChange = { classic ->
-                            classicEditorLayout = classic
-                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                try {
-                                    com.apexstudio.app.data.settings.EditorLayoutPrefs(context)
-                                        .setClassicEditorLayout(classic)
-                                } catch (_: Exception) { }
-                            }
-                        }
+                        onOpenDiagnostics = { overlay = Overlay.Diagnostics }
                     )
                     is Overlay.Diagnostics -> CrashDiagnosticsScreen(
                         onBack = { overlay = null }
@@ -97,9 +72,6 @@ fun ApexRoot() {
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "edit" },
                             onExport = { showExportSettings = true }
-                        )
-                        "lenses" -> LensesScreen(
-                            onBack = { currentTab = "home" }
                         )
                     }
                 }

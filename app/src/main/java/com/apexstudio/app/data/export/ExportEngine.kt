@@ -19,6 +19,8 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
+import com.apexstudio.app.data.ar.ArFaceGlEffect
+import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.filter.FilterPreset
@@ -91,6 +93,12 @@ class ExportEngine(private val context: Context) {
         val fxPreset: FxPreset? = null,
         val fxIntensity: Float = 1f,
         val fxSpeed: Float = 1f,
+        // AR Face filter (previewed via ArFaceFilterOverlay): the graded
+        // look is baked by ArFaceGlEffect; festival banner text is baked
+        // as a caption overlay (see buildArGreetingOverlay).
+        val arFilterId: String? = null,
+        val arFilterIntensity: Float = 0f,
+        val arFilterCustomText: String = "",
         val transitionType: TransitionEngine.Companion.TransitionType? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
@@ -118,8 +126,13 @@ class ExportEngine(private val context: Context) {
     /**
      * Configuration for one Picture-in-Picture overlay in the export.
      * The overlay video is composited over the main video at [offsetMs] on the
-     * export timeline, scaled to [widthFraction] of the output width and placed
-     * in the bottom-end corner (matching the preview's BottomEnd PiP box).
+     * export timeline, centred at ([centerX], [centerY]) — normalised 0..1,
+     * x from the left, y from the top — with width [widthFraction] of the
+     * output width, a 16:9 box, and [rotationDeg] clockwise rotation.
+     *
+     * These mirror MediaClip's pipX/pipY/pipScale/pipRotationDeg exactly, so
+     * the export renders what the preview canvas showed (WYSIWYG). The old
+     * fixed bottom-end corner equals centerX = 0.85, centerY = 0.85.
      */
     data class PipOverlayConfig(
         val uri: String,
@@ -127,7 +140,9 @@ class ExportEngine(private val context: Context) {
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = Long.MAX_VALUE,
         val widthFraction: Float = 0.25f,
-        val marginFraction: Float = 0.03f,
+        val centerX: Float = 0.85f,
+        val centerY: Float = 0.85f,
+        val rotationDeg: Float = 0f,
         val opacity: Float = 1f
     )
 
@@ -185,7 +200,9 @@ class ExportEngine(private val context: Context) {
                                 trimStartMs = pip.trimStartMs,
                                 trimEndMs = pip.trimEndMs,
                                 widthFraction = pip.widthFraction,
-                                marginFraction = pip.marginFraction,
+                                centerX = pip.centerX,
+                                centerY = pip.centerY,
+                                rotationDeg = pip.rotationDeg,
                                 opacity = pip.opacity
                             )
                         )
@@ -258,6 +275,14 @@ class ExportEngine(private val context: Context) {
                     videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity, config.fxSpeed))
                 }
 
+                // 3.5 AR Face filter: bake the graded look of the active AR
+                // Face card so the export matches the AR Face preview.
+                if (config.arFilterId != null && config.arFilterIntensity > 0f &&
+                    ArFaceGlEffect.isKnownFilter(config.arFilterId)
+                ) {
+                    videoEffects.add(ArFaceGlEffect(config.arFilterId, config.arFilterIntensity))
+                }
+
                 // 4. Transitions
                 if (config.transitionType != null && config.transitionDurationMs > 0L) {
                     videoEffects.add(
@@ -291,7 +316,8 @@ class ExportEngine(private val context: Context) {
                 }
 
                 // 7. Caption / Text Overlays & Stickers
-                val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() }
+                val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() } +
+                    listOfNotNull(buildArGreetingOverlay(config))
                 if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty()) {
                     val aspect = queryAspectRatio(inputUri)
                     captionOverlays.forEach { overlay ->
@@ -663,6 +689,30 @@ class ExportEngine(private val context: Context) {
                 delay(100)
             }
         }
+    }
+
+    /**
+     * The AR Face festival banner text (e.g. "Happy Ganesh Chaturthi")
+     * is previewed as a bottom banner by [ArFaceFilterOverlay]; bake it
+     * into the export as a caption overlay so it survives, matching the
+     * preview. Non-festival AR filters return null.
+     */
+    private fun buildArGreetingOverlay(config: ExportConfig): TextOverlay? {
+        if (config.arFilterIntensity <= 0f) return null
+        val preset = ArFilterCatalog.getFilterById(config.arFilterId) ?: return null
+        if (!preset.hasEditableText) return null
+        val greeting = config.arFilterCustomText.ifBlank { preset.defaultGreetingText }
+        if (greeting.isBlank()) return null
+        return TextOverlay(
+            id = "ar_greeting_${preset.id}",
+            text = "✨ $greeting ✨",
+            x = 0.5f,
+            y = 0.88f,
+            sizeScale = 1f,
+            colorArgb = 0xFFFFFDFAL,
+            bgArgb = 0xE6C2410CL,
+            isBold = true
+        )
     }
 
     private fun queryAspectRatio(inputUri: String): Float = try {

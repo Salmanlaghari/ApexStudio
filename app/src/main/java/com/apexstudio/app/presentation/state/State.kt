@@ -68,9 +68,6 @@ data class EditorState(
     // fxSpeed (0.1–4x) drives the animation rate of time-based
     // (Snapchat-style) presets like Hue Cycle.
     val fxPanelOpen: Boolean = false,
-    // Set to true while the Snap Camera Kit Lenses overlay is open inside
-    // the editor (full-screen; editor state is preserved).
-    val lensesPanelOpen: Boolean = false,
     val activeFxId: String? = null,
     val fxIntensity: Float = 1f,
     val fxSpeed: Float = 1f,
@@ -114,6 +111,11 @@ data class EditorState(
     // belongs to so we can clear it when the clip is deleted.
     val overlayTransform: OverlayTransform = OverlayTransform(),
     val overlayClipId: String? = null,
+    // PiP overlay canvas selection: id of the overlay clip currently
+    // selected on the preview canvas (tap to select). The transform
+    // itself lives on the MediaClip (pipX/pipY/pipScale/pipRotationDeg/
+    // pipOpacity) so preview and export always agree. Null = none.
+    val selectedOverlayClipId: String? = null,
     // Phase D: pending + Add intent. When non-null, the next media
     // picker callback will route the result to the chosen lane.
     // Cleared after the picker returns.
@@ -190,11 +192,7 @@ data class EditorState(
     val beatSourceTrackId: String? = null,
     // Volume / Fade bottom sheets for the contextual toolbar.
     val clipVolumeSheetOpen: Boolean = false,
-    val audioFadeSheetOpen: Boolean = false,
-    // Editor layout backup: false = New contextual toolbar (default),
-    // true = Classic legacy UI (old BottomEditToolbar + original transport
-    // row). Switchable from Settings; persisted in DataStore.
-    val useClassicEditorLayout: Boolean = false
+    val audioFadeSheetOpen: Boolean = false
 ) {
     companion object {
         // Equality on data classes with FloatArray doesn't compare the

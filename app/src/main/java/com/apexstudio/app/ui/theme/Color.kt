@@ -18,6 +18,8 @@ object ApexPalette {
     val NeonEmerald = Color(0xFF10B981)
     val NeonPink = Color(0xFFFF4081)
     val NeonAmber = Color(0xFFF59E0B)
+    // Mockup A1 pill: true medium blue (distinct from the cyan V1 pill).
+    val TrackBlue = Color(0xFF3B82F6)
 
     val TextPrimary = Color(0xFFF1F5F9)
     val TextSecondary = Color(0xFF94A3B8)

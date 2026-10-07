@@ -28,7 +28,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,6 +46,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.SystemClock
+import kotlinx.coroutines.delay
 import com.apexstudio.app.data.animation.AnimationPresetType
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.PI
@@ -72,6 +76,17 @@ fun KeyframePresetCards(
     modifier: Modifier = Modifier
 ) {
     var lastApplied by remember { mutableStateOf<AnimationPresetType?>(null) }
+    var lastApplyAtMs by remember { mutableLongStateOf(0L) }
+
+    // The checkmark is a transient "just applied" confirmation, not a claim about
+    // current keyframe state — it auto-clears so it can never go stale when the
+    // manual panel edits keyframes behind the cards.
+    LaunchedEffect(lastApplied) {
+        if (lastApplied != null) {
+            delay(1200)
+            lastApplied = null
+        }
+    }
 
     Column(
         modifier = modifier
@@ -128,6 +143,11 @@ fun KeyframePresetCards(
                     def = def,
                     applied = lastApplied == def.type,
                     onClick = {
+                        // Debounce: rapid taps must not spam the undo stack with
+                        // redundant applyAnimationPreset calls.
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastApplyAtMs < 400L) return@PresetCard
+                        lastApplyAtMs = now
                         onApplyPreset(def.type)
                         lastApplied = def.type
                     }

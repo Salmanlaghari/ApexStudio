@@ -64,6 +64,9 @@ fun EditorScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    // Dedicated muted player for the live video PiP overlay preview.
+    // Bound to the active V2 video overlay clip by EditorPreviewSection.
+    var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
@@ -147,6 +150,22 @@ fun EditorScreen(
         onDispose {
             exoPlayer?.release()
             exoPlayer = null
+            overlayPlayer?.release()
+            overlayPlayer = null
+        }
+    }
+
+    // Overlay PiP player: muted, no controller — the preview section binds
+    // it to the active video overlay clip (trimmed range, looping).
+    LaunchedEffect(Unit) {
+        try {
+            val player = ExoPlayer.Builder(context).build()
+            player.volume = 0f
+            player.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            overlayPlayer = player
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "Overlay player init failed: ${e.message}")
+            overlayPlayer = null
         }
     }
 
@@ -358,14 +377,37 @@ fun EditorScreen(
             isCoverMode = isCoverMode,
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
-            onOpenAddMediaMenu = { showAddMediaMenu = true }
+            onOpenAddMediaMenu = { showAddMediaMenu = true },
+            overlayPlayer = overlayPlayer
         )
 
         EditorTransportSection(
             state = state,
             vm = vm,
             seekPlayerAndState = seekPlayerAndState,
-            onOpenAddMediaMenu = { showAddMediaMenu = true }
+            // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
+            // set here and the picker launches immediately, so the pick
+            // can never be misrouted to V1 (the old bug: the ClipType was
+            // dropped and the generic menu's "Video" entry reset the flag).
+            onOpenAddMediaMenu = { type ->
+                if (type == ClipType.OVERLAY) {
+                    vm.setPendingAddAsOverlay(true)
+                    vm.setPendingAddAsAudio(false)
+                    mediaPicker.pickMultipleMedia.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    )
+                } else if (type == ClipType.AUDIO) {
+                    // A1 lane "+" — audio goes straight to the audio
+                    // picker and lands in project.audioTracks (A1 lane).
+                    vm.setPendingAddAsOverlay(false)
+                    vm.setPendingAddAsAudio(true)
+                    mediaPicker.pickAudioMedia.launch("audio/*")
+                } else {
+                    vm.setPendingAddAsOverlay(false)
+                    vm.setPendingAddAsAudio(false)
+                    showAddMediaMenu = true
+                }
+            }
         )
 
         // New contextual bottom toolbar — extracted to EditorBottomToolbarSection

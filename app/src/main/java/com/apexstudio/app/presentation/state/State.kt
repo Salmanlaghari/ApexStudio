@@ -111,6 +111,11 @@ data class EditorState(
     // belongs to so we can clear it when the clip is deleted.
     val overlayTransform: OverlayTransform = OverlayTransform(),
     val overlayClipId: String? = null,
+    // PiP overlay canvas selection: id of the overlay clip currently
+    // selected on the preview canvas (tap to select). The transform
+    // itself lives on the MediaClip (pipX/pipY/pipScale/pipRotationDeg/
+    // pipOpacity) so preview and export always agree. Null = none.
+    val selectedOverlayClipId: String? = null,
     // Phase D: pending + Add intent. When non-null, the next media
     // picker callback will route the result to the chosen lane.
     // Cleared after the picker returns.

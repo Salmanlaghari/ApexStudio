@@ -74,7 +74,7 @@ fun TimelineTrackArea(
     onSelectClip: (String?) -> Unit = {},
     onSelectFx: (String) -> Unit = {},
     onSelectFilter: (String) -> Unit = {},
-    onAddMedia: () -> Unit = {},
+    onAddMedia: (ClipType) -> Unit = {},
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
     onDeleteClip: (clipId: String) -> Unit = {},
@@ -163,7 +163,7 @@ fun TimelineTrackArea(
                 onSelectClip(clipId)
             },
             onReorderClips = onReorderClips,
-            onAddMedia = { onAddMedia() },
+            onAddMedia = { type -> onAddMedia(type) },
             onSplitClip = onSplitClip,
             onDuplicateClip = onDuplicateClip,
             onDeleteClip = onDeleteClip,
@@ -299,7 +299,7 @@ fun TimelineTrackArea(
                         QuickActionSquareCard(
                             icon = Icons.Default.AddPhotoAlternate,
                             label = "Replace",
-                            onClick = onAddMedia
+                            onClick = { onAddMedia(ClipType.OVERLAY) }
                         )
                         QuickActionSquareCard(
                             icon = Icons.Default.DeleteOutline,

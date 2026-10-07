@@ -126,8 +126,13 @@ class ExportEngine(private val context: Context) {
     /**
      * Configuration for one Picture-in-Picture overlay in the export.
      * The overlay video is composited over the main video at [offsetMs] on the
-     * export timeline, scaled to [widthFraction] of the output width and placed
-     * in the bottom-end corner (matching the preview's BottomEnd PiP box).
+     * export timeline, centred at ([centerX], [centerY]) — normalised 0..1,
+     * x from the left, y from the top — with width [widthFraction] of the
+     * output width, a 16:9 box, and [rotationDeg] clockwise rotation.
+     *
+     * These mirror MediaClip's pipX/pipY/pipScale/pipRotationDeg exactly, so
+     * the export renders what the preview canvas showed (WYSIWYG). The old
+     * fixed bottom-end corner equals centerX = 0.85, centerY = 0.85.
      */
     data class PipOverlayConfig(
         val uri: String,
@@ -135,7 +140,9 @@ class ExportEngine(private val context: Context) {
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = Long.MAX_VALUE,
         val widthFraction: Float = 0.25f,
-        val marginFraction: Float = 0.03f,
+        val centerX: Float = 0.85f,
+        val centerY: Float = 0.85f,
+        val rotationDeg: Float = 0f,
         val opacity: Float = 1f
     )
 
@@ -193,7 +200,9 @@ class ExportEngine(private val context: Context) {
                                 trimStartMs = pip.trimStartMs,
                                 trimEndMs = pip.trimEndMs,
                                 widthFraction = pip.widthFraction,
-                                marginFraction = pip.marginFraction,
+                                centerX = pip.centerX,
+                                centerY = pip.centerY,
+                                rotationDeg = pip.rotationDeg,
                                 opacity = pip.opacity
                             )
                         )

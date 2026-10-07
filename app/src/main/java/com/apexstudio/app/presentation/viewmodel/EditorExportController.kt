@@ -66,7 +66,15 @@ fun EditorViewModel.startExport(
                 offsetMs = ov.timelineOffsetMs,
                 trimStartMs = ov.trimStartMs,
                 trimEndMs = ov.trimEndMs,
-                opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
+                // The overlay's canvas transform — preview and export
+                // resolve the same numbers against the frame geometry.
+                widthFraction = ov.pipScale,
+                centerX = ov.pipX,
+                centerY = ov.pipY,
+                rotationDeg = ov.pipRotationDeg,
+                opacity = (ov.pipOpacity *
+                        ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
+                    .coerceIn(0f, 1f)
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -244,7 +252,16 @@ fun EditorViewModel.startPhotoExport(
                         offsetMs = ov.timelineOffsetMs,
                         trimStartMs = ov.trimStartMs,
                         trimEndMs = ov.trimEndMs,
-                        opacity = ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity
+                        // The overlay's canvas transform — preview and
+                        // export resolve the same numbers against the
+                        // frame geometry.
+                        widthFraction = ov.pipScale,
+                        centerX = ov.pipX,
+                        centerY = ov.pipY,
+                        rotationDeg = ov.pipRotationDeg,
+                        opacity = (ov.pipOpacity *
+                                ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
+                            .coerceIn(0f, 1f)
                     )
                 }
             val transitionType = s.project?.lastTransitionType?.let { typeStr ->

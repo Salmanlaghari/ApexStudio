@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,24 +59,57 @@ fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
 
 private data class CtxToolItem(
     val label: String,
-    val icon: ImageVector,
+    val icon: ImageVector? = null,
     val tint: Color = Color(0xFF9CA3AF),
-    val onClick: () -> Unit
-)
+    val onClick: () -> Unit,
+    /** Text glyph rendered in place of [icon] (e.g. the mockup's bold "T" for Text). */
+    val glyph: String? = null,
+    /** Degrees to rotate [icon] (e.g. 90 for the mockup's horizontal Adjust sliders). */
+    val iconRotationDeg: Float = 0f
+) {
+    init {
+        require(icon != null || glyph != null) { "CtxToolItem needs an icon or a glyph" }
+    }
+}
+
+/**
+ * Mockup Keyframe icon: diamond (rhombus) outline, drawn as a stroked vector
+ * so it pixel-matches the approved mockup (diamond, not the key glyph).
+ */
+private val DiamondOutlineIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "DiamondOutline",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).addPath(
+        pathData = listOf(
+            androidx.compose.ui.graphics.vector.PathNode.MoveTo(12f, 3.5f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(20.5f, 12f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(12f, 20.5f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(3.5f, 12f),
+            androidx.compose.ui.graphics.vector.PathNode.Close
+        ),
+        stroke = androidx.compose.ui.graphics.SolidColor(Color.Black),
+        strokeLineWidth = 2f,
+        strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round,
+        strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round
+    ).build()
+}
 
 @Composable
 fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
-    // Global tools
-    onEdit: () -> Unit = {},
-    onAudio: () -> Unit = {},
+    // Global tools (mockup bottom tabs)
     onText: () -> Unit = {},
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
-    // Global tools (B1/B2): Lenses opens the Camera Kit lens browser,
-    // Filters opens the GPU filter gallery directly.
-    onLenses: () -> Unit = {},
+    // Global tools: Filters opens the GPU filter gallery directly.
     onFilters: () -> Unit = {},
+    // Mockup "AR Face" tab: opens the AR face-filter panel (functionality
+    // owned by a separate workstream; this only wires the tab).
+    onArFace: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
     onReplace: () -> Unit = {},
@@ -99,25 +133,26 @@ fun ContextualBottomToolbar(
 ) {
     val items: List<CtxToolItem> = when (selectionKind) {
         ToolbarSelectionKind.NONE -> listOf(
-            CtxToolItem("Edit", Icons.Default.ContentCut, ApexPalette.NeonCyan, onEdit),
-            CtxToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
-            CtxToolItem("Text", Icons.Default.TextFields, onClick = onText),
+            // Mockup bottom tabs, exact order/labels/icons: Text (active cyan),
+            // Stickers, Effects, Filters, AR Face, Adjust.
+            CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
+            CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-            CtxToolItem("Filters", Icons.Default.Palette, onClick = onFilters),
-            CtxToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
-            CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses)
+            CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
+            CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
+            CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust)
         )
         ToolbarSelectionKind.VIDEO -> listOf(
             // Keyframe tab: opens the keyframe editor (diamonds + curves)
             // so keyframes can be added/edited immediately on selection.
-            // Mockup: key (not diamond) icon, cyan.
-            CtxToolItem("Keyframe", Icons.Default.VpnKey, ApexPalette.NeonCyan, onAnimation),
-            CtxToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust),
-            CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
-            CtxToolItem("Speed", Icons.Default.Speed, onClick = onSpeed),
+            // Mockup: diamond-outline icon, cyan; every tool icon+label is cyan.
+            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
+            CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
+            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
             // Second entry point into the same keyframe/animation panel.
-            CtxToolItem("Animation", Icons.Default.AutoAwesome, onClick = onAnimation),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.Danger, onDelete)
+            CtxToolItem("Animation", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonCyan, onClick = onDelete)
         )
         ToolbarSelectionKind.AUDIO -> listOf(
             CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
@@ -206,12 +241,26 @@ fun ContextualBottomToolbar(
                     .fillMaxHeight()
                     .clickable(onClick = item.onClick)
             ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = item.label,
-                    tint = item.tint,
-                    modifier = Modifier.size(21.dp)
-                )
+                if (item.glyph != null) {
+                    // Mockup text glyph (e.g. the bold "T" for the Text tab).
+                    Text(
+                        text = item.glyph,
+                        color = item.tint,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.size(21.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                } else {
+                    Icon(
+                        imageVector = item.icon!!,
+                        contentDescription = item.label,
+                        tint = item.tint,
+                        modifier = Modifier
+                            .size(21.dp)
+                            .graphicsLayer { rotationZ = item.iconRotationDeg }
+                    )
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = item.label,
@@ -388,12 +437,10 @@ fun EditorBottomToolbarSection(
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
-        onEdit = { vm.openTrimPanel() },
-        onAudio = { vm.openAudioMixer() },
         onText = { vm.openTextPanel() },
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
-        onLenses = { vm.openLensesPanel() },
+        onArFace = { vm.openArFilterPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
         onReplace = {

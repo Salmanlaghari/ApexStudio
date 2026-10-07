@@ -235,22 +235,21 @@ fun VideoTimeline(
     val isPlayheadSnapped = snapToBeat &&
         beatMarkersMs.any { kotlin.math.abs(it - safePlayheadMs) <= snapThresholdMs }
 
-    // Mockup track geometry (CapCut/VN style): thin elegant tracks (~44dp,
-    // FX slimmer) with generous dark spacing between rows. The sidebar pill
+    // Mockup track geometry: V1 on top, then V2, FX, A1. The sidebar pill
     // cells use the same heights so pills stay centered on their rows.
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
     val rulerHeight = 30.dp
-    val v1Height = 44.dp
-    val v2Height = 44.dp
-    val fxHeight = 36.dp
+    val v1Height = 92.dp
+    val v2Height = 64.dp
+    val fxHeight = 48.dp
     val a1ExtraDp = ((audioTracks.size - 1).coerceAtLeast(0) * 34).coerceAtMost(102)
-    val a1Height = (44 + a1ExtraDp).dp
+    val a1Height = (56 + a1ExtraDp).dp
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height((228 + a1ExtraDp).dp)
+            .height((314 + a1ExtraDp).dp)
             .background(Color(0xFF090B10))
             .border(1.dp, Color(0xFF171B26))
     ) {
@@ -345,7 +344,7 @@ fun VideoTimeline(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     // TRACK 0: Time Ruler & Beat Markers
                     TimelineTimeRuler(
@@ -724,7 +723,7 @@ private fun TimelineLeftSidebar(
             .background(Color(0xFF0C0E14))
             .border(width = 1.dp, color = Color(0xFF1E2230))
             .padding(horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Zoom cell (aligned with the ruler row)
@@ -772,7 +771,7 @@ private fun TimelineLeftSidebar(
         TrackPill(label = "V1", accent = ApexPalette.NeonCyan, height = v1Height)
         TrackPill(label = "V2", accent = ApexPalette.NeonPurple, height = v2Height)
         TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight)
-        TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height)
+        TrackPill(label = "A1", accent = ApexPalette.NeonCyanGlow, height = a1Height)
     }
 }
 
@@ -1008,7 +1007,7 @@ private fun TimelineOverlayTrack(
         }
 
         // Lane 1: Overlay Video Clips — absolutely positioned by timelineOffsetMs, draggable.
-        Box(modifier = Modifier.fillMaxWidth().height(38.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(52.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
@@ -1025,7 +1024,7 @@ private fun TimelineOverlayTrack(
                     Box(
                         modifier = Modifier
                             .width(clipWidthDp)
-                            .height(26.dp)
+                            .height(32.dp)
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(4.dp))
                             .background(
@@ -1091,7 +1090,7 @@ private fun TimelineOverlayTrack(
                         onMoveKeyframe = { kfId, newTimeMs -> onMoveKeyframe(clip.id, kfId, newTimeMs) },
                         onAddAtPlayhead = { onToggleKeyframeAtPlayhead(clip.id) },
                         accentColor = ApexPalette.NeonCyan,
-                        modifier = Modifier.height(12.dp)
+                        modifier = Modifier.height(18.dp)
                     )
                 }
             }
@@ -1120,7 +1119,7 @@ private fun TimelineOverlayTrack(
 
         // Lane 2: Text Overlays — positioned by startMs, with their own keyframe lane.
         if (textOverlays.isNotEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().height(32.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(36.dp)) {
                 textOverlays.forEach { textOverlay ->
                     val ownerClipId = allClips.firstOrNull { c -> c.textOverlays.any { it.id == textOverlay.id } }?.id
                     val ovStartMs = textOverlay.startMs.coerceAtLeast(0L)
@@ -1137,7 +1136,7 @@ private fun TimelineOverlayTrack(
                         Box(
                             modifier = Modifier
                                 .width(ovWidthDp)
-                                .height(18.dp)
+                                .height(20.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(Color(0xFF2A1538))
                                 .border(1.dp, ApexPalette.NeonPink.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
@@ -1171,7 +1170,7 @@ private fun TimelineOverlayTrack(
                                 if (ownerClipId != null) onToggleTextKeyframeAtPlayhead(ownerClipId, textOverlay.id)
                             },
                             accentColor = ApexPalette.NeonPink,
-                            modifier = Modifier.height(12.dp)
+                            modifier = Modifier.height(14.dp)
                         )
                     }
                 }
@@ -1372,8 +1371,8 @@ private fun TimelineVideoTrack(
                             width = if (isBeingDragged) 2.5.dp else if (isSelected || isMultiSelected) 2.dp else 1.dp,
                             color = if (isBeingDragged) ApexPalette.NeonCyan
                             else if (isMultiSelected) Color(0xFFFFB300)
-                            // Mockup: selected clip gets a teal border highlight.
-                            else if (isSelected) ApexPalette.NeonCyan
+                            // Mockup: selected clip gets a white border + teal band.
+                            else if (isSelected) Color.White
                             else Color(0xFF2E384D),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1476,6 +1475,15 @@ private fun TimelineVideoTrack(
                             }
                         }
 
+                        // Teal selection band (mockup).
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp)
+                                    .background(ApexPalette.NeonCyanGlow.copy(alpha = 0.55f))
+                            )
+                        }
                     }
 
                     // Trim Grips on active clip — draggable to trim start/end.
@@ -1485,7 +1493,7 @@ private fun TimelineVideoTrack(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
-                                .width(16.dp).fillMaxHeight()
+                                .size(width = 16.dp, height = 44.dp)
                                 .pointerInput(clip.id) {
                                     detectDragGestures(
                                         onDragStart = {
@@ -1519,7 +1527,7 @@ private fun TimelineVideoTrack(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(width = 5.dp, height = 28.dp)
+                                    .size(width = 5.dp, height = 36.dp)
                                     .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
                             )
                         }
@@ -1527,7 +1535,7 @@ private fun TimelineVideoTrack(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .width(16.dp).fillMaxHeight()
+                                .size(width = 16.dp, height = 44.dp)
                                 .pointerInput(clip.id) {
                                     detectDragGestures(
                                         onDragStart = {
@@ -1561,7 +1569,7 @@ private fun TimelineVideoTrack(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(width = 5.dp, height = 28.dp)
+                                    .size(width = 5.dp, height = 36.dp)
                                     .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
                             )
                         }
@@ -1763,9 +1771,11 @@ private fun TimelineFxTrack(
 }
 
 /**
- * Audio Track (A1) with dynamic waveform bars and beat-sync indicators.
+ * A1 audio lane. The lane is ALWAYS rendered — never collapsed or hidden —
+ * with a visible waveform (real analysis when available, deterministic
+ * synthetic fallback otherwise). Every audio track gets its own row so
+ * added audio is actually present and manageable in the timeline.
  */
-@Composable
 private fun TimelineAudioTrack(
     audioTracks: List<AudioTrack>,
     durationMs: Long,
@@ -1780,10 +1790,6 @@ private fun TimelineAudioTrack(
     onAddAudio: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // The A1 lane is ALWAYS rendered — never collapsed or hidden — with
-    // a visible waveform (real analysis when available, deterministic
-    // synthetic fallback otherwise). Every audio track gets its own row
-    // so added audio is actually present and manageable in the timeline.
     val samples = remember(audioWaveform, audioTracks.map { it.id }) {
         if (audioWaveform.isNotEmpty() && audioWaveform.any { it > 0.01f }) audioWaveform
         else SyntheticWaveform.generate(
@@ -1804,7 +1810,7 @@ private fun TimelineAudioTrack(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(56.dp)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -1882,7 +1888,7 @@ private fun AudioTrackLaneRow(
     val accent = if (track.volume >= 0.99f) Color(0xFFFBBF24) else Color(0xFF34D399)
     Row(
         modifier = modifier
-            .height(34.dp)
+            .height(40.dp)
             .padding(horizontal = 6.dp, vertical = 3.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))

@@ -27,6 +27,10 @@ import androidx.media3.effect.GlShaderProgram
  * 0..1, width [widthFraction] of the output width in a 16:9 box, and
  * [rotationDeg] clockwise — exactly matching the preview's PipOverlayCanvas.
  *
+ * Still-image overlays (no video track in the URI) are decoded to a bitmap
+ * and composited through a regular 2D texture for the same timeline window,
+ * so picture overlays are no longer silently dropped from the export.
+ *
  * The PiP is positioned at [offsetMs] on the export timeline and shows the
  * overlay's [trimStartMs, trimEndMs] range. If the decoder fails for any
  * reason, the effect degrades gracefully to a pass-through (main video only).
@@ -99,6 +103,13 @@ class PipOverlayGlEffect(
         private var pipSizeNdc = floatArrayOf(0.5f, 0.28125f)
         private var pipOutputPx = floatArrayOf(1920f, 1080f)
 
+        // Image-overlay path: when the overlay URI has no video track
+        // (a still picture), the bitmap is uploaded to a regular 2D
+        // texture and composited for the same timeline window instead of
+        // being silently dropped.
+        private var imageTextureId: Int = 0
+        private var hasImageOverlay: Boolean = false
+
         init {
             glProgram = try {
                 GlProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -123,8 +134,75 @@ class PipOverlayGlEffect(
             try {
                 setupDecoder()
             } catch (e: Exception) {
-                Log.w(TAG, "PiP decoder setup failed for $overlayUri, PiP disabled", e)
+                // No decodable video track — fall back to a still image
+                // overlay (picture PiP) instead of disabling the PiP.
+                Log.i(TAG, "No video track in overlay $overlayUri, trying image path")
                 releaseDecoder()
+                try {
+                    setupImageTexture()
+                } catch (e2: Exception) {
+                    Log.w(TAG, "PiP image setup failed for $overlayUri, PiP disabled", e2)
+                    releaseImageTexture()
+                }
+            }
+        }
+
+        /**
+         * Uploads a still-image overlay to a regular 2D texture, downsampled
+         * (the PiP box is small) so the export never OOMs on a huge photo.
+         */
+        private fun setupImageTexture() {
+            val bytes = appContext.contentResolver
+                .openInputStream(Uri.parse(overlayUri))?.use { it.readBytes() }
+                ?: throw IllegalArgumentException("Cannot open overlay image $overlayUri")
+            val bounds = android.graphics.BitmapFactory.Options()
+                .apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
+            }
+            var sample = 1
+            while ((bounds.outWidth / sample) > 512 || (bounds.outHeight / sample) > 512) {
+                sample *= 2
+            }
+            val opts = android.graphics.BitmapFactory.Options()
+                .apply { inSampleSize = sample }
+            val bitmap = android.graphics.BitmapFactory
+                .decodeByteArray(bytes, 0, bytes.size, opts)
+                ?: throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
+            val tex = IntArray(1)
+            GLES20.glGenTextures(1, tex, 0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+            GLES20.glTexParameteri(
+                GLES20.GL_TEXTURE_2D,
+                GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
+            )
+            GLES20.glTexParameteri(
+                GLES20.GL_TEXTURE_2D,
+                GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
+            )
+            GLES20.glTexParameteri(
+                GLES20.GL_TEXTURE_2D,
+                GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
+            )
+            GLES20.glTexParameteri(
+                GLES20.GL_TEXTURE_2D,
+                GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
+            )
+            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            bitmap.recycle()
+            imageTextureId = tex[0]
+            hasImageOverlay = true
+            Log.d(TAG, "PiP image texture ready for $overlayUri")
+        }
+
+        private fun releaseImageTexture() {
+            hasImageOverlay = false
+            if (imageTextureId != 0) {
+                try {
+                    GLES20.glDeleteTextures(1, intArrayOf(imageTextureId), 0)
+                } catch (_: Exception) {}
+                imageTextureId = 0
             }
         }
 
@@ -247,20 +325,30 @@ class PipOverlayGlEffect(
                 // seeked to trimStartMs in setupDecoder(), so decoded frames carry
                 // source-media timestamps — the trim offset must be added back.
                 val sourceTimeUs = (overlayTimeMs + trimStartMs) * 1000L
-                val visible = decoderReady &&
-                    overlayTimeMs >= 0 &&
-                    overlayTimeMs < trimmedDurationMs &&
-                    sourceTimeUs < overlayDurationUs
+                val inWindow = overlayTimeMs >= 0 && overlayTimeMs < trimmedDurationMs
+                val visible = decoderReady && inWindow && sourceTimeUs < overlayDurationUs
 
                 var pipTex = 0
-                if (visible) {
+                var pipIsImage = 0f
+                if (hasImageOverlay) {
+                    // Still picture: composite for the same timeline window.
+                    if (inWindow && imageTextureId != 0) {
+                        pipTex = imageTextureId
+                        pipIsImage = 1f
+                    }
+                } else if (visible) {
                     pipTex = updateOverlayTexture(sourceTimeUs)
                 }
 
                 if (pipTex != 0) {
-                    // Composite: sample PiP texture with OES sampler, blend
-                    // at the overlay's transform (centre / size / rotation).
-                    glProgram.setSamplerTexIdUniform("uPipSampler", pipTex, 1)
+                    // Composite: sample PiP texture, blend at the overlay's
+                    // transform (centre / size / rotation). Images use the
+                    // regular 2D sampler, video the external OES sampler.
+                    if (pipIsImage > 0.5f) {
+                        glProgram.setSamplerTexIdUniform("uPipImageSampler", pipTex, 1)
+                    } else {
+                        glProgram.setSamplerTexIdUniform("uPipSampler", pipTex, 1)
+                    }
                     glProgram.setFloatsUniform("uPipCenter", pipCenterNdc)
                     glProgram.setFloatsUniform("uPipSize", pipSizeNdc)
                     glProgram.setFloatsUniform("uOutputSize", pipOutputPx)
@@ -268,6 +356,7 @@ class PipOverlayGlEffect(
                         "uPipAngle",
                         floatArrayOf(Math.toRadians(rotationDeg.toDouble()).toFloat())
                     )
+                    glProgram.setFloatsUniform("uPipIsImage", floatArrayOf(pipIsImage))
                     glProgram.setFloatsUniform("uPipOpacity", floatArrayOf(opacity.coerceIn(0f, 1f)))
                     glProgram.setFloatsUniform("uPipEnabled", floatArrayOf(1f))
                 } else {
@@ -373,6 +462,7 @@ class PipOverlayGlEffect(
         override fun release() {
             super.release()
             releaseDecoder()
+            releaseImageTexture()
             // The GlProgram created in init{} is a separate GL object from the
             // parent BaseGlShaderProgram's program — it must be deleted here,
             // otherwise the shader program leaks on every export.
@@ -426,6 +516,8 @@ class PipOverlayGlEffect(
             varying vec2 vTextureCoord;
             uniform sampler2D uTexSampler;
             uniform samplerExternalOES uPipSampler;
+            uniform sampler2D uPipImageSampler; // still-picture overlays
+            uniform float uPipIsImage; // 1 = sample the 2D image texture
             uniform vec2 uPipCenter; // NDC
             uniform vec2 uPipSize;   // full width/height, NDC
             uniform vec2 uOutputSize; // pixels
@@ -456,11 +548,14 @@ class PipOverlayGlEffect(
                     // Inverse-rotate into the overlay's local frame.
                     vec2 local = vec2(d.x * c + d.y * s, -d.x * s + d.y * c);
                     if (abs(local.x) <= halfPx.x && abs(local.y) <= halfPx.y) {
-                        // Map to PiP texture coords (no Y flip: v = 1 at the
-                        // rect's bottom edge, matching the OES orientation).
+                        // Map to PiP texture coords (v = 1 at the rect's
+                        // bottom edge): upright for both the OES video
+                        // texture and the 2D bitmap texture.
                         vec2 pipUv = vec2(local.x / halfPx.x * 0.5 + 0.5,
                                           local.y / halfPx.y * 0.5 + 0.5);
-                        vec4 pip = texture2D(uPipSampler, pipUv);
+                        vec4 pip = uPipIsImage > 0.5
+                            ? texture2D(uPipImageSampler, pipUv)
+                            : texture2D(uPipSampler, pipUv);
                         float a = uPipOpacity;
                         vec3 outRgb = pip.rgb * a + video.rgb * (1.0 - a);
                         outColor = vec4(outRgb, video.a);

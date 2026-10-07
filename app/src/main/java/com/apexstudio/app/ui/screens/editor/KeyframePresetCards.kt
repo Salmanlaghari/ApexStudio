@@ -77,6 +77,7 @@ fun KeyframePresetCards(
 ) {
     var lastApplied by remember { mutableStateOf<AnimationPresetType?>(null) }
     var lastApplyAtMs by remember { mutableLongStateOf(0L) }
+    var lastApplyType by remember { mutableStateOf<AnimationPresetType?>(null) }
 
     // The checkmark is a transient "just applied" confirmation, not a claim about
     // current keyframe state — it auto-clears so it can never go stale when the
@@ -143,11 +144,13 @@ fun KeyframePresetCards(
                     def = def,
                     applied = lastApplied == def.type,
                     onClick = {
-                        // Debounce: rapid taps must not spam the undo stack with
-                        // redundant applyAnimationPreset calls.
+                        // Debounce repeated taps of the SAME card (400ms) so rapid
+                        // taps can't spam the undo stack — but a DIFFERENT card
+                        // always applies immediately, never swallowed.
                         val now = SystemClock.uptimeMillis()
-                        if (now - lastApplyAtMs < 400L) return@PresetCard
+                        if (def.type == lastApplyType && now - lastApplyAtMs < 400L) return@PresetCard
                         lastApplyAtMs = now
+                        lastApplyType = def.type
                         onApplyPreset(def.type)
                         lastApplied = def.type
                     }

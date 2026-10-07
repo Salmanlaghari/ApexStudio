@@ -44,13 +44,46 @@ data class MediaClip(
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    // PiP overlay transform — only meaningful when type == ClipType.OVERLAY.
+    // The live preview (PipOverlayCanvas) and the export (PipOverlayGlEffect)
+    // resolve these against the same frame geometry, so what you drag on
+    // screen is exactly what bakes into the MP4:
+    // - pipX / pipY: normalised centre of the overlay (0..1; x from the
+    //   left, y from the top). Defaults put the box in the classic
+    //   bottom-end PiP corner.
+    // - pipScale: overlay width as a fraction of the frame width
+    //   (0.05..0.9). The box keeps a 16:9 aspect, matching the export.
+    // - pipRotationDeg: clockwise rotation in degrees.
+    // - pipOpacity: 0..1 alpha.
+    // Default values preserve the pre-editing bottom-end PiP look, and
+    // keep older saved projects (missing fields) deserialising unchanged.
+    val pipX: Float = 0.85f,
+    val pipY: Float = 0.85f,
+    val pipScale: Float = 0.25f,
+    val pipRotationDeg: Float = 0f,
+    val pipOpacity: Float = 1f,
     // Photo-editing tools for IMAGE clips (crop / adjust / LUT filter /
     // rotate+flip). Stored per-clip so every photo keeps its own edits;
     // the preview renderer and the export path both read this single
     // source of truth. Default = untouched photo. Backwards-compatible:
     // older project JSONs without this field deserialise as default.
     val photoEdit: PhotoEditSettings = PhotoEditSettings()
-)
+) {
+    /**
+     * True when this overlay clip (type == [ClipType.OVERLAY]) should be
+     * visible at [timeMs] on the timeline: from its [timelineOffsetMs]
+     * for exactly its trimmed duration. The preview canvas and the
+     * export visibility check both use this single helper so they can
+     * never disagree.
+     */
+    fun isOverlayActiveAt(timeMs: Long): Boolean {
+        if (type != ClipType.OVERLAY) return false
+        val trimmedMs = (trimEndMs - trimStartMs).coerceAtLeast(0L)
+        val endMs = if (trimEndMs == Long.MAX_VALUE) Long.MAX_VALUE
+        else timelineOffsetMs + trimmedMs
+        return timeMs in timelineOffsetMs until endMs
+    }
+}
 
 /**
  * Normalised crop rectangle for a photo clip (all values 0..1 in the

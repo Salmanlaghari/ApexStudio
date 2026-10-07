@@ -128,11 +128,35 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val s = _state.value
         // Phase D: read the pendingAddAsOverlay flag from state so
         // the picker's callback can route the result through either
-        // the regular video path or the overlay path. Phase E: audio
-        // picks land in the A1 lane; the timeline's existing filter
-        // `it.type == ClipType.AUDIO` routes them correctly without
-        // any extra re-tagging.
+        // the regular video path or the overlay path. Audio picks
+        // (pendingAddAsAudio) are routed into project.audioTracks so
+        // they land on the A1 lane — previously the flag was consumed
+        // by nothing and audio became invisible ClipType.AUDIO clips
+        // that no timeline lane renders.
         val asOverlay = s.pendingAddAsOverlay
+        val asAudio = s.pendingAddAsAudio
+        if (asAudio && !replace) {
+            mediaList.forEach { meta ->
+                val uri = if (context != null) {
+                    com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString()
+                } else meta.uri
+                addAudioTrack(
+                    name = meta.name.ifBlank { "Imported Audio" },
+                    uri = uri,
+                    kind = com.apexstudio.app.domain.model.AudioTrack.Kind.MUSIC,
+                    sourceDurationMs = meta.durationMs
+                )
+            }
+            _state.update {
+                it.copy(
+                    pickedMedia = mediaList,
+                    isMediaPickerOpen = false,
+                    pendingAddAsOverlay = false,
+                    pendingAddAsAudio = false
+                )
+            }
+            return@launch
+        }
         val newClips = mediaList.mapNotNull { meta ->
             val resolvedMeta = if (context != null) {
                 meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
@@ -169,10 +193,14 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 },
                 isPlaying = true,
                 // Phase D: register the freshly added overlay so the
-                // preview layer starts rendering it immediately.
+                // preview layer starts rendering it immediately, and
+                // select it on the PiP canvas so its edit handles show.
                 overlayClipId = if (asOverlay) {
                     newClips.firstOrNull()?.id ?: it.overlayClipId
                 } else it.overlayClipId,
+                selectedOverlayClipId = if (asOverlay) {
+                    newClips.firstOrNull()?.id ?: it.selectedOverlayClipId
+                } else it.selectedOverlayClipId,
                 overlayTransform = if (asOverlay) {
                     com.apexstudio.app.presentation.state.OverlayTransform.Identity
                 } else it.overlayTransform,

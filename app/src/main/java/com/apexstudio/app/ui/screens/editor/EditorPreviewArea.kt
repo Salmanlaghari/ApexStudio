@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +38,21 @@ import com.apexstudio.app.util.TimeFormat
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
     chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
-    overlayClip: MediaClip? = null,
+    // PiP overlay clips (V2 track). Rendered by the interactive
+    // PipOverlayCanvas: tap to select, drag to move, pinch to
+    // scale/rotate, with delete + resize handles on the selection.
+    // [overlayPlayer] plays the bound video overlay live (muted);
+    // image overlays render via Coil.
+    overlayClips: List<MediaClip> = emptyList(),
+    selectedOverlayClipId: String? = null,
+    overlayPlayer: ExoPlayer? = null,
+    overlayPlayerClipId: String? = null,
+    onSelectOverlayClip: ((String?) -> Unit)? = null,
+    onMoveOverlayClip: ((id: String, dx: Float, dy: Float, persist: Boolean) -> Unit)? = null,
+    onScaleOverlayClip: ((id: String, scale: Float, persist: Boolean) -> Unit)? = null,
+    onRotateOverlayClip: ((id: String, deltaDeg: Float, persist: Boolean) -> Unit)? = null,
+    onOverlayGestureEnd: ((String) -> Unit)? = null,
+    onRemoveOverlayClip: ((String) -> Unit)? = null,
     isCoverMode: Boolean = true,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
@@ -277,39 +290,31 @@ fun VideoPreviewArea(
             }
         }
 
-        // Picture-in-Picture Overlay Media Preview (Video / Image Overlay)
-        if (overlayClip != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 12.dp, bottom = 12.dp)
-                    .size(130.dp, 75.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black)
-                    .border(1.5.dp, Color(0xFF00F0FF), RoundedCornerShape(8.dp))
-            ) {
-                coil.compose.AsyncImage(
-                    model = overlayClip.uri,
-                    contentDescription = "Overlay Media",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(3.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = "PIP OVERLAY",
-                        color = Color(0xFF00F0FF),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+        // Interactive PiP overlay canvas (video / image overlays on the V2
+        // track): tap to select, drag to move, pinch to scale/rotate,
+        // delete + resize handles on the selection. Replaces the old
+        // fixed bottom-end box, which could not be edited at all.
+        if (overlayClips.isNotEmpty()) {
+            PipOverlayCanvas(
+                overlayClips = overlayClips,
+                selectedOverlayClipId = selectedOverlayClipId,
+                currentTimeMs = currentTimeMs,
+                overlayPlayer = overlayPlayer,
+                overlayPlayerClipId = overlayPlayerClipId,
+                onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
+                onMoveOverlayClip = { id, dx, dy, persist ->
+                    onMoveOverlayClip?.invoke(id, dx, dy, persist)
+                },
+                onScaleOverlayClip = { id, scale, persist ->
+                    onScaleOverlayClip?.invoke(id, scale, persist)
+                },
+                onRotateOverlayClip = { id, deltaDeg, persist ->
+                    onRotateOverlayClip?.invoke(id, deltaDeg, persist)
+                },
+                onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
+                onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         if (playerError != null) {

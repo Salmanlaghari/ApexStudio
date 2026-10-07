@@ -191,6 +191,18 @@ class PipOverlayGlEffect(
             )
             android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
             bitmap.recycle()
+            // Fail loudly on a bad upload: the caller degrades gracefully
+            // (PiP disabled) instead of compositing an undefined texture.
+            val glError = GLES20.glGetError()
+            if (glError != GLES20.GL_NO_ERROR) {
+                try {
+                    GLES20.glDeleteTextures(1, tex, 0)
+                } catch (_: Exception) {
+                }
+                throw IllegalStateException(
+                    "PiP image texture upload failed for $overlayUri, glError=$glError"
+                )
+            }
             imageTextureId = tex[0]
             hasImageOverlay = true
             Log.d(TAG, "PiP image texture ready for $overlayUri")

@@ -101,15 +101,11 @@ private val DiamondOutlineIcon: ImageVector by lazy {
 @Composable
 fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
-    // Global tools
-    onEdit: () -> Unit = {},
-    onAudio: () -> Unit = {},
+    // Global tools (mockup bottom tabs)
     onText: () -> Unit = {},
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
-    // Global tools (B1/B2): Lenses opens the Camera Kit lens browser,
-    // Filters opens the GPU filter gallery directly.
-    onLenses: () -> Unit = {},
+    // Global tools: Filters opens the GPU filter gallery directly.
     onFilters: () -> Unit = {},
     // Mockup "AR Face" tab: opens the AR face-filter panel (functionality
     // owned by a separate workstream; this only wires the tab).
@@ -456,12 +452,9 @@ fun EditorBottomToolbarSection(
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
-        onEdit = { vm.openTrimPanel() },
-        onAudio = { vm.openAudioMixer() },
         onText = { vm.openTextPanel() },
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
-        onLenses = { vm.openLensesPanel() },
         onArFace = { vm.openArFilterPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },

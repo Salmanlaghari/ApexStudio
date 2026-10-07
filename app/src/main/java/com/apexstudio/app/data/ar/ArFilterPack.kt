@@ -135,6 +135,24 @@ object ArFilterCatalog {
             hasEditableText = true,
             defaultGreetingText = "Aashirwad & Prosperity",
             accentHex = 0xFFF97316
+        ),
+        // Warm Golden Glow
+        ArFilterPreset(
+            id = "ar_warm_glow",
+            title = "Golden Warm Glow",
+            category = ArFilterCategory.BEAUTY,
+            subtitle = "Sun-kissed warm radiance & soft golden bloom",
+            defaultIntensity = 0.80f,
+            accentHex = 0xFFFFC24B
+        ),
+        // Face Zoom Pulse
+        ArFilterPreset(
+            id = "ar_face_zoom_pulse",
+            title = "Face Zoom Pulse",
+            category = ArFilterCategory.FACE_EYES,
+            subtitle = "Rhythmic beat-synced zoom pulse on the face",
+            defaultIntensity = 0.85f,
+            accentHex = 0xFF00E5FF
         )
     )
 

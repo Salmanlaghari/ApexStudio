@@ -86,6 +86,11 @@ fun EditorViewModel.startExport(
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,
+            // AR Face parity: bake the active AR card's graded look +
+            // festival banner text so the export matches the preview.
+            arFilterId = s.activeArFilterId,
+            arFilterIntensity = s.arFilterIntensity,
+            arFilterCustomText = s.arFilterCustomText,
             clipSpeed = speed,
             keyframes = selected?.keyframes ?: KeyframeTrack(),
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
@@ -260,6 +265,10 @@ fun EditorViewModel.startPhotoExport(
                     keyframes = clip.keyframes,
                     fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
                     fxIntensity = s.fxIntensity,
+                    // AR Face parity on the photo path too.
+                    arFilterId = s.activeArFilterId,
+                    arFilterIntensity = s.arFilterIntensity,
+                    arFilterCustomText = s.arFilterCustomText,
                     textOverlays = clip.textOverlays,
                     stickers = stickers,
                     // Trim is baked into the still-video duration.

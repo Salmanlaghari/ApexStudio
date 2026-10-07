@@ -33,7 +33,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * CapCut-style contextual bottom toolbar.
  *
  * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → global tools (Edit, Audio, Text, Effects, Filters, Stickers, Lenses)
+ * - Nothing selected → global tools (Text, Stickers, Effects, Filters, AR Face, Adjust)
  * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
  * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
  *
@@ -101,15 +101,15 @@ private val DiamondOutlineIcon: ImageVector by lazy {
 @Composable
 fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
-    // Global tools (mockup bottom tabs)
+    // Global tools
     onText: () -> Unit = {},
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
-    // Global tools: Filters opens the GPU filter gallery directly.
-    onFilters: () -> Unit = {},
-    // Mockup "AR Face" tab: opens the AR face-filter panel (functionality
-    // owned by a separate workstream; this only wires the tab).
+    // Global tools: AR Face opens the native AR face-filter card carousel
+    // (tap a card → effect applies, no camera preview opens); Filters opens
+    // the GPU filter gallery directly.
     onArFace: () -> Unit = {},
+    onFilters: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
     onReplace: () -> Unit = {},

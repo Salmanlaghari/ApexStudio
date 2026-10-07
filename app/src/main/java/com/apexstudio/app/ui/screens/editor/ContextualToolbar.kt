@@ -32,7 +32,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * CapCut-style contextual bottom toolbar.
  *
  * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → global tools (Edit, Audio, Text, Effects, Filters, Stickers, Lenses)
+ * - Nothing selected → global tools (Text, Stickers, Effects, Filters, AR Face, Adjust)
  * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
  * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
  *
@@ -67,14 +67,13 @@ private data class CtxToolItem(
 fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
     // Global tools
-    onEdit: () -> Unit = {},
-    onAudio: () -> Unit = {},
     onText: () -> Unit = {},
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
-    // Global tools (B1/B2): Lenses opens the Camera Kit lens browser,
+    // Global tools (B1/B2): AR Face opens the native AR face-filter card
+    // carousel (tap a card → effect applies, no camera preview opens),
     // Filters opens the GPU filter gallery directly.
-    onLenses: () -> Unit = {},
+    onArFace: () -> Unit = {},
     onFilters: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
@@ -99,13 +98,13 @@ fun ContextualBottomToolbar(
 ) {
     val items: List<CtxToolItem> = when (selectionKind) {
         ToolbarSelectionKind.NONE -> listOf(
-            CtxToolItem("Edit", Icons.Default.ContentCut, ApexPalette.NeonCyan, onEdit),
-            CtxToolItem("Audio", Icons.Default.MusicNote, onClick = onAudio),
+            // Mockup order: Text, Stickers, Effects, Filters, AR Face, Adjust.
             CtxToolItem("Text", Icons.Default.TextFields, onClick = onText),
+            CtxToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
             CtxToolItem("Filters", Icons.Default.Palette, onClick = onFilters),
-            CtxToolItem("Stickers", Icons.Default.EmojiEmotions, onClick = onStickers),
-            CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses)
+            CtxToolItem("AR Face", Icons.Default.Face, onClick = onArFace),
+            CtxToolItem("Adjust", Icons.Default.Tune, onClick = onAdjust)
         )
         ToolbarSelectionKind.VIDEO -> listOf(
             // Keyframe tab: opens the keyframe editor (diamonds + curves)
@@ -403,12 +402,10 @@ fun EditorBottomToolbarSection(
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
-        onEdit = { vm.openTrimPanel() },
-        onAudio = { vm.openAudioMixer() },
         onText = { vm.openTextPanel() },
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
-        onLenses = { vm.openLensesPanel() },
+        onArFace = { vm.openArFilterPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
         onReplace = {

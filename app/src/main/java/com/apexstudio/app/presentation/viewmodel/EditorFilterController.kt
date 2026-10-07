@@ -295,10 +295,6 @@ fun EditorViewModel.openFxPanel() = _state.update { it.copy(fxPanelOpen = true) 
 
 fun EditorViewModel.closeFxPanel() = _state.update { it.copy(fxPanelOpen = false) }
 
-fun EditorViewModel.openLensesPanel() = _state.update { it.copy(lensesPanelOpen = true) }
-
-fun EditorViewModel.closeLensesPanel() = _state.update { it.copy(lensesPanelOpen = false) }
-
 fun EditorViewModel.setActiveFx(id: String?) = _state.update { it.copy(activeFxId = id) }
 
 fun EditorViewModel.setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }

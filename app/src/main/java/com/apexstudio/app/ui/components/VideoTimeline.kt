@@ -1776,6 +1776,7 @@ private fun TimelineFxTrack(
  * synthetic fallback otherwise). Every audio track gets its own row so
  * added audio is actually present and manageable in the timeline.
  */
+@Composable
 private fun TimelineAudioTrack(
     audioTracks: List<AudioTrack>,
     durationMs: Long,

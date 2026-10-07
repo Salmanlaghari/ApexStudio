@@ -1101,7 +1101,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         isPlaying = state.isPlaying,
         canUndo = state.canUndo,
         canRedo = state.canRedo,
-        showKeyframeButton = !state.useClassicEditorLayout,
+        showKeyframeButton = true,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
         onTogglePlay = { vm.togglePlay() },
         onUndo = { vm.undo() },

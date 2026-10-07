@@ -60,12 +60,12 @@ fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
 private data class CtxToolItem(
     val label: String,
     val icon: ImageVector? = null,
+    val tint: Color = Color(0xFF9CA3AF),
+    val onClick: () -> Unit,
     /** Text glyph rendered in place of [icon] (e.g. the mockup's bold "T" for Text). */
     val glyph: String? = null,
     /** Degrees to rotate [icon] (e.g. 90 for the mockup's horizontal Adjust sliders). */
-    val iconRotationDeg: Float = 0f,
-    val tint: Color = Color(0xFF9CA3AF),
-    val onClick: () -> Unit
+    val iconRotationDeg: Float = 0f
 ) {
     init {
         require(icon != null || glyph != null) { "CtxToolItem needs an icon or a glyph" }

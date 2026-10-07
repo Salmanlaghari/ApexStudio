@@ -35,7 +35,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,9 +47,11 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Transform
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
@@ -234,16 +238,19 @@ fun VideoTimeline(
     // Mockup track geometry (CapCut/VN style): thin elegant tracks (~44dp,
     // FX slimmer) with generous dark spacing between rows. The sidebar pill
     // cells use the same heights so pills stay centered on their rows.
+    // A1 grows with the audio track count (34dp per extra row, capped) so
+    // every track stays visible and tappable — never collapsed or hidden.
     val rulerHeight = 30.dp
     val v1Height = 44.dp
     val v2Height = 44.dp
     val fxHeight = 36.dp
-    val a1Height = 44.dp
+    val a1ExtraDp = ((audioTracks.size - 1).coerceAtLeast(0) * 34).coerceAtMost(102)
+    val a1Height = (44 + a1ExtraDp).dp
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(228.dp)
+            .height((228 + a1ExtraDp).dp)
             .background(Color(0xFF090B10))
             .border(1.dp, Color(0xFF171B26))
     ) {
@@ -509,6 +516,7 @@ fun VideoTimeline(
                         playheadMs = safePlayheadMs,
                         selectedAudioTrackId = selectedAudioTrackId,
                         onSelectAudioTrack = onSelectAudioTrack,
+                        onAddAudio = { onAddMedia(ClipType.AUDIO) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(a1Height)
@@ -1477,7 +1485,7 @@ private fun TimelineVideoTrack(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
-                                .size(width = 16.dp).fillMaxHeight()
+                                .width(16.dp).fillMaxHeight()
                                 .pointerInput(clip.id) {
                                     detectDragGestures(
                                         onDragStart = {
@@ -1519,7 +1527,7 @@ private fun TimelineVideoTrack(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .size(width = 16.dp).fillMaxHeight()
+                                .width(16.dp).fillMaxHeight()
                                 .pointerInput(clip.id) {
                                     detectDragGestures(
                                         onDragStart = {
@@ -1769,80 +1777,221 @@ private fun TimelineAudioTrack(
     playheadMs: Long,
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
+    onAddAudio: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val activeTrack = audioTracks.firstOrNull()
-    // CapCut-style: tapping the A1 lane selects the active audio track,
-    // switching the bottom toolbar to audio tools; selected = white border.
-    val isAudioSelected = activeTrack != null && activeTrack.id == selectedAudioTrackId
-
-    // Waveform samples: real analysis when available, otherwise a
-    // deterministic synthetic fallback so the lane always shows the
-    // mockup's lively blue waveform instead of a flat line.
-    val samples = remember(audioWaveform, activeTrack?.id) {
+    // The A1 lane is ALWAYS rendered — never collapsed or hidden — with
+    // a visible waveform (real analysis when available, deterministic
+    // synthetic fallback otherwise). Every audio track gets its own row
+    // so added audio is actually present and manageable in the timeline.
+    val samples = remember(audioWaveform, audioTracks.map { it.id }) {
         if (audioWaveform.isNotEmpty() && audioWaveform.any { it > 0.01f }) audioWaveform
-        else SyntheticWaveform.generate((activeTrack?.id ?: "master").hashCode().toLong(), 160)
+        else SyntheticWaveform.generate(
+            (audioTracks.firstOrNull()?.id ?: "master").hashCode().toLong(), 160
+        )
     }
+    val effectiveSelectedId = selectedAudioTrackId ?: audioTracks.firstOrNull()?.id
 
-    Box(
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0C1322))
-            .border(
-                width = if (isAudioSelected) 1.5.dp else 1.dp,
-                color = if (isAudioSelected) Color.White
-                else ApexPalette.NeonCyan.copy(alpha = 0.25f),
-                shape = RoundedCornerShape(8.dp)
-            )
-            .clickable(enabled = activeTrack != null) {
-                val t = activeTrack
-                if (t != null) onSelectAudioTrack(t.id)
-            }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center
+            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+            .verticalScroll(rememberScrollState())
     ) {
-        // Mockup: full-width BLUE waveform bars.
-        val barCount = 120
-        val progress = (playheadMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            repeat(barCount) { i ->
-                val barFrac = i.toFloat() / barCount.toFloat()
-                val isPlayed = barFrac <= progress
-                val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
-                val amp = samples[sampleIdx].coerceIn(0.1f, 1.0f)
-
-                // Beat markers (from the Beats tool) render as bright bars
-                // whenever markers exist — independent of snap-to-beat.
-                val isBeat = beatMarkersMs.any { beatMs ->
-                    val beatFrac = beatMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)
-                    kotlin.math.abs(beatFrac - barFrac) < (1.2f / barCount)
-                }
-
-                Box(
+        if (audioTracks.isEmpty()) {
+            // Empty state: visible waveform + add affordance.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                AudioWaveformBars(
+                    samples = samples,
+                    durationMs = durationMs,
+                    playheadMs = playheadMs,
+                    beatMarkersMs = beatMarkersMs,
+                    isMuted = isMuted,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onAddAudio)
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .width(2.dp)
-                            .fillMaxHeight(amp)
-                            .background(
-                                color = when {
-                                    isMuted -> Color(0xFF475569)
-                                    isBeat -> ApexPalette.NeonCyan
-                                    isPlayed -> Color.White
-                                    else -> ApexPalette.NeonCyan.copy(alpha = 0.85f)
-                                },
-                                shape = RoundedCornerShape(1.dp)
-                            )
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = ApexPalette.NeonCyan,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        "+ Add Audio (A1)",
+                        color = Color(0xFF67E8F9),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
+            }
+        } else {
+            audioTracks.forEach { track ->
+                val isSelected = track.id == effectiveSelectedId
+                AudioTrackLaneRow(
+                    track = track,
+                    isSelected = isSelected,
+                    samples = samples,
+                    durationMs = durationMs,
+                    playheadMs = playheadMs,
+                    beatMarkersMs = beatMarkersMs,
+                    isMuted = isMuted || track.isMuted,
+                    onSelect = { onSelectAudioTrack(track.id) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One audio-track row inside the A1 lane: kind colour strip, name,
+ * mini waveform, mute badge. Tapping selects the track (white border),
+ * switching the quick actions to the audio tools for that track.
+ */
+@Composable
+private fun AudioTrackLaneRow(
+    track: AudioTrack,
+    isSelected: Boolean,
+    samples: FloatArray,
+    durationMs: Long,
+    playheadMs: Long,
+    beatMarkersMs: List<Long>,
+    isMuted: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = when (track.kind) {
+        AudioTrack.Kind.ORIGINAL_VIDEO -> ApexPalette.NeonCyan
+        AudioTrack.Kind.MUSIC -> Color(0xFF34D399)
+        AudioTrack.Kind.SFX -> Color(0xFFFBBF24)
+    }
+    Row(
+        modifier = modifier
+            .height(34.dp)
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) Color.White else accent.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(2.dp))
+                .background(accent)
+        )
+        Icon(
+            Icons.Default.MusicNote,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(
+            text = track.name.ifBlank { "Audio" },
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = 110.dp)
+        )
+        if (track.isMuted) {
+            Icon(
+                Icons.Default.VolumeOff,
+                contentDescription = "Muted",
+                tint = Color(0xFF64748B),
+                modifier = Modifier.size(12.dp)
+            )
+        }
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            AudioWaveformBars(
+                samples = samples,
+                durationMs = durationMs,
+                playheadMs = playheadMs,
+                beatMarkersMs = beatMarkersMs,
+                isMuted = isMuted,
+                barColor = accent,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * Shared waveform bar renderer used by the A1 lane rows: full-width bars
+ * with played-progress tinting and beat-marker highlights.
+ */
+@Composable
+private fun AudioWaveformBars(
+    samples: FloatArray,
+    durationMs: Long,
+    playheadMs: Long,
+    beatMarkersMs: List<Long>,
+    isMuted: Boolean,
+    barColor: Color = ApexPalette.NeonCyan,
+    modifier: Modifier = Modifier
+) {
+    val barCount = 120
+    val progress = (playheadMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(barCount) { i ->
+            val barFrac = i.toFloat() / barCount.toFloat()
+            val isPlayed = barFrac <= progress
+            val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
+            val amp = samples[sampleIdx].coerceIn(0.1f, 1.0f)
+
+            // Beat markers (from the Beats tool) render as bright bars
+            // whenever markers exist — independent of snap-to-beat.
+            val isBeat = beatMarkersMs.any { beatMs ->
+                val beatFrac = beatMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)
+                kotlin.math.abs(beatFrac - barFrac) < (1.2f / barCount)
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .fillMaxHeight(amp)
+                        .background(
+                            color = when {
+                                isMuted -> Color(0xFF475569)
+                                isBeat -> ApexPalette.NeonCyan
+                                isPlayed -> Color.White
+                                else -> barColor.copy(alpha = 0.85f)
+                            },
+                            shape = RoundedCornerShape(1.dp)
+                        )
+                )
             }
         }
     }

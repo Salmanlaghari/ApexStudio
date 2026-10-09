@@ -77,6 +77,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -276,7 +277,6 @@ fun VideoTimeline(
         ((used + 0 + extraVideoLayers).toSortedSet()).toList().take(10)
     }
     val overlayLayerHeight = 58.dp
-    val videoLayersHeight = v1Height + overlayLayerHeight * videoLayers.count { it > 0 }
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -1209,7 +1209,6 @@ private fun TimelineTimeRuler(
  *   each with a keyframe diamond strip (tap = seek, drag = move, "+" = toggle at playhead).
  * - Lane 2: text overlays positioned by startMs, each with its own keyframe lane.
  */
-@Composable
 /**
  * One overlay video layer row (V2..V10, CapCut-style multi-layer).
  *
@@ -1482,6 +1481,7 @@ private fun TimelineTextLane(
     }
 }
 
+@Composable
 private fun TimelineOverlayTrack(
     clips: List<MediaClip>,
     textOverlays: List<TextOverlay>,

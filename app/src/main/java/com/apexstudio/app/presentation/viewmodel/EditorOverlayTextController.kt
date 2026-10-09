@@ -27,6 +27,11 @@ fun EditorViewModel.setPendingAddAsAudio(v: Boolean) = _state.update {
     it.copy(pendingAddAsAudio = v)
 }
 
+/** Route the next media-picker result to overlay layer [layer] (1..9). */
+fun EditorViewModel.setPendingAddToLayer(layer: Int?) = _state.update {
+    it.copy(pendingAddToLayer = layer?.coerceIn(1, MAX_VIDEO_LAYERS - 1))
+}
+
 
 fun EditorViewModel.openStickerPanel() = _state.update { it.copy(stickerPanelOpen = true) }
 

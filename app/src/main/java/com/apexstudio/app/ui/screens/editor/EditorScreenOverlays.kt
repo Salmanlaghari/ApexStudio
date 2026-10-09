@@ -884,10 +884,13 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
                 ?: AnimatedTransform.Identity
         }
-        // All overlay clips on the V2 track — the interactive canvas shows
-        // the ones active at the playhead and lets the user edit them.
-        val overlayClips = remember(state.project?.clips) {
-            state.project?.clips?.filter { it.type == ClipType.OVERLAY } ?: emptyList()
+        // All overlay clips across video layers V2..V10 — the interactive
+        // canvas shows the ones active at the playhead and lets the user
+        // edit them. Hidden layers are skipped.
+        val overlayClips = remember(state.project?.clips, state.hiddenVideoLayers) {
+            state.project?.clips?.filter {
+                it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
+            } ?: emptyList()
         }
         // The video overlay clip the shared muted player is bound to:
         // the first VIDEO overlay active at the playhead.
@@ -1266,6 +1269,17 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onZoomOut = { vm.zoomOutTimeline() },
         onResetZoom = { vm.setTimelineZoom(1.0f) },
         onSetZoom = { zoom -> vm.setTimelineZoom(zoom) },
+        // Multi-layer video tracks (V1..V10) + 60fps playhead.
+        onToggleLayerVisibility = { layer -> vm.toggleVideoLayerVisibility(layer) },
+        onToggleLayerLock = { layer -> vm.toggleVideoLayerLock(layer) },
+        onDeleteLayer = { layer -> vm.deleteVideoLayer(layer) },
+        onAddLayer = { vm.addEmptyVideoLayer() },
+        onMoveClipToLayer = { clipId, layer -> vm.moveClipToVideoLayer(clipId, layer) },
+        onAddClipToLayer = { layer ->
+            vm.setPendingAddToLayer(layer)
+            onOpenAddMediaMenu(ClipType.OVERLAY)
+        },
+        playerPositionFlow = vm.playerPositionFlow,
         onOpenSpeed = { vm.openSpeedPanel() },
         onOpenAudio = { vm.openAudioMixer() },
         onOpenTrim = { vm.openTrimPanel() },

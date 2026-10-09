@@ -797,3 +797,135 @@ fun EditorViewModel.moveTextKeyframe(clipId: String, overlayId: String, keyframe
         )
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// Multi-layer video tracks (CapCut-style, up to 10 layers).
+// Layer 0 = main video (V1). Layers 1..9 = overlay layers (V2..V10),
+// composited picture-in-picture above the main layer.
+// A clip's layer is its MediaClip.trackIndex (0..9).
+// ---------------------------------------------------------------------------
+
+/** Maximum number of video layers (V1..V10). */
+const val MAX_VIDEO_LAYERS = 10
+
+/** Toggle a video layer's visibility (eye). Hidden layers are skipped in preview, export and timeline. */
+fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
+    val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    _state.update { s ->
+        val hidden = s.hiddenVideoLayers.toMutableSet()
+        if (l in hidden) hidden.remove(l) else hidden.add(l)
+        s.copy(hiddenVideoLayers = hidden)
+    }
+    persistProject()
+}
+
+/** Toggle a video layer's lock. Locked layers can't be edited until unlocked. */
+fun EditorViewModel.toggleVideoLayerLock(layer: Int) {
+    val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    _state.update { s ->
+        val locked = s.lockedVideoLayers.toMutableSet()
+        if (l in locked) locked.remove(l) else locked.add(l)
+        s.copy(lockedVideoLayers = locked)
+    }
+    persistProject()
+}
+
+/**
+ * Delete a video layer: removes every clip on it. Layer 0 (main) can never
+ * be deleted. Returns true when a layer was actually removed.
+ */
+fun EditorViewModel.deleteVideoLayer(layer: Int): Boolean {
+    val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    if (l == 0) return false
+    pushUndo()
+    var removed = false
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val remaining = p.clips.filter { clip ->
+            val onLayer = clip.trackIndex == l &&
+                (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+                 clip.type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+                 clip.type == com.apexstudio.app.domain.model.ClipType.OVERLAY)
+            if (onLayer) removed = true
+            !onLayer
+        }
+        val hidden = s.hiddenVideoLayers - l
+        val locked = s.lockedVideoLayers - l
+        val extras = s.extraVideoLayers - l
+        s.copy(
+            project = p.copy(clips = remaining),
+            hiddenVideoLayers = hidden,
+            lockedVideoLayers = locked,
+            extraVideoLayers = extras,
+            selectedClipId = if (s.selectedClipId?.let { id -> remaining.none { it.id == id } } == true) null else s.selectedClipId
+        )
+    }
+    persistProject()
+    return removed
+}
+
+/**
+ * Find the next free overlay layer (1..9). A layer is free when no video
+ * clip uses that trackIndex. Returns -1 when all 10 layers are occupied.
+ */
+fun EditorViewModel.nextFreeVideoLayer(): Int {
+    val used = _state.value.project?.clips
+        ?.filter {
+            it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            it.type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+            it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        }
+        ?.map { it.trackIndex.coerceIn(0, MAX_VIDEO_LAYERS - 1) }
+        ?.toSet() ?: setOf(0)
+    return (1 until MAX_VIDEO_LAYERS).firstOrNull { it !in used } ?: -1
+}
+
+/**
+ * Move a clip to a video layer. Layer 0 keeps VIDEO/IMAGE types (full-frame
+ * main). Layers 1..9 force OVERLAY so preview + export composite the clip
+ * picture-in-picture above the main layer — matching the timeline's V2..V10
+ * rows and the PiP canvas hit-testing.
+ */
+fun EditorViewModel.moveClipToVideoLayer(clipId: String, layer: Int) {
+    val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    pushUndo()
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val updated = p.clips.map { clip ->
+            if (clip.id != clipId) return@map clip
+            val newType = when {
+                l == 0 && clip.type == com.apexstudio.app.domain.model.ClipType.OVERLAY ->
+                    com.apexstudio.app.domain.model.ClipType.VIDEO
+                l > 0 && (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+                          clip.type == com.apexstudio.app.domain.model.ClipType.IMAGE) ->
+                    com.apexstudio.app.domain.model.ClipType.OVERLAY
+                else -> clip.type
+            }
+            clip.copy(trackIndex = l, type = newType)
+        }
+        s.copy(project = p.copy(clips = updated))
+    }
+    persistProject()
+}
+
+/**
+ * Explicitly add an empty overlay layer (V2..V10). The layer row appears
+ * immediately so the user can drop clips onto it; the layer is forgotten
+ * again once it holds clips (trackIndex becomes the source of truth).
+ * Returns the new layer index, or -1 when all 10 layers exist.
+ */
+fun EditorViewModel.addEmptyVideoLayer(): Int {
+    val used = _state.value.project?.clips
+        ?.filter {
+            it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            it.type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+            it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        }
+        ?.map { it.trackIndex.coerceIn(0, MAX_VIDEO_LAYERS - 1) }
+        ?.toSet() ?: emptySet()
+    val extras = _state.value.extraVideoLayers
+    val layer = (1 until MAX_VIDEO_LAYERS).firstOrNull { it !in used && it !in extras } ?: return -1
+    _state.update { it.copy(extraVideoLayers = it.extraVideoLayers + layer) }
+    return layer
+}

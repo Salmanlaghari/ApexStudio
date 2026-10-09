@@ -18,8 +18,12 @@ import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -32,6 +36,21 @@ class EditorViewModel(
 
     internal val _state = MutableStateFlow(EditorState())
     val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    /**
+     * 60fps-safe playhead position stream. The timeline playhead collects
+     * this flow directly so playback ticks do NOT recompose the whole
+     * timeline — only the playhead + ruler move. (Passing playerPositionMs
+     * as a plain Long recomposed all tracks/clips/thumbnails every tick.)
+     */
+    val playerPositionFlow: StateFlow<Long> = _state
+        .map { it.playerPositionMs }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 0L
+        )
 
     internal val _export = MutableStateFlow(ExportState())
     val export: StateFlow<ExportState> = _export.asStateFlow()

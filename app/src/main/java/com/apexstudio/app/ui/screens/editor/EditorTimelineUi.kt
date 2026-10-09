@@ -107,6 +107,14 @@ fun TimelineTrackArea(
     onOpenArFilters: () -> Unit = {},
     onOpenRoyaltyMusic: () -> Unit = {},
     onSelectAudioTrack: (String) -> Unit = {},
+    // Multi-layer video tracks (V1..V10) + 60fps playhead flow.
+    onToggleLayerVisibility: (Int) -> Unit = {},
+    onToggleLayerLock: (Int) -> Unit = {},
+    onDeleteLayer: (Int) -> Unit = {},
+    onAddLayer: () -> Unit = {},
+    onMoveClipToLayer: (String, Int) -> Unit = { _, _ -> },
+    onAddClipToLayer: (Int) -> Unit = {},
+    playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -185,6 +193,13 @@ fun TimelineTrackArea(
                 selectedLayer = SelectedLayerType.AUDIO_A1
                 onSelectAudioTrack(trackId)
             },
+            onToggleLayerVisibility = onToggleLayerVisibility,
+            onToggleLayerLock = onToggleLayerLock,
+            onDeleteLayer = onDeleteLayer,
+            onAddLayer = onAddLayer,
+            onMoveClipToLayer = onMoveClipToLayer,
+            onAddClipToLayer = onAddClipToLayer,
+            playerPositionFlow = playerPositionFlow,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)

@@ -3,20 +3,24 @@ package com.apexstudio.app.domain.model
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BlurCircular
+import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.ChangeCircle
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Grain
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lens
+import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Timelapse
 import androidx.compose.material.icons.filled.Transform
+import androidx.compose.material.icons.filled.Waves
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
@@ -194,6 +198,47 @@ object TransitionLibrary {
             icon = Icons.Default.BrightnessAuto,
             gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFB923C)),
             tag = "Vintage"
+        ),
+        // Pro Phase 1: new GPU shader transitions
+        TransitionDefinition(
+            id = "cross_blur",
+            name = "Cross Blur",
+            category = TransitionCategory.DISSOLVE,
+            description = "Dreamy defocus blend — both shots melt through a soft blur.",
+            badgeText = "BLUR",
+            icon = Icons.Default.BlurOn,
+            gradientColors = listOf(Color(0xFF7C9AB5), Color(0xFF3B5B7C)),
+            tag = "New"
+        ),
+        TransitionDefinition(
+            id = "doorway",
+            name = "Doorway",
+            category = TransitionCategory.MOTION,
+            description = "3D doorway swing — the outgoing shot opens like a door onto the next scene.",
+            badgeText = "DOOR",
+            icon = Icons.Default.MeetingRoom,
+            gradientColors = listOf(Color(0xFF8B5CF6), Color(0xFF4C1D95)),
+            tag = "New"
+        ),
+        TransitionDefinition(
+            id = "pixelize",
+            name = "Pixelize",
+            category = TransitionCategory.EFFECTS,
+            description = "Retro mosaic dissolve — the frame breaks into pixels and reforms.",
+            badgeText = "PIXEL",
+            icon = Icons.Default.GridOn,
+            gradientColors = listOf(Color(0xFF22D3EE), Color(0xFF0E7490)),
+            tag = "New"
+        ),
+        TransitionDefinition(
+            id = "crosswarp",
+            name = "Cross Warp",
+            category = TransitionCategory.EFFECTS,
+            description = "Warp-speed sweep — both shots bow and rush past each other.",
+            badgeText = "WARP",
+            icon = Icons.Default.Waves,
+            gradientColors = listOf(Color(0xFFF472B6), Color(0xFF7C3AED)),
+            tag = "New"
         )
     )
 

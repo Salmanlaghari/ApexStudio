@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
 
 // === 1. TOP APP BAR ===
+// COMPACT (Pro Phase 1): slim 40dp bar — small single-line title + small
+// Export button so the video preview gets maximum full view area.
 @Composable
 fun TopAppBarSection(
     canUndo: Boolean = false,
@@ -43,73 +45,53 @@ fun TopAppBarSection(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .padding(horizontal = 12.dp),
+            .height(40.dp)
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Hamburger menu + Two-line title
+        // Left: back + compact single-line title
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Menu,
                 contentDescription = "Menu",
                 tint = Color.White,
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(20.dp)
                     .clickable(onClick = onBack)
             )
 
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Apex",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                    Text(
-                        text = "Studio",
-                        color = Color(0xFF8B5CF6),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-                Text(
-                    text = "Pro Video Editor",
-                    color = Color(0xFF9CA3AF),
-                    fontWeight = FontWeight.Normal,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    softWrap = false
-                )
-            }
+            Text(
+                text = "ApexStudio",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                maxLines = 1,
+                softWrap = false
+            )
         }
 
-        // Right side: Fit/Cover toggle + Fullscreen + Resolution dropdown + Export button
+        // Right side: compact controls + small Export button
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             // Fit / Cover Mode Toggle Button
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(7.dp))
                     .background(Color(0xFF1B1B26))
-                    .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
                     .clickable(onClick = onToggleCoverMode)
-                    .padding(horizontal = 7.dp, vertical = 5.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = if (isCoverMode) "COVER" else "FIT",
                     color = Color(0xFFD1D5DB),
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -121,13 +103,13 @@ fun TopAppBarSection(
                     .background(Color(0xFF1B1B26))
                     .border(1.dp, Color(0xFF2E2E40), CircleShape)
                     .clickable(onClick = onFullscreenToggle)
-                    .padding(6.dp)
+                    .padding(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Fullscreen,
                     contentDescription = "Fullscreen",
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
 
@@ -135,11 +117,11 @@ fun TopAppBarSection(
             Box {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(7.dp))
                         .background(Color(0xFF1B1B26))
-                        .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
                         .clickable { showResolutionDropdown = true }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .padding(horizontal = 7.dp, vertical = 4.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -149,13 +131,13 @@ fun TopAppBarSection(
                             text = resolution,
                             color = Color(0xFFD1D5DB),
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp
+                            fontSize = 10.sp
                         )
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Resolution",
                             tint = Color(0xFF9CA3AF),
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }
@@ -183,33 +165,33 @@ fun TopAppBarSection(
                 }
             }
 
-            // Prominent Gradient Export Button
+            // Compact Export Button
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(
                         Brush.horizontalGradient(
                             listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
                         )
                     )
                     .clickable(onClick = onExport)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Upload,
                         contentDescription = "Export",
                         tint = Color.White,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                     Text(
                         text = "Export",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                         softWrap = false
                     )

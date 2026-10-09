@@ -29,7 +29,10 @@ fun EditorViewModel.updateExport(upd: (ExportSettings) -> ExportSettings) {
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
     fps: Int = _export.value.settings.frameRate,
-    quality: String = _export.value.settings.quality.label.lowercase()
+    quality: String = _export.value.settings.quality.label.lowercase(),
+    // Pro Phase 1: aspect ratio + bitrate flow from ExportSettings
+    aspectRatio: String = _export.value.settings.aspectRatio,
+    bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     val s = _state.value
     val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
@@ -90,6 +93,8 @@ fun EditorViewModel.startExport(
             resolution = resolution,
             fps = fps,
             quality = quality,
+            aspectRatio = aspectRatio,
+            bitrateMbps = bitrateMbps,
             filterPreset = filterPreset,
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,

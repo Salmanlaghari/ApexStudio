@@ -741,6 +741,88 @@ private fun TransitionLivePreview(
                     )
                 }
 
+                "cross_blur" -> {
+                    // Defocus blend: crossfade + horizontal streaks suggesting blur
+                    drawClipA(alpha = 1f - p)
+                    drawClipB(alpha = p)
+                    val blurAmt = kotlin.math.sin(p * PI.toFloat())
+                    if (blurAmt > 0.05f) {
+                        for (i in 0 until 7) {
+                            val y = h * (i + 1) / 8f
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.08f * blurAmt),
+                                start = Offset(0f, y),
+                                end = Offset(w, y),
+                                strokeWidth = 2f + 6f * blurAmt
+                            )
+                        }
+                    }
+                }
+
+                "doorway" -> {
+                    // B pushes in from behind, A shrinks toward center
+                    val openAmt = p.coerceIn(0f, 1f)
+                    val bScale = 1.3f - 0.3f * openAmt
+                    val bw = w * bScale
+                    val bh = h * bScale
+                    drawClipB(
+                        topLeft = Offset((w - bw) / 2f, (h - bh) / 2f),
+                        size = Size(bw, bh)
+                    )
+                    val aScale = (1f - openAmt * 0.94f).coerceAtLeast(0.02f)
+                    val aw = w * aScale
+                    val ah = h * aScale
+                    clipRect(left = 0f, top = 0f, right = w, bottom = h) {
+                        drawClipA(
+                            alpha = 1f - openAmt * openAmt,
+                            topLeft = Offset((w - aw) / 2f, (h - ah) / 2f),
+                            size = Size(aw, ah)
+                        )
+                    }
+                }
+
+                "pixelize" -> {
+                    // Mosaic: draw A/B then overlay a growing grid
+                    if (p < 0.5f) drawClipA() else drawClipB()
+                    val cells = (3 + (1f - kotlin.math.abs(p - 0.5f) * 2f) * 9).toInt()
+                    val cw = w / cells
+                    val ch = h / cells
+                    for (gx in 0 until cells) {
+                        drawLine(
+                            color = Color.Black.copy(alpha = 0.25f),
+                            start = Offset(gx * cw, 0f),
+                            end = Offset(gx * cw, h),
+                            strokeWidth = 1f
+                        )
+                    }
+                    for (gy in 0 until cells) {
+                        drawLine(
+                            color = Color.Black.copy(alpha = 0.25f),
+                            start = Offset(0f, gy * ch),
+                            end = Offset(w, gy * ch),
+                            strokeWidth = 1f
+                        )
+                    }
+                }
+
+                "crosswarp" -> {
+                    // Warp sweep: A slides right bowing, B enters from left
+                    val bow = kotlin.math.sin(p * PI.toFloat()) * h * 0.08f
+                    val sweep = w * p
+                    clipRect(left = 0f, top = 0f, right = w, bottom = h) {
+                        drawClipA(topLeft = Offset(sweep * 0.9f, bow * (1f - p)), size = Size(w, h))
+                        drawClipB(topLeft = Offset(-w * (1f - p) * 0.9f, -bow * p), size = Size(w, h))
+                    }
+                    // warp seam glow
+                    val seamX = w * (1f - p)
+                    drawLine(
+                        color = Color(0xFFF472B6).copy(alpha = 0.5f * kotlin.math.sin(p * PI.toFloat())),
+                        start = Offset(seamX, 0f),
+                        end = Offset(seamX, h),
+                        strokeWidth = 4f
+                    )
+                }
+
                 else -> {
                     // Default cut
                     if (p < 0.5f) drawClipA()

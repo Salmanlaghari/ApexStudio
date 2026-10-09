@@ -90,6 +90,11 @@ class TransitionGlEffect(
                     TransitionEngine.Companion.TransitionType.FADE_BLACK -> 5
                     TransitionEngine.Companion.TransitionType.FADE_WHITE -> 6
                     TransitionEngine.Companion.TransitionType.LIGHT_LEAK -> 7
+                    // Pro Phase 1: new shader transitions
+                    TransitionEngine.Companion.TransitionType.CROSS_BLUR -> 8
+                    TransitionEngine.Companion.TransitionType.DOORWAY -> 9
+                    TransitionEngine.Companion.TransitionType.PIXELIZE -> 10
+                    TransitionEngine.Companion.TransitionType.CROSSWARP -> 11
                 }
                 glProgram.setFloatUniform("uType", typeCode.toFloat())
                 glProgram.bindAttributesAndUniforms()
@@ -166,11 +171,44 @@ class TransitionGlEffect(
                         vec3 white = vec3(1.0, 1.0, 1.0);
                         float flash = sin(p * 3.14159265);
                         gl_FragColor = vec4(mix(col.rgb, white, flash), col.a);
-                    } else {
+                    } else if (uType < 7.5) {
                         // Light leak
                         float flare = sin(p * 3.14159265);
                         vec3 flareCol = vec3(1.0, 0.75, 0.4) * flare * 0.8;
                         gl_FragColor = vec4(col.rgb + flareCol, col.a);
+                    } else if (uType < 8.5) {
+                        // Cross blur (single-texture): defocus peaks mid-transition
+                        float blurAmt = sin(p * 3.14159265) * 0.02;
+                        vec4 bAcc = vec4(0.0);
+                        bAcc += texture2D(uTexSampler, uv + vec2(blurAmt, 0.0));
+                        bAcc += texture2D(uTexSampler, uv - vec2(blurAmt, 0.0));
+                        bAcc += texture2D(uTexSampler, uv + vec2(0.0, blurAmt));
+                        bAcc += texture2D(uTexSampler, uv - vec2(0.0, blurAmt));
+                        bAcc += texture2D(uTexSampler, uv);
+                        gl_FragColor = bAcc / 5.0;
+                    } else if (uType < 9.5) {
+                        // Doorway (single-texture): frame shrinks toward center
+                        float openAmt = smoothstep(0.0, 1.0, p);
+                        float dScale = max(1.0 - openAmt * 0.9, 0.05);
+                        vec2 dUv = (uv - vec2(0.5)) / dScale + vec2(0.5);
+                        vec4 dCol = texture2D(uTexSampler, clamp(dUv, 0.0, 1.0));
+                        dCol.rgb *= mix(1.0, 0.5, openAmt);
+                        gl_FragColor = dCol;
+                    } else if (uType < 10.5) {
+                        // Pixelize (single-texture): mosaic peaks mid-transition
+                        float cells = mix(120.0, 12.0, sin(p * 3.14159265));
+                        vec2 grid = vec2(cells, cells * 9.0 / 16.0);
+                        vec2 pUv = (floor(uv * grid) + 0.5) / grid;
+                        gl_FragColor = texture2D(uTexSampler, clamp(pUv, 0.0, 1.0));
+                    } else {
+                        // Crosswarp (single-texture): bow + horizontal sweep
+                        float bow = sin(p * 3.14159265) * 0.1 * (uv.y - 0.5) * 2.0;
+                        vec2 wUv = uv + vec2(bow + p * 0.2, 0.0);
+                        vec4 wCol = texture2D(uTexSampler, wUv);
+                        if (wUv.x < 0.0 || wUv.x > 1.0) {
+                            wCol = vec4(0.0, 0.0, 0.0, 1.0);
+                        }
+                        gl_FragColor = wCol;
                     }
                 }
             """.trimIndent()

@@ -135,6 +135,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         // that no timeline lane renders.
         val asOverlay = s.pendingAddAsOverlay
         val asAudio = s.pendingAddAsAudio
+        val targetLayer = s.pendingAddToLayer?.coerceIn(1, MAX_VIDEO_LAYERS - 1)
         if (asAudio && !replace) {
             mediaList.forEach { meta ->
                 val uri = if (context != null) {
@@ -166,7 +167,13 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             // entry point, re-tag the clip as OVERLAY + trackIndex 1
             // and register it as the active overlay. A new overlay
             // replaces any prior one (single-overlay v1 limit).
-            if (asOverlay && created != null) {
+            // Multi-layer: route to the requested overlay layer (1..9).
+            if (targetLayer != null && created != null) {
+                created.copy(
+                    type = ClipType.OVERLAY,
+                    trackIndex = targetLayer
+                )
+            } else if (asOverlay && created != null) {
                 created.copy(
                     type = ClipType.OVERLAY,
                     trackIndex = 1
@@ -195,17 +202,22 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 // Phase D: register the freshly added overlay so the
                 // preview layer starts rendering it immediately, and
                 // select it on the PiP canvas so its edit handles show.
-                overlayClipId = if (asOverlay) {
+                // Multi-layer: a clip routed to a specific layer also
+                // registers as the active overlay for instant preview.
+                overlayClipId = if (asOverlay || targetLayer != null) {
                     newClips.firstOrNull()?.id ?: it.overlayClipId
                 } else it.overlayClipId,
-                selectedOverlayClipId = if (asOverlay) {
+                selectedOverlayClipId = if (asOverlay || targetLayer != null) {
                     newClips.firstOrNull()?.id ?: it.selectedOverlayClipId
                 } else it.selectedOverlayClipId,
-                overlayTransform = if (asOverlay) {
+                overlayTransform = if (asOverlay || targetLayer != null) {
                     com.apexstudio.app.presentation.state.OverlayTransform.Identity
                 } else it.overlayTransform,
                 pendingAddAsOverlay = false,
-                pendingAddAsAudio = false
+                pendingAddAsAudio = false,
+                pendingAddToLayer = null,
+                // The layer now holds clips: drop it from the empty-layer set.
+                extraVideoLayers = if (targetLayer != null) it.extraVideoLayers - targetLayer else it.extraVideoLayers
             )
         }
         persistProject()

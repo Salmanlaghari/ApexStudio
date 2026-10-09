@@ -46,8 +46,13 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Transform
@@ -107,8 +112,10 @@ import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -165,13 +172,47 @@ fun VideoTimeline(
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    // Multi-layer video tracks (CapCut-style, up to 10). Layer 0 = main (V1),
+    // layers 1..9 = overlay layers (V2..V10) composited PiP above the main.
+    hiddenVideoLayers: Set<Int> = emptySet(),
+    lockedVideoLayers: Set<Int> = emptySet(),
+    // Explicitly-added empty layers (rendered as empty rows).
+    extraVideoLayers: Set<Int> = emptySet(),
+    onToggleLayerVisibility: (Int) -> Unit = {},
+    onToggleLayerLock: (Int) -> Unit = {},
+    onDeleteLayer: (Int) -> Unit = {},
+    onAddLayer: () -> Unit = {},
+    onMoveClipToLayer: (String, Int) -> Unit = { _, _ -> },
+    /** User tapped "+ Add clip" on overlay layer [layer]: arm the picker routing, then open it. */
+    onAddClipToLayer: (Int) -> Unit = {},
+    /**
+     * 60fps-safe playhead stream. When provided, the playhead + ruler
+     * collect it in isolated composables so playback ticks do NOT
+     * recompose the whole timeline. Falls back to [playheadMs] when null.
+     */
+    playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
-    val safePlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
+    // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
+    // (tiny composable). Everything else uses a 10Hz-sampled snapshot so
+    // playback ticks don't recompose tracks/clips/thumbnails every frame.
+    var uiPlayheadMs by remember { mutableStateOf(playheadMs.coerceIn(0L, safeDurationMs)) }
+    LaunchedEffect(playerPositionFlow) {
+        val flow = playerPositionFlow
+        if (flow != null) {
+            flow.sample(100).collect { uiPlayheadMs = it.coerceIn(0L, safeDurationMs) }
+        }
+    }
+    // Keep the snapshot in sync for scrubbing (non-flow path / user seeks).
+    LaunchedEffect(playheadMs) {
+        if (playerPositionFlow == null) uiPlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
+        else if (kotlin.math.abs(playheadMs - uiPlayheadMs) > 500L) uiPlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
+    }
+    val safePlayheadMs = uiPlayheadMs
     val effectiveZoom = timelineZoom.coerceIn(0.5f, 10.0f)
 
     // Scaling: dp per second based on zoom factor (scales up to 540dp/sec for frame-level editing)
@@ -197,23 +238,45 @@ fun VideoTimeline(
     )
     val timelineWidthPx = with(density) { timelineWidthDp.toPx() }
 
-    // Auto-scroll when playing
+    // Auto-scroll when playing — edge-triggered (not every tick) so it never
+    // fights the user's finger. Uses instant scrollTo: animateScrollTo on
+    // every playhead update caused visible stutter during playback.
     LaunchedEffect(isPlaying, safePlayheadMs) {
         if (isPlaying) {
             val playheadX = safePlayheadMs * msToDp
             val playheadPx = with(density) { playheadX.dp.toPx() }.roundToInt()
             val viewportWidth = scrollState.viewportSize
-            val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
-            if (kotlin.math.abs(scrollState.value - targetScroll) > 120) {
-                scrollState.animateScrollTo(targetScroll)
+            val edge = (viewportWidth * 0.85f).toInt()
+            // Only recenter when the playhead is about to leave the viewport.
+            if (playheadPx > scrollState.value + edge || playheadPx < scrollState.value) {
+                val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
+                scrollState.scrollTo(targetScroll)
             }
         }
     }
 
     // Drag-and-drop state for video clips
-    // V1 lane: main video clips + photo (IMAGE) clips share the filmstrip
-    // lane (photo clips previously rendered nowhere -> empty V1 track).
-    val videoClips = remember(clips) { clips.filter { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE } }
+    // V1 lane: main video clips + photo (IMAGE) clips on layer 0 share the
+    // filmstrip lane (photo clips previously rendered nowhere -> empty V1
+    // track). Overlay layers (1..9) render in their own rows below.
+    val videoClips = remember(clips) {
+        clips.filter {
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
+        }
+    }
+    // Multi-layer video tracks: distinct trackIndex values across all video
+    // clips (0..9). Layer 0 is always present (main V1); overlay layers
+    // 1..9 appear when they hold clips. Hidden layers still render a muted
+    // placeholder row so the layer structure stays visible.
+    val videoLayers = remember(clips, extraVideoLayers) {
+        val used = clips.filter {
+            it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY
+        }.map { it.trackIndex.coerceIn(0, 9) }.toSortedSet()
+        // Extra (empty) layers that still hold clips merge into `used`.
+        ((used + 0 + extraVideoLayers).toSortedSet()).toList().take(10)
+    }
+    val overlayLayerHeight = 58.dp
+    val videoLayersHeight = v1Height + overlayLayerHeight * videoLayers.count { it > 0 }
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -223,7 +286,7 @@ fun VideoTimeline(
 
     // Tracks Mute / Active states
     var isAudioMuted by remember { mutableStateOf(false) }
-    var isOverlayVisible by remember { mutableStateOf(true) }
+    // (Per-layer visibility replaced the old single overlay toggle.)
 
     // Multi-select state (pro timeline): select several clips, then move/delete together.
     var multiSelectMode by remember { mutableStateOf(false) }
@@ -250,11 +313,19 @@ fun VideoTimeline(
     // keeps item 5's exact mockup match (228dp total).
     val a1ExtraDp = ((audioTracks.size - 1).coerceAtLeast(0) * 34).coerceAtMost(102)
     val a1Height = (44 + a1ExtraDp).dp
+    // Dynamic timeline height: ruler + V1 + N overlay layers + optional text
+    // lane + FX + A1, with 10dp spacing between rows (matches spacedBy).
+    val overlayLayerCount = videoLayers.count { it in 1..9 }
+    val hasTextLane = textOverlays.isNotEmpty()
+    val timelineTotalDp = 30 + 44 +
+        overlayLayerCount * (58 + 10) +
+        (if (hasTextLane) (32 + 10) else 0) +
+        36 + 44 + a1ExtraDp + 10 * 4
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height((228 + a1ExtraDp).dp)
+            .height(timelineTotalDp.dp)
             .background(Color(0xFF090B10))
             .border(1.dp, Color(0xFF171B26))
     ) {
@@ -263,9 +334,17 @@ fun VideoTimeline(
             zoomFactor = activeZoomDisplay,
             rulerHeight = rulerHeight,
             v1Height = v1Height,
-            v2Height = v2Height,
+            overlayLayerHeight = overlayLayerHeight,
+            videoLayers = videoLayers,
+            hiddenVideoLayers = hiddenVideoLayers,
+            lockedVideoLayers = lockedVideoLayers,
+            hasTextLane = hasTextLane,
             fxHeight = fxHeight,
             a1Height = a1Height,
+            onToggleLayerVisibility = onToggleLayerVisibility,
+            onToggleLayerLock = onToggleLayerLock,
+            onDeleteLayer = onDeleteLayer,
+            onAddLayer = onAddLayer,
             onZoomIn = {
                 val next = (activeZoomDisplay + 0.5f).coerceAtMost(10.0f)
                 activeZoomDisplay = next
@@ -364,7 +443,7 @@ fun VideoTimeline(
                             .height(rulerHeight)
                     )
 
-                    // TRACK 1: V1 (Main Video + Photo Filmstrip Track)
+                    // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
                     TimelineVideoTrack(
                         videoClips = videoClips,
                         selectedClipId = selectedClipId,
@@ -470,26 +549,44 @@ fun VideoTimeline(
                             .height(v1Height)
                     )
 
-                    // TRACK 2: V2 (Overlay / PIP / Text / Stickers)
-                    TimelineOverlayTrack(
-                        clips = clips.filter { it.type == ClipType.OVERLAY },
+                    // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
+                    // Each used layer 1..9 gets its own PiP row, absolutely
+                    // positioned by timelineOffsetMs, with per-layer show/hide
+                    // + lock driven from the sidebar. Hidden layers render a
+                    // muted placeholder so the structure stays visible.
+                    videoLayers.filter { it in 1..9 }.forEach { layer ->
+                        val layerClips = remember(clips, layer) {
+                            clips.filter {
+                                it.trackIndex == layer &&
+                                    (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
+                            }
+                        }
+                        TimelineVideoLayerRow(
+                            layerIndex = layer,
+                            clips = layerClips,
+                            thumbnailsByClip = thumbnailsByClip,
+                            selectedClipId = selectedClipId,
+                            msToDp = msToDp,
+                            isHidden = layer in hiddenVideoLayers,
+                            isLocked = layer in lockedVideoLayers,
+                            onSelectClip = onSelectClip,
+                            onAddClip = { onAddClipToLayer(layer) },
+                            onMoveClipOffset = onMoveClipOffset,
+                            onDeleteClip = onDeleteClip,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(overlayLayerHeight)
+                        )
+                    }
+
+                    // Text overlays lane (kept below the video layers).
+                    TimelineTextLane(
                         textOverlays = textOverlays,
-                        stickers = stickers,
-                        selectedClipId = selectedClipId,
-                        msToDp = msToDp,
-                        isVisible = isOverlayVisible,
-                        onSelectClip = onSelectClip,
-                        onAddOverlay = { onAddMedia(ClipType.OVERLAY) },
-                        onMoveClipOffset = onMoveClipOffset,
-                        onSeekToKeyframe = onScrub,
-                        onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
-                        onMoveKeyframe = onMoveKeyframe,
-                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
-                        onMoveTextKeyframe = onMoveTextKeyframe,
                         allClips = clips,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(v2Height)
+                        msToDp = msToDp,
+                        onSeekToKeyframe = onScrub,
+                        onMoveTextKeyframe = onMoveTextKeyframe,
+                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead
                     )
 
                     // TRACK 3: FX / Shader Track
@@ -528,11 +625,12 @@ fun VideoTimeline(
                 }
 
                 // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
-                val playheadXDp = (safePlayheadMs * msToDp).dp + 16.dp
-                TimelinePlayhead(
-                    playheadX = playheadXDp,
-                    playheadMs = safePlayheadMs,
-                    onScrub = onScrub,
+                // Isolated: collects the raw position flow directly so the
+                // playhead glides at full rate without recomposing tracks.
+                TimelinePlayheadOverlay(
+                    playerPositionFlow = playerPositionFlow,
+                    fallbackMs = safePlayheadMs,
+                    durationMs = safeDurationMs,
                     msToDp = msToDp,
                     isSnapped = isPlayheadSnapped
                 )
@@ -655,6 +753,17 @@ fun VideoTimeline(
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSelectAudioTrack: (String) -> Unit = {},
+    // Multi-layer controls (wired by the editor screen).
+    hiddenVideoLayers: Set<Int> = state.hiddenVideoLayers,
+    lockedVideoLayers: Set<Int> = state.lockedVideoLayers,
+    extraVideoLayers: Set<Int> = state.extraVideoLayers,
+    onToggleLayerVisibility: (Int) -> Unit = {},
+    onToggleLayerLock: (Int) -> Unit = {},
+    onDeleteLayer: (Int) -> Unit = {},
+    onAddLayer: () -> Unit = {},
+    onMoveClipToLayer: (String, Int) -> Unit = { _, _ -> },
+    onAddClipToLayer: (Int) -> Unit = {},
+    playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
@@ -695,7 +804,17 @@ fun VideoTimeline(
         onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
         onMoveTextKeyframe = onMoveTextKeyframe,
         selectedAudioTrackId = state.selectedAudioTrackId,
-        onSelectAudioTrack = onSelectAudioTrack
+        onSelectAudioTrack = onSelectAudioTrack,
+        hiddenVideoLayers = hiddenVideoLayers,
+        lockedVideoLayers = lockedVideoLayers,
+        extraVideoLayers = extraVideoLayers,
+        onToggleLayerVisibility = onToggleLayerVisibility,
+        onToggleLayerLock = onToggleLayerLock,
+        onDeleteLayer = onDeleteLayer,
+        onAddLayer = onAddLayer,
+        onMoveClipToLayer = onMoveClipToLayer,
+        onAddClipToLayer = onAddClipToLayer,
+        playerPositionFlow = playerPositionFlow
     )
 }
 
@@ -713,9 +832,17 @@ private fun TimelineLeftSidebar(
     zoomFactor: Float,
     rulerHeight: Dp,
     v1Height: Dp,
-    v2Height: Dp,
+    overlayLayerHeight: Dp,
+    videoLayers: List<Int>,
+    hiddenVideoLayers: Set<Int>,
+    lockedVideoLayers: Set<Int>,
+    hasTextLane: Boolean,
     fxHeight: Dp,
     a1Height: Dp,
+    onToggleLayerVisibility: (Int) -> Unit,
+    onToggleLayerLock: (Int) -> Unit,
+    onDeleteLayer: (Int) -> Unit,
+    onAddLayer: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetZoom: () -> Unit = {},
@@ -723,11 +850,11 @@ private fun TimelineLeftSidebar(
 ) {
     Column(
         modifier = modifier
-            .width(60.dp)
+            .width(64.dp)
             .fillMaxHeight()
             .background(Color(0xFF0C0E14))
             .border(width = 1.dp, color = Color(0xFF1E2230))
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -773,10 +900,117 @@ private fun TimelineLeftSidebar(
             }
         }
 
+        // V1 main layer pill (layer 0 can never be hidden/locked/deleted).
         TrackPill(label = "V1", accent = ApexPalette.NeonCyan, height = v1Height)
-        TrackPill(label = "V2", accent = ApexPalette.NeonPurple, height = v2Height)
+
+        // Overlay layer pills V2..V10 with eye / lock / delete controls.
+        videoLayers.filter { it in 1..9 }.forEach { layer ->
+            VideoLayerPill(
+                layerIndex = layer,
+                height = overlayLayerHeight,
+                isHidden = layer in hiddenVideoLayers,
+                isLocked = layer in lockedVideoLayers,
+                onToggleVisibility = { onToggleLayerVisibility(layer) },
+                onToggleLock = { onToggleLayerLock(layer) },
+                onDelete = { onDeleteLayer(layer) }
+            )
+        }
+
+        // Add-layer button (up to 10 layers total).
+        if (videoLayers.size < 10) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF141824))
+                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable(onClick = onAddLayer),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add layer", tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
+                    Text("V${videoLayers.size + 1}", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        if (hasTextLane) {
+            TrackPill(label = "TXT", accent = ApexPalette.NeonPink, height = 32.dp)
+        }
         TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight)
         TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height)
+    }
+}
+
+/**
+ * Overlay layer pill (V2..V10) with show/hide (eye), lock and delete.
+ */
+@Composable
+private fun VideoLayerPill(
+    layerIndex: Int,
+    height: Dp,
+    isHidden: Boolean,
+    isLocked: Boolean,
+    onToggleVisibility: () -> Unit,
+    onToggleLock: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 44.dp, height = 26.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (isHidden) Color(0xFF2A2F3A) else ApexPalette.NeonPurple)
+                .alpha(if (isHidden) 0.6f else 1f),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "V${layerIndex + 1}",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                contentDescription = if (isHidden) "Show layer" else "Hide layer",
+                tint = if (isHidden) Color(0xFF64748B) else Color.White,
+                modifier = Modifier
+                    .size(14.dp)
+                    .clickable(onClick = onToggleVisibility)
+            )
+            Icon(
+                if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                contentDescription = if (isLocked) "Unlock layer" else "Lock layer",
+                tint = if (isLocked) Color(0xFFFBBF24) else Color(0xFF94A3B8),
+                modifier = Modifier
+                    .size(14.dp)
+                    .clickable(onClick = onToggleLock)
+            )
+            Icon(
+                Icons.Default.DeleteOutline,
+                contentDescription = "Delete layer",
+                tint = Color(0xFFF87171),
+                modifier = Modifier
+                    .size(14.dp)
+                    .clickable(onClick = onDelete)
+            )
+        }
     }
 }
 
@@ -976,6 +1210,278 @@ private fun TimelineTimeRuler(
  * - Lane 2: text overlays positioned by startMs, each with its own keyframe lane.
  */
 @Composable
+/**
+ * One overlay video layer row (V2..V10, CapCut-style multi-layer).
+ *
+ * Clips are absolutely positioned by [MediaClip.timelineOffsetMs] and render
+ * as PiP blocks with a filmstrip thumbnail strip, matching the main V1
+ * track's look. Locked layers ignore gestures; hidden layers show a muted
+ * placeholder row.
+ */
+@Composable
+private fun TimelineVideoLayerRow(
+    layerIndex: Int,
+    clips: List<MediaClip>,
+    thumbnailsByClip: Map<String, Map<Int, Bitmap>>,
+    selectedClipId: String?,
+    msToDp: Float,
+    isHidden: Boolean,
+    isLocked: Boolean,
+    onSelectClip: (String) -> Unit,
+    onAddClip: () -> Unit,
+    onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit,
+    onDeleteClip: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isHidden) Color(0xFF0B0D14) else Color(0xFF0F1420))
+            .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp, vertical = 3.dp)
+    ) {
+        if (isHidden) {
+            Text(
+                "Layer V${layerIndex + 1} hidden",
+                color = Color(0xFF475569),
+                fontSize = 10.sp,
+                modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+            )
+            return@Column
+        }
+
+        Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
+            clips.forEach { clip ->
+                val isSelected = clip.id == selectedClipId
+                val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+                val clipWidthDp = maxOf((clipDur * msToDp).dp, 56.dp)
+                val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
+                var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
+                var isDragging by remember(clip.id) { mutableStateOf(false) }
+                val clipThumbs = thumbnailsByClip[clip.id] ?: emptyMap()
+
+                Column(
+                    modifier = Modifier
+                        .offset(x = clipOffsetDp)
+                        .width(clipWidthDp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(clipWidthDp)
+                            .height(32.dp)
+                            .graphicsLayer { translationX = dragDx }
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(
+                                if (isSelected) Color(0xFF0B3B48)
+                                else if (isDragging) Color(0xFF134A5C)
+                                else Color(0xFF0C2B38)
+                            )
+                            .border(
+                                width = if (isSelected || isDragging) 1.5.dp else 1.dp,
+                                color = if (isSelected) Color.White
+                                else if (isDragging) ApexPalette.NeonCyan
+                                else ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(5.dp)
+                            )
+                            .pointerInput(clip.id, isLocked) {
+                                if (!isLocked) {
+                                    detectDragGestures(
+                                        onDragStart = { isDragging = true },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragDx += dragAmount.x
+                                        },
+                                        onDragEnd = {
+                                            val deltaMs = (dragDx / msToDp).toLong()
+                                            val newOffset =
+                                                (clip.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+                                            dragDx = 0f
+                                            isDragging = false
+                                            if (newOffset != clip.timelineOffsetMs) {
+                                                onMoveClipOffset(clip.id, newOffset)
+                                            }
+                                        },
+                                        onDragCancel = { dragDx = 0f; isDragging = false }
+                                    )
+                                }
+                            }
+                            .clickable { onSelectClip(clip.id) }
+                    ) {
+                        // Filmstrip thumbnails inside the PiP block.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 6)
+                            for (sec in 0 until totalSec) {
+                                val frameBmp = clipThumbs[sec] ?: clipThumbs[0]
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Color(0xFF16202F))
+                                ) {
+                                    if (frameBmp != null) {
+                                        Image(
+                                            bitmap = frameBmp.asImageBitmap(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Clip name badge (bottom-left).
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                clip.name.ifEmpty { "V${layerIndex + 1}" },
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                maxLines = 1
+                            )
+                        }
+                        if (isLocked) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = "Locked",
+                                tint = Color(0xFFFBBF24),
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .size(10.dp)
+                            )
+                        }
+                    }
+
+                    // Keyframe diamond strip for this layer clip.
+                    KeyframeDiamondStrip(
+                        keyframes = clip.keyframes.keyframes,
+                        spanStartMs = clip.timelineOffsetMs,
+                        spanDurationMs = clipDur,
+                        stripWidthDp = clipWidthDp,
+                        msToDp = msToDp,
+                        onSeekToKeyframe = {},
+                        onMoveKeyframe = { _, _ -> },
+                        onAddAtPlayhead = {},
+                        accentColor = ApexPalette.NeonCyan,
+                        modifier = Modifier.height(10.dp)
+                    )
+                }
+            }
+
+            if (clips.isEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onAddClip)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .align(Alignment.CenterStart),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = ApexPalette.NeonCyan,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        "+ Add clip (V${layerIndex + 1})",
+                        color = Color(0xFF67E8F9),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Text overlays lane — positioned by startMs, each with its own keyframe
+ * diamond strip. Rendered below the video layers (was Lane 2 of the old
+ * single V2 overlay track).
+ */
+@Composable
+private fun TimelineTextLane(
+    textOverlays: List<TextOverlay>,
+    allClips: List<MediaClip>,
+    msToDp: Float,
+    onSeekToKeyframe: (Long) -> Unit = {},
+    onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier
+) {
+    if (textOverlays.isEmpty()) return
+    Box(modifier = modifier.fillMaxWidth().height(32.dp)) {
+        textOverlays.forEach { textOverlay ->
+            val ownerClipId = allClips.firstOrNull { c -> c.textOverlays.any { it.id == textOverlay.id } }?.id
+            val ovStartMs = textOverlay.startMs.coerceAtLeast(0L)
+            val ovEndMs = if (textOverlay.endMs == Long.MAX_VALUE) ovStartMs + 3000L else textOverlay.endMs
+            val ovDur = (ovEndMs - ovStartMs).coerceAtLeast(500L)
+            val ovWidthDp = maxOf((ovDur * msToDp).dp, 40.dp)
+            val ovOffsetDp = (ovStartMs * msToDp).dp
+
+            Column(
+                modifier = Modifier
+                    .offset(x = ovOffsetDp)
+                    .width(ovWidthDp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(ovWidthDp)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF2A1538))
+                        .border(1.dp, ApexPalette.NeonPink.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Default.Title, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(11.dp))
+                        Text(
+                            textOverlay.text.ifEmpty { "Title" },
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+                KeyframeDiamondStrip(
+                    keyframes = textOverlay.keyframes.keyframes,
+                    spanStartMs = ovStartMs,
+                    spanDurationMs = ovDur,
+                    stripWidthDp = ovWidthDp,
+                    msToDp = msToDp,
+                    onSeekToKeyframe = onSeekToKeyframe,
+                    onMoveKeyframe = { kfId, newTimeMs ->
+                        if (ownerClipId != null) onMoveTextKeyframe(ownerClipId, textOverlay.id, kfId, newTimeMs)
+                    },
+                    onAddAtPlayhead = {
+                        if (ownerClipId != null) onToggleTextKeyframeAtPlayhead(ownerClipId, textOverlay.id)
+                    },
+                    accentColor = ApexPalette.NeonPink,
+                    modifier = Modifier.height(12.dp)
+                )
+            }
+        }
+    }
+}
+
 private fun TimelineOverlayTrack(
     clips: List<MediaClip>,
     textOverlays: List<TextOverlay>,
@@ -2044,6 +2550,36 @@ private fun TimelinePlayhead(
             drawPath(triangle, color = Color.White, style = Stroke(width = 1.5.dp.toPx()))
         }
     }
+}
+
+/**
+ * 60fps playhead overlay — collects the raw position flow in THIS tiny
+ * composable only, so the playhead glides smoothly during playback
+ * without recomposing the tracks, clips or thumbnails above.
+ */
+@Composable
+private fun TimelinePlayheadOverlay(
+    playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>?,
+    fallbackMs: Long,
+    durationMs: Long,
+    msToDp: Float,
+    isSnapped: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val liveMs = if (playerPositionFlow != null) {
+        playerPositionFlow.collectAsStateWithLifecycle().value
+    } else {
+        fallbackMs
+    }
+    val posMs = liveMs.coerceIn(0L, durationMs.coerceAtLeast(1L))
+    TimelinePlayhead(
+        playheadX = (posMs * msToDp).dp + 16.dp,
+        playheadMs = posMs,
+        onScrub = {},
+        msToDp = msToDp,
+        isSnapped = isSnapped,
+        modifier = modifier
+    )
 }
 
 /**

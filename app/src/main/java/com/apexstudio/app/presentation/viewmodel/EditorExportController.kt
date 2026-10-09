@@ -58,8 +58,10 @@ fun EditorViewModel.startExport(
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
     // Picture-in-Picture overlays: composite overlay clips in the export.
+    // Hidden video layers are skipped.
     val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
-        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
+                  it.trackIndex !in s.hiddenVideoLayers }
         .map { ov ->
             ExportEngine.PipOverlayConfig(
                 uri = ov.uri,
@@ -245,7 +247,8 @@ fun EditorViewModel.startPhotoExport(
             val s = _state.value
             val stickers = (s.project?.stickers ?: emptyList()) + clip.stickers
             val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
-                .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY }
+                .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
+                          it.trackIndex !in s.hiddenVideoLayers }
                 .map { ov ->
                     ExportEngine.PipOverlayConfig(
                         uri = ov.uri,

@@ -18,6 +18,17 @@ data class EditorState(
     val playerPositionMs: Long = 0L,
     val playerDurationMs: Long = 0L,
     val isPlayerReady: Boolean = false,
+    // Multi-layer video tracks (CapCut-style, up to 10):
+    // layer 0 = main video (V1), layers 1..9 = overlay layers (V2..V10).
+    // A clip's layer is its MediaClip.trackIndex (0..9).
+    // hiddenVideoLayers: layers not rendered in preview/export/timeline
+    // (eye toggle). lockedVideoLayers: layers whose clips can't be
+    // selected, dragged, trimmed or deleted until unlocked.
+    val hiddenVideoLayers: Set<Int> = emptySet(),
+    val lockedVideoLayers: Set<Int> = emptySet(),
+    // Layers explicitly added via "+ Add layer" that have no clips yet.
+    // Rendered as empty rows so the user can drop clips onto them.
+    val extraVideoLayers: Set<Int> = emptySet(),
     // Set to true while ExoPlayer is in STATE_BUFFERING. Drives the
     // "Loading…" spinner overlay in VideoPreviewSection so the user
     // sees feedback during the 1-3s startup / seek-while-paused gap
@@ -120,6 +131,10 @@ data class EditorState(
     // picker callback will route the result to the chosen lane.
     // Cleared after the picker returns.
     val pendingAddAsOverlay: Boolean = false,
+    // Multi-layer: when non-null, the next media picker result is routed
+    // to this video layer (1..9) as an OVERLAY clip. Cleared after the
+    // picker returns. Null = default routing (main V1 or overlay flag).
+    val pendingAddToLayer: Int? = null,
     // Phase E: same routing flag pattern as pendingAddAsOverlay but
     // for audio picks from the A1 lane "+ Add → Audio" entry. Cleared
     // after onMediaPicked consumes it.

@@ -278,6 +278,18 @@ fun FxPanelOverlay(
     }
 }
 
+/** Snap Camera Kit Lenses overlay (full-screen inside the editor). */
+@Composable
+fun LensesPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.lensesPanelOpen) return
+    // LensesScreen is self-contained (own ViewModel); embedding it as an
+    // overlay keeps the editor state alive underneath.
+    com.apexstudio.app.camerakit.LensesScreen(onBack = { vm.closeLensesPanel() })
+}
+
 /** Transmission templates bottom-sheet overlay. */
 @Composable
 fun TransmissionTemplatesOverlay(

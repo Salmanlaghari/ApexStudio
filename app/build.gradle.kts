@@ -40,6 +40,23 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
 
+    // Snap Camera Kit API token: read from the SNAP_CAMERA_KIT_TOKEN environment
+    // variable (injected in CI from the GitHub Actions secret of the same name),
+    // falling back to local.properties for local builds. Never hardcode the token.
+    val snapCameraKitToken: String = System.getenv("SNAP_CAMERA_KIT_TOKEN")
+      ?: rootProject.file("local.properties").takeIf { it.exists() }?.let { propsFile ->
+        Properties().also { props ->
+          propsFile.inputStream().use { props.load(it) }
+        }.getProperty("SNAP_CAMERA_KIT_TOKEN")
+      }
+      ?: ""
+    // Escape every character that is special inside a Java string literal so the
+    // token survives verbatim into the generated BuildConfig field.
+    // (In Java source only backslash and the quote need escaping; '$' is literal.)
+    val escapedToken = snapCameraKitToken
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+    buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"$escapedToken\"")
     // Royalty-free music library: free Jamendo API client ID (empty = offline mode).
     buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
@@ -129,6 +146,12 @@ dependencies {
   implementation("androidx.media3:media3-effect:1.5.0")
   implementation("androidx.media3:media3-session:1.5.0")
   implementation("androidx.media3:media3-datasource:1.5.0")
+
+  // Snap Camera Kit SDK (AR lenses) — https://github.com/Snapchat/camera-kit-android-sdk
+  val cameraKitVersion = "1.50.0"
+  implementation("com.snap.camerakit:camerakit:$cameraKitVersion")
+  implementation("com.snap.camerakit:camerakit-kotlin:$cameraKitVersion")
+  implementation("com.snap.camerakit:support-camerax:$cameraKitVersion")
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

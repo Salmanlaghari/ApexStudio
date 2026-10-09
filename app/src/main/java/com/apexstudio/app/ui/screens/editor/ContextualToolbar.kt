@@ -106,9 +106,11 @@ fun ContextualBottomToolbar(
     onEffects: () -> Unit = {},
     onStickers: () -> Unit = {},
     // Global tools: AR Face opens the native AR face-filter card carousel
-    // (tap a card → effect applies, no camera preview opens); Filters opens
+    // (tap a card → effect applies, no camera preview opens); Lenses opens
+    // the Snap Camera Kit live-camera lens browser; Filters opens
     // the GPU filter gallery directly.
     onArFace: () -> Unit = {},
+    onLenses: () -> Unit = {},
     onFilters: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
@@ -140,6 +142,7 @@ fun ContextualBottomToolbar(
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
+            CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
             CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust)
         )
         ToolbarSelectionKind.VIDEO -> listOf(
@@ -441,6 +444,7 @@ fun EditorBottomToolbarSection(
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
         onArFace = { vm.openArFilterPanel() },
+        onLenses = { vm.openLensesPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
         onReplace = {

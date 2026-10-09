@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ApexStudio Pro — Editor Redesign Mockup</title>
+<style>
+/* ============ APEXSTUDIO PRO — DESIGN MOCKUP ============ */
+:root{
+  --bg:#0b0b0e; --panel:#141419; --panel2:#1b1b22; --line:#26262e;
+  --txt:#f2f2f5; --muted:#9a9aa5; --dim:#6b6b76;
+  --acc:#ff4b4b; --acc-d:#e03333; --acc-glow:rgba(255,75,75,.35);
+  --gold:#f5b942; --ok:#3ddc84;
+  --r:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,Arial,sans-serif;
+  background:radial-gradient(1200px 800px at 20% -10%,#1a1420 0%,var(--bg) 55%) fixed,var(--bg);
+  color:var(--txt); min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 60px;
+}
+/* ---------- desktop header ---------- */
+.brandbar{width:100%;max-width:1060px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#ff4b4b,#a3122e);
+  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;color:#fff;
+  box-shadow:0 6px 22px var(--acc-glow)}
+.brandbar h1{font-size:22px;letter-spacing:.3px}
+.brandbar h1 span{color:var(--acc)}
+.brandbar .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.badges{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.badge{font-size:11.5px;font-weight:700;padding:7px 12px;border-radius:999px;border:1px solid var(--line);
+  background:var(--panel);color:var(--txt);display:flex;align-items:center;gap:6px}
+.badge.ok{border-color:rgba(61,220,132,.4);color:var(--ok)}
+.badge.acc{border-color:rgba(255,75,75,.45);color:#ff8a8a}
+/* ---------- layout ---------- */
+.stage{width:100%;max-width:1060px;display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.sidenav{width:210px;flex-shrink:0;position:sticky;top:20px}
+.sidenav h3{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);margin:0 0 10px 4px}
+.navbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--panel);
+  border:1px solid var(--line);color:var(--txt);padding:11px 13px;border-radius:12px;margin-bottom:8px;
+  font-size:13.5px;font-weight:600;cursor:pointer;transition:.15s}
+.navbtn:hover{border-color:var(--acc)}
+.navbtn.active{background:linear-gradient(135deg,rgba(255,75,75,.18),rgba(255,75,75,.06));border-color:var(--acc)}
+.navbtn .n{width:24px;height:24px;border-radius:8px;background:var(--panel2);display:flex;align-items:center;
+  justify-content:center;font-size:12px;color:var(--muted);flex-shrink:0}
+.navbtn.active .n{background:var(--acc);color:#fff}
+.sidenav .hint{font-size:12px;color:var(--dim);line-height:1.6;margin-top:14px;padding:0 4px}
+/* ---------- phone ---------- */
+.phone{width:390px;max-width:100%;height:min(844px,94vh);min-height:620px;background:#000;border-radius:48px;
+  border:1px solid #2c2c34;box-shadow:0 0 0 10px #101014,0 30px 80px rgba(0,0,0,.7),0 0 90px rgba(255,75,75,.07);
+  position:relative;overflow:hidden;flex-shrink:0}
+.notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:120px;height:28px;background:#000;
+  border-radius:16px;z-index:60;border:1px solid #1c1c22}
+.screen{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;overflow:hidden}
+.screen.active{display:flex}
+/* ---------- top bar ---------- */
+.topbar{display:flex;align-items:center;gap:10px;padding:52px 14px 10px;flex-shrink:0}
+.iconbtn{width:36px;height:36px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--txt);flex-shrink:0}
+.iconbtn svg{width:18px;height:18px}
+.proj{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resbadge{font-size:10.5px;font-weight:800;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  padding:5px 8px;border-radius:7px}
+.exportbtn{margin-left:auto;background:linear-gradient(135deg,#ff5a5a,#e03333);border:none;color:#fff;
+  font-weight:800;font-size:14px;padding:10px 20px;border-radius:12px;cursor:pointer;
+  box-shadow:0 4px 18px var(--acc-glow)}
+.exportbtn:active{transform:scale(.96)}
+/* ---------- preview ---------- */
+.previewwrap{padding:2px 14px 8px;flex-shrink:0}
+.preview{position:relative;width:100%;aspect-ratio:16/9;border-radius:var(--r);overflow:hidden;background:#000;
+  border:1px solid var(--line)}
+.scene{position:absolute;inset:0}
+.grad{position:absolute;inset:0;opacity:0;transition:opacity .25s}
+.grain{position:absolute;inset:0;opacity:.5;mix-blend-mode:overlay;
+  background-image:repeating-conic-gradient(#000 0 .0001turn,#fff .0002turn .0003turn);
+  background-size:170px 170px}
+.vignette{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 45%,transparent 55%,rgba(0,0,0,.55) 100%)}
+/* sample footage scenes (pure CSS) */
+.sc-rain{background:
+  radial-gradient(220px 120px at 70% 20%,rgba(160,190,230,.35),transparent 70%),
+  radial-gradient(300px 200px at 20% 80%,rgba(40,60,90,.6),transparent 70%),
+  linear-gradient(180deg,#2a3442 0%,#1a2230 55%,#0e141d 100%)}
+.sc-candle{background:
+  radial-gradient(90px 130px at 50% 42%,#fff8e0 0%,#ffd76e 22%,#ff9a3c 45%,transparent 72%),
+  radial-gradient(400px 300px at 50% 110%,#7a2c12 0%,transparent 70%),
+  linear-gradient(180deg,#050505 0%,#120a06 100%)}
+.sc-night{background:
+  radial-gradient(140px 90px at 78% 62%,rgba(255,190,90,.55),transparent 70%),
+  radial-gradient(100px 70px at 60% 70%,rgba(255,120,160,.4),transparent 70%),
+  radial-gradient(500px 300px at 50% 120%,#2b1b4d 0%,transparent 70%),
+  linear-gradient(180deg,#070a18 0%,#0d1030 60%,#05060f 100%)}
+.sc-sunset{background:
+  radial-gradient(300px 160px at 50% 78%,rgba(255,190,90,.8),transparent 70%),
+  linear-gradient(180deg,#3b1d5e 0%,#a83a6e 45%,#ff8a4b 75%,#2a1430 100%)}
+.sc-demo{background:
+  radial-gradient(200px 140px at 75% 25%,rgba(45,226,230,.7),transparent 70%),
+  radial-gradient(220px 160px at 20% 70%,rgba(255,75,110,.75),transparent 70%),
+  radial-gradient(160px 120px at 50% 45%,rgba(255,154,60,.8),transparent 70%),
+  linear-gradient(135deg,#7b2ff7,#2b1b4d)}
+.playov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.playov .pp{width:52px;height:52px;border-radius:50%;background:rgba(10,10,14,.55);backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center}
+.playov .pp svg{width:20px;height:20px;fill:#fff;margin-left:2px}
+.tcode{position:absolute;right:10px;bottom:8px;font-size:11px;font-weight:700;background:rgba(0,0,0,.6);
+  padding:4px 8px;border-radius:6px;color:#fff}
+.fxchip{position:absolute;left:10px;bottom:8px;font-size:10.5px;font-weight:800;background:rgba(255,75,75,.85);
+  padding:4px 9px;border-radius:999px;color:#fff;display:none;align-items:center;gap:5px}
+.fxchip.on{display:flex}
+/* ---------- timeline ---------- */
+.tl{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 0 4px;position:relative}
+.ruler{display:flex;margin-left:44px;height:18px;position:relative;border-bottom:1px solid var(--line)}
+.ruler span{flex:1;font-size:9px;color:var(--dim);border-left:1px solid var(--line);padding-left:3px}
+.track{display:flex;align-items:stretch;min-height:52px;border-bottom:1px solid rgba(38,38,46,.6);position:relative}
+.tlabel{width:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;
+  color:var(--dim);background:rgba(20,20,25,.7);border-right:1px solid var(--line)}
+.tlabel.acc{color:var(--acc)}
+.tlane{flex:1;position:relative;display:flex;gap:3px;padding:5px 8px 5px 6px;overflow:hidden}
+.clip{position:relative;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.12);flex-shrink:0;cursor:pointer}
+.clip.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.clip .dur{position:absolute;right:4px;bottom:3px;font-size:9px;font-weight:800;color:#fff;
+  background:rgba(0,0,0,.65);padding:2px 5px;border-radius:5px}
+.clip .tr{position:absolute;left:0;top:0;bottom:0;width:8px;background:linear-gradient(135deg,var(--acc),#ff9a3c);
+  clip-path:polygon(0 0,100% 50%,0 100%)}
+.chip{position:relative;border-radius:8px;border:1px dashed rgba(255,75,75,.55);background:rgba(255,75,75,.1);
+  display:flex;align-items:center;gap:6px;padding:0 10px;font-size:10.5px;font-weight:700;color:#ff9a9a;flex-shrink:0}
+.chip.blue{border-color:rgba(90,160,255,.5);background:rgba(90,160,255,.1);color:#9ac4ff}
+.txtclip{position:relative;border-radius:8px;background:rgba(245,185,66,.12);border:1px solid rgba(245,185,66,.4);
+  display:flex;align-items:center;padding:0 10px;font-size:10px;font-weight:700;color:var(--gold);flex-shrink:0;
+  white-space:nowrap;overflow:hidden}
+.wave{flex:1;display:flex;align-items:center;gap:2px;padding:6px 4px;position:relative;min-width:0}
+.wave i{flex:1;background:linear-gradient(180deg,#3ddc84,#1d7a4c);border-radius:2px;min-width:2px}
+.beat{position:absolute;top:2px;width:5px;height:5px;border-radius:50%;background:var(--acc);
+  box-shadow:0 0 6px var(--acc)}
+.playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:5;box-shadow:0 0 8px rgba(255,255,255,.7)}
+.playhead::before{content:"";position:absolute;top:-1px;left:-5px;border:6px solid transparent;border-top:8px solid #fff}
+</style>
+<style>
+/* ---------- bottom toolbar ---------- */
+.toolbar{display:flex;background:rgba(16,16,20,.96);border-top:1px solid var(--line);padding:10px 4px 26px;flex-shrink:0}
+.tool{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--muted);font-size:9.5px;
+  font-weight:600;cursor:pointer;position:relative;padding:4px 0;border:none;background:none;font-family:inherit}
+.tool svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tool.active{color:var(--acc)}
+.tool .new{position:absolute;top:0;right:calc(50% - 20px);font-size:8px;font-weight:800;background:var(--acc);
+  color:#fff;padding:2px 5px;border-radius:5px}
+/* ---------- bottom sheets ---------- */
+.backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:.25s;z-index:40}
+.backdrop.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:76%;background:var(--panel);border-radius:22px 22px 0 0;
+  border-top:1px solid var(--line);z-index:41;transform:translateY(102%);transition:transform .3s cubic-bezier(.2,.8,.25,1);
+  display:flex;flex-direction:column;overflow:hidden}
+.sheet.on{transform:translateY(0)}
+.handle{width:42px;height:5px;border-radius:3px;background:#3a3a44;margin:10px auto 4px;flex-shrink:0}
+.sheethead{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;flex-shrink:0}
+.sheethead h2{font-size:16px;font-weight:800}
+.sheethead .x{margin-left:auto}
+.sheetbody{overflow-y:auto;padding:0 16px 26px;flex:1}
+/* ---------- pills / tabs ---------- */
+.pills{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;flex-shrink:0;scrollbar-width:none}
+.pills::-webkit-scrollbar{display:none}
+.pill{flex-shrink:0;font-size:12.5px;font-weight:700;color:var(--muted);background:var(--panel2);
+  border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.pill.active{background:rgba(255,75,75,.14);border-color:var(--acc);color:#ff8f8f}
+.secttl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin:14px 0 10px}
+/* ---------- filter gallery ---------- */
+.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.fcard{background:var(--panel2);border:2px solid transparent;border-radius:12px;overflow:hidden;cursor:pointer;
+  transition:.15s;position:relative}
+.fcard.sel{border-color:var(--acc);box-shadow:0 0 14px var(--acc-glow)}
+.fthumb{aspect-ratio:1/1;position:relative}
+.fthumb .sc-demo{position:absolute;inset:0}
+.fname{font-size:10.5px;font-weight:700;padding:7px 4px;text-align:center;color:var(--txt)}
+.fcard.sel .fname{color:#ff8f8f}
+.intensity{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px}
+.intensity .lab{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.intensity .lab b{color:var(--acc)}
+input[type=range]{width:100%;appearance:none;-webkit-appearance:none;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,var(--acc) var(--fill,70%),#33333c var(--fill,70%));outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:#fff;border:5px solid var(--acc);box-shadow:0 2px 10px rgba(0,0,0,.5);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:5px solid var(--acc)}
+.babefore{display:flex;gap:8px;margin-top:10px}
+.babox{flex:1;position:relative;aspect-ratio:16/10;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.babox .tag{position:absolute;left:6px;top:6px;font-size:9px;font-weight:800;background:rgba(0,0,0,.6);
+  padding:3px 7px;border-radius:5px;color:#fff}
+/* ---------- templates ---------- */
+.tsearch{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px;margin-bottom:4px}
+.tsearch input{flex:1;background:none;border:none;color:var(--txt);font-size:13px;outline:none;font-family:inherit}
+.tsearch input::placeholder{color:var(--dim)}
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tcard{background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.15s}
+.tcard:hover{border-color:var(--acc)}
+.tcover{aspect-ratio:4/5;position:relative;overflow:hidden}
+.tcover .dur{position:absolute;right:7px;bottom:7px;font-size:10px;font-weight:800;background:rgba(0,0,0,.65);
+  color:#fff;padding:3px 7px;border-radius:6px}
+.tcover .slots{position:absolute;left:7px;bottom:7px;font-size:10px;font-weight:800;background:rgba(255,75,75,.9);
+  color:#fff;padding:3px 7px;border-radius:6px}
+.tcover .beatb{position:absolute;left:7px;top:7px;font-size:9px;font-weight:800;background:rgba(0,0,0,.65);
+  color:var(--gold);padding:3px 7px;border-radius:6px}
+.tmeta{padding:10px 11px}
+.tmeta h4{font-size:13px;font-weight:800}
+.tmeta p{font-size:11px;color:var(--muted);margin-top:3px}
+.usebtn{width:100%;margin-top:8px;background:rgba(255,75,75,.14);border:1px solid var(--acc);color:#ff8f8f;
+  font-weight:800;font-size:12px;padding:8px;border-radius:9px;cursor:pointer;font-family:inherit}
+/* template detail */
+.backrow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.backrow h2{font-size:15px}
+.slotgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:10px 0}
+.slot{aspect-ratio:3/4;border-radius:10px;border:1.5px dashed #3d3d48;background:var(--panel2);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;position:relative;overflow:hidden}
+.slot .plus{width:30px;height:30px;border-radius:50%;background:rgba(255,75,75,.15);border:1px solid var(--acc);
+  color:#ff8f8f;font-size:18px;display:flex;align-items:center;justify-content:center}
+.slot span{font-size:10px;font-weight:700;color:var(--muted)}
+.slot .sd{position:absolute;bottom:5px;font-size:9px;color:var(--dim);font-weight:700}
+.tvar{margin-bottom:10px}
+.tvar label{font-size:11.5px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px}
+.tvar input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--txt);
+  padding:11px 12px;font-size:13px;font-weight:700;outline:none;font-family:inherit}
+.tvar input:focus{border-color:var(--acc)}
+.beatstrip{display:flex;gap:4px;align-items:flex-end;height:34px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:10px;padding:8px 10px;margin-top:6px}
+.beatstrip i{flex:1;background:#3a3a46;border-radius:2px;min-height:4px}
+.beatstrip i.hit{background:var(--acc);box-shadow:0 0 6px var(--acc-glow)}
+.cta{width:100%;background:linear-gradient(135deg,#ff5a5a,#e03333);border:none;color:#fff;font-weight:800;
+  font-size:15px;padding:14px;border-radius:14px;cursor:pointer;margin-top:14px;font-family:inherit;
+  box-shadow:0 6px 20px var(--acc-glow)}
+/* ---------- text & stickers ---------- */
+.ttabs{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:12px}
+.ttab{flex:1;text-align:center;font-size:12.5px;font-weight:800;color:var(--muted);padding:9px;border-radius:9px;
+  cursor:pointer}
+.ttab.active{background:var(--acc);color:#fff}
+.txtgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.txtcard{background:#000;border:1px solid var(--line);border-radius:12px;aspect-ratio:16/10;display:flex;
+  align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;transition:.15s}
+.txtcard.sel{border-color:var(--acc);box-shadow:0 0 12px var(--acc-glow)}
+.stkgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stk{background:var(--panel2);border:1px solid var(--line);border-radius:12px;aspect-ratio:1/1;display:flex;
+  align-items:center;justify-content:center;font-size:30px;cursor:pointer;transition:.15s}
+.stk:hover{border-color:var(--acc);transform:scale(1.05)}
+.emogrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.emo{background:var(--panel2);border-radius:10px;aspect-ratio:1/1;display:flex;align-items:center;
+  justify-content:center;font-size:26px;cursor:pointer}
+.emo:hover{background:#26262e}
+/* ---------- effects ---------- */
+.fxgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.fxcard{background:var(--panel2);border:2px solid transparent;border-radius:12px;overflow:hidden;cursor:pointer;position:relative}
+.fxcard.sel{border-color:var(--acc)}
+.fxthumb{aspect-ratio:1/1;position:relative;overflow:hidden}
+.fxname{font-size:10.5px;font-weight:700;padding:7px 4px;text-align:center}
+/* animated fx previews */
+@keyframes glitch{0%,100%{transform:translate(0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}
+  60%{transform:translate(-3px,-1px)}80%{transform:translate(3px,1px)}}
+.fx-glitch{background:
+  repeating-linear-gradient(0deg,transparent 0 6px,rgba(255,0,80,.25) 6px 8px,transparent 8px 14px),
+  linear-gradient(135deg,#2b1055,#0f3460);animation:glitch .5s infinite}
+@keyframes vhs{0%,100%{filter:hue-rotate(0)}50%{filter:hue-rotate(40deg)}}
+.fx-vhs{background:repeating-linear-gradient(0deg,#1a1a2e 0 3px,#16213e 3px 6px);animation:vhs 1.2s infinite}
+.fx-vhs::after{content:"";position:absolute;inset:0;background:
+  radial-gradient(60px 40px at 30% 40%,rgba(255,255,255,.5),transparent 70%),
+  linear-gradient(90deg,transparent 40%,rgba(255,0,100,.35) 50%,rgba(0,255,255,.35) 55%,transparent 65%)}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.fx-part{background:radial-gradient(circle at 30% 70%,#ffd76e 2px,transparent 3px),
+  radial-gradient(circle at 60% 30%,#ff8fb0 2px,transparent 3px),
+  radial-gradient(circle at 80% 80%,#7be0ff 2px,transparent 3px),
+  radial-gradient(circle at 40% 50%,#fff 1.5px,transparent 2.5px),linear-gradient(180deg,#0b0b18,#1a1030);
+  animation:float 2.4s ease-in-out infinite}
+.fx-leak{background:
+  radial-gradient(120px 80px at 85% 10%,rgba(255,150,60,.85),transparent 70%),
+  radial-gradient(90px 70px at 10% 90%,rgba(255,60,120,.5),transparent 70%),linear-gradient(135deg,#241335,#0e0a1c)}
+.fx-grain{background:linear-gradient(135deg,#3a3a44,#17171d)}
+.fx-grain::after{content:"";position:absolute;inset:0;opacity:.55;
+  background-image:repeating-conic-gradient(#fff 0 .0001turn,#000 .0002turn .0003turn);background-size:90px 90px}
+.fx-chroma{background:linear-gradient(135deg,#123,#312);position:relative}
+.fx-chroma::before,.fx-chroma::after{content:"▮";position:absolute;top:32%;font-size:34px;font-weight:900}
+.fx-chroma::before{left:26%;color:rgba(255,0,90,.8)}
+.fx-chroma::after{left:34%;color:rgba(0,220,255,.8)}
+@keyframes shake{0%,100%{transform:translate(0)}25%{transform:translate(-3px,1px)}75%{transform:translate(3px,-1px)}}
+.fx-shake{background:linear-gradient(135deg,#3d1420,#12060a);animation:shake .3s infinite}
+.fx-glow{background:radial-gradient(70px 70px at 50% 50%,#fff8,transparent 70%),linear-gradient(135deg,#2b1055,#7597de)}
+.fx-vig{background:radial-gradient(120% 100% at 50% 50%,transparent 40%,#000 95%),linear-gradient(135deg,#4a3b6b,#1c1430)}
+/* ---------- edit / music / audio sheets ---------- */
+.toolgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.ttool{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 6px;display:flex;
+  flex-direction:column;align-items:center;gap:7px;font-size:10.5px;font-weight:700;color:var(--txt);cursor:pointer}
+.ttool svg{width:22px;height:22px;stroke:var(--acc);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mrow{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px;margin-bottom:9px;cursor:pointer}
+.mrow .art{width:44px;height:44px;border-radius:9px;flex-shrink:0}
+.mrow h4{font-size:13px;font-weight:700}
+.mrow p{font-size:11px;color:var(--muted);margin-top:2px}
+.mrow .add{margin-left:auto;width:30px;height:30px;border-radius:50%;background:rgba(255,75,75,.14);
+  border:1px solid var(--acc);color:#ff8f8f;font-size:16px;display:flex;align-items:center;justify-content:center}
+.mixrow{margin-bottom:16px}
+.mixrow .lab{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:8px}
+.mixrow .lab b{color:var(--acc)}
+/* ---------- export screen ---------- */
+.expscroll{flex:1;overflow-y:auto;padding:4px 18px 20px}
+.expPrev{position:relative;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;border:1px solid var(--line);margin-bottom:6px}
+.optgrid{display:flex;gap:8px;flex-wrap:wrap}
+.opt{flex:1;min-width:0;text-align:center;font-size:13px;font-weight:800;color:var(--muted);background:var(--panel2);
+  border:1.5px solid var(--line);padding:11px 6px;border-radius:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.opt.active{border-color:var(--acc);color:#ff8f8f;background:rgba(255,75,75,.1)}
+.opt small{display:block;font-size:10px;font-weight:600;color:var(--dim);margin-top:2px}
+.prow{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid rgba(61,220,132,.35);
+  border-radius:12px;padding:11px 13px;margin-bottom:8px;font-size:12.5px;font-weight:700;color:#c9f5dd}
+.prow .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);flex-shrink:0}
+.estbox{background:linear-gradient(135deg,rgba(255,75,75,.12),rgba(255,75,75,.03));border:1px solid rgba(255,75,75,.35);
+  border-radius:14px;padding:14px;margin-top:4px}
+.estbox .row{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.estbox .row b{color:var(--txt)}
+.estbox .big{font-size:22px;font-weight:900;color:#fff}
+.expbar{height:10px;background:var(--panel2);border-radius:5px;overflow:hidden;margin-top:12px;display:none}
+.expbar.on{display:block}
+.expbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),#ff9a3c);border-radius:5px;transition:width .2s}
+.expmsg{text-align:center;font-size:13px;font-weight:700;color:var(--ok);margin-top:10px;display:none}
+.expmsg.on{display:block}
+@media(max-width:700px){.sidenav{display:none}.brandbar{justify-content:center}.badges{margin-left:0}}
+</style>
+</head>
+<body>
+<!-- ================= DESKTOP HEADER ================= -->
+<div class="brandbar">
+  <div class="logo">A</div>
+  <div>
+    <h1>ApexStudio <span>Pro</span> — Editor Redesign</h1>
+    <div class="sub">Interactive design mockup · v2.0 concept · for Prince's approval</div>
+  </div>
+  <div class="badges">
+    <div class="badge ok">✓ No watermark</div>
+    <div class="badge ok">✓ 100% on-device</div>
+    <div class="badge acc">✦ 100+ LUTs · Templates · Beat Sync</div>
+  </div>
+</div>
+
+<div class="stage">
+  <!-- ================= SIDE NAV ================= -->
+  <div class="sidenav">
+    <h3>Screens</h3>
+    <button class="navbtn active" data-nav="editor"><span class="n">1</span>Main Editor</button>
+    <button class="navbtn" data-nav="filter"><span class="n">2</span>Filter Gallery</button>
+    <button class="navbtn" data-nav="template"><span class="n">3</span>Template Browser</button>
+    <button class="navbtn" data-nav="text"><span class="n">4</span>Text &amp; Stickers</button>
+    <button class="navbtn" data-nav="effects"><span class="n">5</span>Effects Panel</button>
+    <button class="navbtn" data-nav="export"><span class="n">6</span>Export Screen</button>
+    <div class="hint">Tap any screen to preview it inside the phone. Inside the phone, the bottom toolbar works like the real app — panels slide up DJI-style.</div>
+  </div>
+
+  <!-- ================= PHONE ================= -->
+  <div class="phone">
+    <div class="notch"></div>
+
+    <!-- ============ SCREEN 1: MAIN EDITOR ============ -->
+    <div class="screen active" id="screen-editor">
+      <div class="topbar">
+        <div class="iconbtn" onclick="goHome()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <div class="proj">Khoya Hua Main — v2</div>
+        <div class="resbadge">1080p</div>
+        <div class="resbadge">16:9</div>
+        <button class="exportbtn" onclick="openScreen('export')">Export</button>
+      </div>
+
+      <div class="previewwrap">
+        <div class="preview" id="mainPreview">
+          <div class="scene sc-night"></div>
+          <div class="grad" id="mainGrad"></div>
+          <div class="grain"></div>
+          <div class="vignette"></div>
+          <div class="fxchip" id="fxChip">✦ <span id="fxChipName">Glitch</span></div>
+          <div class="playov"><div class="pp"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
+          <div class="tcode">00:13 / 00:29</div>
+        </div>
+      </div>
+
+      <div class="tl" id="timeline">
+        <div class="ruler"><span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span></div>
+        <div class="track">
+          <div class="tlabel acc">FX</div>
+          <div class="tlane">
+            <div class="chip" style="width:150px">✦ Film Grain · 35%</div>
+            <div class="chip blue" style="width:90px">Light Leak</div>
+          </div>
+        </div>
+        <div class="track">
+          <div class="tlabel">V1</div>
+          <div class="tlane" id="v1lane">
+            <div class="clip sel" style="width:88px"><div class="scene sc-rain" style="position:absolute;inset:0"></div><div class="dur">6.6s</div></div>
+            <div class="clip" style="width:62px"><div class="scene sc-sunset" style="position:absolute;inset:0"></div><div class="tr"></div><div class="dur">4.5s</div></div>
+            <div class="clip" style="width:62px"><div class="scene sc-candle" style="position:absolute;inset:0"></div><div class="tr"></div><div class="dur">4.5s</div></div>
+            <div class="clip" style="width:62px"><div class="scene sc-night" style="position:absolute;inset:0"></div><div class="tr"></div><div class="dur">4.5s</div></div>
+            <div class="clip" style="width:62px"><div class="scene sc-rain" style="position:absolute;inset:0"></div><div class="tr"></div><div class="dur">4.5s</div></div>
+            <div class="clip" style="width:64px"><div class="scene sc-sunset" style="position:absolute;inset:0"></div><div class="tr"></div><div class="dur">4.7s</div></div>
+          </div>
+        </div>
+        <div class="track">
+          <div class="tlabel">T1</div>
+          <div class="tlane">
+            <div class="txtclip" style="width:200px;margin-left:70px">♪ Kya galat kiya tha maine…</div>
+          </div>
+        </div>
+        <div class="track">
+          <div class="tlabel">A1</div>
+          <div class="tlane">
+            <div class="wave" id="wave"></div>
+          </div>
+        </div>
+        <div class="playhead" id="playhead" style="left:44%"></div>
+      </div>
+
+      <div class="toolbar">
+        <button class="tool" onclick="openSheet('template')"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Template<span class="new">NEW</span></button>
+        <button class="tool" onclick="openSheet('edit')"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.8L20 19M8.2 16.2L20 5"/></svg>Edit</button>
+        <button class="tool" onclick="openSheet('music')"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>Music</button>
+        <button class="tool" onclick="openSheet('text')"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16m-3 0h6"/></svg>Text &amp; Sticker</button>
+        <button class="tool" onclick="openSheet('filter')"><svg viewBox="0 0 24 24"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.2"/><circle cx="8" cy="16" r="2.2"/></svg>Filter</button>
+        <button class="tool" onclick="openSheet('effects')"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9z"/></svg>Effects</button>
+        <button class="tool" onclick="openSheet('audio')"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 4V6l-4 4z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/></svg>Audio</button>
+      </div>
+    </div>
+    <!-- ============ SCREEN 6: EXPORT ============ -->
+    <div class="screen" id="screen-export">
+      <div class="topbar">
+        <div class="iconbtn" onclick="openScreen('editor')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <div class="proj">Export Video</div>
+      </div>
+      <div class="expscroll">
+        <div class="expPrev"><div class="scene sc-night"></div><div class="vignette"></div>
+          <div class="tcode">00:29 · <span id="expResTag">1080p</span></div></div>
+
+        <div class="secttl">Resolution</div>
+        <div class="optgrid" id="resOpts">
+          <button class="opt" data-v="720">720p<small>HD · fast</small></button>
+          <button class="opt active" data-v="1080">1080p<small>Full HD</small></button>
+          <button class="opt" data-v="2160">4K<small>Ultra HD</small></button>
+        </div>
+        <div class="secttl">Aspect ratio</div>
+        <div class="optgrid" id="arOpts">
+          <button class="opt active" data-v="16:9">16:9<small>Landscape</small></button>
+          <button class="opt" data-v="9:16">9:16<small>Shorts / Reels</small></button>
+          <button class="opt" data-v="1:1">1:1<small>Square</small></button>
+        </div>
+        <div class="secttl">Frame rate</div>
+        <div class="optgrid" id="fpsOpts">
+          <button class="opt" data-v="24">24<small>cinematic</small></button>
+          <button class="opt active" data-v="30">30<small>standard</small></button>
+          <button class="opt" data-v="60">60<small>smooth</small></button>
+        </div>
+        <div class="secttl">Quality / bitrate</div>
+        <div class="optgrid" id="qOpts">
+          <button class="opt" data-v="8">Medium<small>8 Mbps</small></button>
+          <button class="opt active" data-v="16">High<small>16 Mbps</small></button>
+          <button class="opt" data-v="32">Ultra<small>32 Mbps</small></button>
+        </div>
+
+        <div class="secttl">Why ApexStudio Pro</div>
+        <div class="prow"><span class="dot"></span>No watermark — ever. Your video, your brand.</div>
+        <div class="prow"><span class="dot"></span>100% on-device render — no upload, no cloud queue.</div>
+        <div class="prow"><span class="dot"></span>Hardware encoding — 4K export in minutes, not hours.</div>
+
+        <div class="estbox">
+          <div class="row"><span>Duration</span><b>00:29</b></div>
+          <div class="row"><span>Estimated size</span><b class="big" id="estSize">58 MB</b></div>
+          <div class="row"><span>Format</span><b>MP4 · H.264 · AAC</b></div>
+          <div class="expbar" id="expBar"><i id="expFill"></i></div>
+          <div class="expmsg" id="expMsg">✓ Export complete — saved to Gallery</div>
+        </div>
+        <button class="cta" id="expBtn" onclick="startExport()">Export Video</button>
+      </div>
+    </div>
+
+    <div class="backdrop" id="backdrop" onclick="closeSheets()"></div>
+
+    <!-- ============ SHEET: FILTER GALLERY ============ -->
+    <div class="sheet" id="sheet-filter">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Filter</h2><span class="resbadge" id="filterCount">100+ LUTs</span>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="babefore">
+          <div class="babox"><div class="scene sc-demo"></div><span class="tag">Before</span></div>
+          <div class="babox"><div class="scene sc-demo" id="baAfter" style="filter:none"></div><div class="scene sc-demo grad" id="baGrad" style="opacity:.7"></div><span class="tag" id="baName">Neon Night</span></div>
+        </div>
+        <div class="pills" id="filterCats">
+          <button class="pill active" data-c="all">Recommended</button>
+          <button class="pill" data-c="cinematic">Cinematic</button>
+          <button class="pill" data-c="vintage">Vintage</button>
+          <button class="pill" data-c="vibrant">Vibrant</button>
+          <button class="pill" data-c="bw">B&amp;W</button>
+          <button class="pill" data-c="portrait">Portrait</button>
+          <button class="pill" data-c="night">Night</button>
+        </div>
+        <div class="fgrid" id="filterGrid"></div>
+        <div class="intensity">
+          <div class="lab"><span>Intensity</span><b id="intVal">70%</b></div>
+          <input type="range" min="0" max="100" value="70" id="intSlider" oninput="setIntensity(this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET: TEMPLATE BROWSER ============ -->
+    <div class="sheet" id="sheet-template">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Templates</h2><span class="resbadge">One-tap</span>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody" id="templateBody">
+        <div class="tsearch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9aa5" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Search templates…"></div>
+        <div class="pills" id="tplCats">
+          <button class="pill active">Hot</button><button class="pill">Travel</button><button class="pill">Vlog</button>
+          <button class="pill">Beat Sync</button><button class="pill">Fashion</button><button class="pill">Wedding</button><button class="pill">Sports</button>
+        </div>
+        <div class="tgrid" id="tplGrid"></div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET: TEXT & STICKERS ============ -->
+    <div class="sheet" id="sheet-text">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Text &amp; Stickers</h2>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="ttabs">
+          <div class="ttab active" onclick="textTab('text',this)">Text</div>
+          <div class="ttab" onclick="textTab('stickers',this)">Stickers</div>
+          <div class="ttab" onclick="textTab('emoji',this)">Emoji</div>
+        </div>
+        <div id="tab-text">
+          <div class="txtgrid">
+            <div class="txtcard sel"><span style="font-family:Impact,Arial Black;font-size:22px;font-weight:900;letter-spacing:2px;color:#fff;text-shadow:2px 2px 0 #ff4b4b">MY JOURNEY</span></div>
+            <div class="txtcard"><span style="font-size:15px;font-weight:700;color:#fff;border-left:3px solid #f5b942;padding-left:8px;text-align:left">Lower Third<br><small style="color:#9a9aa5;font-weight:400">subtitle here</small></span></div>
+            <div class="txtcard"><span style="font-family:Georgia,serif;font-style:italic;font-size:16px;color:#ffe9b0">“chandni raatein,<br>adhoori baatein…”</span></div>
+            <div class="txtcard"><span style="font-family:monospace;font-size:19px;font-weight:700;color:#7be0ff;text-shadow:2px 0 #ff2e88,-2px 0 #2effc4">GLITCH</span></div>
+            <div class="txtcard"><span style="font-size:20px;font-weight:800;color:#fff;text-shadow:0 0 14px #ff4b4b,0 0 34px #ff4b4b">NEON</span></div>
+            <div class="txtcard"><span style="font-size:14px;font-weight:600;color:#e8e8ec;letter-spacing:4px">MINIMAL</span></div>
+          </div>
+          <div class="secttl">Fonts · OFL licensed</div>
+          <div class="pills"><button class="pill active">Anton</button><button class="pill">Bebas Neue</button><button class="pill">Poppins</button><button class="pill">Playfair</button><button class="pill">Lobster</button><button class="pill">Orbitron</button></div>
+        </div>
+        <div id="tab-stickers" style="display:none">
+          <div class="pills"><button class="pill active">Hot</button><button class="pill">Movie Quote</button><button class="pill">Travel</button><button class="pill">Crayon</button></div>
+          <div class="stkgrid">
+            <div class="stk">🔥</div><div class="stk">⭐</div><div class="stk">💯</div><div class="stk">🎬</div>
+            <div class="stk">✈️</div><div class="stk">🌙</div><div class="stk">⚡</div><div class="stk">🎧</div>
+            <div class="stk">💡</div><div class="stk">🎯</div><div class="stk">🌈</div><div class="stk">👑</div>
+          </div>
+          <div class="secttl">Movie Quote · text stickers</div>
+          <div class="stkgrid">
+            <div class="stk" style="font-size:13px;font-weight:800;color:#ffd76e">WOW!</div>
+            <div class="stk" style="font-size:13px;font-weight:800;color:#ff8fb0">CUTIE</div>
+            <div class="stk" style="font-size:13px;font-weight:800;color:#7be0ff">VLOG</div>
+            <div class="stk" style="font-size:13px;font-weight:800;color:#c9f5dd">GO!</div>
+          </div>
+        </div>
+        <div id="tab-emoji" style="display:none">
+          <div class="emogrid">
+            <div class="emo">😀</div><div class="emo">😍</div><div class="emo">🤩</div><div class="emo">😎</div><div class="emo">🥳</div><div class="emo">😭</div>
+            <div class="emo">❤️</div><div class="emo">🔥</div><div class="emo">👏</div><div class="emo">🙏</div><div class="emo">💪</div><div class="emo">🎉</div>
+            <div class="emo">🌹</div><div class="emo">🌙</div><div class="emo">⭐</div><div class="emo">⚡</div><div class="emo">🎵</div><div class="emo">📸</div>
+          </div>
+          <div class="secttl" style="margin-top:12px">Fluent Emoji · MIT licensed</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET: EFFECTS ============ -->
+    <div class="sheet" id="sheet-effects">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Effects</h2><span class="resbadge">GPU shaders</span>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="ttabs">
+          <div class="ttab active" onclick="fxTab('fx',this)">Video FX</div>
+          <div class="ttab" onclick="fxTab('ov',this)">Overlays</div>
+        </div>
+        <div id="fxpanel-fx" class="fxgrid">
+          <div class="fxcard sel" onclick="applyFx('Glitch',this)"><div class="fxthumb fx-glitch"></div><div class="fxname">Glitch</div></div>
+          <div class="fxcard" onclick="applyFx('VHS',this)"><div class="fxthumb fx-vhs"></div><div class="fxname">VHS</div></div>
+          <div class="fxcard" onclick="applyFx('Particles',this)"><div class="fxthumb fx-part"></div><div class="fxname">Particles</div></div>
+          <div class="fxcard" onclick="applyFx('Light Leak',this)"><div class="fxthumb fx-leak"></div><div class="fxname">Light Leak</div></div>
+          <div class="fxcard" onclick="applyFx('Film Grain',this)"><div class="fxthumb fx-grain"></div><div class="fxname">Film Grain</div></div>
+          <div class="fxcard" onclick="applyFx('Chroma Shift',this)"><div class="fxthumb fx-chroma"></div><div class="fxname">Chroma Shift</div></div>
+          <div class="fxcard" onclick="applyFx('Shake',this)"><div class="fxthumb fx-shake"></div><div class="fxname">Shake</div></div>
+          <div class="fxcard" onclick="applyFx('Glow',this)"><div class="fxthumb fx-glow"></div><div class="fxname">Glow</div></div>
+          <div class="fxcard" onclick="applyFx('Vignette',this)"><div class="fxthumb fx-vig"></div><div class="fxname">Vignette</div></div>
+        </div>
+        <div id="fxpanel-ov" class="fxgrid" style="display:none">
+          <div class="fxcard" onclick="applyFx('Dust',this)"><div class="fxthumb fx-part"></div><div class="fxname">Dust</div></div>
+          <div class="fxcard" onclick="applyFx('Rain',this)"><div class="fxthumb fx-vhs"></div><div class="fxname">Rain</div></div>
+          <div class="fxcard" onclick="applyFx('Snow',this)"><div class="fxthumb fx-grain"></div><div class="fxname">Snow</div></div>
+          <div class="fxcard" onclick="applyFx('Bokeh',this)"><div class="fxthumb fx-glow"></div><div class="fxname">Bokeh</div></div>
+          <div class="fxcard" onclick="applyFx('Old Film',this)"><div class="fxthumb fx-vig"></div><div class="fxname">Old Film</div></div>
+          <div class="fxcard" onclick="applyFx('Sun Flare',this)"><div class="fxthumb fx-leak"></div><div class="fxname">Sun Flare</div></div>
+        </div>
+      </div>
+    </div>
+    <!-- ============ SHEET: EDIT TOOLS ============ -->
+    <div class="sheet" id="sheet-edit">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Edit</h2><span class="resbadge">Clip selected</span>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="toolgrid">
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M7 4v16M17 4v16"/></svg>Trim</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><path d="M8 7l12 11M8 17L20 6"/></svg>Split</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M3 8h5M3 16h5M16 8h5M16 16h5"/></svg>Crop</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M13 3L4 14h6l-1 7 9-11h-6z"/></svg>Speed</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9M3 5v4h4"/><path d="M12 7v5l3 3"/></svg>Reverse</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16"/></svg>Freeze</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>Keyframe</div>
+          <div class="ttool"><svg viewBox="0 0 24 24"><path d="M4 12h16M12 4v16"/></svg>Mask</div>
+        </div>
+        <div class="secttl">Speed ramp</div>
+        <div class="pills"><button class="pill">0.25×</button><button class="pill">0.5×</button><button class="pill active">1×</button><button class="pill">1.5×</button><button class="pill">2×</button><button class="pill">Curve</button></div>
+        <div class="secttl">Transitions · 30+ GLSL</div>
+        <div class="pills"><button class="pill active">Glitch</button><button class="pill">Fade</button><button class="pill">Wipe</button><button class="pill">Zoom</button><button class="pill">Cube 3D</button><button class="pill">Kaleido</button><button class="pill">RGB Split</button></div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET: MUSIC ============ -->
+    <div class="sheet" id="sheet-music">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Music</h2>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="ttabs">
+          <div class="ttab active" onclick="mxTab('lib',this)">Library</div>
+          <div class="ttab" onclick="mxTab('sfx',this)">SFX</div>
+          <div class="ttab" onclick="mxTab('vox',this)">Voiceover</div>
+        </div>
+        <div id="mx-lib">
+          <div class="mrow"><div class="art sc-sunset"></div><div><h4>Neon Drive</h4><p>Synthwave · 0:15 · Jamendo CC</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art sc-night"></div><div><h4>Midnight Pulse</h4><p>Electronic · 0:29 · Jamendo CC</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art sc-rain"></div><div><h4>Barish Lo-Fi</h4><p>Lo-Fi · 1:02 · Jamendo CC</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art sc-candle"></div><div><h4>Acoustic Soul</h4><p>Acoustic · 0:45 · Offline</p></div><div class="add">+</div></div>
+        </div>
+        <div id="mx-sfx" style="display:none">
+          <div class="mrow"><div class="art" style="background:linear-gradient(135deg,#3a3a44,#17171d)"></div><div><h4>Whoosh</h4><p>0:01 · CC0</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art" style="background:linear-gradient(135deg,#3a3a44,#17171d)"></div><div><h4>Cinematic Riser</h4><p>0:03 · CC0</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art" style="background:linear-gradient(135deg,#3a3a44,#17171d)"></div><div><h4>Camera Shutter</h4><p>0:01 · CC0</p></div><div class="add">+</div></div>
+          <div class="mrow"><div class="art" style="background:linear-gradient(135deg,#3a3a44,#17171d)"></div><div><h4>Glitch Zap</h4><p>0:02 · CC0</p></div><div class="add">+</div></div>
+        </div>
+        <div id="mx-vox" style="display:none">
+          <div class="mrow"><div class="art" style="background:linear-gradient(135deg,#7b2ff7,#2b1b4d);display:flex;align-items:center;justify-content:center;font-size:20px">🎙</div><div><h4>Record voiceover</h4><p>Tap to start recording</p></div><div class="add">●</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET: AUDIO MIXER ============ -->
+    <div class="sheet" id="sheet-audio">
+      <div class="handle"></div>
+      <div class="sheethead"><h2>Audio Mixer</h2>
+        <div class="iconbtn x" onclick="closeSheets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div class="sheetbody">
+        <div class="mixrow"><div class="lab"><span>🎵 Music</span><b>80%</b></div><input type="range" min="0" max="100" value="80" oninput="mix(this)"></div>
+        <div class="mixrow"><div class="lab"><span>✦ SFX</span><b>65%</b></div><input type="range" min="0" max="100" value="65" oninput="mix(this)"></div>
+        <div class="mixrow"><div class="lab"><span>🎙 Voiceover</span><b>90%</b></div><input type="range" min="0" max="100" value="90" oninput="mix(this)"></div>
+        <div class="mixrow"><div class="lab"><span>🔊 Master</span><b>100%</b></div><input type="range" min="0" max="100" value="100" oninput="mix(this)"></div>
+        <div class="secttl">Beat markers on timeline</div>
+        <div class="pills"><button class="pill active">Auto-detect beats</button><button class="pill">Tap tempo</button><button class="pill">Snap cuts to beats</button></div>
+      </div>
+    </div>
+
+  </div><!-- /phone -->
+</div><!-- /stage -->
+
+<script>
+/* ================= DATA ================= */
+const FILTERS=[
+ {n:"Original",c:"all",f:"none"},
+ {n:"Neon Night",c:"night",f:"saturate(1.6) contrast(1.15) hue-rotate(-15deg) brightness(.95)"},
+ {n:"Golden Hour",c:"all",f:"sepia(.45) saturate(1.5) contrast(1.05) brightness(1.05)"},
+ {n:"Teal & Orange",c:"cinematic",f:"saturate(1.3) contrast(1.2) hue-rotate(10deg)"},
+ {n:"Noir",c:"cinematic",f:"grayscale(1) contrast(1.35) brightness(.95)"},
+ {n:"Film Fade",c:"cinematic",f:"contrast(.85) brightness(1.1) saturate(.7) sepia(.2)"},
+ {n:"Sepia 70s",c:"vintage",f:"sepia(.8) contrast(1.05) brightness(1.02)"},
+ {n:"Faded Film",c:"vintage",f:"sepia(.35) contrast(.8) brightness(1.12) saturate(.6)"},
+ {n:"Pop",c:"vibrant",f:"saturate(1.9) contrast(1.25)"},
+ {n:"Candy",c:"vibrant",f:"saturate(1.7) hue-rotate(-25deg) brightness(1.08)"},
+ {n:"Mono",c:"bw",f:"grayscale(1) contrast(1.1)"},
+ {n:"High Contrast",c:"bw",f:"grayscale(1) contrast(1.8) brightness(1.05)"},
+ {n:"Soft Glow",c:"portrait",f:"saturate(1.15) brightness(1.12) contrast(.95)"},
+ {n:"Cyber City",c:"night",f:"hue-rotate(160deg) saturate(1.6) contrast(1.2)"},
+ {n:"Warm Portrait",c:"portrait",f:"sepia(.25) saturate(1.35) brightness(1.06)"}
+];
+const TEMPLATES=[
+ {t:"Neon Travel",cat:"Travel",d:"0:15",slots:6,beat:true,sc:"sc-night",ar:"9:16"},
+ {t:"Urban Vlog",cat:"Vlog",d:"0:20",slots:5,beat:false,sc:"sc-sunset",ar:"16:9"},
+ {t:"Beat Drop",cat:"Beat Sync",d:"0:12",slots:4,beat:true,sc:"sc-demo",ar:"9:16"},
+ {t:"Golden Wedding",cat:"Wedding",d:"0:30",slots:8,beat:false,sc:"sc-candle",ar:"16:9"},
+ {t:"Street Fashion",cat:"Fashion",d:"0:15",slots:5,beat:true,sc:"sc-rain",ar:"9:16"},
+ {t:"Epic Sports",cat:"Sports",d:"0:18",slots:6,beat:true,sc:"sc-sunset",ar:"16:9"}
+];
+let curFilter=FILTERS[1], intensity=70;
+
+/* ================= NAV ================= */
+const screens={editor:"screen-editor",export:"screen-export"};
+function openScreen(k){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(screens[k]).classList.add("active");
+  closeSheets();
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.nav===k));
+  window.scrollTo({top:0});
+}
+function goHome(){}
+function openSheet(id){
+  closeSheets(true);
+  document.getElementById("sheet-"+id).classList.add("on");
+  document.getElementById("backdrop").classList.add("on");
+  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.nav===id));
+  document.querySelectorAll(".tool").forEach(t=>t.classList.remove("active"));
+}
+function closeSheets(keepNav){
+  document.querySelectorAll(".sheet").forEach(s=>s.classList.remove("on"));
+  document.getElementById("backdrop").classList.remove("on");
+  if(!keepNav)document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.nav==="editor"));
+}
+document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{
+  const k=b.dataset.nav;
+  if(k==="export")openScreen("export");
+  else{openScreen("editor");if(k!=="editor")openSheet(k);}
+}));
+/* pills generic */
+document.querySelectorAll(".pills").forEach(p=>{
+  p.addEventListener("click",e=>{
+    const btn=e.target.closest(".pill");if(!btn)return;
+    p.querySelectorAll(".pill").forEach(x=>x.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+/* ================= FILTER GALLERY ================= */
+function renderFilters(cat){
+  const g=document.getElementById("filterGrid");g.innerHTML="";
+  FILTERS.filter(f=>cat==="all"||f.c===cat||f.c==="all").forEach(f=>{
+    const d=document.createElement("div");
+    d.className="fcard"+(f===curFilter?" sel":"");
+    d.innerHTML=`<div class="fthumb"><div class="scene sc-demo" style="filter:${f.f}"></div></div><div class="fname">${f.n}</div>`;
+    d.onclick=()=>selectFilter(f);
+    g.appendChild(d);
+  });
+}
+function selectFilter(f){
+  curFilter=f;
+  document.getElementById("baAfter").style.filter=f.f;
+  document.getElementById("baGrad").style.filter=f.f;
+  document.getElementById("baGrad").style.opacity=intensity/100;
+  document.getElementById("baName").textContent=f.n;
+  document.querySelectorAll("#filterGrid .fcard").forEach(c=>c.classList.remove("sel"));
+  event.currentTarget.classList.add("sel");
+  const mg=document.getElementById("mainGrad");
+  mg.style.background="";mg.style.filter=f.f;mg.classList.add("scene","sc-demo");
+  mg.style.opacity=intensity/100;
+}
+function setIntensity(v){
+  intensity=+v;
+  document.getElementById("intVal").textContent=v+"%";
+  const s=document.getElementById("intSlider");
+  s.style.setProperty("--fill",v+"%");
+  document.getElementById("baGrad").style.opacity=v/100;
+  document.getElementById("mainGrad").style.opacity=v/100;
+}
+document.getElementById("filterCats").addEventListener("click",e=>{
+  const b=e.target.closest(".pill");if(b)renderFilters(b.dataset.c);
+});
+renderFilters("all");
+setIntensity(70);
+/* ================= TEMPLATES ================= */
+function renderTemplates(){
+  const g=document.getElementById("tplGrid");g.innerHTML="";
+  TEMPLATES.forEach((t,i)=>{
+    const d=document.createElement("div");
+    d.className="tcard";
+    d.innerHTML=`<div class="tcover"><div class="scene ${t.sc}"></div><div class="vignette"></div>
+      ${t.beat?'<span class="beatb">♪ BEAT</span>':""}
+      <span class="slots">${t.slots} slots</span><span class="dur">${t.d}</span></div>
+      <div class="tmeta"><h4>${t.t}</h4><p>${t.cat} · ${t.ar}</p>
+      <button class="usebtn" onclick="event.stopPropagation();openTplDetail(${i})">Use Template</button></div>`;
+    d.onclick=()=>openTplDetail(i);
+    g.appendChild(d);
+  });
+}
+function openTplDetail(i){
+  const t=TEMPLATES[i];
+  const body=document.getElementById("templateBody");
+  let slots="";
+  for(let s=1;s<=t.slots;s++)slots+=`<div class="slot"><div class="plus">+</div><span>Clip ${s}</span><span class="sd">2.5s</span></div>`;
+  let beats="";
+  for(let b=0;b<14;b++)beats+=`<i class="${b%2===0?"hit":""}"></i>`;
+  body.innerHTML=`
+    <div class="backrow"><div class="iconbtn" onclick="backToTpl()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></div><h2>${t.t}</h2></div>
+    <div class="tcover" style="border-radius:12px;aspect-ratio:16/9"><div class="scene ${t.sc}"></div><div class="vignette"></div>
+      <span class="dur">${t.d} · ${t.ar}</span>${t.beat?'<span class="beatb">♪ BEAT SYNCED</span>':""}</div>
+    <div class="secttl">Your clips · tap a slot to replace</div>
+    <div class="slotgrid">${slots}</div>
+    <div class="secttl">Text</div>
+    <div class="tvar"><label>Title</label><input value="MY JOURNEY" maxlength="24"></div>
+    <div class="tvar"><label>Subtitle</label><input value="neon nights" maxlength="40"></div>
+    <div class="secttl">Music · beat markers</div>
+    <div class="mrow"><div class="art ${t.sc}"></div><div><h4>Neon Drive</h4><p>Synthwave · cuts snap to beats</p></div><div class="add">♪</div></div>
+    <div class="beatstrip">${beats}</div>
+    <button class="cta" onclick="closeSheets();document.getElementById('fxChipName').textContent='Template FX';document.getElementById('fxChip').classList.add('on')">Create Video</button>`;
+}
+function backToTpl(){
+  const body=document.getElementById("templateBody");
+  body.innerHTML=`<div class="tsearch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9aa5" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Search templates…"></div>
+    <div class="pills" id="tplCats"><button class="pill active">Hot</button><button class="pill">Travel</button><button class="pill">Vlog</button><button class="pill">Beat Sync</button><button class="pill">Fashion</button><button class="pill">Wedding</button><button class="pill">Sports</button></div>
+    <div class="tgrid" id="tplGrid"></div>`;
+  bindPills(body);
+  renderTemplates();
+}
+function bindPills(root){
+  root.querySelectorAll(".pills").forEach(p=>p.addEventListener("click",e=>{
+    const btn=e.target.closest(".pill");if(!btn)return;
+    p.querySelectorAll(".pill").forEach(x=>x.classList.remove("active"));btn.classList.add("active");
+  }));
+}
+renderTemplates();
+/* ================= TEXT / FX / MUSIC TABS ================= */
+function textTab(k,el){
+  el.parentElement.querySelectorAll(".ttab").forEach(t=>t.classList.remove("active"));el.classList.add("active");
+  ["text","stickers","emoji"].forEach(x=>document.getElementById("tab-"+x).style.display=x===k?"block":"none");
+}
+function fxTab(k,el){
+  el.parentElement.querySelectorAll(".ttab").forEach(t=>t.classList.remove("active"));el.classList.add("active");
+  document.getElementById("fxpanel-fx").style.display=k==="fx"?"grid":"none";
+  document.getElementById("fxpanel-ov").style.display=k==="ov"?"grid":"none";
+}
+function mxTab(k,el){
+  el.parentElement.querySelectorAll(".ttab").forEach(t=>t.classList.remove("active"));el.classList.add("active");
+  ["lib","sfx","vox"].forEach(x=>document.getElementById("mx-"+x).style.display=x===k?"block":"none");
+}
+document.querySelectorAll(".txtcard").forEach(c=>c.addEventListener("click",()=>{
+  document.querySelectorAll(".txtcard").forEach(x=>x.classList.remove("sel"));c.classList.add("sel");
+}));
+function applyFx(name,el){
+  const grid=el.parentElement;
+  grid.querySelectorAll(".fxcard").forEach(c=>c.classList.remove("sel"));el.classList.add("sel");
+  document.getElementById("fxChipName").textContent=name;
+  document.getElementById("fxChip").classList.add("on");
+}
+function mix(el){
+  el.parentElement.querySelector("b").textContent=el.value+"%";
+  el.style.setProperty("--fill",el.value+"%");
+}
+document.querySelectorAll(".mixrow input").forEach(el=>el.style.setProperty("--fill",el.value+"%"));
+/* clips selectable */
+document.querySelectorAll("#v1lane .clip").forEach(c=>c.addEventListener("click",()=>{
+  document.querySelectorAll("#v1lane .clip").forEach(x=>x.classList.remove("sel"));c.classList.add("sel");
+}));
+/* waveform */
+(function(){
+  const w=document.getElementById("wave");let h="";
+  const vals=[8,14,20,12,26,34,18,28,40,22,30,44,26,18,34,46,30,20,38,28,16,32,42,24,18,30,36,22,14,26,34,20,28,16,24,32,20,12,22,30];
+  vals.forEach((v,i)=>{h+=`<i style="height:${v}px"></i>`;if(i%5===0)h+=`<span class="beat" style="left:${(i/vals.length*100).toFixed(1)}%"></span>`;});
+  w.innerHTML=h;
+})();
+/* ================= EXPORT ================= */
+const exp={res:1080,ar:"16:9",fps:30,q:16};
+function bindOpts(id,key,fn){
+  document.getElementById(id).addEventListener("click",e=>{
+    const b=e.target.closest(".opt");if(!b)return;
+    document.getElementById(id).querySelectorAll(".opt").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");exp[key]=isNaN(+b.dataset.v)?b.dataset.v:+b.dataset.v;
+    if(fn)fn();updateEst();
+  });
+}
+bindOpts("resOpts","res",()=>document.getElementById("expResTag").textContent=exp.res>=2160?"4K":exp.res+"p");
+bindOpts("arOpts","ar");bindOpts("fpsOpts","fps");bindOpts("qOpts","q");
+function updateEst(){
+  const resF={720:.5,1080:1,2160:3}[exp.res]||1;
+  const mb=Math.round(exp.q*29/8*resF);
+  document.getElementById("estSize").textContent=mb+" MB";
+}
+updateEst();
+let exporting=false;
+function startExport(){
+  if(exporting)return;exporting=true;
+  const bar=document.getElementById("expBar"),fill=document.getElementById("expFill"),
+        msg=document.getElementById("expMsg"),btn=document.getElementById("expBtn");
+  bar.classList.add("on");msg.classList.remove("on");btn.textContent="Rendering…";btn.style.opacity=".7";
+  let p=0;fill.style.width="0";
+  const t=setInterval(()=>{
+    p+=Math.random()*9+3;
+    if(p>=100){p=100;clearInterval(t);
+      btn.textContent="Export Video";btn.style.opacity="1";exporting=false;
+      msg.classList.add("on");setTimeout(()=>bar.classList.remove("on"),2500);}
+    fill.style.width=p+"%";
+  },220);
+}
+</script>
+</body>
+</html>

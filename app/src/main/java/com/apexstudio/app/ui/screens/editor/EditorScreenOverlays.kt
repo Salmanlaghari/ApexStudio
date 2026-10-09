@@ -65,7 +65,7 @@ fun TrimPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTrimPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -129,7 +129,7 @@ fun GpuFilterPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.45f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeGpuFilterPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -170,7 +170,7 @@ fun ColorGradingPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.35f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable {
                 vm.closeFilterPanel()
                 vm.closeColorGradingLutPanel()
@@ -226,7 +226,7 @@ fun AdjustmentsPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeAdjustmentsPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -256,7 +256,7 @@ fun FxPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeFxPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -301,7 +301,7 @@ fun TransmissionTemplatesOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTransmissionTemplatesPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -332,7 +332,7 @@ fun TransitionPickerOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTransitionPicker() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -378,7 +378,7 @@ fun TextPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTextPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -488,7 +488,7 @@ fun AudioMixerPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeAudioMixer() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -566,7 +566,7 @@ fun SpeedPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeSpeedPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -608,7 +608,7 @@ fun StickerPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeStickerPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -631,7 +631,7 @@ fun VoiceRecorderOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeVoiceRecorder() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -654,7 +654,7 @@ fun CameraCaptureOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeCameraCapture() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -679,7 +679,7 @@ fun ArFilterPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeArFilterPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -708,7 +708,7 @@ fun CoverPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeCoverPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -739,7 +739,7 @@ fun ChromaKeyPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeChromaKeyPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -785,7 +785,7 @@ fun KeyframePanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.setKeyframePanelOpen(false) },
         contentAlignment = Alignment.BottomCenter
     ) {

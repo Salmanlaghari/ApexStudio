@@ -493,7 +493,7 @@ private fun PhotoEditSheet(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closePhotoEditPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {

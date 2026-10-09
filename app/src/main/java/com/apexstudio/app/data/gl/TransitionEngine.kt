@@ -44,7 +44,12 @@ class TransitionEngine {
             CLOCK_WIPE("clock_wipe"),
             SLIDE_RIGHT("slide_right"),
             SLIDE_UP("slide_up"),
-            LIGHT_LEAK("light_leak");
+            LIGHT_LEAK("light_leak"),
+            // Pro Phase 1: new shader transitions (original GLSL, MIT-clean)
+            CROSS_BLUR("cross_blur"),
+            DOORWAY("doorway"),
+            PIXELIZE("pixelize"),
+            CROSSWARP("crosswarp");
 
             companion object {
                 fun fromId(id: String?): TransitionType {
@@ -57,7 +62,8 @@ class TransitionEngine {
                             "dip_black" -> FADE_BLACK
                             "zoom_push" -> ZOOM_BLUR
                             "slide_left" -> SLIDE
-                            "radial_wipe" -> CLOCK_WIPE
+                            "radial_wipe", "circle" -> CLOCK_WIPE
+                            "blur" -> CROSS_BLUR
                             else -> CROSS_DISSOLVE
                         }
                 }
@@ -244,7 +250,58 @@ void main() {
         float flare = sin(p * 3.14159265);
         vec3 flareCol = vec3(1.0, 0.75, 0.4) * flare * 0.85;
         fragColor = vec4(base.rgb + flareCol, base.a);
-    } 
+    }
+    else if (uType == 14) {
+        // Cross Blur: gaussian-ish blur peaks mid-transition, then resolves
+        float blurAmt = sin(p * 3.14159265) * 0.012;
+        vec4 colA = vec4(0.0);
+        vec4 colB = vec4(0.0);
+        float total = 0.0;
+        for (float x = -2.0; x <= 2.0; x += 1.0) {
+            for (float y = -2.0; y <= 2.0; y += 1.0) {
+                vec2 off = vec2(x, y) * blurAmt;
+                colA += texture(uTexA, clamp(uv + off, 0.0, 1.0));
+                colB += texture(uTexB, clamp(uv + off, 0.0, 1.0));
+                total += 1.0;
+            }
+        }
+        fragColor = mix(colA / total, colB / total, smoothstep(0.3, 0.7, p));
+    }
+    else if (uType == 15) {
+        // Doorway: clip A swings away toward the center (door opening),
+        // clip B pushes in from behind with a slight zoom
+        float openAmt = smoothstep(0.0, 1.0, p);
+        vec2 uvB = (uv - vec2(0.5)) / mix(1.3, 1.0, openAmt) + vec2(0.5);
+        vec4 colB = texture(uTexB, clamp(uvB, 0.0, 1.0));
+        float aScale = max(1.0 - openAmt * 0.94, 0.02);
+        vec2 uvA = (uv - vec2(0.5)) / aScale + vec2(0.5);
+        vec4 colA = texture(uTexA, clamp(uvA, 0.0, 1.0));
+        colA.rgb *= mix(1.0, 0.55, openAmt); // depth shading as the door opens
+        vec2 halfSize = vec2(0.5) * aScale;
+        float inA = step(abs(uv.x - 0.5), halfSize.x) * step(abs(uv.y - 0.5), halfSize.y);
+        float aAlpha = inA * (1.0 - smoothstep(0.9, 1.0, openAmt));
+        fragColor = mix(colB, colA, aAlpha);
+    }
+    else if (uType == 16) {
+        // Pixelize: mosaic size peaks mid-transition
+        float cells = mix(140.0, 10.0, sin(p * 3.14159265));
+        vec2 grid = vec2(cells, cells * 9.0 / 16.0);
+        vec2 puv = (floor(uv * grid) + 0.5) / grid;
+        vec4 colA = texture(uTexA, clamp(puv, 0.0, 1.0));
+        vec4 colB = texture(uTexB, clamp(puv, 0.0, 1.0));
+        fragColor = mix(colA, colB, smoothstep(0.35, 0.65, p));
+    }
+    else if (uType == 17) {
+        // Crosswarp: both frames bow and sweep past each other
+        float c = sin(p * 3.14159265);
+        float bow = c * 0.16 * (uv.y - 0.5) * 2.0;
+        float sweep = 0.85;
+        vec2 uvA = uv + vec2(bow * (1.0 - p) + p * sweep, 0.0);
+        vec2 uvB = uv + vec2(-bow * p - (1.0 - p) * sweep, 0.0);
+        vec4 colA = texture(uTexA, clamp(uvA, 0.0, 1.0));
+        vec4 colB = texture(uTexB, clamp(uvB, 0.0, 1.0));
+        fragColor = mix(colA, colB, smoothstep(0.15, 0.85, p));
+    }
     else {
         fragColor = mix(texture(uTexA, uv), texture(uTexB, uv), p);
     }
@@ -496,6 +553,10 @@ void main() {
             TransitionType.SLIDE_RIGHT -> 11
             TransitionType.SLIDE_UP -> 12
             TransitionType.LIGHT_LEAK -> 13
+            TransitionType.CROSS_BLUR -> 14
+            TransitionType.DOORWAY -> 15
+            TransitionType.PIXELIZE -> 16
+            TransitionType.CROSSWARP -> 17
         }
         GLES30.glUniform1i(uTypeLoc, typeInt)
 

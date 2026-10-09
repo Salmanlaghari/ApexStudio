@@ -23,6 +23,7 @@ import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.AspectCropTransformation
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.data.fx.FxGlEffect
@@ -83,6 +84,9 @@ class ExportEngine(private val context: Context) {
         val resolution: String = "1080p",
         val fps: Int = 60,
         val quality: String = "high",
+        // Pro Phase 1: aspect ratio + bitrate controls
+        val aspectRatio: String = "16:9", // "16:9" | "9:16" | "1:1"
+        val bitrateMbps: Int = 0, // 0 = auto (resolution-based default)
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
@@ -186,6 +190,21 @@ class ExportEngine(private val context: Context) {
                 val outputFile = File(outputDir, outputFileName)
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+
+                // 0. Pro Phase 1: aspect-ratio conversion (16:9 / 9:16 / 1:1).
+                // Runs first on raw frames: center-crops to the target aspect
+                // and scales to the target output size. Skipped when the
+                // aspect is the default 16:9 (zero behavior change).
+                if (config.aspectRatio == "9:16" || config.aspectRatio == "1:1") {
+                    val (tw, th) = AspectCropTransformation.targetSizeFor(
+                        config.resolution, config.aspectRatio
+                    )
+                    try {
+                        videoEffects.add(AspectCropTransformation(tw, th))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Aspect-ratio transform failed", e)
+                    }
+                }
 
                 // Picture-in-Picture overlays: composite each overlay clip as a true
                 // PiP in the export, matching the preview's bottom-end corner placement.
@@ -359,8 +378,10 @@ class ExportEngine(private val context: Context) {
                     .build()
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
+                //    (+ Pro Phase 1 custom bitrate override when set)
                 val transformer = buildHardwareTransformer(
-                    config.resolution, outputFile, config.musicMixTracks
+                    config.resolution, outputFile, config.musicMixTracks,
+                    bitrateMbpsOverride = config.bitrateMbps
                 )
                 this@ExportEngine.transformer = transformer
 
@@ -564,9 +585,14 @@ class ExportEngine(private val context: Context) {
     private fun buildHardwareTransformer(
         resolution: String,
         outputFile: File,
-        musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+        musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
+        bitrateMbpsOverride: Int = 0
     ): Transformer {
-        val targetBitrate = when (resolution.lowercase()) {
+        // Pro Phase 1: explicit bitrate from the Export screen wins;
+        // otherwise fall back to the resolution-based default.
+        val targetBitrate = if (bitrateMbpsOverride > 0) {
+            bitrateMbpsOverride * 1_000_000
+        } else when (resolution.lowercase()) {
             "4k", "2160p" -> 50_000_000
             "720p" -> 6_000_000
             else -> 18_000_000 // 1080p

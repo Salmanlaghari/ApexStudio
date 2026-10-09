@@ -64,6 +64,24 @@ fun ExportScreen(
     val selectedResolution = export.settings.resolution
     val selectedFps = export.settings.frameRate.toFloat()
     val activeFxId = editorState.activeFxId
+    // Pro Phase 1: aspect ratio + bitrate from ExportSettings
+    val selectedAspect = export.settings.aspectRatio
+    val selectedBitrateMbps = export.settings.bitrateMbps
+    // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
+    val projectDurationMs = editorState.durationMs.coerceAtLeast(1L)
+    val effectiveBitrateMbps = if (selectedBitrateMbps > 0) selectedBitrateMbps else when {
+        selectedResolution.contains("4k", ignoreCase = true) ||
+                selectedResolution.contains("2160") -> 50
+        selectedResolution.contains("720") -> 6
+        else -> 18
+    }
+    val estimatedSizeText = remember(effectiveBitrateMbps, projectDurationMs) {
+        val bytes = effectiveBitrateMbps * 1_000_000L / 8 * (projectDurationMs / 1000f)
+        when {
+            bytes >= 1_000_000_000L -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1_000_000_000f)
+            else -> String.format(java.util.Locale.US, "%d MB", (bytes / 1_000_000L).toInt())
+        }
+    }
 
 
     Column(
@@ -149,6 +167,34 @@ fun ExportScreen(
                 }
             }
 
+            // Pro Phase 1: aspect ratio selector (16:9 / 9:16 / 1:1)
+            SectionLabel("ASPECT RATIO")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for ((label, sub) in listOf(
+                        "16:9" to "Landscape",
+                        "9:16" to "Portrait",
+                        "1:1" to "Square"
+                    )) {
+                        ResolutionPill(
+                            label = label,
+                            sub = sub,
+                            selected = selectedAspect == label,
+                            onClick = {
+                                vm.updateExport { it.copy(aspectRatio = label) }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
             SectionLabel("FRAME RATE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -190,7 +236,7 @@ fun ExportScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        for (f in listOf(30f, 60f, 90f, 120f)) {
+                        for (f in listOf(24f, 30f, 60f, 90f, 120f)) {
                             val sel = selectedFps == f
                             Box(
                                 modifier = Modifier
@@ -222,45 +268,125 @@ fun ExportScreen(
                 }
             }
 
-            SectionLabel("BITRATE & QUALITY")
+            // Pro Phase 1: bitrate control (Auto + presets, Mbps)
+            SectionLabel("BITRATE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // The gauge now drives off the live export
-                    // progress (was hardcoded 0.78f so it never
-                    // changed once the export started). When
-                    // export.progress == 0f and isExporting is
-                    // false we leave the gauge blank rather than
-                    // showing a misleading "0%" before the user
-                    // taps the button.
-                    GaugeArc(
-                        progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            if (export.isExporting) "Exporting…"
-                            else if (export.progress > 0f) "Export Complete"
-                            else "Estimated File Size",
-                            color = ApexPalette.TextTertiary,
-                            fontSize = 9.sp
+                    val bitrateOptions = listOf(0 to "Auto", 8 to "8", 12 to "12", 16 to "16", 24 to "24", 32 to "32")
+                    for ((mbps, label) in bitrateOptions) {
+                        val sel = selectedBitrateMbps == mbps
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (sel) ApexPalette.NeonCyan.copy(alpha = 0.15f)
+                                    else ApexPalette.BgElevated
+                                )
+                                .border(
+                                    if (sel) 1.5.dp else 1.dp,
+                                    if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    vm.updateExport { it.copy(bitrateMbps = mbps) }
+                                }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    label,
+                                    color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    if (mbps == 0) "auto" else "Mbps",
+                                    color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionLabel("BITRATE & QUALITY")
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // The gauge now drives off the live export
+                        // progress (was hardcoded 0.78f so it never
+                        // changed once the export started). When
+                        // export.progress == 0f and isExporting is
+                        // false we leave the gauge blank rather than
+                        // showing a misleading "0%" before the user
+                        // taps the button.
+                        GaugeArc(
+                            progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
+                            modifier = Modifier.size(56.dp)
                         )
-                        Text(
-                            "1.8 GB",
-                            color = ApexPalette.TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (export.isExporting) "Exporting…"
+                                else if (export.progress > 0f) "Export Complete"
+                                else "Estimated File Size",
+                                color = ApexPalette.TextTertiary,
+                                fontSize = 9.sp
+                            )
+                            // Pro Phase 1: live estimate from bitrate x duration
+                            // (was hardcoded "1.8 GB").
+                            Text(
+                                estimatedSizeText,
+                                color = ApexPalette.TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                "$effectiveBitrateMbps Mbps • $selectedAspect • H.264",
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // Pro Phase 1: no-watermark differentiator badge
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(ApexPalette.NeonCyan.copy(alpha = 0.1f))
+                            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Verified,
+                            contentDescription = null,
+                            tint = ApexPalette.NeonCyan,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            "120 Mbps • H.265",
+                            "No watermark • 100% on-device",
                             color = ApexPalette.NeonCyan,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -435,7 +561,7 @@ fun ExportScreen(
                 Text(
                     if (export.isExporting)
                         "Exporting… ${(export.progress * 100).toInt()}%"
-                    else "Export $selectedResolution @ ${selectedFps.toInt()}fps",
+                    else "Export $selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp

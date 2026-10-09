@@ -7,7 +7,6 @@
         "teal_orange",
         "hollywood",
         "moody_blockbuster",
-        "matrix_green",
         "film_noir_cinema",
         "blockbuster_warm",
         "epic_dawn",
@@ -21,14 +20,15 @@
         "cine_drama",
         "cine_teal_orange",
         "cine_teal_orange_2",
-        "cine_vibrant",
         "cine_bright",
-        "cine_natural"
+        "cine_natural",
+        "epic_sunset",
+        "matrix_green"
       ]
     },
     {
-      "id": "retro_film",
-      "name": "Retro & Film",
+      "id": "vintage",
+      "name": "Vintage",
       "filters": [
         "kodak_35mm",
         "fuji_chrome",
@@ -46,46 +46,30 @@
       ]
     },
     {
-      "id": "cyberpunk_neon",
-      "name": "Cyberpunk & Neon",
+      "id": "vibrant",
+      "name": "Vibrant",
       "filters": [
-        "neon_purple",
-        "cyan_glow",
-        "midnight_dark",
+        "cine_vibrant",
+        "vibrant_punch",
+        "tropical_punch",
+        "forest_green",
+        "sunset_gold",
+        "ocean_blue",
+        "fresh_garden",
+        "golden_hour",
+        "mountain_air",
+        "desert_sand",
+        "emerald_garden",
+        "desert_gold",
         "neon_contrast",
-        "synthwave_pink",
-        "synthwave_blue",
-        "laser_grid",
+        "cyan_glow",
         "chrome_metal",
-        "neon_green",
-        "ultraviolet",
-        "neon_magenta",
-        "electric_violet",
-        "midnight_drive"
+        "synthwave_pink"
       ]
     },
     {
-      "id": "portrait_beauty",
-      "name": "Portrait & Beauty",
-      "filters": [
-        "soft_skin_glow",
-        "natural_warmth",
-        "pastel_tone",
-        "warm_honey",
-        "studio_glow",
-        "fresh_face",
-        "peachy_glow",
-        "porcelain",
-        "rose_gold",
-        "clean_white",
-        "rose_blush",
-        "amber_skin",
-        "porcelain_soft"
-      ]
-    },
-    {
-      "id": "b&w_monochromatic",
-      "name": "B&W & Monochromatic",
+      "id": "bw",
+      "name": "B&W",
       "filters": [
         "noir_classic",
         "high_contrast_charcoal",
@@ -103,41 +87,51 @@
       ]
     },
     {
-      "id": "urban_moody",
-      "name": "Urban & Moody",
+      "id": "portrait",
+      "name": "Portrait",
       "filters": [
-        "cold_city",
-        "street_blue",
-        "muted_tones",
-        "industrial",
-        "rainy_window",
-        "night_street",
-        "urban_shadow",
-        "concrete_gray",
-        "subway_light",
-        "rooftop_dusk",
-        "steel_concrete",
-        "rainy_night",
-        "industrial_ash"
+        "soft_skin_glow",
+        "natural_warmth",
+        "pastel_tone",
+        "warm_honey",
+        "studio_glow",
+        "fresh_face",
+        "peachy_glow",
+        "porcelain",
+        "rose_gold",
+        "clean_white",
+        "rose_blush",
+        "amber_skin",
+        "porcelain_soft"
       ]
     },
     {
-      "id": "food_landscape",
-      "name": "Food & Landscape",
+      "id": "night",
+      "name": "Night",
       "filters": [
-        "vibrant_punch",
-        "forest_green",
-        "sunset_gold",
-        "ocean_blue",
-        "tropical_punch",
-        "fresh_garden",
-        "golden_hour",
+        "midnight_dark",
+        "midnight_drive",
+        "night_street",
+        "rainy_night",
+        "rainy_window",
+        "cold_city",
+        "street_blue",
+        "urban_shadow",
+        "subway_light",
+        "rooftop_dusk",
         "blue_hour",
-        "mountain_air",
-        "desert_sand",
-        "epic_sunset",
-        "emerald_garden",
-        "desert_gold"
+        "muted_tones",
+        "industrial",
+        "concrete_gray",
+        "steel_concrete",
+        "industrial_ash",
+        "neon_purple",
+        "neon_green",
+        "neon_magenta",
+        "electric_violet",
+        "ultraviolet",
+        "synthwave_blue",
+        "laser_grid"
       ]
     }
   ],
@@ -205,361 +199,361 @@
     {
       "id": "kodak_35mm",
       "name": "Kodak 35mm",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/kodak_35mm.cube"
     },
     {
       "id": "fuji_chrome",
       "name": "Fuji Chrome",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/fuji_chrome.cube"
     },
     {
       "id": "vintage_sepia",
       "name": "Vintage Sepia",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/vintage_sepia.cube"
     },
     {
       "id": "eighties_grain",
       "name": "80s Grain",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/eighties_grain.cube"
     },
     {
       "id": "polaroid_fade",
       "name": "Polaroid Fade",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/polaroid_fade.cube"
     },
     {
       "id": "super_8",
       "name": "Super 8",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/super_8.cube"
     },
     {
       "id": "film_warm",
       "name": "Film Warm",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/film_warm.cube"
     },
     {
       "id": "film_cool",
       "name": "Film Cool",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/film_cool.cube"
     },
     {
       "id": "disposable_camera",
       "name": "Disposable Camera",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/disposable_camera.cube"
     },
     {
       "id": "vhs_warm",
       "name": "VHS Warm",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/vhs_warm.cube"
     },
     {
       "id": "neon_purple",
       "name": "Neon Purple",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/neon_purple.cube"
     },
     {
       "id": "cyan_glow",
       "name": "Cyan Glow",
-      "category": "Cyberpunk & Neon",
+      "category": "Vibrant",
       "asset": "luts/cyan_glow.cube"
     },
     {
       "id": "midnight_dark",
       "name": "Midnight Dark",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/midnight_dark.cube"
     },
     {
       "id": "neon_contrast",
       "name": "Neon High Contrast",
-      "category": "Cyberpunk & Neon",
+      "category": "Vibrant",
       "asset": "luts/neon_contrast.cube"
     },
     {
       "id": "synthwave_pink",
       "name": "Synthwave Pink",
-      "category": "Cyberpunk & Neon",
+      "category": "Vibrant",
       "asset": "luts/synthwave_pink.cube"
     },
     {
       "id": "synthwave_blue",
       "name": "Synthwave Blue",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/synthwave_blue.cube"
     },
     {
       "id": "laser_grid",
       "name": "Laser Grid",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/laser_grid.cube"
     },
     {
       "id": "chrome_metal",
       "name": "Chrome Metal",
-      "category": "Cyberpunk & Neon",
+      "category": "Vibrant",
       "asset": "luts/chrome_metal.cube"
     },
     {
       "id": "neon_green",
       "name": "Neon Green",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/neon_green.cube"
     },
     {
       "id": "ultraviolet",
       "name": "Ultraviolet",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/ultraviolet.cube"
     },
     {
       "id": "soft_skin_glow",
       "name": "Soft Skin Glow",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/soft_skin_glow.cube"
     },
     {
       "id": "natural_warmth",
       "name": "Natural Warmth",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/natural_warmth.cube"
     },
     {
       "id": "pastel_tone",
       "name": "Pastel Tone",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/pastel_tone.cube"
     },
     {
       "id": "warm_honey",
       "name": "Warm Honey",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/warm_honey.cube"
     },
     {
       "id": "studio_glow",
       "name": "Studio Glow",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/studio_glow.cube"
     },
     {
       "id": "fresh_face",
       "name": "Fresh Face",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/fresh_face.cube"
     },
     {
       "id": "peachy_glow",
       "name": "Peachy Glow",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/peachy_glow.cube"
     },
     {
       "id": "porcelain",
       "name": "Porcelain",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/porcelain.cube"
     },
     {
       "id": "rose_gold",
       "name": "Rose Gold",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/rose_gold.cube"
     },
     {
       "id": "clean_white",
       "name": "Clean White",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/clean_white.cube"
     },
     {
       "id": "noir_classic",
       "name": "Noir Classic",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/noir_classic.cube"
     },
     {
       "id": "high_contrast_charcoal",
       "name": "High Contrast Charcoal",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/high_contrast_charcoal.cube"
     },
     {
       "id": "silver_oxide",
       "name": "Silver Oxide",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/silver_oxide.cube"
     },
     {
       "id": "rich_black",
       "name": "Rich Black",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/rich_black.cube"
     },
     {
       "id": "film_bw_warm",
       "name": "Film B&W Warm",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/film_bw_warm.cube"
     },
     {
       "id": "film_bw_cool",
       "name": "Film B&W Cool",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/film_bw_cool.cube"
     },
     {
       "id": "ink_wash",
       "name": "Ink Wash",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/ink_wash.cube"
     },
     {
       "id": "graphite",
       "name": "Graphite",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/graphite.cube"
     },
     {
       "id": "classic_mono",
       "name": "Classic Mono",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/classic_mono.cube"
     },
     {
       "id": "high_key_mono",
       "name": "High Key Mono",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/high_key_mono.cube"
     },
     {
       "id": "cold_city",
       "name": "Cold City",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/cold_city.cube"
     },
     {
       "id": "street_blue",
       "name": "Street Blue",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/street_blue.cube"
     },
     {
       "id": "muted_tones",
       "name": "Muted Tones",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/muted_tones.cube"
     },
     {
       "id": "industrial",
       "name": "Industrial",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/industrial.cube"
     },
     {
       "id": "rainy_window",
       "name": "Rainy Window",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/rainy_window.cube"
     },
     {
       "id": "night_street",
       "name": "Night Street",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/night_street.cube"
     },
     {
       "id": "urban_shadow",
       "name": "Urban Shadow",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/urban_shadow.cube"
     },
     {
       "id": "concrete_gray",
       "name": "Concrete Gray",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/concrete_gray.cube"
     },
     {
       "id": "subway_light",
       "name": "Subway Light",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/subway_light.cube"
     },
     {
       "id": "rooftop_dusk",
       "name": "Rooftop Dusk",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/rooftop_dusk.cube"
     },
     {
       "id": "vibrant_punch",
       "name": "Vibrant Punch",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/vibrant_punch.cube"
     },
     {
       "id": "forest_green",
       "name": "Forest Green",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/forest_green.cube"
     },
     {
       "id": "sunset_gold",
       "name": "Sunset Gold",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/sunset_gold.cube"
     },
     {
       "id": "ocean_blue",
       "name": "Ocean Blue",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/ocean_blue.cube"
     },
     {
       "id": "tropical_punch",
       "name": "Tropical Punch",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/tropical_punch.cube"
     },
     {
       "id": "fresh_garden",
       "name": "Fresh Garden",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/fresh_garden.cube"
     },
     {
       "id": "golden_hour",
       "name": "Golden Hour",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/golden_hour.cube"
     },
     {
       "id": "blue_hour",
       "name": "Blue Hour",
-      "category": "Food & Landscape",
+      "category": "Night",
       "asset": "luts/blue_hour.cube"
     },
     {
       "id": "mountain_air",
       "name": "Mountain Air",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/mountain_air.cube"
     },
     {
       "id": "desert_sand",
       "name": "Desert Sand",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/desert_sand.cube"
     },
     {
@@ -577,109 +571,109 @@
     {
       "id": "vintage_fade_70s",
       "name": "Vintage Fade 70s",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/vintage_fade_70s.cube"
     },
     {
       "id": "sepia_classic",
       "name": "Sepia Classic",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/sepia_classic.cube"
     },
     {
       "id": "polaroid_warm",
       "name": "Polaroid Warm",
-      "category": "Retro & Film",
+      "category": "Vintage",
       "asset": "luts/polaroid_warm.cube"
     },
     {
       "id": "neon_magenta",
       "name": "Neon Magenta",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/neon_magenta.cube"
     },
     {
       "id": "electric_violet",
       "name": "Electric Violet",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/electric_violet.cube"
     },
     {
       "id": "midnight_drive",
       "name": "Midnight Drive",
-      "category": "Cyberpunk & Neon",
+      "category": "Night",
       "asset": "luts/midnight_drive.cube"
     },
     {
       "id": "rose_blush",
       "name": "Rose Blush",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/rose_blush.cube"
     },
     {
       "id": "amber_skin",
       "name": "Amber Skin",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/amber_skin.cube"
     },
     {
       "id": "porcelain_soft",
       "name": "Porcelain Soft",
-      "category": "Portrait & Beauty",
+      "category": "Portrait",
       "asset": "luts/porcelain_soft.cube"
     },
     {
       "id": "noir_ink",
       "name": "Noir Ink",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/noir_ink.cube"
     },
     {
       "id": "silver_gelatin",
       "name": "Silver Gelatin",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/silver_gelatin.cube"
     },
     {
       "id": "graphite_dark",
       "name": "Graphite Dark",
-      "category": "B&W & Monochromatic",
+      "category": "B&W",
       "asset": "luts/graphite_dark.cube"
     },
     {
       "id": "steel_concrete",
       "name": "Steel Concrete",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/steel_concrete.cube"
     },
     {
       "id": "rainy_night",
       "name": "Rainy Night",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/rainy_night.cube"
     },
     {
       "id": "industrial_ash",
       "name": "Industrial Ash",
-      "category": "Urban & Moody",
+      "category": "Night",
       "asset": "luts/industrial_ash.cube"
     },
     {
       "id": "epic_sunset",
       "name": "Epic Sunset",
-      "category": "Food & Landscape",
+      "category": "Cinematic",
       "asset": "luts/epic_sunset.cube"
     },
     {
       "id": "emerald_garden",
       "name": "Emerald Garden",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/emerald_garden.cube"
     },
     {
       "id": "desert_gold",
       "name": "Desert Gold",
-      "category": "Food & Landscape",
+      "category": "Vibrant",
       "asset": "luts/desert_gold.cube"
     },
     {
@@ -715,7 +709,7 @@
     {
       "id": "cine_vibrant",
       "name": "Cine Vibrant",
-      "category": "Cinematic",
+      "category": "Vibrant",
       "asset": "luts/cine_vibrant.cube"
     },
     {

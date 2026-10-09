@@ -561,7 +561,10 @@ data class ExportSettings(
     val resolution: String = "8K Ultra HD",
     val frameRate: Int = 60,
     val quality: ExportQuality = ExportQuality.HIGH,
-    val estimatedSizeGb: Float = 1.8f
+    val estimatedSizeGb: Float = 1.8f,
+    // Pro Phase 1: aspect ratio + bitrate controls
+    val aspectRatio: String = "16:9", // "16:9" | "9:16" | "1:1"
+    val bitrateMbps: Int = 0 // 0 = auto (resolution-based default)
 )
 
 enum class ExportQuality(val label: String) {

@@ -83,7 +83,9 @@ fun AudioMixerPanel(
     onFadeOut: (trackId: String, ms: Long) -> Unit,
     onImportLocalAudio: () -> Unit = {},
     onOpenRoyaltyFreeMusic: () -> Unit = {},
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    /** Phase 4: player audio session for the live visualizer (0 = none yet). */
+    audioSessionId: Int = 0
 ) {
     Column(
         modifier = Modifier
@@ -141,6 +143,14 @@ fun AudioMixerPanel(
                 onClick = onOpenRoyaltyFreeMusic
             )
         }
+
+        Spacer(Modifier.height(14.dp))
+
+        // Phase 4: live spectrum visualizer (vendored audio-visualizer-android).
+        MixerVisualizer(
+            audioSessionId = audioSessionId,
+            modifier = Modifier.fillMaxWidth()
+        )
 
         Spacer(Modifier.height(14.dp))
 

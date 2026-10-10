@@ -446,7 +446,9 @@ fun EditorScreen(
         audioState = audioState,
         vm = vm,
         audioPickerLauncher = audioPickerLauncher,
-        onOpenRoyaltyFreeSheet = { showRoyaltyFreeSheet = true }
+        onOpenRoyaltyFreeSheet = { showRoyaltyFreeSheet = true },
+        // Phase 4: live visualizer needs the player audio session.
+        audioSessionId = exoPlayer?.audioSessionId ?: 0
     )
 
     // Volume + Fade sheets — extracted to overlay composables to keep this
@@ -515,6 +517,7 @@ private fun PhotoEditSheet(
                 onRotate90 = { vm.rotatePhotoClockwise(photoEditClip.id) },
                 onFlipH = { vm.togglePhotoFlipHorizontal(photoEditClip.id) },
                 onFlipV = { vm.togglePhotoFlipVertical(photoEditClip.id) },
+                onKenBurns = { vm.setPhotoKenBurns(photoEditClip.id, it) },
                 onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
                 onClose = { vm.closePhotoEditPanel() }
             )

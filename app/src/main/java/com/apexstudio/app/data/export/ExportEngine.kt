@@ -29,6 +29,7 @@ import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.gl.TransitionEngine
+import com.apexstudio.app.data.gl.GlTransitionAdapterEffect
 import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
@@ -104,6 +105,11 @@ class ExportEngine(private val context: Context) {
         val arFilterIntensity: Float = 0f,
         val arFilterCustomText: String = "",
         val transitionType: TransitionEngine.Companion.TransitionType? = null,
+        /**
+         * Phase 4: gl-transitions shader id (without the `glpro_` prefix).
+         * Takes precedence over [transitionType] when non-null.
+         */
+        val transitionGlId: String? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
         val stickers: List<com.apexstudio.app.domain.model.StickerOverlay> = emptyList(),
@@ -303,14 +309,26 @@ class ExportEngine(private val context: Context) {
                 }
 
                 // 4. Transitions
-                if (config.transitionType != null && config.transitionDurationMs > 0L) {
-                    videoEffects.add(
-                        TransitionGlEffect(
-                            transitionType = config.transitionType,
-                            durationUs = config.transitionDurationMs * 1000L,
-                            startUs = 0L
+                if (config.transitionDurationMs > 0L) {
+                    val glId = config.transitionGlId
+                    if (glId != null) {
+                        // Phase 4: real gl-transitions GLSL shader.
+                        videoEffects.add(
+                            GlTransitionAdapterEffect(
+                                glId = glId,
+                                durationUs = config.transitionDurationMs * 1000L,
+                                startUs = 0L
+                            )
                         )
-                    )
+                    } else if (config.transitionType != null) {
+                        videoEffects.add(
+                            TransitionGlEffect(
+                                transitionType = config.transitionType,
+                                durationUs = config.transitionDurationMs * 1000L,
+                                startUs = 0L
+                            )
+                        )
+                    }
                 }
 
                 // 5. Speed Ramping with Audio/Video synchronization

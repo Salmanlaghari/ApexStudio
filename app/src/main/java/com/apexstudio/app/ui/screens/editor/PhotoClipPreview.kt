@@ -23,6 +23,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.viewinterop.AndroidView
+import com.flaviofaria.kenburnsview.KenBurnsView
+import com.flaviofaria.kenburnsview.RandomTransitionGenerator
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.filter.LutBitmapCache
@@ -153,86 +156,107 @@ fun PhotoClipPreview(
     val lockedAspect = PhotoEditSettings.aspectRatioForPreset(settings.cropAspectPreset)
     var dragCorner by remember { mutableStateOf<PhotoEditRenderer.CropCorner?>(null) }
 
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .onSizeChanged { canvasSize = it }
-            .pointerInput(cropActive, photoRect) {
-                if (!cropActive) return@pointerInput
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        dragCorner = hitTestCorner(offset, cropRect, photoRect, handleRadiusPx * 1.6f)
-                    },
-                    onDragEnd = { dragCorner = null },
-                    onDragCancel = { dragCorner = null },
-                    onDrag = { change, _ ->
-                        val corner = dragCorner ?: return@detectDragGestures
-                        val rect = photoRect ?: return@detectDragGestures
-                        val nx = ((change.position.x - rect.left) / rect.width).coerceIn(-0.2f, 1.2f)
-                        val ny = ((change.position.y - rect.top) / rect.height).coerceIn(-0.2f, 1.2f)
-                        onCropChange(
-                            PhotoEditRenderer.moveCorner(cropRect, corner, nx, ny, lockedAspect)
+    // Phase 4: Ken Burns motion preview — the real KenBurnsView
+    // (Apache-2.0) pans/zooms the edited bitmap. Crop interactions stay
+    // on the static canvas.
+    if (settings.kenBurns && !cropActive && bmp != null) {
+        val kbBitmap = bmp
+        AndroidView(
+            factory = { ctx ->
+                KenBurnsView(ctx).apply {
+                    setTransitionGenerator(
+                        RandomTransitionGenerator(
+                            8000L,
+                            android.view.animation.AccelerateDecelerateInterpolator()
                         )
-                        change.consume()
-                    }
-                )
-            }
-    ) {
-        val bitmap = bmp ?: return@Canvas
-        val rect = photoRect ?: return@Canvas
-
-        drawImage(
-            image = bitmap.asImageBitmap(),
-            dstOffset = IntOffset(rect.left.toInt(), rect.top.toInt()),
-            dstSize = IntSize(rect.width.toInt(), rect.height.toInt())
+                    )
+                }
+            },
+            update = { view -> view.setImageBitmap(kbBitmap) },
+            modifier = modifier.fillMaxSize()
         )
+    } else {
+        Canvas(
+            modifier = modifier
+                .fillMaxSize()
+                .onSizeChanged { canvasSize = it }
+                .pointerInput(cropActive, photoRect) {
+                    if (!cropActive) return@pointerInput
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            dragCorner = hitTestCorner(offset, cropRect, photoRect, handleRadiusPx * 1.6f)
+                        },
+                        onDragEnd = { dragCorner = null },
+                        onDragCancel = { dragCorner = null },
+                        onDrag = { change, _ ->
+                            val corner = dragCorner ?: return@detectDragGestures
+                            val rect = photoRect ?: return@detectDragGestures
+                            val nx = ((change.position.x - rect.left) / rect.width).coerceIn(-0.2f, 1.2f)
+                            val ny = ((change.position.y - rect.top) / rect.height).coerceIn(-0.2f, 1.2f)
+                            onCropChange(
+                                PhotoEditRenderer.moveCorner(cropRect, corner, nx, ny, lockedAspect)
+                            )
+                            change.consume()
+                        }
+                    )
+                }
+        ) {
+            val bitmap = bmp ?: return@Canvas
+            val rect = photoRect ?: return@Canvas
 
-        if (cropActive) {
-            // Crop window in display coords.
-            val cl = rect.left + cropRect.left * rect.width
-            val ct = rect.top + cropRect.top * rect.height
-            val cr = rect.left + cropRect.right * rect.width
-            val cb = rect.top + cropRect.bottom * rect.height
-            val dim = Color.Black.copy(alpha = 0.55f)
-            // Dim everything outside the crop window.
-            drawRect(dim, Offset(0f, 0f), Size(size.width, ct))
-            drawRect(dim, Offset(0f, cb), Size(size.width, size.height - cb))
-            drawRect(dim, Offset(0f, ct), Size(cl, cb - ct))
-            drawRect(dim, Offset(cr, ct), Size(size.width - cr, cb - ct))
-            // Window border + rule-of-thirds grid.
-            drawRect(
-                Color.White, Offset(cl, ct), Size(cr - cl, cb - ct),
-                style = Stroke(width = 2.dp.toPx())
+            drawImage(
+                image = bitmap.asImageBitmap(),
+                dstOffset = IntOffset(rect.left.toInt(), rect.top.toInt()),
+                dstSize = IntSize(rect.width.toInt(), rect.height.toInt())
             )
-            val gw = (cr - cl) / 3f
-            val gh = (cb - ct) / 3f
-            for (i in 1..2) {
-                drawLine(
-                    Color.White.copy(alpha = 0.45f),
-                    Offset(cl + gw * i, ct), Offset(cl + gw * i, cb),
-                    strokeWidth = 1.dp.toPx()
+
+            if (cropActive) {
+                // Crop window in display coords.
+                val cl = rect.left + cropRect.left * rect.width
+                val ct = rect.top + cropRect.top * rect.height
+                val cr = rect.left + cropRect.right * rect.width
+                val cb = rect.top + cropRect.bottom * rect.height
+                val dim = Color.Black.copy(alpha = 0.55f)
+                // Dim everything outside the crop window.
+                drawRect(dim, Offset(0f, 0f), Size(size.width, ct))
+                drawRect(dim, Offset(0f, cb), Size(size.width, size.height - cb))
+                drawRect(dim, Offset(0f, ct), Size(cl, cb - ct))
+                drawRect(dim, Offset(cr, ct), Size(size.width - cr, cb - ct))
+                // Window border + rule-of-thirds grid.
+                drawRect(
+                    Color.White, Offset(cl, ct), Size(cr - cl, cb - ct),
+                    style = Stroke(width = 2.dp.toPx())
                 )
-                drawLine(
-                    Color.White.copy(alpha = 0.45f),
-                    Offset(cl, ct + gh * i), Offset(cr, ct + gh * i),
-                    strokeWidth = 1.dp.toPx()
-                )
-            }
-            // Corner handles.
-            val active = dragCorner
-            listOf(
-                PhotoEditRenderer.CropCorner.TOP_LEFT to Offset(cl, ct),
-                PhotoEditRenderer.CropCorner.TOP_RIGHT to Offset(cr, ct),
-                PhotoEditRenderer.CropCorner.BOTTOM_LEFT to Offset(cl, cb),
-                PhotoEditRenderer.CropCorner.BOTTOM_RIGHT to Offset(cr, cb)
-            ).forEach { (corner, pos) ->
-                val highlight = active == corner
-                drawRoundRect(
-                    color = if (highlight) Color(0xFF00F0FF) else Color.White,
-                    topLeft = Offset(pos.x - handleRadiusPx, pos.y - handleRadiusPx),
-                    size = Size(handleRadiusPx * 2f, handleRadiusPx * 2f),
-                    cornerRadius = CornerRadius(handleRadiusPx * 0.45f)
-                )
+                val gw = (cr - cl) / 3f
+                val gh = (cb - ct) / 3f
+                for (i in 1..2) {
+                    drawLine(
+                        Color.White.copy(alpha = 0.45f),
+                        Offset(cl + gw * i, ct), Offset(cl + gw * i, cb),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    drawLine(
+                        Color.White.copy(alpha = 0.45f),
+                        Offset(cl, ct + gh * i), Offset(cr, ct + gh * i),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+                // Corner handles.
+                val active = dragCorner
+                listOf(
+                    PhotoEditRenderer.CropCorner.TOP_LEFT to Offset(cl, ct),
+                    PhotoEditRenderer.CropCorner.TOP_RIGHT to Offset(cr, ct),
+                    PhotoEditRenderer.CropCorner.BOTTOM_LEFT to Offset(cl, cb),
+                    PhotoEditRenderer.CropCorner.BOTTOM_RIGHT to Offset(cr, cb)
+                ).forEach { (corner, pos) ->
+                    val highlight = active == corner
+                    drawRoundRect(
+                        color = if (highlight) Color(0xFF00F0FF) else Color.White,
+                        topLeft = Offset(pos.x - handleRadiusPx, pos.y - handleRadiusPx),
+                        size = Size(handleRadiusPx * 2f, handleRadiusPx * 2f),
+                        cornerRadius = CornerRadius(handleRadiusPx * 0.45f)
+                    )
+                }
             }
         }
     }

@@ -53,6 +53,11 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.rememberLottieComposition
+import com.apexstudio.app.data.stickers.LottieFrameCache
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -293,7 +298,18 @@ private fun StickerItem(
             }
     ) {
         val img = imageBitmap
-        if (img != null) {
+        val isLottie = LottieFrameCache.isLottieAsset(latest.assetPath)
+        if (isLottie) {
+            // Phase 4: animated Lottie sticker — real looping animation.
+            val composition by rememberLottieComposition(
+                LottieCompositionSpec.Asset(latest.assetPath!!)
+            )
+            LottieAnimation(
+                composition = composition,
+                iterations = LottieConstants.IterateForever,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (img != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val c = latest.sanitizedCrop()
                 val srcOffset = IntOffset(

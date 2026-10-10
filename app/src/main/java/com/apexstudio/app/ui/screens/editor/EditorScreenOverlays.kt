@@ -15,8 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +46,10 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.presentation.viewmodel.captionUi
+import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
+import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
+import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -375,6 +380,7 @@ fun TextPanelOverlay(
         ?: state.project?.clips?.firstOrNull()
     val textOverlays = textClip?.textOverlays ?: emptyList()
     val activeOverlayId = state.selectedTextOverlayId
+    val captionUiState by vm.captionUi.collectAsState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -469,7 +475,16 @@ fun TextPanelOverlay(
                         vm.setTextOverlayAnimation(textClip.id, activeOverlayId, anim)
                     }
                 },
-                onClose = { vm.closeTextPanel() }
+                onClose = { vm.closeTextPanel() },
+                captionUiState = captionUiState,
+                onAutoCaptions = {
+                    textClip?.let {
+                        vm.resetCaptionUi()
+                        vm.generateAutoCaptions(it.id)
+                    }
+                },
+                onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
+                hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
             )
         }
     }
@@ -509,7 +524,8 @@ fun AudioMixerPanelOverlay(
                 onTrim = { trackId, start, end -> vm.setAudioTrackTrim(trackId, start, end) },
                 onFadeIn = { trackId, ms -> vm.setAudioTrackFadeIn(trackId, ms) },
                 onFadeOut = { trackId, ms -> vm.setAudioTrackFadeOut(trackId, ms) },
-                onClose = { vm.closeAudioMixer() }
+                onClose = { vm.closeAudioMixer() },
+                audioSessionId = audioSessionId
             )
         }
     }

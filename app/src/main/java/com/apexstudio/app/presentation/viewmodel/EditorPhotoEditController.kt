@@ -86,3 +86,7 @@ fun EditorViewModel.togglePhotoFlipVertical(clipId: String) =
 /** Clear every photo edit on the clip back to the untouched photo. */
 fun EditorViewModel.resetPhotoEdits(clipId: String) =
     updatePhotoEdit(clipId) { PhotoEditSettings() }
+
+/** Phase 4: toggles the Ken Burns pan/zoom motion on a photo clip. */
+fun EditorViewModel.setPhotoKenBurns(clipId: String, enabled: Boolean) =
+    updatePhotoEdit(clipId) { it.copy(kenBurns = enabled) }

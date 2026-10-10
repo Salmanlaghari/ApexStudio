@@ -20,11 +20,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.MediaClip
@@ -519,6 +523,16 @@ fun TrimPanel(
             }
         }
 
+        // Phase 4: filmstrip + dual-thumb range selector
+        // (k4l-video-trimmer UX, MIT — original implementation).
+        TrimFilmstrip(
+            clip = clip,
+            trimStart = trimStart,
+            trimEnd = trimEnd,
+            duration = duration,
+            onTrimChange = onTrimChange
+        )
+
         // Start Point Slider Adjuster
         Column(
             modifier = Modifier
@@ -855,6 +869,144 @@ private fun PresetPill(
             color = if (isAccent) ApexPalette.NeonPink else ApexPalette.TextSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+/**
+ * Phase 4: k4l-video-trimmer-style filmstrip (MIT,
+ * https://github.com/titansgroup/k4l-video-trimmer — original Compose
+ * implementation of the same UX idea).
+ *
+ * A strip of real video thumbnails with a dual-thumb [RangeSlider] on top:
+ * drag either handle to set the trim window; the cut-away regions dim.
+ * The precise sliders + nudge buttons below remain for frame accuracy.
+ */
+@Composable
+private fun TrimFilmstrip(
+    clip: com.apexstudio.app.domain.model.MediaClip,
+    trimStart: Long,
+    trimEnd: Long,
+    duration: Long,
+    onTrimChange: (Long, Long) -> Unit
+) {
+    val context = LocalContext.current
+    val thumbCount = 8
+    val thumbs by produceState<List<android.graphics.Bitmap?>>(
+        initialValue = List(thumbCount) { null },
+        clip.uri, clip.id
+    ) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            (0 until thumbCount).map { i ->
+                val t = (duration * i / (thumbCount - 1).coerceAtLeast(1))
+                    .coerceIn(0L, (duration - 100L).coerceAtLeast(0L))
+                try {
+                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
+                        context, clip.uri, t
+                    )
+                } catch (e: Exception) { null }
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgGlass)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Filmstrip",
+                color = ApexPalette.TextPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                TimeFormat.formatMs(trimEnd - trimStart) + " selected",
+                color = ApexPalette.NeonCyan,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0B0E14))
+        ) {
+            val maxW = maxWidth
+            // Thumbnails.
+            Row(modifier = Modifier.fillMaxWidth()) {
+                thumbs.forEach { bmp ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(64.dp)
+                            .background(Color(0xFF151D2E)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (bmp != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
+            }
+            // Dim the trimmed-away regions.
+            val startFrac = (trimStart.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+            val endFrac = (trimEnd.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+            if (startFrac > 0f) {
+                Box(
+                    modifier = Modifier
+                        .width(maxW * startFrac)
+                        .height(64.dp)
+                        .background(Color.Black.copy(alpha = 0.62f))
+                        .align(Alignment.CenterStart)
+                )
+            }
+            if (endFrac < 1f) {
+                Box(
+                    modifier = Modifier
+                        .width(maxW * (1f - endFrac))
+                        .height(64.dp)
+                        .background(Color.Black.copy(alpha = 0.62f))
+                        .align(Alignment.CenterEnd)
+                )
+            }
+            // Dual-thumb range selector over the strip.
+            RangeSlider(
+                value = trimStart.toFloat()..trimEnd.toFloat(),
+                onValueChange = { range ->
+                    val s = range.start.toLong().coerceIn(0L, trimEnd - 100L)
+                    val e = range.endInclusive.toLong().coerceIn(s + 100L, duration)
+                    onTrimChange(s, e)
+                },
+                valueRange = 0f..duration.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = ApexPalette.NeonCyan,
+                    activeTrackColor = Color.Transparent,
+                    inactiveTrackColor = Color.Transparent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Text(
+            "Drag the handles on the filmstrip for a quick trim — fine-tune below.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 10.sp
         )
     }
 }

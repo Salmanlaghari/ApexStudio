@@ -12,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import com.apexstudio.app.data.stickers.LottieFrameCache
 import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.StickerOverlay
@@ -56,6 +57,21 @@ class StickerGlEffect(
         private val glProgram: GlProgram
         private val overlayTexId: IntArray = intArrayOf(0)
 
+        // Phase 4: animated Lottie stickers — frame strip + sprite geometry,
+        // re-uploaded only when the frame index changes.
+        private val lottieFrames: List<android.graphics.Bitmap>? =
+            if (LottieFrameCache.isLottieAsset(sticker.assetPath)) {
+                try {
+                    LottieFrameCache.frames(context, sticker.assetPath!!)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lottie frames unavailable", e)
+                    null
+                }
+            } else null
+        private var lottieW = 0
+        private var lottieH = 0
+        private var lastLottieFrame = -1
+
         init {
             glProgram = try {
                 GlProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -83,7 +99,18 @@ class StickerGlEffect(
             val path = sticker.assetPath
             if (!path.isNullOrBlank()) {
                 try {
-                    uploadSprite(context, sticker, path, aspectRatio)
+                    if (lottieFrames != null) {
+                        // Lottie: remember sprite geometry; first frame
+                        // uploaded now, rest swapped in drawFrame().
+                        val (w, h) = spriteSize(aspectRatio)
+                        lottieW = w
+                        lottieH = h
+                        ensureLottieTexture()
+                        uploadLottieFrame(lottieFrames[0])
+                        lastLottieFrame = 0
+                    } else {
+                        uploadSprite(context, sticker, path, aspectRatio)
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Sticker sprite upload failed ($path)", e)
                 }
@@ -123,6 +150,36 @@ class StickerGlEffect(
             }
         }
 
+        /** Sprite canvas size for the current video aspect (shared PNG/Lottie). */
+        private fun spriteSize(aspect: Float): Pair<Int, Int> {
+            val longEdge = 1600
+            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
+            return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+        }
+
+        private fun uploadLottieFrame(frame: android.graphics.Bitmap) {
+            val sprite = StickerSpriteRenderer.render(frame, sticker, lottieW, lottieH)
+            try {
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, overlayTexId[0])
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, sprite, 0)
+                GlUtil.checkGlError()
+            } finally {
+                sprite.recycle()
+            }
+        }
+
+        private fun ensureLottieTexture() {
+            if (overlayTexId[0] != 0) return
+            val tex = IntArray(1)
+            GLES20.glGenTextures(1, tex, 0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            overlayTexId[0] = tex[0]
+        }
+
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
             return Size(inputWidth, inputHeight)
         }
@@ -132,6 +189,18 @@ class StickerGlEffect(
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
+                // Phase 4: animated Lottie sticker — advance frames by time.
+                val frames = lottieFrames
+                if (frames != null && frames.isNotEmpty() &&
+                    timeMs >= sticker.startMs && timeMs <= sticker.endMs
+                ) {
+                    val idx = LottieFrameCache.frameIndex(timeMs, sticker.startMs, frames.size)
+                    if (idx != lastLottieFrame) {
+                        ensureLottieTexture()
+                        uploadLottieFrame(frames[idx])
+                        lastLottieFrame = idx
+                    }
+                }
                 val isVisible = (overlayTexId[0] != 0) && (timeMs >= sticker.startMs && timeMs <= sticker.endMs)
                 val overlayId = if (isVisible) overlayTexId[0] else inputTexId
                 glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)

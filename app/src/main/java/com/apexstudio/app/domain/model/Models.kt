@@ -152,7 +152,13 @@ data class PhotoEditSettings(
     /** Quarter-turns clockwise (normalised to 0..3). */
     val rotationSteps: Int = 0,
     val flipHorizontal: Boolean = false,
-    val flipVertical: Boolean = false
+    val flipVertical: Boolean = false,
+    /**
+     * Phase 4: Ken Burns pan/zoom animation (flavioarfaria/KenBurnsView,
+     * Apache-2.0). When true the photo gently zooms/pans in preview and
+     * the export bakes the motion into the still-video.
+     */
+    val kenBurns: Boolean = false
 ) {
     val normalizedRotationSteps: Int
         get() = ((rotationSteps % 4) + 4) % 4

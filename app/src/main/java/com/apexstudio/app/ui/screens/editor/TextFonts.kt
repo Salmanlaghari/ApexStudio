@@ -28,3 +28,18 @@ fun rememberTextFontFamily(
 /** Font picker entries shown in the Text panel (key → label). */
 val TEXT_FONT_OPTIONS: List<Pair<String, String>> =
     TextFontRegistry.fonts.map { it.key to it.label }
+
+/**
+ * Phase 4: fonts grouped by category for the picker's sectioned grid
+ * (category → list of key/label pairs).
+ */
+val TEXT_FONT_GROUPS: List<Pair<String, List<Pair<String, String>>>>
+    get() {
+        val order = listOf("System", "Display", "Handwriting", "Serif", "Sans Serif")
+        val grouped = TextFontRegistry.fonts.groupBy { it.category }
+        val ordered = order.filter { grouped.containsKey(it) }
+            .map { it to grouped.getValue(it).map { f -> f.key to f.label } }
+        val rest = (grouped.keys - order.toSet()).sorted()
+            .map { it to grouped.getValue(it).map { f -> f.key to f.label } }
+        return ordered + rest
+    }

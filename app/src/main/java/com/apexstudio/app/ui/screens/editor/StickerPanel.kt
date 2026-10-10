@@ -36,6 +36,10 @@ import com.apexstudio.app.data.stickers.StickerEntry
 import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerPack
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.rememberLottieComposition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -65,6 +69,7 @@ fun StickerPanel(
 
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
+    var showAnimated by remember { mutableStateOf(false) }
 
     val filtered = remember(entries, query, selectedCategory) {
         val byCategory = if (selectedCategory == ALL_CATEGORY) entries
@@ -106,6 +111,37 @@ fun StickerPanel(
 
         Spacer(Modifier.height(10.dp))
 
+        // Stickers | Animated tabs (Phase 4: Lottie)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(false to "Stickers", true to "Animated").forEach { (tab, label) ->
+                val isSel = showAnimated == tab
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSel) ApexPalette.NeonCyan else ApexPalette.BgElevated)
+                        .clickable { showAnimated = tab }
+                        .padding(vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = if (isSel) androidx.compose.ui.graphics.Color(0xFF0A0E1A) else ApexPalette.TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        if (showAnimated) {
+            AnimatedStickerGrid(onAddSticker = onAddSticker)
+        } else {
         // Tag-based search
         OutlinedTextField(
             value = query,
@@ -209,6 +245,7 @@ fun StickerPanel(
                 }
             }
         }
+        } // end else — sticker search/categories/grid
 
         Spacer(Modifier.height(8.dp))
 
@@ -268,6 +305,67 @@ private fun StickerCell(
                     .clip(CircleShape)
                     .background(ApexPalette.BgElevated)
             )
+        }
+    }
+}
+
+/** Phase 4: animated Lottie sticker grid (original ApexStudio animations). */
+@Composable
+private fun AnimatedStickerGrid(
+    onAddSticker: (assetPath: String, category: String, name: String) -> Unit
+) {
+    val animations = remember {
+        listOf(
+            "bouncing_ball.json" to "Bouncing Ball",
+            "confetti_burst.json" to "Confetti",
+            "heart_pop.json" to "Heart Pop",
+            "pulse_ring.json" to "Pulse Ring",
+            "rotating_star.json" to "Star Spin",
+            "swipe_arrow.json" to "Swipe Up"
+        )
+    }
+    Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
+        Text(
+            "Animated overlays — play live in preview and export.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            androidx.compose.foundation.lazy.grid.items(animations) { (file, name) ->
+                val composition by rememberLottieComposition(
+                    LottieCompositionSpec.Asset("lottie/$file")
+                )
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                        .clickable {
+                            onAddSticker("lottie/$file", "animated", name)
+                        }
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    LottieAnimation(
+                        composition = composition,
+                        iterations = LottieConstants.IterateForever,
+                        modifier = Modifier.size(72.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        name,
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
         }
     }
 }

@@ -22,14 +22,19 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.data.text.TextFontRegistry
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -42,11 +47,14 @@ import com.apexstudio.app.data.text.TextPreset
 import com.apexstudio.app.data.text.TextPresetEngine
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.presentation.viewmodel.CaptionPhase
+import com.apexstudio.app.presentation.viewmodel.CaptionUiState
 
 enum class TextPanelTab {
     EDIT,
     ANIMATION,
-    PRESETS
+    PRESETS,
+    CAPTIONS
 }
 
 data class TextAnimationOption(
@@ -114,10 +122,15 @@ fun TextPanel(
     onDelete: (String) -> Unit,
     onApplyPreset: (TextPreset) -> Unit = {},
     onAnimationChange: (String) -> Unit = {},
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    captionUiState: CaptionUiState = CaptionUiState(),
+    onAutoCaptions: () -> Unit = {},
+    onClearCaptions: () -> Unit = {},
+    hasAutoCaptions: Boolean = false
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
     var activeTab by remember { mutableStateOf(TextPanelTab.EDIT) }
+    var showCustomColor by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf(TextPresetEngine.categories.first()) }
     val scrollState = rememberScrollState()
 
@@ -242,7 +255,8 @@ fun TextPanel(
             listOf(
                 TextPanelTab.EDIT to "Edit & Font",
                 TextPanelTab.ANIMATION to "Animation",
-                TextPanelTab.PRESETS to "Presets"
+                TextPanelTab.PRESETS to "Presets",
+                TextPanelTab.CAPTIONS to "Captions"
             ).forEach { (tab, label) ->
                 val isSel = activeTab == tab
                 Box(
@@ -374,51 +388,70 @@ fun TextPanel(
 
                 // Bundled OFL font picker — chips render in the actual
                 // typeface so WYSIWYG matches the exported video.
+                // Phase 4: ensure the 36 Google Fonts are registered before
+                // the grouped picker reads them (runs before first read).
+                val fontCtx = LocalContext.current
+                val fontGroups = remember {
+                    TextFontRegistry.init(fontCtx)
+                    TEXT_FONT_GROUPS
+                }
                 Text(
-                    "Font",
+                    "Font (${fontGroups.sumOf { it.second.size }} styles)",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(6.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TEXT_FONT_OPTIONS.chunked(3).forEach { row ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            row.forEach { (fontKey, fontLabel) ->
-                                val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
-                                val chipFont = rememberTextFontFamily(fontKey, selected.isBold, selected.isItalic)
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                                            else ApexPalette.BgElevated
-                                        )
-                                        .border(
-                                            1.dp,
-                                            if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable { onFontFamilyChange(fontKey) }
-                                        .padding(horizontal = 6.dp, vertical = 7.dp),
-                                    contentAlignment = Alignment.Center
+                // Phase 4: sectioned font grid (45 fonts across categories)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    fontGroups.forEach { (category, options) ->
+                        Text(
+                            category.uppercase(),
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            options.chunked(3).forEach { row ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(
-                                        fontLabel,
-                                        color = if (isSel) ApexPalette.NeonCyan else Color.White,
-                                        fontSize = 13.sp,
-                                        fontFamily = chipFont,
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = 1
-                                    )
+                                    row.forEach { (fontKey, fontLabel) ->
+                                        val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
+                                        val chipFont = rememberTextFontFamily(fontKey, selected.isBold, selected.isItalic)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                                    else ApexPalette.BgElevated
+                                                )
+                                                .border(
+                                                    1.dp,
+                                                    if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .clickable { onFontFamilyChange(fontKey) }
+                                                .padding(horizontal = 6.dp, vertical = 7.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                fontLabel,
+                                                color = if (isSel) ApexPalette.NeonCyan else Color.White,
+                                                fontSize = 13.sp,
+                                                fontFamily = chipFont,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    // Pad short rows so chips keep their width
+                                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
                             }
-                            // Pad short rows so chips keep their width
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -488,7 +521,7 @@ fun TextPanel(
                                         else ApexPalette.BorderGlass,
                                         CircleShape
                                     )
-                                    .clickable { onColorChange(c) },
+                                    .clickable { onColorChange(c); showCustomColor = false },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (selected.colorArgb == c) {
@@ -500,7 +533,49 @@ fun TextPanel(
                                 }
                             }
                         }
+                        // Phase 4: custom HSV picker entry.
+                        item {
+                            val isCustom = textColors().none { it == selected.colorArgb }
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.sweepGradient(
+                                            listOf(
+                                                Color.Red, Color.Yellow, Color.Green,
+                                                Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        2.dp,
+                                        if (showCustomColor || isCustom) ApexPalette.NeonCyan
+                                        else ApexPalette.BorderGlass,
+                                        CircleShape
+                                    )
+                                    .clickable { showCustomColor = !showCustomColor },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Add, null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
                     }
+                }
+
+                // Phase 4: expandable HSV color picker.
+                if (showCustomColor && selected != null) {
+                    Spacer(Modifier.height(8.dp))
+                    com.apexstudio.app.ui.components.HsvColorPicker(
+                        initialColor = Color(selected.colorArgb.toInt()),
+                        onColorChange = { c ->
+                            onColorChange(c.toArgb().toLong() and 0xFFFFFFFFL)
+                        }
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -1056,6 +1131,14 @@ private fun AnimationOptionRow(
                 )
             }
         }
+            TextPanelTab.CAPTIONS -> {
+                AutoCaptionsTab(
+                    captionUiState = captionUiState,
+                    onAutoCaptions = onAutoCaptions,
+                    onClearCaptions = onClearCaptions,
+                    hasAutoCaptions = hasAutoCaptions
+                )
+            }
     }
 }
 
@@ -1074,3 +1157,145 @@ private fun pillOptions(): List<Pair<String, Long?>> = listOf(
     "Red" to 0xCCE11D48L,
     "White" to 0xE6FFFFFFL
 )
+
+/**
+ * Phase 4: Auto-captions tab (Vosk offline STT, Apache-2.0).
+ * Every state is surfaced — no dead buttons.
+ */
+@Composable
+private fun AutoCaptionsTab(
+    captionUiState: CaptionUiState,
+    onAutoCaptions: () -> Unit,
+    onClearCaptions: () -> Unit,
+    hasAutoCaptions: Boolean
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Explainer card
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Auto Captions (Offline AI)",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Listens to this clip's audio on-device and creates timed lower-third captions. " +
+                        "First use downloads a 40MB speech model once. English speech works best.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        val phase = captionUiState.phase
+        val busy = phase == CaptionPhase.DOWNLOADING_MODEL || phase == CaptionPhase.TRANSCRIBING
+
+        if (busy) {
+            // Progress state — never a dead button.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ApexPalette.BgElevated)
+                    .padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    captionUiState.message.ifBlank { "Working…" },
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                LinearProgressIndicator(
+                    progress = { captionUiState.progress01.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = ApexPalette.NeonCyan,
+                    trackColor = Color(0xFF26334D)
+                )
+                Text(
+                    "${(captionUiState.progress01 * 100).toInt()}%",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+        } else {
+            Button(
+                onClick = onAutoCaptions,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ApexPalette.NeonCyan,
+                    contentColor = Color.Black
+                ),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Generate Auto Captions", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (phase == CaptionPhase.DONE && captionUiState.segmentsAdded > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF0F2E1F))
+                    .border(1.dp, Color(0xFF34D399), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "✓ ${captionUiState.segmentsAdded} captions added — they appear as timed text overlays.",
+                    color = Color(0xFF6EE7B7),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        if (phase == CaptionPhase.FAILED) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF2E1A1A))
+                    .border(1.dp, Color(0xFFF87171), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    captionUiState.message.ifBlank { "Something went wrong." },
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        if (hasAutoCaptions && !busy) {
+            OutlinedButton(
+                onClick = onClearCaptions,
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp, Color(0xFFF87171).copy(alpha = 0.7f)
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF87171)),
+                modifier = Modifier.fillMaxWidth().height(42.dp)
+            ) {
+                Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Clear Auto Captions", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}

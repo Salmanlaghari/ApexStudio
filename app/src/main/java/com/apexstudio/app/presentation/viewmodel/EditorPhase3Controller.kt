@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import com.apexstudio.app.data.autoclip.AutoClipOp
 import com.apexstudio.app.data.autoclip.AutoClipPlan
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.domain.model.SpeedCurve
 import com.apexstudio.app.ui.screens.editor.SplitLayout
@@ -42,8 +43,15 @@ fun EditorViewModel.applyAutoClipPlan(plan: AutoClipPlan) {
                     selectFilter(op.filterId, op.intensity)
                 }
                 is AutoClipOp.SetEffect -> {
-                    setActiveFx(op.effectId)
-                    _state.update { it.copy(fxIntensity = op.intensity) }
+                    // Validate the effect id against known FX presets: an unknown
+                    // id must not silently arm an inactive effect (Auto Clip would
+                    // then look like it did nothing).
+                    if (FxPreset.byId(op.effectId) != null) {
+                        setActiveFx(op.effectId)
+                        _state.update { it.copy(fxIntensity = op.intensity) }
+                    } else {
+                        Log.w("AutoClip", "SetEffect skipped: unknown effect id '${op.effectId}'")
+                    }
                 }
                 is AutoClipOp.TrimTo -> {
                     val clip = clips.firstOrNull { it.id == op.clipId } ?: return@forEach

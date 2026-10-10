@@ -38,9 +38,13 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 @Composable
@@ -76,20 +80,32 @@ fun EditorScreen(
     var savedProjects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
 
     // Phase 3: auto-save every 30s while a project is open.
+    // LaunchedEffect is cancelled automatically when this composable leaves the
+    // composition; `isActive` + rethrowing CancellationException keep the loop
+    // cooperative (a blanket `catch (Exception)` would swallow cancellation and
+    // spin forever), and the flush itself runs on IO off the main thread.
     LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000)
+        while (isActive) {
+            delay(30_000)
             try {
-                vm.flushProject()
+                withContext(Dispatchers.IO) { vm.flushProject() }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) { }
         }
     }
 
     // Phase 3: refresh saved projects when History/Drafts opens.
+    // Reads DataStore on IO via a proper suspend call instead of runBlocking,
+    // so the main thread never blocks while the read completes.
     LaunchedEffect(state.historyDraftsPanelOpen) {
         if (state.historyDraftsPanelOpen) {
             try {
-                savedProjects = vm.projectRepository?.loadAllNow() ?: emptyList()
+                savedProjects = withContext(Dispatchers.IO) {
+                    vm.projectRepository?.loadAll()?.first() ?: emptyList()
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) { }
         }
     }

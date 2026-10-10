@@ -68,17 +68,40 @@ private data class RgbHistogram(
     val max: Int get() = (r + g + b + luma).maxOrNull() ?: 1
 }
 
+/** Reusable pixel buffer: a 1080p frame is ~1.7MB, so we allocate once and
+ *  reuse it across preview frames instead of per-frame allocation. */
+private var histogramPixelBuffer: IntArray = IntArray(0)
+
 private suspend fun computeHistogram(bitmap: Bitmap): RgbHistogram =
     withContext(Dispatchers.Default) {
         val hist = RgbHistogram()
-        val w = bitmap.width
-        val h = bitmap.height
+        // Downsample before reading pixels: a scope visualization doesn't need
+        // full-resolution data, and it caps the per-frame work and memory.
+        val maxDim = 320
+        val scale = minOf(1f, maxDim / maxOf(bitmap.width, bitmap.height).toFloat())
+        val sample: Bitmap = if (scale < 1f) {
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1),
+                false
+            )
+        } else {
+            bitmap
+        }
+        val w = sample.width
+        val h = sample.height
+        if (histogramPixelBuffer.size < w * h) {
+            histogramPixelBuffer = IntArray(w * h)
+        }
+        val pixels = histogramPixelBuffer
+        sample.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (sample !== bitmap) sample.recycle()
+        val pixelCount = w * h
         // Sample every Nth pixel to stay fast on large frames.
-        val step = maxOf(1, (w * h) / 20000)
-        val pixels = IntArray(w * h)
-        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        val step = maxOf(1, pixelCount / 20000)
         var i = 0
-        while (i < pixels.size) {
+        while (i < pixelCount) {
             val px = pixels[i]
             val r = AndroidColor.red(px)
             val g = AndroidColor.green(px)
@@ -366,27 +389,49 @@ private fun ScopeCanvas(
             }
             "vectorscope" -> {
                 // Graticule + chroma scatter approximated from R/B distribution.
-                drawCircle(Color(0xFF2A2A3E), radius = minOf(w, h) / 2f, center = center, style = Stroke(1f))
-                drawCircle(Color(0xFF2A2A3E), radius = minOf(w, h) / 4f, center = center, style = Stroke(1f))
-                drawLine(Color(0xFF2A2A3E), Offset(center.x - minOf(w, h) / 2f, center.y), Offset(center.x + minOf(w, h) / 2f, center.y))
-                drawLine(Color(0xFF2A2A3E), Offset(center.x, center.y - minOf(w, h) / 2f), Offset(center.x, center.y + minOf(w, h) / 2f))
-                // Skin-tone line (11 o'clock).
-                val radius = minOf(w, h) / 2f
+                // The outer ring is inset by the stroke padding so it is never
+                // clipped at the canvas edges.
+                val graticuleRadius = minOf(w, h) / 2f - 2f
+                drawCircle(Color(0xFF2A2A3E), radius = graticuleRadius, center = center, style = Stroke(1f))
+                drawCircle(Color(0xFF2A2A3E), radius = graticuleRadius / 2f, center = center, style = Stroke(1f))
+                drawLine(Color(0xFF2A2A3E), Offset(center.x - graticuleRadius, center.y), Offset(center.x + graticuleRadius, center.y))
+                drawLine(Color(0xFF2A2A3E), Offset(center.x, center.y - graticuleRadius), Offset(center.x, center.y + graticuleRadius))
+                // Chroma dots from R/B balance (also reused below for the skin-tone line).
+                val maxR = (histogram.r.maxOrNull() ?: 1).toFloat()
+                val maxB = (histogram.b.maxOrNull() ?: 1).toFloat()
+                // Skin-tone line: derived from the frame's actual chroma centroid
+                // (luma-weighted mean of the R/B distribution in draw space).
+                // Falls back to the conventional skin-tone reference angle
+                // (~11 o'clock) when the frame carries no chroma information.
+                var sumCr = 0.0
+                var sumCb = 0.0
+                var sumWeight = 0L
+                for (i in 0 until 256) {
+                    val cr = histogram.r[i] / maxR - 0.5
+                    val cb = histogram.b[i] / maxB - 0.5
+                    val weight = histogram.luma[i].toLong()
+                    sumCr += cr * weight
+                    sumCb += cb * weight
+                    sumWeight += weight
+                }
+                val skinAngle = if (sumWeight > 0) {
+                    kotlin.math.atan2(-sumCb / sumWeight, sumCr / sumWeight).toFloat()
+                } else {
+                    -2.2f
+                }
+                val skinRadius = graticuleRadius * 0.7f
                 drawLine(
                     Color(0xFFFFB74D).copy(alpha = 0.6f),
                     center,
                     Offset(
-                        center.x + radius * 0.7f * kotlin.math.cos(-2.2).toFloat(),
-                        center.y + radius * 0.7f * kotlin.math.sin(-2.2).toFloat()
+                        center.x + skinRadius * kotlin.math.cos(skinAngle),
+                        center.y + skinRadius * kotlin.math.sin(skinAngle)
                     ),
                     strokeWidth = 2f
                 )
-                // Chroma dots from R/B balance.
-                val maxR = (histogram.r.maxOrNull() ?: 1).toFloat()
-                val maxB = (histogram.b.maxOrNull() ?: 1).toFloat()
                 for (i in 0 until 256 step 4) {
-                    val cr = (histogram.r[i] / maxR - 0.5f) * radius
-                    val cb = (histogram.b[i] / maxB - 0.5f) * radius
+                    val cr = (histogram.r[i] / maxR - 0.5f) * graticuleRadius
+                    val cb = (histogram.b[i] / maxB - 0.5f) * graticuleRadius
                     drawCircle(
                         Color(0xFF00E5FF).copy(alpha = 0.5f),
                         radius = 2f,

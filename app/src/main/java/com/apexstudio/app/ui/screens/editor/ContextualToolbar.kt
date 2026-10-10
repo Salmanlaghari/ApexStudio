@@ -129,6 +129,13 @@ fun ContextualBottomToolbar(
     onPhotoAdjust: () -> Unit = {},
     onPhotoFilters: () -> Unit = {},
     onPhotoRotate: () -> Unit = {},
+    // Phase 3 tools
+    onMusic: () -> Unit = {},
+    onAutoClip: () -> Unit = {},
+    onHistory: () -> Unit = {},
+    onEditPack: () -> Unit = {},
+    onScopes: () -> Unit = {},
+    onBgRemover: () -> Unit = {},
     // Collapse (deselect)
     onCollapse: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -143,7 +150,14 @@ fun ContextualBottomToolbar(
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
             CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
-            CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust)
+            CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust),
+            // Phase 3: pack panels + Auto Clip + Music + History.
+            CtxToolItem("Edit Pack", Icons.Default.ContentCut, onClick = onEditPack),
+            CtxToolItem("Scopes", Icons.Default.Insights, onClick = onScopes),
+            CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, onClick = onBgRemover),
+            CtxToolItem("Auto Clip", Icons.Default.Bolt, tint = ApexPalette.NeonPink, onClick = onAutoClip),
+            CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
+            CtxToolItem("History", Icons.Default.History, onClick = onHistory)
         )
         ToolbarSelectionKind.VIDEO -> listOf(
             // Keyframe tab: opens the keyframe editor (diamonds + curves)
@@ -450,6 +464,13 @@ fun EditorBottomToolbarSection(
         onLenses = { vm.openLensesPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
+        // Phase 3 tools.
+        onMusic = { vm.openMusicLibraryPanel() },
+        onAutoClip = { vm.openAutoClipPanel() },
+        onHistory = { vm.openHistoryDraftsPanel() },
+        onEditPack = { vm.openEditPackPanel() },
+        onScopes = { vm.openColorScopesPanel() },
+        onBgRemover = { vm.openBgRemoverPanel() },
         onReplace = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO -> {

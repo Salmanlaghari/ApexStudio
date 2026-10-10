@@ -341,7 +341,18 @@ data class Project(
      * "not detected yet" (falls back to 16:9). Used to set the preview
      * frame and export output ratio without manual user setup.
      */
-    val videoAspectRatio: Float? = null
+    val videoAspectRatio: Float? = null,
+    /**
+     * Phase 3: last time this project was saved/edited (epoch ms).
+     * Drives the History tab ordering. Defaults to 0 for projects
+     * saved before this field existed (they sort last).
+     */
+    val lastEditedMs: Long = 0L,
+    /**
+     * Phase 3: user-visible draft label, e.g. "Draft" vs "Project".
+     * Pure metadata for the History/Drafts UI.
+     */
+    val isDraft: Boolean = false
 )
 
 @Serializable

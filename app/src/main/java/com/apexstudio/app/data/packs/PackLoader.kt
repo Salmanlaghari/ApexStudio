@@ -114,6 +114,22 @@ object PackLoader {
         val presets: List<PackPreset> = emptyList()
     )
 
+    // ---------- Edit presets (have type/description/keyframes at top level) ----------
+
+    @Serializable
+    data class EditPreset(
+        val id: String,
+        val name: String,
+        val type: String = "speed_ramp",
+        val description: String = "",
+        val category: String = "General"
+    )
+
+    @Serializable
+    private data class EditPresetPackFile(
+        val presets: List<EditPreset> = emptyList()
+    )
+
     // ---------- Image tools ----------
 
     @Serializable
@@ -137,9 +153,27 @@ object PackLoader {
     // ---------- BG remover ----------
 
     @Serializable
+    data class BgOption(
+        val id: String,
+        val name: String,
+        val type: String = "solid",
+        val color: String = "#000000",
+        val radius: Int = 15
+    )
+
+    @Serializable
+    data class EdgeRefinement(
+        val id: String,
+        val name: String,
+        val feather: Int = 0,
+        val smooth: Int = 0
+    )
+
+    @Serializable
     data class BgRemoverPack(
         val engine: String = "",
-        val backgrounds: List<String> = emptyList()
+        val backgrounds: List<BgOption> = emptyList(),
+        val edge_refinement: List<EdgeRefinement> = emptyList()
     )
 
     // ---------- Loading ----------
@@ -184,6 +218,73 @@ object PackLoader {
         json.decodeFromString<PresetPackFile>(text).presets
     } catch (e: Exception) {
         Log.w(TAG, "Failed to parse preset pack: $packPath", e)
+        emptyList()
+    }
+
+    /** Edit presets (20) — type/description live at the preset level. */
+    fun loadEditPresets(context: Context): List<EditPreset> = try {
+        val text = readAsset(context, "edit-presets/presets.json") ?: return emptyList()
+        json.decodeFromString<EditPresetPackFile>(text).presets
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse edit-presets pack", e)
+        emptyList()
+    }
+
+    // ---------- Adjust presets (numeric adjustment fields) ----------
+
+    @Serializable
+    data class AdjustPreset(
+        val id: String,
+        val name: String,
+        val category: String = "General",
+        val brightness: Float = 0f,
+        val contrast: Float = 0f,
+        val saturation: Float = 0f,
+        val highlights: Float = 0f,
+        val shadows: Float = 0f,
+        val warmth: Float = 0f,
+        val tint: Float = 0f
+    )
+
+    @Serializable
+    private data class AdjustPresetPackFile(
+        val presets: List<AdjustPreset> = emptyList()
+    )
+
+    /** Adjust presets (30) — numeric fields map to [VideoAdjustments]. */
+    fun loadAdjustPresets(context: Context): List<AdjustPreset> = try {
+        val text = readAsset(context, "adjust-presets/presets.json") ?: return emptyList()
+        json.decodeFromString<AdjustPresetPackFile>(text).presets
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse adjust-presets pack", e)
+        emptyList()
+    }
+
+    /** Color recovery presets (15) — same numeric schema as adjust presets. */
+    fun loadRecoveryPresets(context: Context): List<AdjustPreset> = try {
+        val text = readAsset(context, "color-scopes/recovery-presets.json") ?: return emptyList()
+        json.decodeFromString<AdjustPresetPackFile>(text).presets
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse recovery presets", e)
+        emptyList()
+    }
+
+    @Serializable
+    data class ScopeDef(
+        val id: String,
+        val name: String,
+        val description: String = ""
+    )
+
+    @Serializable
+    private data class ScopesFile(val scopes: List<ScopeDef> = emptyList())
+
+    /** Color scope definitions (waveform, vectorscope, ...). */
+    fun loadScopeDefs(context: Context): List<ScopeDef> = try {
+        val text = readAsset(context, "color-scopes/scopes.json") ?: return emptyList()
+        json.decodeFromString<ScopesFile>(text).scopes
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse scopes", e)
         emptyList()
     }
 

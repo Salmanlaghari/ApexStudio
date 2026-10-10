@@ -38,9 +38,13 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 @Composable
@@ -70,6 +74,41 @@ fun EditorScreen(
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
+    // Phase 3: mood filter passed from Auto Clip -> Music Library.
+    var musicMoodFilter by remember { mutableStateOf<String?>(null) }
+    // Phase 3: saved projects for History/Drafts panel.
+    var savedProjects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
+
+    // Phase 3: auto-save every 30s while a project is open.
+    // LaunchedEffect is cancelled automatically when this composable leaves the
+    // composition; `isActive` + rethrowing CancellationException keep the loop
+    // cooperative (a blanket `catch (Exception)` would swallow cancellation and
+    // spin forever), and the flush itself runs on IO off the main thread.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(30_000)
+            try {
+                withContext(Dispatchers.IO) { vm.flushProject() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) { }
+        }
+    }
+
+    // Phase 3: refresh saved projects when History/Drafts opens.
+    // Reads DataStore on IO via a proper suspend call instead of runBlocking,
+    // so the main thread never blocks while the read completes.
+    LaunchedEffect(state.historyDraftsPanelOpen) {
+        if (state.historyDraftsPanelOpen) {
+            try {
+                savedProjects = withContext(Dispatchers.IO) {
+                    vm.projectRepository?.loadAll()?.first() ?: emptyList()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) { }
+        }
+    }
 
     val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -77,6 +116,17 @@ fun EditorScreen(
         uri?.let {
             val name = it.lastPathSegment?.substringAfterLast('/') ?: "Imported Audio"
             vm.addAudioTrack(name = name, uri = it.toString(), kind = AudioTrack.Kind.MUSIC)
+        }
+    }
+
+    // Phase 3: custom background image picker for BG Remover panel.
+    val bgImagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            vm.updateChromaKeySettings(
+                vm.state.value.chromaKeySettings.copy(customBackgroundUri = it.toString())
+            )
         }
     }
 
@@ -476,6 +526,45 @@ fun EditorScreen(
         vm = vm,
         mediaPicker = mediaPicker,
         onDismiss = { showAddMediaMenu = false }
+    )
+
+    // ---- Phase 3 overlays ----
+    EditPackPanelOverlay(state = state, vm = vm)
+    AdjustPackPanelOverlay(state = state, vm = vm)
+    ColorScopesPanelOverlay(state = state, vm = vm)
+    BgRemoverPanelOverlay(
+        state = state,
+        vm = vm,
+        onPickCustomBackground = {
+            bgImagePickerLauncher.launch("image/*")
+        }
+    )
+    AutoClipPanelOverlay(
+        state = state,
+        vm = vm,
+        onOpenMusicForMood = { mood ->
+            musicMoodFilter = mood
+            vm.openMusicLibraryPanel()
+        }
+    )
+    MusicLibraryPanelOverlay(
+        state = state,
+        vm = vm,
+        initialMood = musicMoodFilter,
+        onAddTrack = { title, filePath, durationMs ->
+            vm.addAudioTrack(
+                name = title,
+                uri = filePath,
+                kind = AudioTrack.Kind.MUSIC,
+                sourceDurationMs = durationMs
+            )
+            musicMoodFilter = null
+        }
+    )
+    HistoryDraftsPanelOverlay(
+        state = state,
+        vm = vm,
+        projects = savedProjects
     )
 }
 

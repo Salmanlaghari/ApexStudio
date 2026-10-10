@@ -298,13 +298,60 @@ fun EditorViewModel.flushProject() = persistProject()
 internal fun EditorViewModel.persistProject() {
     val snapshot = _state.value.project ?: return
     val repo = projectRepository ?: return
+    // Phase 3: stamp edit time so History sorts correctly.
+    val stamped = snapshot.copy(lastEditedMs = System.currentTimeMillis())
+    if (stamped != snapshot) {
+        _state.update { it.copy(project = stamped) }
+    }
     viewModelScope.launch {
         try {
-            repo.saveProject(snapshot)
+            repo.saveProject(stamped)
+            markAutoSaved()
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Auto-save failed", e)
         }
     }
+}
+
+/**
+ * Phase 3: saves the current project as a named draft.
+ * Drafts appear in the Drafts tab and can be resumed/deleted.
+ */
+fun EditorViewModel.saveDraft(name: String? = null) {
+    val snapshot = _state.value.project ?: return
+    val repo = projectRepository ?: return
+    val draft = snapshot.copy(
+        name = name?.takeIf { it.isNotBlank() } ?: snapshot.name,
+        isDraft = true,
+        lastEditedMs = System.currentTimeMillis()
+    )
+    _state.update { it.copy(project = draft) }
+    viewModelScope.launch {
+        try {
+            repo.saveProject(draft)
+            markAutoSaved()
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "Draft save failed", e)
+        }
+    }
+}
+
+/** Phase 3: deletes a project/draft by id. */
+fun EditorViewModel.deleteSavedProject(projectId: String) {
+    val repo = projectRepository ?: return
+    viewModelScope.launch {
+        try {
+            repo.deleteProject(projectId)
+        } catch (e: Exception) {
+            Log.w("EditorViewModel", "Delete failed", e)
+        }
+    }
+}
+
+/** Phase 3: opens a saved project/draft in the editor. */
+fun EditorViewModel.openSavedProject(project: com.apexstudio.app.domain.model.Project) {
+    _state.update { it.copy(project = project) }
+    persistProject()
 }
 
 

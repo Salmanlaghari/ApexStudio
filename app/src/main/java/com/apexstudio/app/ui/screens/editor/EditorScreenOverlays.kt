@@ -1322,3 +1322,212 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             .weight(1f)
     )
 }
+
+/* ================= Phase 3 overlays ================= */
+
+/** Edit Pack bottom-sheet overlay (20 presets). */
+@Composable
+fun EditPackPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.editPackPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
+            .clickable { vm.closeEditPackPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            val clipId = state.selectedClipId
+                ?: state.project?.clips?.firstOrNull()?.id
+            EditPackPanel(
+                onApplySpeedRamp = { _, start, end, fixed ->
+                    clipId?.let { vm.applyEditPackSpeed(it, start, end, fixed) }
+                },
+                onApplyFreeze = {
+                    clipId?.let { vm.applyEditPackFreeze(it) }
+                },
+                onApplySplitScreen = { _, layout ->
+                    clipId?.let { vm.applyEditPackSplit(it, layout) }
+                },
+                onApplyZoom = { _, zoomIn ->
+                    clipId?.let { vm.applyEditPackZoom(it, zoomIn) }
+                },
+                onClose = { vm.closeEditPackPanel() }
+            )
+        }
+    }
+}
+
+/** Adjust Pack bottom-sheet overlay (30 presets + sliders). */
+@Composable
+fun AdjustPackPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.adjustPackPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeAdjustPackPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            AdjustPackPanel(
+                adjustments = state.adjustments,
+                onApplyPreset = { vm.applyAdjustPackPreset(it) },
+                onUpdate = { vm.updateAdjustments(it) },
+                onReset = { vm.resetAdjustments() },
+                onClose = { vm.closeAdjustPackPanel() }
+            )
+        }
+    }
+}
+
+/** Color Scopes bottom-sheet overlay. */
+@Composable
+fun ColorScopesPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.colorScopesPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeColorScopesPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            ColorScopesPanel(
+                previewBitmap = state.gpuFilterPreviewBitmap,
+                onApplyRecovery = { vm.applyAdjustPackPreset(it) },
+                onClose = { vm.closeColorScopesPanel() }
+            )
+        }
+    }
+}
+
+/** BG Remover bottom-sheet overlay. */
+@Composable
+fun BgRemoverPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel,
+    onPickCustomBackground: () -> Unit
+) {
+    if (!state.bgRemoverPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeBgRemoverPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            BgRemoverPanel(
+                chromaKeySettings = state.chromaKeySettings,
+                onUpdateChromaKey = { vm.updateChromaKeySettings(it) },
+                onPickCustomBackground = onPickCustomBackground,
+                onClose = { vm.closeBgRemoverPanel() }
+            )
+        }
+    }
+}
+
+/** Auto Clip bottom-sheet overlay. */
+@Composable
+fun AutoClipPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel,
+    onOpenMusicForMood: (String) -> Unit
+) {
+    if (!state.autoClipPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeAutoClipPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            AutoClipPanel(
+                clips = state.project?.clips ?: emptyList(),
+                onApplyPlan = { plan ->
+                    vm.applyAutoClipPlan(plan)
+                    vm.closeAutoClipPanel()
+                },
+                onApplyPlanWithMusic = { plan ->
+                    vm.applyAutoClipPlan(plan)
+                    vm.closeAutoClipPanel()
+                    onOpenMusicForMood(plan.style.musicMood)
+                },
+                onClose = { vm.closeAutoClipPanel() }
+            )
+        }
+    }
+}
+
+/** Music Library bottom-sheet overlay. */
+@Composable
+fun MusicLibraryPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel,
+    initialMood: String?,
+    onAddTrack: (String, String, Long) -> Unit
+) {
+    if (!state.musicLibraryPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeMusicLibraryPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            MusicLibraryPanel(
+                onAddTrack = { title, path, dur ->
+                    onAddTrack(title, path, dur)
+                    vm.closeMusicLibraryPanel()
+                },
+                onClose = { vm.closeMusicLibraryPanel() },
+                initialMood = initialMood
+            )
+        }
+    }
+}
+
+/** History & Drafts bottom-sheet overlay. */
+@Composable
+fun HistoryDraftsPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel,
+    projects: List<com.apexstudio.app.domain.model.Project>
+) {
+    if (!state.historyDraftsPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeHistoryDraftsPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            HistoryDraftsPanel(
+                projects = projects,
+                currentTab = state.historyDraftsTab,
+                onTabChange = { vm.setHistoryDraftsTab(it) },
+                lastAutoSaveMs = state.lastAutoSaveMs,
+                onOpenProject = { project ->
+                    vm.openSavedProject(project)
+                    vm.closeHistoryDraftsPanel()
+                },
+                onDeleteProject = { id -> vm.deleteSavedProject(id) },
+                onSaveDraft = { vm.saveDraft() },
+                onClose = { vm.closeHistoryDraftsPanel() }
+            )
+        }
+    }
+}

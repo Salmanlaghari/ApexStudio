@@ -195,6 +195,18 @@ data class EditorState(
     val lutTemperature: Float = 5000f,
     val lutTint: Float = 0f,
     val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.STRIP,
+    // ---- Phase 3: Pack panels ----
+    val editPackPanelOpen: Boolean = false,
+    val adjustPackPanelOpen: Boolean = false,
+    val colorScopesPanelOpen: Boolean = false,
+    val bgRemoverPanelOpen: Boolean = false,
+    // ---- Phase 3: Auto Clip / Music / History / Drafts ----
+    val autoClipPanelOpen: Boolean = false,
+    val musicLibraryPanelOpen: Boolean = false,
+    val historyDraftsPanelOpen: Boolean = false,
+    val historyDraftsTab: HistoryDraftsTab = HistoryDraftsTab.HISTORY,
+    // Auto-save bookkeeping: last time the project was auto-persisted.
+    val lastAutoSaveMs: Long = 0L,
     // CapCut-style contextual toolbar selection. selectedAudioTrackId
     // tracks the tapped A1 audio lane; it is mutually exclusive with
     // selectedClipId (one selection at a time, like CapCut).
@@ -357,4 +369,10 @@ enum class LutTargetTrack(val id: String, val label: String, val shortBadge: Str
 enum class LutGalleryViewMode {
     GRID,     // Responsive multi-column thumbnail preview gallery
     STRIP     // Compact horizontal carousel strip
+}
+
+/** Phase 3: History / Drafts panel tabs */
+enum class HistoryDraftsTab {
+    HISTORY,  // Recent edit sessions, tap to reopen
+    DRAFTS    // Manually saved + auto-saved drafts
 }

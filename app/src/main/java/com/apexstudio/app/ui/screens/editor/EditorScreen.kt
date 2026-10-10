@@ -70,6 +70,29 @@ fun EditorScreen(
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
+    // Phase 3: mood filter passed from Auto Clip -> Music Library.
+    var musicMoodFilter by remember { mutableStateOf<String?>(null) }
+    // Phase 3: saved projects for History/Drafts panel.
+    var savedProjects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
+
+    // Phase 3: auto-save every 30s while a project is open.
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            try {
+                vm.flushProject()
+            } catch (_: Exception) { }
+        }
+    }
+
+    // Phase 3: refresh saved projects when History/Drafts opens.
+    LaunchedEffect(state.historyDraftsPanelOpen) {
+        if (state.historyDraftsPanelOpen) {
+            try {
+                savedProjects = vm.projectRepository?.loadAllNow() ?: emptyList()
+            } catch (_: Exception) { }
+        }
+    }
 
     val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -77,6 +100,17 @@ fun EditorScreen(
         uri?.let {
             val name = it.lastPathSegment?.substringAfterLast('/') ?: "Imported Audio"
             vm.addAudioTrack(name = name, uri = it.toString(), kind = AudioTrack.Kind.MUSIC)
+        }
+    }
+
+    // Phase 3: custom background image picker for BG Remover panel.
+    val bgImagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            vm.updateChromaKeySettings(
+                vm.state.value.chromaKeySettings.copy(customBackgroundUri = it.toString())
+            )
         }
     }
 
@@ -476,6 +510,45 @@ fun EditorScreen(
         vm = vm,
         mediaPicker = mediaPicker,
         onDismiss = { showAddMediaMenu = false }
+    )
+
+    // ---- Phase 3 overlays ----
+    EditPackPanelOverlay(state = state, vm = vm)
+    AdjustPackPanelOverlay(state = state, vm = vm)
+    ColorScopesPanelOverlay(state = state, vm = vm)
+    BgRemoverPanelOverlay(
+        state = state,
+        vm = vm,
+        onPickCustomBackground = {
+            bgImagePickerLauncher.launch("image/*")
+        }
+    )
+    AutoClipPanelOverlay(
+        state = state,
+        vm = vm,
+        onOpenMusicForMood = { mood ->
+            musicMoodFilter = mood
+            vm.openMusicLibraryPanel()
+        }
+    )
+    MusicLibraryPanelOverlay(
+        state = state,
+        vm = vm,
+        initialMood = musicMoodFilter,
+        onAddTrack = { title, filePath, durationMs ->
+            vm.addAudioTrack(
+                name = title,
+                uri = filePath,
+                kind = AudioTrack.Kind.MUSIC,
+                sourceDurationMs = durationMs
+            )
+            musicMoodFilter = null
+        }
+    )
+    HistoryDraftsPanelOverlay(
+        state = state,
+        vm = vm,
+        projects = savedProjects
     )
 }
 

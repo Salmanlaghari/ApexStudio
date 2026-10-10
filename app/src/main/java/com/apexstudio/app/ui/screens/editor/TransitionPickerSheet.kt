@@ -42,6 +42,8 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Professional Video Transitions Bottom Sheet UI Component.
@@ -61,9 +63,15 @@ fun TransitionPickerSheet(
     modifier: Modifier = Modifier
 ) {
     // Phase 2: register pack transitions on first open (idempotent).
+    // Registered on IO thread; packsReady re-keys cached lists below so pack
+    // transitions appear on first open.
     val packContext = androidx.compose.ui.platform.LocalContext.current
+    var packsReady by remember { mutableStateOf(TransitionLibrary.hasPackTransitions()) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        com.apexstudio.app.data.packs.PackLoader.ensurePackTransitionsRegistered(packContext)
+        withContext(Dispatchers.IO) {
+            com.apexstudio.app.data.packs.PackLoader.ensurePackTransitionsRegistered(packContext)
+        }
+        packsReady = true
     }
     var selectedTypeId by remember(currentTransition) {
         mutableStateOf(currentTransition?.type ?: "cross_dissolve")
@@ -75,7 +83,7 @@ fun TransitionPickerSheet(
         mutableStateOf(TransitionCategory.ALL)
     }
 
-    val selectedDef = remember(selectedTypeId) {
+    val selectedDef = remember(selectedTypeId, packsReady) {
         TransitionLibrary.getById(selectedTypeId) ?: TransitionLibrary.allTransitions().first()
     }
 
@@ -239,7 +247,7 @@ fun TransitionPickerSheet(
         Spacer(Modifier.height(12.dp))
 
         // Transition Grid
-        val displayedTransitions = remember(activeCategory) {
+        val displayedTransitions = remember(activeCategory, packsReady) {
             TransitionLibrary.getByCategory(activeCategory)
         }
 

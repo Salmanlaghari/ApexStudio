@@ -54,7 +54,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * exactly like the existing AdjustPanel.
  */
 
-internal data class AdjustPresetUi(
+data class AdjustPresetUi(
     val id: String,
     val name: String,
     val category: String,

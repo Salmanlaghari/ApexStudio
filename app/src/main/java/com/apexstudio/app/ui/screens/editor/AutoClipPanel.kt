@@ -204,9 +204,15 @@ fun AutoClipPanel(
                         .weight(1f)
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (canApply) Brush.horizontalGradient(
-                                listOf(ApexPalette.NeonPink, ApexPalette.NeonAmber)
-                            ) else ApexPalette.BgElevated
+                            if (canApply) {
+                                Brush.horizontalGradient(
+                                    listOf(ApexPalette.NeonPink, ApexPalette.NeonAmber)
+                                )
+                            } else {
+                                Brush.verticalGradient(
+                                    listOf(ApexPalette.BgElevated, ApexPalette.BgElevated)
+                                )
+                            }
                         )
                         .clickable(enabled = canApply) { onApplyPlan(plan) }
                         .padding(vertical = 14.dp),

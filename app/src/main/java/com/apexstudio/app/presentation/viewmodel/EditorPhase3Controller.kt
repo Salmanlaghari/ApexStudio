@@ -43,7 +43,7 @@ fun EditorViewModel.applyAutoClipPlan(plan: AutoClipPlan) {
                 }
                 is AutoClipOp.SetEffect -> {
                     setActiveFx(op.effectId)
-                    _state.update { it.copy(fxIntensity = op.intensity.toDouble()) }
+                    _state.update { it.copy(fxIntensity = op.intensity) }
                 }
                 is AutoClipOp.TrimTo -> {
                     val clip = clips.firstOrNull { it.id == op.clipId } ?: return@forEach

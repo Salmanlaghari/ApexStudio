@@ -54,7 +54,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
  * exactly like the existing AdjustPanel.
  */
 
-private data class AdjustPresetUi(
+internal data class AdjustPresetUi(
     val id: String,
     val name: String,
     val category: String,
@@ -249,19 +249,19 @@ fun AdjustPackPanel(
                 label = "Brightness",
                 value = adjustments.brightness,
                 range = -1f..1f,
-                onChange = { onUpdate { it.copy(brightness = it.coerceIn(-1f, 1f)) } }
+                onChange = { v -> onUpdate { adj -> adj.copy(brightness = v.coerceIn(-1f, 1f)) } }
             )
             ManualSlider(
                 label = "Contrast",
                 value = adjustments.contrast,
                 range = 0.2f..3f,
-                onChange = { onUpdate { it.copy(contrast = it.coerceIn(0.2f, 3f)) } }
+                onChange = { v -> onUpdate { adj -> adj.copy(contrast = v.coerceIn(0.2f, 3f)) } }
             )
             ManualSlider(
                 label = "Saturation",
                 value = adjustments.saturation,
                 range = 0f..3f,
-                onChange = { onUpdate { it.copy(saturation = it.coerceIn(0f, 3f)) } }
+                onChange = { v -> onUpdate { adj -> adj.copy(saturation = v.coerceIn(0f, 3f)) } }
             )
             ManualSlider(
                 label = "Warmth",

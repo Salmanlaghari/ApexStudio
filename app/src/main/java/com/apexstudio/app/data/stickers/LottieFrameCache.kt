@@ -9,7 +9,7 @@ import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
 
 /**
- * Renders Lottie animations (assets/lottie/*.json — original ApexStudio
+ * Renders Lottie animations (assets/lottie/ JSON files — original ApexStudio
  * animations, plus the Apache-2.0 lottie-android runtime) into bitmap frame
  * strips so [com.apexstudio.app.data.effect.StickerGlEffect] can bake
  * *animated* stickers into exports.

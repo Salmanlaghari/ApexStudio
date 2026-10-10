@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
+import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.captions.VoskCaptionEngine
 import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.Dispatchers

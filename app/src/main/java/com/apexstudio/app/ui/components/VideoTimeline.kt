@@ -2283,7 +2283,6 @@ private fun TimelineFxTrack(
  * synthetic fallback otherwise). Every audio track gets its own row so
  * added audio is actually present and manageable in the timeline.
  */
-@Composable
 /**
  * Phase 4: per-track waveform. Decodes the track's own audio (real PCM via
  * MediaAnalyzer, cached) instead of reusing the video clip's waveform.
@@ -2304,6 +2303,7 @@ private fun rememberTrackWaveform(track: AudioTrack, fallback: FloatArray): Floa
     return samples
 }
 
+@Composable
 private fun TimelineAudioTrack(
     audioTracks: List<AudioTrack>,
     durationMs: Long,

@@ -65,13 +65,15 @@ object GlTransitionManifest {
         val arr: JSONArray = root.optJSONArray("transitions") ?: return out
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val id = o.optString("id").ifBlank { continue }
+            val id = o.optString("id")
+            if (id.isBlank()) continue
             val params = mutableListOf<GlTransitionParam>()
             val parr = o.optJSONArray("params")
             if (parr != null) {
                 for (j in 0 until parr.length()) {
                     val p = parr.optJSONObject(j) ?: continue
-                    val name = p.optString("name").ifBlank { continue }
+                    val name = p.optString("name")
+                    if (name.isBlank()) continue
                     val type = p.optString("type", "float").lowercase()
                     val d = p.opt("default")
                     val defaults = when (d) {

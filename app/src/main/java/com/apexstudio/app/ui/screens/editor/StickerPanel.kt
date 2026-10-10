@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -311,7 +312,7 @@ private fun StickerCell(
 
 /** Phase 4: animated Lottie sticker grid (original ApexStudio animations). */
 @Composable
-private fun AnimatedStickerGrid(
+private fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
     onAddSticker: (assetPath: String, category: String, name: String) -> Unit
 ) {
     val animations = remember {
@@ -337,7 +338,7 @@ private fun AnimatedStickerGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            androidx.compose.foundation.lazy.grid.items(animations) { (file, name) ->
+            items(animations) { (file, name) ->
                 val composition by rememberLottieComposition(
                     LottieCompositionSpec.Asset("lottie/$file")
                 )

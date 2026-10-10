@@ -497,7 +497,8 @@ fun AudioMixerPanelOverlay(
     audioState: AudioStudioState,
     vm: EditorViewModel,
     audioPickerLauncher: ActivityResultLauncher<String>,
-    onOpenRoyaltyFreeSheet: () -> Unit
+    onOpenRoyaltyFreeSheet: () -> Unit,
+    audioSessionId: Int = 0
 ) {
     if (!state.audioMixerOpen) return
     Box(

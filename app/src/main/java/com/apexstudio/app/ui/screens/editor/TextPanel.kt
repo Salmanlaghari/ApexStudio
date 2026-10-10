@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import kotlin.math.roundToInt
 import com.apexstudio.app.data.text.TextFontRegistry
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -573,7 +574,15 @@ fun TextPanel(
                     com.apexstudio.app.ui.components.HsvColorPicker(
                         initialColor = Color(selected.colorArgb.toInt()),
                         onColorChange = { c ->
-                            onColorChange(c.toArgb().toLong() and 0xFFFFFFFFL)
+                            // ARGB Long without toArgb() (kept explicit).
+                            val a = 0xFF
+                            val r = (c.red * 255).roundToInt().coerceIn(0, 255)
+                            val g = (c.green * 255).roundToInt().coerceIn(0, 255)
+                            val b = (c.blue * 255).roundToInt().coerceIn(0, 255)
+                            onColorChange(
+                                ((a shl 24) or (r shl 16) or (g shl 8) or b).toLong()
+                                    and 0xFFFFFFFFL
+                            )
                         }
                     )
                 }
@@ -1079,6 +1088,14 @@ fun TextPanel(
                 }
             }
         }
+            TextPanelTab.CAPTIONS -> {
+                AutoCaptionsTab(
+                    captionUiState = captionUiState,
+                    onAutoCaptions = onAutoCaptions,
+                    onClearCaptions = onClearCaptions,
+                    hasAutoCaptions = hasAutoCaptions
+                )
+            }
     }
 }
 
@@ -1131,14 +1148,6 @@ private fun AnimationOptionRow(
                 )
             }
         }
-            TextPanelTab.CAPTIONS -> {
-                AutoCaptionsTab(
-                    captionUiState = captionUiState,
-                    onAutoCaptions = onAutoCaptions,
-                    onClearCaptions = onClearCaptions,
-                    hasAutoCaptions = hasAutoCaptions
-                )
-            }
     }
 }
 

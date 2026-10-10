@@ -153,7 +153,13 @@ fun HsvColorPicker(
         }
         // Hex readout
         Text(
-            text = "#%06X".format(0xFFFFFF and current.toArgb()),
+            text = "#%06X".format(
+                0xFFFFFF and (
+                    (current.red * 255).roundToInt() shl 16 or
+                        ((current.green * 255).roundToInt() shl 8) or
+                        (current.blue * 255).roundToInt()
+                    )
+            ),
             color = ApexPalette.TextSecondary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium

@@ -110,8 +110,10 @@ object TextFontRegistry {
             val arr = org.json.JSONObject(json).optJSONArray("fonts") ?: return emptyList()
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                val file = o.optString("file").ifBlank { continue }
-                val family = o.optString("family").ifBlank { continue }
+                val file = o.optString("file")
+                if (file.isBlank()) continue
+                val family = o.optString("family")
+                if (family.isBlank()) continue
                 val category = o.optString("category", "Display")
                 val key = family.lowercase().replace("[^a-z0-9]+".toRegex(), "")
                 out += BundledFont(

@@ -401,7 +401,8 @@ object VoskCaptionEngine {
             val arr = org.json.JSONObject(json).optJSONArray("result") ?: return words
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                val word = o.optString("word").ifBlank { continue }
+                val word = o.optString("word")
+                if (word.isBlank()) continue
                 val start = o.optDouble("start", Double.NaN)
                 val end = o.optDouble("end", Double.NaN)
                 if (start.isNaN() || end.isNaN()) continue

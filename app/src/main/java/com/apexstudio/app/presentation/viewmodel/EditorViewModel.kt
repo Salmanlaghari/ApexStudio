@@ -38,6 +38,13 @@ class EditorViewModel(
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
     /**
+     * Phase 4: auto-caption UI state (Vosk). Instance-scoped so it can't
+     * bleed between editors (multi-window / tests).
+     */
+    internal val _captionUi = MutableStateFlow(CaptionUiState())
+    val captionUi: StateFlow<CaptionUiState> = _captionUi.asStateFlow()
+
+    /**
      * 60fps-safe playhead position stream. The timeline playhead collects
      * this flow directly so playback ticks do NOT recompose the whole
      * timeline — only the playhead + ruler move. (Passing playerPositionMs

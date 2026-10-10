@@ -46,7 +46,6 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
-import com.apexstudio.app.presentation.viewmodel.captionUi
 import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.resetCaptionUi

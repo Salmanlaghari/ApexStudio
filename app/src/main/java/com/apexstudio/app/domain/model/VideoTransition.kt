@@ -248,6 +248,7 @@ object TransitionLibrary {
     // dissolve at render time — entries here are always safe to display.
     @Volatile
     private var packTransitions: List<TransitionDefinition> = emptyList()
+    @Volatile
     private var glProTransitions: List<TransitionDefinition> = emptyList()
 
     /** Built-in + pack transitions. */

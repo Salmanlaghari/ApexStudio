@@ -21,7 +21,8 @@ object TrackWaveformCache {
     private const val TAG = "TrackWaveformCache"
     const val BUCKETS = 160
 
-    private val cache = object : LruCache<String, FloatArray>(24) {
+    // maxSize is in sizeOf() units (floats); 24 tracks x 160 buckets.
+    private val cache = object : LruCache<String, FloatArray>(24 * BUCKETS) {
         override fun sizeOf(key: String, value: FloatArray): Int = value.size
     }
 

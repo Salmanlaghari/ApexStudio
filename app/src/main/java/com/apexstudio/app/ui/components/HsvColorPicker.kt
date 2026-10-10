@@ -88,7 +88,7 @@ fun HsvColorPicker(
                             listOf(Color.White, Color.hsv(hue, 1f, 1f))
                         )
                     )
-                    .pointerInput(hue) {
+                    .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { off ->
                                 sat = (off.x / size.width).coerceIn(0f, 1f)

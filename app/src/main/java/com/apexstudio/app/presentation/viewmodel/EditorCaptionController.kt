@@ -31,9 +31,7 @@ class CaptionUiState(
 
 enum class CaptionPhase { IDLE, DOWNLOADING_MODEL, TRANSCRIBING, DONE, FAILED }
 
-private val _captionUi = MutableStateFlow(CaptionUiState())
-val EditorViewModel.captionUi: StateFlow<CaptionUiState>
-    get() = _captionUi.asStateFlow()
+// CaptionUiState lives on EditorViewModel (instance-scoped).
 
 /** True once the Vosk model is on disk. */
 fun EditorViewModel.isCaptionModelReady(): Boolean {

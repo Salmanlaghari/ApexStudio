@@ -160,21 +160,24 @@ object VoskCaptionEngine {
                 Recognizer(model, TARGET_SAMPLE_RATE.toFloat()).use { rec ->
                     rec.setWords(true)
                     // Partial results disabled for speed; we only need finals.
-                    val chunk = 4096 * 2 // bytes (16-bit samples)
+                    // Single reusable chunk buffer — no per-chunk allocation.
+                    val chunkSize = 4096 * 2 // bytes (16-bit samples)
+                    val chunkBuf = ByteArray(chunkSize)
                     var offset = 0
                     while (offset < pcm.size) {
-                        val len = minOf(chunk, pcm.size - offset)
+                        val len = minOf(chunkSize, pcm.size - offset)
                         val end = offset + len >= pcm.size
+                        pcm.copyInto(chunkBuf, 0, offset, offset + len)
                         if (end) {
-                            rec.acceptWaveForm(pcm, len)
+                            rec.acceptWaveForm(chunkBuf, len)
                             words += parseWords(rec.finalResult)
                         } else {
-                            if (rec.acceptWaveForm(pcm.copyOfRange(offset, offset + len), len)) {
+                            if (rec.acceptWaveForm(chunkBuf, len)) {
                                 words += parseWords(rec.result)
                             }
                         }
                         offset += len
-                        if (offset % (chunk * 64) == 0) {
+                        if (offset % (chunkSize * 64) == 0) {
                             onProgress(0.5f + 0.5f * (offset.toFloat() / pcm.size))
                         }
                     }
@@ -387,55 +390,31 @@ object VoskCaptionEngine {
     // Vosk JSON parsing (no extra deps — tiny hand parser for the known shape)
     // ------------------------------------------------------------------
 
+    /**
+     * Parses Vosk's word-timestamp JSON via org.json (robust against
+     * formatting variations between model versions).
+     * Shape: {"result":[{"word":..,"start":..,"end":..,"conf":..}, …]}
+     */
     private fun parseWords(json: String): List<CaptionWord> {
         val words = mutableListOf<CaptionWord>()
-        // Find "result": [ ... ] array; parse each {"word":..,"start":..,"end":..,"conf":..}
-        val resultIdx = json.indexOf("\"result\"")
-        if (resultIdx < 0) return words
-        val arrStart = json.indexOf('[', resultIdx)
-        val arrEnd = json.indexOf(']', arrStart)
-        if (arrStart < 0 || arrEnd < 0) return words
-        val arr = json.substring(arrStart + 1, arrEnd)
-        // Split top-level objects.
-        var depth = 0
-        var start = -1
-        for (i in arr.indices) {
-            when (arr[i]) {
-                '{' -> { if (depth == 0) start = i; depth++ }
-                '}' -> {
-                    depth--
-                    if (depth == 0 && start >= 0) {
-                        parseWordObj(arr.substring(start, i + 1))?.let { words += it }
-                        start = -1
-                    }
-                }
+        try {
+            val arr = org.json.JSONObject(json).optJSONArray("result") ?: return words
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val word = o.optString("word").ifBlank { continue }
+                val start = o.optDouble("start", Double.NaN)
+                val end = o.optDouble("end", Double.NaN)
+                if (start.isNaN() || end.isNaN()) continue
+                words += CaptionWord(
+                    word = word,
+                    startMs = (start * 1000).toLong(),
+                    endMs = (end * 1000).toLong(),
+                    confidence = o.optDouble("conf", 0.0).toFloat()
+                )
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Vosk JSON parse failed", e)
         }
         return words
-    }
-
-    private fun parseWordObj(obj: String): CaptionWord? {
-        fun str(key: String): String? {
-            val k = "\"$key\""
-            val i = obj.indexOf(k)
-            if (i < 0) return null
-            val c = obj.indexOf(':', i + k.length)
-            if (c < 0) return null
-            var s = c + 1
-            while (s < obj.length && obj[s].isWhitespace()) s++
-            return if (obj[s] == '"') {
-                val e = obj.indexOf('"', s + 1)
-                if (e < 0) null else obj.substring(s + 1, e)
-            } else {
-                var e = s
-                while (e < obj.length && (obj[e].isDigit() || obj[e] == '.' || obj[e] == '-' || obj[e] == 'e' || obj[e] == 'E' || obj[e] == '+')) e++
-                obj.substring(s, e)
-            }
-        }
-        val word = str("word") ?: return null
-        val start = str("start")?.toDoubleOrNull() ?: return null
-        val end = str("end")?.toDoubleOrNull() ?: return null
-        val conf = str("conf")?.toFloatOrNull() ?: 0f
-        return CaptionWord(word, (start * 1000).toLong(), (end * 1000).toLong(), conf)
     }
 }

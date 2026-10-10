@@ -106,39 +106,21 @@ object TextFontRegistry {
     private fun loadManifestFonts(ctx: Context): List<BundledFont> {
         return try {
             val json = ctx.assets.open("fonts/fonts.json").bufferedReader().use { it.readText() }
-            // Tiny hand-parser: [{"file":..,"family":..,"category":..}, …]
             val out = mutableListOf<BundledFont>()
-            var i = 0
-            while (true) {
-                val o = json.indexOf('{', i)
-                if (o < 0) break
-                val c = json.indexOf('}', o)
-                if (c < 0) break
-                val obj = json.substring(o, c + 1)
-                fun f(key: String): String? {
-                    val k = "\"" + key + "\""
-                    val ki = obj.indexOf(k)
-                    if (ki < 0) return null
-                    val q1 = obj.indexOf('"', ki + k.length + 1)
-                    if (q1 < 0) return null
-                    val q2 = obj.indexOf('"', q1 + 1)
-                    if (q2 < 0) return null
-                    return obj.substring(q1 + 1, q2)
-                }
-                val file = f("file")
-                val family = f("family")
-                val category = f("category") ?: "Display"
-                if (file != null && family != null) {
-                    val key = family.lowercase().replace("[^a-z0-9]+".toRegex(), "")
-                    out += BundledFont(
-                        key = key,
-                        label = family,
-                        regularAsset = "fonts/$file",
-                        variable = "-Variable." in file,
-                        category = category
-                    )
-                }
-                i = c + 1
+            val arr = org.json.JSONObject(json).optJSONArray("fonts") ?: return emptyList()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val file = o.optString("file").ifBlank { continue }
+                val family = o.optString("family").ifBlank { continue }
+                val category = o.optString("category", "Display")
+                val key = family.lowercase().replace("[^a-z0-9]+".toRegex(), "")
+                out += BundledFont(
+                    key = key,
+                    label = family,
+                    regularAsset = "fonts/$file",
+                    variable = "-Variable." in file,
+                    category = category
+                )
             }
             Log.i(TAG, "Loaded ${out.size} manifest fonts")
             out

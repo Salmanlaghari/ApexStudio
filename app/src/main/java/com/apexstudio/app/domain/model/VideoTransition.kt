@@ -253,11 +253,37 @@ object TransitionLibrary {
 
     fun hasPackTransitions(): Boolean = packTransitions.isNotEmpty()
 
+    /**
+     * Registers raw pack transitions (from PackLoader) as [TransitionDefinition].
+     * Pack categories map to the closest built-in [TransitionCategory].
+     * Pack GLSL unknown to the GL engine falls back to a safe dissolve at
+     * render time — entries here are always safe to display. Idempotent.
+     */
     @Synchronized
-    fun registerPackTransitions(defs: List<TransitionDefinition>) {
-        if (packTransitions.isNotEmpty()) return
+    fun registerPackTransitions(
+        packTransitions: List<com.apexstudio.app.data.packs.PackLoader.PackTransition>
+    ) {
+        if (this.packTransitions.isNotEmpty()) return
         val builtinIds = transitions.map { it.id }.toSet()
-        packTransitions = defs.filter { it.id !in builtinIds }
+        this.packTransitions = packTransitions.map { t ->
+            val cat = when (t.category.lowercase()) {
+                "basic" -> TransitionCategory.DISSOLVE
+                "3d" -> TransitionCategory.MOTION
+                "glitch" -> TransitionCategory.EFFECTS
+                else -> TransitionCategory.EFFECTS
+            }
+            TransitionDefinition(
+                id = "pack_${t.id}",
+                name = t.name,
+                category = cat,
+                description = "Pack transition: ${t.name}",
+                defaultDurationMs = (t.duration * 1000).toLong(),
+                badgeText = t.name.take(6).uppercase(),
+                icon = Icons.Default.AutoAwesome,
+                gradientColors = listOf(Color(0xFF7C3AED), Color(0xFF00E5FF)),
+                tag = "Pack"
+            )
+        }.filter { it.id !in builtinIds }
     }
 
     fun getById(id: String?): TransitionDefinition? {

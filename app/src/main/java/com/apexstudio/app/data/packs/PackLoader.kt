@@ -7,6 +7,9 @@ import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Phase 2: Content Pack loader.
@@ -184,17 +187,22 @@ object PackLoader {
         emptyList()
     }
 
-    /** Erase pack (configs.json variant). */
+    /** Erase pack (configs.json variant with "configs" key). */
     fun loadEraseConfigs(context: Context): List<PackPreset> = try {
         val text = readAsset(context, "erase/configs.json") ?: return emptyList()
-        // Erase pack uses a "configs" key instead of "presets" — parse leniently.
-        val generic = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(text)
-        val arr = generic["configs"] ?: generic["presets"] ?: return emptyList()
-        json.decodeFromJsonElement<PresetPackFile>(
-            kotlinx.serialization.json.buildJsonObject {
-                put("presets", arr)
-            }
-        ).presets
+        val root = json.parseToJsonElement(text).jsonObject
+        val arr = root["configs"] ?: root["presets"]
+            ?: return emptyList()
+        arr.jsonArray.mapNotNull { el ->
+            try {
+                val obj = el.jsonObject
+                PackPreset(
+                    id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                    name = obj["name"]?.jsonPrimitive?.content ?: "",
+                    category = obj["category"]?.jsonPrimitive?.content ?: "General"
+                )
+            } catch (_: Exception) { null }
+        }
     } catch (e: Exception) {
         Log.w(TAG, "Failed to parse erase pack", e)
         emptyList()
@@ -243,7 +251,6 @@ object PackLoader {
             val p = f.params
             val stylistic = when {
                 p.vignette >= 0.3f -> StylisticEffectType.VIGNETTE
-                p.grain >= 0.25f -> StylisticEffectType.FILM_GRAIN
                 p.fade >= 0.15f -> StylisticEffectType.SEPIA
                 else -> StylisticEffectType.NONE
             }
@@ -282,36 +289,13 @@ object PackLoader {
     }
 
     /**
-     * Converts pack transitions to [TransitionDefinition] and registers them
-     * with [TransitionLibrary]. Pack categories map to the closest built-in
-     * [TransitionCategory]. Idempotent.
+     * Loads pack transitions via [PackLoader] and registers them with
+     * [TransitionLibrary]. Idempotent — safe to call on every picker open.
      */
     fun ensurePackTransitionsRegistered(context: Context) {
         val lib = com.apexstudio.app.domain.model.TransitionLibrary
         if (lib.hasPackTransitions()) return
-        val defs = loadTransitions(context).map { t ->
-            val cat = when (t.category.lowercase()) {
-                "basic" -> com.apexstudio.app.domain.model.TransitionCategory.DISSOLVE
-                "3d" -> com.apexstudio.app.domain.model.TransitionCategory.MOTION
-                "glitch" -> com.apexstudio.app.domain.model.TransitionCategory.EFFECTS
-                else -> com.apexstudio.app.domain.model.TransitionCategory.EFFECTS
-            }
-            com.apexstudio.app.domain.model.TransitionDefinition(
-                id = "pack_${t.id}",
-                name = t.name,
-                category = cat,
-                description = "Pack transition: ${t.name}",
-                defaultDurationMs = (t.duration * 1000).toLong(),
-                badgeText = t.name.take(6).uppercase(),
-                icon = androidx.compose.material.icons.Icons.Default.AutoAwesome,
-                gradientColors = listOf(
-                    androidx.compose.ui.graphics.Color(0xFF7C3AED),
-                    androidx.compose.ui.graphics.Color(0xFF00E5FF)
-                ),
-                tag = "Pack"
-            )
-        }
-        lib.registerPackTransitions(defs)
-        Log.i(TAG, "Registered ${defs.size} pack transitions")
+        lib.registerPackTransitions(loadTransitions(context))
+        Log.i(TAG, "Pack transitions registered")
     }
 }

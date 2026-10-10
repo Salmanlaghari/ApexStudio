@@ -1,12 +1,13 @@
 /*
+ * Vendored from https://github.com/gauravk95/audio-visualizer-android
+ * (Apache License 2.0, Copyright 2018 Gaurav Kumar).
+ * Changes for ApexStudio: package renamed, android.support -> androidx,
+ * XML attributes replaced with programmatic setters (BaseVisualizer).
+ */
+/*
         Copyright 2018 Gaurav Kumar
 
         Licensed under the Apache License, Version 2.0 (the "License");
-/*
- * Vendored from https://github.com/gauravk95/audio-visualizer-android
- * (Apache License 2.0, Copyright 2018 Gaurav Kumar).
- * Changes for ApexStudio: package renamed, android.support -> androidx.
- */
 
         you may not use this file except in compliance with the License.
         You may obtain a copy of the License at

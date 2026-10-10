@@ -1,9 +1,10 @@
-package com.apexstudio.app.vendor.visualizer.visualizer;
 /*
  * Vendored from https://github.com/gauravk95/audio-visualizer-android
  * (Apache License 2.0, Copyright 2018 Gaurav Kumar).
- * Changes for ApexStudio: package renamed, android.support -> androidx.
+ * Changes for ApexStudio: package renamed, android.support -> androidx,
+ * XML attributes replaced with programmatic setters (BaseVisualizer).
  */
+package com.apexstudio.app.vendor.visualizer.visualizer;
 
 
 import android.content.Context;

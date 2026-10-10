@@ -267,7 +267,7 @@ fun AdjustPackPanel(
                 label = "Warmth",
                 value = adjustments.temperature / 1000f,
                 range = -3f..3f,
-                onChange = { onUpdate { it.copy(temperature = (it * 1000f).coerceIn(-3000f, 3000f)) } }
+                onChange = { v -> onUpdate { adj -> adj.copy(temperature = (v * 1000f).coerceIn(-3000f, 3000f)) } }
             )
             Spacer(Modifier.height(8.dp))
         }

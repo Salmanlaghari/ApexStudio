@@ -376,8 +376,8 @@ private fun ScopeCanvas(
                     Color(0xFFFFB74D).copy(alpha = 0.6f),
                     center,
                     Offset(
-                        center.x + radius * 0.7f * kotlin.math.cos(-2.2),
-                        center.y + radius * 0.7f * kotlin.math.sin(-2.2)
+                        center.x + radius * 0.7f * kotlin.math.cos(-2.2).toFloat(),
+                        center.y + radius * 0.7f * kotlin.math.sin(-2.2).toFloat()
                     ),
                     strokeWidth = 2f
                 )

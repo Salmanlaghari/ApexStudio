@@ -158,7 +158,7 @@ dependencies {
   implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
   implementation("com.google.mlkit:face-detection:16.1.7")
   // Phase 3: on-device selfie segmentation for Background Remover pack.
-  implementation("com.google.mlkit:segmentation-selfie:16.0.0")
+  implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)

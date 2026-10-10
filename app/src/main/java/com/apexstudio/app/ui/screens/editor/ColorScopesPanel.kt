@@ -68,10 +68,10 @@ private data class RgbHistogram(
     val max: Int get() = (r + g + b + luma).maxOrNull() ?: 1
 }
 
-/** Reusable pixel buffer: a 1080p frame is ~1.7MB, so we allocate once and
- *  reuse it across preview frames instead of per-frame allocation. */
-private var histogramPixelBuffer: IntArray = IntArray(0)
-
+/** Downsampled frames are tiny (max 320px on the long edge, ~400KB of pixels),
+ *  so allocate the pixel buffer per call: a shared reusable buffer would race
+ *  across concurrent Default-dispatcher coroutines when preview frames arrive
+ *  faster than the histogram finishes. */
 private suspend fun computeHistogram(bitmap: Bitmap): RgbHistogram =
     withContext(Dispatchers.Default) {
         val hist = RgbHistogram()
@@ -91,10 +91,8 @@ private suspend fun computeHistogram(bitmap: Bitmap): RgbHistogram =
         }
         val w = sample.width
         val h = sample.height
-        if (histogramPixelBuffer.size < w * h) {
-            histogramPixelBuffer = IntArray(w * h)
-        }
-        val pixels = histogramPixelBuffer
+        // Local buffer: never shared between concurrent calls.
+        val pixels = IntArray(w * h)
         sample.getPixels(pixels, 0, w, 0, 0, w, h)
         if (sample !== bitmap) sample.recycle()
         val pixelCount = w * h

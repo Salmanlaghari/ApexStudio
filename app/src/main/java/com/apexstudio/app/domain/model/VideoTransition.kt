@@ -42,7 +42,8 @@ enum class TransitionCategory(val label: String) {
     DISSOLVE("Dissolve & Fade"),
     WIPE("Wipe"),
     MOTION("Motion & Slide"),
-    EFFECTS("Glitch & FX")
+    EFFECTS("Glitch & FX"),
+    GL_PRO("GL Pro")
 }
 
 /**

@@ -1087,8 +1087,7 @@ fun TextPanel(
                     }
                 }
             }
-        }
-            TextPanelTab.CAPTIONS -> {
+                    TextPanelTab.CAPTIONS -> {
                 AutoCaptionsTab(
                     captionUiState = captionUiState,
                     onAutoCaptions = onAutoCaptions,
@@ -1096,6 +1095,7 @@ fun TextPanel(
                     hasAutoCaptions = hasAutoCaptions
                 )
             }
+}
     }
 }
 

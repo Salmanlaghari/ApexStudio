@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "engine": "mlkit_selfie_segmentation",
+  "note": "On-device via Google ML Kit (free, no cloud). Enable in app build.gradle: com.google.mlkit:segmentation-selfie",
+  "segmentation": {
+    "model": "selfie_multiclass",
+    "stream_mode": true,
+    "raw_size_mask": true,
+    "confidence_threshold": 0.6
+  },
+  "edge_refinement": [
+    {
+      "id": "er_none",
+      "name": "None",
+      "feather": 0,
+      "smooth": 0
+    },
+    {
+      "id": "er_light",
+      "name": "Light",
+      "feather": 2,
+      "smooth": 1
+    },
+    {
+      "id": "er_medium",
+      "name": "Medium",
+      "feather": 5,
+      "smooth": 2
+    },
+    {
+      "id": "er_strong",
+      "name": "Strong",
+      "feather": 10,
+      "smooth": 3
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "bg_blur_light",
+      "name": "Blur Light",
+      "type": "blur",
+      "radius": 15
+    },
+    {
+      "id": "bg_blur_heavy",
+      "name": "Blur Heavy",
+      "type": "blur",
+      "radius": 40
+    },
+    {
+      "id": "bg_white",
+      "name": "White",
+      "type": "solid",
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "bg_black",
+      "name": "Black",
+      "type": "solid",
+      "color": "#000000"
+    },
+    {
+      "id": "bg_green",
+      "name": "Green Screen",
+      "type": "solid",
+      "color": "#00FF00"
+    },
+    {
+      "id": "bg_gradient_sunset",
+      "name": "Sunset Gradient",
+      "type": "gradient",
+      "colors": [
+        "#FF6B6B",
+        "#4ECDC4"
+      ],
+      "angle": 135
+    },
+    {
+      "id": "bg_gradient_ocean",
+      "name": "Ocean Gradient",
+      "type": "gradient",
+      "colors": [
+        "#2193b0",
+        "#6dd5ed"
+      ],
+      "angle": 135
+    },
+    {
+      "id": "bg_gradient_purple",
+      "name": "Purple Haze",
+      "type": "gradient",
+      "colors": [
+        "#7F00FF",
+        "#E100FF"
+      ],
+      "angle": 135
+    },
+    {
+      "id": "bg_custom",
+      "name": "Custom Image",
+      "type": "image",
+      "pickable": true
+    }
+  ]
+}

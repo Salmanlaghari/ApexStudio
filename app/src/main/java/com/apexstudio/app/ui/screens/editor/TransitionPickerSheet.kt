@@ -60,6 +60,11 @@ fun TransitionPickerSheet(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Phase 2: register pack transitions on first open (idempotent).
+    val packContext = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        com.apexstudio.app.data.packs.PackLoader.ensurePackTransitionsRegistered(packContext)
+    }
     var selectedTypeId by remember(currentTransition) {
         mutableStateOf(currentTransition?.type ?: "cross_dissolve")
     }
@@ -71,7 +76,7 @@ fun TransitionPickerSheet(
     }
 
     val selectedDef = remember(selectedTypeId) {
-        TransitionLibrary.getById(selectedTypeId) ?: TransitionLibrary.transitions.first()
+        TransitionLibrary.getById(selectedTypeId) ?: TransitionLibrary.allTransitions().first()
     }
 
     // Animation progress for the live transition previewer (0f -> 1f loop)

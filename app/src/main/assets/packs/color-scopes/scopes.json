@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "scopes": [
+    {
+      "id": "waveform",
+      "name": "Waveform",
+      "description": "Luma waveform monitor (0-100 IRE)",
+      "settings": {
+        "mode": "luma",
+        "scale": "ire",
+        "opacity": 0.9,
+        "size": "medium"
+      }
+    },
+    {
+      "id": "vectorscope",
+      "name": "Vectorscope",
+      "description": "Chroma vectorscope with skin-tone line",
+      "settings": {
+        "gain": 1.0,
+        "show_skin_line": true,
+        "opacity": 0.9,
+        "size": "medium"
+      }
+    },
+    {
+      "id": "histogram",
+      "name": "Histogram",
+      "description": "RGB + luma histogram",
+      "settings": {
+        "channels": [
+          "r",
+          "g",
+          "b",
+          "luma"
+        ],
+        "scale": "linear",
+        "opacity": 0.85
+      }
+    },
+    {
+      "id": "rgb_parade",
+      "name": "RGB Parade",
+      "description": "Separate R/G/B waveforms",
+      "settings": {
+        "scale": "ire",
+        "opacity": 0.9,
+        "size": "medium"
+      }
+    },
+    {
+      "id": "false_color",
+      "name": "False Color",
+      "description": "IRE false-color exposure overlay",
+      "settings": {
+        "ranges": {
+          "shadow": [
+            0,
+            20
+          ],
+          "midtone": [
+            20,
+            80
+          ],
+          "highlight": [
+            80,
+            100
+          ],
+          "clip": [
+            100,
+            109
+          ]
+        },
+        "opacity": 0.7
+      }
+    },
+    {
+      "id": "zebras",
+      "name": "Zebras",
+      "description": "Overexposure zebra stripes overlay",
+      "settings": {
+        "threshold": 95,
+        "pattern": "diagonal",
+        "opacity": 0.8
+      }
+    }
+  ]
+}

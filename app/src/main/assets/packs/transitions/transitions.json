@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "count": 30,
+  "transitions": [
+    {
+      "id": "tr_fade",
+      "name": "Fade",
+      "category": "Basic",
+      "glsl": "fade",
+      "duration": 0.6,
+      "params": {}
+    },
+    {
+      "id": "tr_wipe_left",
+      "name": "Wipe Left",
+      "category": "Basic",
+      "glsl": "wipeLeft",
+      "duration": 0.6,
+      "params": {}
+    },
+    {
+      "id": "tr_wipe_right",
+      "name": "Wipe Right",
+      "category": "Basic",
+      "glsl": "wipeRight",
+      "duration": 0.6,
+      "params": {}
+    },
+    {
+      "id": "tr_slide_up",
+      "name": "Slide Up",
+      "category": "Basic",
+      "glsl": "slideUp",
+      "duration": 0.6,
+      "params": {}
+    },
+    {
+      "id": "tr_slide_down",
+      "name": "Slide Down",
+      "category": "Basic",
+      "glsl": "slideDown",
+      "duration": 0.6,
+      "params": {}
+    },
+    {
+      "id": "tr_dissolve",
+      "name": "Dissolve",
+      "category": "Basic",
+      "glsl": "custom_dissolve",
+      "duration": 0.8,
+      "params": {
+        "noise": 0.4
+      }
+    },
+    {
+      "id": "tr_iris",
+      "name": "Iris",
+      "category": "Basic",
+      "glsl": "custom_iris",
+      "duration": 0.8,
+      "params": {
+        "shape": "circle"
+      }
+    },
+    {
+      "id": "tr_push",
+      "name": "Push",
+      "category": "Basic",
+      "glsl": "custom_push",
+      "duration": 0.5,
+      "params": {
+        "direction": "left"
+      }
+    },
+    {
+      "id": "tr_cube",
+      "name": "Cube",
+      "category": "3D",
+      "glsl": "cube",
+      "duration": 0.8,
+      "params": {}
+    },
+    {
+      "id": "tr_doorway",
+      "name": "Doorway",
+      "category": "3D",
+      "glsl": "doorway",
+      "duration": 0.9,
+      "params": {}
+    },
+    {
+      "id": "tr_flip_h",
+      "name": "Flip Horizontal",
+      "category": "3D",
+      "glsl": "custom_flipH",
+      "duration": 0.7,
+      "params": {}
+    },
+    {
+      "id": "tr_flip_v",
+      "name": "Flip Vertical",
+      "category": "3D",
+      "glsl": "custom_flipV",
+      "duration": 0.7,
+      "params": {}
+    },
+    {
+      "id": "tr_page_curl",
+      "name": "Page Curl",
+      "category": "3D",
+      "glsl": "custom_pagecurl",
+      "duration": 1.0,
+      "params": {
+        "radius": 0.3
+      }
+    },
+    {
+      "id": "tr_zoom_spin",
+      "name": "Zoom Spin",
+      "category": "3D",
+      "glsl": "custom_zoomspin",
+      "duration": 0.7,
+      "params": {
+        "spins": 1.0
+      }
+    },
+    {
+      "id": "tr_tile_flip",
+      "name": "Tile Flip",
+      "category": "3D",
+      "glsl": "custom_tileflip",
+      "duration": 0.9,
+      "params": {
+        "tiles": [
+          6,
+          4
+        ]
+      }
+    },
+    {
+      "id": "tr_glitch",
+      "name": "Glitch",
+      "category": "Glitch",
+      "glsl": "custom_glitch",
+      "duration": 0.5,
+      "params": {
+        "intensity": 0.8
+      }
+    },
+    {
+      "id": "tr_rgb_split",
+      "name": "RGB Split",
+      "category": "Glitch",
+      "glsl": "custom_rgbsplit",
+      "duration": 0.6,
+      "params": {
+        "distance": 0.05
+      }
+    },
+    {
+      "id": "tr_pixelize",
+      "name": "Pixelize",
+      "category": "Glitch",
+      "glsl": "pixelize",
+      "duration": 0.7,
+      "params": {
+        "squaresMin": 20
+      }
+    },
+    {
+      "id": "tr_datamosh",
+      "name": "Datamosh",
+      "category": "Glitch",
+      "glsl": "custom_datamosh",
+      "duration": 0.6,
+      "params": {
+        "blocks": 24
+      }
+    },
+    {
+      "id": "tr_scanline",
+      "name": "Scanline Wipe",
+      "category": "Glitch",
+      "glsl": "custom_scanwipe",
+      "duration": 0.6,
+      "params": {
+        "lines": 120
+      }
+    },
+    {
+      "id": "tr_noise_cut",
+      "name": "Noise Cut",
+      "category": "Glitch",
+      "glsl": "custom_noisecut",
+      "duration": 0.4,
+      "params": {
+        "threshold": 0.5
+      }
+    },
+    {
+      "id": "tr_shake_in",
+      "name": "Shake In",
+      "category": "Glitch",
+      "glsl": "custom_shakein",
+      "duration": 0.5,
+      "params": {
+        "amplitude": 0.03
+      }
+    },
+    {
+      "id": "tr_blur",
+      "name": "Blur Cross",
+      "category": "Artistic",
+      "glsl": "custom_blurcross",
+      "duration": 0.8,
+      "params": {
+        "maxBlur": 12.0
+      }
+    },
+    {
+      "id": "tr_circle",
+      "name": "Circle Reveal",
+      "category": "Artistic",
+      "glsl": "circleopen",
+      "duration": 0.8,
+      "params": {}
+    },
+    {
+      "id": "tr_swirl",
+      "name": "Swirl",
+      "category": "Artistic",
+      "glsl": "swirl",
+      "duration": 0.9,
+      "params": {}
+    },
+    {
+      "id": "tr_light_leak",
+      "name": "Light Leak",
+      "category": "Artistic",
+      "glsl": "custom_lightleak",
+      "duration": 0.9,
+      "params": {
+        "color": [
+          1.0,
+          0.6,
+          0.3
+        ]
+      }
+    },
+    {
+      "id": "tr_burn",
+      "name": "Film Burn",
+      "category": "Artistic",
+      "glsl": "custom_filmburn",
+      "duration": 0.8,
+      "params": {
+        "intensity": 0.9
+      }
+    },
+    {
+      "id": "tr_ripple",
+      "name": "Ripple",
+      "category": "Artistic",
+      "glsl": "custom_ripple",
+      "duration": 0.9,
+      "params": {
+        "waves": 8.0
+      }
+    },
+    {
+      "id": "tr_kaleido",
+      "name": "Kaleidoscope",
+      "category": "Artistic",
+      "glsl": "kaleidoscope",
+      "duration": 1.0,
+      "params": {
+        "speed": 1.0
+      }
+    },
+    {
+      "id": "tr_paint",
+      "name": "Paint Stroke",
+      "category": "Artistic",
+      "glsl": "custom_paint",
+      "duration": 1.0,
+      "params": {
+        "strokes": 30
+      }
+    }
+  ],
+  "license_note": "gl-transitions shaders are MIT licensed. custom_* shaders are original ApexStudio creations."
+}

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -426,10 +427,16 @@ fun GpuVideoFilterPanel(
                 }
             }
 
-            // Filtered Profiles List
+            // Filtered Profiles List (Phase 2: includes pack profiles).
+            // Ensure pack profiles are registered before first render.
+            val packContext = LocalContext.current
+            LaunchedEffect(Unit) {
+                com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
+            }
             val filteredProfiles = remember(profileCategoryFilter) {
-                if (profileCategoryFilter == "All") GpuColorProfiles.ALL
-                else GpuColorProfiles.ALL.filter { it.category == profileCategoryFilter }
+                val all = GpuColorProfiles.ALL_WITH_PACKS
+                if (profileCategoryFilter == "All") all
+                else all.filter { it.category == profileCategoryFilter }
             }
 
             // Horizontal scrollable strip of Preset Profiles (video stays visible above)

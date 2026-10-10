@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "generated": "2026-10-09",
+  "packs": [
+    {
+      "id": "filters",
+      "name": "Filter Pack",
+      "icon": "filters",
+      "count": 52,
+      "version": 1,
+      "path": "filters/filters.json",
+      "description": "52 parametric filters across 7 categories"
+    },
+    {
+      "id": "transitions",
+      "name": "Transition Pack",
+      "icon": "transitions",
+      "count": 30,
+      "version": 1,
+      "path": "transitions/transitions.json",
+      "glsl_files": 19,
+      "description": "30 transitions, 19 original GLSL shaders"
+    },
+    {
+      "id": "effects",
+      "name": "Effects Pack",
+      "icon": "effects",
+      "count": 25,
+      "version": 1,
+      "path": "effects/effects.json",
+      "glsl_files": 18,
+      "description": "25 video effects, 18 original GLSL shaders"
+    },
+    {
+      "id": "edit-presets",
+      "name": "Edit Pack",
+      "icon": "edit",
+      "count": 20,
+      "version": 1,
+      "path": "edit-presets/presets.json",
+      "description": "20 editing presets: speed ramps, freeze frames, split screens"
+    },
+    {
+      "id": "adjust-presets",
+      "name": "Brightness Pack",
+      "icon": "adjust",
+      "count": 30,
+      "version": 1,
+      "path": "adjust-presets/presets.json",
+      "description": "30 brightness/adjustment presets"
+    },
+    {
+      "id": "image-tools",
+      "name": "Image Editing Tool Pack",
+      "icon": "image",
+      "count": 35,
+      "version": 1,
+      "path": "image-tools/tools.json",
+      "description": "35 photo editing tools: crop, heal, liquify, denoise, sharpen"
+    },
+    {
+      "id": "erase",
+      "name": "Erase Pack",
+      "icon": "erase",
+      "count": 19,
+      "version": 1,
+      "path": "erase/configs.json",
+      "description": "19 eraser configs: brushes, chroma-key, magic eraser"
+    },
+    {
+      "id": "color-scopes",
+      "name": "Colour Recovery Pack",
+      "icon": "scopes",
+      "count": 21,
+      "version": 1,
+      "path": "color-scopes/",
+      "description": "6 color scopes + 15 color recovery presets"
+    },
+    {
+      "id": "3d-luts",
+      "name": "3D Colour Pack",
+      "icon": "lut",
+      "count": 30,
+      "version": 1,
+      "path": "3d-luts/",
+      "description": "30 parametric 3D LUTs (.cube SIZE 16)"
+    },
+    {
+      "id": "bg-remover",
+      "name": "Background Remover Pack",
+      "icon": "bgremove",
+      "count": 13,
+      "version": 1,
+      "path": "bg-remover/config.json",
+      "description": "ML Kit on-device BG removal configs + 9 backgrounds"
+    }
+  ],
+  "total_items": 275
+}

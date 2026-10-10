@@ -150,6 +150,9 @@ fun ContextualBottomToolbar(
             // so keyframes can be added/edited immediately on selection.
             // Mockup: diamond-outline icon, cyan; every tool icon+label is cyan.
             CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            // Phase 2: Filters on video clips too — filters were unreachable
+            // when a video clip was selected (main use case).
+            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
             CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
             CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
             CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),

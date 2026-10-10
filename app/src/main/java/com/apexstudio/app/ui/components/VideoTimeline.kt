@@ -274,7 +274,10 @@ fun VideoTimeline(
             it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY
         }.map { it.trackIndex.coerceIn(0, 9) }.toSortedSet()
         // Extra (empty) layers that still hold clips merge into `used`.
-        ((used + 0 + extraVideoLayers).toSortedSet()).toList().take(10)
+        // Phase 2: V2 (layer 1) is ALWAYS visible — CapCut-style clean
+        // timeline where the overlay track invites PIP content even when
+        // empty. Prince: "Video Layer Overlay Kuch be nahin" fix.
+        ((used + 0 + 1 + extraVideoLayers).toSortedSet()).toList().take(10)
     }
     val overlayLayerHeight = 58.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }

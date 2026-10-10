@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "brushes": [
+    {
+      "id": "br_fine",
+      "name": "Fine",
+      "size": 10,
+      "feather": 0.8,
+      "hardness": 0.9
+    },
+    {
+      "id": "br_medium",
+      "name": "Medium",
+      "size": 40,
+      "feather": 0.5,
+      "hardness": 0.7
+    },
+    {
+      "id": "br_large",
+      "name": "Large",
+      "size": 100,
+      "feather": 0.3,
+      "hardness": 0.5
+    },
+    {
+      "id": "br_soft",
+      "name": "Soft Airbrush",
+      "size": 60,
+      "feather": 0.9,
+      "hardness": 0.2
+    }
+  ],
+  "edge_detection": [
+    {
+      "id": "edge_off",
+      "name": "Off",
+      "sensitivity": 0,
+      "refine": 0
+    },
+    {
+      "id": "edge_low",
+      "name": "Low",
+      "sensitivity": 30,
+      "refine": 1
+    },
+    {
+      "id": "edge_med",
+      "name": "Medium",
+      "sensitivity": 60,
+      "refine": 2
+    },
+    {
+      "id": "edge_high",
+      "name": "High",
+      "sensitivity": 90,
+      "refine": 3
+    }
+  ],
+  "chroma_key": [
+    {
+      "id": "ck_green",
+      "name": "Green Screen",
+      "key_color": "#00FF00",
+      "similarity": 0.35,
+      "smoothness": 0.15,
+      "spill": 0.3
+    },
+    {
+      "id": "ck_blue",
+      "name": "Blue Screen",
+      "key_color": "#0000FF",
+      "similarity": 0.35,
+      "smoothness": 0.15,
+      "spill": 0.3
+    },
+    {
+      "id": "ck_custom",
+      "name": "Custom Color",
+      "key_color": "#FFFFFF",
+      "similarity": 0.25,
+      "smoothness": 0.2,
+      "spill": 0.2,
+      "pickable": true
+    },
+    {
+      "id": "ck_green_pro",
+      "name": "Green Pro",
+      "key_color": "#00B140",
+      "similarity": 0.28,
+      "smoothness": 0.25,
+      "spill": 0.5,
+      "despill": true
+    }
+  ],
+  "mask_feather": [
+    {
+      "id": "mf_sharp",
+      "name": "Sharp",
+      "feather": 0,
+      "expand": 0
+    },
+    {
+      "id": "mf_soft",
+      "name": "Soft",
+      "feather": 8,
+      "expand": 0
+    },
+    {
+      "id": "mf_veryssoft",
+      "name": "Very Soft",
+      "feather": 20,
+      "expand": 2
+    },
+    {
+      "id": "mf_natural",
+      "name": "Natural",
+      "feather": 4,
+      "expand": -1
+    }
+  ],
+  "magic_eraser": [
+    {
+      "id": "me_object",
+      "name": "Object Eraser",
+      "mode": "object",
+      "inpaint": "telea",
+      "dilate": 5
+    },
+    {
+      "id": "me_person",
+      "name": "Person Eraser",
+      "mode": "person",
+      "inpaint": "ns",
+      "dilate": 8
+    },
+    {
+      "id": "me_wire",
+      "name": "Wire/Pole Eraser",
+      "mode": "line",
+      "inpaint": "telea",
+      "dilate": 3
+    }
+  ]
+}

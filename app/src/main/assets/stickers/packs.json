@@ -1,0 +1,492 @@
+{
+  "packs": [
+    {
+      "id": "social",
+      "name": "Social",
+      "icon": "social/like.svg",
+      "count": 20,
+      "stickers": [
+        {
+          "file": "social/like.svg",
+          "title": "Like"
+        },
+        {
+          "file": "social/heart.svg",
+          "title": "Heart"
+        },
+        {
+          "file": "social/share.svg",
+          "title": "Share"
+        },
+        {
+          "file": "social/subscribe.svg",
+          "title": "Subscribe"
+        },
+        {
+          "file": "social/bell.svg",
+          "title": "Notification Bell"
+        },
+        {
+          "file": "social/comment.svg",
+          "title": "Comment"
+        },
+        {
+          "file": "social/follow.svg",
+          "title": "Follow"
+        },
+        {
+          "file": "social/mention.svg",
+          "title": "Mention"
+        },
+        {
+          "file": "social/hashtag.svg",
+          "title": "Hashtag"
+        },
+        {
+          "file": "social/thumbsup.svg",
+          "title": "Thumbs Up"
+        },
+        {
+          "file": "social/thumbsdown.svg",
+          "title": "Thumbs Down"
+        },
+        {
+          "file": "social/star.svg",
+          "title": "Star"
+        },
+        {
+          "file": "social/fire.svg",
+          "title": "Fire"
+        },
+        {
+          "file": "social/clap.svg",
+          "title": "Clap"
+        },
+        {
+          "file": "social/message.svg",
+          "title": "Message"
+        },
+        {
+          "file": "social/live.svg",
+          "title": "Live"
+        },
+        {
+          "file": "social/verified.svg",
+          "title": "Verified"
+        },
+        {
+          "file": "social/trending.svg",
+          "title": "Trending"
+        },
+        {
+          "file": "social/repost.svg",
+          "title": "Repost"
+        },
+        {
+          "file": "social/bookmark.svg",
+          "title": "Bookmark"
+        }
+      ]
+    },
+    {
+      "id": "daily",
+      "name": "Daily Life",
+      "icon": "daily/coffee.svg",
+      "count": 20,
+      "stickers": [
+        {
+          "file": "daily/coffee.svg",
+          "title": "Coffee"
+        },
+        {
+          "file": "daily/home.svg",
+          "title": "Home"
+        },
+        {
+          "file": "daily/sleep.svg",
+          "title": "Sleep"
+        },
+        {
+          "file": "daily/burger.svg",
+          "title": "Burger"
+        },
+        {
+          "file": "daily/shopping.svg",
+          "title": "Shopping"
+        },
+        {
+          "file": "daily/car.svg",
+          "title": "Car"
+        },
+        {
+          "file": "daily/phone.svg",
+          "title": "Phone"
+        },
+        {
+          "file": "daily/laptop.svg",
+          "title": "Laptop"
+        },
+        {
+          "file": "daily/book.svg",
+          "title": "Book"
+        },
+        {
+          "file": "daily/gym.svg",
+          "title": "Gym"
+        },
+        {
+          "file": "daily/sun.svg",
+          "title": "Sun"
+        },
+        {
+          "file": "daily/moon.svg",
+          "title": "Moon"
+        },
+        {
+          "file": "daily/rain.svg",
+          "title": "Rain"
+        },
+        {
+          "file": "daily/plant.svg",
+          "title": "Plant"
+        },
+        {
+          "file": "daily/paw.svg",
+          "title": "Pet Paw"
+        },
+        {
+          "file": "daily/music.svg",
+          "title": "Music"
+        },
+        {
+          "file": "daily/clock.svg",
+          "title": "Clock"
+        },
+        {
+          "file": "daily/calendar.svg",
+          "title": "Calendar"
+        },
+        {
+          "file": "daily/gift.svg",
+          "title": "Gift"
+        },
+        {
+          "file": "daily/bulb.svg",
+          "title": "Lightbulb"
+        }
+      ]
+    },
+    {
+      "id": "vlog",
+      "name": "Vlog",
+      "icon": "vlog/videocam.svg",
+      "count": 20,
+      "stickers": [
+        {
+          "file": "vlog/videocam.svg",
+          "title": "Video Camera"
+        },
+        {
+          "file": "vlog/photocam.svg",
+          "title": "Photo Camera"
+        },
+        {
+          "file": "vlog/mic.svg",
+          "title": "Microphone"
+        },
+        {
+          "file": "vlog/play.svg",
+          "title": "Play"
+        },
+        {
+          "file": "vlog/record.svg",
+          "title": "Record"
+        },
+        {
+          "file": "vlog/clapper.svg",
+          "title": "Clapperboard"
+        },
+        {
+          "file": "vlog/drone.svg",
+          "title": "Drone"
+        },
+        {
+          "file": "vlog/pin.svg",
+          "title": "Map Pin"
+        },
+        {
+          "file": "vlog/airplane.svg",
+          "title": "Airplane"
+        },
+        {
+          "file": "vlog/suitcase.svg",
+          "title": "Suitcase"
+        },
+        {
+          "file": "vlog/passport.svg",
+          "title": "Passport"
+        },
+        {
+          "file": "vlog/ticket.svg",
+          "title": "Ticket"
+        },
+        {
+          "file": "vlog/sunglasses.svg",
+          "title": "Sunglasses"
+        },
+        {
+          "file": "vlog/beach.svg",
+          "title": "Beach Umbrella"
+        },
+        {
+          "file": "vlog/mountain.svg",
+          "title": "Mountains"
+        },
+        {
+          "file": "vlog/city.svg",
+          "title": "City Skyline"
+        },
+        {
+          "file": "vlog/selfie.svg",
+          "title": "Selfie Frame"
+        },
+        {
+          "file": "vlog/vlog-badge.svg",
+          "title": "Vlog Badge"
+        },
+        {
+          "file": "vlog/subscribe-reminder.svg",
+          "title": "Subscribe Reminder"
+        },
+        {
+          "file": "vlog/endscreen.svg",
+          "title": "Next Arrow"
+        }
+      ]
+    },
+    {
+      "id": "expressions",
+      "name": "Expressions",
+      "icon": "expressions/laugh.svg",
+      "count": 20,
+      "stickers": [
+        {
+          "file": "expressions/laugh.svg",
+          "title": "Laughing"
+        },
+        {
+          "file": "expressions/cry.svg",
+          "title": "Crying"
+        },
+        {
+          "file": "expressions/shocked.svg",
+          "title": "Shocked"
+        },
+        {
+          "file": "expressions/angry.svg",
+          "title": "Angry"
+        },
+        {
+          "file": "expressions/love.svg",
+          "title": "In Love"
+        },
+        {
+          "file": "expressions/cool.svg",
+          "title": "Cool"
+        },
+        {
+          "file": "expressions/sleepy.svg",
+          "title": "Sleepy"
+        },
+        {
+          "file": "expressions/thinking.svg",
+          "title": "Thinking"
+        },
+        {
+          "file": "expressions/party.svg",
+          "title": "Party"
+        },
+        {
+          "file": "expressions/wink.svg",
+          "title": "Wink"
+        },
+        {
+          "file": "expressions/thumbsup-hand.svg",
+          "title": "Thumbs Up Hand"
+        },
+        {
+          "file": "expressions/peace.svg",
+          "title": "Peace Sign"
+        },
+        {
+          "file": "expressions/point.svg",
+          "title": "Pointing"
+        },
+        {
+          "file": "expressions/wave.svg",
+          "title": "Waving Hand"
+        },
+        {
+          "file": "expressions/ok-hand.svg",
+          "title": "OK Hand"
+        },
+        {
+          "file": "expressions/pray.svg",
+          "title": "Praying Hands"
+        },
+        {
+          "file": "expressions/muscle.svg",
+          "title": "Muscle"
+        },
+        {
+          "file": "expressions/eyes.svg",
+          "title": "Side Eyes"
+        },
+        {
+          "file": "expressions/hundred.svg",
+          "title": "100 Points"
+        },
+        {
+          "file": "expressions/rock.svg",
+          "title": "Rock On"
+        }
+      ]
+    },
+    {
+      "id": "celebration",
+      "name": "Celebration",
+      "icon": "celebration/balloon.svg",
+      "count": 15,
+      "stickers": [
+        {
+          "file": "celebration/popper.svg",
+          "title": "Party Popper"
+        },
+        {
+          "file": "celebration/confetti.svg",
+          "title": "Confetti"
+        },
+        {
+          "file": "celebration/balloon.svg",
+          "title": "Balloon"
+        },
+        {
+          "file": "celebration/cake.svg",
+          "title": "Birthday Cake"
+        },
+        {
+          "file": "celebration/fireworks.svg",
+          "title": "Fireworks"
+        },
+        {
+          "file": "celebration/champagne.svg",
+          "title": "Champagne"
+        },
+        {
+          "file": "celebration/trophy.svg",
+          "title": "Trophy"
+        },
+        {
+          "file": "celebration/medal.svg",
+          "title": "Medal"
+        },
+        {
+          "file": "celebration/crown.svg",
+          "title": "Crown"
+        },
+        {
+          "file": "celebration/ribbon.svg",
+          "title": "Award Ribbon"
+        },
+        {
+          "file": "celebration/sale.svg",
+          "title": "Sale Tag"
+        },
+        {
+          "file": "celebration/new.svg",
+          "title": "New Badge"
+        },
+        {
+          "file": "celebration/discount.svg",
+          "title": "Discount"
+        },
+        {
+          "file": "celebration/giftbox.svg",
+          "title": "Gift Box"
+        },
+        {
+          "file": "celebration/sparkles.svg",
+          "title": "Sparkles"
+        }
+      ]
+    },
+    {
+      "id": "business",
+      "name": "Business",
+      "icon": "business/rocket.svg",
+      "count": 15,
+      "stickers": [
+        {
+          "file": "business/briefcase.svg",
+          "title": "Briefcase"
+        },
+        {
+          "file": "business/chart.svg",
+          "title": "Growth Chart"
+        },
+        {
+          "file": "business/moneybag.svg",
+          "title": "Money Bag"
+        },
+        {
+          "file": "business/coin.svg",
+          "title": "Dollar Coin"
+        },
+        {
+          "file": "business/creditcard.svg",
+          "title": "Credit Card"
+        },
+        {
+          "file": "business/handshake.svg",
+          "title": "Handshake"
+        },
+        {
+          "file": "business/target.svg",
+          "title": "Target"
+        },
+        {
+          "file": "business/rocket.svg",
+          "title": "Rocket Launch"
+        },
+        {
+          "file": "business/idea.svg",
+          "title": "Bright Idea"
+        },
+        {
+          "file": "business/checklist.svg",
+          "title": "Checklist"
+        },
+        {
+          "file": "business/event.svg",
+          "title": "Calendar Event"
+        },
+        {
+          "file": "business/email.svg",
+          "title": "Email"
+        },
+        {
+          "file": "business/call.svg",
+          "title": "Phone Call"
+        },
+        {
+          "file": "business/wifi.svg",
+          "title": "WiFi Signal"
+        },
+        {
+          "file": "business/battery.svg",
+          "title": "Battery Full"
+        }
+      ]
+    }
+  ]
+}

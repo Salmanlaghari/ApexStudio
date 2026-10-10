@@ -1,0 +1,472 @@
+{
+  "version": 1,
+  "count": 20,
+  "presets": [
+    {
+      "id": "spd_slowmo",
+      "name": "Slow Motion",
+      "type": "speed_ramp",
+      "description": "Smooth 0.25x slow motion",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 1.0
+        },
+        {
+          "t": 0.2,
+          "speed": 0.25
+        },
+        {
+          "t": 0.8,
+          "speed": 0.25
+        },
+        {
+          "t": 1.0,
+          "speed": 1.0
+        }
+      ]
+    },
+    {
+      "id": "spd_speedup",
+      "name": "Speed Up",
+      "type": "speed_ramp",
+      "description": "2x fast forward with ease",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 1.0
+        },
+        {
+          "t": 0.25,
+          "speed": 2.0
+        },
+        {
+          "t": 0.75,
+          "speed": 2.0
+        },
+        {
+          "t": 1.0,
+          "speed": 1.0
+        }
+      ]
+    },
+    {
+      "id": "spd_velocity",
+      "name": "Velocity Curve",
+      "type": "speed_ramp",
+      "description": "CapCut-style velocity dips",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 1.0
+        },
+        {
+          "t": 0.15,
+          "speed": 1.8
+        },
+        {
+          "t": 0.3,
+          "speed": 0.3
+        },
+        {
+          "t": 0.45,
+          "speed": 1.8
+        },
+        {
+          "t": 0.6,
+          "speed": 0.3
+        },
+        {
+          "t": 0.75,
+          "speed": 1.8
+        },
+        {
+          "t": 1.0,
+          "speed": 1.0
+        }
+      ]
+    },
+    {
+      "id": "spd_ramp_in",
+      "name": "Ramp In",
+      "type": "speed_ramp",
+      "description": "Gradual slow-down into moment",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 1.5
+        },
+        {
+          "t": 0.5,
+          "speed": 0.5
+        },
+        {
+          "t": 1.0,
+          "speed": 0.25
+        }
+      ]
+    },
+    {
+      "id": "spd_ramp_out",
+      "name": "Ramp Out",
+      "type": "speed_ramp",
+      "description": "Speed up out of slow moment",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 0.25
+        },
+        {
+          "t": 0.5,
+          "speed": 0.5
+        },
+        {
+          "t": 1.0,
+          "speed": 1.5
+        }
+      ]
+    },
+    {
+      "id": "spd_freeze_beat",
+      "name": "Beat Freeze",
+      "type": "speed_ramp",
+      "description": "Freeze on beat drops",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "speed": 1.0
+        },
+        {
+          "t": 0.24,
+          "speed": 0.0
+        },
+        {
+          "t": 0.26,
+          "speed": 0.0
+        },
+        {
+          "t": 0.3,
+          "speed": 1.0
+        },
+        {
+          "t": 0.74,
+          "speed": 0.0
+        },
+        {
+          "t": 0.76,
+          "speed": 0.0
+        },
+        {
+          "t": 0.8,
+          "speed": 1.0
+        },
+        {
+          "t": 1.0,
+          "speed": 1.0
+        }
+      ]
+    },
+    {
+      "id": "frz_moment",
+      "name": "Freeze Moment",
+      "type": "freeze_frame",
+      "description": "2s freeze with zoom-in",
+      "hold_duration": 2.0,
+      "zoom": {
+        "from": 1.0,
+        "to": 1.15
+      },
+      "flash": false
+    },
+    {
+      "id": "frz_flash",
+      "name": "Flash Freeze",
+      "type": "freeze_frame",
+      "description": "Freeze with white flash",
+      "hold_duration": 1.5,
+      "zoom": {
+        "from": 1.0,
+        "to": 1.0
+      },
+      "flash": true
+    },
+    {
+      "id": "frz_dramatic",
+      "name": "Dramatic Hold",
+      "type": "freeze_frame",
+      "description": "3s hold with slow zoom + desaturate",
+      "hold_duration": 3.0,
+      "zoom": {
+        "from": 1.0,
+        "to": 1.25
+      },
+      "flash": false,
+      "desaturate": 0.4
+    },
+    {
+      "id": "rev_full",
+      "name": "Full Reverse",
+      "type": "reverse",
+      "description": "Play entire clip backwards",
+      "mode": "full",
+      "speed": 1.0
+    },
+    {
+      "id": "rev_boomerang",
+      "name": "Boomerang",
+      "type": "reverse",
+      "description": "Forward then reverse loop",
+      "mode": "boomerang",
+      "speed": 1.0,
+      "loops": 3
+    },
+    {
+      "id": "spl_2side",
+      "name": "Side by Side",
+      "type": "split_screen",
+      "description": "2 clips left/right",
+      "layout": "2x1",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 0.5,
+          "h": 1.0
+        },
+        {
+          "x": 0.5,
+          "y": 0,
+          "w": 0.5,
+          "h": 1.0
+        }
+      ],
+      "divider": {
+        "width": 4,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": "spl_2stack",
+      "name": "Stacked",
+      "type": "split_screen",
+      "description": "2 clips top/bottom",
+      "layout": "1x2",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 1.0,
+          "h": 0.5
+        },
+        {
+          "x": 0,
+          "y": 0.5,
+          "w": 1.0,
+          "h": 0.5
+        }
+      ],
+      "divider": {
+        "width": 4,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": "spl_4grid",
+      "name": "4 Grid",
+      "type": "split_screen",
+      "description": "2x2 four clips",
+      "layout": "2x2",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 0.5,
+          "h": 0.5
+        },
+        {
+          "x": 0.5,
+          "y": 0,
+          "w": 0.5,
+          "h": 0.5
+        },
+        {
+          "x": 0,
+          "y": 0.5,
+          "w": 0.5,
+          "h": 0.5
+        },
+        {
+          "x": 0.5,
+          "y": 0.5,
+          "w": 0.5,
+          "h": 0.5
+        }
+      ],
+      "divider": {
+        "width": 4,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": "spl_1plus2",
+      "name": "Feature + 2",
+      "type": "split_screen",
+      "description": "Large left + 2 stacked right",
+      "layout": "1+2",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 0.66,
+          "h": 1.0
+        },
+        {
+          "x": 0.66,
+          "y": 0,
+          "w": 0.34,
+          "h": 0.5
+        },
+        {
+          "x": 0.66,
+          "y": 0.5,
+          "w": 0.34,
+          "h": 0.5
+        }
+      ],
+      "divider": {
+        "width": 4,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": "spl_3row",
+      "name": "Triple Row",
+      "type": "split_screen",
+      "description": "3 clips horizontal",
+      "layout": "3x1",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 0.333,
+          "h": 1.0
+        },
+        {
+          "x": 0.333,
+          "y": 0,
+          "w": 0.334,
+          "h": 1.0
+        },
+        {
+          "x": 0.667,
+          "y": 0,
+          "w": 0.333,
+          "h": 1.0
+        }
+      ],
+      "divider": {
+        "width": 4,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": "spl_pip_duo",
+      "name": "PIP Duo",
+      "type": "split_screen",
+      "description": "Main + corner PIP",
+      "layout": "pip",
+      "slots": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 1.0,
+          "h": 1.0
+        },
+        {
+          "x": 0.62,
+          "y": 0.6,
+          "w": 0.33,
+          "h": 0.33
+        }
+      ],
+      "divider": {
+        "width": 0,
+        "color": "#000000"
+      },
+      "pip_border": {
+        "width": 3,
+        "color": "#FFFFFF",
+        "radius": 12
+      }
+    },
+    {
+      "id": "zm_punch_in",
+      "name": "Punch In",
+      "type": "zoom",
+      "description": "Quick zoom to subject",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "scale": 1.0,
+          "x": 0.5,
+          "y": 0.5
+        },
+        {
+          "t": 1.0,
+          "scale": 1.5,
+          "x": 0.5,
+          "y": 0.5
+        }
+      ],
+      "easing": "ease_in_out"
+    },
+    {
+      "id": "zm_dolly_out",
+      "name": "Dolly Out",
+      "type": "zoom",
+      "description": "Slow reveal zoom out",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "scale": 1.4,
+          "x": 0.5,
+          "y": 0.5
+        },
+        {
+          "t": 1.0,
+          "scale": 1.0,
+          "x": 0.5,
+          "y": 0.5
+        }
+      ],
+      "easing": "linear"
+    },
+    {
+      "id": "zm_whip",
+      "name": "Whip Pan Zoom",
+      "type": "zoom",
+      "description": "Fast whip with motion blur feel",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "scale": 1.0,
+          "x": 0.3,
+          "y": 0.5
+        },
+        {
+          "t": 0.5,
+          "scale": 1.8,
+          "x": 0.5,
+          "y": 0.5
+        },
+        {
+          "t": 1.0,
+          "scale": 1.0,
+          "x": 0.7,
+          "y": 0.5
+        }
+      ],
+      "easing": "ease_in"
+    }
+  ]
+}

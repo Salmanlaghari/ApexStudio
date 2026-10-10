@@ -409,5 +409,25 @@ object GpuColorProfiles {
 
     val CATEGORIES: List<String> = listOf("All", "Cinematic", "Vintage", "B&W", "Mood", "Artistic", "Vibrant")
 
-    fun findById(id: String?): GpuColorProfile? = ALL.firstOrNull { it.id == id }
+    // Phase 2: runtime-registered pack profiles (from assets/packs/filters/).
+    // Registered once via PackLoader; merged into ALL so the filter studio
+    // renders them with zero UI changes.
+    @Volatile
+    private var packProfiles: List<GpuColorProfile> = emptyList()
+
+    /** All curated + pack profiles. */
+    val ALL_WITH_PACKS: List<GpuColorProfile> get() = ALL + packProfiles
+
+    fun hasPackProfiles(): Boolean = packProfiles.isNotEmpty()
+
+    @Synchronized
+    fun registerPackProfiles(profiles: List<GpuColorProfile>) {
+        if (packProfiles.isNotEmpty()) return
+        // Dedupe against built-ins by id.
+        val builtinIds = ALL.map { it.id }.toSet()
+        packProfiles = profiles.filter { it.id !in builtinIds }
+    }
+
+    fun findById(id: String?): GpuColorProfile? =
+        ALL_WITH_PACKS.firstOrNull { it.id == id }
 }

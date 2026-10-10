@@ -42,3 +42,28 @@
 
 # --- LUT assets (loaded via dynamic paths — keep from resource shrinking) ---
 -keepres "assets/luts/*"
+
+# --- Phase 2: R8 Guard additions ---
+# Snap Camera Kit SDK (restored PR #127 — reflection/JNI heavy)
+-keep class com.snap.camerakit.** { *; }
+-keep class com.snap.** { *; }
+-dontwarn com.snap.**
+
+# Media3 (bundles own rules, belt-and-braces for Transformer GlEffects)
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# Pack assets (loaded via dynamic asset paths — keep from resource shrinking)
+-keepres "assets/packs/*"
+-keepres "assets/stickers/*"
+
+# PackLoader data models are @Serializable — covered by kotlinx-serialization
+# rules above. GpuColorProfile / GpuFilterConfig are constructed reflectively
+# by PackLoader — keep their fields.
+-keepclassmembers class com.apexstudio.app.data.filter.GpuColorProfile { *; }
+-keepclassmembers class com.apexstudio.app.data.filter.GpuFilterConfig { *; }
+-keepclassmembers class com.apexstudio.app.data.packs.PackLoader$* { *; }
+
+# CameraX (used by Camera Kit support lib)
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**

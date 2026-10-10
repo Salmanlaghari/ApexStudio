@@ -242,9 +242,53 @@ object TransitionLibrary {
         )
     )
 
+    // Phase 2: runtime-registered pack transitions (from assets/packs/transitions/).
+    // Pack GLSL that the GL engine doesn't know falls back to a safe default
+    // dissolve at render time — entries here are always safe to display.
+    @Volatile
+    private var packTransitions: List<TransitionDefinition> = emptyList()
+
+    /** Built-in + pack transitions. */
+    fun allTransitions(): List<TransitionDefinition> = transitions + packTransitions
+
+    fun hasPackTransitions(): Boolean = packTransitions.isNotEmpty()
+
+    /**
+     * Registers raw pack transitions (from PackLoader) as [TransitionDefinition].
+     * Pack categories map to the closest built-in [TransitionCategory].
+     * Pack GLSL unknown to the GL engine falls back to a safe dissolve at
+     * render time — entries here are always safe to display. Idempotent.
+     */
+    @Synchronized
+    fun registerPackTransitions(
+        packTransitions: List<com.apexstudio.app.data.packs.PackLoader.PackTransition>
+    ) {
+        if (this.packTransitions.isNotEmpty()) return
+        val builtinIds = transitions.map { it.id }.toSet()
+        this.packTransitions = packTransitions.map { t ->
+            val cat = when (t.category.lowercase()) {
+                "basic" -> TransitionCategory.DISSOLVE
+                "3d" -> TransitionCategory.MOTION
+                "glitch" -> TransitionCategory.EFFECTS
+                else -> TransitionCategory.EFFECTS
+            }
+            TransitionDefinition(
+                id = "pack_${t.id}",
+                name = t.name,
+                category = cat,
+                description = "Pack transition: ${t.name}",
+                defaultDurationMs = (t.duration * 1000).toLong(),
+                badgeText = t.name.take(6).uppercase(),
+                icon = Icons.Default.AutoAwesome,
+                gradientColors = listOf(Color(0xFF7C3AED), Color(0xFF00E5FF)),
+                tag = "Pack"
+            )
+        }.filter { it.id !in builtinIds }
+    }
+
     fun getById(id: String?): TransitionDefinition? {
         if (id == null) return null
-        return transitions.firstOrNull { it.id.equals(id, ignoreCase = true) }
+        return allTransitions().firstOrNull { it.id.equals(id, ignoreCase = true) }
             ?: when (id.lowercase()) {
                 "cross" -> transitions.first { it.id == "cross_dissolve" }
                 "wipe" -> transitions.first { it.id == "wipe_left" }
@@ -255,8 +299,8 @@ object TransitionLibrary {
     }
 
     fun getByCategory(category: TransitionCategory): List<TransitionDefinition> {
-        return if (category == TransitionCategory.ALL) transitions
-        else transitions.filter { it.category == category }
+        return if (category == TransitionCategory.ALL) allTransitions()
+        else allTransitions().filter { it.category == category }
     }
 
     fun formatDuration(durationMs: Long): String {

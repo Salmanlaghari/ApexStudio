@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "crop_ratios": [
+    {
+      "id": "free",
+      "name": "Free",
+      "ratio": null
+    },
+    {
+      "id": "r1_1",
+      "name": "1:1",
+      "ratio": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "r4_5",
+      "name": "4:5",
+      "ratio": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": "r3_4",
+      "name": "3:4",
+      "ratio": [
+        3,
+        4
+      ]
+    },
+    {
+      "id": "r9_16",
+      "name": "9:16",
+      "ratio": [
+        9,
+        16
+      ]
+    },
+    {
+      "id": "r16_9",
+      "name": "16:9",
+      "ratio": [
+        16,
+        9
+      ]
+    },
+    {
+      "id": "r3_2",
+      "name": "3:2",
+      "ratio": [
+        3,
+        2
+      ]
+    },
+    {
+      "id": "r21_9",
+      "name": "21:9",
+      "ratio": [
+        21,
+        9
+      ]
+    }
+  ],
+  "rotate_flip": [
+    {
+      "id": "rot90",
+      "name": "Rotate 90\u00b0",
+      "angle": 90
+    },
+    {
+      "id": "rot180",
+      "name": "Rotate 180\u00b0",
+      "angle": 180
+    },
+    {
+      "id": "rot270",
+      "name": "Rotate 270\u00b0",
+      "angle": 270
+    },
+    {
+      "id": "flip_h",
+      "name": "Flip Horizontal",
+      "axis": "h"
+    },
+    {
+      "id": "flip_v",
+      "name": "Flip Vertical",
+      "axis": "v"
+    },
+    {
+      "id": "straighten",
+      "name": "Straighten",
+      "angle_range": [
+        -15,
+        15
+      ],
+      "auto": true
+    }
+  ],
+  "heal_presets": [
+    {
+      "id": "heal_spot",
+      "name": "Spot Heal",
+      "brush": 30,
+      "feather": 0.6,
+      "sample_mode": "auto",
+      "strength": 0.8
+    },
+    {
+      "id": "heal_object",
+      "name": "Object Remove",
+      "brush": 80,
+      "feather": 0.4,
+      "sample_mode": "surround",
+      "strength": 1.0
+    },
+    {
+      "id": "heal_blemish",
+      "name": "Blemish Fix",
+      "brush": 15,
+      "feather": 0.8,
+      "sample_mode": "auto",
+      "strength": 0.6
+    }
+  ],
+  "liquify_presets": [
+    {
+      "id": "liq_slim",
+      "name": "Slim",
+      "brush": 60,
+      "strength": 0.3,
+      "mode": "push"
+    },
+    {
+      "id": "liq_enlarge",
+      "name": "Enlarge",
+      "brush": 60,
+      "strength": 0.3,
+      "mode": "bloat"
+    },
+    {
+      "id": "liq_shrink",
+      "name": "Shrink",
+      "brush": 60,
+      "strength": 0.3,
+      "mode": "pinch"
+    },
+    {
+      "id": "liq_smile",
+      "name": "Smile+",
+      "brush": 40,
+      "strength": 0.25,
+      "mode": "push",
+      "target": "mouth"
+    }
+  ],
+  "perspective_presets": [
+    {
+      "id": "persp_auto",
+      "name": "Auto Correct",
+      "mode": "auto"
+    },
+    {
+      "id": "persp_vertical",
+      "name": "Vertical Fix",
+      "mode": "vertical",
+      "strength": 0.7
+    },
+    {
+      "id": "persp_horizontal",
+      "name": "Horizontal Fix",
+      "mode": "horizontal",
+      "strength": 0.7
+    },
+    {
+      "id": "persp_full",
+      "name": "Full Correct",
+      "mode": "full",
+      "strength": 0.8
+    }
+  ],
+  "denoise_levels": [
+    {
+      "id": "dn_off",
+      "name": "Off",
+      "luminance": 0,
+      "color": 0
+    },
+    {
+      "id": "dn_light",
+      "name": "Light",
+      "luminance": 25,
+      "color": 20
+    },
+    {
+      "id": "dn_medium",
+      "name": "Medium",
+      "luminance": 50,
+      "color": 40
+    },
+    {
+      "id": "dn_strong",
+      "name": "Strong",
+      "luminance": 75,
+      "color": 60
+    },
+    {
+      "id": "dn_max",
+      "name": "Maximum",
+      "luminance": 100,
+      "color": 80
+    }
+  ],
+  "sharpen_presets": [
+    {
+      "id": "sh_off",
+      "name": "Off",
+      "amount": 0,
+      "radius": 1.0,
+      "detail": 25
+    },
+    {
+      "id": "sh_subtle",
+      "name": "Subtle",
+      "amount": 30,
+      "radius": 1.0,
+      "detail": 30
+    },
+    {
+      "id": "sh_normal",
+      "name": "Normal",
+      "amount": 60,
+      "radius": 1.2,
+      "detail": 40
+    },
+    {
+      "id": "sh_strong",
+      "name": "Strong",
+      "amount": 90,
+      "radius": 1.5,
+      "detail": 50
+    },
+    {
+      "id": "sh_clarity",
+      "name": "Clarity+",
+      "amount": 45,
+      "radius": 2.5,
+      "detail": 70
+    }
+  ]
+}

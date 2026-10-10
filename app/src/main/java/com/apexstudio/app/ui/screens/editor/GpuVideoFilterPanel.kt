@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +38,8 @@ import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun GpuVideoFilterPanel(
@@ -426,10 +429,21 @@ fun GpuVideoFilterPanel(
                 }
             }
 
-            // Filtered Profiles List
-            val filteredProfiles = remember(profileCategoryFilter) {
-                if (profileCategoryFilter == "All") GpuColorProfiles.ALL
-                else GpuColorProfiles.ALL.filter { it.category == profileCategoryFilter }
+            // Filtered Profiles List (Phase 2: includes pack profiles).
+            // Pack profiles register async (IO thread); packsReady re-keys the
+            // cached list so pack filters appear on first panel open.
+            val packContext = LocalContext.current
+            var packsReady by remember { mutableStateOf(GpuColorProfiles.hasPackProfiles()) }
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
+                }
+                packsReady = true
+            }
+            val filteredProfiles = remember(profileCategoryFilter, packsReady) {
+                val all = GpuColorProfiles.ALL_WITH_PACKS
+                if (profileCategoryFilter == "All") all
+                else all.filter { it.category == profileCategoryFilter }
             }
 
             // Horizontal scrollable strip of Preset Profiles (video stays visible above)

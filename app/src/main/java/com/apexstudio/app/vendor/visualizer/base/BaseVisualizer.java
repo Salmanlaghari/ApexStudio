@@ -28,7 +28,6 @@ import androidx.annotation.Nullable;
 import android.util.AttributeSet;
 import android.view.View;
 
-import com.apexstudio.app.vendor.visualizer.R;
 import com.apexstudio.app.vendor.visualizer.utils.AVConstants;
 import com.apexstudio.app.vendor.visualizer.model.AnimSpeed;
 import com.apexstudio.app.vendor.visualizer.model.PaintStyle;

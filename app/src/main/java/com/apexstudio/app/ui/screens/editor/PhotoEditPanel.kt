@@ -29,6 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +78,7 @@ fun PhotoEditPanel(
     onRotate90: () -> Unit,
     onFlipH: () -> Unit,
     onFlipV: () -> Unit,
+    onKenBurns: (Boolean) -> Unit = {},
     onResetAll: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -178,6 +181,10 @@ fun PhotoEditPanel(
                 onRotate90 = onRotate90,
                 onFlipH = onFlipH,
                 onFlipV = onFlipV
+            )
+            PhotoEditTab.MOTION -> PhotoMotionTab(
+                kenBurns = settings.kenBurns,
+                onKenBurns = onKenBurns
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -571,5 +578,56 @@ private fun PhotoRotateButton(
             fontSize = 11.sp,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Motion tab — Phase 4: Ken Burns pan/zoom (flavioarfaria/KenBurnsView)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun PhotoMotionTab(
+    kenBurns: Boolean,
+    onKenBurns: (Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "Add gentle cinematic motion to this photo — it slowly zooms and pans, in preview and in the exported video.",
+            color = Color(0xFF9CA3AF),
+            fontSize = 12.sp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                .clickable { onKenBurns(!kenBurns) }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Ken Burns effect",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Slow zoom + pan slideshow motion",
+                    color = Color(0xFF9CA3AF),
+                    fontSize = 11.sp
+                )
+            }
+            Switch(
+                checked = kenBurns,
+                onCheckedChange = onKenBurns,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = ApexPalette.NeonCyan,
+                    checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
+                )
+            )
+        }
     }
 }

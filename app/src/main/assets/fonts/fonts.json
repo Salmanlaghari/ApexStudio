@@ -1,0 +1,184 @@
+{
+  "fonts": [
+    {
+      "file": "ArchivoBlack-Regular.ttf",
+      "family": "Archivo Black",
+      "category": "Display"
+    },
+    {
+      "file": "Righteous-Regular.ttf",
+      "family": "Righteous",
+      "category": "Display"
+    },
+    {
+      "file": "Bungee-Regular.ttf",
+      "family": "Bungee",
+      "category": "Display"
+    },
+    {
+      "file": "TitanOne-Regular.ttf",
+      "family": "Titan One",
+      "category": "Display"
+    },
+    {
+      "file": "AlfaSlabOne-Regular.ttf",
+      "family": "Alfa Slab One",
+      "category": "Display"
+    },
+    {
+      "file": "RussoOne-Regular.ttf",
+      "family": "Russo One",
+      "category": "Display"
+    },
+    {
+      "file": "Orbitron-Variable.ttf",
+      "family": "Orbitron",
+      "category": "Display"
+    },
+    {
+      "file": "Audiowide-Regular.ttf",
+      "family": "Audiowide",
+      "category": "Display"
+    },
+    {
+      "file": "Monoton-Regular.ttf",
+      "family": "Monoton",
+      "category": "Display"
+    },
+    {
+      "file": "Pacifico-Regular.ttf",
+      "family": "Pacifico",
+      "category": "Handwriting"
+    },
+    {
+      "file": "DancingScript-Variable.ttf",
+      "family": "Dancing Script",
+      "category": "Handwriting"
+    },
+    {
+      "file": "Caveat-Variable.ttf",
+      "family": "Caveat",
+      "category": "Handwriting"
+    },
+    {
+      "file": "ShadowsIntoLight-Regular.ttf",
+      "family": "Shadows Into Light",
+      "category": "Handwriting"
+    },
+    {
+      "file": "Kalam-Regular.ttf",
+      "family": "Kalam",
+      "category": "Handwriting"
+    },
+    {
+      "file": "IndieFlower-Regular.ttf",
+      "family": "Indie Flower",
+      "category": "Handwriting"
+    },
+    {
+      "file": "GochiHand-Regular.ttf",
+      "family": "Gochi Hand",
+      "category": "Handwriting"
+    },
+    {
+      "file": "AmaticSC-Regular.ttf",
+      "family": "Amatic SC",
+      "category": "Handwriting"
+    },
+    {
+      "file": "PlayfairDisplay-Variable.ttf",
+      "family": "Playfair Display",
+      "category": "Serif"
+    },
+    {
+      "file": "Merriweather-Variable.ttf",
+      "family": "Merriweather",
+      "category": "Serif"
+    },
+    {
+      "file": "Lora-Variable.ttf",
+      "family": "Lora",
+      "category": "Serif"
+    },
+    {
+      "file": "DMSerifDisplay-Regular.ttf",
+      "family": "DM Serif Display",
+      "category": "Serif"
+    },
+    {
+      "file": "AbrilFatface-Regular.ttf",
+      "family": "Abril Fatface",
+      "category": "Serif"
+    },
+    {
+      "file": "Cinzel-Variable.ttf",
+      "family": "Cinzel",
+      "category": "Serif"
+    },
+    {
+      "file": "CormorantGaramond-Variable.ttf",
+      "family": "Cormorant Garamond",
+      "category": "Serif"
+    },
+    {
+      "file": "ZillaSlab-Regular.ttf",
+      "family": "Zilla Slab",
+      "category": "Serif"
+    },
+    {
+      "file": "Inter-Variable.ttf",
+      "family": "Inter",
+      "category": "Sans"
+    },
+    {
+      "file": "OpenSans-Variable.ttf",
+      "family": "Open Sans",
+      "category": "Sans"
+    },
+    {
+      "file": "Lato-Regular.ttf",
+      "family": "Lato",
+      "category": "Sans"
+    },
+    {
+      "file": "Nunito-Variable.ttf",
+      "family": "Nunito",
+      "category": "Sans"
+    },
+    {
+      "file": "Quicksand-Variable.ttf",
+      "family": "Quicksand",
+      "category": "Sans"
+    },
+    {
+      "file": "Rubik-Variable.ttf",
+      "family": "Rubik",
+      "category": "Sans"
+    },
+    {
+      "file": "WorkSans-Variable.ttf",
+      "family": "Work Sans",
+      "category": "Sans"
+    },
+    {
+      "file": "DMSans-Variable.ttf",
+      "family": "DM Sans",
+      "category": "Sans"
+    },
+    {
+      "file": "Fredoka-Variable.ttf",
+      "family": "Fredoka",
+      "category": "Fun"
+    },
+    {
+      "file": "Baloo2-Variable.ttf",
+      "family": "Baloo 2",
+      "category": "Fun"
+    },
+    {
+      "file": "SigmarOne-Regular.ttf",
+      "family": "Sigmar One",
+      "category": "Fun"
+    }
+  ]
+}

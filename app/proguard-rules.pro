@@ -67,3 +67,17 @@
 # CameraX (used by Camera Kit support lib)
 -keep class androidx.camera.** { *; }
 -dontwarn androidx.camera.**
+
+# Phase 4: Vosk offline STT (JNA + reflection)
+-keep class org.vosk.** { *; }
+-keep class com.sun.jna.** { *; }
+-dontwarn org.vosk.**
+-dontwarn com.sun.jna.**
+
+# Phase 4: Lottie (reflection on model classes)
+-keep class com.airbnb.lottie.** { *; }
+-dontwarn com.airbnb.lottie.**
+
+# Phase 4: gl-transitions shader assets + Lottie animation assets
+-keepres "assets/gl_transitions/*"
+-keepres "assets/lottie/*"

@@ -160,6 +160,17 @@ dependencies {
   // Phase 3: on-device selfie segmentation for Background Remover pack.
   implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
 
+  // Phase 4: GitHub open-source integrations (all Apache-2.0/MIT/OFL)
+  // Lottie animated stickers/overlays — https://github.com/airbnb/lottie-android
+  implementation("com.airbnb.android:lottie:6.7.1")
+  implementation("com.airbnb.android:lottie-compose:6.7.1")
+  // Ken Burns pan/zoom for photo slideshow — https://github.com/flavioarfaria/KenBurnsView (Apache-2.0)
+  implementation("com.flaviofaria:kenburnsview:1.0.7")
+  // Vosk offline speech recognition for auto-captions — https://github.com/alphacep/vosk-api (Apache-2.0)
+  // Model (~40MB) downloads on first use, NOT bundled in the APK.
+  implementation("net.java.dev.jna:jna:5.18.1@aar")
+  implementation("com.alphacephei:vosk-android:0.3.75@aar")
+
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
 

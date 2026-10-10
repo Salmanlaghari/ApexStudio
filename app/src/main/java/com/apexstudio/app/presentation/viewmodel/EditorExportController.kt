@@ -84,7 +84,13 @@ fun EditorViewModel.startExport(
         }
     // Transition: apply the project's chosen transition type in the export
     // (not just a timeline badge — actually rendered via TransitionGlEffect).
-    val transitionType = s.project?.lastTransitionType?.let { typeStr ->
+    // Phase 4: gl-transitions shaders ride as transitionGlId; the legacy
+    // TransitionType path is skipped for them (adapter takes precedence).
+    val lastTransitionId = s.project?.lastTransitionType
+    val transitionGlId = lastTransitionId
+        ?.takeIf { it.startsWith(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX) }
+        ?.removePrefix(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX)
+    val transitionType = lastTransitionId?.takeIf { transitionGlId == null }?.let { typeStr ->
         com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
     }
     engine.startExport(
@@ -125,6 +131,7 @@ fun EditorViewModel.startExport(
             bassBoostStrength = audioSt.bassBoostStrength,
             pipOverlays = pipOverlays,
             transitionType = transitionType,
+            transitionGlId = transitionGlId,
             transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L,
             // Royalty-free music library: mix every unmuted timeline audio
             // track (downloaded Jamendo tracks, built-in tracks, device
@@ -242,8 +249,10 @@ fun EditorViewModel.startPhotoExport(
             } else {
                 clip.durationMs
             }
-            tempVideo = PhotoVideoEncoder.encodeStillImage(ctx, bitmap, trimmedMs)
-                ?: throw IllegalStateException("Could not encode photo video")
+            // Phase 4: Ken Burns motion bakes into the still-video when enabled.
+            tempVideo = PhotoVideoEncoder.encodeStillImage(
+                ctx, bitmap, trimmedMs, kenBurns = clip.photoEdit.kenBurns
+            ) ?: throw IllegalStateException("Could not encode photo video")
             try {
                 bitmap.recycle()
             } catch (_: Exception) {
@@ -272,7 +281,12 @@ fun EditorViewModel.startPhotoExport(
                             .coerceIn(0f, 1f)
                     )
                 }
-            val transitionType = s.project?.lastTransitionType?.let { typeStr ->
+            // Phase 4: gl-transitions shaders ride as transitionGlId.
+            val lastTransitionIdPhoto = s.project?.lastTransitionType
+            val transitionGlIdPhoto = lastTransitionIdPhoto
+                ?.takeIf { it.startsWith(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX) }
+                ?.removePrefix(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX)
+            val transitionType = lastTransitionIdPhoto?.takeIf { transitionGlIdPhoto == null }?.let { typeStr ->
                 com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
             }
             engine.startExport(
@@ -304,6 +318,7 @@ fun EditorViewModel.startPhotoExport(
                     volume = 1f,
                     pipOverlays = pipOverlays,
                     transitionType = transitionType,
+                    transitionGlId = transitionGlIdPhoto,
                     transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
                 )
             )

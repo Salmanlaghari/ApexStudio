@@ -42,7 +42,8 @@ enum class TransitionCategory(val label: String) {
     DISSOLVE("Dissolve & Fade"),
     WIPE("Wipe"),
     MOTION("Motion & Slide"),
-    EFFECTS("Glitch & FX")
+    EFFECTS("Glitch & FX"),
+    GL_PRO("GL Pro")
 }
 
 /**
@@ -247,9 +248,13 @@ object TransitionLibrary {
     // dissolve at render time — entries here are always safe to display.
     @Volatile
     private var packTransitions: List<TransitionDefinition> = emptyList()
+    @Volatile
+    private var glProTransitions: List<TransitionDefinition> = emptyList()
 
     /** Built-in + pack transitions. */
-    fun allTransitions(): List<TransitionDefinition> = transitions + packTransitions
+    fun allTransitions(): List<TransitionDefinition> = transitions + packTransitions + glProTransitions
+
+    fun hasGlProTransitions(): Boolean = glProTransitions.isNotEmpty()
 
     fun hasPackTransitions(): Boolean = packTransitions.isNotEmpty()
 
@@ -282,6 +287,43 @@ object TransitionLibrary {
                 icon = Icons.Default.AutoAwesome,
                 gradientColors = listOf(Color(0xFF7C3AED), Color(0xFF00E5FF)),
                 tag = "Pack"
+            )
+        }.filter { it.id !in builtinIds }
+    }
+
+    /**
+     * Phase 4: registers the 100+ ported gl-transitions shaders
+     * (MIT, https://github.com/gl-transitions/gl-transitions) as
+     * [TransitionDefinition]s with ids `glpro_<shaderId>`. The export
+     * engine renders them via GlTransitionAdapterEffect; the preview
+     * animates a generic dip-through-black approximation. Idempotent.
+     */
+    @Synchronized
+    fun registerGlProTransitions(
+        glTransitions: List<com.apexstudio.app.data.gl.GlTransitionInfo>
+    ) {
+        if (this.glProTransitions.isNotEmpty()) return
+        val builtinIds = (transitions.map { it.id } + packTransitions.map { it.id }).toSet()
+        // Deterministic accent per shader from its name hash.
+        val accents = listOf(
+            0xFF00E5FFL to 0xFF7C4DFFL,
+            0xFFFF2D55L to 0xFFFF6D00L,
+            0xFF00C853L to 0xFF00E5FFL,
+            0xFFFFC400L to 0xFFFF2D55L,
+            0xFF8B5CF6L to 0xFF00B0FFL
+        )
+        this.glProTransitions = glTransitions.map { t ->
+            val (a, b) = accents[(t.id.hashCode() and Int.MAX_VALUE) % accents.size]
+            TransitionDefinition(
+                id = com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX + t.id,
+                name = t.name,
+                category = TransitionCategory.GL_PRO,
+                description = "GL shader transition by ${t.author}.",
+                defaultDurationMs = 700L,
+                badgeText = "GL",
+                icon = Icons.Default.AutoAwesome,
+                gradientColors = listOf(Color(a), Color(b)),
+                tag = "GL Pro"
             )
         }.filter { it.id !in builtinIds }
     }

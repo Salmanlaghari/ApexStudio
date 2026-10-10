@@ -30,18 +30,21 @@ object TextFontRegistry {
         val italicAsset: String? = null,
         val boldItalicAsset: String? = null,
         /** Set for variable fonts so real weight axes are used (API 28+). */
-        val variable: Boolean = false
+        val variable: Boolean = false,
+        /** Picker grouping: System, Display, Handwriting, Serif, Sans Serif… */
+        val category: String = "System"
     )
 
-    val fonts: List<BundledFont> = listOf(
-        BundledFont("sans", "Default Sans", null),
-        BundledFont("serif", "Serif", null),
-        BundledFont("monospace", "Monospace", null),
-        BundledFont("cursive", "Cursive", null),
+    private val coreFonts: List<BundledFont> = listOf(
+        BundledFont("sans", "Default Sans", null, category = "System"),
+        BundledFont("serif", "Serif", null, category = "System"),
+        BundledFont("monospace", "Monospace", null, category = "System"),
+        BundledFont("cursive", "Cursive", null, category = "System"),
         BundledFont(
             key = "poppins",
             label = "Poppins",
             regularAsset = "fonts/Poppins-Regular.ttf",
+            category = "Sans Serif",
             boldAsset = "fonts/Poppins-Bold.ttf",
             italicAsset = "fonts/Poppins-Italic.ttf",
             boldItalicAsset = "fonts/Poppins-BoldItalic.ttf"
@@ -50,24 +53,39 @@ object TextFontRegistry {
             key = "montserrat",
             label = "Montserrat",
             regularAsset = "fonts/Montserrat.ttf",
-            variable = true
+            variable = true,
+            category = "Sans Serif"
         ),
         BundledFont(
             key = "bebas",
             label = "Bebas Neue",
-            regularAsset = "fonts/BebasNeue-Regular.ttf"
+            regularAsset = "fonts/BebasNeue-Regular.ttf",
+            category = "Display"
         ),
         BundledFont(
             key = "anton",
             label = "Anton",
-            regularAsset = "fonts/Anton-Regular.ttf"
+            regularAsset = "fonts/Anton-Regular.ttf",
+            category = "Display"
         ),
         BundledFont(
             key = "script",
             label = "Script",
-            regularAsset = "fonts/GreatVibes-Regular.ttf"
+            regularAsset = "fonts/GreatVibes-Regular.ttf",
+            category = "Handwriting"
         )
     )
+
+    /**
+     * Phase 4: full font catalogue — core fonts plus the 36 Google Fonts
+     * (OFL) packs from `assets/fonts/fonts.json`, grouped by category for
+     * the picker. Populated on [init]; before that, only core fonts.
+     */
+    val fonts: List<BundledFont>
+        get() = coreFonts + manifestFonts
+
+    @Volatile
+    private var manifestFonts: List<BundledFont> = emptyList()
 
     fun find(key: String?): BundledFont? =
         fonts.firstOrNull { it.key.equals(key, ignoreCase = true) }
@@ -79,6 +97,39 @@ object TextFontRegistry {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        if (manifestFonts.isEmpty()) {
+            manifestFonts = loadManifestFonts(context.applicationContext)
+        }
+    }
+
+    /** Reads `assets/fonts/fonts.json` (written by the Phase 4 font packer). */
+    private fun loadManifestFonts(ctx: Context): List<BundledFont> {
+        return try {
+            val json = ctx.assets.open("fonts/fonts.json").bufferedReader().use { it.readText() }
+            val out = mutableListOf<BundledFont>()
+            val arr = org.json.JSONObject(json).optJSONArray("fonts") ?: return emptyList()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val file = o.optString("file")
+                if (file.isBlank()) continue
+                val family = o.optString("family")
+                if (family.isBlank()) continue
+                val category = o.optString("category", "Display")
+                val key = family.lowercase().replace("[^a-z0-9]+".toRegex(), "")
+                out += BundledFont(
+                    key = key,
+                    label = family,
+                    regularAsset = "fonts/$file",
+                    variable = "-Variable." in file,
+                    category = category
+                )
+            }
+            Log.i(TAG, "Loaded ${out.size} manifest fonts")
+            out
+        } catch (e: Exception) {
+            Log.w(TAG, "fonts.json not found — core fonts only", e)
+            emptyList()
+        }
     }
 
     private fun systemTypeface(key: String, bold: Boolean, italic: Boolean): Typeface {

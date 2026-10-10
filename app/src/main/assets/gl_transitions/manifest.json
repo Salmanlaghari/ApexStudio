@@ -1,0 +1,1962 @@
+{
+  "transitions": [
+    {
+      "id": "AdvancedMosaic",
+      "name": "Advanced Mosaic",
+      "author": "Sergey Kosarevsky",
+      "params": [
+        {
+          "name": "uPixelSize",
+          "type": "float",
+          "default": 50.0,
+          "sourceName": "pixelSize"
+        }
+      ]
+    },
+    {
+      "id": "BlockDissolve",
+      "name": "Block Dissolve",
+      "author": "nwoeanhinnogaehr",
+      "params": [
+        {
+          "name": "uBlocksize",
+          "type": "float",
+          "default": 0.02,
+          "sourceName": "blocksize"
+        }
+      ]
+    },
+    {
+      "id": "BookFlip",
+      "name": "Book Flip",
+      "author": "hong",
+      "params": []
+    },
+    {
+      "id": "Bounce",
+      "name": "Bounce",
+      "author": "Adrian Purser",
+      "params": [
+        {
+          "name": "uShadow_colour",
+          "type": "vec4",
+          "default": "vec4(0.,0.,0.,.6)",
+          "sourceName": "shadow_colour"
+        },
+        {
+          "name": "uShadow_height",
+          "type": "float",
+          "default": 0.075,
+          "sourceName": "shadow_height"
+        },
+        {
+          "name": "uBounces",
+          "type": "float",
+          "default": 3.0,
+          "sourceName": "bounces"
+        }
+      ]
+    },
+    {
+      "id": "BowTieHorizontal",
+      "name": "Bow Tie Horizontal",
+      "author": "huynx",
+      "params": []
+    },
+    {
+      "id": "BowTieVertical",
+      "name": "Bow Tie Vertical",
+      "author": "huynx",
+      "params": []
+    },
+    {
+      "id": "BowTieWithParameter",
+      "name": "Bow Tie With Parameter",
+      "author": "KMojek",
+      "params": [
+        {
+          "name": "uAdjust",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "adjust"
+        },
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "Box",
+      "name": "Box",
+      "author": "lql",
+      "params": [
+        {
+          "name": "uRectIn",
+          "type": "int",
+          "default": 1,
+          "sourceName": "rectIn"
+        },
+        {
+          "name": "uLocation",
+          "type": "int",
+          "default": 0,
+          "sourceName": "location"
+        }
+      ]
+    },
+    {
+      "id": "ButterflyWaveScrawler",
+      "name": "Butterfly Wave Scrawler",
+      "author": "mandubian",
+      "params": [
+        {
+          "name": "uAmplitude",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "amplitude"
+        },
+        {
+          "name": "uWaves",
+          "type": "float",
+          "default": 30.0,
+          "sourceName": "waves"
+        },
+        {
+          "name": "uColorSeparation",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "colorSeparation"
+        }
+      ]
+    },
+    {
+      "id": "CircleCrop",
+      "name": "Circle Crop",
+      "author": "fkuteken",
+      "params": [
+        {
+          "name": "uBgcolor",
+          "type": "vec4",
+          "default": "vec4(0.0, 0.0, 0.0, 1.0)",
+          "sourceName": "bgcolor"
+        }
+      ]
+    },
+    {
+      "id": "ColourDistance",
+      "name": "Colour Distance",
+      "author": "P-Seebauer",
+      "params": [
+        {
+          "name": "uPower",
+          "type": "float",
+          "default": 5.0,
+          "sourceName": "power"
+        }
+      ]
+    },
+    {
+      "id": "CrazyParametricFun",
+      "name": "Crazy Parametric Fun",
+      "author": "mandubian",
+      "params": [
+        {
+          "name": "uA",
+          "type": "float",
+          "default": 4.0,
+          "sourceName": "a"
+        },
+        {
+          "name": "uB",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "b"
+        },
+        {
+          "name": "uAmplitude",
+          "type": "float",
+          "default": 120.0,
+          "sourceName": "amplitude"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "CrossZoom",
+      "name": "Cross Zoom",
+      "author": "rectalogic",
+      "params": [
+        {
+          "name": "uStrength",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "strength"
+        }
+      ]
+    },
+    {
+      "id": "DefocusBlur",
+      "name": "Defocus Blur",
+      "author": "Sergey Kosarevsky",
+      "params": [
+        {
+          "name": "uBlurSize",
+          "type": "float",
+          "default": 0.02,
+          "sourceName": "blurSize"
+        }
+      ]
+    },
+    {
+      "id": "Directional",
+      "name": "Directional",
+      "author": "Gaëtan Renaudeau",
+      "params": [
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(0.0, 1.0)",
+          "sourceName": "direction"
+        }
+      ]
+    },
+    {
+      "id": "DirectionalScaled",
+      "name": "Directional Scaled",
+      "author": "Thibaut Foussard",
+      "params": [
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(0.0, 1.0)",
+          "sourceName": "direction"
+        },
+        {
+          "name": "uScale",
+          "type": "float",
+          "default": 0.7,
+          "sourceName": "scale"
+        }
+      ]
+    },
+    {
+      "id": "DoomScreenTransition",
+      "name": "Doom Screen Transition",
+      "author": "Zeh Fernando",
+      "params": [
+        {
+          "name": "uBars",
+          "type": "int",
+          "default": 30,
+          "sourceName": "bars"
+        },
+        {
+          "name": "uAmplitude",
+          "type": "float",
+          "default": 2.0,
+          "sourceName": "amplitude"
+        },
+        {
+          "name": "uNoise",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "noise"
+        },
+        {
+          "name": "uFrequency",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "frequency"
+        },
+        {
+          "name": "uDripScale",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "dripScale"
+        }
+      ]
+    },
+    {
+      "id": "Dreamy",
+      "name": "Dreamy",
+      "author": "mikolalysenko",
+      "params": []
+    },
+    {
+      "id": "DreamyZoom",
+      "name": "Dreamy Zoom",
+      "author": "Zeh Fernando",
+      "params": [
+        {
+          "name": "uRotation",
+          "type": "float",
+          "default": 6.0,
+          "sourceName": "rotation"
+        },
+        {
+          "name": "uScale",
+          "type": "float",
+          "default": 1.2,
+          "sourceName": "scale"
+        }
+      ]
+    },
+    {
+      "id": "Drop_Zone_Flicker",
+      "name": "Drop Zone Flicker",
+      "author": "bread",
+      "params": [
+        {
+          "name": "uFrameRate",
+          "type": "float",
+          "default": 24.0,
+          "sourceName": "frameRate"
+        },
+        {
+          "name": "uRgbOffset",
+          "type": "float",
+          "default": 0.014,
+          "sourceName": "rgbOffset"
+        },
+        {
+          "name": "uBlockAmount",
+          "type": "float",
+          "default": 0.72,
+          "sourceName": "blockAmount"
+        },
+        {
+          "name": "uGhostAmount",
+          "type": "float",
+          "default": 0.62,
+          "sourceName": "ghostAmount"
+        },
+        {
+          "name": "uRedCyan",
+          "type": "float",
+          "default": 0.58,
+          "sourceName": "redCyan"
+        },
+        {
+          "name": "uScanline",
+          "type": "float",
+          "default": 0.075,
+          "sourceName": "scanline"
+        }
+      ]
+    },
+    {
+      "id": "EdgeTransition",
+      "name": "Edge Transition",
+      "author": "Woohyun Kim",
+      "params": [
+        {
+          "name": "uEdge_thickness",
+          "type": "float",
+          "default": 0.001,
+          "sourceName": "edge_thickness"
+        },
+        {
+          "name": "uEdge_brightness",
+          "type": "float",
+          "default": 8.0,
+          "sourceName": "edge_brightness"
+        }
+      ]
+    },
+    {
+      "id": "FilmBurn",
+      "name": "Film Burn",
+      "author": "Anastasia Dunbar",
+      "params": [
+        {
+          "name": "uSeed",
+          "type": "float",
+          "default": 2.31,
+          "sourceName": "Seed"
+        }
+      ]
+    },
+    {
+      "id": "Fold",
+      "name": "Fold",
+      "author": "nwoeanhinnogaehr",
+      "params": []
+    },
+    {
+      "id": "GlitchDisplace",
+      "name": "Glitch Displace",
+      "author": "Matt DesLauriers",
+      "params": []
+    },
+    {
+      "id": "GlitchMemories",
+      "name": "Glitch Memories",
+      "author": "Gunnar Roth",
+      "params": []
+    },
+    {
+      "id": "GridFlip",
+      "name": "Grid Flip",
+      "author": "TimDonselaar",
+      "params": [
+        {
+          "name": "uSize",
+          "type": "ivec2",
+          "default": "ivec2(4)",
+          "sourceName": "size"
+        },
+        {
+          "name": "uPause",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "pause"
+        },
+        {
+          "name": "uDividerWidth",
+          "type": "float",
+          "default": 0.05,
+          "sourceName": "dividerWidth"
+        },
+        {
+          "name": "uBgcolor",
+          "type": "vec4",
+          "default": "vec4(0.0, 0.0, 0.0, 1.0)",
+          "sourceName": "bgcolor"
+        },
+        {
+          "name": "uRandomness",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "randomness"
+        }
+      ]
+    },
+    {
+      "id": "HSVfade",
+      "name": "HSV Fade",
+      "author": "nwoeanhinnogaehr",
+      "params": []
+    },
+    {
+      "id": "HorizontalClose",
+      "name": "Horizontal Close",
+      "author": "martiniti",
+      "params": []
+    },
+    {
+      "id": "HorizontalOpen",
+      "name": "Horizontal Open",
+      "author": "martiniti",
+      "params": []
+    },
+    {
+      "id": "LeftRight",
+      "name": "Left Right",
+      "author": "zhmy",
+      "params": []
+    },
+    {
+      "id": "LinearBlur",
+      "name": "Linear Blur",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uIntensity",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "intensity"
+        }
+      ]
+    },
+    {
+      "id": "Mosaic",
+      "name": "Mosaic",
+      "author": "Xaychru",
+      "params": [
+        {
+          "name": "uEndx",
+          "type": "int",
+          "default": 2,
+          "sourceName": "endx"
+        },
+        {
+          "name": "uEndy",
+          "type": "int",
+          "default": -1,
+          "sourceName": "endy"
+        }
+      ]
+    },
+    {
+      "id": "Overexposure",
+      "name": "Overexposure",
+      "author": "Ben Zhang",
+      "params": [
+        {
+          "name": "uStrength",
+          "type": "float",
+          "default": 0.6,
+          "sourceName": "strength"
+        }
+      ]
+    },
+    {
+      "id": "PolkaDotsCurtain",
+      "name": "Polka Dots Curtain",
+      "author": "bobylito",
+      "params": [
+        {
+          "name": "uDots",
+          "type": "float",
+          "default": 20.0,
+          "sourceName": "dots"
+        },
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0, 0)",
+          "sourceName": "center"
+        }
+      ]
+    },
+    {
+      "id": "PuzzleRight",
+      "name": "Puzzle Right",
+      "author": "JustKirillS",
+      "params": [
+        {
+          "name": "uSize",
+          "type": "ivec2",
+          "default": "ivec2(4, 4)",
+          "sourceName": "size"
+        },
+        {
+          "name": "uPause",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "pause"
+        },
+        {
+          "name": "uDividerWidth",
+          "type": "float",
+          "default": 0.005,
+          "sourceName": "dividerWidth"
+        }
+      ]
+    },
+    {
+      "id": "Radial",
+      "name": "Radial",
+      "author": "Xaychru",
+      "params": [
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "Rectangle",
+      "name": "Rectangle",
+      "author": "martiniti",
+      "params": [
+        {
+          "name": "uBgcolor",
+          "type": "vec4",
+          "default": "vec4(0.0, 0.0, 0.0, 1.0)",
+          "sourceName": "bgcolor"
+        }
+      ]
+    },
+    {
+      "id": "RectangleCrop",
+      "name": "Rectangle Crop",
+      "author": "martiniti",
+      "params": [
+        {
+          "name": "uBgcolor",
+          "type": "vec4",
+          "default": "vec4(0.0, 0.0, 0.0, 1.0)",
+          "sourceName": "bgcolor"
+        }
+      ]
+    },
+    {
+      "id": "Revolve_Left",
+      "name": "Revolve Left",
+      "author": "bread",
+      "params": [
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0.46, 0.52)",
+          "sourceName": "center"
+        },
+        {
+          "name": "uDirection",
+          "type": "float",
+          "default": -1.0,
+          "sourceName": "direction"
+        },
+        {
+          "name": "uMaxRotation",
+          "type": "float",
+          "default": 1.95,
+          "sourceName": "maxRotation"
+        },
+        {
+          "name": "uPeakZoom",
+          "type": "float",
+          "default": 2.22,
+          "sourceName": "peakZoom"
+        },
+        {
+          "name": "uSwirl",
+          "type": "float",
+          "default": 2.85,
+          "sourceName": "swirl"
+        },
+        {
+          "name": "uBarrel",
+          "type": "float",
+          "default": 0.38,
+          "sourceName": "barrel"
+        },
+        {
+          "name": "uMotionBlur",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "motionBlur"
+        },
+        {
+          "name": "uSwitchStart",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "switchStart"
+        },
+        {
+          "name": "uSwitchEnd",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "switchEnd"
+        },
+        {
+          "name": "uShadow",
+          "type": "float",
+          "default": 0.16,
+          "sourceName": "shadow"
+        }
+      ]
+    },
+    {
+      "id": "Rolls",
+      "name": "Rolls",
+      "author": "Mark Craig",
+      "params": [
+        {
+          "name": "uType",
+          "type": "int",
+          "default": 0,
+          "sourceName": "type"
+        },
+        {
+          "name": "uRotDown",
+          "type": "bool",
+          "default": false,
+          "sourceName": "RotDown"
+        }
+      ]
+    },
+    {
+      "id": "RotateScaleVanish",
+      "name": "Rotate Scale Vanish",
+      "author": "Mark Craig",
+      "params": [
+        {
+          "name": "uFadeInSecond",
+          "type": "bool",
+          "default": true,
+          "sourceName": "FadeInSecond"
+        },
+        {
+          "name": "uReverseEffect",
+          "type": "bool",
+          "default": false,
+          "sourceName": "ReverseEffect"
+        },
+        {
+          "name": "uReverseRotation",
+          "type": "bool",
+          "default": false,
+          "sourceName": "ReverseRotation"
+        }
+      ]
+    },
+    {
+      "id": "SimpleFlip",
+      "name": "Simple Flip",
+      "author": "nwoeanhinnogaehr",
+      "params": []
+    },
+    {
+      "id": "SimpleZoom",
+      "name": "Simple Zoom",
+      "author": "0gust1",
+      "params": [
+        {
+          "name": "uZoom_quickness",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "zoom_quickness"
+        }
+      ]
+    },
+    {
+      "id": "SimpleZoomOut",
+      "name": "Simple Zoom Out",
+      "author": "Tianshuo",
+      "params": [
+        {
+          "name": "uZoom_quickness",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "zoom_quickness"
+        },
+        {
+          "name": "uFade",
+          "type": "bool",
+          "default": true,
+          "sourceName": "fade"
+        }
+      ]
+    },
+    {
+      "id": "Slides",
+      "name": "Slides",
+      "author": "Mark Craig",
+      "params": [
+        {
+          "name": "uType",
+          "type": "int",
+          "default": 0,
+          "sourceName": "type"
+        },
+        {
+          "name": "uIn",
+          "type": "bool",
+          "default": false,
+          "sourceName": "In"
+        }
+      ]
+    },
+    {
+      "id": "StarWipe",
+      "name": "Star Wipe",
+      "author": "Ben Lucas",
+      "params": [
+        {
+          "name": "uBorder_thickness",
+          "type": "float",
+          "default": 0.01,
+          "sourceName": "border_thickness"
+        },
+        {
+          "name": "uStar_rotation",
+          "type": "float",
+          "default": 0.75,
+          "sourceName": "star_rotation"
+        },
+        {
+          "name": "uBorder_color",
+          "type": "vec4",
+          "default": "vec4(1.0)",
+          "sourceName": "border_color"
+        },
+        {
+          "name": "uStar_center",
+          "type": "vec2",
+          "default": "vec2(0.5)",
+          "sourceName": "star_center"
+        }
+      ]
+    },
+    {
+      "id": "StaticFade",
+      "name": "Static Fade",
+      "author": "Ben Lucas",
+      "params": [
+        {
+          "name": "uN_noise_pixels",
+          "type": "float",
+          "default": 200.0,
+          "sourceName": "n_noise_pixels"
+        },
+        {
+          "name": "uStatic_luminosity",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "static_luminosity"
+        }
+      ]
+    },
+    {
+      "id": "StripDatamoshGlitch",
+      "name": "Strip Datamosh Glitch",
+      "author": "bread",
+      "params": [
+        {
+          "name": "uStrength",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "strength"
+        },
+        {
+          "name": "uHorizontalBars",
+          "type": "float",
+          "default": 42.0,
+          "sourceName": "horizontalBars"
+        },
+        {
+          "name": "uVerticalSlits",
+          "type": "float",
+          "default": 18.0,
+          "sourceName": "verticalSlits"
+        },
+        {
+          "name": "uTear",
+          "type": "float",
+          "default": 0.18,
+          "sourceName": "tear"
+        },
+        {
+          "name": "uChroma",
+          "type": "float",
+          "default": 0.032,
+          "sourceName": "chroma"
+        },
+        {
+          "name": "uResidue",
+          "type": "float",
+          "default": 0.62,
+          "sourceName": "residue"
+        },
+        {
+          "name": "uNoiseAmount",
+          "type": "float",
+          "default": 0.16,
+          "sourceName": "noiseAmount"
+        },
+        {
+          "name": "uScanAmount",
+          "type": "float",
+          "default": 0.13,
+          "sourceName": "scanAmount"
+        },
+        {
+          "name": "uFlashAmount",
+          "type": "float",
+          "default": 0.2,
+          "sourceName": "flashAmount"
+        }
+      ]
+    },
+    {
+      "id": "Swirl",
+      "name": "Swirl",
+      "author": "Sergey Kosarevsky",
+      "params": []
+    },
+    {
+      "id": "TVStatic",
+      "name": "TV Static",
+      "author": "Brandon Anzaldi",
+      "params": [
+        {
+          "name": "uOffset",
+          "type": "float",
+          "default": 0.05,
+          "sourceName": "offset"
+        }
+      ]
+    },
+    {
+      "id": "TilesWave",
+      "name": "Tiles Wave",
+      "author": "numb3r23",
+      "params": [
+        {
+          "name": "uTileCount",
+          "type": "ivec2",
+          "default": "ivec2(8, 8)",
+          "sourceName": "tileCount"
+        },
+        {
+          "name": "uFlipX",
+          "type": "bool",
+          "default": true,
+          "sourceName": "flipX"
+        },
+        {
+          "name": "uFlipY",
+          "type": "bool",
+          "default": false,
+          "sourceName": "flipY"
+        }
+      ]
+    },
+    {
+      "id": "TopBottom",
+      "name": "Top Bottom",
+      "author": "zhmy",
+      "params": []
+    },
+    {
+      "id": "VerticalClose",
+      "name": "Vertical Close",
+      "author": "martiniti",
+      "params": []
+    },
+    {
+      "id": "VerticalOpen",
+      "name": "Vertical Open",
+      "author": "martiniti",
+      "params": []
+    },
+    {
+      "id": "WaterDrop",
+      "name": "Water Drop",
+      "author": "Paweł Płóciennik",
+      "params": [
+        {
+          "name": "uAmplitude",
+          "type": "float",
+          "default": 30.0,
+          "sourceName": "amplitude"
+        },
+        {
+          "name": "uSpeed",
+          "type": "float",
+          "default": 30.0,
+          "sourceName": "speed"
+        }
+      ]
+    },
+    {
+      "id": "ZoomInCircles",
+      "name": "Zoom In Circles",
+      "author": "dycm8009",
+      "params": []
+    },
+    {
+      "id": "ZoomLeftWipe",
+      "name": "Zoom Left Wipe",
+      "author": "Handk",
+      "params": [
+        {
+          "name": "uZoom_quickness",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "zoom_quickness"
+        }
+      ]
+    },
+    {
+      "id": "ZoomRigthWipe",
+      "name": "Zoom Rigth Wipe",
+      "author": "Handk",
+      "params": [
+        {
+          "name": "uZoom_quickness",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "zoom_quickness"
+        }
+      ]
+    },
+    {
+      "id": "angular",
+      "name": "Angular",
+      "author": "Fernando Kuteken",
+      "params": [
+        {
+          "name": "uStartingAngle",
+          "type": "float",
+          "default": 90.0,
+          "sourceName": "startingAngle"
+        }
+      ]
+    },
+    {
+      "id": "burn",
+      "name": "Burn",
+      "author": "gre",
+      "params": []
+    },
+    {
+      "id": "burn0",
+      "name": "Burn 0",
+      "author": "liubailin2020@gmail.com",
+      "params": [
+        {
+          "name": "uBurnColor",
+          "type": "vec3",
+          "default": "vec3(1.0, 0.5, 0.0)",
+          "sourceName": "burnColor"
+        }
+      ]
+    },
+    {
+      "id": "cannabisleaf",
+      "name": "Cannabisleaf",
+      "author": "@Flexi23",
+      "params": []
+    },
+    {
+      "id": "chessboard",
+      "name": "Chessboard",
+      "author": "lql",
+      "params": [
+        {
+          "name": "uGrid_num",
+          "type": "float",
+          "default": 10.0,
+          "sourceName": "grid_num"
+        }
+      ]
+    },
+    {
+      "id": "circle",
+      "name": "Circle",
+      "author": "Fernando Kuteken",
+      "params": [
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0.5, 0.5)",
+          "sourceName": "center"
+        },
+        {
+          "name": "uBackColor",
+          "type": "vec3",
+          "default": "vec3(0.1, 0.1, 0.1)",
+          "sourceName": "backColor"
+        }
+      ]
+    },
+    {
+      "id": "circleopen",
+      "name": "Circleopen",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "smoothness"
+        },
+        {
+          "name": "uOpening",
+          "type": "bool",
+          "default": true,
+          "sourceName": "opening"
+        }
+      ]
+    },
+    {
+      "id": "colorphase",
+      "name": "Colorphase",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uFromStep",
+          "type": "vec4",
+          "default": "vec4(0.0, 0.2, 0.4, 0.0)",
+          "sourceName": "fromStep"
+        },
+        {
+          "name": "uToStep",
+          "type": "vec4",
+          "default": "vec4(0.6, 0.8, 1.0, 1.0)",
+          "sourceName": "toStep"
+        }
+      ]
+    },
+    {
+      "id": "coord-from-in",
+      "name": "Coord From In",
+      "author": "haiyoucuv",
+      "params": []
+    },
+    {
+      "id": "crosshatch",
+      "name": "Crosshatch",
+      "author": "pthrasher",
+      "params": [
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0.5)",
+          "sourceName": "center"
+        },
+        {
+          "name": "uThreshold",
+          "type": "float",
+          "default": 3.0,
+          "sourceName": "threshold"
+        },
+        {
+          "name": "uFadeEdge",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "fadeEdge"
+        }
+      ]
+    },
+    {
+      "id": "crosswarp",
+      "name": "Crosswarp",
+      "author": "Eke Péter <peterekepeter@gmail.com>",
+      "params": []
+    },
+    {
+      "id": "cube",
+      "name": "Cube",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uPersp",
+          "type": "float",
+          "default": 0.7,
+          "sourceName": "persp"
+        },
+        {
+          "name": "uUnzoom",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "unzoom"
+        },
+        {
+          "name": "uReflection",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "reflection"
+        },
+        {
+          "name": "uFloating",
+          "type": "float",
+          "default": 3.0,
+          "sourceName": "floating"
+        }
+      ]
+    },
+    {
+      "id": "directional-easing",
+      "name": "Directional Easing",
+      "author": "Max Plotnikov",
+      "params": [
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(0.0, 1.0)",
+          "sourceName": "direction"
+        }
+      ]
+    },
+    {
+      "id": "directionalwarp",
+      "name": "Directionalwarp",
+      "author": "pschroen",
+      "params": [
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "smoothness"
+        },
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(-1.0, 1.0)",
+          "sourceName": "direction"
+        }
+      ]
+    },
+    {
+      "id": "directionalwipe",
+      "name": "Directionalwipe",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(1.0, -1.0)",
+          "sourceName": "direction"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "author": "Travis Fischer",
+      "params": [
+        {
+          "name": "uDisplacementMap",
+          "type": "sampler2D",
+          "default": null,
+          "sourceName": "displacementMap"
+        },
+        {
+          "name": "uStrength",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "strength"
+        }
+      ]
+    },
+    {
+      "id": "dissolve",
+      "name": "Dissolve",
+      "author": "hjm1fb",
+      "params": [
+        {
+          "name": "uLineWidth",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "uLineWidth"
+        },
+        {
+          "name": "uSpreadClr",
+          "type": "vec3",
+          "default": "vec3(1.0, 0.0, 0.0)",
+          "sourceName": "uSpreadClr"
+        },
+        {
+          "name": "uHotClr",
+          "type": "vec3",
+          "default": "vec3(0.9, 0.9, 0.2)",
+          "sourceName": "uHotClr"
+        },
+        {
+          "name": "uPow",
+          "type": "float",
+          "default": 5.0,
+          "sourceName": "uPow"
+        },
+        {
+          "name": "uIntensity",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "uIntensity"
+        }
+      ]
+    },
+    {
+      "id": "doorway",
+      "name": "Doorway",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uReflection",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "reflection"
+        },
+        {
+          "name": "uPerspective",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "perspective"
+        },
+        {
+          "name": "uDepth",
+          "type": "float",
+          "default": 3.0,
+          "sourceName": "depth"
+        }
+      ]
+    },
+    {
+      "id": "fade",
+      "name": "Fade",
+      "author": "gre",
+      "params": []
+    },
+    {
+      "id": "fadecolor",
+      "name": "Fadecolor",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uColor",
+          "type": "vec3",
+          "default": "vec3(0.0)",
+          "sourceName": "color"
+        },
+        {
+          "name": "uColorPhase",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "colorPhase"
+        }
+      ]
+    },
+    {
+      "id": "fadegrayscale",
+      "name": "Fadegrayscale",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uIntensity",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "intensity"
+        }
+      ]
+    },
+    {
+      "id": "flyeye",
+      "name": "Flyeye",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSize",
+          "type": "float",
+          "default": 0.04,
+          "sourceName": "size"
+        },
+        {
+          "name": "uZoom",
+          "type": "float",
+          "default": 50.0,
+          "sourceName": "zoom"
+        },
+        {
+          "name": "uColorSeparation",
+          "type": "float",
+          "default": 0.3,
+          "sourceName": "colorSeparation"
+        }
+      ]
+    },
+    {
+      "id": "fragment",
+      "name": "Fragment",
+      "author": "lbl",
+      "params": []
+    },
+    {
+      "id": "heart",
+      "name": "Heart",
+      "author": "gre",
+      "params": []
+    },
+    {
+      "id": "hexagonalize",
+      "name": "Hexagonalize",
+      "author": "Fernando Kuteken",
+      "params": [
+        {
+          "name": "uSteps",
+          "type": "int",
+          "default": 50,
+          "sourceName": "steps"
+        },
+        {
+          "name": "uHorizontalHexagons",
+          "type": "float",
+          "default": 20.0,
+          "sourceName": "horizontalHexagons"
+        }
+      ]
+    },
+    {
+      "id": "kaleidoscope",
+      "name": "Kaleidoscope",
+      "author": "nwoeanhinnogaehr",
+      "params": [
+        {
+          "name": "uSpeed",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "speed"
+        },
+        {
+          "name": "uAngle",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "angle"
+        },
+        {
+          "name": "uPower",
+          "type": "float",
+          "default": 1.5,
+          "sourceName": "power"
+        }
+      ]
+    },
+    {
+      "id": "luma",
+      "name": "Luma",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uLuma",
+          "type": "sampler2D",
+          "default": null,
+          "sourceName": "luma"
+        }
+      ]
+    },
+    {
+      "id": "luminance_melt",
+      "name": "Luminance Melt",
+      "author": "0gust1",
+      "params": [
+        {
+          "name": "uDirection",
+          "type": "bool",
+          "default": true,
+          "sourceName": "direction"
+        },
+        {
+          "name": "uL_threshold",
+          "type": "float",
+          "default": 0.8,
+          "sourceName": "l_threshold"
+        },
+        {
+          "name": "uAbove",
+          "type": "bool",
+          "default": false,
+          "sourceName": "above"
+        }
+      ]
+    },
+    {
+      "id": "morph",
+      "name": "Morph",
+      "author": "paniq",
+      "params": [
+        {
+          "name": "uStrength",
+          "type": "float",
+          "default": 0.1,
+          "sourceName": "strength"
+        }
+      ]
+    },
+    {
+      "id": "mosaic_transition",
+      "name": "Mosaic Transition",
+      "author": "YueDev",
+      "params": [
+        {
+          "name": "uMosaicNum",
+          "type": "float",
+          "default": 10.0,
+          "sourceName": "mosaicNum"
+        }
+      ]
+    },
+    {
+      "id": "multiply_blend",
+      "name": "Multiply Blend",
+      "author": "Fernando Kuteken",
+      "params": []
+    },
+    {
+      "id": "old_tv_lost_signal",
+      "name": "Old Tv Lost Signal",
+      "author": "mernking gitlab: Godswork",
+      "params": []
+    },
+    {
+      "id": "parametric_glitch",
+      "name": "Parametric Glitch",
+      "author": "Yoni Maltsman @friendlyspinach",
+      "params": [
+        {
+          "name": "uAmpx",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "ampx"
+        },
+        {
+          "name": "uAmpy",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "ampy"
+        }
+      ]
+    },
+    {
+      "id": "perlin",
+      "name": "Perlin",
+      "author": "Rich Harris",
+      "params": [
+        {
+          "name": "uScale",
+          "type": "float",
+          "default": 4.0,
+          "sourceName": "scale"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.01,
+          "sourceName": "smoothness"
+        },
+        {
+          "name": "uSeed",
+          "type": "float",
+          "default": 12.9898,
+          "sourceName": "seed"
+        }
+      ]
+    },
+    {
+      "id": "pinwheel",
+      "name": "Pinwheel",
+      "author": "Mr Speaker",
+      "params": [
+        {
+          "name": "uSpeed",
+          "type": "float",
+          "default": 2.0,
+          "sourceName": "speed"
+        }
+      ]
+    },
+    {
+      "id": "pixelize",
+      "name": "Pixelize",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSquaresMin",
+          "type": "ivec2",
+          "default": "ivec2(20)",
+          "sourceName": "squaresMin"
+        },
+        {
+          "name": "uSteps",
+          "type": "int",
+          "default": 50,
+          "sourceName": "steps"
+        }
+      ]
+    },
+    {
+      "id": "polar_function",
+      "name": "Polar Function",
+      "author": "Fernando Kuteken",
+      "params": [
+        {
+          "name": "uSegments",
+          "type": "int",
+          "default": 5,
+          "sourceName": "segments"
+        }
+      ]
+    },
+    {
+      "id": "powerKaleido",
+      "name": "Power Kaleido",
+      "author": "Boundless",
+      "params": [
+        {
+          "name": "uScale",
+          "type": "float",
+          "default": 2.0,
+          "sourceName": "scale"
+        },
+        {
+          "name": "uZ",
+          "type": "float",
+          "default": 1.5,
+          "sourceName": "z"
+        },
+        {
+          "name": "uSpeed",
+          "type": "float",
+          "default": 5.0,
+          "sourceName": "speed"
+        }
+      ]
+    },
+    {
+      "id": "randomNoisex",
+      "name": "Random Noisex",
+      "author": "towrabbit",
+      "params": []
+    },
+    {
+      "id": "randomsquares",
+      "name": "Randomsquares",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSize",
+          "type": "ivec2",
+          "default": "ivec2(10, 10)",
+          "sourceName": "size"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "ripple",
+      "name": "Ripple",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uAmplitude",
+          "type": "float",
+          "default": 100.0,
+          "sourceName": "amplitude"
+        },
+        {
+          "name": "uSpeed",
+          "type": "float",
+          "default": 50.0,
+          "sourceName": "speed"
+        }
+      ]
+    },
+    {
+      "id": "rotateTransition",
+      "name": "Rotate Transition",
+      "author": "haiyoucuv",
+      "params": []
+    },
+    {
+      "id": "rotate_scale_fade",
+      "name": "Rotate Scale Fade",
+      "author": "Fernando Kuteken",
+      "params": [
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0.5, 0.5)",
+          "sourceName": "center"
+        },
+        {
+          "name": "uRotations",
+          "type": "float",
+          "default": 1.0,
+          "sourceName": "rotations"
+        },
+        {
+          "name": "uScale",
+          "type": "float",
+          "default": 8.0,
+          "sourceName": "scale"
+        },
+        {
+          "name": "uBackColor",
+          "type": "vec4",
+          "default": "vec4(0.15, 0.15, 0.15, 1.0)",
+          "sourceName": "backColor"
+        }
+      ]
+    },
+    {
+      "id": "scale-in",
+      "name": "Scale In",
+      "author": "haiyoucuv",
+      "params": []
+    },
+    {
+      "id": "splitSlideInHorizontal",
+      "name": "Split Slide In Horizontal",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "splitSlideInOutHorizontal",
+      "name": "Split Slide In Out Horizontal",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "splitSlideInOutVertical",
+      "name": "Split Slide In Out Vertical",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "splitSlideInVertical",
+      "name": "Split Slide In Vertical",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "splitSlideOutHorizontal",
+      "name": "Split Slide Out Horizontal",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "splitSlideOutVertical",
+      "name": "Split Slide Out Vertical",
+      "author": "OllyOllyOlly",
+      "params": [
+        {
+          "name": "uReverse",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reverse"
+        }
+      ]
+    },
+    {
+      "id": "squareswire",
+      "name": "Squareswire",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSquares",
+          "type": "ivec2",
+          "default": "ivec2(10,10)",
+          "sourceName": "squares"
+        },
+        {
+          "name": "uDirection",
+          "type": "vec2",
+          "default": "vec2(1.0, -0.5)",
+          "sourceName": "direction"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 1.6,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "squeeze",
+      "name": "Squeeze",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uColorSeparation",
+          "type": "float",
+          "default": 0.04,
+          "sourceName": "colorSeparation"
+        }
+      ]
+    },
+    {
+      "id": "static_wipe",
+      "name": "Static Wipe",
+      "author": "Ben Lucas",
+      "params": [
+        {
+          "name": "u_transitionUpToDown",
+          "type": "bool",
+          "default": true,
+          "sourceName": "u_transitionUpToDown"
+        },
+        {
+          "name": "u_max_static_span",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "u_max_static_span"
+        }
+      ]
+    },
+    {
+      "id": "swap",
+      "name": "Swap",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uReflection",
+          "type": "float",
+          "default": 0.4,
+          "sourceName": "reflection"
+        },
+        {
+          "name": "uPerspective",
+          "type": "float",
+          "default": 0.2,
+          "sourceName": "perspective"
+        },
+        {
+          "name": "uDepth",
+          "type": "float",
+          "default": 3.0,
+          "sourceName": "depth"
+        }
+      ]
+    },
+    {
+      "id": "tangentMotionBlur",
+      "name": "Tangent Motion Blur",
+      "author": "chenkai",
+      "params": []
+    },
+    {
+      "id": "undulatingBurnOut",
+      "name": "Undulating Burn Out",
+      "author": "pthrasher",
+      "params": [
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.03,
+          "sourceName": "smoothness"
+        },
+        {
+          "name": "uCenter",
+          "type": "vec2",
+          "default": "vec2(0.5)",
+          "sourceName": "center"
+        },
+        {
+          "name": "uColor",
+          "type": "vec3",
+          "default": "vec3(0.0)",
+          "sourceName": "color"
+        }
+      ]
+    },
+    {
+      "id": "wind",
+      "name": "Wind",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uSize",
+          "type": "float",
+          "default": 0.2,
+          "sourceName": "size"
+        },
+        {
+          "name": "uReversed",
+          "type": "bool",
+          "default": false,
+          "sourceName": "reversed"
+        }
+      ]
+    },
+    {
+      "id": "windowblinds",
+      "name": "Windowblinds",
+      "author": "Fabien Benetou",
+      "params": []
+    },
+    {
+      "id": "windowslice",
+      "name": "Windowslice",
+      "author": "gre",
+      "params": [
+        {
+          "name": "uCount",
+          "type": "float",
+          "default": 10.0,
+          "sourceName": "count"
+        },
+        {
+          "name": "uSmoothness",
+          "type": "float",
+          "default": 0.5,
+          "sourceName": "smoothness"
+        }
+      ]
+    },
+    {
+      "id": "wipeDown",
+      "name": "Wipe Down",
+      "author": "Jake Nelson",
+      "params": []
+    },
+    {
+      "id": "wipeLeft",
+      "name": "Wipe Left",
+      "author": "Jake Nelson",
+      "params": []
+    },
+    {
+      "id": "wipeRight",
+      "name": "Wipe Right",
+      "author": "Jake Nelson",
+      "params": []
+    },
+    {
+      "id": "wipeUp",
+      "name": "Wipe Up",
+      "author": "Jake Nelson",
+      "params": []
+    },
+    {
+      "id": "x_axis_translation",
+      "name": "X Axis Translation",
+      "author": "lizhongjian",
+      "params": []
+    },
+    {
+      "id": "zoomInOut",
+      "name": "Zoom In Out",
+      "author": "OllyOllyOlly",
+      "params": []
+    }
+  ]
+}

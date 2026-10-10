@@ -43,7 +43,9 @@ object PhotoVideoEncoder {
     suspend fun encodeStillImage(
         context: Context,
         bitmap: Bitmap,
-        durationMs: Long
+        durationMs: Long,
+        /** Phase 4: Ken Burns pan/zoom — animates the still into motion. */
+        kenBurns: Boolean = false
     ): File? = withContext(Dispatchers.Default) {
         var codec: MediaCodec? = null
         var muxer: MediaMuxer? = null
@@ -73,7 +75,34 @@ object PhotoVideoEncoder {
 
             val safeDurationMs = durationMs.coerceAtLeast(1000L)
             val frameCount = ((safeDurationMs * FRAME_RATE) / 1000L).toInt().coerceAtLeast(FRAME_RATE)
-            val yuv = argbToNv12(frame, width, height)
+            val staticYuv = argbToNv12(frame, width, height)
+            // Ken Burns frame scratch (reused — no per-frame allocation).
+            val kbBitmap = if (kenBurns) Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) else null
+            val kbCanvas = if (kenBurns) android.graphics.Canvas(kbBitmap!!) else null
+            val kbPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+            }
+            /** YUV for frame [i]: static, or animated zoom/pan for Ken Burns. */
+            fun yuvForFrame(i: Int): ByteArray {
+                if (!kenBurns || kbBitmap == null || kbCanvas == null) return staticYuv
+                val progress = if (frameCount > 1) i.toFloat() / (frameCount - 1) else 0f
+                // Gentle push-in 1.00 -> 1.18 with a slow diagonal drift.
+                val scale = 1f + 0.18f * progress
+                val dw = width * scale
+                val dh = height * scale
+                // Drift from top-left toward bottom-right.
+                val dx = (width - dw) * (0.5f - 0.5f * progress)
+                val dy = (height - dh) * (0.5f - 0.5f * progress)
+                kbCanvas.drawColor(android.graphics.Color.BLACK)
+                kbCanvas.drawBitmap(
+                    frame,
+                    null,
+                    android.graphics.RectF(dx, dy, dx + dw, dy + dh),
+                    kbPaint
+                )
+                return argbToNv12(kbBitmap, width, height)
+            }
             val bufferInfo = MediaCodec.BufferInfo()
 
             var framesQueued = 0
@@ -91,10 +120,11 @@ object PhotoVideoEncoder {
                         val inputBuffer = codec.getInputBuffer(inIndex)!!
                         inputBuffer.clear()
                         if (framesQueued < frameCount) {
-                            inputBuffer.put(yuv)
+                            val frameYuv = yuvForFrame(framesQueued)
+                            inputBuffer.put(frameYuv)
                             val ptsUs = framesQueued * 1_000_000L / FRAME_RATE
                             codec.queueInputBuffer(
-                                inIndex, 0, yuv.size, ptsUs,
+                                inIndex, 0, frameYuv.size, ptsUs,
                                 if (framesQueued == frameCount - 1) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
                             )
                             if (framesQueued == frameCount - 1) eosQueued = true
@@ -135,6 +165,7 @@ object PhotoVideoEncoder {
             }
 
             if (frame != bitmap) frame.recycle()
+            try { kbBitmap?.recycle() } catch (_: Exception) {}
             outFile.takeIf { it.exists() && it.length() > 0L }
         } catch (e: Exception) {
             Log.e(TAG, "encodeStillImage failed", e)

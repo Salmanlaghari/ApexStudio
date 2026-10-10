@@ -67,11 +67,16 @@ fun TransitionPickerSheet(
     // transitions appear on first open.
     val packContext = androidx.compose.ui.platform.LocalContext.current
     var packsReady by remember { mutableStateOf(TransitionLibrary.hasPackTransitions()) }
+    var glProReady by remember { mutableStateOf(TransitionLibrary.hasGlProTransitions()) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             com.apexstudio.app.data.packs.PackLoader.ensurePackTransitionsRegistered(packContext)
+            // Phase 4: 100+ gl-transitions shaders (idempotent).
+            val glInfos = com.apexstudio.app.data.gl.GlTransitionManifest.load(packContext)
+            TransitionLibrary.registerGlProTransitions(glInfos)
         }
         packsReady = true
+        glProReady = true
     }
     var selectedTypeId by remember(currentTransition) {
         mutableStateOf(currentTransition?.type ?: "cross_dissolve")
@@ -83,7 +88,7 @@ fun TransitionPickerSheet(
         mutableStateOf(TransitionCategory.ALL)
     }
 
-    val selectedDef = remember(selectedTypeId, packsReady) {
+    val selectedDef = remember(selectedTypeId, packsReady, glProReady) {
         TransitionLibrary.getById(selectedTypeId) ?: TransitionLibrary.allTransitions().first()
     }
 
@@ -247,7 +252,7 @@ fun TransitionPickerSheet(
         Spacer(Modifier.height(12.dp))
 
         // Transition Grid
-        val displayedTransitions = remember(activeCategory, packsReady) {
+        val displayedTransitions = remember(activeCategory, packsReady, glProReady) {
             TransitionLibrary.getByCategory(activeCategory)
         }
 
@@ -837,9 +842,34 @@ private fun TransitionLivePreview(
                 }
 
                 else -> {
-                    // Default cut
-                    if (p < 0.5f) drawClipA()
-                    else drawClipB()
+                    // Phase 4: GL Pro shaders — generic dip-through-black with
+                    // a push-zoom approximation (the export runs the real GLSL).
+                    if (selectedType.startsWith("glpro_")) {
+                        val dip = kotlin.math.sin(p * kotlin.math.PI).toFloat()
+                        val zoom = 1f + 0.12f * dip
+                        val dw = w * zoom
+                        val dh = h * zoom
+                        val off = Offset((w - dw) / 2f, (h - dh) / 2f)
+                        if (p < 0.5f) {
+                            drawClipA(
+                                alpha = 1f - dip,
+                                topLeft = off,
+                                size = Size(dw, dh)
+                            )
+                        } else {
+                            drawClipB(
+                                alpha = dip,
+                                topLeft = off,
+                                size = Size(dw, dh)
+                            )
+                        }
+                        // Black dip overlay at mid-transition.
+                        drawRect(color = Color.Black, alpha = dip * 0.55f)
+                    } else {
+                        // Default cut
+                        if (p < 0.5f) drawClipA()
+                        else drawClipB()
+                    }
                 }
             }
         }

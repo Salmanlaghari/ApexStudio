@@ -72,8 +72,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.data.audio.TrackWaveformCache
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -2281,6 +2283,26 @@ private fun TimelineFxTrack(
  * synthetic fallback otherwise). Every audio track gets its own row so
  * added audio is actually present and manageable in the timeline.
  */
+/**
+ * Phase 4: per-track waveform. Decodes the track's own audio (real PCM via
+ * MediaAnalyzer, cached) instead of reusing the video clip's waveform.
+ * Falls back to [fallback] until the decode lands — never blank, never fake.
+ */
+@Composable
+private fun rememberTrackWaveform(track: AudioTrack, fallback: FloatArray): FloatArray {
+    val context = LocalContext.current
+    var samples by remember(track.uri, track.trimStartMs, track.trimEndMs) {
+        mutableStateOf(
+            TrackWaveformCache.peek(track.uri, track.trimStartMs, track.trimEndMs) ?: fallback
+        )
+    }
+    LaunchedEffect(track.uri, track.trimStartMs, track.trimEndMs) {
+        TrackWaveformCache.get(context, track.uri, track.trimStartMs, track.trimEndMs)
+            ?.let { samples = it }
+    }
+    return samples
+}
+
 @Composable
 private fun TimelineAudioTrack(
     audioTracks: List<AudioTrack>,
@@ -2356,10 +2378,13 @@ private fun TimelineAudioTrack(
         } else {
             audioTracks.forEach { track ->
                 val isSelected = track.id == effectiveSelectedId
+                // Phase 4: each track paints its OWN decoded waveform
+                // (falls back to the shared clip waveform while decoding).
+                val trackSamples = rememberTrackWaveform(track, samples)
                 AudioTrackLaneRow(
                     track = track,
                     isSelected = isSelected,
-                    samples = samples,
+                    samples = trackSamples,
                     durationMs = durationMs,
                     playheadMs = playheadMs,
                     beatMarkersMs = beatMarkersMs,

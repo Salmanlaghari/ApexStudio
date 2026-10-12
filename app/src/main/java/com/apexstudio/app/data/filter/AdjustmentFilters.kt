@@ -48,8 +48,10 @@ private fun glUniformLocation(program: Int, name: String): Int {
  * Base for filters with a size-dependent `vec2` uniform (texelSize or
  * resolution). Handles the pending-size + runOnDraw push pattern in one
  * place so subclasses cannot get it wrong.
+ * (Public because the public filter classes below extend it — Kotlin
+ * forbids a public subclass of a private supertype.)
  */
-private abstract class SizeAwareAdjustmentFilter(
+abstract class SizeAwareAdjustmentFilter(
     vertexShader: String,
     fragmentShader: String
 ) : GPUImageFilter(vertexShader, fragmentShader) {

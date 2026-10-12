@@ -164,25 +164,21 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(GPUImageContrastFilter(config.contrast.coerceIn(0.1f, 2.5f)))
         }
 
-        // 6. Whites / Blacks via levels (shader step 5).
-        // Same maths as the Media3 shader: bIn/bOut/wIn/wOut with the
-        // identical 0.3 scale, plus the same degenerate-range guard so
-        // the input range can never collapse (the shader bypasses the
-        // remap; here we clamp wIn above bIn + epsilon, which is the
-        // closest the levels filter can express).
+        // 6. Whites / Blacks (shader step 5): custom levels filter with
+        // the EXACT Media3 shader maths — same 0.3 scale, same
+        // degenerate-range bypass, no [0,1] clamp of the normalized
+        // ratio (the stock GPUImageLevelsFilter clamps, which diverges
+        // from the shader for negative whites/blacks).
         // Positive whites expand the highlight range (lower white input
         // point); negative whites compress it. Positive blacks crush the
         // shadows (raise black input point); negative blacks lift them.
         if (config.whites != 0f || config.blacks != 0f) {
-            val w = config.whites.coerceIn(-1f, 1f)
-            val b = config.blacks.coerceIn(-1f, 1f)
-            val bIn = maxOf(b, 0f) * 0.3f
-            val bOut = maxOf(-b, 0f) * 0.3f
-            val wIn = maxOf(1f - maxOf(w, 0f) * 0.3f, bIn + 0.001f)
-            val wOut = 1f + minOf(w, 0f) * 0.3f
-            val levels = GPUImageLevelsFilter()
-            levels.setMin(bIn, 1.0f, wIn, bOut, wOut)
-            filterList.add(levels)
+            filterList.add(
+                GPUImageWhitesBlacksFilter(
+                    blacks = config.blacks.coerceIn(-1f, 1f),
+                    whites = config.whites.coerceIn(-1f, 1f)
+                )
+            )
         }
 
         // 7. Highlights / Shadows (shader step 6)
@@ -231,16 +227,23 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(GPUImageVignetteFilter(center, color, start, end))
         }
 
-        // 13. Denoise (shader step 12): 4-tap blend mirroring the Media3
-        // shader's tap weights and x0.85 blend factor (WYSIWYG).
-        if (config.denoise != 0f) {
-            filterList.add(GPUImageDenoiseFilter(config.denoise.coerceIn(0f, 1f)))
-        }
-
-        // 14. Sharpness (shader step 13): 4-tap unsharp mask mirroring the
-        // Media3 shader's kernel and x1.6 scaling.
-        if (config.sharpness != 0f) {
-            filterList.add(GPUImageSharpnessFilter(config.sharpness.coerceIn(0f, 1f)))
+        // 13/14. Denoise + Sharpness (shader steps 12-13). When BOTH are
+        // active they share one stage with the shader's exact staging
+        // (sharpness uses the same pre-denoise blur); otherwise the
+        // individual filters run. Either way the maths mirror the Media3
+        // shader: 4-tap 0.4/0.15 kernel, x0.85 denoise blend, x1.6
+        // sharpness scale (WYSIWYG).
+        val denoiseAmt = config.denoise.coerceIn(0f, 1f)
+        val sharpnessAmt = config.sharpness.coerceIn(0f, 1f)
+        if (denoiseAmt > 0f && sharpnessAmt > 0f) {
+            filterList.add(GPUImageDenoiseSharpnessFilter(denoiseAmt, sharpnessAmt))
+        } else {
+            if (denoiseAmt > 0f) {
+                filterList.add(GPUImageDenoiseFilter(denoiseAmt))
+            }
+            if (sharpnessAmt > 0f) {
+                filterList.add(GPUImageSharpnessFilter(sharpnessAmt))
+            }
         }
 
         // 15. Film grain (shader step 14): same hash12 at the actual

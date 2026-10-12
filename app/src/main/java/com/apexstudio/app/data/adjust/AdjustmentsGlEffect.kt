@@ -365,8 +365,16 @@ class AdjustmentsGlEffect(
             // Denoise and sharpness run every neighbour tap through this
             // same function, so the spatial ops sample the GRADED image
             // rather than the raw texture (single-pass correct — no extra
-            // FBO needed). Cost: 5x the color chain, but only while
-            // denoise/sharpness are active (guarded in main()).
+            // FBO needed).
+            //
+            // Performance note: this is 5x the color chain per pixel, but
+            // ONLY while denoise/sharpness are active (both sliders are
+            // opt-in, default 0, and the whole block is skipped otherwise).
+            // Each stage also early-outs on default uniform values, so the
+            // common case (a few sliders moved) stays far below the worst
+            // case. The alternative — a two-pass FBO — would halve the ALU
+            // but adds framebuffer management inside Media3's drawFrame;
+            // revisit if 4K60 profiling shows this stage is hot.
             vec3 applyColorChain(vec3 c) {
 
                 // 1. Exposure (multiplicative, in stops)

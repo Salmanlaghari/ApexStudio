@@ -399,6 +399,16 @@ object FilterColorMatrix {
             matrix[14] += bOffset
         }
 
+        // 1b. Lightness (Video Adjustments v2): midtone lift approximated
+        // as a gentler additive offset on the CPU thumbnail path. The GPU
+        // paths (GPUImage/Media3) use the true midtone-weighted version.
+        if (adjustments.lightness != 0f) {
+            val lOffset = adjustments.lightness * 55f
+            matrix[4] += lOffset
+            matrix[9] += lOffset
+            matrix[14] += lOffset
+        }
+
         // 2. Contrast
         if (adjustments.contrast != 1f) {
             val c = adjustments.contrast.coerceAtLeast(0f)

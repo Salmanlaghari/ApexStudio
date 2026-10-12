@@ -69,6 +69,17 @@ data class GpuFilterConfig(
     val highlights: Float = 1.0f,      // 0.0 .. 1.0
     val shadows: Float = 0f,           // 0.0 .. 1.0
     val vibrance: Float = 0f,          // -1.0 .. 1.0
+    // Video Adjustments v2 (photo-editor parity). All default to
+    // "no change" so existing saved configs keep working.
+    val lightness: Float = 0f,         // -1.0 .. 1.0 (midtone lift)
+    val whites: Float = 0f,            // -1.0 .. 1.0 (white-point expand/compress)
+    val blacks: Float = 0f,            // -1.0 .. 1.0 (black-point crush/lift)
+    val hue: Float = 0f,               // -180.0 .. 180.0 degrees
+    val vignette: Float = 0f,          // 0.0 .. 1.0 (parametric border shading)
+    val grain: Float = 0f,             // 0.0 .. 1.0 (film grain)
+    val clarity: Float = 0f,           // -1.0 .. 1.0 (midtone contrast)
+    val denoise: Float = 0f,           // 0.0 .. 1.0 (edge-preserving smooth)
+    val sharpness: Float = 0f,         // 0.0 .. 1.0 (parametric sharpen)
     val activeProfileId: String? = null,
     val profileIntensity: Float = 1.0f
 ) {
@@ -85,7 +96,16 @@ data class GpuFilterConfig(
                 gamma == 1.0f &&
                 highlights == 1.0f &&
                 shadows == 0f &&
-                vibrance == 0f
+                vibrance == 0f &&
+                lightness == 0f &&
+                whites == 0f &&
+                blacks == 0f &&
+                hue == 0f &&
+                vignette == 0f &&
+                grain == 0f &&
+                clarity == 0f &&
+                denoise == 0f &&
+                sharpness == 0f
 }
 
 /**
@@ -128,12 +148,38 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(GPUImageBrightnessFilter(config.brightness.coerceIn(-1f, 1f)))
         }
 
+        // Video Adjustments v2: Lightness (midtone lift, distinct from brightness)
+        if (config.lightness != 0f) {
+            filterList.add(GPUImageLightnessFilter(config.lightness.coerceIn(-1f, 1f)))
+        }
+
         if (config.contrast != 1.0f) {
             filterList.add(GPUImageContrastFilter(config.contrast.coerceIn(0.1f, 2.5f)))
         }
 
+        // Video Adjustments v2: Whites / Blacks via levels.
+        // Positive whites expand the highlight range (lower white input
+        // point); negative whites compress it. Positive blacks crush the
+        // shadows (raise black input point); negative blacks lift them.
+        if (config.whites != 0f || config.blacks != 0f) {
+            val w = config.whites.coerceIn(-1f, 1f)
+            val b = config.blacks.coerceIn(-1f, 1f)
+            val levels = GPUImageLevelsFilter()
+            val minIn = (maxOf(b, 0f) * 0.3f).coerceIn(0f, 0.9f)
+            val minOut = (maxOf(-b, 0f) * 0.3f).coerceIn(0f, 0.9f)
+            val maxIn = (1f - maxOf(w, 0f) * 0.3f).coerceIn(0.1f, 1f)
+            val maxOut = (1f + minOf(w, 0f) * 0.3f).coerceIn(0.1f, 1f)
+            levels.setMin(minIn, 1.0f, maxIn, minOut, maxOut)
+            filterList.add(levels)
+        }
+
         if (config.saturation != 1.0f) {
             filterList.add(GPUImageSaturationFilter(config.saturation.coerceIn(0f, 2.5f)))
+        }
+
+        // Video Adjustments v2: Hue rotation in degrees (-180..180)
+        if (config.hue != 0f) {
+            filterList.add(GPUImageHueFilter(config.hue.coerceIn(-180f, 180f)))
         }
 
         if (config.gamma != 1.0f) {
@@ -144,8 +190,39 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(GPUImageHighlightShadowFilter(config.shadows.coerceIn(0f, 1f), config.highlights.coerceIn(0f, 1f)))
         }
 
+        // Video Adjustments v2: Clarity (midtone-localised contrast)
+        if (config.clarity != 0f) {
+            filterList.add(GPUImageClarityFilter(config.clarity.coerceIn(-1f, 1f)))
+        }
+
         if (config.vibrance != 0f) {
             filterList.add(GPUImageVibranceFilter(config.vibrance.coerceIn(-1f, 1f)))
+        }
+
+        // Video Adjustments v2: parametric Detail filters.
+        // (Vignette/Sharpen also exist as stylistic effects; these
+        // parametric versions are driven by the Adjust UI sliders.)
+        if (config.vignette != 0f) {
+            val v = config.vignette.coerceIn(0f, 1f)
+            val center = PointF(0.5f, 0.5f)
+            val color = floatArrayOf(0.0f, 0.0f, 0.0f)
+            val start = (0.85f - v * 0.45f).coerceAtLeast(0.1f)
+            val end = (1.5f - v * 0.5f).coerceAtLeast(start + 0.1f)
+            filterList.add(GPUImageVignetteFilter(center, color, start, end))
+        }
+
+        if (config.sharpness != 0f) {
+            filterList.add(GPUImageSharpenFilter(config.sharpness.coerceIn(0f, 1f) * 3.0f))
+        }
+
+        if (config.grain != 0f) {
+            filterList.add(GPUImageGrainFilter(config.grain.coerceIn(0f, 1f)))
+        }
+
+        // Video Adjustments v2: basic edge-preserving denoise.
+        if (config.denoise != 0f) {
+            val d = config.denoise.coerceIn(0f, 1f)
+            filterList.add(GPUImageBilateralBlurFilter(1.0f + d * 4.0f))
         }
 
         // 3. Artistic Stylistic Effects

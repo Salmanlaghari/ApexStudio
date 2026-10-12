@@ -43,7 +43,18 @@ class AdjustmentsGlEffect(
     private val highlightsProvider: (() -> Float)? = null,
     private val shadowsProvider: (() -> Float)? = null,
     private val hdrProvider: (() -> Float)? = null,
-    private val brillianceProvider: (() -> Float)? = null
+    private val brillianceProvider: (() -> Float)? = null,
+    // Video Adjustments v2 (photo-editor parity) — live per-frame providers
+    private val lightnessProvider: (() -> Float)? = null,
+    private val whitesProvider: (() -> Float)? = null,
+    private val blacksProvider: (() -> Float)? = null,
+    private val hueProvider: (() -> Float)? = null,
+    private val vignetteProvider: (() -> Float)? = null,
+    private val grainProvider: (() -> Float)? = null,
+    private val clarityProvider: (() -> Float)? = null,
+    private val denoiseProvider: (() -> Float)? = null,
+    private val sharpnessProvider: (() -> Float)? = null,
+    private val fadeProvider: (() -> Float)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -59,6 +70,16 @@ class AdjustmentsGlEffect(
             shadowsProvider = shadowsProvider,
             hdrProvider = hdrProvider,
             brillianceProvider = brillianceProvider,
+            lightnessProvider = lightnessProvider,
+            whitesProvider = whitesProvider,
+            blacksProvider = blacksProvider,
+            hueProvider = hueProvider,
+            vignetteProvider = vignetteProvider,
+            grainProvider = grainProvider,
+            clarityProvider = clarityProvider,
+            denoiseProvider = denoiseProvider,
+            sharpnessProvider = sharpnessProvider,
+            fadeProvider = fadeProvider,
             useHdr = useHdr
         )
     }
@@ -76,6 +97,16 @@ class AdjustmentsGlEffect(
         private val shadowsProvider: (() -> Float)?,
         private val hdrProvider: (() -> Float)?,
         private val brillianceProvider: (() -> Float)?,
+        private val lightnessProvider: (() -> Float)?,
+        private val whitesProvider: (() -> Float)?,
+        private val blacksProvider: (() -> Float)?,
+        private val hueProvider: (() -> Float)?,
+        private val vignetteProvider: (() -> Float)?,
+        private val grainProvider: (() -> Float)?,
+        private val clarityProvider: (() -> Float)?,
+        private val denoiseProvider: (() -> Float)?,
+        private val sharpnessProvider: (() -> Float)?,
+        private val fadeProvider: (() -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -94,6 +125,19 @@ class AdjustmentsGlEffect(
         private var tint: Float = adjustments.tint
         private var highlights: Float = adjustments.highlights
         private var shadows: Float = adjustments.shadows
+        // Video Adjustments v2
+        private var lightness: Float = adjustments.lightness
+        private var whites: Float = adjustments.whites
+        private var blacks: Float = adjustments.blacks
+        private var hue: Float = adjustments.hue
+        private var vignette: Float = adjustments.vignette
+        private var grain: Float = adjustments.grain
+        private var clarity: Float = adjustments.clarity
+        private var denoise: Float = adjustments.denoise
+        private var sharpness: Float = adjustments.sharpness
+        private var fade: Float = adjustments.fade
+        private var texelWidth: Float = 0f
+        private var texelHeight: Float = 0f
 
         init {
             glProgram = try {
@@ -118,8 +162,11 @@ class AdjustmentsGlEffect(
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
         }
 
-        override fun configure(inputWidth: Int, inputHeight: Int): Size =
-            Size(inputWidth, inputHeight)
+        override fun configure(inputWidth: Int, inputHeight: Int): Size {
+            texelWidth = if (inputWidth > 0) 1f / inputWidth else 0f
+            texelHeight = if (inputHeight > 0) 1f / inputHeight else 0f
+            return Size(inputWidth, inputHeight)
+        }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
@@ -134,6 +181,16 @@ class AdjustmentsGlEffect(
                 shadowsProvider?.let { shadows = it() }
                 hdrProvider?.let { hdr = it() }
                 brillianceProvider?.let { brilliance = it() }
+                lightnessProvider?.let { lightness = it() }
+                whitesProvider?.let { whites = it() }
+                blacksProvider?.let { blacks = it() }
+                hueProvider?.let { hue = it() }
+                vignetteProvider?.let { vignette = it() }
+                grainProvider?.let { grain = it() }
+                clarityProvider?.let { clarity = it() }
+                denoiseProvider?.let { denoise = it() }
+                sharpnessProvider?.let { sharpness = it() }
+                fadeProvider?.let { fade = it() }
 
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
@@ -147,6 +204,17 @@ class AdjustmentsGlEffect(
                 glProgram.setFloatUniform("uShadows", shadows)
                 glProgram.setFloatUniform("uHdr", hdr)
                 glProgram.setFloatUniform("uBrilliance", brilliance)
+                glProgram.setFloatUniform("uLightness", lightness)
+                glProgram.setFloatUniform("uWhites", whites)
+                glProgram.setFloatUniform("uBlacks", blacks)
+                glProgram.setFloatUniform("uHue", hue)
+                glProgram.setFloatUniform("uVignette", vignette)
+                glProgram.setFloatUniform("uGrain", grain)
+                glProgram.setFloatUniform("uClarity", clarity)
+                glProgram.setFloatUniform("uDenoise", denoise)
+                glProgram.setFloatUniform("uSharpness", sharpness)
+                glProgram.setFloatUniform("uFade", fade)
+                glProgram.setFloatsUniform("uTexelSize", floatArrayOf(texelWidth, texelHeight))
                 glProgram.bindAttributesAndUniforms()
                 android.opengl.GLES20.glDrawArrays(
                     android.opengl.GLES20.GL_TRIANGLE_STRIP, 0, 4
@@ -188,6 +256,16 @@ class AdjustmentsGlEffect(
          *  - uTint: -1..1 (positive = green↑)
          *  - uHighlights: -1..1 (lifts/compresses bright pixels)
          *  - uShadows: -1..1 (lifts/compresses dark pixels)
+         *  - uLightness: -1..1 (midtone lift, distinct from brightness)
+         *  - uWhites: -1..1 (white-point expand/compress)
+         *  - uBlacks: -1..1 (black-point crush/lift)
+         *  - uHue: -180..180 degrees rotation
+         *  - uVignette: 0..1 border shading
+         *  - uGrain: 0..1 film grain
+         *  - uClarity: -1..1 midtone-localised contrast
+         *  - uDenoise: 0..1 (4-tap soft blend)
+         *  - uSharpness: 0..1 (4-tap unsharp mask)
+         *  - uFade: 0..1 (washed film look)
          */
         private val FRAGMENT_SHADER = """
             precision highp float;
@@ -203,6 +281,17 @@ class AdjustmentsGlEffect(
             uniform float uShadows;
             uniform float uHdr;
             uniform float uBrilliance;
+            uniform float uLightness;
+            uniform float uWhites;
+            uniform float uBlacks;
+            uniform float uHue;
+            uniform float uVignette;
+            uniform float uGrain;
+            uniform float uClarity;
+            uniform float uDenoise;
+            uniform float uSharpness;
+            uniform float uFade;
+            uniform vec2 uTexelSize;
 
             vec3 applyContrast(vec3 c, float k) {
                 // Same formula as Android ColorMatrix contrast: scale
@@ -225,6 +314,39 @@ class AdjustmentsGlEffect(
                 return clamp(lifted, 0.0, 1.0);
             }
 
+            float hash12(vec2 p) {
+                vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+                p3 += dot(p3, p3.yzx + 33.33);
+                return fract((p3.x + p3.y) * p3.z);
+            }
+
+            vec3 applyHue(vec3 c, float degrees) {
+                // Standard YIQ hue-rotation, written as explicit dot
+                // products (avoids GLSL column-major confusion).
+                float a = radians(degrees);
+                float cosA = cos(a);
+                float sinA = sin(a);
+                vec3 r = vec3(0.299 + 0.701 * cosA + 0.168 * sinA,
+                              0.587 - 0.587 * cosA + 0.330 * sinA,
+                              0.114 - 0.114 * cosA - 0.497 * sinA);
+                vec3 g = vec3(0.299 - 0.299 * cosA - 0.328 * sinA,
+                              0.587 + 0.413 * cosA + 0.035 * sinA,
+                              0.114 - 0.114 * cosA + 0.292 * sinA);
+                vec3 b = vec3(0.299 - 0.299 * cosA + 1.250 * sinA,
+                              0.587 - 0.587 * cosA - 1.050 * sinA,
+                              0.114 + 0.886 * cosA - 0.203 * sinA);
+                return vec3(dot(c, r), dot(c, g), dot(c, b));
+            }
+
+            vec3 boxBlur4(sampler2D tex, vec2 uv, vec2 px) {
+                vec3 c = texture2D(tex, uv).rgb * 0.4;
+                c += texture2D(tex, uv + vec2(px.x, 0.0)).rgb * 0.15;
+                c += texture2D(tex, uv - vec2(px.x, 0.0)).rgb * 0.15;
+                c += texture2D(tex, uv + vec2(0.0, px.y)).rgb * 0.15;
+                c += texture2D(tex, uv - vec2(0.0, px.y)).rgb * 0.15;
+                return c;
+            }
+
             void main() {
                 vec4 src = texture2D(uTexSampler, vTextureCoord);
                 vec3 c = src.rgb;
@@ -236,16 +358,40 @@ class AdjustmentsGlEffect(
                 // 2. Brightness (additive, normalised -1..1)
                 c += vec3(uBrightness);
 
-                // 3. Contrast (multiplicative around 0.5)
+                // 3. Lightness (midtone lift — distinct from brightness)
+                float lumaL = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                float midWL = clamp(1.0 - abs(lumaL - 0.5) * 2.0, 0.0, 1.0);
+                c += vec3(uLightness * 0.4 * midWL);
+
+                // 4. Contrast (multiplicative around 0.5)
                 c = applyContrast(c, uContrast);
 
-                // 4. Highlights / Shadows
+                // 5. Whites / Blacks (levels remap)
+                float bIn = max(uBlacks, 0.0) * 0.3;
+                float bOut = max(-uBlacks, 0.0) * 0.3;
+                float wIn = 1.0 - max(uWhites, 0.0) * 0.3;
+                float wOut = 1.0 + min(uWhites, 0.0) * 0.3;
+                c = (c - vec3(bIn)) / max(wIn - bIn, 0.001);
+                c = vec3(bOut) + c * (wOut - bOut);
+
+                // 6. Highlights / Shadows
                 c = applyHighlightsShadows(c, uHighlights, uShadows);
 
-                // 5. Saturation
+                // 7. Clarity (midtone-localised contrast)
+                float lumaC = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                float midWC = clamp(1.0 - abs(lumaC - 0.5) * 2.0, 0.0, 1.0);
+                vec3 clarityC = (c - 0.5) * (1.0 + uClarity * 0.7) + 0.5;
+                c = mix(c, clarityC, midWC * 0.9);
+
+                // 8. Saturation
                 c = applySaturation(c, uSaturation);
 
-                // 6. Temperature & Tint
+                // 9. Hue rotation
+                if (uHue != 0.0) {
+                    c = applyHue(c, uHue);
+                }
+
+                // 10. Temperature & Tint
                 float rGain = 1.0 + uTemperature * 0.2;
                 float bGain = 1.0 - uTemperature * 0.2;
                 float gGain = 1.0 - uTint * 0.2;
@@ -253,14 +399,45 @@ class AdjustmentsGlEffect(
                 c.g *= gGain;
                 c.b *= bGain;
 
-                // 7. HDR+ dynamic tone-mapping boost
+                // 11. Vignette (border shading toward black)
+                if (uVignette > 0.0) {
+                    float d = distance(vTextureCoord, vec2(0.5));
+                    c *= 1.0 - uVignette * smoothstep(0.25, 0.85, d);
+                }
+
+                // 12. Denoise (soft 4-tap blend)
+                if (uDenoise > 0.0) {
+                    vec3 soft = boxBlur4(uTexSampler, vTextureCoord, uTexelSize);
+                    c = mix(c, soft, uDenoise * 0.85);
+                }
+
+                // 13. Sharpness (4-tap unsharp mask)
+                if (uSharpness > 0.0) {
+                    vec3 soft = boxBlur4(uTexSampler, vTextureCoord, uTexelSize);
+                    c = c + (c - soft) * (uSharpness * 1.6);
+                }
+
+                // 14. Film grain
+                if (uGrain > 0.0) {
+                    float g = hash12(vTextureCoord * vec2(1920.0, 1080.0)) - 0.5;
+                    c += vec3(g * uGrain * 0.28);
+                }
+
+                // 15. Fade (washed film look: lift blacks, slight desat)
+                if (uFade > 0.0) {
+                    float lumaF = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                    c = mix(c, vec3(lumaF), uFade * 0.25);
+                    c = c * (1.0 - uFade * 0.22) + vec3(uFade * 0.16);
+                }
+
+                // 16. HDR+ dynamic tone-mapping boost
                 if (uHdr > 0.0) {
                     vec3 toneMapped = c / (c + vec3(1.0));
                     vec3 boosted = mix(c, toneMapped * 1.8, uHdr * 0.7);
                     c = mix(c, boosted, uHdr);
                 }
 
-                // 8. Brilliance midtone expansion
+                // 17. Brilliance midtone expansion
                 if (uBrilliance != 0.0) {
                     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
                     float midtoneWeight = 1.0 - abs(luma - 0.5) * 2.0;

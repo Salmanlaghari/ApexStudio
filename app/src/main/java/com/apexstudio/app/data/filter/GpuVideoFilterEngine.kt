@@ -124,6 +124,15 @@ class GpuVideoFilterEngine(private val context: Context) {
     /**
      * Constructs a composite [GPUImageFilterGroup] incorporating LUT color grading,
      * fine color adjustments, and stylistic shaders in an optimal pipeline sequence.
+     *
+     * Pipeline order mirrors the Media3 shader
+     * ([com.apexstudio.app.data.adjust.AdjustmentsGlEffect]) step-for-step
+     * (exposure -> brightness -> lightness -> contrast -> whites/blacks ->
+     * highlights/shadows -> clarity -> saturation -> hue -> temp/tint ->
+     * vignette -> denoise -> sharpness -> grain) so the GPUImage preview and
+     * the Media3 export render the same image (WYSIWYG). Gamma/vibrance have
+     * no shader counterpart and sit between hue and vignette without
+     * disturbing the relative order of the shared ops.
      */
     fun buildFilterGroup(config: GpuFilterConfig, lutBitmap: Bitmap? = null): GPUImageFilterGroup {
         val filterList = mutableListOf<GPUImageFilter>()
@@ -135,94 +144,109 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(lookupFilter)
         }
 
-        // 2. Parametric Color Grading Adjustments
-        if (config.temperature != 5000f || config.tint != 0f) {
-            filterList.add(GPUImageWhiteBalanceFilter(config.temperature, config.tint))
-        }
-
+        // 2. Exposure (shader step 1)
         if (config.exposure != 0f) {
             filterList.add(GPUImageExposureFilter(config.exposure.coerceIn(-2f, 2f)))
         }
 
+        // 3. Brightness (shader step 2)
         if (config.brightness != 0f) {
             filterList.add(GPUImageBrightnessFilter(config.brightness.coerceIn(-1f, 1f)))
         }
 
-        // Video Adjustments v2: Lightness (midtone lift, distinct from brightness)
+        // 4. Lightness: midtone lift, distinct from brightness (shader step 3)
         if (config.lightness != 0f) {
             filterList.add(GPUImageLightnessFilter(config.lightness.coerceIn(-1f, 1f)))
         }
 
+        // 5. Contrast (shader step 4)
         if (config.contrast != 1.0f) {
             filterList.add(GPUImageContrastFilter(config.contrast.coerceIn(0.1f, 2.5f)))
         }
 
-        // Video Adjustments v2: Whites / Blacks via levels.
+        // 6. Whites / Blacks via levels (shader step 5).
+        // Same maths as the Media3 shader: bIn/bOut/wIn/wOut with the
+        // identical 0.3 scale, plus the same degenerate-range guard so
+        // the input range can never collapse (the shader bypasses the
+        // remap; here we clamp wIn above bIn + epsilon, which is the
+        // closest the levels filter can express).
         // Positive whites expand the highlight range (lower white input
         // point); negative whites compress it. Positive blacks crush the
         // shadows (raise black input point); negative blacks lift them.
         if (config.whites != 0f || config.blacks != 0f) {
             val w = config.whites.coerceIn(-1f, 1f)
             val b = config.blacks.coerceIn(-1f, 1f)
+            val bIn = maxOf(b, 0f) * 0.3f
+            val bOut = maxOf(-b, 0f) * 0.3f
+            val wIn = maxOf(1f - maxOf(w, 0f) * 0.3f, bIn + 0.001f)
+            val wOut = 1f + minOf(w, 0f) * 0.3f
             val levels = GPUImageLevelsFilter()
-            val minIn = (maxOf(b, 0f) * 0.3f).coerceIn(0f, 0.9f)
-            val minOut = (maxOf(-b, 0f) * 0.3f).coerceIn(0f, 0.9f)
-            val maxIn = (1f - maxOf(w, 0f) * 0.3f).coerceIn(0.1f, 1f)
-            val maxOut = (1f + minOf(w, 0f) * 0.3f).coerceIn(0.1f, 1f)
-            levels.setMin(minIn, 1.0f, maxIn, minOut, maxOut)
+            levels.setMin(bIn, 1.0f, wIn, bOut, wOut)
             filterList.add(levels)
         }
 
-        if (config.saturation != 1.0f) {
-            filterList.add(GPUImageSaturationFilter(config.saturation.coerceIn(0f, 2.5f)))
-        }
-
-        // Video Adjustments v2: Hue rotation in degrees (-180..180)
-        if (config.hue != 0f) {
-            filterList.add(GPUImageHueFilter(config.hue.coerceIn(-180f, 180f)))
-        }
-
-        if (config.gamma != 1.0f) {
-            filterList.add(GPUImageGammaFilter(config.gamma.coerceIn(0.2f, 3.0f)))
-        }
-
+        // 7. Highlights / Shadows (shader step 6)
         if (config.shadows != 0f || config.highlights != 1.0f) {
             filterList.add(GPUImageHighlightShadowFilter(config.shadows.coerceIn(0f, 1f), config.highlights.coerceIn(0f, 1f)))
         }
 
-        // Video Adjustments v2: Clarity (midtone-localised contrast)
+        // 8. Clarity: midtone-localised contrast (shader step 7)
         if (config.clarity != 0f) {
             filterList.add(GPUImageClarityFilter(config.clarity.coerceIn(-1f, 1f)))
+        }
+
+        // 9. Saturation (shader step 8)
+        if (config.saturation != 1.0f) {
+            filterList.add(GPUImageSaturationFilter(config.saturation.coerceIn(0f, 2.5f)))
+        }
+
+        // 10. Hue rotation in degrees (shader step 9)
+        if (config.hue != 0f) {
+            filterList.add(GPUImageHueFilter(config.hue.coerceIn(-180f, 180f)))
+        }
+
+        // 11. Temperature & Tint (shader step 10)
+        if (config.temperature != 5000f || config.tint != 0f) {
+            filterList.add(GPUImageWhiteBalanceFilter(config.temperature, config.tint))
+        }
+
+        // Gamma / Vibrance: GPUImage-only extras, no shader counterpart.
+        if (config.gamma != 1.0f) {
+            filterList.add(GPUImageGammaFilter(config.gamma.coerceIn(0.2f, 3.0f)))
         }
 
         if (config.vibrance != 0f) {
             filterList.add(GPUImageVibranceFilter(config.vibrance.coerceIn(-1f, 1f)))
         }
 
-        // Video Adjustments v2: parametric Detail filters.
-        // (Vignette/Sharpen also exist as stylistic effects; these
-        // parametric versions are driven by the Adjust UI sliders.)
+        // 12. Vignette: parametric border shading (shader step 11).
+        // GPUImageVignetteFilter expects end <= 1.0 (larger values are
+        // undefined), so the radius is clamped.
         if (config.vignette != 0f) {
             val v = config.vignette.coerceIn(0f, 1f)
             val center = PointF(0.5f, 0.5f)
             val color = floatArrayOf(0.0f, 0.0f, 0.0f)
             val start = (0.85f - v * 0.45f).coerceAtLeast(0.1f)
-            val end = (1.5f - v * 0.5f).coerceAtLeast(start + 0.1f)
+            val end = (1.5f - v * 0.5f).coerceAtLeast(start + 0.1f).coerceAtMost(1.0f)
             filterList.add(GPUImageVignetteFilter(center, color, start, end))
         }
 
-        if (config.sharpness != 0f) {
-            filterList.add(GPUImageSharpenFilter(config.sharpness.coerceIn(0f, 1f) * 3.0f))
+        // 13. Denoise (shader step 12): 4-tap blend mirroring the Media3
+        // shader's tap weights and x0.85 blend factor (WYSIWYG).
+        if (config.denoise != 0f) {
+            filterList.add(GPUImageDenoiseFilter(config.denoise.coerceIn(0f, 1f)))
         }
 
+        // 14. Sharpness (shader step 13): 4-tap unsharp mask mirroring the
+        // Media3 shader's kernel and x1.6 scaling.
+        if (config.sharpness != 0f) {
+            filterList.add(GPUImageSharpnessFilter(config.sharpness.coerceIn(0f, 1f)))
+        }
+
+        // 15. Film grain (shader step 14): same hash12 at the actual
+        // output resolution as the Media3 shader.
         if (config.grain != 0f) {
             filterList.add(GPUImageGrainFilter(config.grain.coerceIn(0f, 1f)))
-        }
-
-        // Video Adjustments v2: basic edge-preserving denoise.
-        if (config.denoise != 0f) {
-            val d = config.denoise.coerceIn(0f, 1f)
-            filterList.add(GPUImageBilateralBlurFilter(1.0f + d * 4.0f))
         }
 
         // 3. Artistic Stylistic Effects
@@ -254,7 +278,8 @@ class GpuVideoFilterEngine(private val context: Context) {
                 val center = PointF(0.5f, 0.5f)
                 val color = floatArrayOf(0.0f, 0.0f, 0.0f)
                 val start = (0.85f - clampedIntensity * 0.45f).coerceAtLeast(0.1f)
-                val end = (1.5f - clampedIntensity * 0.5f).coerceAtLeast(start + 0.1f)
+                // end <= 1.0: larger values are undefined in the vignette shader.
+                val end = (1.5f - clampedIntensity * 0.5f).coerceAtLeast(start + 0.1f).coerceAtMost(1.0f)
                 GPUImageVignetteFilter(center, color, start, end)
             }
 

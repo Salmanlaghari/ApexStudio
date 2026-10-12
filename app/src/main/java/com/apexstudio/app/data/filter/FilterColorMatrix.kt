@@ -387,7 +387,8 @@ object FilterColorMatrix {
         intensity: Float = 0f,
         adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         fxId: String? = null,
-        fxIntensity: Float = 0f
+        fxIntensity: Float = 0f,
+        includeLightness: Boolean = true
     ): FloatArray {
         val matrix = getInterpolatedMatrix(filterId, intensity).copyOf()
 
@@ -399,10 +400,14 @@ object FilterColorMatrix {
             matrix[14] += bOffset
         }
 
-        // 1b. Lightness (Video Adjustments v2): midtone lift approximated
-        // as a gentler additive offset on the CPU thumbnail path. The GPU
-        // paths (GPUImage/Media3) use the true midtone-weighted version.
-        if (adjustments.lightness != 0f) {
+        // 1b. Lightness (Video Adjustments v2): a 4x5 ColorMatrix is
+        // linear, so it can only approximate the true midtone-weighted
+        // lift as a gentler additive offset. Matrix-only consumers
+        // (ColorMatrixGlEffect) use this approximation; the CPU photo
+        // path passes includeLightness = false and applies the true
+        // per-pixel midtone lift instead (see
+        // PhotoEditRenderer.applyLightnessLift), matching the GPU maths.
+        if (includeLightness && adjustments.lightness != 0f) {
             val lOffset = adjustments.lightness * 55f
             matrix[4] += lOffset
             matrix[9] += lOffset

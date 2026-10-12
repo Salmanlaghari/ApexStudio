@@ -138,6 +138,10 @@ class AdjustmentsGlEffect(
         private var fade: Float = adjustments.fade
         private var texelWidth: Float = 0f
         private var texelHeight: Float = 0f
+        // Actual input resolution for the grain pattern (>= 1, guarded
+        // in configure() — never hardcoded to 1920x1080).
+        private var inputResW: Float = 1f
+        private var inputResH: Float = 1f
 
         init {
             glProgram = try {
@@ -163,8 +167,14 @@ class AdjustmentsGlEffect(
         }
 
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
+            // Guard against zero dimensions: a zero texel would collapse
+            // every denoise/sharpness tap onto the center pixel. The
+            // spatial strengths are zeroed in drawFrame() when the texel
+            // is invalid, so the failure mode is explicit, not silent.
             texelWidth = if (inputWidth > 0) 1f / inputWidth else 0f
             texelHeight = if (inputHeight > 0) 1f / inputHeight else 0f
+            inputResW = inputWidth.coerceAtLeast(1).toFloat()
+            inputResH = inputHeight.coerceAtLeast(1).toFloat()
             return Size(inputWidth, inputHeight)
         }
 
@@ -192,6 +202,11 @@ class AdjustmentsGlEffect(
                 sharpnessProvider?.let { sharpness = it() }
                 fadeProvider?.let { fade = it() }
 
+                // A zero input dimension yields a zero texel (see
+                // configure()); disable the spatial ops explicitly rather
+                // than letting every tap collapse onto the center pixel.
+                val spatialValid = texelWidth > 0f && texelHeight > 0f
+
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.setFloatUniform("uBrightness", brightness)
@@ -211,10 +226,11 @@ class AdjustmentsGlEffect(
                 glProgram.setFloatUniform("uVignette", vignette)
                 glProgram.setFloatUniform("uGrain", grain)
                 glProgram.setFloatUniform("uClarity", clarity)
-                glProgram.setFloatUniform("uDenoise", denoise)
-                glProgram.setFloatUniform("uSharpness", sharpness)
+                glProgram.setFloatUniform("uDenoise", if (spatialValid) denoise else 0f)
+                glProgram.setFloatUniform("uSharpness", if (spatialValid) sharpness else 0f)
                 glProgram.setFloatUniform("uFade", fade)
                 glProgram.setFloatsUniform("uTexelSize", floatArrayOf(texelWidth, texelHeight))
+                glProgram.setFloatsUniform("uResolution", floatArrayOf(inputResW, inputResH))
                 glProgram.bindAttributesAndUniforms()
                 android.opengl.GLES20.glDrawArrays(
                     android.opengl.GLES20.GL_TRIANGLE_STRIP, 0, 4
@@ -263,9 +279,15 @@ class AdjustmentsGlEffect(
          *  - uVignette: 0..1 border shading
          *  - uGrain: 0..1 film grain
          *  - uClarity: -1..1 midtone-localised contrast
-         *  - uDenoise: 0..1 (4-tap soft blend)
-         *  - uSharpness: 0..1 (4-tap unsharp mask)
+         *  - uDenoise: 0..1 (4-tap soft blend; every tap runs through the
+         *    adjusted color chain — see applyColorChain)
+         *  - uSharpness: 0..1 (4-tap unsharp mask, same adjusted taps)
+         *  - uGrain: 0..1 film grain (hash scaled by uResolution)
          *  - uFade: 0..1 (washed film look)
+         *  - uTexelSize: 1/inputWidth, 1/inputHeight (0,0 when invalid —
+         *    spatial ops are then disabled from Kotlin, see drawFrame)
+         *  - uResolution: actual input resolution driving the grain hash
+         *    (never hardcoded)
          */
         private val FRAGMENT_SHADER = """
             precision highp float;
@@ -292,6 +314,7 @@ class AdjustmentsGlEffect(
             uniform float uSharpness;
             uniform float uFade;
             uniform vec2 uTexelSize;
+            uniform vec2 uResolution;
 
             vec3 applyContrast(vec3 c, float k) {
                 // Same formula as Android ColorMatrix contrast: scale
@@ -338,18 +361,13 @@ class AdjustmentsGlEffect(
                 return vec3(dot(c, r), dot(c, g), dot(c, b));
             }
 
-            vec3 boxBlur4(sampler2D tex, vec2 uv, vec2 px) {
-                vec3 c = texture2D(tex, uv).rgb * 0.4;
-                c += texture2D(tex, uv + vec2(px.x, 0.0)).rgb * 0.15;
-                c += texture2D(tex, uv - vec2(px.x, 0.0)).rgb * 0.15;
-                c += texture2D(tex, uv + vec2(0.0, px.y)).rgb * 0.15;
-                c += texture2D(tex, uv - vec2(0.0, px.y)).rgb * 0.15;
-                return c;
-            }
-
-            void main() {
-                vec4 src = texture2D(uTexSampler, vTextureCoord);
-                vec3 c = src.rgb;
+            // Full per-pixel color chain (steps 1-11, then 15-17 below).
+            // Denoise and sharpness run every neighbour tap through this
+            // same function, so the spatial ops sample the GRADED image
+            // rather than the raw texture (single-pass correct — no extra
+            // FBO needed). Cost: 5x the color chain, but only while
+            // denoise/sharpness are active (guarded in main()).
+            vec3 applyColorChain(vec3 c) {
 
                 // 1. Exposure (multiplicative, in stops)
                 float expScale = pow(2.0, uExposure);
@@ -366,13 +384,18 @@ class AdjustmentsGlEffect(
                 // 4. Contrast (multiplicative around 0.5)
                 c = applyContrast(c, uContrast);
 
-                // 5. Whites / Blacks (levels remap)
+                // 5. Whites / Blacks (levels remap). When whites+blacks
+                // collapse the input range the mapping is degenerate:
+                // bypass the remap instead of dividing by a tiny epsilon
+                // (which would amplify noise ~1000x before the clamp).
                 float bIn = max(uBlacks, 0.0) * 0.3;
                 float bOut = max(-uBlacks, 0.0) * 0.3;
                 float wIn = 1.0 - max(uWhites, 0.0) * 0.3;
                 float wOut = 1.0 + min(uWhites, 0.0) * 0.3;
-                c = (c - vec3(bIn)) / max(wIn - bIn, 0.001);
-                c = vec3(bOut) + c * (wOut - bOut);
+                if (wIn - bIn > 0.0001) {
+                    c = (c - vec3(bIn)) / (wIn - bIn);
+                    c = vec3(bOut) + c * (wOut - bOut);
+                }
 
                 // 6. Highlights / Shadows
                 c = applyHighlightsShadows(c, uHighlights, uShadows);
@@ -405,24 +428,6 @@ class AdjustmentsGlEffect(
                     c *= 1.0 - uVignette * smoothstep(0.25, 0.85, d);
                 }
 
-                // 12. Denoise (soft 4-tap blend)
-                if (uDenoise > 0.0) {
-                    vec3 soft = boxBlur4(uTexSampler, vTextureCoord, uTexelSize);
-                    c = mix(c, soft, uDenoise * 0.85);
-                }
-
-                // 13. Sharpness (4-tap unsharp mask)
-                if (uSharpness > 0.0) {
-                    vec3 soft = boxBlur4(uTexSampler, vTextureCoord, uTexelSize);
-                    c = c + (c - soft) * (uSharpness * 1.6);
-                }
-
-                // 14. Film grain
-                if (uGrain > 0.0) {
-                    float g = hash12(vTextureCoord * vec2(1920.0, 1080.0)) - 0.5;
-                    c += vec3(g * uGrain * 0.28);
-                }
-
                 // 15. Fade (washed film look: lift blacks, slight desat)
                 if (uFade > 0.0) {
                     float lumaF = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -442,6 +447,42 @@ class AdjustmentsGlEffect(
                     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
                     float midtoneWeight = 1.0 - abs(luma - 0.5) * 2.0;
                     c += vec3(uBrilliance * 0.25 * midtoneWeight);
+                }
+
+                return c;
+            }
+
+            void main() {
+                vec4 src = texture2D(uTexSampler, vTextureCoord);
+
+                // 12/13. Denoise (soft 4-tap blend) + sharpness (4-tap
+                // unsharp mask). Every tap runs through applyColorChain,
+                // so both ops work on the ADJUSTED color — never on the
+                // raw texture. This mirrors the GPUImage engine, where
+                // each filter stage samples the previous stage's output.
+                vec3 c;
+                if (uDenoise > 0.0 || uSharpness > 0.0) {
+                    vec3 t0 = applyColorChain(src.rgb);
+                    vec3 t1 = applyColorChain(texture2D(uTexSampler, vTextureCoord + vec2(uTexelSize.x, 0.0)).rgb);
+                    vec3 t2 = applyColorChain(texture2D(uTexSampler, vTextureCoord - vec2(uTexelSize.x, 0.0)).rgb);
+                    vec3 t3 = applyColorChain(texture2D(uTexSampler, vTextureCoord + vec2(0.0, uTexelSize.y)).rgb);
+                    vec3 t4 = applyColorChain(texture2D(uTexSampler, vTextureCoord - vec2(0.0, uTexelSize.y)).rgb);
+                    vec3 soft = t0 * 0.4 + (t1 + t2 + t3 + t4) * 0.15;
+                    c = t0;
+                    if (uDenoise > 0.0) {
+                        c = mix(c, soft, uDenoise * 0.85);
+                    }
+                    if (uSharpness > 0.0) {
+                        c = c + (c - soft) * (uSharpness * 1.6);
+                    }
+                } else {
+                    c = applyColorChain(src.rgb);
+                }
+
+                // 14. Film grain, hashed at the actual input resolution.
+                if (uGrain > 0.0) {
+                    float g = hash12(vTextureCoord * uResolution) - 0.5;
+                    c += vec3(g * uGrain * 0.28);
                 }
 
                 gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);

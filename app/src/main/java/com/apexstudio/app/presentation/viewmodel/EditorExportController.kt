@@ -79,7 +79,9 @@ fun EditorViewModel.startExport(
                 rotationDeg = ov.pipRotationDeg,
                 opacity = (ov.pipOpacity *
                         ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
-                    .coerceIn(0f, 1f)
+                    .coerceIn(0f, 1f),
+                // Shape mask (Mask tool) on the overlay clip.
+                mask = ov.mask
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -115,6 +117,8 @@ fun EditorViewModel.startExport(
             clipSpeed = speed,
             keyframes = selected?.keyframes ?: KeyframeTrack(),
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
+            // Shape mask (Mask tool) on the main clip.
+            mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             stickers = stickers,
             trimStartMs = selected?.trimStartMs ?: 0L,
@@ -278,7 +282,9 @@ fun EditorViewModel.startPhotoExport(
                         rotationDeg = ov.pipRotationDeg,
                         opacity = (ov.pipOpacity *
                                 ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
-                            .coerceIn(0f, 1f)
+                            .coerceIn(0f, 1f),
+                        // Shape mask (Mask tool) on the overlay clip.
+                        mask = ov.mask
                     )
                 }
             // Phase 4: gl-transitions shaders ride as transitionGlId.
@@ -301,6 +307,8 @@ fun EditorViewModel.startPhotoExport(
                     adjustments = VideoAdjustments(),
                     cropRect = null,
                     clipSpeed = clip.speedMultiplier,
+                    // Shape mask (Mask tool) on the photo clip.
+                    mask = clip.mask,
                     keyframes = clip.keyframes,
                     fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
                     fxIntensity = s.fxIntensity,

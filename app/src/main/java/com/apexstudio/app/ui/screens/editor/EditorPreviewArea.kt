@@ -84,6 +84,15 @@ fun VideoPreviewArea(
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onTapVideo: () -> Unit = {},
+    // Shape mask (Mask tool) on the main video clip. Rendered as a
+    // scrim-with-hole overlay so the user sees the kept region;
+    // [maskEditMode] enables drag-to-move/resize directly on the preview.
+    mask: com.apexstudio.app.domain.model.VideoMask? = null,
+    maskEditMode: Boolean = false,
+    onMaskCenterLive: (x: Float, y: Float) -> Unit = { _, _ -> },
+    onMaskCenterFinished: (x: Float, y: Float) -> Unit = { _, _ -> },
+    onMaskSizeLive: (sx: Float, sy: Float) -> Unit = { _, _ -> },
+    onMaskSizeFinished: (sx: Float, sy: Float) -> Unit = { _, _ -> },
     // Photo-clip editing (PR F). When non-null the selected clip is a
     // still image: it is rendered by PhotoClipPreview with its
     // PhotoEditSettings instead of the ExoPlayer surface.
@@ -209,6 +218,19 @@ fun VideoPreviewArea(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+
+            // Shape mask (Mask tool): darken everything outside the mask
+            // shape so the kept region is visible; drag to move/resize
+            // while the mask panel is open.
+            MaskPreviewOverlay(
+                mask = mask,
+                editMode = maskEditMode,
+                onCenterChangeLive = onMaskCenterLive,
+                onCenterChangeFinished = onMaskCenterFinished,
+                onSizeChangeLive = onMaskSizeLive,
+                onSizeChangeFinished = onMaskSizeFinished,
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         // Mockup: "REC • 00:20 / 00:25" time pill, top-left inside the preview.

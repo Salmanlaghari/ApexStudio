@@ -127,6 +127,8 @@ class ExportEngine(private val context: Context) {
         val bassBoostStrength: Short = 0,
         // Picture-in-Picture overlays: composited in the export to match preview.
         val pipOverlays: List<PipOverlayConfig> = emptyList(),
+        // Shape mask (Mask tool) on the main clip. Null = no mask.
+        val mask: com.apexstudio.app.domain.model.VideoMask? = null,
         // Timeline music: unmuted extra audio tracks are decoded and mixed over
         // the exported audio after the Transformer pass (see MusicExportMixer),
         // so added music is actually audible in the exported video. Empty = no-op.
@@ -153,7 +155,9 @@ class ExportEngine(private val context: Context) {
         val centerX: Float = 0.85f,
         val centerY: Float = 0.85f,
         val rotationDeg: Float = 0f,
-        val opacity: Float = 1f
+        val opacity: Float = 1f,
+        // Shape mask (Mask tool) on this overlay clip. Null = no mask.
+        val mask: com.apexstudio.app.domain.model.VideoMask? = null
     )
 
     /**
@@ -228,7 +232,8 @@ class ExportEngine(private val context: Context) {
                                 centerX = pip.centerX,
                                 centerY = pip.centerY,
                                 rotationDeg = pip.rotationDeg,
-                                opacity = pip.opacity
+                                opacity = pip.opacity,
+                                mask = pip.mask
                             )
                         )
                     } catch (e: Exception) {
@@ -281,6 +286,13 @@ class ExportEngine(private val context: Context) {
                             .build()
                     )
                 }
+
+                // 1.6 Shape mask (Mask tool): applied to the source frame
+                // right after geometry, before any colour work, so the
+                // mask matches what MaskPreviewOverlay showed in the
+                // editor. Null/enabled-off = no-op.
+                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(config.mask)
+                    ?.let { videoEffects.add(it) }
 
                 // 2. Color Filter (3D LUT) & Video Adjustments
                 if (config.filterPreset != null && config.filterIntensity > 0f) {

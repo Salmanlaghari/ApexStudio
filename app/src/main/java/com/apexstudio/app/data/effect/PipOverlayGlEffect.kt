@@ -49,7 +49,8 @@ class PipOverlayGlEffect(
     private val centerX: Float = 0.85f,
     private val centerY: Float = 0.85f,
     private val rotationDeg: Float = 0f,
-    private val opacity: Float = 1f
+    private val opacity: Float = 1f,
+    private val mask: com.apexstudio.app.domain.model.VideoMask? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -64,6 +65,7 @@ class PipOverlayGlEffect(
             centerY = centerY,
             rotationDeg = rotationDeg,
             opacity = opacity,
+            mask = mask,
             useHdr = useHdr
         )
     }
@@ -80,6 +82,7 @@ class PipOverlayGlEffect(
         private val centerY: Float,
         private val rotationDeg: Float,
         private val opacity: Float,
+        private val mask: com.apexstudio.app.domain.model.VideoMask?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY),
         SurfaceTexture.OnFrameAvailableListener {
@@ -130,6 +133,25 @@ class PipOverlayGlEffect(
                 0.5f, 0.5f, 0f, 1f
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
+
+            // Shape mask (Mask tool) on the overlay: static for the
+            // life of this effect instance. Mask coords are normalised
+            // to the overlay's own frame (top-left origin) — the same
+            // space as pipUv below and the preview's PiP box.
+            val m = mask
+            val maskEnabled = m != null && m.enabled && m.opacity > 0.001f
+            val shapeId = when (m?.shape) {
+                com.apexstudio.app.domain.model.MaskShape.RECTANGLE -> 0f
+                com.apexstudio.app.domain.model.MaskShape.LINEAR -> 2f
+                else -> 1f
+            }
+            glProgram.setFloatsUniform("uMaskCenter", floatArrayOf(m?.centerX ?: 0.5f, m?.centerY ?: 0.5f))
+            glProgram.setFloatsUniform("uMaskSize", floatArrayOf(m?.sizeX ?: 1f, m?.sizeY ?: 1f))
+            glProgram.setFloatsUniform("uMaskFeather", floatArrayOf((m?.feather ?: 0f).coerceIn(0f, 1f)))
+            glProgram.setFloatsUniform("uMaskInvert", floatArrayOf(if (m?.invert == true) 1f else 0f))
+            glProgram.setFloatsUniform("uMaskOpacity", floatArrayOf((m?.opacity ?: 1f).coerceIn(0f, 1f)))
+            glProgram.setFloatsUniform("uMaskShape", floatArrayOf(shapeId))
+            glProgram.setFloatsUniform("uMaskEnabled", floatArrayOf(if (maskEnabled) 1f else 0f))
 
             try {
                 setupDecoder()
@@ -536,6 +558,47 @@ class PipOverlayGlEffect(
             uniform float uPipAngle; // radians, clockwise-positive
             uniform float uPipOpacity;
             uniform float uPipEnabled;
+            uniform vec2 uMaskCenter;   // overlay-frame normalised, top-left origin
+            uniform vec2 uMaskSize;     // full width/height, 0..1
+            uniform float uMaskFeather; // 0..1
+            uniform float uMaskInvert;  // 0 or 1
+            uniform float uMaskOpacity; // 0..1
+            uniform float uMaskShape;   // 0 = rect, 1 = ellipse, 2 = linear
+            uniform float uMaskEnabled; // 0 or 1
+
+            // Shape-mask factor for the overlay's own frame (pipUv space,
+            // top-left origin). The PiP box is always 16:9, so distances
+            // are aspect-corrected with 16/9 — the same geometry the
+            // preview canvas uses. LINEAR is a vertical wipe: the line
+            // sits at uMaskCenter.x, the left side is kept, uMaskSize.x
+            // sets the transition width.
+            float pipMaskFactor(vec2 uv) {
+                if (uMaskEnabled < 0.5) return 1.0;
+                float aspect = 16.0 / 9.0;
+                float m;
+                if (uMaskShape < 1.5) {
+                    vec2 q = (uv - uMaskCenter) * vec2(aspect, 1.0);
+                    vec2 half_ = uMaskSize * 0.5 * vec2(aspect, 1.0);
+                    float dist;
+                    if (uMaskShape < 0.5) {
+                        vec2 d = abs(q) - half_;
+                        dist = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+                    } else {
+                        vec2 h = max(half_, vec2(1e-4));
+                        dist = (length(q / h) - 1.0) * min(h.x, h.y);
+                    }
+                    float featherW = max(uMaskFeather * 0.3, 1e-4);
+                    m = 1.0 - smoothstep(-featherW, 0.0, dist);
+                } else {
+                    float fw = max(uMaskSize.x * 0.5, 1e-4);
+                    float d = (uv.x - uMaskCenter.x) / fw;
+                    float featherW = max(uMaskFeather, 1e-4);
+                    m = 1.0 - smoothstep(-featherW, 0.0, d);
+                }
+                if (uMaskInvert > 0.5) m = 1.0 - m;
+                return m * uMaskOpacity;
+            }
+
             void main() {
                 vec4 video = texture2D(uTexSampler, vTextureCoord);
                 if (uPipEnabled < 0.5) {
@@ -568,7 +631,7 @@ class PipOverlayGlEffect(
                         vec4 pip = uPipIsImage > 0.5
                             ? texture2D(uPipImageSampler, pipUv)
                             : texture2D(uPipSampler, pipUv);
-                        float a = uPipOpacity;
+                        float a = uPipOpacity * pipMaskFactor(pipUv);
                         vec3 outRgb = pip.rgb * a + video.rgb * (1.0 - a);
                         outColor = vec4(outRgb, video.a);
                     }

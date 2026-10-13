@@ -17,6 +17,7 @@ import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,11 +39,17 @@ class EditorViewModel(
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
     /**
-     * Phase 4: auto-caption UI state (Vosk). Instance-scoped so it can't
+     * Auto-caption UI state (Whisper). Instance-scoped so it can't
      * bleed between editors (multi-window / tests).
      */
     internal val _captionUi = MutableStateFlow(CaptionUiState())
     val captionUi: StateFlow<CaptionUiState> = _captionUi.asStateFlow()
+
+    /**
+     * In-flight auto-caption transcription job (Whisper). Cancelled when
+     * the user taps Cancel, switches language, or leaves the editor.
+     */
+    internal var captionJob: Job? = null
 
     /**
      * 60fps-safe playhead position stream. The timeline playhead collects

@@ -23,6 +23,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Download
+import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.data.packs.download.PackManager
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
@@ -127,6 +130,8 @@ fun TextPanel(
     captionUiState: CaptionUiState = CaptionUiState(),
     onAutoCaptions: () -> Unit = {},
     onClearCaptions: () -> Unit = {},
+    onCaptionLanguageChange: (String) -> Unit = {},
+    onCancelCaptions: () -> Unit = {},
     hasAutoCaptions: Boolean = false
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
@@ -1092,6 +1097,8 @@ fun TextPanel(
                     captionUiState = captionUiState,
                     onAutoCaptions = onAutoCaptions,
                     onClearCaptions = onClearCaptions,
+                    onLanguageChange = onCaptionLanguageChange,
+                    onCancelCaptions = onCancelCaptions,
                     hasAutoCaptions = hasAutoCaptions
                 )
             }
@@ -1168,14 +1175,16 @@ private fun pillOptions(): List<Pair<String, Long?>> = listOf(
 )
 
 /**
- * Phase 4: Auto-captions tab (Vosk offline STT, Apache-2.0).
- * Every state is surfaced — no dead buttons.
+ * AI auto-captions tab: on-device Whisper (tiny, multilingual) via
+ * PackManager. Every state is surfaced — no dead buttons.
  */
 @Composable
 private fun AutoCaptionsTab(
     captionUiState: CaptionUiState,
     onAutoCaptions: () -> Unit,
     onClearCaptions: () -> Unit,
+    onLanguageChange: (String) -> Unit,
+    onCancelCaptions: () -> Unit,
     hasAutoCaptions: Boolean
 ) {
     Column(
@@ -1199,19 +1208,73 @@ private fun AutoCaptionsTab(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Listens to this clip's audio on-device and creates timed lower-third captions. " +
-                        "First use downloads a 40MB speech model once. English speech works best.",
+                    "Whisper AI listens to this clip's audio on-device and creates timed " +
+                        "lower-third captions. First use downloads the speech model " +
+                        "(~103MB in 3 parts, once). Urdu, Hindi and English work best.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
                 )
             }
         }
 
+        // Language selector: Auto (detect) + Prince's languages first.
+        val langOptions = listOf(
+            WhisperCaptionEngine.LANG_AUTO to "Auto",
+            "ur" to "اردو",
+            "hi" to "हिन्दी",
+            "en" to "English"
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Language",
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            langOptions.forEach { (code, label) ->
+                val isSel = captionUiState.language == code
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.18f)
+                            else ApexPalette.BgElevated
+                        )
+                        .border(
+                            1.dp,
+                            if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            RoundedCornerShape(16.dp)
+                        )
+                        .clickable { onLanguageChange(code) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
         val phase = captionUiState.phase
-        val busy = phase == CaptionPhase.DOWNLOADING_MODEL || phase == CaptionPhase.TRANSCRIBING
+        val busy = phase == CaptionPhase.TRANSCRIBING
+
+        if (phase == CaptionPhase.NEED_DOWNLOAD) {
+            // Model pack prompt — routed through PackManager (PR-C pattern).
+            WhisperPackDownloadCard(
+                onDownloaded = onAutoCaptions
+            )
+        }
 
         if (busy) {
-            // Progress state — never a dead button.
+            // Progress state — cancellable, never a dead button.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1239,8 +1302,21 @@ private fun AutoCaptionsTab(
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
                 )
+                OutlinedButton(
+                    onClick = onCancelCaptions,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, ApexPalette.TextSecondary.copy(alpha = 0.5f)
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = ApexPalette.TextSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(38.dp)
+                ) {
+                    Text("Cancel", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
-        } else {
+        } else if (phase != CaptionPhase.NEED_DOWNLOAD) {
             Button(
                 onClick = onAutoCaptions,
                 shape = RoundedCornerShape(12.dp),
@@ -1304,6 +1380,144 @@ private fun AutoCaptionsTab(
                 Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Clear Auto Captions", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+/**
+ * Whisper model download prompt. The model ships as 3 file packs
+ * (encoder / decoder / tokens — one URL per pack is all PackManager
+ * supports); this card downloads the missing ones, shows combined
+ * progress, and fires [onDownloaded] when all 3 land so transcription
+ * starts without another tap. No dead buttons: every pack state has a
+ * working action.
+ */
+@Composable
+private fun WhisperPackDownloadCard(
+    onDownloaded: () -> Unit
+) {
+    val context = LocalContext.current
+    val packs by PackManager.packsState.collectAsState()
+    val items = WhisperCaptionEngine.PACK_IDS.mapNotNull { id ->
+        packs.find { it.pack.id == id }
+    }
+    val allDownloaded = items.size == WhisperCaptionEngine.PACK_IDS.size &&
+        items.all { it.state is PackManager.PackState.Downloaded }
+
+    // Auto-proceed once the full model is on disk.
+    LaunchedEffect(allDownloaded) {
+        if (allDownloaded) onDownloaded()
+    }
+
+    val downloading = items.filter { it.state is PackManager.PackState.Downloading }
+    val failed = items.filter { it.state is PackManager.PackState.Failed }
+    val totalBytes = items.sumOf { it.pack.sizeBytes }.coerceAtLeast(1L)
+    val doneBytes = items.sumOf { item ->
+        when (val s = item.state) {
+            is PackManager.PackState.Downloading -> s.doneBytes
+            is PackManager.PackState.Downloaded -> item.pack.sizeBytes
+            else -> 0L
+        }
+    }
+    val fraction = (doneBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
+
+    fun downloadMissing() {
+        WhisperCaptionEngine.PACK_IDS.forEach { id ->
+            val st = packs.find { it.pack.id == id }?.state
+            if (st !is PackManager.PackState.Downloaded &&
+                st !is PackManager.PackState.Downloading
+            ) {
+                PackManager.download(context, id)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            "AI Model Needed",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "Auto-captions run 100% on-device with the Whisper AI model " +
+                "(~103MB in 3 parts, one-time download, works offline afterwards).",
+            color = ApexPalette.TextSecondary,
+            fontSize = 11.sp
+        )
+        when {
+            downloading.isNotEmpty() -> {
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxWidth().height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = ApexPalette.NeonCyan,
+                    trackColor = Color(0xFF26334D)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Downloading model ${(fraction * 100).toInt()}%…",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 11.sp
+                    )
+                    androidx.compose.foundation.text.ClickableText(
+                        text = androidx.compose.ui.text.AnnotatedString("Cancel"),
+                        style = androidx.compose.ui.text.TextStyle(
+                            color = ApexPalette.TextSecondary, fontSize = 11.sp
+                        ),
+                        onClick = {
+                            WhisperCaptionEngine.PACK_IDS.forEach {
+                                PackManager.cancel(context, it)
+                            }
+                        }
+                    )
+                }
+            }
+            failed.isNotEmpty() -> {
+                Text(
+                    "Download failed: ${(failed.first().state as PackManager.PackState.Failed).reason}",
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 11.sp
+                )
+                Button(
+                    onClick = { downloadMissing() },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ApexPalette.NeonCyan,
+                        contentColor = Color.Black
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Text("Retry Download", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            else -> {
+                Button(
+                    onClick = { downloadMissing() },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ApexPalette.NeonCyan,
+                        contentColor = Color.Black
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Download AI Model (~103MB)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

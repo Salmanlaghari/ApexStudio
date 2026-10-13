@@ -84,17 +84,22 @@ fun EditorViewModel.moveTextOverlayAtPlayhead(
                 ) else it
             }
         } else {
-            // New keyframe at the playhead: capture the current
-            // interpolated look, then pin the new position.
-            val t = ov.keyframes.interpolateAt(playheadMs)
+            // New keyframe at the playhead: a drag is a POSITION gesture,
+            // so pin only the position. Scale/rotation/opacity stay neutral
+            // (the Keyframe defaults) — capturing the interpolated values
+            // here would bake in transient states the user never asked to
+            // keyframe (e.g. a mid-flight preset scale pop), and subsequent
+            // interpolation would animate toward that unintended pin.
+            // This mirrors the nearby-keyframe branch above, which also
+            // rewrites position only.
             kfs + Keyframe(
                 id = java.util.UUID.randomUUID().toString(),
                 timeMs = playheadMs,
                 translateX = cx - ov.x,
                 translateY = cy - ov.y,
-                scale = t.scale,
-                rotationDeg = t.rotationDeg,
-                opacity = t.opacity
+                scale = 1f,
+                rotationDeg = 0f,
+                opacity = 1f
             )
         }
         ov.copy(keyframes = KeyframeTrack(updated).sorted())

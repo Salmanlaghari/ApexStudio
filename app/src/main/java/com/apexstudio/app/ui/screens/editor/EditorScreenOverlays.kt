@@ -1442,22 +1442,36 @@ fun EditPackPanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-            val clipId = state.selectedClipId
-                ?: state.project?.clips?.firstOrNull()?.id
+            // The ACTUAL selected clip — never a silent fallback to the
+            // first clip. With no selection the panel disables its
+            // presets and says so: its header promises "applies to the
+            // selected clip", so it must not apply to anything else.
+            val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+            val clipId = selectedClip?.id
+            // Stable callbacks (remembered on clipId) so the panel skips
+            // recomposition on every 33ms playback tick — the old inline
+            // lambdas were new instances each tick, dragging the whole
+            // preset grid into the playback recomposition storm.
+            val onApplySpeedRamp: (String, Float, Float, Float?) -> Unit = remember(clipId) {
+                { _, start, end, fixed -> clipId?.let { vm.applyEditPackSpeed(it, start, end, fixed) } }
+            }
+            val onApplyFreeze: (String) -> Unit = remember(clipId) {
+                { clipId?.let { vm.applyEditPackFreeze(it) } }
+            }
+            val onApplySplitScreen: (String, SplitLayout) -> Unit = remember(clipId) {
+                { _, layout -> clipId?.let { vm.applyEditPackSplit(it, layout) } }
+            }
+            val onApplyZoom: (String, Boolean) -> Unit = remember(clipId) {
+                { _, zoomIn -> clipId?.let { vm.applyEditPackZoom(it, zoomIn) } }
+            }
+            val onClose: () -> Unit = remember { { vm.closeEditPackPanel() } }
             EditPackPanel(
-                onApplySpeedRamp = { _, start, end, fixed ->
-                    clipId?.let { vm.applyEditPackSpeed(it, start, end, fixed) }
-                },
-                onApplyFreeze = {
-                    clipId?.let { vm.applyEditPackFreeze(it) }
-                },
-                onApplySplitScreen = { _, layout ->
-                    clipId?.let { vm.applyEditPackSplit(it, layout) }
-                },
-                onApplyZoom = { _, zoomIn ->
-                    clipId?.let { vm.applyEditPackZoom(it, zoomIn) }
-                },
-                onClose = { vm.closeEditPackPanel() }
+                selectedClipName = selectedClip?.name,
+                onApplySpeedRamp = onApplySpeedRamp,
+                onApplyFreeze = onApplyFreeze,
+                onApplySplitScreen = onApplySplitScreen,
+                onApplyZoom = onApplyZoom,
+                onClose = onClose
             )
         }
     }

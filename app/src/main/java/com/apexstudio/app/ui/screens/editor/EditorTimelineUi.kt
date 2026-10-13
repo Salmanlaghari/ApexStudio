@@ -35,14 +35,14 @@ import com.apexstudio.app.ui.theme.ApexPalette
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 
 /**
- * Extract a small set of evenly-spaced filmstrip thumbnails for a clip's
- * trimmed range via [ThumbnailExtractor] (MediaMetadataRetriever-backed).
- * Photo clips get a single decoded frame.
+ * Extract per-second filmstrip thumbnails for a clip's trimmed range via
+ * [ThumbnailExtractor.extractPerSecondFrames] (MediaMetadataRetriever,
+ * off the main thread). Photo clips get a single decoded frame.
  *
- * Uses a fixed frame count (8) — the old per-second extraction (up to 60
- * slow getFrameAtTime calls) never finished on long videos, so thumbnails
- * never appeared. extractFrames also falls back to generated frames, so the
- * map is never empty.
+ * Keyed by second (0, 1, 2, …) so the V1 lane renders one cell per
+ * second, each exactly 1s wide — frames scroll and scale with zoom
+ * exactly like the ruler and playhead. Capped at 180s (3 min); longer
+ * clips show the generated placeholder past the cap.
  */
 private suspend fun extractClipThumbnails(
     context: android.content.Context,
@@ -57,15 +57,15 @@ private suspend fun extractClipThumbnails(
     val trimStart = clip.trimStartMs
     val trimEnd =
         if (clip.trimEndMs > trimStart) clip.trimEndMs else clip.durationMs.coerceAtLeast(1000L)
-    return ThumbnailExtractor.extractFrames(
+    return ThumbnailExtractor.extractPerSecondFrames(
         context = context,
         uri = clip.uri,
         trimStartMs = trimStart,
         trimEndMs = trimEnd,
         frameWidthPx = 120,
         frameHeightPx = 80,
-        frameCount = 8
-    ).mapIndexed { index, bitmap -> index to bitmap }.toMap()
+        maxSeconds = 180
+    )
 }
 
 @Composable
@@ -139,11 +139,11 @@ fun TimelineTrackArea(
     // (ownerClipId, overlayId) of the selected text segment — drives the
     // Delete quick action (deletes the TEXT, not the clip).
     var selectedTextRef by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
+    // opening/closing any bottom sheet can never reset the scroll to
+    // 00:00 and strand the playhead off-screen.
     val timelineScrollState = rememberScrollState()
-    val zoomFactor = state.timelineZoom.coerceIn(0.5f, 10.0f)
-    val durationSec = (durationMs / 1000L).coerceAtLeast(1L).toInt()
-    val baseSecondWidthDp = 52.dp
-    val secondWidthDp = (baseSecondWidthDp * zoomFactor).coerceIn(26.dp, 240.dp)
+    val timelineVScrollState = rememberScrollState()
 
     // V1 lane clips: main video + photo (IMAGE) clips share the filmstrip
     // lane. Photo clips previously rendered nowhere, leaving the V1 track
@@ -153,18 +153,22 @@ fun TimelineTrackArea(
     }
 
     // Per-clip filmstrip thumbnails, extracted once per clip (keyed by
-    // id/uri/trim). An instant generated fallback is seeded first so the
-    // lane never looks empty; the real frames replace it when ready.
+    // id/uri/trim), cached in this map. A per-second generated fallback
+    // is seeded first so the lane never shows a dark strip; the real
+    // frames replace it when ready.
     val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
     v1Clips.forEach { clip ->
         LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
             if (!thumbnailsByClip.containsKey(clip.id)) {
+                val clipSeconds = ((clip.trimEndMs - clip.trimStartMs)
+                    .coerceAtLeast(1000L) / 1000L).toInt().coerceIn(1, 180)
                 thumbnailsByClip[clip.id] = com.apexstudio.app.data.media.ThumbnailExtractor
-                    .generateFilmstripFrames(8, 120, 80, clip.uri.hashCode().toLong())
+                    .generateFilmstripFrames(clipSeconds, 120, 80, clip.uri.hashCode().toLong())
                     .mapIndexed { i, b -> i to b }.toMap()
             }
             try {
-                thumbnailsByClip[clip.id] = extractClipThumbnails(context, clip)
+                val real = extractClipThumbnails(context, clip)
+                if (real.isNotEmpty()) thumbnailsByClip[clip.id] = real
             } catch (e: Exception) {
                 Log.w("TimelineTrackArea", "Thumbnail extraction failed for ${clip.id}: ${e.message}")
             }
@@ -237,6 +241,8 @@ fun TimelineTrackArea(
             onMoveClipToLayer = onMoveClipToLayer,
             onAddClipToLayer = onAddClipToLayer,
             playerPositionFlow = playerPositionFlow,
+            scrollState = timelineScrollState,
+            vScrollState = timelineVScrollState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)

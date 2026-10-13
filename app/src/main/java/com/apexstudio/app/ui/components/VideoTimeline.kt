@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -216,13 +217,19 @@ fun VideoTimeline(
      * recompose the whole timeline. Falls back to [playheadMs] when null.
      */
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
+    /**
+     * Hoisted timeline scroll state. Owned by the caller (the editor
+     * screen), NOT by this composable's local remember — so opening or
+     * closing any bottom sheet (or any timeline recomposition) can never
+     * reset the scroll to 00:00 and strand the playhead off-screen.
+     * Defaults keep standalone callers working.
+     */
+    scrollState: ScrollState = rememberScrollState(),
+    /** Hoisted vertical scroll state (same ownership as [scrollState]). */
+    vScrollState: ScrollState = rememberScrollState(),
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
-    // Vertical scroll shared by the track-header rail and the lanes: every
-    // added layer (text, sticker, FX, A1, A2) stays reachable on any screen.
-    val vScrollState = rememberScrollState()
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
     // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
@@ -277,6 +284,24 @@ fun VideoTimeline(
             val edge = (viewportWidth * 0.85f).toInt()
             // Only recenter when the playhead is about to leave the viewport.
             if (playheadPx > scrollState.value + edge || playheadPx < scrollState.value) {
+                val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
+                scrollState.scrollTo(targetScroll)
+            }
+        }
+    }
+
+    // Restore: when the timeline (re)lays out while playing — e.g. right
+    // after a bottom sheet closed and the scroll position was reset by a
+    // recomposition — re-center on the playhead the moment the viewport
+    // is measured. Keyed on viewportSize so it fires on first layout
+    // (0 -> measured) and on rotation. Gated on isPlaying so a paused
+    // user's manual scroll is never yanked back to the playhead.
+    LaunchedEffect(scrollState.viewportSize) {
+        if (isPlaying && scrollState.viewportSize > 0) {
+            val playheadX = safePlayheadMs * msToDp
+            val playheadPx = with(density) { playheadX.dp.toPx() }.roundToInt()
+            val viewportWidth = scrollState.viewportSize
+            if (playheadPx > scrollState.value + viewportWidth || playheadPx < scrollState.value) {
                 val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
                 scrollState.scrollTo(targetScroll)
             }
@@ -884,6 +909,10 @@ fun VideoTimeline(
     onOpenVoice: () -> Unit = {},
     onAddAudioTrack: () -> Unit = {},
     onClearFx: () -> Unit = {},
+    // Hoisted scroll state (see the full overload): owned by the caller
+    // so sheet open/close can never reset the timeline scroll.
+    scrollState: ScrollState = rememberScrollState(),
+    vScrollState: ScrollState = rememberScrollState(),
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
@@ -953,7 +982,9 @@ fun VideoTimeline(
         onAddLayer = onAddLayer,
         onMoveClipToLayer = onMoveClipToLayer,
         onAddClipToLayer = onAddClipToLayer,
-        playerPositionFlow = playerPositionFlow
+        playerPositionFlow = playerPositionFlow,
+        scrollState = scrollState,
+        vScrollState = vScrollState
     )
 }
 
@@ -1320,9 +1351,15 @@ private fun TimelineTimeRuler(
             else -> 5
         }
 
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.Top
+        // Time labels: laid out in a Box (NOT a Row) so each label's
+        // offset(x) is ABSOLUTE from the ruler origin, matching the
+        // Canvas ticks and the playhead. In a Row, offsets are relative
+        // to each child's sequential position, so every label's text
+        // width accumulated and pushed all later labels right — the
+        // ruler read progressively "behind" the playhead (00:20 on the
+        // preview vs ~00:16 on the ruler, drift growing with time).
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
             for (sec in 0..totalSec step stepSec) {
                 val secOffsetDp = (sec * 1000L * msToDp).dp
@@ -2113,9 +2150,11 @@ private fun TimelineVideoTrack(
                             else onSelectClip(clip.id)
                         }
                 ) {
-                    // Mockup filmstrip: per-clip thumbnails, perforation strip,
-                    // teal selection band. Photo clips reuse their single
-                    // frame across cells.
+                    // Filmstrip: one cell per second of the clip, each
+                    // exactly 1s wide (msToDp) so frames scroll and
+                    // scale with zoom exactly like the ruler and the
+                    // playhead. A missing second shows the placeholder —
+                    // never a repeated first frame.
                     val clipThumbs = thumbnailsByClip[clip.id] ?: emptyMap()
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(
@@ -2124,12 +2163,13 @@ private fun TimelineVideoTrack(
                                 .fillMaxWidth()
                                 .padding(3.dp)
                         ) {
-                            val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 8)
+                            val totalSec = (clipDur / 1000L).toInt().coerceIn(1, 180)
+                            val cellWidthDp = (1000f * msToDp).dp
                             for (sec in 0 until totalSec) {
-                                val frameBmp = clipThumbs[sec] ?: clipThumbs[0]
+                                val frameBmp = clipThumbs[sec]
                                 Box(
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .width(cellWidthDp)
                                         .fillMaxHeight()
                                         .padding(horizontal = 1.dp)
                                         .clip(RoundedCornerShape(3.dp))

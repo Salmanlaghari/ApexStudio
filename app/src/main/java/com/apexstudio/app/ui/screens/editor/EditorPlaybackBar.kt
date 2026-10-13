@@ -33,7 +33,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
 // new layout (tapping with no clip selected is a safe no-op; the call site
 // null-checks the clip). Far right: fullscreen corners icon.
 // No time counter and no prev/next buttons here: the time pill lives inside
-// the preview ("REC • 00:20 / 00:25") per the mockup.
+// the preview ("00:20 / 00:25") per the mockup.
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,

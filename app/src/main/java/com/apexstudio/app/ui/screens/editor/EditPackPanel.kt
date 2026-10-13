@@ -84,6 +84,7 @@ private fun labelFor(type: String): String = when (type) {
 
 @Composable
 fun EditPackPanel(
+    selectedClipName: String? = null,
     onApplySpeedRamp: (presetId: String, startSpeed: Float, endSpeed: Float, fixedSpeed: Float?) -> Unit,
     onApplyFreeze: (presetId: String) -> Unit,
     onApplySplitScreen: (presetId: String, layout: SplitLayout) -> Unit,
@@ -108,6 +109,10 @@ fun EditPackPanel(
     val visible = remember(presets, selectedType) {
         if (selectedType == null) presets else presets.filter { it.type == selectedType }
     }
+    // Presets apply to the selected clip ONLY. With no selection the
+    // cards disable and the panel says so — it never silently applies
+    // to some other clip.
+    val hasSelection = selectedClipName != null
 
     Column(
         modifier = modifier
@@ -154,7 +159,8 @@ fun EditPackPanel(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "${presets.size} presets • tap to apply to selected clip",
+                        if (hasSelection) "${presets.size} presets • applies to: $selectedClipName"
+                        else "${presets.size} presets • select a clip on the timeline first",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -173,6 +179,27 @@ fun EditPackPanel(
         }
 
         Spacer(Modifier.height(10.dp))
+
+        // No-selection hint: presets are disabled until a clip is
+        // selected, so the user never wonders where a tap went.
+        if (!hasSelection) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.NeonAmber.copy(alpha = 0.12f))
+                    .border(1.dp, ApexPalette.NeonAmber.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    "No clip selected — tap a clip on the timeline, then pick a preset.",
+                    color = ApexPalette.NeonAmber,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+        }
 
         // Type filter chips
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -202,6 +229,7 @@ fun EditPackPanel(
                     row.forEach { preset ->
                         EditPresetCard(
                             preset = preset,
+                            enabled = hasSelection,
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 when (preset.type) {
@@ -259,6 +287,7 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun EditPresetCard(
     preset: EditPresetUi,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -268,7 +297,7 @@ private fun EditPresetCard(
             .clip(RoundedCornerShape(14.dp))
             .background(ApexPalette.BgElevated)
             .border(0.5.dp, ApexPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .clickable(enabled = !isSoon) { onClick() }
+            .clickable(enabled = enabled && !isSoon) { onClick() }
             .padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

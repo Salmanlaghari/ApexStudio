@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -233,7 +232,8 @@ fun VideoPreviewArea(
             )
         }
 
-        // Mockup: "REC • 00:20 / 00:25" time pill, top-left inside the preview.
+        // Plain timecode pill, top-left inside the preview. (Was "REC • …"
+        // with a red dot — REC implies recording; this is playback/editing.)
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -242,24 +242,13 @@ fun VideoPreviewArea(
                 .background(Color.Black.copy(alpha = 0.55f))
                 .padding(horizontal = 10.dp, vertical = 5.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFF3B30))
-                )
-                Text(
-                    text = "REC • ${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                )
-            }
+            Text(
+                text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
         }
 
         // Mockup: "HDR" badge, bottom-right inside the preview.

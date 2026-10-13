@@ -384,9 +384,24 @@ fun EditorScreen(
         }
     }
 
+    // Single source of truth for playback position: player.currentPosition.
+    // The old fallback extrapolated playerPositionMs + delta * speed
+    // whenever player.isPlaying was momentarily false (buffering/seek) —
+    // a second clock that drifted from the player and hid starvation.
+    // Now: a player always reports its own position (frozen = honestly
+    // stuck); extrapolation survives ONLY for player-less playback
+    // (photo clips, where ExoPlayer holds no media item).
+    // Audio sync is throttled to drift-correction cadence (250ms): the
+    // old per-tick sync() did MediaPlayer IPC + conditional seekTo 30x/s
+    // on the main thread — a real contributor to the Edit Pack stall
+    // (counter crawling, TextureView frame frozen, isPlaying still true).
+    // Play/pause/seek transitions still sync immediately (see the
+    // isPlaying LaunchedEffect above + seekPlayerAndState).
     LaunchedEffect(state.isPlaying, state.durationMs, state.playbackSpeed) {
         val totalDur = state.durationMs.coerceAtLeast(1000L)
         var lastTime = android.os.SystemClock.uptimeMillis()
+        var lastAudioSyncAt = 0L
+        var lastAudioSyncPos = -1L
         while (isActive) {
             if (state.isPlaying) {
                 val now = android.os.SystemClock.uptimeMillis()
@@ -394,7 +409,7 @@ fun EditorScreen(
                 lastTime = now
 
                 val player = exoPlayer
-                val newPos = if (player != null && player.isPlaying) {
+                val newPos = if (player != null) {
                     player.currentPosition
                 } else {
                     state.playerPositionMs + (delta * state.playbackSpeed).toLong()
@@ -406,10 +421,18 @@ fun EditorScreen(
                     exoPlayer?.seekTo(0L)
                     val tracks = state.project?.audioTracks ?: emptyList()
                     audioPlaybackManager.sync(true, 0L, tracks)
+                    lastAudioSyncAt = now
+                    lastAudioSyncPos = 0L
                 } else {
                     vm.setPlayerPosition(newPos)
+                    // Drift-correction only: sync audio when 250ms elapsed
+                    // or the position jumped (seek/loop), never every tick.
                     val tracks = state.project?.audioTracks ?: emptyList()
-                    audioPlaybackManager.sync(true, newPos, tracks)
+                    if (now - lastAudioSyncAt >= 250L || kotlin.math.abs(newPos - lastAudioSyncPos) > 500L) {
+                        audioPlaybackManager.sync(true, newPos, tracks)
+                        lastAudioSyncAt = now
+                        lastAudioSyncPos = newPos
+                    }
                 }
             } else {
                 lastTime = android.os.SystemClock.uptimeMillis()

@@ -53,7 +53,7 @@ internal fun EditorViewModel.loadProject() {
         } else validClips
         val updatedP = p.copy(
             clips = effectiveClips,
-            durationMs = effectiveClips.maxOfOrNull { it.trimEndMs } ?: p.durationMs
+            durationMs = computeTimelineDurationMs(effectiveClips, p.audioTracks)
         )
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
@@ -184,7 +184,10 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
 
         val updatedClips = existingClips + newClips
         val updatedProject = s.project?.copy(clips = updatedClips)
-        val maxDuration = updatedClips.maxOfOrNull { it.durationMs } ?: s.durationMs
+        // Unified duration (was MAX of raw durations -> playhead raced
+        // on multi-clip timelines). A fresh clip always plays at 1x, so
+        // drop any stale global speed left over from another clip.
+        val maxDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
 
         // Immediate state update so video preview loads in 0ms without delay
         _state.update {
@@ -216,6 +219,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 pendingAddAsOverlay = false,
                 pendingAddAsAudio = false,
                 pendingAddToLayer = null,
+                playbackSpeed = 1f,
                 // The layer now holds clips: drop it from the empty-layer set.
                 extraVideoLayers = if (targetLayer != null) it.extraVideoLayers - targetLayer else it.extraVideoLayers
             )

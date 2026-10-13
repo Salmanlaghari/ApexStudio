@@ -32,7 +32,8 @@ fun EditorViewModel.addVoiceOverTrack(uri: String, durationMs: Long, name: Strin
         name = name,
         uri = uri,
         volume = 1f,
-        trimEndMs = durationMs
+        trimEndMs = durationMs,
+        kind = AudioTrack.Kind.SFX
     )
     _state.update { st ->
         val proj = st.project ?: return@update st

@@ -345,7 +345,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 )
             } else c
         }
-        val newDuration = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+        val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
         val newPlayhead = s.playerPositionMs.coerceIn(0L, newDuration)
         s.copy(
             project = proj.copy(clips = updatedClips, durationMs = newDuration),
@@ -452,7 +452,7 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                         _state.update { s ->
                             val p = s.project ?: return@update s
                             val updatedClips = p.clips + newClip
-                            val newDuration = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(1000L) }
+                            val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
                             s.copy(
                                 project = p.copy(clips = updatedClips, durationMs = newDuration),
                                 durationMs = newDuration
@@ -528,7 +528,7 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
                 updatedClips.add(clip)
             }
         }
-        val newDur = updatedClips.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
+        val newDur = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
         s.copy(
             project = p.copy(clips = updatedClips, durationMs = newDur),
             durationMs = newDur,
@@ -550,7 +550,7 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             id = "clip_${System.currentTimeMillis()}_dup"
         )
         val updated = p.clips + newClip
-        val newDur = updated.sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(100L) }
+        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
         s.copy(
             project = p.copy(clips = updated, durationMs = newDur),
             durationMs = newDur,
@@ -586,7 +586,7 @@ fun EditorViewModel.deleteClip(clipId: String) {
         val p = s.project ?: return@update s
         val updated = p.clips.filterNot { it.id == clipId }
         val newSelected = if (s.selectedClipId == clipId) updated.firstOrNull()?.id else s.selectedClipId
-        val newDur = updated.maxOfOrNull { it.trimEndMs - it.trimStartMs } ?: 0L
+        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
         s.copy(
             project = p.copy(clips = updated, durationMs = newDur),
             durationMs = newDur,
@@ -617,7 +617,7 @@ fun EditorViewModel.deleteClips(clipIds: Set<String>) {
         val p = s.project ?: return@update s
         val updated = p.clips.filterNot { it.id in clipIds }
         val newSelected = if (s.selectedClipId in clipIds) updated.firstOrNull()?.id else s.selectedClipId
-        val newDur = updated.maxOfOrNull { it.trimEndMs - it.trimStartMs } ?: 0L
+        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
         s.copy(
             project = p.copy(clips = updated, durationMs = newDur),
             durationMs = newDur,
@@ -676,7 +676,7 @@ fun EditorViewModel.addClipToTrack(type: ClipType, trackIndex: Int) {
         _state.update { s ->
             val p = s.project ?: return@update s
             val updated = p.clips + newClip
-            val newDur = maxOf(s.durationMs, 10_000L)
+            val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
             s.copy(
                 project = p.copy(clips = updated, durationMs = newDur),
                 durationMs = newDur,
@@ -928,4 +928,36 @@ fun EditorViewModel.addEmptyVideoLayer(): Int {
     val layer = (1 until MAX_VIDEO_LAYERS).firstOrNull { it !in used && it !in extras } ?: return -1
     _state.update { it.copy(extraVideoLayers = it.extraVideoLayers + layer) }
     return layer
+}
+
+/**
+ * Single source of truth for the project timeline's total duration.
+ *
+ * ROOT-CAUSE FIX (Prince: "video add karne ke baad timeline bahut fast ho jati hai"):
+ * V1 (trackIndex 0) lays clips SEQUENTIALLY, so its span is the SUM of trimmed
+ * durations — but onMediaPicked/deleteClip used MAX. With 2+ clips the ruler,
+ * playhead and loop point only covered MAX while the clips visually spanned
+ * SUM, so the playhead raced across the timeline (2x fast with 2 clips, and
+ * the track content even overflowed the timeline width). Overlay layers
+ * (1..9) are absolutely positioned by timelineOffsetMs, so their contribution
+ * is MAX(offset + trimmed). Audio tracks may legitimately extend the timeline
+ * (music longer than the video), so their max end is included too.
+ */
+fun computeTimelineDurationMs(
+    clips: List<com.apexstudio.app.domain.model.MediaClip>,
+    audioTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+): Long {
+    val v1SequentialMs = clips
+        .filter {
+            it.trackIndex == 0 &&
+                (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+                 it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
+        }
+        .sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L) }
+    val overlayMaxEndMs = clips
+        .filter { it.trackIndex != 0 }
+        .maxOfOrNull { it.timelineOffsetMs + (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L) }
+        ?: 0L
+    val audioMaxEndMs = audioTracks.maxOfOrNull { it.trimEndMs } ?: 0L
+    return maxOf(v1SequentialMs, overlayMaxEndMs, audioMaxEndMs).coerceAtLeast(1000L)
 }

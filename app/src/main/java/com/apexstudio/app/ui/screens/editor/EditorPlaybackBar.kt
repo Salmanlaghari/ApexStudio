@@ -167,6 +167,7 @@ enum class SelectedLayerType {
     OVERLAY_V2,
     VIDEO_V1,
     TEXT_TXT,
+    STICKER_STK,
     FX_LAYER,
     AUDIO_A1
 }

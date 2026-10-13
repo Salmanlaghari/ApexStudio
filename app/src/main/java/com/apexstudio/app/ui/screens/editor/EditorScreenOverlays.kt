@@ -1065,7 +1065,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with
             // drag-to-move/resize while the mask panel is open.
-            mask = currentSelectedClip?.mask,
+            // Overlay (V2 PiP) clips preview their mask as a hard clip on
+            // the PiP box itself, so the main-frame scrim is restricted to
+            // non-overlay clips.
+            mask = currentSelectedClip?.takeIf { it.type != ClipType.OVERLAY }?.mask,
             maskEditMode = state.maskPanelOpen,
             onMaskCenterLive = { x, y ->
                 currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = false) }

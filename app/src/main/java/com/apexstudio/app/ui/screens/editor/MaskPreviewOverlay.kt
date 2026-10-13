@@ -198,23 +198,49 @@ fun MaskPreviewOverlay(
 
         val steps = 6
         if (!mask.invert) {
-            // Scrim everything outside the shape…
+            // Dim everything outside the feathered edge…
             val scrim = Path().apply {
                 addRect(Rect(0f, 0f, w, h))
-                op(this, shapePath(), PathOperation.Difference)
+                op(this, shapePath(featherPx), PathOperation.Difference)
             }
             drawPath(scrim, Color.Black.copy(alpha = scrimAlpha))
-            // …with a feather band fading outward from the edge.
+            // …with a feather gradient fading in from the mask edge outward.
+            // Rings are outward-only (expanded minus base) so the kept
+            // interior is never darkened.
+            var prev = 0f
             for (i in 1..steps) {
                 val f = i.toFloat() / steps
-                drawPath(shapePath(featherPx * f), Color.Black.copy(alpha = scrimAlpha * f * 0.9f))
+                val ring = Path().apply {
+                    op(
+                        shapePath(featherPx * f),
+                        shapePath(featherPx * prev),
+                        PathOperation.Difference
+                    )
+                }
+                drawPath(ring, Color.Black.copy(alpha = scrimAlpha * f))
+                prev = f
             }
         } else {
-            // Inverted: scrim the inside of the shape instead.
-            drawPath(shapePath(), Color.Black.copy(alpha = scrimAlpha))
+            // Inverted: dim the interior; feather fades inward from the edge.
+            // Clamp the feather depth so a small mask can't invert the rect.
+            val maxIn = when (mask.shape) {
+                MaskShape.LINEAR -> cx
+                else -> minOf(hw, hh)
+            }.coerceAtLeast(0f)
+            val featherIn = featherPx.coerceIn(0f, maxIn)
+            drawPath(shapePath(-featherIn), Color.Black.copy(alpha = scrimAlpha))
+            var prev = 0f
             for (i in 1..steps) {
                 val f = i.toFloat() / steps
-                drawPath(shapePath(-featherPx * f), Color.Black.copy(alpha = scrimAlpha * (1f - f) * 0.9f))
+                val ring = Path().apply {
+                    op(
+                        shapePath(-featherIn * prev),
+                        shapePath(-featherIn * f),
+                        PathOperation.Difference
+                    )
+                }
+                drawPath(ring, Color.Black.copy(alpha = scrimAlpha * f))
+                prev = f
             }
         }
 

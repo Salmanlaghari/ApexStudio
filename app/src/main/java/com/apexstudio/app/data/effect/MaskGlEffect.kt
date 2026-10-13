@@ -44,7 +44,11 @@ class MaskGlEffect private constructor(
         fun fromMask(mask: VideoMask?): MaskGlEffect? {
             if (mask == null || !mask.enabled) return null
             if (mask.opacity <= 0.001f) return null
-            val coversAll = mask.sizeX >= 0.999f && mask.sizeY >= 0.999f && !mask.invert
+            // Full-size non-inverted rect/ellipse with full opacity is a
+            // no-op. LINEAR is excluded: its wipe position (centerX) still
+            // cuts the frame even at full size, so it must reach the shader.
+            val coversAll = mask.sizeX >= 0.999f && mask.sizeY >= 0.999f &&
+                    !mask.invert && mask.shape != MaskShape.LINEAR
             if (coversAll && mask.opacity >= 0.999f) return null
             return MaskGlEffect(mask)
         }

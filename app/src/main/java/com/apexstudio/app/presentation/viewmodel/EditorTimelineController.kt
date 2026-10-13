@@ -48,7 +48,17 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
     )
 }
 
-fun EditorViewModel.setPlayerPosition(ms: Long) = _state.update { it.copy(playerPositionMs = ms) }
+/**
+ * Single source of truth for the playhead: [playerPositionMs] IS the
+ * position (driven by player.currentPosition in the EditorScreen loop).
+ * [currentTimeMs] is kept in lock-step here so the two clocks can never
+ * diverge — the old split (playerPositionMs advancing during playback
+ * while currentTimeMs froze at the last seek) made text-overlay timing
+ * and cut-at-playhead read a stale playhead.
+ */
+fun EditorViewModel.setPlayerPosition(ms: Long) = _state.update {
+    it.copy(playerPositionMs = ms, currentTimeMs = ms)
+}
 
 fun EditorViewModel.setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
 
@@ -304,6 +314,10 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
     }
     val track = com.apexstudio.app.data.animation.AnimationPresets.createTrack(preset, startMs, animDuration)
     updateClip(clipId) { it.copy(keyframes = track) }
+    // The clip the preset landed on STAYS selected: Edit Pack (and every
+    // other tool) says "applies to the selected clip", so an Animation
+    // apply must never leave the user with no selection.
+    _state.update { it.copy(selectedClipId = clipId) }
 }
 
 

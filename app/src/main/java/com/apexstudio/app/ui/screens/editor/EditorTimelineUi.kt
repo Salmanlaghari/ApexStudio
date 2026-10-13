@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -783,7 +782,9 @@ fun TimelineQuickActionBar(
     }
 }
 
-/** Diamond (keyframe) icon — material core has no Diamond, so build it. */
+/** Diamond (keyframe) icon — material core has no Diamond, so build it.
+ * Uses explicit PathNodes (same pattern as ContextualToolbar.DiamondOutlineIcon):
+ * no string parsing, no PathParser API ambiguity. */
 private val KeyframeDiamondIcon: ImageVector by lazy {
     ImageVector.Builder(
         name = "keyframe_diamond",
@@ -792,7 +793,13 @@ private val KeyframeDiamondIcon: ImageVector by lazy {
         viewportWidth = 24f,
         viewportHeight = 24f
     ).addPath(
-        pathData = PathParser().parsePathString("M12,2 L22,12 L12,22 L2,12 Z").toNodes(),
+        pathData = listOf(
+            androidx.compose.ui.graphics.vector.PathNode.MoveTo(12f, 2f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(22f, 12f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(12f, 22f),
+            androidx.compose.ui.graphics.vector.PathNode.LineTo(2f, 12f),
+            androidx.compose.ui.graphics.vector.PathNode.Close
+        ),
         fill = SolidColor(Color.Black)
     ).build()
 }

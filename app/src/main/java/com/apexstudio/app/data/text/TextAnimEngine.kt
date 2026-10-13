@@ -175,15 +175,19 @@ object TextAnimEngine {
     }
 
     /**
-     * [stateKey] plus the keyframe contribution, quantised the same
-     * way. Keyframed text re-rasterises per frame bucket (~40ms) so
-     * the movement bakes smoothly into the MP4.
+     * [stateKey] plus the keyframe contribution, evaluated at the EXACT
+     * frame time. Keyframe time is deliberately NOT quantised: the old
+     * 40ms buckets made ~2.4 frames share one sprite at 60fps export,
+     * producing visible stutter on fast keyframed text movement. The
+     * value-level quantisation below (x10000 / x1000 / x10 casts) still
+     * collapses sub-pixel jitter, so the sprite only re-rasterises when
+     * the text visibly moved — smooth motion now bakes per-frame into
+     * the MP4 at the cost of more texture uploads while text is moving.
      */
     fun stateKeyFull(overlay: TextOverlay, timeMs: Long): Any {
         val base = stateKey(overlay, timeMs)
         if (overlay.keyframes.keyframes.isEmpty()) return base
-        val t = (timeMs / 40L) * 40L
-        val kf = overlay.keyframes.interpolateAt(t)
+        val kf = overlay.keyframes.interpolateAt(timeMs)
         return listOf(
             base,
             (kf.translateX * 10000f).toInt(),

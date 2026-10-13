@@ -43,7 +43,10 @@ fun MaskPanel(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
-    val current = mask ?: VideoMask.default()
+    // NOTE: there is intentionally no `?: VideoMask.default()` fallback
+    // here. When the mask is null (removed), the panel shows the
+    // no-mask state below; every control below reads `mask` directly so
+    // a slider touch can never resurrect a removed mask.
 
     Column(
         modifier = modifier
@@ -102,7 +105,7 @@ fun MaskPanel(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             MaskShape.entries.forEach { shape ->
-                val selected = current.shape == shape
+                val selected = mask?.shape == shape
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -113,7 +116,10 @@ fun MaskPanel(
                             if (selected) ApexPalette.NeonCyan else Color.Transparent,
                             RoundedCornerShape(12.dp)
                         )
-                        .clickable { onUpdate(current.copy(shape = shape)) }
+                        // Tapping a shape with no mask creates one; with a
+                        // mask it switches shape. Either way the mask param
+                        // (not a synthesized default) is the source of truth.
+                        .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -127,23 +133,28 @@ fun MaskPanel(
             }
         }
 
+        // Sliders + invert only exist when there IS a mask. When the mask
+        // was removed these controls are hidden (with a hint instead), so
+        // touching a slider can never resurrect a removed mask.
+        val activeMask = mask
+        if (activeMask != null) {
         Spacer(Modifier.height(16.dp))
 
         // Feather slider
         MaskSliderRow(
             label = "Feather",
-            valueLabel = "${(current.feather * 100).toInt()}%",
-            value = current.feather,
-            onValueChange = { onUpdate(current.copy(feather = it)) }
+            valueLabel = "${(activeMask.feather * 100).toInt()}%",
+            value = activeMask.feather,
+            onValueChange = { onUpdate(activeMask.copy(feather = it)) }
         )
         Spacer(Modifier.height(10.dp))
 
         // Opacity slider
         MaskSliderRow(
             label = "Opacity",
-            valueLabel = "${(current.opacity * 100).toInt()}%",
-            value = current.opacity,
-            onValueChange = { onUpdate(current.copy(opacity = it)) }
+            valueLabel = "${(activeMask.opacity * 100).toInt()}%",
+            value = activeMask.opacity,
+            onValueChange = { onUpdate(activeMask.copy(opacity = it)) }
         )
         Spacer(Modifier.height(14.dp))
 
@@ -166,12 +177,20 @@ fun MaskPanel(
                 )
             }
             Switch(
-                checked = current.invert,
-                onCheckedChange = { onUpdate(current.copy(invert = it)) },
+                checked = activeMask.invert,
+                onCheckedChange = { onUpdate(activeMask.copy(invert = it)) },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = ApexPalette.NeonCyan,
                     checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
                 )
+            )
+        }
+        } else {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "No mask on this clip — pick a shape above to add one.",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 12.sp
             )
         }
 

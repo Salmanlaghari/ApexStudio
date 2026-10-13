@@ -269,18 +269,16 @@ private fun PipOverlayItem(
                 shape = RoundedCornerShape(8.dp)
             )
     ) {
-        // Shape mask (Mask tool) on the overlay: hard-edged clip in the
-        // live preview (feather is export-only — see VideoMaskClipShape).
+        // Shape mask (Mask tool) on the overlay: feathered clip with
+        // per-pixel opacity, WYSIWYG with the export shader
+        // (PipOverlayGlEffect composites maskFactor * opacity).
         val overlayMask = clip.mask?.takeIf { it.enabled && it.opacity > 0.001f }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (overlayMask != null) {
-                        Modifier
-                            .graphicsLayer { alpha = overlayMask.opacity }
-                            .clip(VideoMaskClipShape(overlayMask))
-                    } else Modifier
+                    if (overlayMask != null) Modifier.videoMaskFeatheredClip(overlayMask)
+                    else Modifier
                 )
         ) {
         when {

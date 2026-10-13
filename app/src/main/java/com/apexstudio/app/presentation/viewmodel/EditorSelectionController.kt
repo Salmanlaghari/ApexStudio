@@ -40,6 +40,27 @@ fun EditorViewModel.setClipVolume(clipId: String, volume: Float) {
     persistProject()
 }
 
+/**
+ * Clean Voice (per-clip voice noise cleanup). Same pattern as
+ * [setClipVolume]: the clip's fields are the single source of truth,
+ * and both the preview (DenoiseRenderersFactory audio sink) and the
+ * export (Transformer Effects) read them, so preview == export.
+ */
+fun EditorViewModel.setClipDenoise(
+    clipId: String,
+    enabled: Boolean,
+    strength: com.apexstudio.app.domain.model.DenoiseStrength
+) {
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        val updated = p.clips.map {
+            if (it.id == clipId) it.copy(denoiseEnabled = enabled, denoiseStrength = strength) else it
+        }
+        s.copy(project = p.copy(clips = updated))
+    }
+    persistProject()
+}
+
 fun EditorViewModel.openClipVolumeSheet() = _state.update { it.copy(clipVolumeSheetOpen = true) }
 
 fun EditorViewModel.closeClipVolumeSheet() = _state.update { it.copy(clipVolumeSheetOpen = false) }

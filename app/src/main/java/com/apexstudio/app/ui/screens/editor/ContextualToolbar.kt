@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -300,6 +303,10 @@ fun ContextualBottomToolbar(
  * Volume bottom sheet for the contextual toolbar.
  * Video clip: 0..200% per-clip gain (live preview + export).
  * Audio track: 0..100% track gain (preview + export).
+ *
+ * Video clips also get the Clean Voice section (null [denoiseEnabled]
+ * hides it — used for audio tracks, whose MediaPlayer-based playback
+ * cannot host a Media3 AudioProcessor).
  */
 @Composable
 fun ClipVolumeSheet(
@@ -308,6 +315,9 @@ fun ClipVolumeSheet(
     maxVolume: Float = 2f,
     onVolumeChange: (Float) -> Unit,
     onClose: () -> Unit,
+    denoiseEnabled: Boolean? = null,
+    denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
+    onDenoiseChange: ((Boolean, DenoiseStrength) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -347,6 +357,89 @@ fun ClipVolumeSheet(
                 )
             )
             Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(20.dp))
+        }
+        // Clean Voice (video clips only): one-tap voice noise cleanup.
+        // Same processing in preview and export; toggle is instant
+        // (real-time processor, no offline job to cancel).
+        if (denoiseEnabled != null && onDenoiseChange != null) {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Clean Voice",
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Removes hiss & hum from this clip's voice",
+                        color = Color(0xFF9CA3AF),
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = denoiseEnabled,
+                    onCheckedChange = { onDenoiseChange(it, denoiseStrength) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = ApexPalette.NeonCyan,
+                        uncheckedThumbColor = Color(0xFF9CA3AF),
+                        uncheckedTrackColor = Color(0xFF2A2A3C)
+                    )
+                )
+            }
+            if (denoiseEnabled) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Plain for-loop (not forEach) so Modifier.weight
+                    // still sees the RowScope receiver.
+                    for ((strength, label) in listOf(
+                        DenoiseStrength.LIGHT to "Light",
+                        DenoiseStrength.MEDIUM to "Medium",
+                        DenoiseStrength.STRONG to "Strong"
+                    )) {
+                        val selected = strength == denoiseStrength
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                    else Color(0xFF2A2A3C)
+                                )
+                                .clickable {
+                                    // Chips only render while denoise is
+                                    // on (see the if above), so this keeps
+                                    // the current enabled state — tapping
+                                    // a strength never toggles on its own.
+                                    onDenoiseChange(denoiseEnabled, strength)
+                                }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (selected) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Strong removes more noise but can thin very quiet speech.",
+                    color = Color(0xFF9CA3AF),
+                    fontSize = 11.sp
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -586,7 +679,12 @@ fun ClipVolumeSheetOverlay(
                         volume = volClip.volume,
                         maxVolume = 2f,
                         onVolumeChange = { vm.setClipVolume(volClip.id, it) },
-                        onClose = { vm.closeClipVolumeSheet() }
+                        onClose = { vm.closeClipVolumeSheet() },
+                        denoiseEnabled = volClip.denoiseEnabled,
+                        denoiseStrength = volClip.denoiseStrength,
+                        onDenoiseChange = { enabled, strength ->
+                            vm.setClipDenoise(volClip.id, enabled, strength)
+                        }
                     )
                 }
                 toolbarKind == ToolbarSelectionKind.AUDIO && volTrack != null -> {

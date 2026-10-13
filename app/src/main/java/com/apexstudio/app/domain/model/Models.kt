@@ -41,6 +41,16 @@ data class MediaClip(
     // Applied to the ExoPlayer preview of this clip and multiplied into
     // the export audio volume, so the Volume tool is real in both.
     val volume: Float = 1f,
+    // Clean Voice (voice noise cleanup): per-clip spectral noise
+    // suppression for the clip's embedded audio (hiss / fan hum / room
+    // tone). Applied via the same DenoiseAudioProcessor in the preview
+    // (DenoiseRenderersFactory audio sink) and the export (Transformer
+    // Effects), so preview == export. Backwards-compatible: older project JSONs
+    // without these fields deserialise as off.
+    // NOTE: the engine is classical spectral gating, NOT RNNoise — see
+    // SpectralDenoiser's KDoc for the honest reasoning.
+    val denoiseEnabled: Boolean = false,
+    val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
     // Animated transform track — empty by default. When populated
     // by the Keyframe panel, the GL effect applies the interpolated
     // translate / scale / rotation / opacity on every preview frame
@@ -382,6 +392,23 @@ enum class SpeedCurve {
     EASE_OUT,      // decelerate from start speed → end speed
     EASE_IN_OUT,   // smooth accel + decel
     RAMP           // keyframe-driven (start + end)
+}
+
+/**
+ * Clean Voice strength (per-clip voice noise cleanup). Maps to the
+ * spectral-gating parameters in [SpectralDenoiser]: LIGHT is gentle
+ * (keeps almost everything, removes only clear hiss), MEDIUM is the
+ * balanced default, STRONG suppresses aggressively (may thin very
+ * quiet speech — that is the documented trade-off of a classical
+ * suppressor). This is NOT an RNNoise strength — see SpectralDenoiser's
+ * KDoc for why this feature uses classical spectral gating instead of
+ * RNNoise.
+ */
+@Serializable
+enum class DenoiseStrength {
+    LIGHT,
+    MEDIUM,
+    STRONG
 }
 
 /**

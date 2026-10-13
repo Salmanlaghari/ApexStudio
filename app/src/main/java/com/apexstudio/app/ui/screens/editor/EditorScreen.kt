@@ -397,11 +397,22 @@ fun EditorScreen(
     // (counter crawling, TextureView frame frozen, isPlaying still true).
     // Play/pause/seek transitions still sync immediately (see the
     // isPlaying LaunchedEffect above + seekPlayerAndState).
-    LaunchedEffect(state.isPlaying, state.durationMs, state.playbackSpeed) {
+    LaunchedEffect(
+        state.isPlaying,
+        state.durationMs,
+        state.playbackSpeed,
+        // Restart when the selected clip's curve changes so the loop
+        // always reads the current points (not a stale snapshot).
+        currentSelectedClip?.speedPoints,
+        currentSelectedClip?.id
+    ) {
         val totalDur = state.durationMs.coerceAtLeast(1000L)
         var lastTime = android.os.SystemClock.uptimeMillis()
         var lastAudioSyncAt = 0L
         var lastAudioSyncPos = -1L
+        // Last curve speed pushed to ExoPlayer (null = constant-speed
+        // mode, owned by the playbackSpeed LaunchedEffect above).
+        var lastCurveSpeedApplied: Float? = null
         while (isActive) {
             if (state.isPlaying) {
                 val now = android.os.SystemClock.uptimeMillis()
@@ -409,8 +420,56 @@ fun EditorScreen(
                 lastTime = now
 
                 val player = exoPlayer
+                val curveClip = currentSelectedClip
+                    ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+                    ?.takeIf { it.hasSpeedCurve() }
                 val newPos = if (player != null) {
-                    player.currentPosition
+                    val rawPos = player.currentPosition
+                    if (curveClip != null) {
+                        // Variable speed (PR-E): the player reports SOURCE
+                        // time; the playhead shows OUTPUT (timeline) time.
+                        // Also push the curve's instantaneous rate to
+                        // ExoPlayer so the preview itself ramps.
+                        val span = (curveClip.trimEndMs - curveClip.trimStartMs)
+                            .coerceAtLeast(1L)
+                        val srcInClip = (rawPos - curveClip.trimStartMs)
+                            .coerceIn(0L, span)
+                        val frac = srcInClip.toFloat() / span.toFloat()
+                        val curveSpeed =
+                            com.apexstudio.app.domain.model.SpeedCurveMath.speedAt(
+                                curveClip.speedPoints, frac
+                            )
+                        if (lastCurveSpeedApplied == null ||
+                            kotlin.math.abs(curveSpeed - lastCurveSpeedApplied!!) > 0.02f
+                        ) {
+                            try {
+                                player.playbackParameters =
+                                    androidx.media3.common.PlaybackParameters(curveSpeed)
+                                lastCurveSpeedApplied = curveSpeed
+                            } catch (_: Exception) {
+                            }
+                        }
+                        val clips = state.project?.clips ?: emptyList()
+                        val clipStart =
+                            com.apexstudio.app.domain.model.SpeedCurveMath
+                                .timelineStartMsForClip(clips, curveClip)
+                        clipStart + com.apexstudio.app.domain.model.SpeedCurveMath
+                            .sourceToOutputMs(srcInClip, span, curveClip.speedPoints)
+                    } else {
+                        // Curve cleared mid-playback: hand the rate back
+                        // to the constant-speed LaunchedEffect.
+                        if (lastCurveSpeedApplied != null) {
+                            try {
+                                player.playbackParameters =
+                                    androidx.media3.common.PlaybackParameters(
+                                        state.playbackSpeed.coerceIn(0.1f, 10.0f)
+                                    )
+                            } catch (_: Exception) {
+                            }
+                            lastCurveSpeedApplied = null
+                        }
+                        rawPos
+                    }
                 } else {
                     state.playerPositionMs + (delta * state.playbackSpeed).toLong()
                 }
@@ -441,10 +500,36 @@ fun EditorScreen(
         }
     }
 
-    val seekPlayerAndState: (Long) -> Unit = remember(exoPlayer, state.durationMs, audioPlaybackManager) {
+    val seekPlayerAndState: (Long) -> Unit = remember(
+        exoPlayer, state.durationMs, audioPlaybackManager,
+        currentSelectedClip?.id, currentSelectedClip?.speedPoints,
+        state.project?.clips
+    ) {
         { targetMs ->
             val clamped = targetMs.coerceIn(0L, state.durationMs.coerceAtLeast(1L))
-            exoPlayer?.seekTo(clamped)
+            // Variable speed (PR-E): the playhead is OUTPUT (timeline)
+            // time; the player seeks in SOURCE time. Map through the
+            // curve when the target lands inside the selected clip's
+            // span; outside the span keep the legacy direct seek.
+            val curveClip = currentSelectedClip
+                ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+                ?.takeIf { it.hasSpeedCurve() }
+            val playerTarget = if (curveClip != null) {
+                val clips = state.project?.clips ?: emptyList()
+                val clipStart = com.apexstudio.app.domain.model.SpeedCurveMath
+                    .timelineStartMsForClip(clips, curveClip)
+                val span = (curveClip.trimEndMs - curveClip.trimStartMs).coerceAtLeast(1L)
+                val outDur = curveClip.effectiveDurationMs()
+                if (clamped in clipStart..(clipStart + outDur)) {
+                    curveClip.trimStartMs + com.apexstudio.app.domain.model.SpeedCurveMath
+                        .outputToSourceMs(clamped - clipStart, span, curveClip.speedPoints)
+                } else {
+                    clamped
+                }
+            } else {
+                clamped
+            }
+            exoPlayer?.seekTo(playerTarget)
             audioPlaybackManager.seekTo(clamped)
             vm.seekTo(clamped)
         }

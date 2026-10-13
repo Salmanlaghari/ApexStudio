@@ -93,6 +93,11 @@ class ExportEngine(private val context: Context) {
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
+        // Variable speed curve (PR-E): when non-empty, the export
+        // follows the curve instead of the constant [clipSpeed].
+        // Points are fractions 0..1 across the TRIMMED clip span
+        // (see SpeedCurveMath). Empty = constant [clipSpeed].
+        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
             com.apexstudio.app.domain.model.KeyframeTrack(),
         val fxPreset: FxPreset? = null,
@@ -167,7 +172,10 @@ class ExportEngine(private val context: Context) {
     data class AudioExportSource(
         val uri: String,
         val trimStartMs: Long = 0L,
-        val trimEndMs: Long = 0L
+        val trimEndMs: Long = 0L,
+        // Variable speed curve for THIS source (PR-E). Empty = fall
+        // back to the config's constant clipSpeed (legacy behaviour).
+        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList()
     )
 
     /**
@@ -367,13 +375,14 @@ class ExportEngine(private val context: Context) {
                 }
 
                 // 5. Speed Ramping with Audio/Video synchronization
-                if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
-                    val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
-                        override fun getSpeed(timeUs: Long): Float = config.clipSpeed
-                        override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
-                            androidx.media3.common.C.TIME_UNSET
-                    }
-                    val speedPair = Effects.createExperimentalSpeedChangingEffect(constantProvider)
+                // Variable curve (PR-E): the SpeedProvider follows the
+                // curve; constant speed is the no-curve fallback.
+                // Audio is time-stretched with pitch preservation by
+                // Media3's experimental speed-changing effect, so a
+                // ramped clip's audio stays in sync and on-pitch —
+                // no mute, no chipmunk effect.
+                buildSpeedProvider(config)?.let { provider ->
+                    val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
                     audioProcessors.add(speedPair.first)
                     videoEffects.add(speedPair.second)
                 }
@@ -488,17 +497,66 @@ class ExportEngine(private val context: Context) {
             audioProcessors.add(channelMixingProcessor)
         }
 
-        // Speed change affects audio too.
-        if (config.clipSpeed > 0f && config.clipSpeed != 1f) {
-            val constantProvider = object : androidx.media3.common.audio.SpeedProvider {
-                override fun getSpeed(timeUs: Long): Float = config.clipSpeed
-                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
-                    androidx.media3.common.C.TIME_UNSET
-            }
-            val speedPair = Effects.createExperimentalSpeedChangingEffect(constantProvider)
+        // Speed change affects audio too (constant or curve — same
+        // provider builder as the video path, so the two can never
+        // disagree about the clip's rate).
+        buildSpeedProvider(config)?.let { provider ->
+            val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
             audioProcessors.add(speedPair.first)
         }
         return audioProcessors
+    }
+
+    /**
+     * Builds the Media3 [SpeedProvider] for an export, or null when no
+     * speed change applies (constant 1x, no curve).
+     *
+     * Timestamp base: the effect receives presentation times relative
+     * to the clipped item start (0-based), the same convention
+     * KeyframeAnimationEffect already relies on — so the fraction is
+     * timeUs / trimmed-span. [getNextSpeedChangeTimeUs] re-queries
+     * every 10 ms of source time so the effect tracks the curve
+     * instead of caching one rate for the whole clip.
+     */
+    private fun buildSpeedProvider(
+        config: ExportConfig
+    ): androidx.media3.common.audio.SpeedProvider? {
+        val points = com.apexstudio.app.domain.model.SpeedCurveMath.sanitize(config.speedPoints)
+        val hasCurve = points.size >= 2
+        val constant = config.clipSpeed
+        if (!hasCurve && (constant <= 0f || constant == 1f)) return null
+        val spanUs = if (config.trimEndMs > config.trimStartMs) {
+            (config.trimEndMs - config.trimStartMs) * 1000L
+        } else {
+            -1L
+        }
+        if (hasCurve && spanUs <= 0L) {
+            // Curve without a usable trim span (e.g. the photo path
+            // passes 0..0): fall back to the constant rate rather
+            // than guessing a mapping.
+            Log.w(TAG, "Speed curve ignored: no valid trim span in export config")
+            if (constant <= 0f || constant == 1f) return null
+            return object : androidx.media3.common.audio.SpeedProvider {
+                override fun getSpeed(timeUs: Long): Float = constant
+                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long =
+                    androidx.media3.common.C.TIME_UNSET
+            }
+        }
+        return object : androidx.media3.common.audio.SpeedProvider {
+            override fun getSpeed(timeUs: Long): Float {
+                if (!hasCurve) return constant
+                val fraction = (timeUs.coerceIn(0L, spanUs).toDouble() / spanUs.toDouble())
+                    .toFloat()
+                return com.apexstudio.app.domain.model.SpeedCurveMath.speedAt(points, fraction)
+            }
+
+            override fun getNextSpeedChangeTimeUs(timeUs: Long): Long {
+                if (!hasCurve) return androidx.media3.common.C.TIME_UNSET
+                // Next 10 ms boundary (source time).
+                val next = ((timeUs / 10_000L) + 1L) * 10_000L
+                return next.coerceAtMost(spanUs)
+            }
+        }
     }
 
     /**
@@ -543,9 +601,19 @@ class ExportEngine(private val context: Context) {
                     }
                     // Fresh audio processors per item — processors are stateful
                     // and must not be shared across sequence items.
+                    // Per-source curve (PR-E): a ramped clip's audio is
+                    // time-stretched by its own curve; sources without a
+                    // curve fall back to the config's constant clipSpeed.
                     EditedMediaItem.Builder(mediaItemBuilder.build())
                         .setRemoveVideo(true)
-                        .setEffects(Effects(buildExportAudioProcessors(config), emptyList()))
+                        .setEffects(
+                            Effects(
+                                buildExportAudioProcessors(
+                                    config.copy(speedPoints = src.speedPoints)
+                                ),
+                                emptyList()
+                            )
+                        )
                         .build()
                 }
                 val composition = Composition.Builder(

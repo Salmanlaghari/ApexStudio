@@ -48,11 +48,15 @@ private suspend fun extractClipThumbnails(
     context: android.content.Context,
     clip: com.apexstudio.app.domain.model.MediaClip
 ): Map<Int, Bitmap> {
-    if (clip.type == ClipType.IMAGE) {
+    // OVERLAY clips can be image-backed too (overlay picker allows
+    // ImageAndVideo). Try the still loader first for them as well;
+    // if it fails, fall through to video-frame extraction below.
+    if (clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY) {
         val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
             context, clip.uri, maxDim = 240
         )
-        return if (photo != null) mapOf(0 to photo) else emptyMap()
+        if (photo != null) return mapOf(0 to photo)
+        if (clip.type == ClipType.IMAGE) return emptyMap()
     }
     val trimStart = clip.trimStartMs
     val trimEnd =
@@ -76,6 +80,9 @@ fun TimelineTrackArea(
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
     onSelectClip: (String?) -> Unit = {},
+    // Tapping empty timeline space clears the selection (hides the clip
+    // action bar). Wired to VideoTimeline's background tap.
+    onDeselect: () -> Unit = {},
     onSelectFx: (String) -> Unit = {},
     onSelectFilter: (String) -> Unit = {},
     onAddMedia: (ClipType) -> Unit = {},
@@ -131,25 +138,22 @@ fun TimelineTrackArea(
 ) {
     val context = LocalContext.current
     val clips = state.project?.clips ?: emptyList()
-    val activeClip = clips.firstOrNull { it.id == state.selectedClipId } ?: clips.firstOrNull()
-    val durationMs = state.durationMs.coerceAtLeast(1000L)
-    val playheadMs = state.playerPositionMs.coerceIn(0L, durationMs)
 
-    var selectedLayer by remember { mutableStateOf(SelectedLayerType.NONE) }
-    // (ownerClipId, overlayId) of the selected text segment — drives the
-    // Delete quick action (deletes the TEXT, not the clip).
-    var selectedTextRef by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
     // opening/closing any bottom sheet can never reset the scroll to
     // 00:00 and strand the playhead off-screen.
     val timelineScrollState = rememberScrollState()
     val timelineVScrollState = rememberScrollState()
 
-    // V1 lane clips: main video + photo (IMAGE) clips share the filmstrip
-    // lane. Photo clips previously rendered nowhere, leaving the V1 track
-    // empty even with a project loaded.
-    val v1Clips = remember(clips) {
-        clips.filter { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE }
+    // Filmstrip clips: main video + photo (IMAGE) clips share the V1
+    // filmstrip lane, and overlay (OVERLAY) clips get frames too — the
+    // overlay rows previously showed no frames because only VIDEO/IMAGE
+    // clips were extracted here. Photo clips previously rendered nowhere,
+    // leaving the V1 track empty even with a project loaded.
+    val filmstripClips = remember(clips) {
+        clips.filter {
+            it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY
+        }
     }
 
     // Per-clip filmstrip thumbnails, extracted once per clip (keyed by
@@ -157,7 +161,7 @@ fun TimelineTrackArea(
     // is seeded first so the lane never shows a dark strip; the real
     // frames replace it when ready.
     val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
-    v1Clips.forEach { clip ->
+    filmstripClips.forEach { clip ->
         LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
             if (!thumbnailsByClip.containsKey(clip.id)) {
                 val clipSeconds = ((clip.trimEndMs - clip.trimStartMs)
@@ -175,8 +179,8 @@ fun TimelineTrackArea(
         }
     }
     // Drop thumbnails for clips that no longer exist.
-    LaunchedEffect(v1Clips.map { it.id }) {
-        thumbnailsByClip.keys.retainAll(v1Clips.map { it.id }.toSet())
+    LaunchedEffect(filmstripClips.map { it.id }) {
+        thumbnailsByClip.keys.retainAll(filmstripClips.map { it.id }.toSet())
     }
 
     Column(
@@ -190,10 +194,8 @@ fun TimelineTrackArea(
         com.apexstudio.app.ui.components.VideoTimeline(
             state = state,
             onScrub = onScrub,
-            onSelectClip = { clipId ->
-                selectedLayer = SelectedLayerType.VIDEO_V1
-                onSelectClip(clipId)
-            },
+            onSelectClip = onSelectClip,
+            onDeselect = onDeselect,
             onReorderClips = onReorderClips,
             onAddMedia = { type -> onAddMedia(type) },
             onSplitClip = onSplitClip,
@@ -213,19 +215,9 @@ fun TimelineTrackArea(
             onMoveKeyframe = onMoveKeyframe,
             onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
             onMoveTextKeyframe = onMoveTextKeyframe,
-            onSelectAudioTrack = { trackId ->
-                selectedLayer = SelectedLayerType.AUDIO_A1
-                onSelectAudioTrack(trackId)
-            },
-            onSelectTextOverlay = { clipId, overlayId ->
-                selectedLayer = SelectedLayerType.TEXT_TXT
-                selectedTextRef = clipId to overlayId
-                onSelectTextOverlay(clipId, overlayId)
-            },
-            onSelectSticker = { stickerId ->
-                selectedLayer = SelectedLayerType.STICKER_STK
-                onSelectSticker(stickerId)
-            },
+            onSelectAudioTrack = onSelectAudioTrack,
+            onSelectTextOverlay = onSelectTextOverlay,
+            onSelectSticker = onSelectSticker,
             onOpenText = onOpenText,
             onOpenStickers = onOpenStickers,
             onOpenFilter = onOpenFilter,
@@ -247,291 +239,6 @@ fun TimelineTrackArea(
                 .fillMaxWidth()
                 .weight(1f)
         )
-
-        Spacer(Modifier.height(4.dp))
-
-        // --- 3. CONTEXTUAL QUICK ACTIONS (adapt on layer tap) ---
-        // Note: the mockup's cyan divider + "Video clip selected" label and
-        // the clip toolbar live in ContextualToolbar (EditorBottomToolbarSection,
-        // rendered directly below); they are intentionally not duplicated here.
-        if (selectedLayer != SelectedLayerType.NONE) {
-            // Layer-Specific Contextual Action Cards
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .padding(top = 6.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                when (selectedLayer) {
-                    SelectedLayerType.VIDEO_V1 -> {
-                        QuickActionSquareCard(
-                            icon = Icons.Default.ContentCut,
-                            label = "Split",
-                            onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Tune,
-                            label = "Trim",
-                            onClick = onOpenTrim
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Speed,
-                            label = "Speed",
-                            onClick = onOpenSpeed
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.VolumeUp,
-                            label = "Volume",
-                            onClick = onOpenAudio
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.AutoAwesome,
-                            label = "Effects",
-                            onClick = onOpenFx
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Layers,
-                            label = "Animation",
-                            onClick = onOpenAnimation
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Crop,
-                            label = "Mask",
-                            tint = Color(0xFF00E5FF),
-                            onClick = onOpenMask
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.ContentCopy,
-                            label = "Duplicate",
-                            onClick = { activeClip?.let { onDuplicateClip(it.id) } }
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.DeleteOutline,
-                            label = "Delete",
-                            tint = ApexPalette.NeonPink,
-                            onClick = { activeClip?.let { onDeleteClip(it.id) } }
-                        )
-                    }
-
-                    SelectedLayerType.OVERLAY_V2 -> {
-                        val ovClip = state.project?.clips?.firstOrNull { it.type == ClipType.OVERLAY }
-                        if (ovClip != null) {
-                            QuickActionSquareCard(
-                                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                label = "Push -1s",
-                                tint = Color(0xFF00E5FF),
-                                onClick = { onShiftClipOffset(ovClip.id, -1000L) }
-                            )
-                            QuickActionSquareCard(
-                                icon = Icons.AutoMirrored.Filled.ArrowForward,
-                                label = "Push +1s",
-                                tint = Color(0xFF00E5FF),
-                                onClick = { onShiftClipOffset(ovClip.id, 1000L) }
-                            )
-                            QuickActionSquareCard(
-                                icon = Icons.Default.NearMe,
-                                label = "To Playhead",
-                                tint = Color(0xFFFFD700),
-                                onClick = { onSetClipOffset(ovClip.id, playheadMs) }
-                            )
-                            QuickActionSquareCard(
-                                icon = Icons.Default.SwapVert,
-                                label = "Swap V1",
-                                tint = Color(0xFF38BDF8),
-                                onClick = { onMoveClipLeft(ovClip.id) }
-                            )
-                        }
-                        QuickActionSquareCard(
-                            icon = Icons.Default.ContentCut,
-                            label = "Split",
-                            onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Layers,
-                            label = "3D Chroma",
-                            tint = Color(0xFF00E5FF),
-                            onClick = onOpenChromaKey
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Crop,
-                            label = "Mask",
-                            tint = Color(0xFF00E5FF),
-                            onClick = onOpenMask
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.AutoAwesome,
-                            label = "Animation",
-                            onClick = onOpenAnimation
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.AddPhotoAlternate,
-                            label = "Replace",
-                            onClick = { onAddMedia(ClipType.OVERLAY) }
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.DeleteOutline,
-                            label = "Delete",
-                            tint = ApexPalette.NeonPink,
-                            onClick = { activeClip?.let { onDeleteClip(it.id) } }
-                        )
-                    }
-
-                    SelectedLayerType.TEXT_TXT -> {
-                        QuickActionSquareCard(
-                            icon = Icons.Default.TextFields,
-                            label = "Edit Text",
-                            tint = Color(0xFFA855F7),
-                            onClick = onOpenText
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Palette,
-                            label = "Styles",
-                            tint = Color(0xFFA855F7),
-                            onClick = onOpenText
-                        )
-                        QuickActionSquareCard(
-                            icon = KeyframeDiamondIcon,
-                            label = "Keyframe",
-                            tint = Color(0xFFFBBF24),
-                            onClick = {
-                                selectedTextRef?.let { (clipId, overlayId) ->
-                                    onToggleTextKeyframeAtPlayhead(clipId, overlayId)
-                                }
-                            }
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.DeleteOutline,
-                            label = "Delete",
-                            tint = ApexPalette.NeonPink,
-                            onClick = {
-                                selectedTextRef?.let { (clipId, overlayId) ->
-                                    onDeleteTextOverlay(clipId, overlayId)
-                                }
-                            }
-                        )
-                    }
-
-                    SelectedLayerType.STICKER_STK -> {
-                        QuickActionSquareCard(
-                            icon = Icons.Default.EmojiEmotions,
-                            label = "Edit",
-                            tint = Color(0xFFEC4899),
-                            onClick = onOpenStickers
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.DeleteOutline,
-                            label = "Delete",
-                            tint = ApexPalette.NeonPink,
-                            onClick = {
-                                state.selectedStickerId?.let { onDeleteSticker(it) }
-                            }
-                        )
-                    }
-
-                    SelectedLayerType.FX_LAYER -> {
-                        QuickActionSquareCard(
-                            icon = Icons.Default.AutoAwesome,
-                            label = "Visual FX",
-                            tint = Color(0xFFF59E0B),
-                            onClick = onOpenFx
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.FaceRetouchingNatural,
-                            label = "AR Face",
-                            tint = Color(0xFF10B981),
-                            onClick = onOpenArFilters
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Refresh,
-                            label = "Reset FX",
-                            onClick = onClearFx
-                        )
-                    }
-
-                    SelectedLayerType.AUDIO_A1 -> {
-                        QuickActionSquareCard(
-                            icon = Icons.Default.LibraryMusic,
-                            label = "Audio Mix",
-                            tint = Color(0xFF10B981),
-                            onClick = onOpenAudio
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.MusicNote,
-                            label = "Royalty Music",
-                            tint = Color(0xFF34D399),
-                            onClick = onOpenRoyaltyMusic
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.VolumeUp,
-                            label = "Volume",
-                            onClick = onOpenAudio
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.Mic,
-                            label = "Record",
-                            onClick = onOpenVoice
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.DeleteOutline,
-                            label = "Delete",
-                            tint = ApexPalette.NeonPink,
-                            onClick = { activeClip?.let { onDeleteClip(it.id) } }
-                        )
-                    }
-
-                    SelectedLayerType.NONE -> {}
-                }
-                }
-        } else {
-            // Default CapCut quick action toolbar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                QuickActionSquareCard(
-                    icon = Icons.Default.ContentCut,
-                    label = "Split",
-                    onClick = { activeClip?.let { onSplitClip(it.id, playheadMs) } }
-                )
-
-                QuickActionSquareCard(
-                    icon = Icons.Default.Tune,
-                    label = "Trim",
-                    onClick = onOpenTrim
-                )
-
-                QuickActionSquareCard(
-                    icon = Icons.Default.Speed,
-                    label = "Speed",
-                    onClick = onOpenSpeed
-                )
-
-                QuickActionSquareCard(
-                    icon = Icons.Default.VolumeUp,
-                    label = "Volume",
-                    onClick = onOpenAudio
-                )
-
-                QuickActionSquareCard(
-                    icon = Icons.Default.Layers,
-                    label = "Animation",
-                    onClick = onOpenAnimation
-                )
-
-                QuickActionSquareCard(
-                    icon = Icons.Default.DeleteOutline,
-                    label = "Delete",
-                    tint = ApexPalette.NeonPink,
-                    onClick = { activeClip?.let { onDeleteClip(it.id) } }
-                )
-            }
-        }
     }
 }
 
@@ -784,64 +491,6 @@ fun TimelineQuickActionBar(
                     modifier = Modifier.size(13.dp)
                 )
             }
-        }
-    }
-}
-
-/** Diamond (keyframe) icon — material core has no Diamond, so build it.
- * Uses explicit PathNodes (same pattern as ContextualToolbar.DiamondOutlineIcon):
- * no string parsing, no PathParser API ambiguity. */
-private val KeyframeDiamondIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "keyframe_diamond",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).addPath(
-        pathData = listOf(
-            androidx.compose.ui.graphics.vector.PathNode.MoveTo(12f, 2f),
-            androidx.compose.ui.graphics.vector.PathNode.LineTo(22f, 12f),
-            androidx.compose.ui.graphics.vector.PathNode.LineTo(12f, 22f),
-            androidx.compose.ui.graphics.vector.PathNode.LineTo(2f, 12f),
-            androidx.compose.ui.graphics.vector.PathNode.Close
-        ),
-        fill = SolidColor(Color.Black)
-    ).build()
-}
-
-@Composable
-private fun QuickActionSquareCard(
-    icon: ImageVector,
-    label: String,
-    tint: Color = Color.White,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(width = 54.dp, height = 50.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF141420))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = tint,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = label,
-                color = tint,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium
-            )
         }
     }
 }

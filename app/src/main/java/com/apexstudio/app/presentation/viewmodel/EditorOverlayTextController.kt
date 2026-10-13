@@ -59,7 +59,16 @@ fun EditorViewModel.openTextPanel() = _state.update { it.copy(textPanelOpen = tr
 
 fun EditorViewModel.closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }
 
-fun EditorViewModel.selectTextOverlay(id: String?) = _state.update { it.copy(selectedTextOverlayId = id) }
+fun EditorViewModel.selectTextOverlay(id: String?) = _state.update {
+    // Single selection: picking a text overlay clears a stale sticker
+    // selection (TEXT outranks STICKER in resolveToolbarSelection, so a
+    // leftover sticker id would resurrect the STICKER bar on deselect).
+    // The clip selection is kept so the owner clip stays highlighted.
+    it.copy(
+        selectedTextOverlayId = id,
+        selectedStickerId = if (id != null) null else it.selectedStickerId
+    )
+}
 
 
 fun EditorViewModel.addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.35f) {
@@ -195,7 +204,16 @@ fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
 
 
 fun EditorViewModel.selectSticker(id: String?) {
-    _state.update { it.copy(selectedStickerId = id) }
+    // Single selection: picking a sticker clears a stale text selection
+    // (otherwise the TEXT bar, higher precedence, would keep showing
+    // instead of the STICKER bar). The clip selection is kept so the
+    // owner clip stays highlighted.
+    _state.update {
+        it.copy(
+            selectedStickerId = id,
+            selectedTextOverlayId = if (id != null) null else it.selectedTextOverlayId
+        )
+    }
 }
 
 

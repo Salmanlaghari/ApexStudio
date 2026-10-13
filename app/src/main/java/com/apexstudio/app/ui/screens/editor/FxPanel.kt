@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,11 +58,32 @@ fun FxPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // Half height so the preview + playhead stay visible while an
+            // effect is applied; the overlay wrapper adds status/nav insets.
+            .fillMaxHeight(0.55f)
+            .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
     ) {
+        // Drag handle
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .size(width = 36.dp, height = 4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(ApexPalette.TextTertiary.copy(alpha = 0.5f))
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // Scrollable content; the "Keyframe animation" row stays sticky
+        // at the bottom (outside this scroll container).
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -198,6 +221,8 @@ fun FxPanel(
                 )
             )
         }
+
+        } // end scrollable content
 
         if (onKeyframesClick != null) {
             Spacer(Modifier.height(4.dp))

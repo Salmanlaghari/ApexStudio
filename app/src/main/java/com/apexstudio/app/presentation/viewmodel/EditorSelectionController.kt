@@ -16,13 +16,27 @@ import kotlinx.coroutines.flow.update
 fun EditorViewModel.selectAudioTrack(id: String?) = _state.update { state ->
     state.copy(
         selectedAudioTrackId = id,
-        selectedClipId = if (id != null) null else state.selectedClipId
+        // Single selection: picking a track also clears any text /
+        // sticker selection, otherwise the TEXT/STICKER bar (higher
+        // precedence in resolveToolbarSelection) would keep showing
+        // and the audio actions would stay unreachable.
+        selectedClipId = if (id != null) null else state.selectedClipId,
+        selectedTextOverlayId = if (id != null) null else state.selectedTextOverlayId,
+        selectedStickerId = if (id != null) null else state.selectedStickerId
     )
 }
 
 /** Clears every selection — the contextual toolbar returns to global tools. */
 fun EditorViewModel.clearSelection() = _state.update {
-    it.copy(selectedClipId = null, selectedAudioTrackId = null)
+    // Clear every selection kind: the merged clip bar's visibility is
+    // derived from these ids, so leaving text/sticker selection behind
+    // would keep the TEXT/STICKER bar visible after a deselect.
+    it.copy(
+        selectedClipId = null,
+        selectedAudioTrackId = null,
+        selectedTextOverlayId = null,
+        selectedStickerId = null
+    )
 }
 
 /**

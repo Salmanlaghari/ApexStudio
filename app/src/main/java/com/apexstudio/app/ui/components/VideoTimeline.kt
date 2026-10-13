@@ -20,8 +20,11 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -80,6 +83,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -180,6 +184,9 @@ fun VideoTimeline(
     thumbnailsByClip: Map<String, Map<Int, Bitmap>> = emptyMap(),
     onScrub: (Long) -> Unit = {},
     onSelectClip: (String) -> Unit = {},
+    // Tapping empty timeline space (no clip/track consumed the tap)
+    // clears the selection (hides the clip action bar).
+    onDeselect: () -> Unit = {},
     onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
     onAddMedia: (ClipType) -> Unit = {},
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
@@ -331,6 +338,10 @@ fun VideoTimeline(
         // empty. Prince: "Video Layer Overlay Kuch be nahin" fix.
         ((used + 0 + 1 + extraVideoLayers).toSortedSet()).toList().take(10)
     }
+    // Overlay row heights: 58dp with clips, slim 32dp when empty (still
+    // tappable for "+ Add clip"). The sidebar pills use the same
+    // per-layer heights so pills stay centered on their rows.
+    val emptyOverlayLayerHeight = 32.dp
     val overlayLayerHeight = 58.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
@@ -361,7 +372,8 @@ fun VideoTimeline(
     val rulerHeight = 30.dp
     val v1Height = 44.dp
     val v2Height = 44.dp
-    val fxHeight = 36.dp
+    // Finger-friendly 40dp for TEXT / STICKER / FX lanes (was 32/32/36).
+    val fxHeight = 40.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -374,21 +386,44 @@ fun VideoTimeline(
     // every track stays visible; the outer vertical scroll handles overflow.
     val a1Height = (musicTracks.size.coerceAtLeast(1) * 46).dp
     val a2Height = (voiceTracks.size.coerceAtLeast(1) * 46).dp
-    // Dynamic timeline height: ruler + V1 + N overlay layers + text +
-    // sticker + FX + A1 + A2, with 10dp spacing between rows (matches the
-    // Column's spacedBy). Text/sticker lanes are ALWAYS present now (mockup:
-    // every added element must be a visible layer).
-    val overlayLayerCount = videoLayers.count { it in 1..9 }
-    val textLaneHeight = 32
-    val stickerLaneHeight = 32
-    val fxLaneHeight = 36
-    val timelineTotalDp = 30 + 44 +
-        overlayLayerCount * (58 + 10) +
+    // Layers 1..9 holding no clips render slim empty rows.
+    // videoLayers is a key too: adding an empty layer changes
+    // videoLayers (via extraVideoLayers) without changing clips, and
+    // the stale set would render the new row at 58dp instead of 32dp.
+    val emptyVideoLayers = remember(clips, videoLayers) {
+        videoLayers.filter { layer ->
+            layer in 1..9 && clips.none {
+                it.trackIndex == layer &&
+                    (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
+            }
+        }.toSet()
+    }
+    fun overlayRowHeight(layer: Int): Dp =
+        if (layer in emptyVideoLayers) emptyOverlayLayerHeight else overlayLayerHeight
+    // Dynamic timeline height: ruler + V1 + overlay rows + add-layer
+    // spacer (when <10 layers) + text + sticker + FX + A1 + A2, with
+    // 10dp spacing between rows — built from the same per-row heights the
+    // canvas + sidebar render, so the two stay aligned. (The old formula
+    // undercounted by 10–48dp and clipped the bottom of the A2 row.)
+    val textLaneHeight = 40
+    val stickerLaneHeight = 40
+    val fxLaneHeight = 40
+    val overlayRowsTotal = videoLayers.filter { it in 1..9 }
+        .sumOf { overlayRowHeight(it).value.toInt() + 10 }
+    val addLayerSpacerTotal = if (videoLayers.size < 10) 28 + 10 else 0
+    val timelineTotalDp = 30 + 10 + 44 +
+        10 +
+        overlayRowsTotal +
+        addLayerSpacerTotal +
         (textLaneHeight + 10) +
         (stickerLaneHeight + 10) +
         (fxLaneHeight + 10) +
         (musicTracks.size.coerceAtLeast(1) * 46 + 10) +
         (voiceTracks.size.coerceAtLeast(1) * 46 + 10)
+    // Pinned header: ruler + gap + V1 (84dp) stays fixed while the other
+    // tracks scroll vertically underneath it.
+    val fixedHeaderHeight = 30 + 10 + 44
+    val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
     Row(
         modifier = modifier
@@ -403,12 +438,14 @@ fun VideoTimeline(
             rulerHeight = rulerHeight,
             v1Height = v1Height,
             overlayLayerHeight = overlayLayerHeight,
+            emptyVideoLayers = emptyVideoLayers,
             videoLayers = videoLayers,
             hiddenVideoLayers = hiddenVideoLayers,
             lockedVideoLayers = lockedVideoLayers,
             fxHeight = fxHeight,
             a1Height = a1Height,
             a2Height = a2Height,
+            vScrollState = vScrollState,
             onToggleLayerVisibility = onToggleLayerVisibility,
             onToggleLayerLock = onToggleLayerLock,
             onDeleteLayer = onDeleteLayer,
@@ -418,7 +455,10 @@ fun VideoTimeline(
             onAddFx = onOpenFxPanel,
             onAddAudio = onAddAudioTrack,
             onAddVoice = onOpenVoice,
-            modifier = Modifier.verticalScroll(vScrollState),
+            // No verticalScroll modifier here: the sidebar scrolls its
+            // lower section internally (same vScrollState as the canvas)
+            // so the zoom cell + V1 pill stay pinned.
+            modifier = Modifier,
             onZoomIn = {
                 val next = (activeZoomDisplay + 0.5f).coerceAtMost(10.0f)
                 activeZoomDisplay = next
@@ -486,285 +526,350 @@ fun VideoTimeline(
                         }
                     )
                 }
+                // Tapping empty timeline space (no clip/track consumed the
+                // tap) clears the selection. Child clickables (clips,
+                // ruler scrub, HUD, multi-select) win over this parent
+                // clickable, so a tap on a clip never deselects.
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { onDeselect() }
         ) {
-            // Scrollable Timeline Canvas: horizontal for time, vertical
-            // (synced with the header rail) so every lane stays reachable.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .horizontalScroll(scrollState)
-                    .verticalScroll(vScrollState)
-            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // PINNED HEADER: ruler + V1 stay fixed while the other
+                // tracks scroll vertically. Horizontally synced with the
+                // scrolling content via translationX (no recomposition
+                // per scroll frame); clipped so it never draws over the
+                // scrolling rows. The header also accepts horizontal
+                // swipes (scrollable on the shared scrollState, same
+                // direction as horizontalScroll) — without it a swipe
+                // starting on the ruler/V1 would do nothing, since only
+                // the lower box scrolls. Child gestures (ruler scrub,
+                // clip drag) consume first, so they still win.
                 Box(
                     modifier = Modifier
-                        .width(timelineWidthDp)
-                        .height(timelineTotalDp.dp)
-                ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // TRACK 0: Time Ruler & Beat Markers
-                    TimelineTimeRuler(
-                        durationMs = safeDurationMs,
-                        secondWidthDp = secondWidthDp,
-                        msToDp = msToDp,
-                        beatMarkersMs = beatMarkersMs,
-                        snapToBeat = snapToBeat,
-                        onScrub = onScrub,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(rulerHeight)
-                    )
-
-                    // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
-                    TimelineVideoTrack(
-                        videoClips = videoClips,
-                        selectedClipId = selectedClipId,
-                        msToDp = msToDp,
-                        playheadMs = safePlayheadMs,
-                        thumbnailsByClip = thumbnailsByClip,
-                        draggingClipId = draggingClipId,
-                        dragAccumulatedOffsetPx = dragAccumulatedOffsetPx,
-                        targetDropIndex = targetDropIndex,
-                        transitions = transitions,
-                        onOpenTransition = onOpenTransition,
-                        onSelectClip = onSelectClip,
-                        onSeekToKeyframe = onScrub,
-                        onClipBoundsMeasured = { idx, leftPx, widthPx ->
-                            clipLayoutBounds[idx] = Pair(leftPx, widthPx)
-                        },
-                        onDragStart = { clip ->
-                            draggingClipId = clip.id
-                            dragAccumulatedOffsetPx = 0f
-                            val origIdx = videoClips.indexOfFirst { it.id == clip.id }
-                            targetDropIndex = origIdx
-                        },
-                        onDrag = { deltaX ->
-                            dragAccumulatedOffsetPx += deltaX
-                            val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
-                            if (origIdx != -1) {
-                                val currentBound = clipLayoutBounds[origIdx]
-                                if (currentBound != null) {
-                                    val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
-                                    // Find new target drop slot
-                                    var newIdx = origIdx
-                                    clipLayoutBounds.forEach { (idx, bounds) ->
-                                        val clipCenter = bounds.first + (bounds.second / 2f)
-                                        if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
-                                            newIdx = idx
-                                        } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
-                                            newIdx = idx
-                                        }
-                                    }
-                                    targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
-                            if (origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
-                                onReorderClips(origIdx, targetDropIndex)
-                            }
-                            draggingClipId = null
-                            dragAccumulatedOffsetPx = 0f
-                            targetDropIndex = -1
-                        },
-                        onAddClip = { onAddMedia(ClipType.VIDEO) },
-                        multiSelectMode = multiSelectMode,
-                        multiSelectedIds = multiSelectedIds,
-                        onToggleMultiSelect = { clipId ->
-                            multiSelectedIds = if (clipId in multiSelectedIds) {
-                                multiSelectedIds - clipId
-                            } else {
-                                multiSelectedIds + clipId
-                            }
-                        },
-                        onTrimClip = onTrimClip,
-                        onReorderByDrag = { clipId, deltaX ->
-                            // Direct finger-drag reorder for the selected clip (no long-press needed).
-                            if (draggingClipId == null) {
-                                draggingClipId = clipId
-                                dragAccumulatedOffsetPx = 0f
-                                targetDropIndex = videoClips.indexOfFirst { it.id == clipId }
-                            }
-                            dragAccumulatedOffsetPx += deltaX
-                            val origIdx = videoClips.indexOfFirst { it.id == clipId }
-                            if (origIdx != -1) {
-                                val currentBound = clipLayoutBounds[origIdx]
-                                if (currentBound != null) {
-                                    val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
-                                    var newIdx = origIdx
-                                    clipLayoutBounds.forEach { (idx, bounds) ->
-                                        val clipCenter = bounds.first + (bounds.second / 2f)
-                                        if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
-                                            newIdx = idx
-                                        } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
-                                            newIdx = idx
-                                        }
-                                    }
-                                    targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
-                                }
-                            }
-                        },
-                        onReorderByDragEnd = {
-                            val clipId = draggingClipId
-                            val origIdx = videoClips.indexOfFirst { it.id == clipId }
-                            if (clipId != null && origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
-                                onReorderClips(origIdx, targetDropIndex)
-                            }
-                            draggingClipId = null
-                            dragAccumulatedOffsetPx = 0f
-                            targetDropIndex = -1
-                        },
-                        onMoveKeyframe = onMoveKeyframe,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(v1Height)
-                    )
-
-                    // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
-                    // Each used layer 1..9 gets its own PiP row, absolutely
-                    // positioned by timelineOffsetMs, with per-layer show/hide
-                    // + lock driven from the sidebar. Hidden layers render a
-                    // muted placeholder so the structure stays visible.
-                    videoLayers.filter { it in 1..9 }.forEach { layer ->
-                        val layerClips = remember(clips, layer) {
-                            clips.filter {
-                                it.trackIndex == layer &&
-                                    (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
-                            }
-                        }
-                        TimelineVideoLayerRow(
-                            layerIndex = layer,
-                            clips = layerClips,
-                            thumbnailsByClip = thumbnailsByClip,
-                            selectedClipId = selectedClipId,
-                            msToDp = msToDp,
-                            isHidden = layer in hiddenVideoLayers,
-                            isLocked = layer in lockedVideoLayers,
-                            onSelectClip = onSelectClip,
-                            onAddClip = { onAddClipToLayer(layer) },
-                            onMoveClipOffset = onMoveClipOffset,
-                            onDeleteClip = onDeleteClip,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(overlayLayerHeight)
+                        .fillMaxWidth()
+                        .height(fixedHeaderHeight.dp)
+                        .clipToBounds()
+                        .scrollable(
+                            state = scrollState,
+                            orientation = Orientation.Horizontal,
+                            reverseDirection = true
                         )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(timelineWidthDp)
+                            .height(fixedHeaderHeight.dp)
+                            .graphicsLayer { translationX = -scrollState.value.toFloat() }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // TRACK 0: Time Ruler & Beat Markers
+                            TimelineTimeRuler(
+                                durationMs = safeDurationMs,
+                                secondWidthDp = secondWidthDp,
+                                msToDp = msToDp,
+                                beatMarkersMs = beatMarkersMs,
+                                snapToBeat = snapToBeat,
+                                onScrub = onScrub,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(rulerHeight)
+                            )
+
+                            // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
+                            TimelineVideoTrack(
+                                videoClips = videoClips,
+                                selectedClipId = selectedClipId,
+                                msToDp = msToDp,
+                                playheadMs = safePlayheadMs,
+                                thumbnailsByClip = thumbnailsByClip,
+                                draggingClipId = draggingClipId,
+                                dragAccumulatedOffsetPx = dragAccumulatedOffsetPx,
+                                targetDropIndex = targetDropIndex,
+                                transitions = transitions,
+                                onOpenTransition = onOpenTransition,
+                                onSelectClip = onSelectClip,
+                                onSeekToKeyframe = onScrub,
+                                onClipBoundsMeasured = { idx, leftPx, widthPx ->
+                                    clipLayoutBounds[idx] = Pair(leftPx, widthPx)
+                                },
+                                onDragStart = { clip ->
+                                    draggingClipId = clip.id
+                                    dragAccumulatedOffsetPx = 0f
+                                    val origIdx = videoClips.indexOfFirst { it.id == clip.id }
+                                    targetDropIndex = origIdx
+                                },
+                                onDrag = { deltaX ->
+                                    dragAccumulatedOffsetPx += deltaX
+                                    val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
+                                    if (origIdx != -1) {
+                                        val currentBound = clipLayoutBounds[origIdx]
+                                        if (currentBound != null) {
+                                            val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
+                                            // Find new target drop slot
+                                            var newIdx = origIdx
+                                            clipLayoutBounds.forEach { (idx, bounds) ->
+                                                val clipCenter = bounds.first + (bounds.second / 2f)
+                                                if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
+                                                    newIdx = idx
+                                                } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
+                                                    newIdx = idx
+                                                }
+                                            }
+                                            targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
+                                    if (origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
+                                        onReorderClips(origIdx, targetDropIndex)
+                                    }
+                                    draggingClipId = null
+                                    dragAccumulatedOffsetPx = 0f
+                                    targetDropIndex = -1
+                                },
+                                onAddClip = { onAddMedia(ClipType.VIDEO) },
+                                multiSelectMode = multiSelectMode,
+                                multiSelectedIds = multiSelectedIds,
+                                onToggleMultiSelect = { clipId ->
+                                    multiSelectedIds = if (clipId in multiSelectedIds) {
+                                        multiSelectedIds - clipId
+                                    } else {
+                                        multiSelectedIds + clipId
+                                    }
+                                },
+                                onTrimClip = onTrimClip,
+                                onReorderByDrag = { clipId, deltaX ->
+                                    // Direct finger-drag reorder for the selected clip (no long-press needed).
+                                    if (draggingClipId == null) {
+                                        draggingClipId = clipId
+                                        dragAccumulatedOffsetPx = 0f
+                                        targetDropIndex = videoClips.indexOfFirst { it.id == clipId }
+                                    }
+                                    dragAccumulatedOffsetPx += deltaX
+                                    val origIdx = videoClips.indexOfFirst { it.id == clipId }
+                                    if (origIdx != -1) {
+                                        val currentBound = clipLayoutBounds[origIdx]
+                                        if (currentBound != null) {
+                                            val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
+                                            var newIdx = origIdx
+                                            clipLayoutBounds.forEach { (idx, bounds) ->
+                                                val clipCenter = bounds.first + (bounds.second / 2f)
+                                                if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
+                                                    newIdx = idx
+                                                } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
+                                                    newIdx = idx
+                                                }
+                                            }
+                                            targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
+                                        }
+                                    }
+                                },
+                                onReorderByDragEnd = {
+                                    val clipId = draggingClipId
+                                    val origIdx = videoClips.indexOfFirst { it.id == clipId }
+                                    if (clipId != null && origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
+                                        onReorderClips(origIdx, targetDropIndex)
+                                    }
+                                    draggingClipId = null
+                                    dragAccumulatedOffsetPx = 0f
+                                    targetDropIndex = -1
+                                },
+                                onMoveKeyframe = onMoveKeyframe,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(v1Height)
+                            )
+                        }
                     }
-
-                    // Rail alignment: mirror the sidebar's 28dp add-layer
-                    // button so pills stay centered on their rows.
-                    if (videoLayers.size < 10) {
-                        Spacer(Modifier.height(28.dp))
-                    }
-
-                    // TEXT lane — ALWAYS visible (mockup): every text element
-                    // the user adds must appear as a tappable layer segment.
-                    TimelineTextLane(
-                        textOverlays = textOverlays,
-                        allClips = clips,
-                        msToDp = msToDp,
-                        selectedTextOverlayId = selectedTextOverlayId,
-                        onSelectTextOverlay = onSelectTextOverlay,
-                        onAddText = onOpenText,
-                        onSeekToKeyframe = onScrub,
-                        onMoveTextKeyframe = onMoveTextKeyframe,
-                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(textLaneHeight.dp)
-                    )
-
-                    // STICKER lane — ALWAYS visible (mockup): project-level
-                    // stickers render as segments, tappable to select/edit.
-                    TimelineStickerLane(
-                        stickers = stickers,
-                        msToDp = msToDp,
-                        selectedStickerId = selectedStickerId,
-                        onSelectSticker = onSelectSticker,
-                        onAddSticker = onOpenStickers,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(stickerLaneHeight.dp)
-                    )
-
-                    // TRACK 3: FX lane — one segment per applied
-                    // filter/FX/adjustment (mockup), each tappable.
-                    TimelineFxTrack(
-                        activeFxId = activeFxId,
-                        activeFilterId = activeFilterId,
-                        filterIntensity = filterIntensity,
-                        adjustments = adjustments,
-                        fxIntensity = fxIntensity,
-                        durationMs = safeDurationMs,
-                        msToDp = msToDp,
-                        fxKeyframes = videoClips.firstOrNull { it.id == selectedClipId }?.keyframes?.keyframes
-                            ?: emptyList(),
-                        onSeekToKeyframe = onScrub,
-                        onToggleKeyframeAtPlayhead = {
-                            selectedClipId?.let { onToggleKeyframeAtPlayhead(it) }
-                        },
-                        onOpenFilter = onOpenFilter,
-                        onOpenFxPanel = onOpenFxPanel,
-                        onOpenAdjust = onOpenAdjust,
-                        onClearFx = onClearFx,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(fxLaneHeight.dp)
-                    )
-
-                    // TRACK 4: A1 (music) + TRACK 5: A2 (voice) — mockup.
-                    TimelineAudioTrack(
-                        audioTracks = musicTracks,
-                        addLabel = "+ Add Audio",
-                        durationMs = safeDurationMs,
-                        msToDp = msToDp,
-                        isMuted = isAudioMuted,
-                        audioWaveform = audioWaveform,
-                        beatMarkersMs = beatMarkersMs,
-                        snapToBeat = snapToBeat,
-                        playheadMs = safePlayheadMs,
-                        selectedAudioTrackId = selectedAudioTrackId,
-                        onSelectAudioTrack = onSelectAudioTrack,
-                        onAddAudio = onAddAudioTrack,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(a1Height)
-                    )
-                    TimelineAudioTrack(
-                        audioTracks = voiceTracks,
-                        addLabel = "+ Add Voice",
-                        durationMs = safeDurationMs,
-                        msToDp = msToDp,
-                        isMuted = isAudioMuted,
-                        audioWaveform = audioWaveform,
-                        beatMarkersMs = beatMarkersMs,
-                        snapToBeat = snapToBeat,
-                        playheadMs = safePlayheadMs,
-                        selectedAudioTrackId = selectedAudioTrackId,
-                        onSelectAudioTrack = onSelectAudioTrack,
-                        onAddAudio = onOpenVoice,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(a2Height)
-                    )
                 }
 
-                // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
-                // Isolated: collects the raw position flow directly so the
-                // playhead glides at full rate without recomposing tracks.
+                // SCROLLABLE TRACKS: overlay layers + TXT/STK/FX/A1/A2.
+                // Same horizontal + vertical scroll states as the sidebar,
+                // so pills and rows stay aligned while scrolling.
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .horizontalScroll(scrollState)
+                        .verticalScroll(vScrollState)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(timelineWidthDp)
+                            .height(scrollableTotalDp.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                // 10dp gap between the pinned V1 row and
+                                // the first scrolling row (was the
+                                // Column's spacedBy before the split).
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+
+                            // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
+                            // Each used layer 1..9 gets its own PiP row, absolutely
+                            // positioned by timelineOffsetMs, with per-layer show/hide
+                            // + lock driven from the sidebar. Hidden layers render a
+                            // muted placeholder so the structure stays visible.
+                            videoLayers.filter { it in 1..9 }.forEach { layer ->
+                                val layerClips = remember(clips, layer) {
+                                    clips.filter {
+                                        it.trackIndex == layer &&
+                                            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
+                                    }
+                                }
+                                TimelineVideoLayerRow(
+                                    layerIndex = layer,
+                                    clips = layerClips,
+                                    thumbnailsByClip = thumbnailsByClip,
+                                    selectedClipId = selectedClipId,
+                                    msToDp = msToDp,
+                                    isHidden = layer in hiddenVideoLayers,
+                                    isLocked = layer in lockedVideoLayers,
+                                    onSelectClip = onSelectClip,
+                                    onAddClip = { onAddClipToLayer(layer) },
+                                    onMoveClipOffset = onMoveClipOffset,
+                                    onDeleteClip = onDeleteClip,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        // Slim 32dp row when the layer is empty.
+                                        .height(overlayRowHeight(layer))
+                                )
+                            }
+
+                            // Rail alignment: mirror the sidebar's 28dp add-layer
+                            // button so pills stay centered on their rows.
+                            if (videoLayers.size < 10) {
+                                Spacer(Modifier.height(28.dp))
+                            }
+
+                            // TEXT lane — ALWAYS visible (mockup): every text element
+                            // the user adds must appear as a tappable layer segment.
+                            TimelineTextLane(
+                                textOverlays = textOverlays,
+                                allClips = clips,
+                                msToDp = msToDp,
+                                selectedTextOverlayId = selectedTextOverlayId,
+                                onSelectTextOverlay = onSelectTextOverlay,
+                                onAddText = onOpenText,
+                                onSeekToKeyframe = onScrub,
+                                onMoveTextKeyframe = onMoveTextKeyframe,
+                                onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(textLaneHeight.dp)
+                            )
+
+                            // STICKER lane — ALWAYS visible (mockup): project-level
+                            // stickers render as segments, tappable to select/edit.
+                            TimelineStickerLane(
+                                stickers = stickers,
+                                msToDp = msToDp,
+                                selectedStickerId = selectedStickerId,
+                                onSelectSticker = onSelectSticker,
+                                onAddSticker = onOpenStickers,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(stickerLaneHeight.dp)
+                            )
+
+                            // TRACK 3: FX lane — one segment per applied
+                            // filter/FX/adjustment (mockup), each tappable.
+                            TimelineFxTrack(
+                                activeFxId = activeFxId,
+                                activeFilterId = activeFilterId,
+                                filterIntensity = filterIntensity,
+                                adjustments = adjustments,
+                                fxIntensity = fxIntensity,
+                                durationMs = safeDurationMs,
+                                msToDp = msToDp,
+                                fxKeyframes = videoClips.firstOrNull { it.id == selectedClipId }?.keyframes?.keyframes
+                                    ?: emptyList(),
+                                onSeekToKeyframe = onScrub,
+                                onToggleKeyframeAtPlayhead = {
+                                    selectedClipId?.let { onToggleKeyframeAtPlayhead(it) }
+                                },
+                                onOpenFilter = onOpenFilter,
+                                onOpenFxPanel = onOpenFxPanel,
+                                onOpenAdjust = onOpenAdjust,
+                                onClearFx = onClearFx,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(fxLaneHeight.dp)
+                            )
+
+                            // TRACK 4: A1 (music) + TRACK 5: A2 (voice) — mockup.
+                            TimelineAudioTrack(
+                                audioTracks = musicTracks,
+                                addLabel = "+ Add Audio",
+                                durationMs = safeDurationMs,
+                                msToDp = msToDp,
+                                isMuted = isAudioMuted,
+                                audioWaveform = audioWaveform,
+                                beatMarkersMs = beatMarkersMs,
+                                snapToBeat = snapToBeat,
+                                playheadMs = safePlayheadMs,
+                                selectedAudioTrackId = selectedAudioTrackId,
+                                onSelectAudioTrack = onSelectAudioTrack,
+                                onAddAudio = onAddAudioTrack,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(a1Height)
+                            )
+                            TimelineAudioTrack(
+                                audioTracks = voiceTracks,
+                                addLabel = "+ Add Voice",
+                                durationMs = safeDurationMs,
+                                msToDp = msToDp,
+                                isMuted = isAudioMuted,
+                                audioWaveform = audioWaveform,
+                                beatMarkersMs = beatMarkersMs,
+                                snapToBeat = snapToBeat,
+                                playheadMs = safePlayheadMs,
+                                selectedAudioTrackId = selectedAudioTrackId,
+                                onSelectAudioTrack = onSelectAudioTrack,
+                                onAddAudio = onOpenVoice,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(a2Height)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
+            // At canvas-root level (not inside the scrolled content) so it
+            // spans the full visible height — pinned header included — and
+            // its handle never scrolls off-screen. The horizontal scroll
+            // offset is subtracted inside the overlay. Clipped so a
+            // left-scrolled playhead never draws over the sidebar.
+            Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                 TimelinePlayheadOverlay(
                     playerPositionFlow = playerPositionFlow,
                     fallbackMs = safePlayheadMs,
                     durationMs = safeDurationMs,
                     msToDp = msToDp,
-                    isSnapped = isPlayheadSnapped
+                    isSnapped = isPlayheadSnapped,
+                    // Provider, not a snapshot read: reading
+                    // scrollState.value here would recompose the whole
+                    // timeline on every scroll frame.
+                    scrollOffsetPx = { scrollState.value.toFloat() }
                 )
             }
-        }
+            // NOTE: the canvas Box stays open — the Zoom HUD + multi-select
+            // overlays below are its children (they use BoxScope align).
 
         // Floating Zoom HUD & Frame Precision indicator overlay
         if (showZoomHud || isPinchZooming) {
@@ -864,6 +969,9 @@ fun VideoTimeline(
     state: EditorState,
     onScrub: (Long) -> Unit,
     onSelectClip: (String?) -> Unit,
+    // Tapping empty timeline space clears the selection (hides the clip
+    // action bar). No-op default keeps standalone callers working.
+    onDeselect: () -> Unit = {},
     onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit,
     onAddMedia: (ClipType) -> Unit,
     onSplitClip: (clipId: String, atMs: Long) -> Unit,
@@ -955,6 +1063,7 @@ fun VideoTimeline(
         thumbnailsByClip = thumbnailsByClip,
         onScrub = onScrub,
         onSelectClip = { onSelectClip(it) },
+        onDeselect = onDeselect,
         onReorderClips = onReorderClips,
         onAddMedia = onAddMedia,
         onSplitClip = onSplitClip,
@@ -1003,6 +1112,14 @@ private fun TimelineLeftSidebar(
     rulerHeight: Dp,
     v1Height: Dp,
     overlayLayerHeight: Dp,
+    // Layers 1..9 holding no clips render slim 32dp pills (matches
+    // the slim empty rows on the canvas).
+    emptyVideoLayers: Set<Int> = emptySet(),
+    emptyOverlayLayerHeight: Dp = 32.dp,
+    // Vertical scroll state shared with the canvas — the sidebar
+    // scrolls its lower section with the same offset so pills stay
+    // centered on their rows.
+    vScrollState: ScrollState,
     videoLayers: List<Int>,
     hiddenVideoLayers: Set<Int>,
     lockedVideoLayers: Set<Int>,
@@ -1029,97 +1146,120 @@ private fun TimelineLeftSidebar(
             .fillMaxHeight()
             .background(Color(0xFF0C0E14))
             .border(width = 1.dp, color = Color(0xFF1E2230))
-            .padding(horizontal = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 4.dp)
     ) {
-        // Zoom cell (aligned with the ruler row)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(rulerHeight),
-            contentAlignment = Alignment.Center
+        // PINNED: zoom cell + V1 pill stay fixed while the rest
+        // scrolls (V1 must stay visible while other tracks scroll).
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(1.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onZoomOut),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
-                }
-                Text(
-                    text = "${String.format(java.util.Locale.US, "%.1f", zoomFactor)}x",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(3.dp))
-                        .clickable(onClick = onResetZoom)
-                        .padding(horizontal = 1.dp)
-                )
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onZoomIn),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
-                }
-            }
-        }
-
-        // V1 main layer pill (layer 0 can never be hidden/locked/deleted).
-        TrackPill(label = "V1", accent = ApexPalette.NeonCyan, height = v1Height)
-
-        // Overlay layer pills V2..V10 with eye / lock / delete controls.
-        videoLayers.filter { it in 1..9 }.forEach { layer ->
-            VideoLayerPill(
-                layerIndex = layer,
-                height = overlayLayerHeight,
-                isHidden = layer in hiddenVideoLayers,
-                isLocked = layer in lockedVideoLayers,
-                onToggleVisibility = { onToggleLayerVisibility(layer) },
-                onToggleLock = { onToggleLayerLock(layer) },
-                onDelete = { onDeleteLayer(layer) }
-            )
-        }
-
-        // Add-layer button (up to 10 layers total).
-        if (videoLayers.size < 10) {
+            // Zoom cell (aligned with the ruler row)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF141824))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                    .clickable(onClick = onAddLayer),
+                    .height(rulerHeight),
                 contentAlignment = Alignment.Center
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(1.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add layer", tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
-                    Text("V${videoLayers.size + 1}", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onZoomOut),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                    }
+                    Text(
+                        text = "${String.format(java.util.Locale.US, "%.1f", zoomFactor)}x",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .clickable(onClick = onResetZoom)
+                            .padding(horizontal = 1.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onZoomIn),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                    }
                 }
             }
-        }
 
-        // Mockup: TEXT / STICKER / FX / A1 / A2 lanes are always present;
-        // the + chip on each pill adds that element type (no dead buttons).
-        TrackPill(label = "TXT", accent = ApexPalette.NeonPink, height = 32.dp, onAdd = onAddText)
-        TrackPill(label = "STK", accent = Color(0xFFF472B6), height = 32.dp, onAdd = onAddSticker)
-        TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight, onAdd = onAddFx)
-        TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height, onAdd = onAddAudio)
-        TrackPill(label = "A2", accent = Color(0xFFF472B6), height = a2Height, onAdd = onAddVoice)
+            // V1 main layer pill (layer 0 can never be hidden/locked/deleted).
+            TrackPill(label = "V1", accent = ApexPalette.NeonCyan, height = v1Height)
+        }
+        // SCROLLABLE: overlay pills + add-layer + TXT/STK/FX/A1/A2.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(vScrollState)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 10dp gap between the pinned V1 pill and the
+                    // first scrolling pill.
+                    .padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+            // Overlay layer pills V2..V10 with eye / lock / delete controls.
+            videoLayers.filter { it in 1..9 }.forEach { layer ->
+                VideoLayerPill(
+                    layerIndex = layer,
+                    height = if (layer in emptyVideoLayers) emptyOverlayLayerHeight else overlayLayerHeight,
+                    isHidden = layer in hiddenVideoLayers,
+                    isLocked = layer in lockedVideoLayers,
+                    onToggleVisibility = { onToggleLayerVisibility(layer) },
+                    onToggleLock = { onToggleLayerLock(layer) },
+                    onDelete = { onDeleteLayer(layer) }
+                )
+            }
+
+            // Add-layer button (up to 10 layers total).
+            if (videoLayers.size < 10) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF141824))
+                        .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onAddLayer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add layer", tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
+                        Text("V${videoLayers.size + 1}", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Mockup: TEXT / STICKER / FX / A1 / A2 lanes are always present;
+            // the + chip on each pill adds that element type (no dead buttons).
+            TrackPill(label = "TXT", accent = ApexPalette.NeonPink, height = 40.dp, onAdd = onAddText)
+            TrackPill(label = "STK", accent = Color(0xFFF472B6), height = 40.dp, onAdd = onAddSticker)
+            TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight, onAdd = onAddFx)
+            TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height, onAdd = onAddAudio)
+            TrackPill(label = "A2", accent = Color(0xFFF472B6), height = a2Height, onAdd = onAddVoice)
+            }
+        }
     }
 }
 
@@ -1449,7 +1589,12 @@ private fun TimelineVideoLayerRow(
             return@Column
         }
 
-        Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
+        // Compact empty rows (32dp from the caller): the content box shrinks
+        // so the "+ Add clip" affordance fits without overflowing into
+        // the next row. Full rows keep the 44dp box (32dp chip + 10dp
+        // keyframe strip + spacing).
+        val compactEmpty = clips.isEmpty()
+        Box(modifier = Modifier.fillMaxWidth().height(if (compactEmpty) 26.dp else 44.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 // Speed-ramped clips occupy their OUTPUT length.
@@ -3048,6 +3193,14 @@ private fun TimelinePlayheadOverlay(
     durationMs: Long,
     msToDp: Float,
     isSnapped: Boolean = false,
+    // Horizontal scroll offset (px) provider of the canvas. The overlay
+    // sits at canvas-root level (not inside the scrolled content), so
+    // the offset shifts the playhead to keep it glued to the playhead
+    // position. A provider (read inside graphicsLayer, i.e. the
+    // layout/draw phase) instead of a plain Float: reading
+    // scrollState.value during composition would recompose the whole
+    // VideoTimeline on every scroll frame.
+    scrollOffsetPx: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
     val liveMs = if (playerPositionFlow != null) {
@@ -3056,14 +3209,18 @@ private fun TimelinePlayheadOverlay(
         fallbackMs
     }
     val posMs = liveMs.coerceIn(0L, durationMs.coerceAtLeast(1L))
-    TimelinePlayhead(
-        playheadX = (posMs * msToDp).dp + 16.dp,
-        playheadMs = posMs,
-        onScrub = {},
-        msToDp = msToDp,
-        isSnapped = isSnapped,
-        modifier = modifier
-    )
+    // Content-space X (unscrolled); the scroll shift is applied as a
+    // layer translation below, so scrolling never recomposes this.
+    Box(modifier = Modifier.graphicsLayer { translationX = -scrollOffsetPx() }) {
+        TimelinePlayhead(
+            playheadX = (posMs * msToDp).dp + 16.dp,
+            playheadMs = posMs,
+            onScrub = {},
+            msToDp = msToDp,
+            isSnapped = isSnapped,
+            modifier = modifier
+        )
+    }
 }
 
 /**

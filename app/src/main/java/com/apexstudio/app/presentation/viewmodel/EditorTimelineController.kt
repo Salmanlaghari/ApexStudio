@@ -42,8 +42,13 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
     val clip = id?.let { clipId -> state.project?.clips?.firstOrNull { it.id == clipId } }
     state.copy(
         selectedClipId = id,
-        // CapCut-style single selection: picking a clip clears the audio-lane selection.
+        // CapCut-style single selection: picking a clip clears the audio-lane
+        // selection, and also any text/sticker selection — otherwise the
+        // TEXT/STICKER bar (higher precedence in resolveToolbarSelection)
+        // would keep showing and the clip actions would stay unreachable.
         selectedAudioTrackId = if (id != null) null else state.selectedAudioTrackId,
+        selectedTextOverlayId = if (id != null) null else state.selectedTextOverlayId,
+        selectedStickerId = if (id != null) null else state.selectedStickerId,
         activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
     )
 }

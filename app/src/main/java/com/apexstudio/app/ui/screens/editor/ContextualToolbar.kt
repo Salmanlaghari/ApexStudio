@@ -1,6 +1,13 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -42,10 +49,15 @@ import com.apexstudio.app.ui.theme.ApexPalette
  *
  * A collapse chevron as the first item deselects and returns to global tools.
  */
-enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO }
+enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO, TEXT, STICKER }
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
     val project = state.project ?: return ToolbarSelectionKind.NONE
+    // Text / sticker selections are the most specific: a text overlay or
+    // sticker sits on top of a clip, and the clip stays selected too, so
+    // these win over the clip's own kind.
+    if (state.selectedTextOverlayId != null) return ToolbarSelectionKind.TEXT
+    if (state.selectedStickerId != null) return ToolbarSelectionKind.STICKER
     if (state.selectedAudioTrackId != null &&
         project.audioTracks.any { it.id == state.selectedAudioTrackId }
     ) {
@@ -141,10 +153,37 @@ fun ContextualBottomToolbar(
     onBgRemover: () -> Unit = {},
     // Collapse (deselect)
     onCollapse: () -> Unit = {},
+    // Merged clip-bar actions (previously the timeline quick-actions row
+    // inside TimelineTrackArea — merged here so there is exactly one
+    // clip bar, with no duplicated Split / Speed / Animation entries).
+    onSplit: () -> Unit = {},
+    onTrim: () -> Unit = {},
+    onMask: () -> Unit = {},
+    onDuplicate: () -> Unit = {},
+    // Keyframe: toggles a keyframe at the playhead. Distinct from
+    // onAnimation (opens the keyframe/animation panel) — the old bar had
+    // both Keyframe and Animation opening the same panel.
+    onToggleKeyframe: () -> Unit = {},
+    // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
+    onAudioMix: () -> Unit = {},
+    onRecord: () -> Unit = {},
+    onRoyaltyMusic: () -> Unit = {},
+    // Text / sticker-bar actions (previously the TEXT_TXT / STICKER_STK
+    // quick-actions rows).
+    onEditText: () -> Unit = {},
+    onToggleTextKeyframe: () -> Unit = {},
+    onDeleteText: () -> Unit = {},
+    onDeleteSticker: () -> Unit = {},
+    // While playing, only the main tool bar shows (clip bar hides).
+    isPlaying: Boolean = false,
+    // Small chip shown inside the clip bar (clip/track name, "Text",
+    // "Sticker"); replaces the old "Video clip selected" label row.
+    selectionChipLabel: String? = null,
     modifier: Modifier = Modifier
 ) {
-    val items: List<CtxToolItem> = when (selectionKind) {
-        ToolbarSelectionKind.NONE -> listOf(
+    // Main tool bar: always visible (also the only bar when nothing is
+    // selected, or while playing).
+    val mainItems: List<CtxToolItem> = listOf(
             // Mockup bottom tabs, exact order/labels/icons: Text (active cyan),
             // Stickers, Effects, Filters, AR Face, Adjust.
             CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
@@ -161,21 +200,29 @@ fun ContextualBottomToolbar(
             CtxToolItem("Auto Clip", Icons.Default.Bolt, tint = ApexPalette.NeonPink, onClick = onAutoClip),
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory)
-        )
+    )
+
+    // Clip action bar: the merged union of the old contextual bar and the
+    // old timeline quick-actions row — one entry per action, no duplicates.
+    val clipItems: List<CtxToolItem> = when (selectionKind) {
         ToolbarSelectionKind.VIDEO -> listOf(
-            // Keyframe tab: opens the keyframe editor (diamonds + curves)
-            // so keyframes can be added/edited immediately on selection.
-            // Mockup: diamond-outline icon, cyan; every tool icon+label is cyan.
-            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
+            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
+            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            // Keyframe toggles a keyframe at the playhead (distinct action);
+            // Animation opens the keyframe/animation panel.
+            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
+            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
             // Phase 2: Filters on video clips too — filters were unreachable
             // when a video clip was selected (main use case).
             CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
             CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
+            CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects),
+            CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
             CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
-            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
-            // Second entry point into the same keyframe/animation panel.
-            CtxToolItem("Animation", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onAnimation),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonCyan, onClick = onDelete)
+            CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         )
         ToolbarSelectionKind.AUDIO -> listOf(
             CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
@@ -187,6 +234,9 @@ fun ContextualBottomToolbar(
                 onBeats
             ),
             CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
+            CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix),
+            CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic),
+            CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
         )
         // Photo clip selected → real photo-editing tools (PR F).
@@ -197,104 +247,176 @@ fun ContextualBottomToolbar(
             CtxToolItem("Rotate", Icons.Default.RotateRight, onClick = onPhotoRotate),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
         )
+        // Text overlay selected → text tools (previously TEXT_TXT
+        // quick-actions row).
+        ToolbarSelectionKind.TEXT -> listOf(
+            CtxToolItem("Edit Text", Icons.Default.TextFields, tint = Color(0xFFA855F7), onClick = onEditText),
+            CtxToolItem("Styles", Icons.Default.Palette, tint = Color(0xFFA855F7), onClick = onEditText),
+            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = Color(0xFFFBBF24), onClick = onToggleTextKeyframe),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDeleteText)
+        )
+        // Sticker selected → sticker tools (previously STICKER_STK
+        // quick-actions row).
+        ToolbarSelectionKind.STICKER -> listOf(
+            CtxToolItem("Edit", Icons.Default.EmojiEmotions, tint = Color(0xFFEC4899), onClick = onStickers),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDeleteSticker)
+        )
+        ToolbarSelectionKind.NONE -> emptyList()
     }
 
-    // Mockup: the toolbar sits in a dark rounded container; when a video
-    // clip is selected a cyan "Video clip selected" label with a cyan
-    // divider sits above it.
+    // Two stacked bars:
+    // - Clip action bar (merged, one entry per action): only while a
+    //   clip/overlay/track is selected AND the editor is not playing.
+    //   Tapping a clip reveals it with a ~200ms slide/fade; tapping empty
+    //   timeline space (which clears the selection) or starting playback
+    //   hides it again. The old "Video clip selected" label row is gone —
+    //   the selection now shows as a small chip inside this bar.
+    // - Main tool bar: always visible.
+    // The freed height (old quick-actions row + label row) goes to the
+    // timeline: this toolbar never adds padding/spacers of its own.
+    val showClipBar = selectionKind != ToolbarSelectionKind.NONE && !isPlaying
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(Color(0xFF0C0C14))
     ) {
-        if (selectionKind == ToolbarSelectionKind.VIDEO) {
-            Text(
-                text = "Video clip selected",
-                color = ApexPalette.NeonCyan,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 8.dp)
+        AnimatedVisibility(
+            visible = showClipBar,
+            enter = fadeIn(animationSpec = tween(200)) +
+                slideInVertically(animationSpec = tween(200)) { it },
+            exit = fadeOut(animationSpec = tween(200)) +
+                slideOutVertically(animationSpec = tween(200)) { it }
+        ) {
+            ToolbarBarRow(
+                items = clipItems,
+                leadingContent = {
+                    // CapCut-style collapse chevron: deselects, hiding
+                    // this bar again.
+                    Box(
+                        modifier = Modifier
+                            .width(44.dp)
+                            .fillMaxHeight()
+                            .clickable(onClick = onCollapse),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Deselect",
+                            tint = Color(0xFF9CA3AF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .fillMaxHeight(0.6f)
+                            .background(Color(0xFF1F1F2E))
+                    )
+                    // Selection chip (replaces the old label row).
+                    if (selectionChipLabel != null) {
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .widthIn(max = 110.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(ApexPalette.NeonCyan.copy(alpha = 0.12f))
+                                .border(
+                                    1.dp,
+                                    ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = selectionChipLabel,
+                                color = ApexPalette.NeonCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                }
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(ApexPalette.NeonCyan)
-            )
+        }
+        ToolbarBarRow(items = mainItems)
+    }
+}
+
+/**
+ * One horizontally scrollable toolbar bar (58dp, rounded, dark).
+ * [leadingContent] (collapse chevron + selection chip) stays fixed while
+ * the tool items scroll.
+ */
+@Composable
+private fun ToolbarBarRow(
+    items: List<CtxToolItem>,
+    modifier: Modifier = Modifier,
+    leadingContent: @Composable (RowScope.() -> Unit)? = null
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(ApexPalette.BgElevated)
+            .height(58.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (leadingContent != null) {
+            leadingContent()
         }
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(ApexPalette.BgElevated)
-                .height(58.dp)
+                .weight(1f)
+                .fillMaxHeight()
                 .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically
         ) {
-        // CapCut-style collapse chevron when a clip/track is selected.
-        if (selectionKind != ToolbarSelectionKind.NONE) {
-            Box(
-                modifier = Modifier
-                    .width(44.dp)
-                    .fillMaxHeight()
-                    .clickable(onClick = onCollapse),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Deselect",
-                    tint = Color(0xFF9CA3AF),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight(0.6f)
-                    .background(Color(0xFF1F1F2E))
-            )
-        }
-        items.forEach { item ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .width(64.dp)
-                    .fillMaxHeight()
-                    .clickable(onClick = item.onClick)
-            ) {
-                if (item.glyph != null) {
-                    // Mockup text glyph (e.g. the bold "T" for the Text tab).
+            items.forEach { item ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .width(64.dp)
+                        .fillMaxHeight()
+                        .clickable(onClick = item.onClick)
+                ) {
+                    if (item.glyph != null) {
+                        // Mockup text glyph (e.g. the bold "T" for the Text tab).
+                        Text(
+                            text = item.glyph,
+                            color = item.tint,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.size(21.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    } else {
+                        Icon(
+                            imageVector = item.icon!!,
+                            contentDescription = item.label,
+                            tint = item.tint,
+                            modifier = Modifier
+                                .size(21.dp)
+                                .graphicsLayer { rotationZ = item.iconRotationDeg }
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        text = item.glyph,
+                        text = item.label,
                         color = item.tint,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.size(21.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                } else {
-                    Icon(
-                        imageVector = item.icon!!,
-                        contentDescription = item.label,
-                        tint = item.tint,
-                        modifier = Modifier
-                            .size(21.dp)
-                            .graphicsLayer { rotationZ = item.iconRotationDeg }
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = item.label,
-                    color = item.tint,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    softWrap = false
-                )
             }
-        }
         }
     }
 }
@@ -548,8 +670,25 @@ fun EditorBottomToolbarSection(
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
+    // Owner clip of the selected text overlay (for text keyframe/delete).
+    val selectedTextOwnerClip = state.project?.clips?.firstOrNull { clip ->
+        clip.textOverlays.any { it.id == state.selectedTextOverlayId }
+    }
+    // Small chip inside the clip bar (replaces the old label row).
+    val selectionChipLabel = when (toolbarKind) {
+        ToolbarSelectionKind.VIDEO, ToolbarSelectionKind.PHOTO ->
+            state.project?.clips?.firstOrNull { it.id == state.selectedClipId }?.name
+        ToolbarSelectionKind.AUDIO ->
+            selectedAudioTrack?.name
+                ?: state.project?.clips?.firstOrNull { it.id == state.selectedClipId }?.name
+        ToolbarSelectionKind.TEXT -> "Text"
+        ToolbarSelectionKind.STICKER -> "Sticker"
+        ToolbarSelectionKind.NONE -> null
+    }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
+        isPlaying = state.isPlaying,
+        selectionChipLabel = selectionChipLabel,
         onText = { vm.openTextPanel() },
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
@@ -598,6 +737,9 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 ToolbarSelectionKind.NONE -> {}
+                // Text / sticker bars have no Replace action.
+                ToolbarSelectionKind.TEXT -> {}
+                ToolbarSelectionKind.STICKER -> {}
                 // Photo clip → replace with another still image.
                 ToolbarSelectionKind.PHOTO -> {
                     val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
@@ -633,6 +775,10 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 ToolbarSelectionKind.NONE -> {}
+                // Text / sticker Delete buttons use onDeleteText /
+                // onDeleteSticker (separate params), not this handler.
+                ToolbarSelectionKind.TEXT -> {}
+                ToolbarSelectionKind.STICKER -> {}
             }
         },
         onFade = { vm.openAudioFadeSheet() },
@@ -648,7 +794,32 @@ fun EditorBottomToolbarSection(
         onPhotoAdjust = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.ADJUST) },
         onPhotoFilters = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.FILTERS) },
         onPhotoRotate = { vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.ROTATE) },
-        onCollapse = { vm.clearSelection() }
+        onCollapse = { vm.clearSelection() },
+        // Merged clip-bar actions (previously the timeline quick-actions row).
+        onSplit = {
+            state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
+        },
+        onTrim = { vm.openTrimPanel() },
+        onMask = { vm.openMaskPanel() },
+        onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
+        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+        onAudioMix = { vm.openAudioMixer() },
+        onRecord = { vm.openVoiceRecorder() },
+        onRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
+        onEditText = { vm.openTextPanel() },
+        onToggleTextKeyframe = {
+            val overlayId = state.selectedTextOverlayId
+            if (overlayId != null && selectedTextOwnerClip != null) {
+                vm.toggleTextKeyframeAtPlayhead(selectedTextOwnerClip.id, overlayId)
+            }
+        },
+        onDeleteText = {
+            val overlayId = state.selectedTextOverlayId
+            if (overlayId != null && selectedTextOwnerClip != null) {
+                vm.removeTextOverlay(selectedTextOwnerClip.id, overlayId)
+            }
+        },
+        onDeleteSticker = { state.selectedStickerId?.let { vm.removeSticker(it) } }
     )
 }
 

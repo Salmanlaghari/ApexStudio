@@ -111,6 +111,10 @@ fun RoyaltyFreeMusicSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // Bound to 85% of the available height so the sheet can never
+            // run under the status bar on short phones (the overlay
+            // wrapper bottom-aligns it and adds status/nav insets).
+            .fillMaxHeight(0.85f)
             .heightIn(max = 620.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)

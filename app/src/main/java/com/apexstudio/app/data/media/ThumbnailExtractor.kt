@@ -200,14 +200,12 @@ object ThumbnailExtractor {
             c.drawRect(2f, 2f, w - 2f, h - 2f, p)
             p.style = android.graphics.Paint.Style.FILL
 
-            // Time indicator dot & label
+            // Neutral placeholder mark (a film-frame glyph). Deliberately
+            // NO time text here: these tiles are fallbacks shown when real
+            // frame extraction hasn't delivered yet, and a fake "0s"/"1s"
+            // label reads as broken data rather than a loading state.
             p.color = android.graphics.Color.rgb(0, 240, 255)
-            c.drawCircle(w * 0.25f, h * 0.5f, 6f, p)
-
-            p.color = android.graphics.Color.WHITE
-            p.textSize = (h * 0.28f).coerceAtLeast(10f)
-            p.textAlign = android.graphics.Paint.Align.LEFT
-            c.drawText("${i * 10 / count}s", w * 0.40f, h * 0.6f, p)
+            c.drawCircle(w * 0.5f, h * 0.5f, 6f, p)
 
             out.add(bmp)
         }

@@ -66,6 +66,10 @@ fun GpuVideoFilterPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Half height so the preview + playhead stay visible while a
+            // filter is applied; the overlay wrapper adds status/nav insets.
+            .fillMaxHeight(0.55f)
+            .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(
                 Brush.verticalGradient(
@@ -80,11 +84,10 @@ fun GpuVideoFilterPanel(
                 ApexPalette.NeonCyan.copy(alpha = 0.35f),
                 RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Drag Handle
+        // Drag Handle (fixed at the top — stays visible while scrolling)
         Box(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
@@ -92,6 +95,15 @@ fun GpuVideoFilterPanel(
                 .clip(RoundedCornerShape(2.dp))
                 .background(ApexPalette.TextTertiary.copy(alpha = 0.5f))
         )
+
+        // Scrollable content. The Reset / All Clips / Apply Grade buttons
+        // stay sticky at the bottom (outside this scroll container).
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
 
         // Header: Title & Quick Compare Switch
         Row(
@@ -203,11 +215,13 @@ fun GpuVideoFilterPanel(
             }
         }
 
-        // Studio Navigation Tabs
-        TabRow(
+        // Studio Navigation Tabs — scrollable with single-line labels so
+        // labels never wrap ("Stylisti c") on narrow phones.
+        ScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = Color.Transparent,
             contentColor = ApexPalette.NeonCyan,
+            edgePadding = 0.dp,
             divider = {},
             modifier = Modifier
                 .fillMaxWidth()
@@ -221,7 +235,7 @@ fun GpuVideoFilterPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.FilterVintage, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("Presets", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Presets", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -234,7 +248,7 @@ fun GpuVideoFilterPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("Stylistic", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Stylistic", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -247,7 +261,7 @@ fun GpuVideoFilterPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("Grading", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Grading", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -260,7 +274,7 @@ fun GpuVideoFilterPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.MovieFilter, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(3.dp))
-                        Text("Filters", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Filters", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 },
                 selectedContentColor = ApexPalette.NeonCyan,
@@ -908,7 +922,10 @@ fun GpuVideoFilterPanel(
             }
         }
 
+        } // end scrollable content
+
         // Action Buttons Row: Reset, Apply to All Clips, Apply to Selected Clip
+        // — sticky at the bottom, above the navigation bar.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)

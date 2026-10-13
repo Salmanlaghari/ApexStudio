@@ -146,11 +146,16 @@ fun ColorGradingLutPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // Half height so the preview + playhead stay visible while a
+            // filter is applied; the overlay wrapper adds status/nav
+            // insets. Content scrolls inside (the gallery grid itself is
+            // height-bounded, so nested scrolling stays well-defined).
+            .fillMaxHeight(0.55f)
+            .verticalScroll(rememberScrollState())
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp)
-            .navigationBarsPadding()
     ) {
         // --- 1. Header Bar with View Mode Switcher ---
         Row(

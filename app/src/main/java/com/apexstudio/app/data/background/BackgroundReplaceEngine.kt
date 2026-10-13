@@ -121,7 +121,8 @@ object BackgroundReplaceEngine {
         clipId: String,
         settings: BackgroundReplaceSettings
     ): File {
-        val dir = File(context.getExternalFilesDir("bg_replace") ?: File(context.filesDir, "bg_replace"))
+        val dir = context.getExternalFilesDir("bg_replace")
+            ?: File(context.filesDir, "bg_replace")
         dir.mkdirs()
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(settings.cacheKey().toByteArray(Charsets.UTF_8))
@@ -684,25 +685,27 @@ object BackgroundReplaceEngine {
     }
 
     /** Decode a background image with sampling (cap [BG_IMAGE_MAX_DIM]). */
-    private fun loadBackgroundImage(context: Context, uri: String): Bitmap? = try {
-        val parsed = Uri.parse(uri)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(parsed)?.use {
-            BitmapFactory.decodeStream(it, null, bounds)
+    private fun loadBackgroundImage(context: Context, uri: String): Bitmap? {
+        return try {
+            val parsed = Uri.parse(uri)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(parsed)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / sample > BG_IMAGE_MAX_DIM ||
+                bounds.outHeight / sample > BG_IMAGE_MAX_DIM
+            ) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            context.contentResolver.openInputStream(parsed)?.use {
+                BitmapFactory.decodeStream(it, null, opts)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Background image load failed", e)
+            null
         }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > BG_IMAGE_MAX_DIM ||
-            bounds.outHeight / sample > BG_IMAGE_MAX_DIM
-        ) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        context.contentResolver.openInputStream(parsed)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        }
-    } catch (e: Exception) {
-        Log.w(TAG, "Background image load failed", e)
-        null
     }
 }

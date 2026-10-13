@@ -109,7 +109,12 @@ class FrameCompositor(
     /** Cover-crop [src] to exactly [width]×[height] (no letterboxing). */
     private fun coverCropToFrame(src: Bitmap): Bitmap {
         val crop = BackgroundReplaceMath.coverCropRect(src.width, src.height, width, height)
-        val srcRect = RectF(crop[0], crop[1], crop[2], crop[3])
+        // drawBitmap's src rect is an int Rect (there is no
+        // (Bitmap, RectF, RectF, Paint) overload); sub-pixel crop
+        // precision is irrelevant at frame scale.
+        val srcRect = Rect(
+            crop[0].toInt(), crop[1].toInt(), crop[2].toInt(), crop[3].toInt()
+        )
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         Canvas(out).drawBitmap(src, srcRect, RectF(0f, 0f, width.toFloat(), height.toFloat()), filterPaint)
         return out

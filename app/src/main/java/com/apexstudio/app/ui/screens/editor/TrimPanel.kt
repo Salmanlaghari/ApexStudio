@@ -912,19 +912,25 @@ private fun TrimFilmstrip(
     // asset:// and content:// URIs. The old VideoThumbnailExtractor
     // only called setDataSource(context, Uri) and returned null for
     // plain file paths — the usual reason this strip rendered blank.
-    // extractFrames never returns empty (generated fallback tiles),
-    // so a blank strip now means extraction truly produced nothing.
+    // Sample the FULL clip [0, duration]: this strip is the range
+    // selector and its dim regions are positioned relative to the full
+    // clip, so sampling only [trimStart, trimEnd] would show the
+    // selected range stretched across positions that mean earlier
+    // source time. Trim changes therefore need no re-extraction.
+    // extractFrames may return fewer than frameCount frames when a
+    // mid-stream frame fails to decode; the row below pads with
+    // placeholders so the strip always keeps thumbCount cells.
     val thumbs by produceState<List<android.graphics.Bitmap?>>(
         initialValue = List(thumbCount) { null },
-        clip.uri, clip.id, clip.trimStartMs, clip.trimEndMs
+        clip.uri, clip.id
     ) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 com.apexstudio.app.data.media.ThumbnailExtractor.extractFrames(
                     context = context,
                     uri = clip.uri,
-                    trimStartMs = clip.trimStartMs,
-                    trimEndMs = clip.trimEndMs,
+                    trimStartMs = 0L,
+                    trimEndMs = duration.coerceAtLeast(1L),
                     frameWidthPx = 120,
                     frameHeightPx = 68,
                     frameCount = thumbCount
@@ -970,9 +976,13 @@ private fun TrimFilmstrip(
                 .background(Color(0xFF0B0E14))
         ) {
             val maxW = maxWidth
-            // Thumbnails.
+            // Thumbnails. Always thumbCount cells: extractFrames may
+            // return fewer frames on a partial decode failure, and
+            // getOrNull pads the rest with placeholders so later frames
+            // never shift into earlier positions.
             Row(modifier = Modifier.fillMaxWidth()) {
-                thumbs.forEach { bmp ->
+                for (i in 0 until thumbCount) {
+                    val bmp = thumbs.getOrNull(i)
                     Box(
                         modifier = Modifier
                             .weight(1f)

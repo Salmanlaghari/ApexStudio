@@ -20,7 +20,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -385,7 +386,10 @@ fun VideoTimeline(
     val a1Height = (musicTracks.size.coerceAtLeast(1) * 46).dp
     val a2Height = (voiceTracks.size.coerceAtLeast(1) * 46).dp
     // Layers 1..9 holding no clips render slim empty rows.
-    val emptyVideoLayers = remember(clips) {
+    // videoLayers is a key too: adding an empty layer changes
+    // videoLayers (via extraVideoLayers) without changing clips, and
+    // the stale set would render the new row at 58dp instead of 32dp.
+    val emptyVideoLayers = remember(clips, videoLayers) {
         videoLayers.filter { layer ->
             layer in 1..9 && clips.none {
                 it.trackIndex == layer &&
@@ -535,12 +539,22 @@ fun VideoTimeline(
                 // tracks scroll vertically. Horizontally synced with the
                 // scrolling content via translationX (no recomposition
                 // per scroll frame); clipped so it never draws over the
-                // scrolling rows.
+                // scrolling rows. The header also accepts horizontal
+                // swipes (scrollable on the shared scrollState, same
+                // direction as horizontalScroll) — without it a swipe
+                // starting on the ruler/V1 would do nothing, since only
+                // the lower box scrolls. Child gestures (ruler scrub,
+                // clip drag) consume first, so they still win.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
+                        .scrollable(
+                            state = scrollState,
+                            orientation = Orientation.Horizontal,
+                            reverseDirection = true
+                        )
                 ) {
                     Box(
                         modifier = Modifier
@@ -847,7 +861,10 @@ fun VideoTimeline(
                     durationMs = safeDurationMs,
                     msToDp = msToDp,
                     isSnapped = isPlayheadSnapped,
-                    scrollOffsetPx = scrollState.value.toFloat()
+                    // Provider, not a snapshot read: reading
+                    // scrollState.value here would recompose the whole
+                    // timeline on every scroll frame.
+                    scrollOffsetPx = { scrollState.value.toFloat() }
                 )
             }
             // NOTE: the canvas Box stays open — the Zoom HUD + multi-select
@@ -3175,10 +3192,14 @@ private fun TimelinePlayheadOverlay(
     durationMs: Long,
     msToDp: Float,
     isSnapped: Boolean = false,
-    // Horizontal scroll offset (px) of the canvas. The overlay sits at
-    // canvas-root level (not inside the scrolled content), so the offset
-    // is subtracted here to keep the line glued to the playhead.
-    scrollOffsetPx: Float = 0f,
+    // Horizontal scroll offset (px) provider of the canvas. The overlay
+    // sits at canvas-root level (not inside the scrolled content), so
+    // the offset shifts the playhead to keep it glued to the playhead
+    // position. A provider (read inside graphicsLayer, i.e. the
+    // layout/draw phase) instead of a plain Float: reading
+    // scrollState.value during composition would recompose the whole
+    // VideoTimeline on every scroll frame.
+    scrollOffsetPx: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
     val liveMs = if (playerPositionFlow != null) {
@@ -3187,17 +3208,18 @@ private fun TimelinePlayheadOverlay(
         fallbackMs
     }
     val posMs = liveMs.coerceIn(0L, durationMs.coerceAtLeast(1L))
-    val scrollOffsetDp = with(androidx.compose.ui.platform.LocalDensity.current) {
-        scrollOffsetPx.toDp()
+    // Content-space X (unscrolled); the scroll shift is applied as a
+    // layer translation below, so scrolling never recomposes this.
+    Box(modifier = Modifier.graphicsLayer { translationX = -scrollOffsetPx() }) {
+        TimelinePlayhead(
+            playheadX = (posMs * msToDp).dp + 16.dp,
+            playheadMs = posMs,
+            onScrub = {},
+            msToDp = msToDp,
+            isSnapped = isSnapped,
+            modifier = modifier
+        )
     }
-    TimelinePlayhead(
-        playheadX = (posMs * msToDp).dp + 16.dp - scrollOffsetDp,
-        playheadMs = posMs,
-        onScrub = {},
-        msToDp = msToDp,
-        isSnapped = isSnapped,
-        modifier = modifier
-    )
 }
 
 /**

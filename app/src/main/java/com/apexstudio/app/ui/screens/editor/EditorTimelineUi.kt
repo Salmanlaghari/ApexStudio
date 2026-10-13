@@ -48,11 +48,15 @@ private suspend fun extractClipThumbnails(
     context: android.content.Context,
     clip: com.apexstudio.app.domain.model.MediaClip
 ): Map<Int, Bitmap> {
-    if (clip.type == ClipType.IMAGE) {
+    // OVERLAY clips can be image-backed too (overlay picker allows
+    // ImageAndVideo). Try the still loader first for them as well;
+    // if it fails, fall through to video-frame extraction below.
+    if (clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY) {
         val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
             context, clip.uri, maxDim = 240
         )
-        return if (photo != null) mapOf(0 to photo) else emptyMap()
+        if (photo != null) return mapOf(0 to photo)
+        if (clip.type == ClipType.IMAGE) return emptyMap()
     }
     val trimStart = clip.trimStartMs
     val trimEnd =

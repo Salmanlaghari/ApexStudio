@@ -90,6 +90,21 @@ class WhisperModel private constructor(
                 }
                 val encoder = env.createSession(encoderFile.absolutePath, opts)
                 val decoder = env.createSession(decoderFile.absolutePath, opts)
+                // Fail fast on an unexpected export: the decode loop maps
+                // I/O positionally (mirroring k2-fsa test.py), so a model
+                // with different arity/names would produce silent garbage.
+                // The two names asserted here are the stable anchors.
+                val encOk = encoder.inputNames.size == 1 && encoder.outputNames.size == 2
+                val decOk = decoder.inputNames.size == 6 && decoder.outputNames.size == 3 &&
+                    "tokens" in decoder.inputNames && "offset" in decoder.inputNames
+                if (!encOk || !decOk) {
+                    Log.e(TAG, "unexpected whisper I/O: encoder " +
+                        "${encoder.inputNames.size}in/${encoder.outputNames.size}out, decoder " +
+                        "${decoder.inputNames.size}in/${decoder.outputNames.size}out")
+                    try { encoder.close() } catch (_: Exception) {}
+                    try { decoder.close() } catch (_: Exception) {}
+                    return null
+                }
                 val meta = readMeta(encoder)
                 val tokens = readTokens(tokensFile)
                 Log.i(TAG, "loaded whisper tiny (multilingual=${meta.isMultilingual}, " +
@@ -280,14 +295,19 @@ class WhisperModel private constructor(
     private fun suppress(logits: FloatArray, isInitial: Boolean) {
         // Mirrors test.py suppress_tokens. The no-timestamps token is
         // ALWAYS suppressed: captions need timestamp tokens.
-        if (isInitial) {
-            logits[meta.eot] = Float.NEGATIVE_INFINITY
-            logits[meta.blank] = Float.NEGATIVE_INFINITY
+        // Bounds-guarded: a model whose metadata disagrees with its
+        // vocab must degrade to a wrong token, never a crash.
+        fun kill(id: Int) {
+            if (id in logits.indices) logits[id] = Float.NEGATIVE_INFINITY
         }
-        logits[meta.noTimestamps] = Float.NEGATIVE_INFINITY
-        logits[meta.sot] = Float.NEGATIVE_INFINITY
-        logits[meta.noSpeech] = Float.NEGATIVE_INFINITY
-        logits[meta.translate] = Float.NEGATIVE_INFINITY
+        if (isInitial) {
+            kill(meta.eot)
+            kill(meta.blank)
+        }
+        kill(meta.noTimestamps)
+        kill(meta.sot)
+        kill(meta.noSpeech)
+        kill(meta.translate)
     }
 
     private fun greedyDecode(
@@ -342,6 +362,7 @@ class WhisperModel private constructor(
     }
 
     private fun argmax(a: FloatArray): Int {
+        if (a.isEmpty()) throw IllegalStateException("empty logits row — model returned no vocab")
         var best = 0
         var bestV = a[0]
         for (i in 1 until a.size) {

@@ -44,6 +44,9 @@ object WhisperCaptionEngine {
     /** Language codes the UI offers; "auto" = detect from the audio. */
     const val LANG_AUTO = "auto"
 
+    /** Heuristic tokens per 30 s chunk, for progress display only. */
+    private const val EXPECTED_TOKENS_PER_CHUNK = 150
+
     /** The 3 model files, or null when any is missing. */
     fun modelFiles(context: Context): Triple<File, File, File>? {
         val enc = File(PackManager.packDir(context, PACK_ENCODER), WhisperModel.ENCODER_FILE)
@@ -61,6 +64,10 @@ object WhisperCaptionEngine {
      * Transcribe [uri]'s audio into caption segments.
      *
      * @param language "auto" or a whisper language code ("ur", "hi", "en", …).
+     * @param trimStartMs / trimEndMs the clip's active source range. The
+     *   PCM is sliced to exactly this range (sample-exact), so returned
+     *   segment times are **clip-relative** (0 = trim start) — matching
+     *   [TextOverlay.startMs], which is defined on the clip's timeline.
      * @param onProgress invoked with 0..1 overall progress.
      * @return segments, or null when there is no usable audio / model.
      *   Empty list = model ran but heard no speech (caller reports that).
@@ -69,6 +76,8 @@ object WhisperCaptionEngine {
         context: Context,
         uri: Uri,
         language: String = LANG_AUTO,
+        trimStartMs: Long = 0L,
+        trimEndMs: Long = Long.MAX_VALUE,
         onProgress: (Float) -> Unit = {}
     ): List<CaptionSegment>? = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
@@ -79,8 +88,18 @@ object WhisperCaptionEngine {
 
         try {
             onProgress(0.02f)
-            val pcm = PcmAudioExtractor.extractMono16k(appContext, uri)
+            val fullPcm = PcmAudioExtractor.extractMono16k(appContext, uri)
                 ?: return@withContext null // no decodable audio
+            // Slice to the clip's trim range (sample-exact) — captions
+            // must cover only the active portion, on the clip's timeline.
+            val startSample = ((trimStartMs.coerceAtLeast(0L) *
+                WhisperMelSpectrogram.SAMPLE_RATE) / 1000)
+                .toInt().coerceIn(0, fullPcm.size)
+            val endSample = if (trimEndMs == Long.MAX_VALUE) fullPcm.size
+            else ((trimEndMs.coerceAtLeast(0L) *
+                WhisperMelSpectrogram.SAMPLE_RATE) / 1000)
+                .toInt().coerceIn(startSample, fullPcm.size)
+            val pcm = fullPcm.copyOfRange(startSample, endSample)
             if (pcm.isEmpty()) return@withContext null
             onProgress(0.05f)
 
@@ -102,8 +121,14 @@ object WhisperCaptionEngine {
                 val mel = WhisperMelSpectrogram.compute(chunk)
                 val chunkOffsetMs = c * 30_000L
                 val result = model.transcribeChunk(mel, langTokenId) { generated ->
-                    // Coarse within-chunk progress (token count vs ctx size).
-                    val frac = (c + generated.toFloat() / model.meta.nTextCtx) / nChunks
+                    // Cancel promptly mid-chunk (the decoder loop can run
+                    // 10-60 s per chunk; chunk-boundary checks alone would
+                    // leave the Cancel button dead for up to 30 s).
+                    coroutineContext.ensureActive()
+                    // Coarse within-chunk progress. A 30 s chunk usually
+                    // yields 50-150 tokens; 150 is the heuristic cap.
+                    val frac = (c + (generated.coerceAtMost(EXPECTED_TOKENS_PER_CHUNK)
+                        .toFloat() / EXPECTED_TOKENS_PER_CHUNK)) / nChunks
                     onProgress(0.05f + 0.9f * frac.coerceIn(0f, 1f))
                 }
                 if (langTokenId == null) langTokenId = result.langTokenId

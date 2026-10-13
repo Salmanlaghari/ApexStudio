@@ -76,6 +76,13 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     }
     if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return // already running
     captionJob?.cancel()
+    // Flip the phase SYNCHRONOUSLY so a second concurrent call (e.g. the
+    // download card's auto-start firing twice on recomposition) sees
+    // TRANSCRIBING and bails instead of starting a duplicate job.
+    _captionUi.value = _captionUi.value.copy(
+        phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
+        message = "Checking AI model…"
+    )
 
     captionJob = viewModelScope.launch(Dispatchers.IO) {
         try {
@@ -84,10 +91,6 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
             //    truth for heavy assets (PR-C). refreshSync first so the
             //    check sees the latest catalog/registry.
             PackManager.refreshSync(ctx.applicationContext)
-            _captionUi.value = _captionUi.value.copy(
-                phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
-                message = "Checking AI model…"
-            )
             val ready = WhisperCaptionEngine.isModelReady(ctx.applicationContext)
             if (!ready) {
                 _captionUi.value = _captionUi.value.copy(
@@ -102,7 +105,11 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 message = "Listening… (on-device AI)"
             )
             val segments = WhisperCaptionEngine.transcribe(
-                ctx.applicationContext, android.net.Uri.parse(clip.uri), language
+                ctx.applicationContext,
+                android.net.Uri.parse(clip.uri),
+                language,
+                clip.trimStartMs,
+                clip.trimEndMs
             ) { p ->
                 _captionUi.value = _captionUi.value.copy(
                     phase = CaptionPhase.TRANSCRIBING, progress01 = p,
@@ -126,8 +133,10 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 }
             }
             // 3. Segments -> timed text overlays (existing text pipeline).
-            val clipStartMs = clip.trimStartMs
-            val overlays = segments!!.map { seg ->
+            // Segments are already clip-relative (the engine sliced the
+            // PCM to [trimStartMs, trimEndMs]), so NO trim offset here —
+            // TextOverlay.startMs is defined on the clip's timeline.
+            val overlays = segments.map { seg ->
                 TextOverlay.of(
                     text = seg.text,
                     x = 0.5f,
@@ -138,8 +147,8 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                     isBold = true,
                     presetId = "caption_auto"
                 ).copy(
-                    startMs = (clipStartMs + seg.startMs).coerceAtLeast(0L),
-                    endMs = (clipStartMs + seg.endMs).coerceAtLeast(0L)
+                    startMs = seg.startMs.coerceAtLeast(0L),
+                    endMs = seg.endMs.coerceAtLeast(0L)
                 )
             }
             // Replace previous auto-captions, keep manual overlays.

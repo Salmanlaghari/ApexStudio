@@ -115,6 +115,9 @@ fun EditorViewModel.startExport(
             arFilterIntensity = s.arFilterIntensity,
             arFilterCustomText = s.arFilterCustomText,
             clipSpeed = speed,
+            // Variable speed curve (PR-E): the export follows the
+            // curve; constant [clipSpeed] is the no-curve fallback.
+            speedPoints = selected?.speedPoints ?: emptyList(),
             keyframes = selected?.keyframes ?: KeyframeTrack(),
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
             // Shape mask (Mask tool) on the main clip.
@@ -181,7 +184,9 @@ fun EditorViewModel.startAudioExport(
                 ExportEngine.AudioExportSource(
                     uri = clip.uri,
                     trimStartMs = clip.trimStartMs,
-                    trimEndMs = clip.trimEndMs
+                    trimEndMs = clip.trimEndMs,
+                    // Per-clip variable speed curve (PR-E).
+                    speedPoints = clip.speedPoints
                 )
             )
         }

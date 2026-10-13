@@ -28,6 +28,15 @@ data class MediaClip(
     val speedCurve: SpeedCurve = SpeedCurve.LINEAR,
     val rampStartSpeed: Float = 1f,
     val rampEndSpeed: Float = 1f,
+    // Variable speed curve (PR-E): per-clip speed-ramping graph.
+    // Empty = no variable curve — the clip plays at [speedMultiplier]
+    // (constant). Non-empty = a list of (timeFraction, speed) control
+    // points, timeFraction in 0..1 across the TRIMMED clip span, speed
+    // in 0.1..10. The engine interpolates with monotone cubic (PCHIP)
+    // so the curve never overshoots between points. Backwards
+    // compatible: older project JSONs without this field deserialise
+    // as empty (constant speed).
+    val speedPoints: List<SpeedPoint> = emptyList(),
     // Per-clip audio gain (0 = silent, 1 = original, up to 2 = boosted).
     // Applied to the ExoPlayer preview of this clip and multiplied into
     // the export audio volume, so the Volume tool is real in both.
@@ -90,6 +99,21 @@ data class MediaClip(
         else timelineOffsetMs + trimmedMs
         return timeMs in timelineOffsetMs until endMs
     }
+
+    /** True when this clip has a variable speed curve (2+ points). */
+    fun hasSpeedCurve(): Boolean = speedPoints.size >= 2
+
+    /**
+     * The clip's length on the timeline (output time). Without a speed
+     * curve this is just the trimmed span. With a curve it is the
+     * integral of 1/speed over the trimmed span — a 0.5x clip plays
+     * twice as long, a 2x clip half as long. Deliberately does NOT
+     * account for the constant [speedMultiplier]: the timeline never
+     * has (pre-PR-E behaviour), and changing that would alter every
+     * existing project with a non-1x constant speed.
+     */
+    fun effectiveDurationMs(): Long =
+        SpeedCurveMath.effectiveDurationMs(trimEndMs - trimStartMs, speedPoints)
 }
 
 /**
@@ -359,6 +383,23 @@ enum class SpeedCurve {
     EASE_IN_OUT,   // smooth accel + decel
     RAMP           // keyframe-driven (start + end)
 }
+
+/**
+ * One control point of a variable speed curve ([MediaClip.speedPoints]).
+ * [timeFraction] is 0..1 across the TRIMMED clip span (0 = first frame,
+ * 1 = last frame). [speed] is the playback rate at that point (0.1..10).
+ * [sharp] marks an abrupt segment: when true, the segment ENDING at
+ * this point interpolates linearly (a straight, near-vertical drop /
+ * rise, CapCut velocity-edit style) instead of the default smooth
+ * PCHIP curve. Lets one curve mix smooth Bezier-like ramps with
+ * sharp cuts and rapid fast/slow flicker (alternating sharp points).
+ */
+@Serializable
+data class SpeedPoint(
+    val timeFraction: Float,
+    val speed: Float,
+    val sharp: Boolean = false
+)
 
 enum class SpeedPreset(val label: String, val multiplier: Float) {
     QUARTER("0.25x", 0.25f),

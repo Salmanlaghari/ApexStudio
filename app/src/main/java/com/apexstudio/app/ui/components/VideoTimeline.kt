@@ -1452,7 +1452,8 @@ private fun TimelineVideoLayerRow(
         Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
-                val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+                // Speed-ramped clips occupy their OUTPUT length.
+                val clipDur = clip.effectiveDurationMs().coerceAtLeast(500L)
                 val clipWidthDp = maxOf((clipDur * msToDp).dp, 56.dp)
                 val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
                 var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
@@ -1754,7 +1755,8 @@ private fun TimelineOverlayTrack(
         Box(modifier = Modifier.fillMaxWidth().height(38.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
-                val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(500L)
+                // Speed-ramped clips occupy their OUTPUT length.
+                val clipDur = clip.effectiveDurationMs().coerceAtLeast(500L)
                 val clipWidthDp = maxOf((clipDur * msToDp).dp, 48.dp)
                 val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
                 var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
@@ -2045,7 +2047,8 @@ private fun TimelineVideoTrack(
         var acc = 0L
         videoClips.forEach { c ->
             starts.add(acc)
-            acc += (c.trimEndMs - c.trimStartMs).coerceAtLeast(0L)
+            // Speed-ramped clips occupy their OUTPUT length.
+            acc += c.effectiveDurationMs()
         }
         starts
     }
@@ -2071,7 +2074,15 @@ private fun TimelineVideoTrack(
                 var trimPreviewEnd by remember(clip.id) { mutableStateOf<Long?>(null) }
                 val effTrimStart = trimPreviewStart ?: clip.trimStartMs
                 val effTrimEnd = trimPreviewEnd ?: clip.trimEndMs
-                val clipDur = (effTrimEnd - effTrimStart).coerceAtLeast(500L)
+                // Speed-ramped clips occupy their OUTPUT length; during a
+                // live trim drag the preview trims define the span.
+                val clipDur = if (trimPreviewStart != null || trimPreviewEnd != null) {
+                    com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
+                        effTrimEnd - effTrimStart, clip.speedPoints
+                    ).coerceAtLeast(500L)
+                } else {
+                    clip.effectiveDurationMs().coerceAtLeast(500L)
+                }
                 val clipWidth = maxOf((clipDur * msToDp).dp, 64.dp)
 
                 // Drop target indicator before this clip

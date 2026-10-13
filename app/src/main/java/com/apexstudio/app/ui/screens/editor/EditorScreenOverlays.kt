@@ -610,6 +610,19 @@ fun SpeedPanelOverlay(
                 onChangeOpticalFlowIntensity = { intensity ->
                     vm.setOpticalFlowMotionBlur(state.opticalFlowMotionBlur, intensity)
                 },
+                // Variable speed curve (PR-E): commits on gesture end.
+                speedPoints = currentClip?.speedPoints ?: emptyList(),
+                clipIsVideo = (currentClip?.type
+                    ?: com.apexstudio.app.domain.model.ClipType.VIDEO) ==
+                    com.apexstudio.app.domain.model.ClipType.VIDEO,
+                clipSourceDurationMs = (currentClip?.trimEndMs ?: 0L) -
+                    (currentClip?.trimStartMs ?: 0L),
+                onCurveChanged = { pts ->
+                    state.selectedClipId?.let { cid -> vm.setClipSpeedPoints(cid, pts) }
+                },
+                onClearCurve = {
+                    state.selectedClipId?.let { cid -> vm.setClipSpeedPoints(cid, emptyList()) }
+                },
                 onClose = { vm.closeSpeedPanel() }
             )
         }

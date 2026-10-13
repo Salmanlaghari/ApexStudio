@@ -122,9 +122,62 @@ fun EditorViewModel.setSpeedRampCurvePreset(preset: String) {
 
 fun EditorViewModel.setClipSpeed(clipId: String, multiplier: Float) {
     val clamped = multiplier.coerceIn(0.1f, 10f)
-    updateClip(clipId) { it.copy(speedMultiplier = clamped) }
-    val selectedSpeed = clamped
-    _state.update { it.copy(playbackSpeed = selectedSpeed) }
+    // A constant speed supersedes any variable curve: the curve is
+    // cleared so the two can never disagree about the clip's rate.
+    // Recompute the timeline duration because clearing a curve
+    // restores the clip's plain trimmed span.
+    updateClip(clipId) { it.copy(speedMultiplier = clamped, speedPoints = emptyList()) }
+    _state.update { it.copy(playbackSpeed = clamped) }
+    refreshTimelineDuration()
+}
+
+/**
+ * Apply a variable speed curve to a clip. [points] is sanitised
+ * (sorted, clamped, endpoints pinned); an empty/sanitised-to-empty
+ * list clears the curve. Also recomputes the timeline duration —
+ * a curve changes the clip's output length.
+ */
+fun EditorViewModel.setClipSpeedPoints(clipId: String, points: List<SpeedPoint>) {
+    val clean = SpeedCurveMath.sanitize(points)
+    updateClip(clipId) {
+        it.copy(
+            speedPoints = clean,
+            speedCurve = if (clean.isNotEmpty()) SpeedCurve.RAMP else it.speedCurve
+        )
+    }
+    if (clean.isEmpty()) {
+        _state.update { it.copy(speedRampCurvePreset = "CUSTOM") }
+    }
+    refreshTimelineDuration()
+}
+
+/** One-tap curve presets (Slow-mo / Fast / Ramp In / Ramp Out / Bullet Time). */
+fun EditorViewModel.applySpeedCurvePreset(clipId: String, preset: SpeedCurveMath.CurvePreset) {
+    setClipSpeedPoints(clipId, preset.points)
+    _state.update { it.copy(speedRampCurvePreset = preset.name) }
+}
+
+/**
+ * Recompute [EditorState.durationMs] from the current clips after a
+ * change that can alter a clip's output length (curve edit / clear,
+ * trim, add/remove). Mirrors [trimClip]: the playhead is clamped
+ * into the new total so it can never strand past the end.
+ */
+fun EditorViewModel.refreshTimelineDuration() {
+    _state.update { s ->
+        val clips = s.project?.clips ?: return@update s
+        val newDuration = computeTimelineDurationMs(clips, s.project?.audioTracks ?: emptyList())
+        val newPlayhead = s.playerPositionMs.coerceIn(0L, newDuration)
+        s.copy(
+            project = s.project?.copy(clips = clips, durationMs = newDuration),
+            durationMs = newDuration,
+            playerPositionMs = newPlayhead,
+            currentTimeMs = newPlayhead
+        )
+    }
+    // updateClip() already persisted once with the pre-refresh
+    // duration; persist again so disk state matches.
+    persistProject()
 }
 
 
@@ -967,10 +1020,11 @@ fun computeTimelineDurationMs(
                 (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
                  it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
         }
-        .sumOf { (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L) }
+        // A speed-ramped clip occupies its OUTPUT length on the timeline.
+        .sumOf { it.effectiveDurationMs() }
     val overlayMaxEndMs = clips
         .filter { it.trackIndex != 0 }
-        .maxOfOrNull { it.timelineOffsetMs + (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L) }
+        .maxOfOrNull { it.timelineOffsetMs + it.effectiveDurationMs() }
         ?: 0L
     val audioMaxEndMs = audioTracks.maxOfOrNull { it.trimEndMs } ?: 0L
     return maxOf(v1SequentialMs, overlayMaxEndMs, audioMaxEndMs).coerceAtLeast(1000L)

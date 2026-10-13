@@ -1,5 +1,6 @@
 package com.apexstudio.app.data.filter
 
+import android.util.Log
 import kotlinx.serialization.Serializable
 
 /**
@@ -48,6 +49,7 @@ data class GpuColorProfile(
  * featuring 'Vintage', 'B&W', 'Cinematic', and other aesthetic looks.
  */
 object GpuColorProfiles {
+    private const val TAG = "GpuColorProfiles"
 
     // 1. Cinematic (Teal & Orange)
     val CINEMATIC = GpuColorProfile(
@@ -428,6 +430,31 @@ object GpuColorProfiles {
         packProfiles = profiles.filter { it.id !in builtinIds }
     }
 
+    // PR-C: runtime-registered profiles from DOWNLOADED packs (on-demand pack
+    // manager). Unlike the bundled pack profiles above, this list grows over
+    // time — one entry per downloaded filter pack, deduped by id.
+    @Volatile
+    private var downloadedPackProfiles: List<GpuColorProfile> = emptyList()
+
+    /** All curated + bundled-pack + downloaded-pack profiles. */
+    val ALL_WITH_DOWNLOADED: List<GpuColorProfile>
+        get() = ALL_WITH_PACKS + downloadedPackProfiles
+
+    @Synchronized
+    fun registerDownloadedPackProfiles(profiles: List<GpuColorProfile>) {
+        val builtinIds = ALL_WITH_PACKS.map { it.id }.toSet()
+        val current = downloadedPackProfiles.toMutableList()
+        var replaced = 0
+        for (p in profiles) {
+            if (p.id in builtinIds) continue // never shadow a built-in profile
+            if (current.removeAll { it.id == p.id }) replaced++
+            current.add(p)
+        }
+        downloadedPackProfiles = current
+        Log.i(TAG, "Registered ${profiles.size} downloaded pack profiles " +
+            "($replaced replaced from pack updates, total downloaded: ${current.size})")
+    }
+
     fun findById(id: String?): GpuColorProfile? =
-        ALL_WITH_PACKS.firstOrNull { it.id == id }
+        ALL_WITH_DOWNLOADED.firstOrNull { it.id == id }
 }

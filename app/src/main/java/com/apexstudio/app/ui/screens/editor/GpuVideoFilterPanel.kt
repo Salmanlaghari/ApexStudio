@@ -429,19 +429,45 @@ fun GpuVideoFilterPanel(
                 }
             }
 
-            // Filtered Profiles List (Phase 2: includes pack profiles).
+            // Filtered Profiles List (Phase 2: includes pack profiles; PR-C: + downloaded packs).
             // Pack profiles register async (IO thread); packsReady re-keys the
             // cached list so pack filters appear on first panel open.
             val packContext = LocalContext.current
             var packsReady by remember { mutableStateOf(GpuColorProfiles.hasPackProfiles()) }
+            var dlVersion by remember { mutableStateOf(0) }
+            val dlPacks by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsState()
             LaunchedEffect(Unit) {
+                // Await the catalog so the downloadable section below is
+                // populated before the list first renders.
+                com.apexstudio.app.data.packs.download.PackManager.refreshSync(packContext)
                 withContext(Dispatchers.IO) {
                     com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
+                    com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
                 }
                 packsReady = true
             }
-            val filteredProfiles = remember(profileCategoryFilter, packsReady) {
-                val all = GpuColorProfiles.ALL_WITH_PACKS
+            // Re-register only when the SET of downloaded pack ids changes —
+            // not on every progress tick of an in-flight download.
+            // derivedStateOf emits only when the resulting set's *content*
+            // changes, so the effect below never restarts spuriously.
+            val downloadedPackIds by remember {
+                derivedStateOf {
+                    dlPacks
+                        .filter { it.state == com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded }
+                        .map { it.pack.id }
+                        .toSet()
+                }
+            }
+            LaunchedEffect(downloadedPackIds) {
+                if (downloadedPackIds.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
+                    }
+                    dlVersion++
+                }
+            }
+            val filteredProfiles = remember(profileCategoryFilter, packsReady, dlVersion) {
+                val all = GpuColorProfiles.ALL_WITH_DOWNLOADED
                 if (profileCategoryFilter == "All") all
                 else all.filter { it.category == profileCategoryFilter }
             }
@@ -466,6 +492,27 @@ fun GpuVideoFilterPanel(
                         },
                         modifier = Modifier.width(140.dp)
                     )
+                }
+            }
+
+            // PR-C: Downloadable filter packs (on-demand). This is the live
+            // gating proof for PackManager.requirePack(): pack content is
+            // inaccessible until downloaded; the UI prompts download instead.
+            // Only actually-downloadable packs are listed (coming-soon packs
+            // live in the Pack Store, never as dead buttons here).
+            val downloadableFilterPacks = dlPacks.filter { it.pack.category == "filters" && it.pack.isAvailable }
+            if (downloadableFilterPacks.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "More Filters — Downloadable",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(6.dp))
+                downloadableFilterPacks.forEach { item ->
+                    DownloadableFilterPackRow(item = item)
+                    Spacer(Modifier.height(6.dp))
                 }
             }
         }
@@ -1120,3 +1167,94 @@ private fun GpuColorProfileCard(
     }
 }
 
+
+/**
+ * PR-C: one downloadable filter pack row inside the filter panel.
+ *
+ * Live gating proof for [com.apexstudio.app.data.packs.download.PackManager.requirePack]:
+ * the pack's filters are inaccessible until downloaded — the UI shows a
+ * download prompt instead of the feature. No dead buttons: every state has a
+ * working action (Download / Cancel / Delete / Retry), coming-soon packs are
+ * not listed here at all.
+ */
+@Composable
+private fun DownloadableFilterPackRow(
+    item: com.apexstudio.app.data.packs.download.PackManager.PackUiItem
+) {
+    val context = LocalContext.current
+    val pack = item.pack
+    // The gate: content is only usable when the pack is installed.
+    val unlocked = com.apexstudio.app.data.packs.download.PackManager.requirePack(context, pack.id)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                pack.name,
+                color = ApexPalette.TextPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (unlocked) "Downloaded — filters are in the list above"
+                else "${com.apexstudio.app.data.packs.download.PackManifestRepo.formatSize(pack.sizeBytes)} • tap Download to unlock ${pack.name}",
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp,
+                maxLines = 2
+            )
+            val st = item.state
+            if (st is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloading) {
+                Spacer(Modifier.height(6.dp))
+                if (st.fraction >= 0) {
+                    LinearProgressIndicator(
+                        progress = { st.fraction },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = ApexPalette.NeonCyan,
+                        trackColor = ApexPalette.BgBase
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ApexPalette.NeonCyan)
+                }
+            }
+            if (st is com.apexstudio.app.data.packs.download.PackManager.PackState.Failed) {
+                Text(st.reason, color = ApexPalette.Danger, fontSize = 10.sp)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        when (val st = item.state) {
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.NotDownloaded,
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.UpdateAvailable ->
+                TextButton(onClick = {
+                    com.apexstudio.app.data.packs.download.PackManager.download(context, pack.id)
+                }) {
+                    Icon(Icons.Default.Download, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (st is com.apexstudio.app.data.packs.download.PackManager.PackState.UpdateAvailable) "Update" else "Download", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloading ->
+                TextButton(onClick = {
+                    com.apexstudio.app.data.packs.download.PackManager.cancel(context, pack.id)
+                }) {
+                    Text("Cancel", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                }
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded ->
+                Text("Added ✓", color = Color(0xFF34D399), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.Failed ->
+                TextButton(onClick = {
+                    com.apexstudio.app.data.packs.download.PackManager.download(context, pack.id)
+                }) {
+                    Text("Retry", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            is com.apexstudio.app.data.packs.download.PackManager.PackState.ComingSoon -> { /* not listed */ }
+        }
+    }
+}

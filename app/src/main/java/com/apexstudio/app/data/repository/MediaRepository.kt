@@ -41,8 +41,8 @@ object MediaRepository {
             ),
             audioTracks = listOf(
                 AudioTrack("a1", "BGM_Track.wav", "asset://bgm", volume = 0.7f),
-                AudioTrack("a2", "Voiceover.mp3", "asset://vo", volume = 0.85f),
-                AudioTrack("a3", "SFX", "asset://sfx", volume = 0.6f)
+                AudioTrack("a2", "Voiceover.mp3", "asset://vo", volume = 0.85f, kind = com.apexstudio.app.domain.model.AudioTrack.Kind.SFX),
+                AudioTrack("a3", "SFX", "asset://sfx", volume = 0.6f, kind = com.apexstudio.app.domain.model.AudioTrack.Kind.SFX)
             )
         ),
         Project(

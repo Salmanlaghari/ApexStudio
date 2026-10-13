@@ -374,13 +374,21 @@ data class AudioTrack(
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
     val fadeInMs: Long = 0L,
-    val fadeOutMs: Long = 0L
+    val fadeOutMs: Long = 0L,
+    /**
+     * Persisted track kind: drives the timeline's A1 (music) / A2 (voice)
+     * lane split and the mixer fader labels ("Video", "Music",
+     * "Voiceover / SFX"). Defaults to MUSIC so pre-existing saved projects
+     * decode unchanged. Voice recordings are stored as SFX.
+     */
+    val kind: Kind = Kind.MUSIC
 ) {
     /**
      * The kind of audio track, used by the mixer UI to label faders
      * ("Video", "Music", "Voiceover / SFX") and to pick a default
      * colour strip. SFX tracks default to a louder volume than music.
      */
+    @Serializable
     enum class Kind { ORIGINAL_VIDEO, MUSIC, SFX }
 
     /** Approximate source duration if known, else 0. */

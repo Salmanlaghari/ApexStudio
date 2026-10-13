@@ -245,6 +245,7 @@ fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Ki
         name = name,
         uri = uri,
         volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.85f,
+        kind = kind,
         trimStartMs = 0L,
         trimEndMs = finalDuration
     )

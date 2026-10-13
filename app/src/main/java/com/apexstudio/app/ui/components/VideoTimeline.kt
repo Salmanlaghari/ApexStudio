@@ -340,8 +340,11 @@ fun VideoTimeline(
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
-    val musicTracks = remember(audioTracks) { audioTracks.filter { it.volume < 0.99f } }
-    val voiceTracks = remember(audioTracks) { audioTracks.filter { it.volume >= 0.99f } }
+    // A1 = music, A2 = voice/SFX — keyed off the persisted AudioTrack.kind
+    // (Kilo: the old volume>=0.99f threshold misfiled SFX into the voice lane
+    // and broke on any track at exactly the boundary).
+    val musicTracks = remember(audioTracks) { audioTracks.filter { it.kind == AudioTrack.Kind.MUSIC } }
+    val voiceTracks = remember(audioTracks) { audioTracks.filter { it.kind != AudioTrack.Kind.MUSIC } }
     // Lane heights grow 46dp per extra row (one AudioTrackLaneRow each) so
     // every track stays visible; the outer vertical scroll handles overflow.
     val a1Height = (musicTracks.size.coerceAtLeast(1) * 46).dp
@@ -2500,14 +2503,14 @@ private fun TimelineFxTrack(
                     if (!activeFilterId.isNullOrBlank()) {
                         FxSegment(
                             emoji = "🎨",
-                            text = "${prettifyId(activeFilterId)} ${(filterIntensity * 100).toInt()}%",
+                            text = "${prettifyId(activeFilterId)} ${(filterIntensity.coerceIn(0f, 1f) * 100).toInt()}%",
                             onClick = onOpenFilter
                         )
                     }
                     if (!activeFxId.isNullOrBlank()) {
                         FxSegment(
                             emoji = "✨",
-                            text = "${prettifyId(activeFxId)} ${(fxIntensity * 100).toInt()}%",
+                            text = "${prettifyId(activeFxId)} ${(fxIntensity.coerceIn(0f, 1f) * 100).toInt()}%",
                             onClick = onOpenFxPanel
                         )
                     }
@@ -2799,10 +2802,8 @@ private fun AudioTrackLaneRow(
     modifier: Modifier = Modifier
 ) {
     // Accent follows the mixer's track-type language (AudioMixerPanel):
-    // full-volume tracks read as SFX (amber), the rest as music (green).
-    // AudioTrack.Kind is not persisted on the model, so the same
-    // volume heuristic keeps both UIs consistent.
-    val accent = if (track.volume >= 0.99f) Color(0xFFFBBF24) else Color(0xFF34D399)
+    // SFX/voice tracks read amber, music tracks green.
+    val accent = if (track.kind != AudioTrack.Kind.MUSIC) Color(0xFFFBBF24) else Color(0xFF34D399)
     Row(
         modifier = modifier
             .height(40.dp)

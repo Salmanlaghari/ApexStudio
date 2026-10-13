@@ -620,7 +620,8 @@ data class VideoAdjustments(
     @FloatRange(from = -1.0, to = 1.0)
     val clarity: Float = 0f,
     @FloatRange(from = 0.0, to = 1.0)
-    val denoise: Float = 0f
+    val denoise: Float = 0f,
+    val vibrance: Float = 0f
 ) {
     val isDefault: Boolean
         get() = hdr == 0f &&
@@ -642,7 +643,8 @@ data class VideoAdjustments(
                 blacks == 0f &&
                 hue == 0f &&
                 clarity == 0f &&
-                denoise == 0f
+                denoise == 0f &&
+                vibrance == 0f
 }
 
 /**

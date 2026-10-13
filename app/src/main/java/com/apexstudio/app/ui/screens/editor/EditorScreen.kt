@@ -312,6 +312,39 @@ fun EditorScreen(
                 )
                 add(com.apexstudio.app.data.filter.ColorMatrixGlEffect(adjustMatrix))
             }
+            // Video Adjustments v2: the non-matrix adjustments
+            // (highlights/shadows/sharpness/fade/vignette/grain/lightness/
+            // whites/blacks/hue/vibrance/clarity/denoise) can't be expressed
+            // as a color matrix, so they run in the live GL shader below.
+            // Base = all-default VideoAdjustments so the matrix-covered
+            // knobs don't double-apply; only the v2 providers are live.
+            run {
+                val v2 = state.adjustments
+                if (v2.highlights != 0f || v2.shadows != 0f ||
+                    v2.sharpness != 0f || v2.fade != 0f || v2.vignette != 0f || v2.grain != 0f ||
+                    v2.lightness != 0f || v2.whites != 0f || v2.blacks != 0f || v2.hue != 0f ||
+                    v2.vibrance != 0f || v2.clarity != 0f || v2.denoise != 0f
+                ) {
+                    add(
+                        com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                            adjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+                            highlightsProvider = { state.adjustments.highlights },
+                            shadowsProvider = { state.adjustments.shadows },
+                            sharpnessProvider = { state.adjustments.sharpness },
+                            fadeProvider = { state.adjustments.fade },
+                            vignetteProvider = { state.adjustments.vignette },
+                            grainProvider = { state.adjustments.grain },
+                            lightnessProvider = { state.adjustments.lightness },
+                            whitesProvider = { state.adjustments.whites },
+                            blacksProvider = { state.adjustments.blacks },
+                            hueProvider = { state.adjustments.hue },
+                            vibranceProvider = { state.adjustments.vibrance },
+                            clarityProvider = { state.adjustments.clarity },
+                            denoiseProvider = { state.adjustments.denoise }
+                        )
+                    )
+                }
+            }
             if (activeFx != null && state.fxIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.fx.FxGlEffect(

@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -41,22 +40,62 @@ private data class AdjustItem(
     val formatValue: (Float) -> String = { "%.0f".format(it * 100) }
 )
 
+/**
+ * Adjustment tabs (photo-editor parity easy layout).
+ * Tone = light/exposure controls, Colours = color controls,
+ * Details = sharpness/texture controls.
+ */
+private enum class AdjustTab(val title: String) {
+    TONE("Tone"),
+    COLOURS("Colours"),
+    DETAILS("Details")
+}
+
 private val ADJUST_ITEMS = listOf(
+    // ---- Tone ----
     AdjustItem("hdr", "HDR+", "✨", 0f..1f, 0.05f, { it.hdr }, { a, v -> a.copy(hdr = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
-    AdjustItem("brightness", "Brightness", "☀️", -1f..1f, 0.05f, { it.brightness }, { a, v -> a.copy(brightness = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("brilliance", "Brilliance", "🌟", -1f..1f, 0.05f, { it.brilliance }, { a, v -> a.copy(brilliance = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
-    AdjustItem("contrast", "Contrast", "🌓", 0f..2f, 0.05f, { it.contrast }, { a, v -> a.copy(contrast = v.coerceIn(0f, 2f)) }, { "%.0f%%".format(it * 100) }),
-    AdjustItem("saturation", "Saturation", "🎨", 0f..2f, 0.05f, { it.saturation }, { a, v -> a.copy(saturation = v.coerceIn(0f, 2f)) }, { "%.0f%%".format(it * 100) }),
     AdjustItem("exposure", "Exposure", "📸", -1f..1f, 0.05f, { it.exposure }, { a, v -> a.copy(exposure = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("brightness", "Brightness", "☀️", -1f..1f, 0.05f, { it.brightness }, { a, v -> a.copy(brightness = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("contrast", "Contrast", "🌓", 0f..2f, 0.05f, { it.contrast }, { a, v -> a.copy(contrast = v.coerceIn(0f, 2f)) }, { "%.0f%%".format(it * 100) }),
+    AdjustItem("lightness", "Lightness", "💡", -1f..1f, 0.05f, { it.lightness }, { a, v -> a.copy(lightness = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("highlights", "Highlights", "🔆", -1f..1f, 0.05f, { it.highlights }, { a, v -> a.copy(highlights = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
-    AdjustItem("shadows", "Shadows", "👥", -1f..1f, 0.05f, { it.shadows }, { a, v -> a.copy(shadows = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("shadows", "Shadows", "🌘", -1f..1f, 0.05f, { it.shadows }, { a, v -> a.copy(shadows = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("whites", "Whites", "⬜", -1f..1f, 0.05f, { it.whites }, { a, v -> a.copy(whites = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("blacks", "Blacks", "⬛", -1f..1f, 0.05f, { it.blacks }, { a, v -> a.copy(blacks = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    // ---- Colours ----
+    AdjustItem("saturation", "Saturation", "🎨", 0f..2f, 0.05f, { it.saturation }, { a, v -> a.copy(saturation = v.coerceIn(0f, 2f)) }, { "%.0f%%".format(it * 100) }),
+    AdjustItem("vibrance", "Vibrance", "🌈", -1f..1f, 0.05f, { it.vibrance }, { a, v -> a.copy(vibrance = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("temp", "Warmth", "🌡️", -1f..1f, 0.05f, { it.temperature }, { a, v -> a.copy(temperature = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("tint", "Tint", "🌸", -1f..1f, 0.05f, { it.tint }, { a, v -> a.copy(tint = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("hue", "Hue", "🔄", -180f..180f, 5f, { it.hue }, { a, v -> a.copy(hue = v.coerceIn(-180f, 180f)) }, { "%+.0f°".format(it) }),
+    // ---- Details ----
     AdjustItem("sharpness", "Sharpness", "🔪", 0f..1f, 0.05f, { it.sharpness }, { a, v -> a.copy(sharpness = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
-    AdjustItem("fade", "Fade", "🌫️", 0f..1f, 0.05f, { it.fade }, { a, v -> a.copy(fade = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
+    AdjustItem("clarity", "Clarity", "💎", -1f..1f, 0.05f, { it.clarity }, { a, v -> a.copy(clarity = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
+    AdjustItem("denoise", "De-noise", "🔇", 0f..1f, 0.05f, { it.denoise }, { a, v -> a.copy(denoise = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
     AdjustItem("vignette", "Vignette", "🎯", 0f..1f, 0.05f, { it.vignette }, { a, v -> a.copy(vignette = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
-    AdjustItem("grain", "Film Grain", "📽️", 0f..1f, 0.05f, { it.grain }, { a, v -> a.copy(grain = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) })
+    AdjustItem("grain", "Film Grain", "📽️", 0f..1f, 0.05f, { it.grain }, { a, v -> a.copy(grain = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
+    AdjustItem("fade", "Fade", "🌫️", 0f..1f, 0.05f, { it.fade }, { a, v -> a.copy(fade = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) })
 )
+
+/** Maps each tab to its tool ids, in display order. */
+private val TAB_TOOLS: Map<AdjustTab, List<String>> = mapOf(
+    AdjustTab.TONE to listOf("hdr", "brilliance", "exposure", "brightness", "contrast", "lightness", "highlights", "shadows", "whites", "blacks"),
+    AdjustTab.COLOURS to listOf("saturation", "vibrance", "temp", "tint", "hue"),
+    AdjustTab.DETAILS to listOf("sharpness", "clarity", "denoise", "vignette", "grain", "fade")
+)
+
+private val ITEM_BY_ID: Map<String, AdjustItem> = ADJUST_ITEMS.associateBy { it.id }
+
+private fun defaultFor(item: AdjustItem): Float = when (item.id) {
+    "contrast", "saturation" -> 1f
+    else -> 0f
+}
+
+private fun isModified(item: AdjustItem, adjustments: VideoAdjustments): Boolean {
+    val v = item.getValue(adjustments)
+    return v != defaultFor(item)
+}
 
 @Composable
 fun AdjustPanel(
@@ -67,8 +106,15 @@ fun AdjustPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var activeTab by remember { mutableStateOf(AdjustTab.TONE) }
     var selectedAdjustId by remember { mutableStateOf("hdr") }
-    val activeItem = ADJUST_ITEMS.firstOrNull { it.id == selectedAdjustId } ?: ADJUST_ITEMS.first()
+
+    // Keep the selected tool inside the active tab.
+    val tabItems = TAB_TOOLS[activeTab].orEmpty().mapNotNull { ITEM_BY_ID[it] }
+    if (tabItems.none { it.id == selectedAdjustId } && tabItems.isNotEmpty()) {
+        selectedAdjustId = tabItems.first().id
+    }
+    val activeItem = ITEM_BY_ID[selectedAdjustId] ?: tabItems.firstOrNull() ?: ADJUST_ITEMS.first()
     val currentValue = activeItem.getValue(adjustments)
 
     Column(
@@ -133,7 +179,7 @@ fun AdjustPanel(
                         }
                     }
                     Text(
-                        "14 Professional Parameters • Real-time Hardware GL",
+                        "${ADJUST_ITEMS.size} Professional Parameters • Real-time Hardware GL",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -167,12 +213,68 @@ fun AdjustPanel(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // MOVED TO TOP: 14 Adjustment Feature Categories Strip
-        // Placed at the very top of the controls so the user sees all options immediately!
+        // TAB ROW: Tone | Colours | Details (photo-editor parity easy layout)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            AdjustTab.values().forEach { tab ->
+                val isActive = tab == activeTab
+                val modifiedCount = TAB_TOOLS[tab].orEmpty().count { id ->
+                    ITEM_BY_ID[id]?.let { isModified(it, adjustments) } == true
+                }
+                Column(
+                    modifier = Modifier
+                        .clickable { activeTab = tab }
+                        .padding(bottom = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            tab.title,
+                            color = if (isActive) ApexPalette.TextPrimary else ApexPalette.TextSecondary,
+                            fontSize = 14.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+                        )
+                        if (modifiedCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(ApexPalette.NeonAmber.copy(alpha = 0.25f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "$modifiedCount",
+                                    color = ApexPalette.NeonAmber,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .height(2.dp)
+                            .width(48.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(
+                                if (isActive) ApexPalette.NeonCyan
+                                else Color.Transparent
+                            )
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        // TOOL GRID for the active tab
         Text(
-            "SELECT PARAMETER (14 FEATURES)",
+            "SELECT PARAMETER (${tabItems.size} TOOLS)",
             color = ApexPalette.TextSecondary,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
@@ -184,13 +286,10 @@ fun AdjustPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(ADJUST_ITEMS) { item ->
+            items(tabItems) { item ->
                 val isSelected = item.id == selectedAdjustId
                 val valForDisplay = item.getValue(adjustments)
-                val isModified = when (item.id) {
-                    "contrast", "saturation" -> valForDisplay != 1f
-                    else -> valForDisplay != 0f
-                }
+                val modified = isModified(item, adjustments)
 
                 Box(
                     modifier = Modifier
@@ -202,7 +301,7 @@ fun AdjustPanel(
                         .border(
                             1.5.dp,
                             if (isSelected) ApexPalette.NeonCyan
-                            else if (isModified) ApexPalette.NeonAmber
+                            else if (modified) ApexPalette.NeonAmber
                             else ApexPalette.BorderGlass,
                             RoundedCornerShape(10.dp)
                         )
@@ -224,7 +323,7 @@ fun AdjustPanel(
                             )
                             Text(
                                 item.formatValue(valForDisplay),
-                                color = if (isModified) ApexPalette.NeonAmber else ApexPalette.TextTertiary,
+                                color = if (modified) ApexPalette.NeonAmber else ApexPalette.TextTertiary,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -267,11 +366,7 @@ fun AdjustPanel(
                             .clip(RoundedCornerShape(6.dp))
                             .background(ApexPalette.BgElevated)
                             .clickable {
-                                val defaultVal = when (activeItem.id) {
-                                    "contrast", "saturation" -> 1f
-                                    else -> 0f
-                                }
-                                onUpdate { current -> activeItem.updateValue(current, defaultVal) }
+                                onUpdate { current -> activeItem.updateValue(current, defaultFor(activeItem)) }
                             }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {

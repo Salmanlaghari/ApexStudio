@@ -185,6 +185,13 @@ dependencies {
   // downloads on first use via PackManager, NOT bundled in the APK.
   implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
+  // PR-G: MediaPipe Tasks Vision for per-clip background replace
+  // (person segmentation) — https://github.com/google-ai-edge/mediapipe
+  // (Apache-2.0). Official Maven artifact (Google Maven). Only the
+  // Tasks library is bundled; the segmentation model (~244 KB)
+  // downloads on first use via PackManager, NOT in the APK.
+  implementation("com.google.mediapipe:tasks-vision:0.10.35")
+
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
 

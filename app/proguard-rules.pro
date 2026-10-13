@@ -73,6 +73,12 @@
 -keep class ai.onnxruntime.** { *; }
 -dontwarn ai.onnxruntime.**
 
+# PR-G: MediaPipe Tasks (JNI + reflection-heavy task graph; release
+# builds have crashed without this keep — the native layer resolves
+# task classes by name).
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
+
 # Phase 4: Lottie (reflection on model classes)
 -keep class com.airbnb.lottie.** { *; }
 -dontwarn com.airbnb.lottie.**

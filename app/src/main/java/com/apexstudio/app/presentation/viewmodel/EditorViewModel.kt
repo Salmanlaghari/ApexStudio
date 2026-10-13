@@ -52,6 +52,19 @@ class EditorViewModel(
     internal var captionJob: Job? = null
 
     /**
+     * Background-replace UI state (MediaPipe person segmentation,
+     * PR-G). Instance-scoped so it can't bleed between editors.
+     */
+    internal val _backgroundUi = MutableStateFlow(BackgroundUiState())
+    val backgroundUi: StateFlow<BackgroundUiState> = _backgroundUi.asStateFlow()
+
+    /**
+     * In-flight background-replace processing job. Cancelled when
+     * the user taps Cancel or leaves the editor.
+     */
+    internal var backgroundJob: Job? = null
+
+    /**
      * 60fps-safe playhead position stream. The timeline playhead collects
      * this flow directly so playback ticks do NOT recompose the whole
      * timeline — only the playhead + ruler move. (Passing playerPositionMs

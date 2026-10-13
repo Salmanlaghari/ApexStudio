@@ -269,6 +269,20 @@ private fun PipOverlayItem(
                 shape = RoundedCornerShape(8.dp)
             )
     ) {
+        // Shape mask (Mask tool) on the overlay: hard-edged clip in the
+        // live preview (feather is export-only — see VideoMaskClipShape).
+        val overlayMask = clip.mask?.takeIf { it.enabled && it.opacity > 0.001f }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (overlayMask != null) {
+                        Modifier
+                            .graphicsLayer { alpha = overlayMask.opacity }
+                            .clip(VideoMaskClipShape(overlayMask))
+                    } else Modifier
+                )
+        ) {
         when {
             // Live video overlay through the dedicated muted player.
             clip.type == ClipType.VIDEO && overlayPlayer != null &&
@@ -311,6 +325,7 @@ private fun PipOverlayItem(
                 )
             }
         }
+        } // inner mask-clip box
 
         if (isSelected) {
             // Dashed selection border (rotates with the overlay, CapCut-style).

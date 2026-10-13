@@ -89,6 +89,11 @@ fun EditorViewModel.openChromaKeyPanel() = _state.update { it.copy(chromaKeyPane
 
 fun EditorViewModel.closeChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = false) }
 
+/** Mask tool bottom sheet. */
+fun EditorViewModel.openMaskPanel() = _state.update { it.copy(maskPanelOpen = true) }
+
+fun EditorViewModel.closeMaskPanel() = _state.update { it.copy(maskPanelOpen = false) }
+
 fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings) {
     _state.update { 
         it.copy(

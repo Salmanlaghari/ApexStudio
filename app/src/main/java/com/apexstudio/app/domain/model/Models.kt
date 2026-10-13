@@ -68,7 +68,13 @@ data class MediaClip(
     // the preview renderer and the export path both read this single
     // source of truth. Default = untouched photo. Backwards-compatible:
     // older project JSONs without this field deserialise as default.
-    val photoEdit: PhotoEditSettings = PhotoEditSettings()
+    val photoEdit: PhotoEditSettings = PhotoEditSettings(),
+    // Shape mask (CapCut-style Mask tool). Null = no mask. When set,
+    // the preview darkens everything outside the mask shape and the
+    // export bakes the same mask via MaskGlEffect (V1) or
+    // PipOverlayGlEffect (V2 overlay). Backwards-compatible: older
+    // project JSONs without this field deserialise as null.
+    val mask: VideoMask? = null
 ) {
     /**
      * True when this overlay clip (type == [ClipType.OVERLAY]) should be
@@ -286,6 +292,64 @@ data class TextOverlay(
 }
 
 enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX, IMAGE }
+
+/**
+ * Shape of a [VideoMask].
+ */
+@Serializable
+enum class MaskShape {
+    RECTANGLE,
+    ELLIPSE,
+    /** Horizontal gradient wipe: the left side is kept, feathered edge. */
+    LINEAR;
+
+    val label: String get() = when (this) {
+        RECTANGLE -> "Rectangle"
+        ELLIPSE -> "Circle"
+        LINEAR -> "Linear"
+    }
+}
+
+/**
+ * A shape mask applied to a video clip (CapCut-style Mask tool).
+ *
+ * All geometry is normalised to the clip's own video frame (0..1):
+ * [centerX]/[centerY] is the mask centre, [sizeX]/[sizeY] the full
+ * width/height as fractions of the frame. [feather] (0..1) softens
+ * the mask edge, [invert] keeps everything OUTSIDE the shape, and
+ * [opacity] fades the whole masked result.
+ *
+ * The preview ([MaskPreviewOverlay]) and the export ([MaskGlEffect]
+ * / [PipOverlayGlEffect]) resolve the same numbers against the frame
+ * geometry, so what the user drags on screen is exactly what bakes
+ * into the MP4.
+ */
+@Serializable
+data class VideoMask(
+    val shape: MaskShape = MaskShape.ELLIPSE,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f,
+    val sizeX: Float = 0.6f,
+    val sizeY: Float = 0.6f,
+    val feather: Float = 0.15f,
+    val invert: Boolean = false,
+    val opacity: Float = 1f,
+    val enabled: Boolean = true
+) {
+    fun withCenter(x: Float, y: Float) = copy(
+        centerX = x.coerceIn(0f, 1f),
+        centerY = y.coerceIn(0f, 1f)
+    )
+
+    fun withSize(sx: Float, sy: Float) = copy(
+        sizeX = sx.coerceIn(0.05f, 1f),
+        sizeY = sy.coerceIn(0.05f, 1f)
+    )
+
+    companion object {
+        fun default(shape: MaskShape = MaskShape.ELLIPSE) = VideoMask(shape = shape)
+    }
+}
 
 @Serializable
 enum class SpeedCurve {

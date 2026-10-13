@@ -772,6 +772,35 @@ fun ChromaKeyPanelOverlay(
     }
 }
 
+/** Mask tool bottom-sheet overlay. */
+@Composable
+fun MaskPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.maskPanelOpen) return
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        ?: state.project?.clips?.firstOrNull()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeMaskPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            MaskPanel(
+                mask = selectedClip?.mask,
+                onUpdate = { mask ->
+                    val clipId = selectedClip?.id ?: return@MaskPanel
+                    if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)
+                },
+                onClose = { vm.closeMaskPanel() }
+            )
+        }
+    }
+}
+
 /** Help dialog overlay. */
 @Composable
 fun HelpDialogOverlay(
@@ -1034,6 +1063,22 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             animatedTransform = animatedTransform,
             currentTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
+            // Shape mask (Mask tool) on the selected main clip, with
+            // drag-to-move/resize while the mask panel is open.
+            mask = currentSelectedClip?.mask,
+            maskEditMode = state.maskPanelOpen,
+            onMaskCenterLive = { x, y ->
+                currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = false) }
+            },
+            onMaskCenterFinished = { x, y ->
+                currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = true) }
+            },
+            onMaskSizeLive = { sx, sy ->
+                currentSelectedClip?.id?.let { vm.setMaskSize(it, sx, sy, persist = false) }
+            },
+            onMaskSizeFinished = { sx, sy ->
+                currentSelectedClip?.id?.let { vm.setMaskSize(it, sx, sy, persist = true) }
+            },
             // Photo clip (PR F): rendered by PhotoClipPreview with
             // its edits; null for video clips.
             photoClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE },
@@ -1138,7 +1183,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             onMoveTextOverlay = { id, dx, dy ->
                 val clipId = selectedClip?.id ?: state.project?.clips?.firstOrNull()?.id
                 if (clipId != null) {
-                    vm.updateTextOverlay(clipId, id) { it.copy(x = it.x + dx, y = it.y + dy) }
+                    // CapCut behaviour: when the text has keyframes the
+                    // drag writes a keyframe at the playhead (the text
+                    // animates); otherwise the base position moves.
+                    val ov = selectedClip?.textOverlays?.firstOrNull { it.id == id }
+                    vm.moveTextOverlayAtPlayhead(
+                        clipId, id,
+                        (ov?.x ?: 0.5f) + dx, (ov?.y ?: 0.5f) + dy
+                    )
                 }
             },
             onDeleteTextOverlay = { id ->
@@ -1342,6 +1394,23 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             vm.openTransitionPicker(fromId, toId)
         },
         onOpenChromaKey = { vm.openChromaKeyPanel() },
+        onOpenMask = {
+            // Opening the Mask tool on a clip with no mask creates a
+            // default one immediately so the user sees it on the
+            // preview and can drag it straight away.
+            val clipId = state.selectedClipId
+                ?: state.project?.clips?.firstOrNull()?.id
+            if (clipId != null) {
+                val clip = state.project?.clips?.firstOrNull { it.id == clipId }
+                if (clip?.mask == null) {
+                    vm.setClipMask(
+                        clipId,
+                        com.apexstudio.app.domain.model.VideoMask.default()
+                    )
+                }
+            }
+            vm.openMaskPanel()
+        },
         onOpenArFilters = { vm.openArFilterPanel() },
         onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
         onSelectAudioTrack = { vm.selectAudioTrack(it) },

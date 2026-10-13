@@ -174,6 +174,8 @@ data class EditorState(
     val coverTextStyle: String = "BOLD_TITLE",
     val chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     val chromaKeyPanelOpen: Boolean = false,
+    // Mask tool bottom sheet (shape mask on the selected video clip).
+    val maskPanelOpen: Boolean = false,
     val royaltyMusicDialogOpen: Boolean = false,
     val arFilterPanelOpen: Boolean = false,
     val activeArFilterId: String? = null,

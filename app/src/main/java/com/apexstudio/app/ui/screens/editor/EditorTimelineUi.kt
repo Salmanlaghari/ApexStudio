@@ -21,7 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -114,6 +116,7 @@ fun TimelineTrackArea(
     onOpenTransition: () -> Unit = {},
     onOpenClipTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     onOpenChromaKey: () -> Unit = {},
+    onOpenMask: () -> Unit = {},
     onOpenArFilters: () -> Unit = {},
     onOpenRoyaltyMusic: () -> Unit = {},
     onSelectAudioTrack: (String) -> Unit = {},
@@ -290,6 +293,12 @@ fun TimelineTrackArea(
                             onClick = onOpenAnimation
                         )
                         QuickActionSquareCard(
+                            icon = Icons.Default.Crop,
+                            label = "Mask",
+                            tint = Color(0xFF00E5FF),
+                            onClick = onOpenMask
+                        )
+                        QuickActionSquareCard(
                             icon = Icons.Default.ContentCopy,
                             label = "Duplicate",
                             onClick = { activeClip?.let { onDuplicateClip(it.id) } }
@@ -342,6 +351,12 @@ fun TimelineTrackArea(
                             onClick = onOpenChromaKey
                         )
                         QuickActionSquareCard(
+                            icon = Icons.Default.Crop,
+                            label = "Mask",
+                            tint = Color(0xFF00E5FF),
+                            onClick = onOpenMask
+                        )
+                        QuickActionSquareCard(
                             icon = Icons.Default.AutoAwesome,
                             label = "Animation",
                             onClick = onOpenAnimation
@@ -371,6 +386,16 @@ fun TimelineTrackArea(
                             label = "Styles",
                             tint = Color(0xFFA855F7),
                             onClick = onOpenText
+                        )
+                        QuickActionSquareCard(
+                            icon = KeyframeDiamondIcon,
+                            label = "Keyframe",
+                            tint = Color(0xFFFBBF24),
+                            onClick = {
+                                selectedTextRef?.let { (clipId, overlayId) ->
+                                    onToggleTextKeyframeAtPlayhead(clipId, overlayId)
+                                }
+                            }
                         )
                         QuickActionSquareCard(
                             icon = Icons.Default.DeleteOutline,
@@ -756,6 +781,20 @@ fun TimelineQuickActionBar(
             }
         }
     }
+}
+
+/** Diamond (keyframe) icon — material core has no Diamond, so build it. */
+private val KeyframeDiamondIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "keyframe_diamond",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).addPath(
+        pathData = PathParser().parsePathString("M12,2 L22,12 L12,22 L2,12 Z").toNodes(),
+        fill = SolidColor(Color.Black)
+    ).build()
 }
 
 @Composable

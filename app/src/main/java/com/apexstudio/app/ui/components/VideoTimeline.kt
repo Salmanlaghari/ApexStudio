@@ -2184,6 +2184,26 @@ private fun TimelineVideoTrack(
 
                     }
 
+                    // Mask badge (Mask tool): shown when a shape mask is
+                    // attached to the clip.
+                    if (clip.mask != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(4.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF00E5FF).copy(alpha = 0.92f))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Mask: ${clip.mask?.shape?.label ?: ""}",
+                                color = Color.Black,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     // Trim Grips on active clip — draggable to trim start/end.
                     if (isSelected && !multiSelectMode) {
                         var trimDragAccumX by remember(clip.id) { mutableFloatStateOf(0f) }

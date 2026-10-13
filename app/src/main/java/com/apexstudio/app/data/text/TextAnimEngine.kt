@@ -117,8 +117,38 @@ object TextAnimEngine {
     fun isAnimated(overlay: TextOverlay): Boolean {
         if (!normalizeIntro(overlay.animationType).equals("NONE", ignoreCase = true)) return true
         if (!normalizeOutro(overlay.outroAnimationType).equals("NONE", ignoreCase = true)) return true
+        if (overlay.keyframes.keyframes.isNotEmpty()) return true
         return false
     }
+
+    /**
+     * The keyframe contribution to the overlay's state at [timeMs],
+     * as a [State] that composes with the intro/outro state via
+     * [State.plus] (alphas/scales multiply, offsets/rotations add) —
+     * the exact composition the live preview
+     * ([AnimatedTextOverlayView]) uses, so export matches it.
+     *
+     * Keyframe translate is in fractions of the frame, matching
+     * [State.transXFrac]/[transYFrac].
+     */
+    fun keyframeState(overlay: TextOverlay, timeMs: Long): State {
+        if (overlay.keyframes.keyframes.isEmpty()) return State.Identity
+        val kf = overlay.keyframes.interpolateAt(timeMs)
+        return State(
+            alpha = kf.opacity.coerceIn(0f, 1f),
+            scaleX = kf.scale,
+            scaleY = kf.scale,
+            transXFrac = kf.translateX,
+            transYFrac = kf.translateY,
+            rotZDeg = kf.rotationDeg
+        )
+    }
+
+    /**
+     * Full animated state (intro/outro + keyframes) at [timeMs].
+     */
+    fun fullState(overlay: TextOverlay, timeMs: Long, forExport: Boolean = false): State =
+        compute(overlay, timeMs, forExport) + keyframeState(overlay, timeMs)
 
     /**
      * Cache key for the export path: re-rasterise the sprite only
@@ -141,6 +171,26 @@ object TextAnimEngine {
             (s.rotZDeg * 10f).toInt(),
             (s.blurFrac * 10000f).toInt(),
             s.charsToShow ?: -1
+        )
+    }
+
+    /**
+     * [stateKey] plus the keyframe contribution, quantised the same
+     * way. Keyframed text re-rasterises per frame bucket (~40ms) so
+     * the movement bakes smoothly into the MP4.
+     */
+    fun stateKeyFull(overlay: TextOverlay, timeMs: Long): Any {
+        val base = stateKey(overlay, timeMs)
+        if (overlay.keyframes.keyframes.isEmpty()) return base
+        val t = (timeMs / 40L) * 40L
+        val kf = overlay.keyframes.interpolateAt(t)
+        return listOf(
+            base,
+            (kf.translateX * 10000f).toInt(),
+            (kf.translateY * 10000f).toInt(),
+            (kf.scale * 1000f).toInt(),
+            (kf.rotationDeg * 10f).toInt(),
+            (kf.opacity * 255f).toInt()
         )
     }
 

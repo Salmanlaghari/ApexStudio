@@ -33,6 +33,11 @@ import com.apexstudio.app.domain.model.TextOverlay
  * between frames, so the MP4 bakes exactly what the live preview
  * showed. Static captions keep the old single-upload fast path.
  *
+ * Keyframed text (moving/animated via the timeline diamond strip) is
+ * baked the same way: [TextAnimEngine.fullState] merges the keyframe
+ * interpolation into the sprite state, so the export moves exactly
+ * like the preview.
+ *
  * Multiple captions = multiple effect instances appended to the
  * effect chain (each composites its own sprite on top of the output
  * of the previous one).
@@ -112,7 +117,9 @@ class TextOverlayGlEffect(
         private fun uploadSprite(overlay: TextOverlay, aspect: Float, timeMs: Long?) {
             val (w, h) = spriteSize(aspect)
             val states = if (timeMs != null) {
-                mapOf(overlay.id to TextAnimEngine.compute(overlay, timeMs, forExport = true))
+                // Full state = intro/outro animation + keyframe track, so
+                // keyframed (moving) text bakes exactly what the preview showed.
+                mapOf(overlay.id to TextAnimEngine.fullState(overlay, timeMs, forExport = true))
             } else {
                 emptyMap()
             }
@@ -153,7 +160,7 @@ class TextOverlayGlEffect(
                 // animation state actually changed since last frame.
                 if (animated && inWindow && !overlay.text.isBlank()) {
                     try {
-                        val key = TextAnimEngine.stateKey(overlay, timeMs)
+                        val key = TextAnimEngine.stateKeyFull(overlay, timeMs)
                         if (key != lastStateKey) {
                             uploadSprite(overlay, aspectRatio, timeMs)
                             lastStateKey = key

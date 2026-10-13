@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
  * Language: "auto" (detect) or a whisper code ("ur", "hi", "en", …).
  * Prince's content is Urdu/Hindi songs + vlogs, so those are first-class.
  */
-class CaptionUiState(
+data class CaptionUiState(
     val phase: CaptionPhase = CaptionPhase.IDLE,
     val progress01: Float = 0f,
     val message: String = "",
@@ -102,7 +102,7 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 message = "Listening… (on-device AI)"
             )
             val segments = WhisperCaptionEngine.transcribe(
-                ctx.applicationContext, clip.uri, language
+                ctx.applicationContext, android.net.Uri.parse(clip.uri), language
             ) { p ->
                 _captionUi.value = _captionUi.value.copy(
                     phase = CaptionPhase.TRANSCRIBING, progress01 = p,

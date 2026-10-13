@@ -166,17 +166,17 @@ class WhisperModel private constructor(
         onStep: (generated: Int) -> Unit = {}
     ): ChunkResult {
         val encIn = encoder.inputNames.toList()
-        val encOut = encoder.outputNames.toList()
         val melTensor = OnnxTensor.createTensor(
             env, FloatBuffer.wrap(mel),
             longArrayOf(1, meta.nMels.toLong(), WhisperMelSpectrogram.N_FRAMES.toLong())
         )
         // Encoder outputs the cross-attention K/V directly.
-        val (crossK, crossV) = melTensor.use {
-            encoder.run(mapOf(encIn[0] to it)).use { res ->
-                (res[0] as OnnxTensor) to (res[1] as OnnxTensor)
-            }
-        }
+        // NOTE: the Result OWNS its output tensors (closing it closes
+        // them), so it stays open until crossK/crossV are closed.
+        val encResult = encoder.run(mapOf(encIn[0] to melTensor))
+        melTensor.close() // input consumed by run()
+        val crossK = encResult[0] as OnnxTensor
+        val crossV = encResult[1] as OnnxTensor
         try {
             val lang = langTokenId ?: detectLanguage(crossK, crossV)
             val ids = greedyDecode(crossK, crossV, lang, onStep)
@@ -184,6 +184,7 @@ class WhisperModel private constructor(
         } finally {
             crossK.close()
             crossV.close()
+            encResult.close() // after its values; double-close is guarded
         }
     }
 
@@ -194,7 +195,7 @@ class WhisperModel private constructor(
         val step = runDecoderStep(
             longArrayOf(meta.sot.toLong()), kIn, vIn, crossK, crossV, 0L
         )
-        kIn.close()
+        kIn.close() // inputs consumed by run()
         vIn.close()
         val row = step.logits
         var best = meta.langTokens.firstOrNull() ?: meta.sot
@@ -202,8 +203,7 @@ class WhisperModel private constructor(
         for (id in meta.langTokens) {
             if (id < row.size && row[id] > bestV) { bestV = row[id]; best = id }
         }
-        step.caches.first.close()
-        step.caches.second.close()
+        step.close()
         Log.i(TAG, "detected language: ${meta.idToLang[best] ?: "?"} (token $best)")
         return best
     }
@@ -211,8 +211,18 @@ class WhisperModel private constructor(
     private data class StepResult(
         val logits: FloatArray, // last position row, suppressible copy
         /** Fresh output caches — ownership passes to the caller. */
-        val caches: Pair<OnnxTensor, OnnxTensor>
-    )
+        val kCache: OnnxTensor,
+        val vCache: OnnxTensor,
+        /** Backing run result — owns kCache/vCache; closed AFTER them. */
+        private val result: OrtSession.Result
+    ) {
+        /** Close caches, then the backing result (caches first). */
+        fun close() {
+            try { kCache.close() } catch (_: Exception) {}
+            try { vCache.close() } catch (_: Exception) {}
+            try { result.close() } catch (_: Exception) {}
+        }
+    }
 
     private fun zeroCache(): OnnxTensor {
         val n = meta.nTextLayer * 1 * meta.nTextCtx * meta.nTextState
@@ -225,6 +235,8 @@ class WhisperModel private constructor(
     /**
      * One decoder step. Returns a *copy* of the last-position logits row
      * (safe to suppress in place) plus the new KV caches (caller-owned).
+     * The returned StepResult keeps the run's Result alive: closing the
+     * Result would close the caches it owns.
      */
     private fun runDecoderStep(
         tokenIds: LongArray,
@@ -247,24 +259,22 @@ class WhisperModel private constructor(
             decIn[4] to crossV,
             decIn[5] to off
         )
-        var outK: OnnxTensor? = null
-        var outV: OnnxTensor? = null
-        val row: FloatArray
-        decoder.run(inputs).use { res ->
-            val logitsT = res[0] as OnnxTensor
-            outK = res[1] as OnnxTensor
-            outV = res[2] as OnnxTensor
-            val shape = logitsT.info.shape // [1, T, vocab]
-            val t = shape[1].toInt()
-            val vocab = shape[2].toInt()
-            val buf = logitsT.floatBuffer
-            row = FloatArray(vocab)
-            val base = (t - 1) * vocab
-            for (i in 0 until vocab) row[i] = buf.get(base + i)
-        }
-        tokens.close()
+        val res = decoder.run(inputs)
+        val logitsT = res[0] as OnnxTensor
+        val outK = res[1] as OnnxTensor
+        val outV = res[2] as OnnxTensor
+        val shape = logitsT.info.shape // [1, T, vocab]
+        val t = shape[1].toInt()
+        val vocab = shape[2].toInt()
+        val buf = logitsT.floatBuffer
+        val row = FloatArray(vocab)
+        val base = (t - 1) * vocab
+        for (i in 0 until vocab) row[i] = buf.get(base + i)
+        tokens.close() // inputs consumed by run()
         off.close()
-        return StepResult(row, outK!! to outV!!)
+        // NOTE: res is NOT closed here — it owns outK/outV. The caller's
+        // StepResult.close() closes caches first, then res.
+        return StepResult(row, outK, outV, res)
     }
 
     private fun suppress(logits: FloatArray, isInitial: Boolean) {
@@ -292,45 +302,41 @@ class WhisperModel private constructor(
         if (sotSeq.size >= 2) sotSeq[1] = langTokenId
         if (sotSeq.size >= 3) sotSeq[2] = meta.transcribe
 
-        var kCache = zeroCache()
-        var vCache = zeroCache()
         val results = ArrayList<Int>(128)
-        // Ownership invariant: kCache/vCache always hold exactly one live
-        // pair. Each step consumes the input pair (closed right after the
-        // run) and yields a fresh output pair that becomes current.
+        // Ownership: each step's output caches become the next step's
+        // inputs. A step's inputs are consumed by run() and closed right
+        // after the next step returns; the previous step's Result is
+        // closed along with its caches (caches first).
+        val zeroK = zeroCache()
+        val zeroV = zeroCache()
+        var step = runDecoderStep(
+            sotSeq.map { it.toLong() }.toLongArray(),
+            zeroK, zeroV, crossK, crossV, 0L
+        )
+        zeroK.close(); zeroV.close()
         try {
-            var offset = 0L
-            var step = runDecoderStep(
-                sotSeq.map { it.toLong() }.toLongArray(),
-                kCache, vCache, crossK, crossV, offset
-            )
-            kCache.close(); vCache.close()
-            kCache = step.caches.first
-            vCache = step.caches.second
-            offset += sotSeq.size
-
-            val row = step.logits
-            suppress(row, isInitial = true)
-            var next = argmax(row)
+            var offset = sotSeq.size.toLong()
+            suppress(step.logits, isInitial = true)
+            var next = argmax(step.logits)
 
             var count = 0
             while (next != meta.eot && results.size < meta.nTextCtx) {
                 results.add(next)
                 count++
                 if (count % 8 == 0) onStep(count)
-                step = runDecoderStep(longArrayOf(next.toLong()), kCache, vCache, crossK, crossV, offset)
-                kCache.close(); vCache.close()
-                kCache = step.caches.first
-                vCache = step.caches.second
+                val prev = step
+                step = runDecoderStep(
+                    longArrayOf(next.toLong()), prev.kCache, prev.vCache,
+                    crossK, crossV, offset
+                )
+                prev.close() // its inputs are consumed; close caches + result
                 offset += 1
-                val r = step.logits
-                suppress(r, isInitial = false)
-                next = argmax(r)
+                suppress(step.logits, isInitial = false)
+                next = argmax(step.logits)
             }
             onStep(count)
         } finally {
-            try { kCache.close() } catch (_: Exception) {}
-            try { vCache.close() } catch (_: Exception) {}
+            step.close()
         }
         return results.toIntArray()
     }

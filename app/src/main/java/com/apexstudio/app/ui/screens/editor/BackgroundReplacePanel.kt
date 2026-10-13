@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -300,7 +301,9 @@ fun BackgroundReplacePanel(
                     Spacer(Modifier.height(4.dp))
                     HsvColorPicker(
                         initialColor = Color(colorArgb.toInt()),
-                        onColorChange = { colorArgb = it.value.toLong() and 0xFFFFFFFFL or 0xFF000000L }
+                        // toArgb() is the idiomatic ARGB int; mask to
+                        // unsigned Long and force opaque alpha.
+                        onColorChange = { colorArgb = it.toArgb().toLong() and 0xFFFFFFFFL or 0xFF000000L }
                     )
                 }
                 BgUiMode.IMAGE -> {

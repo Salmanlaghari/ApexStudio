@@ -5,6 +5,7 @@ import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /**
@@ -88,6 +89,20 @@ class BackgroundReplaceMathTest {
         assertEquals(0f, r[1], 0.001f)
         assertEquals(1920f, r[2], 0.001f)
         assertEquals(1080f, r[3], 0.001f)
+    }
+
+    @Test
+    fun `coverCropRect throws for non-positive dimensions`() {
+        try {
+            BackgroundReplaceMath.coverCropRect(0, 1080, 1080, 1080)
+            fail("expected IllegalArgumentException for zero width")
+        } catch (_: IllegalArgumentException) {
+        }
+        try {
+            BackgroundReplaceMath.coverCropRect(1920, 1080, 0, 720)
+            fail("expected IllegalArgumentException for zero destination width")
+        } catch (_: IllegalArgumentException) {
+        }
     }
 
     @Test

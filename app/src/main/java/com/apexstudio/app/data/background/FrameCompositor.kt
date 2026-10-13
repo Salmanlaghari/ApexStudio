@@ -120,6 +120,11 @@ class FrameCompositor(
         return out
     }
 
+    // Idempotent-release guard (Kilo review): recycle() on an
+    // already-recycled bitmap throws; a second release() must be
+    // a no-op instead of relying on try-catch.
+    private var released = false
+
     /**
      * Composite [frame] with [mask] (row-major confidence 0..1,
      * [maskW]×[maskH]) into [result]. [frame] must be [width]×[height].
@@ -128,6 +133,7 @@ class FrameCompositor(
      *   its length, or the frame size mismatches the compositor.
      */
     fun composite(frame: Bitmap, mask: FloatArray, maskW: Int, maskH: Int) {
+        check(!released) { "FrameCompositor is released" }
         require(frame.width == width && frame.height == height) {
             "Frame ${frame.width}×${frame.height} != compositor ${width}×${height}"
         }
@@ -180,14 +186,17 @@ class FrameCompositor(
         resultCanvas.drawBitmap(scratch, 0f, 0f, null)
     }
 
-    /** Recycle all working bitmaps. The compositor must not be used after this. */
+    /** Recycle all working bitmaps. Idempotent. The compositor must not be used after this. */
     fun release() {
-        try { maskBitmap?.recycle() } catch (_: Exception) {}
-        try { scaledMask.recycle() } catch (_: Exception) {}
-        try { scratch.recycle() } catch (_: Exception) {}
-        try { result.recycle() } catch (_: Exception) {}
-        try { blurSmall?.recycle() } catch (_: Exception) {}
-        try { solidBg?.recycle() } catch (_: Exception) {}
-        try { imageBg?.recycle() } catch (_: Exception) {}
+        if (released) return
+        released = true
+        maskBitmap?.recycle()
+        maskBitmap = null
+        scaledMask.recycle()
+        scratch.recycle()
+        result.recycle()
+        blurSmall?.recycle()
+        solidBg?.recycle()
+        imageBg?.recycle()
     }
 }

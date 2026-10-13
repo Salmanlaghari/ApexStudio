@@ -1726,8 +1726,10 @@ fun BackgroundReplacePanelOverlay(
     LaunchedEffect(Unit) {
         com.apexstudio.app.data.packs.download.PackManager.refresh(context.applicationContext)
     }
+    // Exact match only (Kilo review): falling back to the first clip
+    // when nothing is selected would apply the treatment to a clip
+    // the user never chose. Null → the panel says "select a clip".
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-        ?: state.project?.clips?.firstOrNull()
     Box(
         modifier = Modifier
             .fillMaxSize()

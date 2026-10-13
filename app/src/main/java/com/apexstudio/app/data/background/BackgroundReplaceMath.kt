@@ -46,10 +46,14 @@ object BackgroundReplaceMath {
      * (no letterboxing) and return the source rect to crop, centred.
      * Used to fit a picked background image to the video frame.
      * Returns (srcLeft, srcTop, srcRight, srcBottom) in source pixels.
+     *
+     * @throws IllegalArgumentException for non-positive dimensions
+     * (fail fast — silently returning an identity rect would mask
+     * an upstream bug, e.g. uninitialized bitmap dimensions).
      */
     fun coverCropRect(srcW: Int, srcH: Int, dstW: Int, dstH: Int): FloatArray {
-        if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) {
-            return floatArrayOf(0f, 0f, srcW.toFloat(), srcH.toFloat())
+        require(srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
+            "coverCropRect needs positive dimensions: ${srcW}×${srcH} → ${dstW}×${dstH}"
         }
         val srcAspect = srcW.toFloat() / srcH
         val dstAspect = dstW.toFloat() / dstH

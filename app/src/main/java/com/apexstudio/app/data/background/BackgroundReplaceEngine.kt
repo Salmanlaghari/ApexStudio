@@ -14,7 +14,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.util.Log
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
@@ -28,12 +28,14 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
@@ -100,6 +102,15 @@ object BackgroundReplaceEngine {
     private const val PROGRESS_EMIT_INTERVAL_MS = 250L
     private const val BG_IMAGE_MAX_DIM = 1920
 
+    /**
+     * Dedicated single thread for background-replace runs (Kilo
+     * review): a run can take minutes, so it must not starve
+     * `Dispatchers.Default`'s shared pool. App-lifetime; never closed.
+     */
+    private val processingDispatcher = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BgReplace").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+
     /** The downloaded model file, or null when not downloaded yet. */
     fun modelFile(context: Context): File =
         File(PackManager.packDir(context, PACK_ID), MODEL_FILE)
@@ -161,7 +172,7 @@ object BackgroundReplaceEngine {
         settings: BackgroundReplaceSettings,
         outputFile: File,
         onProgress: (Float) -> Unit = {}
-    ): File = withContext(Dispatchers.Default) {
+    ): File = withContext(processingDispatcher) {
         val safe = settings.sanitized()
         val appContext = context.applicationContext
         val model = modelFile(appContext)
@@ -183,6 +194,7 @@ object BackgroundReplaceEngine {
         var encoder: MediaCodec? = null
         var muxer: MediaMuxer? = null
         var reader: android.media.ImageReader? = null
+        var frameThread: HandlerThread? = null
         var compositor: FrameCompositor? = null
         var bgImage: Bitmap? = null
         try {
@@ -240,6 +252,12 @@ object BackgroundReplaceEngine {
             } else 30
             val mime = format.getString(MediaFormat.KEY_MIME)!!
 
+            // YUV→RGB conversion must match the source's colour
+            // standard + range (Kilo review): assuming BT.601
+            // limited-range for every clip shifts colours on BT.709
+            // or full-range sources.
+            val yuvParams = yuvParamsFor(format)
+
             // Output dims: rotation is baked in (the processed file
             // carries no rotation metadata, so preview/export agree).
             val swapped = rotation == 90 || rotation == 270
@@ -283,6 +301,11 @@ object BackgroundReplaceEngine {
                 srcW, srcH, ImageFormat.YUV_420_888, IMAGE_READER_MAX_IMAGES
             )
             reader = imgReader
+            // Dedicated handler thread for frame delivery (Kilo
+            // review): the main looper must never gate decoding —
+            // a blocked UI thread would stall the whole run.
+            val frames = HandlerThread("BgReplaceFrames").apply { start() }
+            frameThread = frames
             imgReader.setOnImageAvailableListener(
                 { r ->
                     try {
@@ -290,7 +313,7 @@ object BackgroundReplaceEngine {
                     } catch (_: Exception) {
                     }
                 },
-                Handler(Looper.getMainLooper())
+                Handler(frames.looper)
             )
             val dec = MediaCodec.createDecoderByType(mime)
             decoder = dec
@@ -298,6 +321,10 @@ object BackgroundReplaceEngine {
             dec.start()
 
             // --- Encoder + muxer. ---
+            // ~0.15 bits per pixel: the usual H.264 rule of thumb for
+            // visually near-lossless quality at 1080p (CapCut-style
+            // editors use ~0.1–0.2 bpp). Clamped so 4K doesn't
+            // explode and tiny clips don't starve.
             val bitrate = (outW.toLong() * outH * fps * 15L / 100L).toInt()
                 .coerceIn(MIN_BITRATE, MAX_BITRATE)
             val encFormat = MediaFormat.createVideoFormat(VIDEO_MIME_AVC, outW, outH).apply {
@@ -448,7 +475,7 @@ object BackgroundReplaceEngine {
                             val image = waitForImage(imageQueue)
                                 ?: throw IllegalStateException("Decoder produced no frame.")
                             try {
-                                val frame = yuv420ToBitmap(image)
+                                val frame = yuv420ToBitmap(image, yuvParams)
                                 try {
                                     val oriented = rotateBitmapIfNeeded(frame, rotation, outW, outH)
                                     try {
@@ -516,6 +543,7 @@ object BackgroundReplaceEngine {
             try { encoder?.release() } catch (_: Exception) {}
             try { muxer?.release() } catch (_: Exception) {}
             try { reader?.close() } catch (_: Exception) {}
+            try { frameThread?.quitSafely() } catch (_: Exception) {}
             try { extractor?.release() } catch (_: Exception) {}
             try { audioExtractor?.release() } catch (_: Exception) {}
             try { segmenter?.close() } catch (_: Exception) {}
@@ -594,8 +622,57 @@ object BackgroundReplaceEngine {
         }
     }
 
-    /** YUV_420_888 [Image] → ARGB bitmap (BT.601 limited-range, integer math). */
-    private fun yuv420ToBitmap(image: Image): Bitmap {
+    /**
+     * Integer YUV→RGB coefficients (×256, from the BT.601 / BT.709 /
+     * BT.2020 matrices). Chosen per source in [yuvParamsFor]:
+     * assuming BT.601 limited-range for every clip shifts colours
+     * on BT.709 or full-range sources (Kilo review). Unknown or
+     * absent metadata falls back to BT.601 limited — the historical
+     * default for phone clips.
+     */
+    private data class YuvParams(
+        /** Y offset (16 = limited range, 0 = full range). */
+        val yOffset: Int,
+        /** Y scale ×256 (298 = 255/219 limited, 256 = full). */
+        val yScale: Int,
+        /** R chroma coefficient for V (×256). */
+        val rV: Int,
+        /** G chroma coefficients for U and V (×256). */
+        val gU: Int,
+        val gV: Int,
+        /** B chroma coefficient for U (×256). */
+        val bU: Int,
+    ) {
+        companion object {
+            val BT601_LIMITED = YuvParams(16, 298, 409, -100, -208, 516)
+            val BT601_FULL = YuvParams(0, 256, 359, -88, -183, 454)
+            val BT709_LIMITED = YuvParams(16, 298, 459, -55, -136, 541)
+            val BT709_FULL = YuvParams(0, 256, 403, -48, -120, 475)
+            val BT2020_LIMITED = YuvParams(16, 298, 430, -48, -166, 548)
+            val BT2020_FULL = YuvParams(0, 256, 377, -42, -146, 482)
+        }
+    }
+
+    private fun yuvParamsFor(format: MediaFormat): YuvParams {
+        // containsKey + getInteger: minSdk 26, so the API-29
+        // getInteger(key, default) overload is not available.
+        val standard = if (format.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
+            format.getInteger(MediaFormat.KEY_COLOR_STANDARD)
+        } else 0
+        val fullRange = if (format.containsKey(MediaFormat.KEY_COLOR_RANGE)) {
+            format.getInteger(MediaFormat.KEY_COLOR_RANGE) == MediaFormat.COLOR_RANGE_FULL
+        } else false
+        return when (standard) {
+            MediaFormat.COLOR_STANDARD_BT709 ->
+                if (fullRange) YuvParams.BT709_FULL else YuvParams.BT709_LIMITED
+            MediaFormat.COLOR_STANDARD_BT2020 ->
+                if (fullRange) YuvParams.BT2020_FULL else YuvParams.BT2020_LIMITED
+            else -> if (fullRange) YuvParams.BT601_FULL else YuvParams.BT601_LIMITED
+        }
+    }
+
+    /** YUV_420_888 [Image] → ARGB bitmap (integer math; coefficients from [params]). */
+    private fun yuv420ToBitmap(image: Image, params: YuvParams): Bitmap {
         val w = image.width
         val h = image.height
         val planes = image.planes
@@ -620,10 +697,10 @@ object BackgroundReplaceEngine {
                 val yy = yBuf.get(yRow + x).toInt() and 0xff
                 val u = (uBuf.get(uRow + (x / 2) * uPixelStride).toInt() and 0xff) - 128
                 val v = (vBuf.get(vRow + (x / 2) * vPixelStride).toInt() and 0xff) - 128
-                val c = yy - 16
-                var r = (298 * c + 409 * v + 128) shr 8
-                var g = (298 * c - 100 * u - 208 * v + 128) shr 8
-                var b = (298 * c + 516 * u + 128) shr 8
+                val c = yy - params.yOffset
+                var r = (params.yScale * c + params.rV * v + 128) shr 8
+                var g = (params.yScale * c + params.gU * u + params.gV * v + 128) shr 8
+                var b = (params.yScale * c + params.bU * u + 128) shr 8
                 r = r.coerceIn(0, 255)
                 g = g.coerceIn(0, 255)
                 b = b.coerceIn(0, 255)
@@ -662,7 +739,13 @@ object BackgroundReplaceEngine {
             return retriever.extractMetadata(
                 MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
             )?.toIntOrNull() ?: 0
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Rotation metadata unreadable (corrupt file / permission /
+            // unsupported format): log and assume 0° rather than
+            // failing the whole run for a cosmetic metadata read
+            // (Kilo review). The output may be mis-oriented in that
+            // case — the log line is the diagnostic.
+            Log.w(TAG, "Rotation metadata unreadable; assuming 0°", e)
             return 0
         } finally {
             try { retriever.release() } catch (_: Exception) {}

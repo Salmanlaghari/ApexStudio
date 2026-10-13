@@ -294,6 +294,29 @@ class ExportEngine(private val context: Context) {
                     )
                     videoEffects.add(com.apexstudio.app.data.filter.ColorMatrixGlEffect(adjustMatrix))
                 }
+                // Video Adjustments v2 (export): bake the non-matrix
+                // adjustments into the exported MP4 via the GL shader.
+                // Matrix-covered knobs are zeroed out so nothing
+                // double-applies (ColorMatrix above handles those).
+                run {
+                    val v2 = config.adjustments
+                    if (v2.hasNonMatrixAdjustments) {
+                        videoEffects.add(
+                            com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                                adjustments = v2.copy(
+                                    hdr = 0f,
+                                    brilliance = 0f,
+                                    brightness = 0f,
+                                    contrast = 1f,
+                                    saturation = 1f,
+                                    exposure = 0f,
+                                    temperature = 0f,
+                                    tint = 0f
+                                )
+                            )
+                        )
+                    }
+                }
 
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)
                 if (config.fxPreset != null && config.fxIntensity > 0f) {

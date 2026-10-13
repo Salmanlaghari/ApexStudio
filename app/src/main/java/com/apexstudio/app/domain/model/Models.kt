@@ -620,7 +620,9 @@ data class VideoAdjustments(
     @FloatRange(from = -1.0, to = 1.0)
     val clarity: Float = 0f,
     @FloatRange(from = 0.0, to = 1.0)
-    val denoise: Float = 0f
+    val denoise: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0)
+    val vibrance: Float = 0f
 ) {
     val isDefault: Boolean
         get() = hdr == 0f &&
@@ -642,7 +644,20 @@ data class VideoAdjustments(
                 blacks == 0f &&
                 hue == 0f &&
                 clarity == 0f &&
-                denoise == 0f
+                denoise == 0f &&
+                vibrance == 0f
+
+    /**
+     * True when any adjustment that can't be expressed as a color matrix is
+     * active. The live preview (EditorScreen) and the export path
+     * (ExportEngine) use this to decide whether the GL shader stage is
+     * needed; the matrix stage handles the rest, so nothing double-applies.
+     */
+    val hasNonMatrixAdjustments: Boolean
+        get() = highlights != 0f || shadows != 0f ||
+                sharpness != 0f || fade != 0f || vignette != 0f || grain != 0f ||
+                lightness != 0f || whites != 0f || blacks != 0f || hue != 0f ||
+                vibrance != 0f || clarity != 0f || denoise != 0f
 }
 
 /**

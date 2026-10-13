@@ -54,7 +54,8 @@ class AdjustmentsGlEffect(
     private val clarityProvider: (() -> Float)? = null,
     private val denoiseProvider: (() -> Float)? = null,
     private val sharpnessProvider: (() -> Float)? = null,
-    private val fadeProvider: (() -> Float)? = null
+    private val fadeProvider: (() -> Float)? = null,
+    private val vibranceProvider: (() -> Float)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -80,6 +81,7 @@ class AdjustmentsGlEffect(
             denoiseProvider = denoiseProvider,
             sharpnessProvider = sharpnessProvider,
             fadeProvider = fadeProvider,
+            vibranceProvider = vibranceProvider,
             useHdr = useHdr
         )
     }
@@ -107,6 +109,7 @@ class AdjustmentsGlEffect(
         private val denoiseProvider: (() -> Float)?,
         private val sharpnessProvider: (() -> Float)?,
         private val fadeProvider: (() -> Float)?,
+        private val vibranceProvider: (() -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -136,6 +139,7 @@ class AdjustmentsGlEffect(
         private var denoise: Float = adjustments.denoise
         private var sharpness: Float = adjustments.sharpness
         private var fade: Float = adjustments.fade
+        private var vibrance: Float = adjustments.vibrance
         private var texelWidth: Float = 0f
         private var texelHeight: Float = 0f
         // Actual input resolution for the grain pattern (>= 1, guarded
@@ -201,6 +205,7 @@ class AdjustmentsGlEffect(
                 denoiseProvider?.let { denoise = it() }
                 sharpnessProvider?.let { sharpness = it() }
                 fadeProvider?.let { fade = it() }
+                vibranceProvider?.let { vibrance = it() }
 
                 // A zero input dimension yields a zero texel (see
                 // configure()); disable the spatial ops explicitly rather
@@ -229,6 +234,7 @@ class AdjustmentsGlEffect(
                 glProgram.setFloatUniform("uDenoise", if (spatialValid) denoise else 0f)
                 glProgram.setFloatUniform("uSharpness", if (spatialValid) sharpness else 0f)
                 glProgram.setFloatUniform("uFade", fade)
+                glProgram.setFloatUniform("uVibrance", vibrance)
                 glProgram.setFloatsUniform("uTexelSize", floatArrayOf(texelWidth, texelHeight))
                 glProgram.setFloatsUniform("uResolution", floatArrayOf(inputResW, inputResH))
                 glProgram.bindAttributesAndUniforms()
@@ -288,6 +294,7 @@ class AdjustmentsGlEffect(
          *    spatial ops are then disabled from Kotlin, see drawFrame)
          *  - uResolution: actual input resolution driving the grain hash
          *    (never hardcoded)
+         *  - uVibrance: -1..1 (smart saturation)
          */
         private val FRAGMENT_SHADER = """
             precision highp float;
@@ -313,6 +320,7 @@ class AdjustmentsGlEffect(
             uniform float uDenoise;
             uniform float uSharpness;
             uniform float uFade;
+            uniform float uVibrance;
             uniform vec2 uTexelSize;
             uniform vec2 uResolution;
 
@@ -416,6 +424,18 @@ class AdjustmentsGlEffect(
 
                 // 8. Saturation
                 c = applySaturation(c, uSaturation);
+
+                // 8b. Vibrance (smart saturation: boosts muted colors more).
+                // Mirrors the CPU thumbnail path (ColorGradingProcessor):
+                // saturation is normalized to 0..1 so post-exposure values
+                // can't invert the effect, with the same 0.5 response scale.
+                if (uVibrance != 0.0) {
+                    float maxV = max(max(c.r, c.g), c.b);
+                    float minV = min(min(c.r, c.g), c.b);
+                    float satV = maxV > 0.0 ? clamp((maxV - minV) / maxV, 0.0, 1.0) : 0.0;
+                    float vibAmt = uVibrance * (1.0 - satV) * 0.5;
+                    c = applySaturation(c, 1.0 + vibAmt);
+                }
 
                 // 9. Hue rotation
                 if (uHue != 0.0) {

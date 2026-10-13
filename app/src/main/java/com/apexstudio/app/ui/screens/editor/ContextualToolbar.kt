@@ -737,6 +737,9 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 ToolbarSelectionKind.NONE -> {}
+                // Text / sticker bars have no Replace action.
+                ToolbarSelectionKind.TEXT -> {}
+                ToolbarSelectionKind.STICKER -> {}
                 // Photo clip → replace with another still image.
                 ToolbarSelectionKind.PHOTO -> {
                     val clip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
@@ -772,6 +775,10 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 ToolbarSelectionKind.NONE -> {}
+                // Text / sticker Delete buttons use onDeleteText /
+                // onDeleteSticker (separate params), not this handler.
+                ToolbarSelectionKind.TEXT -> {}
+                ToolbarSelectionKind.STICKER -> {}
             }
         },
         onFade = { vm.openAudioFadeSheet() },

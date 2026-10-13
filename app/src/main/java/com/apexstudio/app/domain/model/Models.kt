@@ -51,6 +51,18 @@ data class MediaClip(
     // SpectralDenoiser's KDoc for the honest reasoning.
     val denoiseEnabled: Boolean = false,
     val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
+    // Background replace (PR-G): per-clip MediaPipe person
+    // segmentation. Null = original background (no processing).
+    // When set, [uri] points at the processed video file (same
+    // duration / resolution as the original) and
+    // [backgroundReplace.sourceUri] points at the untouched
+    // original, so "Original" restores it and re-applying a
+    // different treatment always starts from the original —
+    // never from an already-processed file. Preview and export
+    // both read [uri], so they show the identical pixels by
+    // construction. Backwards-compatible: older project JSONs
+    // without this field deserialise as null (original).
+    val backgroundReplace: BackgroundReplaceSettings? = null,
     // Animated transform track — empty by default. When populated
     // by the Keyframe panel, the GL effect applies the interpolated
     // translate / scale / rotation / opacity on every preview frame
@@ -404,6 +416,79 @@ enum class SpeedCurve {
  * KDoc for why this feature uses classical spectral gating instead of
  * RNNoise.
  */
+/**
+ * Background replace mode (PR-G): what replaces the background
+ * behind the segmented person. ORIGINAL means "no processing" —
+ * it is represented by `MediaClip.backgroundReplace == null`,
+ * never by a settings object with this mode.
+ */
+@Serializable
+enum class BackgroundReplaceMode {
+    /** Blur the background (strength = [BackgroundReplaceSettings.blurStrength]). */
+    BLUR,
+    /** Solid colour ([BackgroundReplaceSettings.colorArgb]). */
+    COLOR,
+    /** Another image, cover-cropped to the frame ([BackgroundReplaceSettings.imageUri]). */
+    IMAGE
+}
+
+/**
+ * Per-clip background-replace settings (PR-G, MediaPipe person
+ * segmentation). Persisted on [MediaClip.backgroundReplace].
+ *
+ * - [sourceUri] is the untouched original clip. The processed
+ *   file lives at [MediaClip.uri]. Keeping the original here
+ *   (instead of deriving it) is what makes "Original" a lossless
+ *   restore and re-apply idempotent.
+ * - [blurStrength] 0..1 maps to the blur divisor in
+ *   [com.apexstudio.app.data.background.BackgroundReplaceMath]
+ *   (0 = light blur, 1 = strongest).
+ * - [colorArgb] is 0xAARRGGBB; only read in COLOR mode.
+ * - [imageUri] is the picked replacement image; only read in IMAGE mode.
+ *
+ * Use [sanitized] before processing: it clamps every knob so the
+ * engine never sees an out-of-range value.
+ */
+@Serializable
+data class BackgroundReplaceSettings(
+    val mode: BackgroundReplaceMode = BackgroundReplaceMode.BLUR,
+    val blurStrength: Float = 0.5f,
+    val colorArgb: Long = 0xFF000000L,
+    val imageUri: String? = null,
+    val sourceUri: String = ""
+) {
+    /** Clamped copy: blur in 0..1, colour alpha forced opaque. */
+    fun sanitized(): BackgroundReplaceSettings = copy(
+        blurStrength = blurStrength.coerceIn(0f, 1f),
+        // A transparent "solid colour" would punch a hole to black in
+        // the encoder; force opaque so COLOR always means a real colour.
+        colorArgb = colorArgb or 0xFF000000L
+    )
+
+    /**
+     * Stable cache key for the processed output file: identical
+     * settings + identical source map to the same file, so a
+     * re-apply with unchanged settings reuses the file instead of
+     * re-processing. Any knob change yields a different key.
+     */
+    fun cacheKey(): String = listOf(
+        sourceUri,
+        mode.name,
+        blurStrength.toString(),
+        colorArgb.toString(),
+        imageUri ?: ""
+    ).joinToString("|")
+
+    companion object {
+        /** Default first-use settings: medium blur. */
+        fun defaultFor(sourceUri: String) = BackgroundReplaceSettings(
+            mode = BackgroundReplaceMode.BLUR,
+            blurStrength = 0.5f,
+            sourceUri = sourceUri
+        )
+    }
+}
+
 @Serializable
 enum class DenoiseStrength {
     LIGHT,

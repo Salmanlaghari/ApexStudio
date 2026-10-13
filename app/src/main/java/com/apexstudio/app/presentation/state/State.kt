@@ -202,6 +202,9 @@ data class EditorState(
     val adjustPackPanelOpen: Boolean = false,
     val colorScopesPanelOpen: Boolean = false,
     val bgRemoverPanelOpen: Boolean = false,
+    // Background replace panel (PR-G): per-clip MediaPipe person
+    // segmentation (blur / colour / image background).
+    val backgroundPanelOpen: Boolean = false,
     // ---- Phase 3: Auto Clip / Music / History / Drafts ----
     val autoClipPanelOpen: Boolean = false,
     val musicLibraryPanelOpen: Boolean = false,

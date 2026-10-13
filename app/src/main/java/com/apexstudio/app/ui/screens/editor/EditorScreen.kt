@@ -139,6 +139,15 @@ fun EditorScreen(
         }
     }
 
+    // PR-G: replacement-image picker for the per-clip Background panel.
+    // The picked image is stored on the panel state (pending Apply),
+    // never applied immediately.
+    val bgReplaceImagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { vm.setBackgroundReplaceImageUri(it.toString()) }
+    }
+
     mediaPicker.registerLaunchers()
 
     // Make bundled OFL text fonts available to the preview + export renderers.
@@ -712,6 +721,14 @@ fun EditorScreen(
         vm = vm,
         onPickCustomBackground = {
             bgImagePickerLauncher.launch("image/*")
+        }
+    )
+    // PR-G: per-clip Background replace (MediaPipe segmentation).
+    BackgroundReplacePanelOverlay(
+        state = state,
+        vm = vm,
+        onPickBackgroundImage = {
+            bgReplaceImagePickerLauncher.launch("image/*")
         }
     )
     AutoClipPanelOverlay(

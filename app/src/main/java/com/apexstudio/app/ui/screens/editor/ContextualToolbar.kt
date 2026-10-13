@@ -134,6 +134,8 @@ fun ContextualBottomToolbar(
     onVolume: () -> Unit = {},
     onAnimation: () -> Unit = {},
     onDelete: () -> Unit = {},
+    // PR-G: per-clip Background replace (MediaPipe person segmentation).
+    onBackground: () -> Unit = {},
     // Audio tools
     onFade: () -> Unit = {},
     onBeats: () -> Unit = {},
@@ -220,6 +222,9 @@ fun ContextualBottomToolbar(
             CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects),
             CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
+            // PR-G: per-clip Background replace (MediaPipe person
+            // segmentation) — blur / colour / image behind the person.
+            CtxToolItem("Background", Icons.Default.Person, tint = ApexPalette.NeonCyan, onClick = onBackground),
             CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
             CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
@@ -703,6 +708,8 @@ fun EditorBottomToolbarSection(
         onEditPack = { vm.openEditPackPanel() },
         onScopes = { vm.openColorScopesPanel() },
         onBgRemover = { vm.openBgRemoverPanel() },
+        // PR-G: per-clip Background replace panel (selected video clip).
+        onBackground = { vm.openBackgroundPanel() },
         onReplace = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO -> {

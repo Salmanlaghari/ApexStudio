@@ -163,6 +163,10 @@ fun EditorViewModel.openBgRemoverPanel() = _state.update { it.copy(bgRemoverPane
 
 fun EditorViewModel.closeBgRemoverPanel() = _state.update { it.copy(bgRemoverPanelOpen = false) }
 
+// ---------- PR-G: Background replace (per-clip MediaPipe segmentation) ----------
+// openBackgroundPanel / closeBackgroundPanel live in
+// EditorBackgroundController (they also seed the panel state).
+
 
 // ---------- Phase 3: Auto Clip / Music / History / Drafts ----------
 

@@ -275,6 +275,38 @@ fun EditorScreen(
         }
     }
 
+    // Clean Voice (per-clip voice noise cleanup): the preview runs the
+    // SAME DenoiseAudioProcessor class the export uses, so what you hear
+    // is exactly what bakes into the MP4. Toggling re-applies the
+    // effects and re-seeks to the same position to force the audio sink
+    // to reconfigure with the new effect chain.
+    LaunchedEffect(
+        exoPlayer,
+        currentSelectedClip?.id,
+        currentSelectedClip?.denoiseEnabled,
+        currentSelectedClip?.denoiseStrength
+    ) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        val clip = currentSelectedClip ?: return@LaunchedEffect
+        try {
+            val effects: List<androidx.media3.common.Effect> =
+                if (clip.denoiseEnabled) {
+                    listOf(
+                        com.apexstudio.app.data.audio.DenoiseAudioProcessor(
+                            clip.denoiseStrength
+                        )
+                    )
+                } else {
+                    emptyList()
+                }
+            player.setAudioEffects(effects)
+            // Force the audio sink to pick up the new effect chain.
+            player.seekTo(player.currentPosition)
+        } catch (e: Exception) {
+            Log.e("EditorScreen", "Failed to apply denoise audio effect", e)
+        }
+    }
+
     val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts) {
         state.activeFilterId?.let { id ->
             filterEngine.manifest.filters.firstOrNull { it.id == id }

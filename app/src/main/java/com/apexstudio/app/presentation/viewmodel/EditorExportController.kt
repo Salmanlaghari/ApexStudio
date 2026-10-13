@@ -131,6 +131,11 @@ fun EditorViewModel.startExport(
             // global audio volume, so what the user hears in the preview
             // is exactly what bakes into the export.
             volume = (selected?.volume ?: 1f) * (if (audioSt.isMuted) 0f else audioSt.volume),
+            // Clean Voice: the selected clip's denoise setting rides
+            // into the export with the same processor the preview uses.
+            denoiseEnabled = selected?.denoiseEnabled ?: false,
+            denoiseStrength = selected?.denoiseStrength
+                ?: com.apexstudio.app.domain.model.DenoiseStrength.MEDIUM,
             reverbEnabled = audioSt.reverbEnabled,
             reverbPreset = audioSt.reverbPreset,
             echoEnabled = audioSt.echoEnabled,
@@ -186,7 +191,11 @@ fun EditorViewModel.startAudioExport(
                     trimStartMs = clip.trimStartMs,
                     trimEndMs = clip.trimEndMs,
                     // Per-clip variable speed curve (PR-E).
-                    speedPoints = clip.speedPoints
+                    speedPoints = clip.speedPoints,
+                    // Per-clip Clean Voice: the same denoise setting the
+                    // preview and the video export use for this clip.
+                    denoiseEnabled = clip.denoiseEnabled,
+                    denoiseStrength = clip.denoiseStrength
                 )
             )
         }

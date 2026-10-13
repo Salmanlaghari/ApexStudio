@@ -21,6 +21,7 @@ import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
+import com.apexstudio.app.data.audio.DenoiseAudioProcessor
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.AspectCropTransformation
@@ -33,6 +34,7 @@ import com.apexstudio.app.data.gl.GlTransitionAdapterEffect
 import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
+import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +127,13 @@ class ExportEngine(private val context: Context) {
         val trimEndMs: Long = 0L,
         val pitchSemitones: Float = 0f,
         val volume: Float = 1f,
+        // Clean Voice (per-clip voice noise cleanup): when true, the
+        // export runs the same DenoiseAudioProcessor the preview uses
+        // (first in the audio chain, so it sees the original audio).
+        // The engine is classical spectral gating, NOT RNNoise — see
+        // SpectralDenoiser's KDoc for the honest reasoning.
+        val denoiseEnabled: Boolean = false,
+        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
         val reverbEnabled: Boolean = false,
         val reverbPreset: Short = 0,
         val echoEnabled: Boolean = false,
@@ -175,7 +184,12 @@ class ExportEngine(private val context: Context) {
         val trimEndMs: Long = 0L,
         // Variable speed curve for THIS source (PR-E). Empty = fall
         // back to the config's constant clipSpeed (legacy behaviour).
-        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList()
+        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
+        // Clean Voice for THIS source (per-clip). Extra audio tracks
+        // (music / voiceover) leave this off — the toggle is per
+        // video clip, and music must never be noise-gated.
+        val denoiseEnabled: Boolean = false,
+        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM
     )
 
     /**
@@ -276,6 +290,12 @@ class ExportEngine(private val context: Context) {
                     channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
                     audioProcessors.add(channelMixingProcessor)
                 }
+
+                // Clean Voice (per-clip voice noise cleanup): the same
+                // DenoiseAudioProcessor the preview uses, first in the
+                // chain so it sees the original audio before pitch /
+                // volume / speed effects.
+                denoiseProcessorOrNull(config)?.let { audioProcessors.add(0, it) }
 
                 // 1. Crop
                 config.cropRect?.let { r ->
@@ -472,6 +492,10 @@ class ExportEngine(private val context: Context) {
     ): MutableList<androidx.media3.common.audio.AudioProcessor> {
         val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
+        // Clean Voice first: same DenoiseAudioProcessor the preview uses,
+        // so it sees the original audio before pitch / volume / speed.
+        denoiseProcessorOrNull(config)?.let { audioProcessors.add(it) }
+
         // Audio Pitch Adjustment via SonicAudioProcessor
         if (config.pitchSemitones != 0f) {
             val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
@@ -505,6 +529,20 @@ class ExportEngine(private val context: Context) {
             audioProcessors.add(speedPair.first)
         }
         return audioProcessors
+    }
+
+    /**
+     * Fresh Clean Voice processor for an export config, or null when
+     * denoise is off. One instance per media item — processors are
+     * stateful and must never be shared across items. Shared by both
+     * export paths (single-clip [startExport] and [startAudioExport])
+     * so they can never disagree about the denoise chain.
+     */
+    private fun denoiseProcessorOrNull(
+        config: ExportConfig
+    ): androidx.media3.common.audio.AudioProcessor? {
+        if (!config.denoiseEnabled) return null
+        return DenoiseAudioProcessor(config.denoiseStrength)
     }
 
     /**
@@ -604,12 +642,17 @@ class ExportEngine(private val context: Context) {
                     // Per-source curve (PR-E): a ramped clip's audio is
                     // time-stretched by its own curve; sources without a
                     // curve fall back to the config's constant clipSpeed.
+                    // Per-source Clean Voice likewise rides on the copy.
                     EditedMediaItem.Builder(mediaItemBuilder.build())
                         .setRemoveVideo(true)
                         .setEffects(
                             Effects(
                                 buildExportAudioProcessors(
-                                    config.copy(speedPoints = src.speedPoints)
+                                    config.copy(
+                                        speedPoints = src.speedPoints,
+                                        denoiseEnabled = src.denoiseEnabled,
+                                        denoiseStrength = src.denoiseStrength
+                                    )
                                 ),
                                 emptyList()
                             )

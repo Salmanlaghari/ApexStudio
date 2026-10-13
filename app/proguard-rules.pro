@@ -68,11 +68,10 @@
 -keep class androidx.camera.** { *; }
 -dontwarn androidx.camera.**
 
-# Phase 4: Vosk offline STT (JNA + reflection)
--keep class org.vosk.** { *; }
--keep class com.sun.jna.** { *; }
--dontwarn org.vosk.**
--dontwarn com.sun.jna.**
+# AI auto-captions: onnxruntime-android (JNI; direct API calls, no reflection,
+# but keep the package so R8 can't strip classes the native layer needs).
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
 
 # Phase 4: Lottie (reflection on model classes)
 -keep class com.airbnb.lottie.** { *; }

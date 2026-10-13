@@ -483,6 +483,8 @@ fun TextPanelOverlay(
                     }
                 },
                 onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
+                onCaptionLanguageChange = { vm.setCaptionLanguage(it) },
+                onCancelCaptions = { vm.cancelAutoCaptions() },
                 hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
             )
         }

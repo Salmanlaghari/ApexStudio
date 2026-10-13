@@ -2,41 +2,59 @@ package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.apexstudio.app.data.captions.VoskCaptionEngine
+import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.domain.model.TextOverlay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Auto-captions controller (Phase 4): offline speech-to-text via Vosk
- * (Apache-2.0, https://github.com/alphacep/vosk-api).
+ * Auto-captions controller: on-device Whisper speech-to-text
+ * (tiny, multilingual, int8 — via onnxruntime-android).
  *
- * Flow: user taps "Auto Captions" on a video clip -> model downloads once
- * (~40MB, progress shown) -> audio transcribed on-device with word
- * timestamps -> words grouped into caption segments -> each segment becomes
- * a timed [TextOverlay] (startMs/endMs) on the clip, so preview AND export
- * render them via the existing text pipeline. No dead buttons: every state
- * (downloading / transcribing / done / failed) is surfaced in the UI.
+ * Flow: user taps "Auto Captions" on a video clip -> if the Whisper model
+ * files (~103MB in 3 file packs) aren't downloaded, the UI shows a
+ * download prompt (routed through PackManager.requirePack /
+ * PackManager.download) -> audio is extracted to 16 kHz mono PCM ->
+ * transcribed on-device in 30 s chunks with a cancellable progress UI ->
+ * each timestamped segment becomes a timed [TextOverlay] (startMs/endMs)
+ * on the clip, so preview AND export render them via the existing text
+ * pipeline. No dead buttons: every state (need-download / transcribing /
+ * done / failed / no-speech) is surfaced in the UI.
+ *
+ * Language: "auto" (detect) or a whisper code ("ur", "hi", "en", …).
+ * Prince's content is Urdu/Hindi songs + vlogs, so those are first-class.
  */
 class CaptionUiState(
     val phase: CaptionPhase = CaptionPhase.IDLE,
     val progress01: Float = 0f,
     val message: String = "",
-    val segmentsAdded: Int = 0
+    val segmentsAdded: Int = 0,
+    val language: String = WhisperCaptionEngine.LANG_AUTO
 )
 
-enum class CaptionPhase { IDLE, DOWNLOADING_MODEL, TRANSCRIBING, DONE, FAILED }
+enum class CaptionPhase { IDLE, NEED_DOWNLOAD, TRANSCRIBING, DONE, FAILED }
 
 // CaptionUiState lives on EditorViewModel (instance-scoped).
 
-/** True once the Vosk model is on disk. */
-fun EditorViewModel.isCaptionModelReady(): Boolean {
-    val ctx = context ?: return false
-    return VoskCaptionEngine.modelDir(ctx) != null
+/** Switch the caption language (resets the phase so the user can retry). */
+fun EditorViewModel.setCaptionLanguage(code: String) {
+    captionJob?.cancel()
+    captionJob = null
+    _captionUi.value = CaptionUiState(language = code)
+}
+
+/** Cancel an in-flight transcription. Never a dead button. */
+fun EditorViewModel.cancelAutoCaptions() {
+    captionJob?.cancel()
+    captionJob = null
+    _captionUi.value = _captionUi.value.copy(
+        phase = CaptionPhase.IDLE, progress01 = 0f, message = "Cancelled"
+    )
 }
 
 /**
@@ -45,59 +63,71 @@ fun EditorViewModel.isCaptionModelReady(): Boolean {
  */
 fun EditorViewModel.generateAutoCaptions(clipId: String) {
     val ctx = context ?: run {
-        _captionUi.value = CaptionUiState(CaptionPhase.FAILED, message = "No context")
+        _captionUi.value = _captionUi.value.copy(
+            phase = CaptionPhase.FAILED, message = "No context"
+        )
         return
     }
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: run {
-        _captionUi.value = CaptionUiState(CaptionPhase.FAILED, message = "Clip not found")
+        _captionUi.value = _captionUi.value.copy(
+            phase = CaptionPhase.FAILED, message = "Clip not found"
+        )
         return
     }
-    if (_captionUi.value.phase == CaptionPhase.DOWNLOADING_MODEL ||
-        _captionUi.value.phase == CaptionPhase.TRANSCRIBING
-    ) return // already running
+    if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return // already running
+    captionJob?.cancel()
 
-    viewModelScope.launch(Dispatchers.IO) {
+    captionJob = viewModelScope.launch(Dispatchers.IO) {
         try {
-            // 1. Model (one-time ~40MB download).
-            if (VoskCaptionEngine.modelDir(ctx) == null) {
-                _captionUi.value = CaptionUiState(
-                    CaptionPhase.DOWNLOADING_MODEL, 0f,
-                    "Downloading speech model (40MB, once)…"
+            val language = _captionUi.value.language
+            // 1. Model pack gating: PackManager is the single source of
+            //    truth for heavy assets (PR-C). refreshSync first so the
+            //    check sees the latest catalog/registry.
+            PackManager.refreshSync(ctx.applicationContext)
+            _captionUi.value = _captionUi.value.copy(
+                phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
+                message = "Checking AI model…"
+            )
+            val ready = WhisperCaptionEngine.isModelReady(ctx.applicationContext)
+            if (!ready) {
+                _captionUi.value = _captionUi.value.copy(
+                    phase = CaptionPhase.NEED_DOWNLOAD,
+                    message = "The Whisper AI model (~103MB in 3 parts, one-time download) is needed for auto-captions."
                 )
-                val dir = VoskCaptionEngine.ensureModel(ctx) { p ->
-                    _captionUi.value = CaptionUiState(
-                        CaptionPhase.DOWNLOADING_MODEL, p,
-                        "Downloading speech model ${(p * 100).toInt()}%…"
+                return@launch
+            }
+            // 2. Transcribe (cancellable; progress per 30 s chunk).
+            _captionUi.value = _captionUi.value.copy(
+                phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
+                message = "Listening… (on-device AI)"
+            )
+            val segments = WhisperCaptionEngine.transcribe(
+                ctx.applicationContext, clip.uri, language
+            ) { p ->
+                _captionUi.value = _captionUi.value.copy(
+                    phase = CaptionPhase.TRANSCRIBING, progress01 = p,
+                    message = "Transcribing ${(p * 100).toInt()}%…"
+                )
+            }
+            when {
+                segments == null -> {
+                    _captionUi.value = _captionUi.value.copy(
+                        phase = CaptionPhase.FAILED,
+                        message = "Couldn't load the AI model or read this clip's audio."
                     )
+                    return@launch
                 }
-                if (dir == null) {
-                    _captionUi.value = CaptionUiState(
-                        CaptionPhase.FAILED,
-                        message = "Model download failed — check internet and retry."
+                segments.isEmpty() -> {
+                    _captionUi.value = _captionUi.value.copy(
+                        phase = CaptionPhase.FAILED,
+                        message = "No speech detected in this clip."
                     )
                     return@launch
                 }
             }
-            // 2. Transcribe.
-            _captionUi.value = CaptionUiState(
-                CaptionPhase.TRANSCRIBING, 0f, "Listening… (on-device)"
-            )
-            val words = VoskCaptionEngine.transcribe(ctx, clip.uri) { p ->
-                _captionUi.value = CaptionUiState(
-                    CaptionPhase.TRANSCRIBING, p,
-                    "Transcribing ${(p * 100).toInt()}%…"
-                )
-            }
-            if (words.isEmpty()) {
-                _captionUi.value = CaptionUiState(
-                    CaptionPhase.FAILED, message = "No speech detected in this clip."
-                )
-                return@launch
-            }
-            // 3. Group into segments -> timed text overlays.
-            val segments = VoskCaptionEngine.toSegments(words)
+            // 3. Segments -> timed text overlays (existing text pipeline).
             val clipStartMs = clip.trimStartMs
-            val overlays = segments.map { seg ->
+            val overlays = segments!!.map { seg ->
                 TextOverlay.of(
                     text = seg.text,
                     x = 0.5f,
@@ -117,15 +147,20 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 val manual = c.textOverlays.filter { it.presetId != "caption_auto" }
                 c.copy(textOverlays = manual + overlays)
             }
-            _captionUi.value = CaptionUiState(
-                CaptionPhase.DONE, 1f,
-                "Added ${overlays.size} captions",
+            _captionUi.value = _captionUi.value.copy(
+                phase = CaptionPhase.DONE, progress01 = 1f,
+                message = "Added ${overlays.size} captions",
                 segmentsAdded = overlays.size
+            )
+        } catch (e: CancellationException) {
+            // Cancel button: back to idle, no error noise.
+            _captionUi.value = _captionUi.value.copy(
+                phase = CaptionPhase.IDLE, progress01 = 0f, message = "Cancelled"
             )
         } catch (e: Exception) {
             Log.e("CaptionCtrl", "Auto-captions failed", e)
-            _captionUi.value = CaptionUiState(
-                CaptionPhase.FAILED,
+            _captionUi.value = _captionUi.value.copy(
+                phase = CaptionPhase.FAILED,
                 message = "Captions failed: ${e.message?.take(80)}"
             )
         }
@@ -133,6 +168,8 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
 }
 
 fun EditorViewModel.resetCaptionUi() {
+    captionJob?.cancel()
+    captionJob = null
     _captionUi.value = CaptionUiState()
 }
 

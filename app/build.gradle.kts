@@ -179,10 +179,11 @@ dependencies {
   implementation("com.airbnb.android:lottie-compose:6.7.1")
   // Ken Burns pan/zoom for photo slideshow — https://github.com/flavioarfaria/KenBurnsView (Apache-2.0)
   implementation("com.flaviofaria:kenburnsview:1.0.7")
-  // Vosk offline speech recognition for auto-captions — https://github.com/alphacep/vosk-api (Apache-2.0)
-  // Model (~40MB) downloads on first use, NOT bundled in the APK.
-  implementation("net.java.dev.jna:jna:5.18.1@aar")
-  implementation("com.alphacephei:vosk-android:0.3.75@aar")
+  // On-device Whisper speech recognition for auto-captions —
+  // https://github.com/microsoft/onnxruntime (MIT). Official Maven
+  // artifact, no NDK/JNI of our own. Model (~103MB in 3 file packs)
+  // downloads on first use via PackManager, NOT bundled in the APK.
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)

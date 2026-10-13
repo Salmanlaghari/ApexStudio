@@ -320,11 +320,7 @@ fun EditorScreen(
             // knobs don't double-apply; only the v2 providers are live.
             run {
                 val v2 = state.adjustments
-                if (v2.highlights != 0f || v2.shadows != 0f ||
-                    v2.sharpness != 0f || v2.fade != 0f || v2.vignette != 0f || v2.grain != 0f ||
-                    v2.lightness != 0f || v2.whites != 0f || v2.blacks != 0f || v2.hue != 0f ||
-                    v2.vibrance != 0f || v2.clarity != 0f || v2.denoise != 0f
-                ) {
+                if (v2.hasNonMatrixAdjustments) {
                     add(
                         com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
                             adjustments = com.apexstudio.app.domain.model.VideoAdjustments(),

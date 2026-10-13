@@ -300,11 +300,7 @@ class ExportEngine(private val context: Context) {
                 // double-applies (ColorMatrix above handles those).
                 run {
                     val v2 = config.adjustments
-                    if (v2.highlights != 0f || v2.shadows != 0f ||
-                        v2.sharpness != 0f || v2.fade != 0f || v2.vignette != 0f || v2.grain != 0f ||
-                        v2.lightness != 0f || v2.whites != 0f || v2.blacks != 0f || v2.hue != 0f ||
-                        v2.vibrance != 0f || v2.clarity != 0f || v2.denoise != 0f
-                    ) {
+                    if (v2.hasNonMatrixAdjustments) {
                         videoEffects.add(
                             com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
                                 adjustments = v2.copy(

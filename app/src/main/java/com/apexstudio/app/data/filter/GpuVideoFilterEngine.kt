@@ -128,11 +128,15 @@ class GpuVideoFilterEngine(private val context: Context) {
      * Pipeline order mirrors the Media3 shader
      * ([com.apexstudio.app.data.adjust.AdjustmentsGlEffect]) step-for-step
      * (exposure -> brightness -> lightness -> contrast -> whites/blacks ->
-     * highlights/shadows -> clarity -> saturation -> hue -> temp/tint ->
-     * vignette -> denoise -> sharpness -> grain) so the GPUImage preview and
-     * the Media3 export render the same image (WYSIWYG). Gamma/vibrance have
-     * no shader counterpart and sit between hue and vignette without
-     * disturbing the relative order of the shared ops.
+     * highlights/shadows -> clarity -> saturation -> vibrance -> hue ->
+     * temp/tint -> vignette -> denoise -> sharpness -> grain) so the GPUImage
+     * preview and the Media3 export render the same image (WYSIWYG). Gamma has
+     * no shader counterpart and sits between hue and vignette without
+     * disturbing the relative order of the shared ops. Vibrance has a Media3
+     * shader counterpart (normalized saturation, 0.5 response, same as the
+     * CPU thumbnail path); the preview keeps the stock GPUImageVibranceFilter,
+     * whose response curve differs slightly — a known minor preview/export
+     * divergence.
      */
     fun buildFilterGroup(config: GpuFilterConfig, lutBitmap: Bitmap? = null): GPUImageFilterGroup {
         val filterList = mutableListOf<GPUImageFilter>()
@@ -206,7 +210,10 @@ class GpuVideoFilterEngine(private val context: Context) {
             filterList.add(GPUImageWhiteBalanceFilter(config.temperature, config.tint))
         }
 
-        // Gamma / Vibrance: GPUImage-only extras, no shader counterpart.
+        // Gamma: GPUImage-only extra, no shader counterpart. Vibrance has a
+        // Media3 shader counterpart (AdjustmentsGlEffect stage 8b); the
+        // preview keeps the stock GPUImageVibranceFilter — the slight
+        // response-curve divergence is documented in the class KDoc.
         if (config.gamma != 1.0f) {
             filterList.add(GPUImageGammaFilter(config.gamma.coerceIn(0.2f, 3.0f)))
         }

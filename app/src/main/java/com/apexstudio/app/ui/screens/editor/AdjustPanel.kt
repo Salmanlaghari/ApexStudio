@@ -68,7 +68,7 @@ private val ADJUST_ITEMS = listOf(
     AdjustItem("vibrance", "Vibrance", "🌈", -1f..1f, 0.05f, { it.vibrance }, { a, v -> a.copy(vibrance = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("temp", "Warmth", "🌡️", -1f..1f, 0.05f, { it.temperature }, { a, v -> a.copy(temperature = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("tint", "Tint", "🌸", -1f..1f, 0.05f, { it.tint }, { a, v -> a.copy(tint = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
-    AdjustItem("hue", "Hue", "🔄", -180f..180f, 5f, { it.hue }, { a, v -> a.copy(hue = v.coerceIn(-180f, 180f)) }, { "%+.0f°".format(it) }),
+    AdjustItem("hue", "Hue", "🔄", -180f..180f, 1f, { it.hue }, { a, v -> a.copy(hue = v.coerceIn(-180f, 180f)) }, { "%+.0f°".format(it) }),
     // ---- Details ----
     AdjustItem("sharpness", "Sharpness", "🔪", 0f..1f, 0.05f, { it.sharpness }, { a, v -> a.copy(sharpness = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
     AdjustItem("clarity", "Clarity", "💎", -1f..1f, 0.05f, { it.clarity }, { a, v -> a.copy(clarity = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
@@ -109,10 +109,13 @@ fun AdjustPanel(
     var activeTab by remember { mutableStateOf(AdjustTab.TONE) }
     var selectedAdjustId by remember { mutableStateOf("hdr") }
 
-    // Keep the selected tool inside the active tab.
+    // Keep the selected tool inside the active tab (side-effect, so it
+    // runs in LaunchedEffect rather than during composition).
     val tabItems = TAB_TOOLS[activeTab].orEmpty().mapNotNull { ITEM_BY_ID[it] }
-    if (tabItems.none { it.id == selectedAdjustId } && tabItems.isNotEmpty()) {
-        selectedAdjustId = tabItems.first().id
+    LaunchedEffect(activeTab) {
+        if (tabItems.none { it.id == selectedAdjustId } && tabItems.isNotEmpty()) {
+            selectedAdjustId = tabItems.first().id
+        }
     }
     val activeItem = ITEM_BY_ID[selectedAdjustId] ?: tabItems.firstOrNull() ?: ADJUST_ITEMS.first()
     val currentValue = activeItem.getValue(adjustments)

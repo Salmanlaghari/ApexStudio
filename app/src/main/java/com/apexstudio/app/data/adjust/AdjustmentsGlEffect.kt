@@ -425,11 +425,15 @@ class AdjustmentsGlEffect(
                 // 8. Saturation
                 c = applySaturation(c, uSaturation);
 
-                // 8b. Vibrance (smart saturation: boosts muted colors more)
+                // 8b. Vibrance (smart saturation: boosts muted colors more).
+                // Mirrors the CPU thumbnail path (ColorGradingProcessor):
+                // saturation is normalized to 0..1 so post-exposure values
+                // can't invert the effect, with the same 0.5 response scale.
                 if (uVibrance != 0.0) {
-                    float lumaV = dot(c, vec3(0.2126, 0.7152, 0.0722));
-                    float satV = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
-                    float vibAmt = uVibrance * (1.0 - satV) * 0.9;
+                    float maxV = max(max(c.r, c.g), c.b);
+                    float minV = min(min(c.r, c.g), c.b);
+                    float satV = maxV > 0.0 ? clamp((maxV - minV) / maxV, 0.0, 1.0) : 0.0;
+                    float vibAmt = uVibrance * (1.0 - satV) * 0.5;
                     c = applySaturation(c, 1.0 + vibAmt);
                 }
 

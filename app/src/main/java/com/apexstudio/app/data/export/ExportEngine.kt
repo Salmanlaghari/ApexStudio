@@ -291,7 +291,8 @@ class ExportEngine(private val context: Context) {
                 // right after geometry, before any colour work, so the
                 // mask matches what MaskPreviewOverlay showed in the
                 // editor. Null/enabled-off = no-op.
-                MaskGlEffect.fromMask(config.mask)?.let { videoEffects.add(it) }
+                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(config.mask)
+                    ?.let { videoEffects.add(it) }
 
                 // 2. Color Filter (3D LUT) & Video Adjustments
                 if (config.filterPreset != null && config.filterIntensity > 0f) {

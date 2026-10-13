@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Storage
@@ -40,7 +41,8 @@ import com.apexstudio.app.ui.theme.ApexPalette
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onOpenDiagnostics: () -> Unit
+    onOpenDiagnostics: () -> Unit,
+    onOpenPacks: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -75,6 +77,14 @@ fun SettingsScreen(
                     subtitle = "Open crash diagnostics",
                     tint = ApexPalette.Danger,
                     onClick = onOpenDiagnostics
+                )
+                Spacer(Modifier.height(8.dp))
+                SettingsRow(
+                    icon = Icons.Default.CloudDownload,
+                    title = "Downloadable Packs",
+                    subtitle = "Filters, effects & AI models on demand",
+                    tint = ApexPalette.NeonPurple,
+                    onClick = onOpenPacks
                 )
                 Spacer(Modifier.height(8.dp))
                 SettingsRow(

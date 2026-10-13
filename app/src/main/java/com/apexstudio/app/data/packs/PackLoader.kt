@@ -8,6 +8,7 @@ import com.apexstudio.app.data.filter.StylisticEffectType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
+import java.io.File
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -192,6 +193,21 @@ object PackLoader {
     } catch (e: Exception) {
         Log.w(TAG, "Failed to parse filters pack", e)
         emptyList()
+    }
+
+    /**
+     * PR-C: parse a filters file from a DOWNLOADED pack directory.
+     * Same schema as the bundled filters pack; malformed files yield emptyList(),
+     * never a crash.
+     */
+    fun loadFiltersFromFile(file: File): List<PackFilter> {
+        if (!file.exists()) return emptyList()
+        return try {
+            json.decodeFromString<FilterPackFile>(file.readText()).filters
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse downloaded filters: ${file.path}", e)
+            emptyList()
+        }
     }
 
     /** All 30 transitions from the Transition Pack. */

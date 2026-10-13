@@ -84,8 +84,21 @@ android {
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
+      // PR-C ("Blake" — APK size discipline): ship native libraries for arm64
+      // only in release. This drops the x86_64/armeabi-v7a copies of heavy
+      // native SDKs (notably Snap Camera Kit's ~96MB of .so files), roughly
+      // halving their footprint. arm64-v8a covers effectively all real
+      // devices (2017+); debug keeps x86_64 so emulator testing still works.
+      ndk {
+        abiFilters += listOf("arm64-v8a")
+      }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      signingConfig = signingConfigs.getByName("debugConfig")
+      ndk {
+        abiFilters += listOf("arm64-v8a", "x86_64")
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17

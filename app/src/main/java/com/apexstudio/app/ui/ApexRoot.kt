@@ -20,6 +20,7 @@ import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
 import com.apexstudio.app.ui.screens.editor.EditorScreen
 import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
+import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
 @Composable
@@ -39,10 +40,14 @@ fun ApexRoot() {
                 when (overlay) {
                     is Overlay.Settings -> SettingsScreen(
                         onBack = { overlay = null },
-                        onOpenDiagnostics = { overlay = Overlay.Diagnostics }
+                        onOpenDiagnostics = { overlay = Overlay.Diagnostics },
+                        onOpenPacks = { overlay = Overlay.Packs }
                     )
                     is Overlay.Diagnostics -> CrashDiagnosticsScreen(
                         onBack = { overlay = null }
+                    )
+                    is Overlay.Packs -> PacksScreen(
+                        onBack = { overlay = Overlay.Settings }
                     )
                     else -> when (currentTab) {
                         "home" -> HomeScreen(
@@ -104,4 +109,5 @@ fun ApexRoot() {
 private sealed class Overlay {
     data object Settings : Overlay()
     data object Diagnostics : Overlay()
+    data object Packs : Overlay()
 }

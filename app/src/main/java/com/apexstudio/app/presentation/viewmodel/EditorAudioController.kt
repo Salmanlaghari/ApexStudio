@@ -252,7 +252,7 @@ fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Ki
     _state.update { s ->
         val p = s.project ?: return@update s
         val updatedTracks = p.audioTracks + track
-        val newDuration = maxOf(s.durationMs, finalDuration)
+        val newDuration = computeTimelineDurationMs(p.clips, updatedTracks)
         s.copy(
             project = p.copy(audioTracks = updatedTracks),
             durationMs = newDuration

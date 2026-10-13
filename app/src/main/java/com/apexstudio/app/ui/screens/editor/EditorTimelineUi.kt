@@ -34,11 +34,14 @@ import com.apexstudio.app.ui.theme.ApexPalette
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 
 /**
- * Filmstrip thumbnails for one V1 clip, keyed by second (0, 1, 2, ...).
- * Still-image clips contribute the photo itself (MediaMetadataRetriever
- * cannot pull frames from a JPEG); video clips get per-second frames.
- * [ThumbnailExtractor.extractPerSecondFrames] falls back to generated
- * frames, so the map is never empty for a valid clip.
+ * Extract a small set of evenly-spaced filmstrip thumbnails for a clip's
+ * trimmed range via [ThumbnailExtractor] (MediaMetadataRetriever-backed).
+ * Photo clips get a single decoded frame.
+ *
+ * Uses a fixed frame count (8) — the old per-second extraction (up to 60
+ * slow getFrameAtTime calls) never finished on long videos, so thumbnails
+ * never appeared. extractFrames also falls back to generated frames, so the
+ * map is never empty.
  */
 private suspend fun extractClipThumbnails(
     context: android.content.Context,
@@ -53,15 +56,15 @@ private suspend fun extractClipThumbnails(
     val trimStart = clip.trimStartMs
     val trimEnd =
         if (clip.trimEndMs > trimStart) clip.trimEndMs else clip.durationMs.coerceAtLeast(1000L)
-    return ThumbnailExtractor.extractPerSecondFrames(
+    return ThumbnailExtractor.extractFrames(
         context = context,
         uri = clip.uri,
         trimStartMs = trimStart,
         trimEndMs = trimEnd,
         frameWidthPx = 120,
         frameHeightPx = 80,
-        maxSeconds = 60
-    )
+        frameCount = 8
+    ).mapIndexed { index, bitmap -> index to bitmap }.toMap()
 }
 
 @Composable
@@ -100,6 +103,13 @@ fun TimelineTrackArea(
     onOpenStickers: () -> Unit = {},
     onOpenFx: () -> Unit = {},
     onOpenVoice: () -> Unit = {},
+    onOpenFilter: () -> Unit = {},
+    onOpenAdjust: () -> Unit = {},
+    onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onDeleteTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onSelectSticker: (String?) -> Unit = {},
+    onDeleteSticker: (String) -> Unit = {},
+    onClearFx: () -> Unit = {},
     onOpenAnimation: () -> Unit = {},
     onOpenTransition: () -> Unit = {},
     onOpenClipTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
@@ -124,6 +134,9 @@ fun TimelineTrackArea(
     val playheadMs = state.playerPositionMs.coerceIn(0L, durationMs)
 
     var selectedLayer by remember { mutableStateOf(SelectedLayerType.NONE) }
+    // (ownerClipId, overlayId) of the selected text segment — drives the
+    // Delete quick action (deletes the TEXT, not the clip).
+    var selectedTextRef by remember { mutableStateOf<Pair<String, String>?>(null) }
     val timelineScrollState = rememberScrollState()
     val zoomFactor = state.timelineZoom.coerceIn(0.5f, 10.0f)
     val durationSec = (durationMs / 1000L).coerceAtLeast(1L).toInt()
@@ -137,12 +150,17 @@ fun TimelineTrackArea(
         clips.filter { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE }
     }
 
-    // Per-clip, per-second filmstrip thumbnails. Extracted once per clip
-    // (keyed by id/uri/trim) so every V1 clip shows its own frames instead
-    // of every clip reusing the active clip's frames.
+    // Per-clip filmstrip thumbnails, extracted once per clip (keyed by
+    // id/uri/trim). An instant generated fallback is seeded first so the
+    // lane never looks empty; the real frames replace it when ready.
     val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
     v1Clips.forEach { clip ->
         LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
+            if (!thumbnailsByClip.containsKey(clip.id)) {
+                thumbnailsByClip[clip.id] = com.apexstudio.app.data.media.ThumbnailExtractor
+                    .generateFilmstripFrames(8, 120, 80, clip.uri.hashCode().toLong())
+                    .mapIndexed { i, b -> i to b }.toMap()
+            }
             try {
                 thumbnailsByClip[clip.id] = extractClipThumbnails(context, clip)
             } catch (e: Exception) {
@@ -193,6 +211,23 @@ fun TimelineTrackArea(
                 selectedLayer = SelectedLayerType.AUDIO_A1
                 onSelectAudioTrack(trackId)
             },
+            onSelectTextOverlay = { clipId, overlayId ->
+                selectedLayer = SelectedLayerType.TEXT_TXT
+                selectedTextRef = clipId to overlayId
+                onSelectTextOverlay(clipId, overlayId)
+            },
+            onSelectSticker = { stickerId ->
+                selectedLayer = SelectedLayerType.STICKER_STK
+                onSelectSticker(stickerId)
+            },
+            onOpenText = onOpenText,
+            onOpenStickers = onOpenStickers,
+            onOpenFilter = onOpenFilter,
+            onOpenFxPanel = onOpenFx,
+            onOpenAdjust = onOpenAdjust,
+            onOpenVoice = onOpenVoice,
+            onAddAudioTrack = { onAddMedia(ClipType.AUDIO) },
+            onClearFx = onClearFx,
             onToggleLayerVisibility = onToggleLayerVisibility,
             onToggleLayerLock = onToggleLayerLock,
             onDeleteLayer = onDeleteLayer,
@@ -338,21 +373,31 @@ fun TimelineTrackArea(
                             onClick = onOpenText
                         )
                         QuickActionSquareCard(
+                            icon = Icons.Default.DeleteOutline,
+                            label = "Delete",
+                            tint = ApexPalette.NeonPink,
+                            onClick = {
+                                selectedTextRef?.let { (clipId, overlayId) ->
+                                    onDeleteTextOverlay(clipId, overlayId)
+                                }
+                            }
+                        )
+                    }
+
+                    SelectedLayerType.STICKER_STK -> {
+                        QuickActionSquareCard(
                             icon = Icons.Default.EmojiEmotions,
-                            label = "Stickers",
+                            label = "Edit",
                             tint = Color(0xFFEC4899),
                             onClick = onOpenStickers
-                        )
-                        QuickActionSquareCard(
-                            icon = Icons.Default.ContentCopy,
-                            label = "Duplicate",
-                            onClick = { activeClip?.let { onDuplicateClip(it.id) } }
                         )
                         QuickActionSquareCard(
                             icon = Icons.Default.DeleteOutline,
                             label = "Delete",
                             tint = ApexPalette.NeonPink,
-                            onClick = { activeClip?.let { onDeleteClip(it.id) } }
+                            onClick = {
+                                state.selectedStickerId?.let { onDeleteSticker(it) }
+                            }
                         )
                     }
 
@@ -372,7 +417,7 @@ fun TimelineTrackArea(
                         QuickActionSquareCard(
                             icon = Icons.Default.Refresh,
                             label = "Reset FX",
-                            onClick = { onSelectFx("") }
+                            onClick = onClearFx
                         )
                     }
 

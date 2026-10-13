@@ -111,6 +111,7 @@ import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -144,6 +145,26 @@ fun VideoTimeline(
     textOverlays: List<TextOverlay> = emptyList(),
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
+    // Pro-timeline layers (mockup): project-level stickers (NOT the legacy
+    // per-clip list), selection ids, and the filter/FX/adjustment state that
+    // the FX lane renders as segments. Everything the user adds must appear
+    // as a visible, tappable layer.
+    selectedTextOverlayId: String? = null,
+    selectedStickerId: String? = null,
+    activeFilterId: String? = null,
+    filterIntensity: Float = 1f,
+    adjustments: VideoAdjustments = VideoAdjustments(),
+    fxIntensity: Float = 1f,
+    onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onSelectSticker: (String?) -> Unit = {},
+    onOpenText: () -> Unit = {},
+    onOpenStickers: () -> Unit = {},
+    onOpenFilter: () -> Unit = {},
+    onOpenFxPanel: () -> Unit = {},
+    onOpenAdjust: () -> Unit = {},
+    onOpenVoice: () -> Unit = {},
+    onAddAudioTrack: () -> Unit = {},
+    onClearFx: () -> Unit = {},
     totalDurationMs: Long,
     playheadMs: Long,
     timelineZoom: Float = 1.0f,
@@ -198,6 +219,9 @@ fun VideoTimeline(
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    // Vertical scroll shared by the track-header rail and the lanes: every
+    // added layer (text, sticker, FX, A1, A2) stays reachable on any screen.
+    val vScrollState = rememberScrollState()
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
     // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
@@ -312,20 +336,30 @@ fun VideoTimeline(
     val v1Height = 44.dp
     val v2Height = 44.dp
     val fxHeight = 36.dp
-    // A1 audio space (item 2 fix, adapted to the thin mockup geometry):
-    // the lane grows 34dp per extra audio row (capped) so every track stays
-    // visible and tappable — never collapsed or hidden. Single-audio default
-    // keeps item 5's exact mockup match (228dp total).
-    val a1ExtraDp = ((audioTracks.size - 1).coerceAtLeast(0) * 34).coerceAtMost(102)
-    val a1Height = (44 + a1ExtraDp).dp
-    // Dynamic timeline height: ruler + V1 + N overlay layers + optional text
-    // lane + FX + A1, with 10dp spacing between rows (matches spacedBy).
+    // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
+    // 46dp per extra audio row so every track stays visible and tappable —
+    // never collapsed or hidden; the outer vertical scroll handles overflow.
+    val musicTracks = remember(audioTracks) { audioTracks.filter { it.volume < 0.99f } }
+    val voiceTracks = remember(audioTracks) { audioTracks.filter { it.volume >= 0.99f } }
+    // Lane heights grow 46dp per extra row (one AudioTrackLaneRow each) so
+    // every track stays visible; the outer vertical scroll handles overflow.
+    val a1Height = (musicTracks.size.coerceAtLeast(1) * 46).dp
+    val a2Height = (voiceTracks.size.coerceAtLeast(1) * 46).dp
+    // Dynamic timeline height: ruler + V1 + N overlay layers + text +
+    // sticker + FX + A1 + A2, with 10dp spacing between rows (matches the
+    // Column's spacedBy). Text/sticker lanes are ALWAYS present now (mockup:
+    // every added element must be a visible layer).
     val overlayLayerCount = videoLayers.count { it in 1..9 }
-    val hasTextLane = textOverlays.isNotEmpty()
+    val textLaneHeight = 32
+    val stickerLaneHeight = 32
+    val fxLaneHeight = 36
     val timelineTotalDp = 30 + 44 +
         overlayLayerCount * (58 + 10) +
-        (if (hasTextLane) (32 + 10) else 0) +
-        36 + 44 + a1ExtraDp + 10 * 4
+        (textLaneHeight + 10) +
+        (stickerLaneHeight + 10) +
+        (fxLaneHeight + 10) +
+        (musicTracks.size.coerceAtLeast(1) * 46 + 10) +
+        (voiceTracks.size.coerceAtLeast(1) * 46 + 10)
 
     Row(
         modifier = modifier
@@ -343,13 +377,19 @@ fun VideoTimeline(
             videoLayers = videoLayers,
             hiddenVideoLayers = hiddenVideoLayers,
             lockedVideoLayers = lockedVideoLayers,
-            hasTextLane = hasTextLane,
             fxHeight = fxHeight,
             a1Height = a1Height,
+            a2Height = a2Height,
             onToggleLayerVisibility = onToggleLayerVisibility,
             onToggleLayerLock = onToggleLayerLock,
             onDeleteLayer = onDeleteLayer,
             onAddLayer = onAddLayer,
+            onAddText = onOpenText,
+            onAddSticker = onOpenStickers,
+            onAddFx = onOpenFxPanel,
+            onAddAudio = onAddAudioTrack,
+            onAddVoice = onOpenVoice,
+            modifier = Modifier.verticalScroll(vScrollState),
             onZoomIn = {
                 val next = (activeZoomDisplay + 0.5f).coerceAtMost(10.0f)
                 activeZoomDisplay = next
@@ -418,16 +458,18 @@ fun VideoTimeline(
                     )
                 }
         ) {
-            // Horizontally Scrollable Timeline Canvas
+            // Scrollable Timeline Canvas: horizontal for time, vertical
+            // (synced with the header rail) so every lane stays reachable.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .horizontalScroll(scrollState)
+                    .verticalScroll(vScrollState)
             ) {
                 Box(
                     modifier = Modifier
                         .width(timelineWidthDp)
-                        .fillMaxHeight()
+                        .height(timelineTotalDp.dp)
                 ) {
                 Column(
                     modifier = Modifier
@@ -584,19 +626,50 @@ fun VideoTimeline(
                         )
                     }
 
-                    // Text overlays lane (kept below the video layers).
+                    // Rail alignment: mirror the sidebar's 28dp add-layer
+                    // button so pills stay centered on their rows.
+                    if (videoLayers.size < 10) {
+                        Spacer(Modifier.height(28.dp))
+                    }
+
+                    // TEXT lane — ALWAYS visible (mockup): every text element
+                    // the user adds must appear as a tappable layer segment.
                     TimelineTextLane(
                         textOverlays = textOverlays,
                         allClips = clips,
                         msToDp = msToDp,
+                        selectedTextOverlayId = selectedTextOverlayId,
+                        onSelectTextOverlay = onSelectTextOverlay,
+                        onAddText = onOpenText,
                         onSeekToKeyframe = onScrub,
                         onMoveTextKeyframe = onMoveTextKeyframe,
-                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead
+                        onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(textLaneHeight.dp)
                     )
 
-                    // TRACK 3: FX / Shader Track
+                    // STICKER lane — ALWAYS visible (mockup): project-level
+                    // stickers render as segments, tappable to select/edit.
+                    TimelineStickerLane(
+                        stickers = stickers,
+                        msToDp = msToDp,
+                        selectedStickerId = selectedStickerId,
+                        onSelectSticker = onSelectSticker,
+                        onAddSticker = onOpenStickers,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(stickerLaneHeight.dp)
+                    )
+
+                    // TRACK 3: FX lane — one segment per applied
+                    // filter/FX/adjustment (mockup), each tappable.
                     TimelineFxTrack(
                         activeFxId = activeFxId,
+                        activeFilterId = activeFilterId,
+                        filterIntensity = filterIntensity,
+                        adjustments = adjustments,
+                        fxIntensity = fxIntensity,
                         durationMs = safeDurationMs,
                         msToDp = msToDp,
                         fxKeyframes = videoClips.firstOrNull { it.id == selectedClipId }?.keyframes?.keyframes
@@ -605,14 +678,19 @@ fun VideoTimeline(
                         onToggleKeyframeAtPlayhead = {
                             selectedClipId?.let { onToggleKeyframeAtPlayhead(it) }
                         },
+                        onOpenFilter = onOpenFilter,
+                        onOpenFxPanel = onOpenFxPanel,
+                        onOpenAdjust = onOpenAdjust,
+                        onClearFx = onClearFx,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(fxHeight)
+                            .height(fxLaneHeight.dp)
                     )
 
-                    // TRACK 4: A1 (Audio Waveform Track)
+                    // TRACK 4: A1 (music) + TRACK 5: A2 (voice) — mockup.
                     TimelineAudioTrack(
-                        audioTracks = audioTracks,
+                        audioTracks = musicTracks,
+                        addLabel = "+ Add Audio",
                         durationMs = safeDurationMs,
                         msToDp = msToDp,
                         isMuted = isAudioMuted,
@@ -622,10 +700,27 @@ fun VideoTimeline(
                         playheadMs = safePlayheadMs,
                         selectedAudioTrackId = selectedAudioTrackId,
                         onSelectAudioTrack = onSelectAudioTrack,
-                        onAddAudio = { onAddMedia(ClipType.AUDIO) },
+                        onAddAudio = onAddAudioTrack,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(a1Height)
+                    )
+                    TimelineAudioTrack(
+                        audioTracks = voiceTracks,
+                        addLabel = "+ Add Voice",
+                        durationMs = safeDurationMs,
+                        msToDp = msToDp,
+                        isMuted = isAudioMuted,
+                        audioWaveform = audioWaveform,
+                        beatMarkersMs = beatMarkersMs,
+                        snapToBeat = snapToBeat,
+                        playheadMs = safePlayheadMs,
+                        selectedAudioTrackId = selectedAudioTrackId,
+                        onSelectAudioTrack = onSelectAudioTrack,
+                        onAddAudio = onOpenVoice,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(a2Height)
                     )
                 }
 
@@ -769,11 +864,30 @@ fun VideoTimeline(
     onMoveClipToLayer: (String, Int) -> Unit = { _, _ -> },
     onAddClipToLayer: (Int) -> Unit = {},
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
+    activeFilterId: String? = state.activeFilterId,
+    filterIntensity: Float = state.filterIntensity,
+    adjustments: com.apexstudio.app.domain.model.VideoAdjustments = state.adjustments,
+    fxIntensity: Float = state.fxIntensity,
+    selectedTextOverlayId: String? = state.selectedTextOverlayId,
+    selectedStickerId: String? = state.selectedStickerId,
+    onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onSelectSticker: (String?) -> Unit = {},
+    onOpenText: () -> Unit = {},
+    onOpenStickers: () -> Unit = {},
+    onOpenFilter: () -> Unit = {},
+    onOpenFxPanel: () -> Unit = {},
+    onOpenAdjust: () -> Unit = {},
+    onOpenVoice: () -> Unit = {},
+    onAddAudioTrack: () -> Unit = {},
+    onClearFx: () -> Unit = {},
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
     val textOverlays = clips.flatMap { it.textOverlays }
-    val stickers = clips.flatMap { it.stickers }
+    // Project-level stickers: addStickerOverlay() stores them on
+    // Project.stickers (the old clips.flatMap read the legacy per-clip
+    // list, so added stickers never appeared as layers).
+    val stickers = state.project?.stickers ?: emptyList()
 
     VideoTimeline(
         clips = clips,
@@ -781,6 +895,22 @@ fun VideoTimeline(
         textOverlays = textOverlays,
         stickers = stickers,
         activeFxId = state.activeFxId,
+        selectedTextOverlayId = selectedTextOverlayId,
+        selectedStickerId = selectedStickerId,
+        activeFilterId = activeFilterId,
+        filterIntensity = filterIntensity,
+        adjustments = adjustments,
+        fxIntensity = fxIntensity,
+        onSelectTextOverlay = onSelectTextOverlay,
+        onSelectSticker = onSelectSticker,
+        onOpenText = onOpenText,
+        onOpenStickers = onOpenStickers,
+        onOpenFilter = onOpenFilter,
+        onOpenFxPanel = onOpenFxPanel,
+        onOpenAdjust = onOpenAdjust,
+        onOpenVoice = onOpenVoice,
+        onAddAudioTrack = onAddAudioTrack,
+        onClearFx = onClearFx,
         totalDurationMs = state.durationMs,
         playheadMs = state.playerPositionMs,
         timelineZoom = state.timelineZoom,
@@ -841,13 +971,18 @@ private fun TimelineLeftSidebar(
     videoLayers: List<Int>,
     hiddenVideoLayers: Set<Int>,
     lockedVideoLayers: Set<Int>,
-    hasTextLane: Boolean,
     fxHeight: Dp,
     a1Height: Dp,
+    a2Height: Dp,
     onToggleLayerVisibility: (Int) -> Unit,
     onToggleLayerLock: (Int) -> Unit,
     onDeleteLayer: (Int) -> Unit,
     onAddLayer: () -> Unit,
+    onAddText: () -> Unit = {},
+    onAddSticker: () -> Unit = {},
+    onAddFx: () -> Unit = {},
+    onAddAudio: () -> Unit = {},
+    onAddVoice: () -> Unit = {},
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetZoom: () -> Unit = {},
@@ -943,11 +1078,13 @@ private fun TimelineLeftSidebar(
             }
         }
 
-        if (hasTextLane) {
-            TrackPill(label = "TXT", accent = ApexPalette.NeonPink, height = 32.dp)
-        }
-        TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight)
-        TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height)
+        // Mockup: TEXT / STICKER / FX / A1 / A2 lanes are always present;
+        // the + chip on each pill adds that element type (no dead buttons).
+        TrackPill(label = "TXT", accent = ApexPalette.NeonPink, height = 32.dp, onAdd = onAddText)
+        TrackPill(label = "STK", accent = Color(0xFFF472B6), height = 32.dp, onAdd = onAddSticker)
+        TrackPill(label = "FX", accent = ApexPalette.NeonPurple, height = fxHeight, onAdd = onAddFx)
+        TrackPill(label = "A1", accent = ApexPalette.TrackBlue, height = a1Height, onAdd = onAddAudio)
+        TrackPill(label = "A2", accent = Color(0xFFF472B6), height = a2Height, onAdd = onAddVoice)
     }
 }
 
@@ -1023,7 +1160,8 @@ private fun VideoLayerPill(
 private fun TrackPill(
     label: String,
     accent: Color,
-    height: Dp
+    height: Dp,
+    onAdd: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -1031,19 +1169,35 @@ private fun TrackPill(
             .height(height),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 40.dp, height = 30.dp)
-                .clip(RoundedCornerShape(9.dp))
-                .background(accent),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(width = 38.dp, height = 30.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(accent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            if (onAdd != null) {
+                Spacer(Modifier.width(3.dp))
+                Box(
+                    modifier = Modifier
+                        .size(19.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1A2233))
+                        .border(1.dp, accent.copy(alpha = 0.7f), CircleShape)
+                        .clickable(onClick = onAdd),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("+", color = accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
@@ -1413,22 +1567,47 @@ private fun TimelineVideoLayerRow(
 }
 
 /**
- * Text overlays lane — positioned by startMs, each with its own keyframe
- * diamond strip. Rendered below the video layers (was Lane 2 of the old
- * single V2 overlay track).
+ * Text overlays lane — ALWAYS rendered (mockup): every text element the user
+ * adds appears here as a tappable layer segment positioned by startMs, each
+ * with its own keyframe diamond strip. Tapping selects the overlay (white
+ * border) and arms the text quick actions below the timeline.
  */
 @Composable
 private fun TimelineTextLane(
     textOverlays: List<TextOverlay>,
     allClips: List<MediaClip>,
     msToDp: Float,
+    selectedTextOverlayId: String? = null,
+    onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onAddText: () -> Unit = {},
     onSeekToKeyframe: (Long) -> Unit = {},
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
-    if (textOverlays.isEmpty()) return
-    Box(modifier = modifier.fillMaxWidth().height(32.dp)) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0F1420))
+            .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp, vertical = 3.dp)
+    ) {
+        if (textOverlays.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onAddText)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .align(Alignment.CenterStart),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(12.dp))
+                Text("+ Add text", color = Color(0xFFF9A8D4), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            }
+            return@Box
+        }
         textOverlays.forEach { textOverlay ->
             val ownerClipId = allClips.firstOrNull { c -> c.textOverlays.any { it.id == textOverlay.id } }?.id
             val ovStartMs = textOverlay.startMs.coerceAtLeast(0L)
@@ -1437,6 +1616,7 @@ private fun TimelineTextLane(
             val ovWidthDp = maxOf((ovDur * msToDp).dp, 40.dp)
             val ovOffsetDp = (ovStartMs * msToDp).dp
 
+            val isSelected = textOverlay.id == selectedTextOverlayId
             Column(
                 modifier = Modifier
                     .offset(x = ovOffsetDp)
@@ -1447,8 +1627,15 @@ private fun TimelineTextLane(
                         .width(ovWidthDp)
                         .height(18.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFF2A1538))
-                        .border(1.dp, ApexPalette.NeonPink.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .background(if (isSelected) Color(0xFF3B1D4D) else Color(0xFF2A1538))
+                        .border(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) Color.White else ApexPalette.NeonPink.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                        .clickable {
+                            if (ownerClipId != null) onSelectTextOverlay(ownerClipId, textOverlay.id)
+                        }
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -2178,18 +2365,109 @@ private fun TimelineVideoTrack(
 }
 
 /**
- * FX / Filter Shader Track.
+ * Sticker lane — ALWAYS rendered (mockup): every project sticker appears as
+ * a tappable segment positioned by its startMs. Tapping selects the sticker
+ * (white border) and arms the sticker quick actions below the timeline.
+ * Previously stickers never appeared here at all: the lane read the legacy
+ * per-clip sticker list while new stickers are stored on the project.
+ */
+@Composable
+private fun TimelineStickerLane(
+    stickers: List<StickerOverlay>,
+    msToDp: Float,
+    selectedStickerId: String? = null,
+    onSelectSticker: (String?) -> Unit = {},
+    onAddSticker: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0F1420))
+            .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp, vertical = 3.dp)
+    ) {
+        if (stickers.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onAddSticker)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .align(Alignment.CenterStart),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(12.dp))
+                Text("+ Add sticker", color = Color(0xFFFBCFE8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            }
+            return@Box
+        }
+        stickers.forEach { sticker ->
+            val start = sticker.startMs.coerceAtLeast(0L)
+            val rawEnd = if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs
+            val dur = (rawEnd - start).coerceAtLeast(500L)
+            val isSelected = sticker.id == selectedStickerId
+            val assetName = sticker.assetPath?.substringAfterLast("/")?.substringBeforeLast(".")
+            val label = when {
+                sticker.name.isNotBlank() -> sticker.name
+                !assetName.isNullOrBlank() -> assetName
+                else -> sticker.symbolOrUri.take(12)
+            }
+            Box(
+                modifier = Modifier
+                    .offset(x = (start * msToDp).dp)
+                    .width((dur * msToDp).dp.coerceAtLeast(52.dp))
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (isSelected) Color(0xFF4A2B3D) else Color(0xFF2E1B28))
+                    .border(
+                        width = if (isSelected) 1.5.dp else 1.dp,
+                        color = if (isSelected) Color.White else Color(0xFFF472B6).copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(5.dp)
+                    )
+                    .clickable { onSelectSticker(sticker.id) }
+                    .padding(horizontal = 6.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = "🎨 $label",
+                    color = Color(0xFFFBCFE8),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * FX lane (mockup): one tappable segment per applied filter / FX /
+ * adjustment — e.g. "Bright −5 · Contrast · 14 FX". Tapping a segment opens
+ * the matching panel. Empty state offers "+ Add FX".
  */
 @Composable
 private fun TimelineFxTrack(
     activeFxId: String?,
+    activeFilterId: String?,
+    filterIntensity: Float,
+    adjustments: VideoAdjustments,
+    fxIntensity: Float,
     durationMs: Long,
     msToDp: Float,
     fxKeyframes: List<Keyframe> = emptyList(),
     onSeekToKeyframe: (Long) -> Unit = {},
     onToggleKeyframeAtPlayhead: () -> Unit = {},
+    onOpenFilter: () -> Unit = {},
+    onOpenFxPanel: () -> Unit = {},
+    onOpenAdjust: () -> Unit = {},
+    onClearFx: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val adjSummary = remember(adjustments) { adjustmentsSummary(adjustments) }
+    val hasAdjustments = adjSummary.isNotEmpty()
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -2197,41 +2475,71 @@ private fun TimelineFxTrack(
             .border(1.dp, Color(0xFF2A2440), RoundedCornerShape(8.dp))
             .padding(horizontal = 4.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Mockup: full-width purple gradient FX bar, always visible.
-            Box(
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                ApexPalette.NeonPurple.copy(alpha = 0.8f),
-                                ApexPalette.NeonPurple.copy(alpha = 0.35f)
-                            )
-                        )
-                    )
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.CenterStart
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    if (activeFxId != null) {
-                        Text(
-                            "FX: ${activeFxId.replace("_", " ").uppercase()}",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                if (activeFilterId.isNullOrBlank() && activeFxId.isNullOrBlank() && !hasAdjustments) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .clickable(onClick = onOpenFxPanel)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonPurple, modifier = Modifier.size(12.dp))
+                        Text("+ Add FX", color = Color(0xFFC4B5FD), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+                } else {
+                    if (!activeFilterId.isNullOrBlank()) {
+                        FxSegment(
+                            emoji = "🎨",
+                            text = "${prettifyId(activeFilterId)} ${(filterIntensity * 100).toInt()}%",
+                            onClick = onOpenFilter
                         )
+                    }
+                    if (!activeFxId.isNullOrBlank()) {
+                        FxSegment(
+                            emoji = "✨",
+                            text = "${prettifyId(activeFxId)} ${(fxIntensity * 100).toInt()}%",
+                            onClick = onOpenFxPanel
+                        )
+                    }
+                    if (hasAdjustments) {
+                        FxSegment(
+                            emoji = "🎚",
+                            text = adjSummary,
+                            onClick = onOpenAdjust
+                        )
+                    }
+                    // + chip to open the FX panel for more effects.
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E1836))
+                            .border(1.dp, ApexPalette.NeonPurple.copy(alpha = 0.7f), CircleShape)
+                            .clickable(onClick = onOpenFxPanel),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+", color = ApexPalette.NeonPurple, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    // x chip: clears the whole lane (FX + LUT filter + adjustments).
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E1836))
+                            .border(1.dp, Color(0xFF64748B).copy(alpha = 0.7f), CircleShape)
+                            .clickable(onClick = onClearFx),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("x", color = Color(0xFF94A3B8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -2277,6 +2585,79 @@ private fun TimelineFxTrack(
     }
 }
 
+@Composable
+private fun FxSegment(
+    emoji: String,
+    text: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        ApexPalette.NeonPurple.copy(alpha = 0.55f),
+                        ApexPalette.NeonPurple.copy(alpha = 0.25f)
+                    )
+                )
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = "$emoji $text",
+            color = Color.White,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private fun prettifyId(id: String): String =
+    id.replace("_", " ").replaceFirstChar { it.uppercase() }
+
+private fun formatAdjValue(v: Float): String {
+    val pct = (v * 100).toInt()
+    return if (pct > 0) "+$pct" else "$pct"
+}
+
+/**
+ * Compact "Bright −5 · Contrast · 14 FX"-style summary of every non-default
+ * adjustment, for the FX lane segment (mockup).
+ */
+private fun adjustmentsSummary(a: VideoAdjustments): String {
+    val parts = mutableListOf<String>()
+    if (a.brightness != 0f) parts += "Bright ${formatAdjValue(a.brightness)}"
+    if (a.contrast != 1f) parts += "Contrast"
+    if (a.saturation != 1f) parts += "Sat"
+    if (a.exposure != 0f) parts += "Exp ${formatAdjValue(a.exposure)}"
+    if (a.highlights != 0f) parts += "High ${formatAdjValue(a.highlights)}"
+    if (a.shadows != 0f) parts += "Shad ${formatAdjValue(a.shadows)}"
+    if (a.temperature != 0f) parts += "Temp ${formatAdjValue(a.temperature)}"
+    if (a.tint != 0f) parts += "Tint ${formatAdjValue(a.tint)}"
+    if (a.hdr != 0f) parts += "HDR"
+    if (a.brilliance != 0f) parts += "Brill ${formatAdjValue(a.brilliance)}"
+    if (a.sharpness != 0f) parts += "Sharp ${formatAdjValue(a.sharpness)}"
+    if (a.vignette != 0f) parts += "Vig ${formatAdjValue(a.vignette)}"
+    if (a.grain != 0f) parts += "Grain"
+    if (a.fade != 0f) parts += "Fade"
+    if (a.lightness != 0f) parts += "Light ${formatAdjValue(a.lightness)}"
+    if (a.whites != 0f) parts += "Whites ${formatAdjValue(a.whites)}"
+    if (a.blacks != 0f) parts += "Blacks ${formatAdjValue(a.blacks)}"
+    if (a.hue != 0f) parts += "Hue ${formatAdjValue(a.hue)}"
+    if (a.clarity != 0f) parts += "Clarity"
+    if (a.denoise != 0f) parts += "Denoise"
+    if (a.vibrance != 0f) parts += "Vibrance"
+    if (parts.isEmpty()) return ""
+    val shown = parts.take(3).joinToString(" · ")
+    val suffix = if (parts.size > 3) " · +${parts.size - 3}" else " · ${parts.size} FX"
+    return shown + suffix
+}
+
 /**
  * A1 audio lane. The lane is ALWAYS rendered — never collapsed or hidden —
  * with a visible waveform (real analysis when available, deterministic
@@ -2306,6 +2687,7 @@ private fun rememberTrackWaveform(track: AudioTrack, fallback: FloatArray): Floa
 @Composable
 private fun TimelineAudioTrack(
     audioTracks: List<AudioTrack>,
+    addLabel: String = "+ Add Audio",
     durationMs: Long,
     msToDp: Float,
     isMuted: Boolean,
@@ -2331,7 +2713,8 @@ private fun TimelineAudioTrack(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0C1322))
             .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-            .verticalScroll(rememberScrollState())
+            .padding(vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         if (audioTracks.isEmpty()) {
             // Empty state: visible waveform + add affordance.
@@ -2368,7 +2751,7 @@ private fun TimelineAudioTrack(
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        "+ Add Audio (A1)",
+                        addLabel,
                         color = Color(0xFF67E8F9),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium

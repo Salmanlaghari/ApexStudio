@@ -1315,6 +1315,18 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onOpenStickers = { vm.openStickerPanel() },
         onOpenFx = { vm.openFxPanel() },
         onOpenVoice = { vm.openVoiceRecorder() },
+        onOpenFilter = { vm.openFilterPanel() },
+        onOpenAdjust = { vm.openAdjustmentsPanel() },
+        onSelectTextOverlay = { _, overlayId -> vm.selectTextOverlay(overlayId) },
+        onDeleteTextOverlay = { clipId, overlayId -> vm.removeTextOverlay(clipId, overlayId) },
+        onSelectSticker = { vm.selectSticker(it) },
+        onDeleteSticker = { vm.removeSticker(it) },
+        // Reset FX clears the whole lane: FX + LUT filter + adjustments.
+        onClearFx = {
+            vm.selectFx(null)
+            vm.selectFilter(null)
+            vm.resetAdjustments()
+        },
         onOpenAnimation = { vm.setKeyframePanelOpen(true) },
         onOpenTransition = {
             val clips = state.project?.clips ?: emptyList()

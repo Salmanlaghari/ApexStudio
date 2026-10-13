@@ -1,5 +1,6 @@
 package com.apexstudio.app.domain.model
 
+import androidx.annotation.FloatRange
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
@@ -603,7 +604,23 @@ data class VideoAdjustments(
     val sharpness: Float = 0f,
     val fade: Float = 0f,
     val vignette: Float = 0f,
-    val grain: Float = 0f
+    val grain: Float = 0f,
+    // Video Adjustments v2 (photo-editor parity):
+    // lightness/whites/blacks/clarity are -1..1, hue is degrees -180..180,
+    // denoise is 0..1. All default to "no change" so old saved
+    // adjustments keep working (backward compatible).
+    @FloatRange(from = -1.0, to = 1.0)
+    val lightness: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0)
+    val whites: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0)
+    val blacks: Float = 0f,
+    @FloatRange(from = -180.0, to = 180.0)
+    val hue: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0)
+    val clarity: Float = 0f,
+    @FloatRange(from = 0.0, to = 1.0)
+    val denoise: Float = 0f
 ) {
     val isDefault: Boolean
         get() = hdr == 0f &&
@@ -619,7 +636,13 @@ data class VideoAdjustments(
                 sharpness == 0f &&
                 fade == 0f &&
                 vignette == 0f &&
-                grain == 0f
+                grain == 0f &&
+                lightness == 0f &&
+                whites == 0f &&
+                blacks == 0f &&
+                hue == 0f &&
+                clarity == 0f &&
+                denoise == 0f
 }
 
 /**

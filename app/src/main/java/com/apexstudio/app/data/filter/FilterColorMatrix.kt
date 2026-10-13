@@ -387,7 +387,16 @@ object FilterColorMatrix {
         intensity: Float = 0f,
         adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         fxId: String? = null,
-        fxIntensity: Float = 0f
+        fxIntensity: Float = 0f,
+        // Lightness is a NONLINEAR midtone-weighted lift, which a linear
+        // 4x5 matrix cannot express. It is therefore EXCLUDED by default:
+        // every production path applies the true lift separately
+        // (PhotoEditRenderer.applyLightnessLift on CPU;
+        // AdjustmentsGlEffect / GPUImageLightnessFilter on GPU), so
+        // keeping it out of the matrix also avoids double-application.
+        // Pass true only for matrix-only consumers that consciously
+        // accept the linear approximation below.
+        includeLightness: Boolean = false
     ): FloatArray {
         val matrix = getInterpolatedMatrix(filterId, intensity).copyOf()
 
@@ -397,6 +406,17 @@ object FilterColorMatrix {
             matrix[4] += bOffset
             matrix[9] += bOffset
             matrix[14] += bOffset
+        }
+
+        // 1b. Lightness (Video Adjustments v2): OPT-IN linear
+        // approximation (see includeLightness). The true midtone-weighted
+        // lift lives outside the matrix (CPU: PhotoEditRenderer;
+        // GPU: AdjustmentsGlEffect / GPUImageLightnessFilter).
+        if (includeLightness && adjustments.lightness != 0f) {
+            val lOffset = adjustments.lightness * 55f
+            matrix[4] += lOffset
+            matrix[9] += lOffset
+            matrix[14] += lOffset
         }
 
         // 2. Contrast

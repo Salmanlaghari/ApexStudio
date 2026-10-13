@@ -24,6 +24,7 @@ import java.io.File
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * CPU photo-editing pipeline shared by the live preview and the export.
@@ -329,17 +330,59 @@ object PhotoEditRenderer {
     }
 
     private fun applyAdjustments(src: Bitmap, settings: PhotoEditSettings): Bitmap {
+        // The linear ColorMatrix cannot express the midtone-weighted
+        // lightness lift, so it is excluded from the matrix and applied
+        // per-pixel below with the exact GPU maths (WYSIWYG).
         val matrixValues = FilterColorMatrix.getCombinedMatrix(
             filterId = null,
             intensity = 0f,
-            adjustments = settings.adjustments
+            adjustments = settings.adjustments,
+            includeLightness = false
         )
         val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
         val paint = Paint().apply {
             colorFilter = ColorMatrixColorFilter(ColorMatrix(matrixValues))
         }
         Canvas(out).drawBitmap(src, 0f, 0f, paint)
-        return out
+        return applyLightnessLift(out, settings.adjustments.lightness)
+    }
+
+    /**
+     * Lightness (-1..1): TRUE midtone lift on the CPU, identical maths to
+     * the GPU paths (AdjustmentsGlEffect / GPUImageLightnessFilter):
+     * offset = lightness * 0.4 * midWeight, where midWeight peaks at 0.5
+     * luma and falls to 0 at the extremes. A 4x5 ColorMatrix is linear and
+     * cannot express this curve, hence the per-pixel pass.
+     */
+    fun applyLightnessLift(src: Bitmap, lightness: Float): Bitmap {
+        val l = lightness.coerceIn(-1f, 1f)
+        if (l == 0f) return src
+        val w = src.width
+        val h = src.height
+        // In-place: a single IntArray is reused as both source and
+        // destination (no second full-size copy). The output bitmap is
+        // still required because `src` is owned by the caller.
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        for (i in px.indices) {
+            val c = px[i]
+            val a = (c ushr 24) and 0xff
+            val r = (c ushr 16) and 0xff
+            val g = (c ushr 8) and 0xff
+            val b = c and 0xff
+            val luma = (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
+            val midWeight = (1f - abs(luma - 0.5f) * 2f).coerceIn(0f, 1f)
+            // roundToInt (not toInt): sub-integer deltas accumulate
+            // visibly across large flat areas; truncation would band.
+            val delta = (l * 0.4f * midWeight * 255f).roundToInt()
+            px[i] = (a shl 24) or
+                    ((r + delta).coerceIn(0, 255) shl 16) or
+                    ((g + delta).coerceIn(0, 255) shl 8) or
+                    (b + delta).coerceIn(0, 255)
+        }
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        result.setPixels(px, 0, w, 0, 0, w, h)
+        return result
     }
 
     /**

@@ -88,6 +88,10 @@ fun TrimPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Cap the height so the panel never draws under the status bar
+            // on short phones; the overlay wrapper adds status/nav insets.
+            .fillMaxHeight(0.92f)
+            .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
             .background(
                 Brush.verticalGradient(
@@ -102,8 +106,7 @@ fun TrimPanel(
                 ApexPalette.NeonCyan.copy(alpha = 0.3f),
                 RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Drag handle & Header
@@ -114,6 +117,15 @@ fun TrimPanel(
                 .clip(RoundedCornerShape(2.dp))
                 .background(ApexPalette.TextTertiary.copy(alpha = 0.5f))
         )
+
+        // Scrollable content. The Preview Cut / Export Studio buttons stay
+        // sticky at the bottom (outside this scroll container).
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -772,7 +784,10 @@ fun TrimPanel(
             }
         }
 
-        // Secondary Action Buttons Row (Preview Cut & Export Full)
+        } // end scrollable content
+
+        // Secondary Action Buttons Row (Preview Cut & Export Full) — sticky
+        // at the bottom, above the navigation bar.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -892,19 +907,30 @@ private fun TrimFilmstrip(
 ) {
     val context = LocalContext.current
     val thumbCount = 8
+    // Thumbnails via the shared ThumbnailExtractor (same pipeline the
+    // timeline filmstrip uses): it handles plain file paths, file://,
+    // asset:// and content:// URIs. The old VideoThumbnailExtractor
+    // only called setDataSource(context, Uri) and returned null for
+    // plain file paths — the usual reason this strip rendered blank.
+    // extractFrames never returns empty (generated fallback tiles),
+    // so a blank strip now means extraction truly produced nothing.
     val thumbs by produceState<List<android.graphics.Bitmap?>>(
         initialValue = List(thumbCount) { null },
-        clip.uri, clip.id
+        clip.uri, clip.id, clip.trimStartMs, clip.trimEndMs
     ) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
-            (0 until thumbCount).map { i ->
-                val t = (duration * i / (thumbCount - 1).coerceAtLeast(1))
-                    .coerceIn(0L, (duration - 100L).coerceAtLeast(0L))
-                try {
-                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
-                        context, clip.uri, t
-                    )
-                } catch (e: Exception) { null }
+            try {
+                com.apexstudio.app.data.media.ThumbnailExtractor.extractFrames(
+                    context = context,
+                    uri = clip.uri,
+                    trimStartMs = clip.trimStartMs,
+                    trimEndMs = clip.trimEndMs,
+                    frameWidthPx = 120,
+                    frameHeightPx = 68,
+                    frameCount = thumbCount
+                )
+            } catch (e: Exception) {
+                List(thumbCount) { null }
             }
         }
     }

@@ -11,7 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +71,10 @@ fun TrimPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // WindowInsets: keep the panel clear of the status bar
+            // (title) and the navigation bar (bottom buttons).
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTrimPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -133,6 +139,10 @@ fun GpuFilterPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // WindowInsets: keep the panel clear of the status bar
+            // (title) and the navigation bar (bottom buttons).
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeGpuFilterPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -174,6 +184,10 @@ fun ColorGradingPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // WindowInsets: keep the panel clear of the status bar
+            // (title) and the navigation bar (bottom buttons).
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable {
                 vm.closeFilterPanel()
@@ -260,6 +274,10 @@ fun FxPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // WindowInsets: keep the panel clear of the status bar
+            // (title) and the navigation bar (bottom buttons).
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeFxPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -543,34 +561,58 @@ fun RoyaltyMusicSheetOverlay(
     audioPickerLauncher: ActivityResultLauncher<String>
 ) {
     if (showRoyaltyFreeSheet) {
-        RoyaltyFreeMusicSheet(
-            onClose = onCloseRoyaltyFreeSheet,
-            onSelectSong = { title, filePath, durationMs ->
-                vm.addAudioTrack(
-                    name = title,
-                    uri = filePath,
-                    kind = AudioTrack.Kind.MUSIC,
-                    sourceDurationMs = durationMs
+        // Bottom-aligned overlay: the sheet was composed bare (top-aligned
+        // in the parent Box), so its title drew under the status bar.
+        // No scrim/clickable here — the sheet has its own close control
+        // and touches outside it keep passing through to the editor.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                RoyaltyFreeMusicSheet(
+                    onClose = onCloseRoyaltyFreeSheet,
+                    onSelectSong = { title, filePath, durationMs ->
+                        vm.addAudioTrack(
+                            name = title,
+                            uri = filePath,
+                            kind = AudioTrack.Kind.MUSIC,
+                            sourceDurationMs = durationMs
+                        )
+                        onCloseRoyaltyFreeSheet()
+                    }
                 )
-                onCloseRoyaltyFreeSheet()
             }
-        )
+        }
     }
 
     if (state.royaltyMusicDialogOpen) {
-        RoyaltyFreeMusicSheet(
-            onClose = { vm.closeRoyaltyMusicDialog() },
-            onSelectSong = { title, filePath, durationMs ->
-                vm.addRoyaltyTrack(title, filePath, durationMs)
-                vm.closeRoyaltyMusicDialog()
-            },
-            // Device import: reuse the existing MediaStore audio picker; the
-            // picked file lands on the audio track via audioPickerLauncher.
-            onImportAudio = {
-                vm.closeRoyaltyMusicDialog()
-                audioPickerLauncher.launch("audio/*")
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                RoyaltyFreeMusicSheet(
+                    onClose = { vm.closeRoyaltyMusicDialog() },
+                    onSelectSong = { title, filePath, durationMs ->
+                        vm.addRoyaltyTrack(title, filePath, durationMs)
+                        vm.closeRoyaltyMusicDialog()
+                    },
+                    // Device import: reuse the existing MediaStore audio picker; the
+                    // picked file lands on the audio track via audioPickerLauncher.
+                    onImportAudio = {
+                        vm.closeRoyaltyMusicDialog()
+                        audioPickerLauncher.launch("audio/*")
+                    }
+                )
             }
-        )
+        }
     }
 }
 
@@ -1342,6 +1384,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onToggleMagneticSnapping = { vm.toggleMagneticSnapping() },
         onToggleRippleEdit = { vm.toggleRippleEdit() },
         onSelectClip = { vm.selectClip(it) },
+        // Tapping empty timeline space clears the selection (hides the
+        // clip action bar again).
+        onDeselect = { vm.clearSelection() },
         onSelectFx = { fxId -> vm.selectFx(fxId, intensity = 0.85f) },
         onSelectFilter = { filterId -> vm.selectFilter(filterId, intensity = 0.85f) },
         onAddMedia = onOpenAddMediaMenu,

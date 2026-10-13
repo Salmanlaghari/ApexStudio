@@ -22,7 +22,15 @@ fun EditorViewModel.selectAudioTrack(id: String?) = _state.update { state ->
 
 /** Clears every selection — the contextual toolbar returns to global tools. */
 fun EditorViewModel.clearSelection() = _state.update {
-    it.copy(selectedClipId = null, selectedAudioTrackId = null)
+    // Clear every selection kind: the merged clip bar's visibility is
+    // derived from these ids, so leaving text/sticker selection behind
+    // would keep the TEXT/STICKER bar visible after a deselect.
+    it.copy(
+        selectedClipId = null,
+        selectedAudioTrackId = null,
+        selectedTextOverlayId = null,
+        selectedStickerId = null
+    )
 }
 
 /**

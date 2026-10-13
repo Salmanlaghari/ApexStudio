@@ -68,6 +68,15 @@ fun EditorScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
+    // of the editor. The player's audio sink (DenoiseRenderersFactory)
+    // runs this instance, and the toggle effect below just flips its
+    // runtime fields — no player rebuild, no seek. Starts disabled;
+    // the effect syncs it to the selected clip's settings.
+    val denoiseProcessor = remember {
+        com.apexstudio.app.data.audio.DenoiseAudioProcessor(enabled = false)
+    }
     // Dedicated muted player for the live video PiP overlay preview.
     // Bound to the active V2 video overlay clip by EditorPreviewSection.
     var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -160,7 +169,14 @@ fun EditorScreen(
 
     LaunchedEffect(Unit) {
         try {
-            val player = ExoPlayer.Builder(context).build()
+            // The RenderersFactory wires the shared denoise processor
+            // into the player's audio sink (Media3 1.5.0 has no
+            // Player.setAudioEffects — the sink is the only hook).
+            val renderersFactory =
+                com.apexstudio.app.data.audio.DenoiseRenderersFactory(context) {
+                    denoiseProcessor
+                }
+            val player = ExoPlayer.Builder(context, renderersFactory).build()
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     val ready = playbackState == Player.STATE_READY
@@ -277,34 +293,18 @@ fun EditorScreen(
 
     // Clean Voice (per-clip voice noise cleanup): the preview runs the
     // SAME DenoiseAudioProcessor class the export uses, so what you hear
-    // is exactly what bakes into the MP4. Toggling re-applies the
-    // effects and re-seeks to the same position to force the audio sink
-    // to reconfigure with the new effect chain.
+    // is exactly what bakes into the MP4. The shared processor already
+    // sits in the player's audio chain (DenoiseRenderersFactory), so
+    // toggling just flips its runtime fields — it takes effect on the
+    // next queued audio buffer, no player rebuild, no seek.
     LaunchedEffect(
-        exoPlayer,
         currentSelectedClip?.id,
         currentSelectedClip?.denoiseEnabled,
         currentSelectedClip?.denoiseStrength
     ) {
-        val player = exoPlayer ?: return@LaunchedEffect
         val clip = currentSelectedClip ?: return@LaunchedEffect
-        try {
-            val effects: List<androidx.media3.common.Effect> =
-                if (clip.denoiseEnabled) {
-                    listOf(
-                        com.apexstudio.app.data.audio.DenoiseAudioProcessor(
-                            clip.denoiseStrength
-                        )
-                    )
-                } else {
-                    emptyList()
-                }
-            player.setAudioEffects(effects)
-            // Force the audio sink to pick up the new effect chain.
-            player.seekTo(player.currentPosition)
-        } catch (e: Exception) {
-            Log.e("EditorScreen", "Failed to apply denoise audio effect", e)
-        }
+        denoiseProcessor.denoiseEnabled = clip.denoiseEnabled
+        denoiseProcessor.denoiseStrength = clip.denoiseStrength
     }
 
     val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts) {

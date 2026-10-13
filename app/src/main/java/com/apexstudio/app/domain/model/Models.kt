@@ -44,8 +44,8 @@ data class MediaClip(
     // Clean Voice (voice noise cleanup): per-clip spectral noise
     // suppression for the clip's embedded audio (hiss / fan hum / room
     // tone). Applied via the same DenoiseAudioProcessor in the preview
-    // (ExoPlayer.setAudioEffects) and the export (Transformer Effects),
-    // so preview == export. Backwards-compatible: older project JSONs
+    // (DenoiseRenderersFactory audio sink) and the export (Transformer
+    // Effects), so preview == export. Backwards-compatible: older project JSONs
     // without these fields deserialise as off.
     // NOTE: the engine is classical spectral gating, NOT RNNoise — see
     // SpectralDenoiser's KDoc for the honest reasoning.

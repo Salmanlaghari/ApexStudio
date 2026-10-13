@@ -43,8 +43,8 @@ fun EditorViewModel.setClipVolume(clipId: String, volume: Float) {
 /**
  * Clean Voice (per-clip voice noise cleanup). Same pattern as
  * [setClipVolume]: the clip's fields are the single source of truth,
- * and both the preview (ExoPlayer.setAudioEffects) and the export
- * (Transformer Effects) read them, so preview == export.
+ * and both the preview (DenoiseRenderersFactory audio sink) and the
+ * export (Transformer Effects) read them, so preview == export.
  */
 fun EditorViewModel.setClipDenoise(
     clipId: String,

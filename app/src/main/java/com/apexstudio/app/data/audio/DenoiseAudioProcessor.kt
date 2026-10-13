@@ -1,7 +1,8 @@
 package com.apexstudio.app.data.audio
 
-import androidx.media3.common.audio.AudioFormat
+import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import com.apexstudio.app.domain.model.DenoiseStrength
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -11,11 +12,16 @@ import java.nio.ByteOrder
  *
  * The SAME processor class is used by BOTH paths, which is what makes
  * preview == export by construction:
- * - Preview: `ExoPlayer.setAudioEffects(listOf(DenoiseAudioProcessor(...)))`
- *   (see EditorScreen).
+ * - Preview: the editor's ExoPlayer is built with a
+ *   [DenoiseRenderersFactory], whose audio sink runs one SHARED
+ *   instance of this processor. Toggling Clean Voice just flips that
+ *   instance's [denoiseEnabled] / [denoiseStrength] fields (see below) —
+ *   no player rebuild, no seek. (Media3 1.5.0 has no
+ *   `Player.setAudioEffects`; the sink is the only supported hook.)
  * - Export: `Effects(buildExportAudioProcessors(...))` in ExportEngine
- *   (Transformer), where this processor sits first in the chain so it
- *   sees the original audio before pitch / volume / speed effects.
+ *   (Transformer), where a fresh instance of this processor sits first
+ *   in the chain so it sees the original audio before pitch / volume /
+ *   speed effects.
  *
  * How it works: input PCM is de-interleaved, the channels are mixed to
  * mono for *analysis* only, the mono mix runs through a
@@ -36,13 +42,29 @@ import java.nio.ByteOrder
  * [-2, 2] so the processor can never amplify wildly. Runs on the
  * Media3 audio / transformer thread — never the main thread.
  *
+ * Runtime toggle / strength (preview path): the editor mutates these
+ * on the shared instance while the player is running. They are read on
+ * the audio thread in [queueInput], so they take effect on the next
+ * queued buffer with no reconfiguration. When [denoiseEnabled] is
+ * false, [queueInput] is a cheap bit-exact passthrough (no FFT) — the
+ * processor stays in the chain, it just stops processing. Export
+ * creates a fresh instance per export with the clip's settings and
+ * never touches these fields.
+ *
  * Lifecycle notes (Media3 calls these): [configure] resets everything
  * (new stream / new clip); [flush] clears only the overlap-add buffers
  * on seek and keeps the learned noise profile (same clip, same room).
  */
 class DenoiseAudioProcessor(
-    strength: DenoiseStrength
+    strength: DenoiseStrength = DenoiseStrength.MEDIUM,
+    enabled: Boolean = true,
 ) : AudioProcessor {
+
+    /** Runtime Clean Voice on/off for the shared preview instance. */
+    @Volatile var denoiseEnabled: Boolean = enabled
+
+    /** Runtime strength for the shared preview instance. */
+    @Volatile var denoiseStrength: DenoiseStrength = strength
 
     companion object {
         private val EMPTY_BUFFER: ByteBuffer =
@@ -52,11 +74,11 @@ class DenoiseAudioProcessor(
         private const val RATIO_SMOOTH = 0.3f
     }
 
-    private val denoiser = SpectralDenoiser().apply { setStrength(strength) }
+    private val denoiser = SpectralDenoiser()
 
     private var sampleRate = 0
     private var channelCount = 0
-    private var encoding = AudioFormat.ENCODING_INVALID
+    private var encoding = C.ENCODING_INVALID
     private var passthrough = false
 
     // Queues keep fed-but-unmatched samples: the denoiser emits a prefix
@@ -75,8 +97,8 @@ class DenoiseAudioProcessor(
         sampleRate = inputAudioFormat.sampleRate
         channelCount = inputAudioFormat.channelCount
         encoding = inputAudioFormat.encoding
-        passthrough = encoding != AudioFormat.ENCODING_PCM_16BIT &&
-            encoding != AudioFormat.ENCODING_PCM_FLOAT
+        passthrough = encoding != C.ENCODING_PCM_16BIT &&
+            encoding != C.ENCODING_PCM_FLOAT
         denoiser.setSampleRate(sampleRate)
         denoiser.reset()
         monoInQueue.clear()
@@ -92,7 +114,7 @@ class DenoiseAudioProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        if (passthrough || channelCount <= 0) {
+        if (passthrough || channelCount <= 0 || !denoiseEnabled) {
             val copy = ByteBuffer.allocateDirect(inputBuffer.remaining())
                 .order(ByteOrder.LITTLE_ENDIAN)
             copy.put(inputBuffer)
@@ -100,6 +122,9 @@ class DenoiseAudioProcessor(
             outputQueue.add(copy)
             return
         }
+        // Strength is applied here (audio thread) rather than in a
+        // setter so all denoiser state stays on one thread.
+        denoiser.setStrength(denoiseStrength)
         val floats = decode(inputBuffer)
         if (floats.isEmpty()) return
         val frames = floats.size / channelCount
@@ -161,7 +186,7 @@ class DenoiseAudioProcessor(
         denoiser.reset()
         sampleRate = 0
         channelCount = 0
-        encoding = AudioFormat.ENCODING_INVALID
+        encoding = C.ENCODING_INVALID
         passthrough = false
     }
 
@@ -173,11 +198,11 @@ class DenoiseAudioProcessor(
         // Media3 expects the processor to consume the input buffer.
         inputBuffer.position(inputBuffer.limit())
         return when (encoding) {
-            AudioFormat.ENCODING_PCM_16BIT -> {
+            C.ENCODING_PCM_16BIT -> {
                 val count = src.remaining() / 2
                 FloatArray(count) { src.short / 32768f }
             }
-            AudioFormat.ENCODING_PCM_FLOAT -> {
+            C.ENCODING_PCM_FLOAT -> {
                 val count = src.remaining() / 4
                 FloatArray(count) { src.float.coerceIn(-1f, 1f) }
             }
@@ -219,7 +244,7 @@ class DenoiseAudioProcessor(
     /** Encodes float samples in [-1, 1] back to the input encoding. */
     private fun encode(samples: FloatArray): ByteBuffer {
         return when (encoding) {
-            AudioFormat.ENCODING_PCM_FLOAT -> {
+            C.ENCODING_PCM_FLOAT -> {
                 val buf = ByteBuffer.allocateDirect(samples.size * 4)
                     .order(ByteOrder.LITTLE_ENDIAN)
                 for (s in samples) buf.putFloat(s.coerceIn(-1f, 1f))

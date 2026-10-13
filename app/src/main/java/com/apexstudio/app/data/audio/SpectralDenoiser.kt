@@ -45,7 +45,10 @@ import kotlin.math.sin
  * - 1024-sample periodic-Hann window, 512 hop, radix-2 FFT.
  * - Noise floor per bin via minima tracking: fast attack when the bin
  *   falls below the estimate, very slow rise otherwise (speech bursts
- *   must not drag the floor up).
+ *   must not drag the floor up). Startup: the floor is seeded LOW
+ *   (5% of the first frame) with a fast rise for the first ~0.5 s, so
+ *   a clip starting mid-speech is never over-suppressed — cleanup
+ *   fades in instead of muffling the opening words.
  * - Gain per bin: spectral subtraction
  *   g = clamp((mag - alpha * noise) / mag, floor, 1),
  *   temporally smoothed (IIR) + 3-bin frequency smoothing to avoid
@@ -69,6 +72,18 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
         private const val HIGH_PASS_HZ = 80f
         private const val NOISE_ATTACK = 0.20f   // track down fast
         private const val NOISE_RELEASE = 0.001f // rise very slowly
+        // Startup: the floor is seeded LOW (a fraction of the first
+        // frame) and may rise FAST for the first SEED_FRAMES. Seeding
+        // from the first frame's full magnitude would over-suppress
+        // speech whenever a clip starts mid-sentence (the floor would
+        // sit at speech level and only decay at NOISE_RELEASE). Seeding
+        // low can only under-suppress briefly — the safe direction —
+        // and the fast initial release converges the floor to the true
+        // noise level within ~0.5 s. After the window, slow release
+        // takes over so speech bursts can't drag the floor up.
+        private const val NOISE_SEED_SCALE = 0.05f
+        private const val SEED_FAST_RELEASE = 0.20f
+        private const val SEED_FRAMES = 48
         private const val GAIN_SMOOTH = 0.35f    // temporal gain smoothing
         private const val OUTPUT_CLAMP = 1.2f
     }
@@ -86,8 +101,12 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
     private val fftRe = FloatArray(FRAME_SIZE)
     private val fftIm = FloatArray(FRAME_SIZE)
 
-    // Streaming state.
+    // Streaming state. [pending] is a sliding window: [pendingStart]
+    // marks the first unconsumed sample. Consumed samples are dropped
+    // in bulk (see compactPending) instead of shifting the whole list
+    // by HOP_SIZE every frame.
     private val pending = ArrayList<Float>(FRAME_SIZE * 2)
+    private var pendingStart = 0
     private val acc = FloatArray(FRAME_SIZE)
     private val env = FloatArray(FRAME_SIZE)
     private var emitted: Long = 0L
@@ -101,7 +120,12 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
     private val noise = FloatArray(BIN_COUNT)
     private val gainSmooth = FloatArray(BIN_COUNT)
     private val gainTmp = FloatArray(BIN_COUNT)
-    private var seeded = false
+    // Frames analysed so far (drives the startup seeding window).
+    private var frameIndex = 0
+
+    // High-pass coefficient depends only on the sample rate, so it is
+    // cached in setSampleRate instead of recomputed per sample.
+    private var hpCoeff = hpCoeffFor(sampleRate)
 
     fun setStrength(strength: DenoiseStrength) {
         when (strength) {
@@ -115,12 +139,14 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
         val safe = rate.coerceAtLeast(8000)
         if (safe != sampleRate) {
             sampleRate = safe
+            hpCoeff = hpCoeffFor(sampleRate)
             reset()
         }
     }
 
     override fun reset() {
         pending.clear()
+        pendingStart = 0
         acc.fill(0f)
         env.fill(0f)
         emitted = 0L
@@ -129,13 +155,14 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
         hpPrevOut = 0f
         noise.fill(0f)
         gainSmooth.fill(0f)
-        seeded = false
+        frameIndex = 0
     }
 
     override fun resetBuffers() {
         // Seek within the same stream: overlap-add state restarts, but the
         // learned noise profile (same clip, same room) stays valid.
         pending.clear()
+        pendingStart = 0
         acc.fill(0f)
         env.fill(0f)
         emitted = 0L
@@ -151,27 +178,29 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
             totalIn++
         }
         val out = ArrayList<Float>(input.size + HOP_SIZE)
-        while (pending.size >= FRAME_SIZE) {
+        while (pending.size - pendingStart >= FRAME_SIZE) {
             processFrame()
             emitHop(out, HOP_SIZE)
             shiftAcc()
-            pending.subList(0, HOP_SIZE).clear()
+            pendingStart += HOP_SIZE
+            compactPending()
         }
         return out.toFloatArray()
     }
 
     override fun flush(): FloatArray {
-        val out = ArrayList<Float>(pending.size + HOP_SIZE)
+        val out = ArrayList<Float>(pending.size - pendingStart + HOP_SIZE)
         // Drain the remaining input with zero-padded frames so the tail
         // gets its full overlap-add contribution.
-        while (pending.isNotEmpty()) {
+        while (pendingStart < pending.size) {
             processPaddedFrame()
             val remaining = (totalIn - emitted).coerceAtLeast(0L).toInt()
             val toEmit = minOf(HOP_SIZE, remaining)
             emitHop(out, toEmit)
             shiftAcc()
-            val drop = minOf(HOP_SIZE, pending.size)
-            pending.subList(0, drop).clear()
+            val drop = minOf(HOP_SIZE, pending.size - pendingStart)
+            pendingStart += drop
+            compactPending()
         }
         // Defensive: sample-count parity must hold exactly. If a bug ever
         // makes us short, pad silence rather than drifting vs video.
@@ -184,10 +213,21 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
 
     // ---- internals ----
 
+    /** Drops samples already consumed from the head of [pending]. */
+    private fun compactPending() {
+        if (pendingStart >= FRAME_SIZE) {
+            pending.subList(0, pendingStart).clear()
+            pendingStart = 0
+        }
+    }
+
+    /** 1st-order RC high-pass coefficient for [rate] (fc = 80 Hz). */
+    private fun hpCoeffFor(rate: Int): Float =
+        (1.0f / (1.0f + (2.0f * PI.toFloat() * HIGH_PASS_HZ / rate))).toFloat()
+
     private fun highPass(x: Float): Float {
         // 1st-order RC high-pass, fc = 80 Hz.
-        val a = (1.0f / (1.0f + (2.0f * PI.toFloat() * HIGH_PASS_HZ / sampleRate))).toFloat()
-        val y = a * (hpPrevOut + x - hpPrevIn)
+        val y = hpCoeff * (hpPrevOut + x - hpPrevIn)
         hpPrevIn = x
         hpPrevOut = y
         return y
@@ -196,7 +236,7 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
     /** Processes the first FRAME_SIZE pending samples as one frame. */
     private fun processFrame() {
         for (i in 0 until FRAME_SIZE) {
-            fftRe[i] = pending[i] * hann[i]
+            fftRe[i] = pending[pendingStart + i] * hann[i]
             fftIm[i] = 0f
         }
         analyseAndOverlapAdd()
@@ -205,7 +245,7 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
     /** Processes a zero-padded frame from whatever is left in [pending]. */
     private fun processPaddedFrame() {
         for (i in 0 until FRAME_SIZE) {
-            val s = if (i < pending.size) pending[i] else 0f
+            val s = if (pendingStart + i < pending.size) pending[pendingStart + i] else 0f
             fftRe[i] = s * hann[i]
             fftIm[i] = 0f
         }
@@ -228,16 +268,24 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
                 finite = false
             }
             val g: Float
-            if (!seeded) {
-                // First frame seeds the noise profile; gains stay 1
-                // (otherwise noise == mag would floor the whole frame).
-                noise[b] = mag
+            if (frameIndex == 0) {
+                // First frame seeds the noise profile LOW (a fraction of
+                // the frame) with gain 1: if the clip starts mid-speech,
+                // seeding at full magnitude would floor the opening
+                // speech; seeding low can only under-suppress briefly
+                // (the fast initial release below converges the floor).
+                noise[b] = mag * NOISE_SEED_SCALE
                 g = 1f
             } else {
+                // During the startup window the floor may rise fast so
+                // it converges to the true noise level; afterwards the
+                // slow release keeps speech bursts from dragging it up.
+                val release =
+                    if (frameIndex < SEED_FRAMES) SEED_FAST_RELEASE else NOISE_RELEASE
                 noise[b] = if (mag < noise[b]) {
                     (1f - NOISE_ATTACK) * noise[b] + NOISE_ATTACK * mag
                 } else {
-                    (1f - NOISE_RELEASE) * noise[b] + NOISE_RELEASE * mag
+                    (1f - release) * noise[b] + release * mag
                 }
                 g = if (mag > 1e-6f) {
                     ((mag - alpha * noise[b]) / mag).coerceIn(spectralFloor, 1f)
@@ -247,13 +295,14 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
             }
             gainTmp[b] = g
         }
-        if (!seeded) {
+        if (frameIndex == 0) {
             gainSmooth.fill(1f)
         } else {
             for (b in 0 until BIN_COUNT) {
                 gainSmooth[b] = (1f - GAIN_SMOOTH) * gainSmooth[b] + GAIN_SMOOTH * gainTmp[b]
             }
         }
+        frameIndex++
         // 3-bin frequency smoothing to suppress musical noise.
         for (b in 0 until BIN_COUNT) {
             val left = gainSmooth[(b - 1).coerceAtLeast(0)]
@@ -287,7 +336,6 @@ class SpectralDenoiser : VoiceNoiseSuppressor {
                 env[i] += hann[i] * hann[i]
             }
         }
-        seeded = true
     }
 
     /** Emits [count] samples from the head of [acc], envelope-normalised. */

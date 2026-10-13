@@ -414,7 +414,13 @@ fun ClipVolumeSheet(
                                     if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
                                     else Color(0xFF2A2A3C)
                                 )
-                                .clickable { onDenoiseChange(true, strength) }
+                                .clickable {
+                                    // Chips only render while denoise is
+                                    // on (see the if above), so this keeps
+                                    // the current enabled state — tapping
+                                    // a strength never toggles on its own.
+                                    onDenoiseChange(denoiseEnabled, strength)
+                                }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {

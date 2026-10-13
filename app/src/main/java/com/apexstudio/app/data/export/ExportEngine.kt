@@ -542,7 +542,7 @@ class ExportEngine(private val context: Context) {
         config: ExportConfig
     ): androidx.media3.common.audio.AudioProcessor? {
         if (!config.denoiseEnabled) return null
-        return DenoiseAudioProcessor(config.denoiseStrength)
+        return DenoiseAudioProcessor(config.denoiseStrength, enabled = true)
     }
 
     /**

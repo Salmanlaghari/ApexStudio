@@ -20,12 +20,11 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
  *
  * The processor instance is SHARED (one instance, created once by the
  * editor and handed in via [processorProvider]) so the Clean Voice
- * toggle / strength can take effect immediately: the editor just flips
- * [DenoiseAudioProcessor.denoiseEnabled] /
- * [DenoiseAudioProcessor.denoiseStrength] on the same instance the sink
- * is already running — no player rebuild, no seek. The processor stays
- * in the chain permanently; when disabled it is a cheap bit-exact
- * passthrough (no FFT).
+ * toggle / strength can take effect immediately: the editor just
+ * writes that instance's [DenoiseAudioProcessor.denoiseSettings] —
+ * no player rebuild, no seek. The processor stays in the chain
+ * permanently; when disabled it is a cheap bit-exact passthrough
+ * (no FFT).
  *
  * Lifetime: the provider must return the same instance for the whole
  * life of the player built from this factory. ExoPlayer creates its

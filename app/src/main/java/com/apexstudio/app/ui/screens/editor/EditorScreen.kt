@@ -303,8 +303,11 @@ fun EditorScreen(
         currentSelectedClip?.denoiseStrength
     ) {
         val clip = currentSelectedClip ?: return@LaunchedEffect
-        denoiseProcessor.denoiseEnabled = clip.denoiseEnabled
-        denoiseProcessor.denoiseStrength = clip.denoiseStrength
+        denoiseProcessor.denoiseSettings =
+            com.apexstudio.app.data.audio.DenoiseSettings(
+                clip.denoiseEnabled,
+                clip.denoiseStrength
+            )
     }
 
     val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts) {

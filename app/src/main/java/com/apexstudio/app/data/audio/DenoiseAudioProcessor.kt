@@ -15,7 +15,7 @@ import java.nio.ByteOrder
  * - Preview: the editor's ExoPlayer is built with a
  *   [DenoiseRenderersFactory], whose audio sink runs one SHARED
  *   instance of this processor. Toggling Clean Voice just flips that
- *   instance's [denoiseEnabled] / [denoiseStrength] fields (see below) —
+ *   instance's [denoiseSettings] (see below) —
  *   no player rebuild, no seek. (Media3 1.5.0 has no
  *   `Player.setAudioEffects`; the sink is the only supported hook.)
  * - Export: `Effects(buildExportAudioProcessors(...))` in ExportEngine
@@ -45,9 +45,9 @@ import java.nio.ByteOrder
  * Runtime toggle / strength (preview path): the editor mutates these
  * on the shared instance while the player is running. They are read on
  * the audio thread in [queueInput], so they take effect on the next
- * queued buffer with no reconfiguration. When [denoiseEnabled] is
- * false, [queueInput] is a cheap bit-exact passthrough (no FFT) — the
- * processor stays in the chain, it just stops processing. Export
+ * queued buffer with no reconfiguration. When [DenoiseSettings.enabled]
+ * is false, [queueInput] is a cheap bit-exact passthrough (no FFT) —
+ * the processor stays in the chain, it just stops processing. Export
  * creates a fresh instance per export with the clip's settings and
  * never touches these fields.
  *
@@ -55,16 +55,26 @@ import java.nio.ByteOrder
  * (new stream / new clip); [flush] clears only the overlap-add buffers
  * on seek and keeps the learned noise profile (same clip, same room).
  */
+
+/**
+ * Runtime Clean Voice settings for the shared preview processor.
+ * Held in ONE `@Volatile` var ([DenoiseAudioProcessor.denoiseSettings])
+ * so the audio thread always sees a consistent (enabled, strength)
+ * pair — two independently-volatile fields could expose a transient
+ * mix of old and new values.
+ */
+data class DenoiseSettings(
+    val enabled: Boolean,
+    val strength: DenoiseStrength,
+)
+
 class DenoiseAudioProcessor(
     strength: DenoiseStrength = DenoiseStrength.MEDIUM,
     enabled: Boolean = true,
 ) : AudioProcessor {
 
-    /** Runtime Clean Voice on/off for the shared preview instance. */
-    @Volatile var denoiseEnabled: Boolean = enabled
-
-    /** Runtime strength for the shared preview instance. */
-    @Volatile var denoiseStrength: DenoiseStrength = strength
+    /** Runtime Clean Voice settings for the shared preview instance. */
+    @Volatile var denoiseSettings: DenoiseSettings = DenoiseSettings(enabled, strength)
 
     companion object {
         private val EMPTY_BUFFER: ByteBuffer =
@@ -75,6 +85,9 @@ class DenoiseAudioProcessor(
     }
 
     private val denoiser = SpectralDenoiser()
+    // Strength last applied to the denoiser (setStrength is called
+    // only when it changes, not on every queueInput).
+    private var appliedStrength: DenoiseStrength? = null
 
     private var sampleRate = 0
     private var channelCount = 0
@@ -114,7 +127,9 @@ class DenoiseAudioProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        if (passthrough || channelCount <= 0 || !denoiseEnabled) {
+        // One atomic snapshot: enabled + strength always consistent.
+        val settings = denoiseSettings
+        if (passthrough || channelCount <= 0 || !settings.enabled) {
             val copy = ByteBuffer.allocateDirect(inputBuffer.remaining())
                 .order(ByteOrder.LITTLE_ENDIAN)
             copy.put(inputBuffer)
@@ -123,8 +138,12 @@ class DenoiseAudioProcessor(
             return
         }
         // Strength is applied here (audio thread) rather than in a
-        // setter so all denoiser state stays on one thread.
-        denoiser.setStrength(denoiseStrength)
+        // setter so all denoiser state stays on one thread, and only
+        // when it actually changed.
+        if (settings.strength != appliedStrength) {
+            denoiser.setStrength(settings.strength)
+            appliedStrength = settings.strength
+        }
         val floats = decode(inputBuffer)
         if (floats.isEmpty()) return
         val frames = floats.size / channelCount
@@ -220,13 +239,20 @@ class DenoiseAudioProcessor(
         val outFloats = FloatArray(frames * channelCount)
         for (f in 0 until frames) {
             val inMono = monoIn[f]
-            val rawRatio = if (kotlin.math.abs(inMono) > RATIO_EPSILON) {
+            val absIn = kotlin.math.abs(inMono)
+            // Smooth gate: the ratio blends to 1 as the input
+            // approaches silence, so there is no discontinuity at
+            // RATIO_EPSILON (previously the ratio jumped from 1 to a
+            // clamped value the moment |inMono| crossed the threshold).
+            val gate = (absIn * absIn) / (absIn * absIn + RATIO_EPSILON * RATIO_EPSILON)
+            val rawRatio = if (absIn > 0f) {
                 (monoOut[f] / inMono).coerceIn(-RATIO_CLAMP, RATIO_CLAMP)
             } else {
                 1f
             }
+            val gatedRatio = 1f + (rawRatio - 1f) * gate
             // Smooth the ratio to avoid zipper noise on transients.
-            prevRatio = (1f - RATIO_SMOOTH) * prevRatio + RATIO_SMOOTH * rawRatio
+            prevRatio = (1f - RATIO_SMOOTH) * prevRatio + RATIO_SMOOTH * gatedRatio
             val ratio = if (prevRatio.isFinite()) prevRatio else 1f
             for (c in 0 until channelCount) {
                 val raw = rawInQueue.removeFirst()

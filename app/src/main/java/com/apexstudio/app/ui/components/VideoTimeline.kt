@@ -93,7 +93,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -300,20 +299,42 @@ fun VideoTimeline(
     )
     val timelineWidthPx = with(density) { timelineWidthDp.toPx() }
 
-    // Auto-scroll when playing — edge-triggered (not every tick) so it never
-    // fights the user's finger. Uses instant scrollTo: animateScrollTo on
-    // every playhead update caused visible stutter during playback.
-    LaunchedEffect(isPlaying, safePlayheadMs) {
-        if (isPlaying) {
-            val playheadX = safePlayheadMs * msToDp
-            val playheadPx = with(density) { playheadX.dp.toPx() }.roundToInt()
+    // CapCut-style FIXED-CENTRE playhead: while playing, the timeline
+    // scrolls underneath a playhead pinned at the viewport centre.
+    // The RAW position flow is collected (not the 10Hz snapshot) so
+    // the scroll moves at the same rate the playhead overlay draws —
+    // a 10Hz scroll would let the playhead wobble around centre at
+    // high zoom. Instant scrollTo (no animation): animateScrollTo on
+    // every update caused visible stutter during playback.
+    LaunchedEffect(isPlaying, playerPositionFlow) {
+        if (!isPlaying) return@LaunchedEffect
+        val flow = playerPositionFlow ?: return@LaunchedEffect
+        flow.collect { posMs ->
             val viewportWidth = scrollState.viewportSize
-            val edge = (viewportWidth * 0.85f).toInt()
-            // Only recenter when the playhead is about to leave the viewport.
-            if (playheadPx > scrollState.value + edge || playheadPx < scrollState.value) {
-                val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
-                scrollState.scrollTo(targetScroll)
+            if (viewportWidth <= 0) return@collect
+            val playheadPx = with(density) {
+                (posMs.coerceIn(0L, safeDurationMs) * msToDp).dp.toPx()
+            }.roundToInt()
+            scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
+        }
+    }
+    // Snapshot-driven centre: no-flow fallback while playing (centre on
+    // every snapshot tick), and — while PAUSED — centre only if the
+    // playhead is off-screen (a seek/jump). Never while the user drags
+    // the ruler: the playhead stays in-viewport under the finger there,
+    // so this never fights an active scrub.
+    LaunchedEffect(safePlayheadMs) {
+        val viewportWidth = scrollState.viewportSize
+        if (viewportWidth <= 0) return@LaunchedEffect
+        val playheadPx = with(density) { (safePlayheadMs * msToDp).dp.toPx() }.roundToInt()
+        val offScreen = playheadPx < scrollState.value ||
+            playheadPx > scrollState.value + viewportWidth
+        if (isPlaying) {
+            if (playerPositionFlow == null) {
+                scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
             }
+        } else if (offScreen) {
+            scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
         }
     }
 
@@ -358,11 +379,12 @@ fun VideoTimeline(
         // empty. Prince: "Video Layer Overlay Kuch be nahin" fix.
         ((used + 0 + 1 + extraVideoLayers).toSortedSet()).toList().take(10)
     }
-    // Overlay row heights: 58dp with clips, slim 32dp when empty (still
-    // tappable for "+ Add clip"). The sidebar pills use the same
-    // per-layer heights so pills stay centered on their rows.
+    // Overlay row heights: 48dp with clips (30dp chip + 10dp keyframe
+    // strip + slack), slim 32dp when empty (still tappable for
+    // "+ Add clip"). The sidebar pills use the same per-layer heights
+    // so pills stay centered on their rows.
     val emptyOverlayLayerHeight = 32.dp
-    val overlayLayerHeight = 58.dp
+    val overlayLayerHeight = 48.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -390,7 +412,9 @@ fun VideoTimeline(
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
     val rulerHeight = 30.dp
-    val v1Height = 44.dp
+    // CapCut-style: the main track is the tallest strip (~56dp) —
+    // a continuous filmstrip, clearly above the slimmer overlay rows.
+    val v1Height = 56.dp
     val v2Height = 44.dp
     // Finger-friendly 40dp for TEXT / STICKER / FX lanes (was 32/32/36).
     val fxHeight = 40.dp
@@ -431,7 +455,7 @@ fun VideoTimeline(
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
         .sumOf { overlayRowHeight(it).value.toInt() + 10 }
     val addLayerSpacerTotal = if (videoLayers.size < 10) 28 + 10 else 0
-    val timelineTotalDp = 30 + 10 + 44 +
+    val timelineTotalDp = 30 + 10 + v1Height.value.toInt() +
         10 +
         overlayRowsTotal +
         addLayerSpacerTotal +
@@ -440,15 +464,19 @@ fun VideoTimeline(
         (fxLaneHeight + 10) +
         (musicTracks.size.coerceAtLeast(1) * 46 + 10) +
         (voiceTracks.size.coerceAtLeast(1) * 46 + 10)
-    // Pinned header: ruler + gap + V1 (84dp) stays fixed while the other
+    // Pinned header: ruler + gap + V1 stays fixed while the other
     // tracks scroll vertically underneath it.
-    val fixedHeaderHeight = 30 + 10 + 44
+    val fixedHeaderHeight = 30 + 10 + v1Height.value.toInt()
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(timelineTotalDp.dp)
+            // Full-view: fill the height the editor gives the timeline
+            // instead of stopping at the content height — the scrollable
+            // section below grows, tracks stay top-aligned. (Only called
+            // from TimelineTrackArea with weight(1f), so this is safe.)
+            .fillMaxHeight()
             .background(Color(0xFF090B10))
             .border(1.dp, Color(0xFF171B26))
     ) {
@@ -1499,6 +1527,14 @@ private fun TimelineTimeRuler(
                 )
             }
 
+            // CapCut-style thin gold rule along the ruler's bottom edge.
+            drawLine(
+                color = Color(0xFFD4AF37),
+                start = Offset(0f, h - 0.75f),
+                end = Offset(size.width, h - 0.75f),
+                strokeWidth = 1.5f
+            )
+
             // Beat Markers (Cyan diamonds on ruler)
             if (snapToBeat && beatMarkersMs.isNotEmpty()) {
                 beatMarkersMs.forEach { beatMs ->
@@ -1515,12 +1551,10 @@ private fun TimelineTimeRuler(
             }
         }
 
-        // Time labels based on zoom factor
-        val stepSec = when {
-            secondWidthDp > 60.dp -> 1
-            secondWidthDp > 35.dp -> 2
-            else -> 5
-        }
+        // Time labels: CapCut-style majors every 2s (MM:SS). At
+        // frame-level zoom (>= 180dp/s) show 1s majors so the ruler
+        // never looks empty.
+        val stepSec = if (secondWidthDp >= 180.dp) 1 else 2
 
         // Time labels: laid out in a Box (NOT a Row) so each label's
         // offset(x) is ABSOLUTE from the ruler origin, matching the
@@ -1540,32 +1574,13 @@ private fun TimelineTimeRuler(
                         .padding(start = 2.dp, top = 2.dp)
                 ) {
                     Text(
-                        // Pro timecode (HH:MM:SS:FF) at high zoom; compact short form otherwise.
-                        text = if (secondWidthDp >= 180.dp) TimeFormat.msToTimecode(sec * 1000L, includeFrames = true)
-                        else TimeFormat.msToShort(sec * 1000L),
+                        // CapCut-style: compact MM:SS majors at every step.
+                        text = TimeFormat.msToShort(sec * 1000L),
                         color = Color(0xFF94A3B8),
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold
                     )
-                }
-
-                // If zoomed in to frame level, show half-second / 15-frame label
-                if (secondWidthDp >= 240.dp) {
-                    val halfOffsetDp = ((sec * 1000L + 500L) * msToDp).dp
-                    Box(
-                        modifier = Modifier
-                            .offset(x = halfOffsetDp)
-                            .padding(start = 2.dp, top = 3.dp)
-                    ) {
-                        Text(
-                            text = TimeFormat.msToTimecode(sec * 1000L + 500L, includeFrames = true).takeLast(3),
-                            color = ApexPalette.NeonCyan.copy(alpha = 0.7f),
-                            fontSize = 8.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
                 }
             }
         }
@@ -1614,12 +1629,14 @@ private fun TimelineVideoLayerRow(
     // local state during the drag so a trim never spams undo entries).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
+    // CapCut-style flat row: no border/radius — thumbnails only, with
+    // the sidebar pill carrying the layer identity. Vertical padding
+    // centres the content box in the row (40dp box in 48dp, 26dp in
+    // 32dp empty) so chips stay aligned with the sidebar pills.
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
             .background(if (isHidden) Color(0xFF0B0D14) else Color(0xFF0F1420))
-            .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .padding(vertical = if (clips.isEmpty()) 3.dp else 4.dp)
     ) {
         if (isHidden) {
             Text(
@@ -1633,10 +1650,10 @@ private fun TimelineVideoLayerRow(
 
         // Compact empty rows (32dp from the caller): the content box shrinks
         // so the "+ Add clip" affordance fits without overflowing into
-        // the next row. Full rows keep the 44dp box (32dp chip + 10dp
-        // keyframe strip + spacing).
+        // the next row. Full rows keep the 40dp box (30dp chip + 10dp
+        // keyframe strip).
         val compactEmpty = clips.isEmpty()
-        Box(modifier = Modifier.fillMaxWidth().height(if (compactEmpty) 26.dp else 44.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(if (compactEmpty) 26.dp else 40.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 // Speed-ramped clips occupy their OUTPUT length.
@@ -1669,7 +1686,7 @@ private fun TimelineVideoLayerRow(
                                 IntOffset(trimStartDxPx.roundToInt(), 0)
                             }
                             .width(liveChipWidthDp.coerceAtLeast(24.dp))
-                            .height(32.dp)
+                            .height(30.dp)
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(5.dp))
                             .background(
@@ -1762,22 +1779,9 @@ private fun TimelineVideoLayerRow(
                                 }
                             }
                         }
-                        // Clip name badge (bottom-left).
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(2.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Color.Black.copy(alpha = 0.55f))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                clip.name.ifEmpty { "OVL$layerIndex" },
-                                color = Color.White,
-                                fontSize = 8.sp,
-                                maxLines = 1
-                            )
-                        }
+                        // (No name badge: CapCut-style overlay chips are
+                        // thumbnails only; the layer identity lives in
+                        // the sidebar pill.)
                         if (isLocked) {
                             Icon(
                                 Icons.Default.Lock,
@@ -2344,17 +2348,17 @@ private fun TimelineVideoTrack(
         starts
     }
 
+    // CapCut-style flat filmstrip: no border, radius or padding —
+    // the clips run edge to edge, with the transition junction badge
+    // as the boundary marker between them.
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF0F121C))
-            .border(1.dp, Color(0xFF22293A), RoundedCornerShape(8.dp))
-            .padding(vertical = 3.dp, horizontal = 4.dp)
+            .background(Color(0xFF0A0A0F))
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             videoClips.forEachIndexed { index, clip ->
                 val isSelected = clip.id == selectedClipId
@@ -2407,7 +2411,7 @@ private fun TimelineVideoTrack(
                                 alpha = 0.92f
                             }
                         }
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(4.dp))
                         .background(
                             if (isMultiSelected) Color(0xFF3A2E00)
                             else if (isSelected) Color(0xFF101623)
@@ -2420,7 +2424,7 @@ private fun TimelineVideoTrack(
                             // Mockup: selected clip gets a teal border highlight.
                             else if (isSelected) ApexPalette.NeonCyan
                             else Color(0xFF2E384D),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(4.dp)
                         )
                         .pointerInput(clip.id, isSelected) {
                             // Direct finger-drag reorder for the selected clip (no long-press needed).
@@ -2498,29 +2502,6 @@ private fun TimelineVideoTrack(
                                         }
                                     }
                                 }
-                            }
-                        }
-
-                        // Film perforations (mockup detail).
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(7.dp)
-                                .padding(horizontal = 5.dp)
-                        ) {
-                            val dotW = 2.5.dp.toPx()
-                            val dotH = 4.dp.toPx()
-                            val gap = 5.dp.toPx()
-                            var x = 0f
-                            val cy = size.height / 2f
-                            while (x + dotW <= size.width) {
-                                drawRoundRect(
-                                    color = ApexPalette.NeonCyan.copy(alpha = 0.75f),
-                                    topLeft = Offset(x, cy - dotH / 2f),
-                                    size = Size(dotW, dotH),
-                                    cornerRadius = CornerRadius(1.dp.toPx())
-                                )
-                                x += dotW + gap
                             }
                         }
 
@@ -2711,20 +2692,21 @@ private fun TimelineVideoTrack(
                 )
             }
 
-            // Add clip button at end of track
+            // CapCut-style white "+" at the end of the main track.
             Box(
                 modifier = Modifier
-                    .size(width = 48.dp, height = 54.dp)
+                    .size(40.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF141926))
-                    .border(1.dp, Color(0xFF26334A), RoundedCornerShape(6.dp))
+                    .background(Color.White)
                     .clickable(onClick = onAddClip),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Clip", tint = ApexPalette.NeonCyan, modifier = Modifier.size(16.dp))
-                    Text("Add", color = Color(0xFF94A3B8), fontSize = 8.sp)
-                }
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Clip",
+                    tint = Color.Black,
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
     }
@@ -3307,6 +3289,9 @@ private fun TimelinePlayhead(
     isSnapped: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // CapCut-style: a thin (2dp) white vertical line, full height —
+    // no handle, no bubble. Scrubbing lives on the ruler, not the
+    // playhead, so the handle was dead affordance.
     Box(
         modifier = modifier
             .offset(x = playheadX - 1.dp)
@@ -3315,28 +3300,6 @@ private fun TimelinePlayhead(
             .zIndex(200f)
             .background(if (isSnapped) ApexPalette.NeonCyan else Color.White)
     )
-
-    // Mockup: small downward triangle handle at the top of the playhead —
-    // cyan fill with a white outline.
-    Box(
-        modifier = Modifier
-            .offset(x = (playheadX - 9.dp).coerceAtLeast(0.dp), y = 0.dp)
-            .zIndex(210f)
-            .size(width = 18.dp, height = 14.dp)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val triangle = Path().apply {
-                moveTo(0f, 0f)
-                lineTo(w, 0f)
-                lineTo(w / 2f, h)
-                close()
-            }
-            drawPath(triangle, color = ApexPalette.NeonCyan)
-            drawPath(triangle, color = Color.White, style = Stroke(width = 1.5.dp.toPx()))
-        }
-    }
 }
 
 /**
@@ -3538,18 +3501,23 @@ private fun TimelineTransitionJunctionBadge(
         TransitionLibrary.getById(transition?.type)
     }
 
+    // CapCut-style boundary badge: a small WHITE square at the clip
+    // boundary when no transition is set (tap = add transition); a
+    // dark pill with the transition icon + label when one is set.
     Box(
         modifier = modifier
-            .width(if (hasTransition) 36.dp else 26.dp)
-            .height(42.dp)
+            .size(
+                width = if (hasTransition) 38.dp else 26.dp,
+                height = if (hasTransition) 30.dp else 26.dp
+            )
             .clip(RoundedCornerShape(6.dp))
             .background(
                 if (hasTransition) Color(0xFF1E1A33)
-                else Color(0xFF141824)
+                else Color.White
             )
             .border(
                 width = if (hasTransition) 1.5.dp else 1.dp,
-                color = if (hasTransition) ApexPalette.NeonCyan else Color(0xFF2E384D),
+                color = if (hasTransition) ApexPalette.NeonCyan else Color(0xFFCBD5E1),
                 shape = RoundedCornerShape(6.dp)
             )
             .clickable(onClick = onClick)
@@ -3583,12 +3551,12 @@ private fun TimelineTransitionJunctionBadge(
                 Icon(
                     imageVector = Icons.Default.Transform,
                     contentDescription = "Add Transition",
-                    tint = Color(0xFF64748B),
+                    tint = Color(0xFF0F172A),
                     modifier = Modifier.size(12.dp)
                 )
                 Text(
                     "+",
-                    color = Color(0xFF94A3B8),
+                    color = Color(0xFF0F172A),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )

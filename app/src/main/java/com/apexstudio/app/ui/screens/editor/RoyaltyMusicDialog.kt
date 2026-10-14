@@ -100,7 +100,7 @@ fun RoyaltyMusicDialog(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(FreeRoyaltyMusic.CATALOG) { track ->
+            items(FreeRoyaltyMusic.CATALOG, key = { it.id }) { track ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

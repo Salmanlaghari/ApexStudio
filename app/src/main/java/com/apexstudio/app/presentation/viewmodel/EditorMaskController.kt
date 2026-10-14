@@ -68,7 +68,7 @@ fun EditorViewModel.moveTextOverlayAtPlayhead(
         }
         return
     }
-    val playheadMs = _state.value.playerPositionMs
+    val playheadMs = livePlayheadMs()
     val cx = newX.coerceIn(0.04f, 0.96f)
     val cy = newY.coerceIn(0.06f, 0.94f)
     updateTextOverlay(clipId, overlayId) { ov ->

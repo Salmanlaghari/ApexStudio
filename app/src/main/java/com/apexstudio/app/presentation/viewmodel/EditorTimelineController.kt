@@ -6,20 +6,49 @@ import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Minimum interval between [EditorState] position mirrors. The live
+ * playhead ([EditorViewModel.playerPositionFlow]) still ticks at ~30Hz,
+ * but the state copy is capped at ~10Hz so playback doesn't recompose
+ * the whole editor 30x/s.
+ */
+private const val POSITION_STATE_SYNC_MIN_INTERVAL_MS = 100L
 
-fun EditorViewModel.togglePlay() = _state.update { it.copy(isPlaying = !it.isPlaying) }
 
-fun EditorViewModel.setPlaying(v: Boolean) = _state.update { it.copy(isPlaying = v) }
+fun EditorViewModel.togglePlay() = setPlaying(!_state.value.isPlaying)
 
-fun EditorViewModel.seekTo(ms: Long) = _state.update {
-    val clamped = ms.coerceIn(0, it.durationMs)
-    it.copy(currentTimeMs = clamped, playerPositionMs = clamped)
+fun EditorViewModel.setPlaying(v: Boolean) {
+    _state.update { it.copy(isPlaying = v) }
+    // Pausing: flush the live position into the state mirror so every
+    // state reader (timecode, trim panel, split) sees the exact frame
+    // playback stopped on, not a up-to-100ms-stale mirror.
+    if (!v) {
+        val live = livePlayheadMs()
+        lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
+        _state.update { it.copy(playerPositionMs = live, currentTimeMs = live) }
+    }
 }
 
-fun EditorViewModel.stepFrame(forward: Boolean) = _state.update {
+fun EditorViewModel.seekTo(ms: Long) {
+    // Seek: the live value AND the state mirror move together, so the
+    // playhead, timecode and every action read the same position.
+    val clamped = ms.coerceIn(0, _state.value.durationMs)
+    _playerPosition.value = clamped
+    lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
+    _state.update {
+        it.copy(currentTimeMs = clamped, playerPositionMs = clamped)
+    }
+}
+
+fun EditorViewModel.stepFrame(forward: Boolean) {
+    // Step from the LIVE playhead: the state mirror can lag it by up to
+    // 100ms, and stepping from the stale mirror would jump backwards.
     val step = 33L
-    val next = if (forward) it.currentTimeMs + step else (it.currentTimeMs - step).coerceAtLeast(0)
-    it.copy(currentTimeMs = next, playerPositionMs = next)
+    val base = livePlayheadMs()
+    val next = if (forward) base + step else (base - step).coerceAtLeast(0)
+    _playerPosition.value = next
+    lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
+    _state.update { it.copy(currentTimeMs = next, playerPositionMs = next) }
 }
 
 fun EditorViewModel.setZoom(z: Float) = _state.update { it.copy(zoomLevel = z.coerceIn(0.2f, 4f)) }
@@ -58,15 +87,21 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
 }
 
 /**
- * Single source of truth for the playhead: [playerPositionMs] IS the
- * position (driven by player.currentPosition in the EditorScreen loop).
- * [currentTimeMs] is kept in lock-step here so the two clocks can never
- * diverge — the old split (playerPositionMs advancing during playback
- * while currentTimeMs froze at the last seek) made text-overlay timing
- * and cut-at-playhead read a stale playhead.
+ * Single source of truth for the playhead: the LIVE flow
+ * ([EditorViewModel.playerPositionFlow]) IS the position (driven by
+ * player.currentPosition in the EditorScreen loop). The [EditorState]
+ * copy ([playerPositionMs] / [currentTimeMs]) is a ~10Hz mirror so
+ * playback ticks don't recompose the whole editor — see
+ * [EditorViewModel._playerPosition]. Seeks / pauses / user actions
+ * force a mirror sync ([forceStateSync]).
  */
-fun EditorViewModel.setPlayerPosition(ms: Long) = _state.update {
-    it.copy(playerPositionMs = ms, currentTimeMs = ms)
+fun EditorViewModel.setPlayerPosition(ms: Long, forceStateSync: Boolean = false) {
+    _playerPosition.value = ms
+    val now = android.os.SystemClock.uptimeMillis()
+    if (forceStateSync || now - lastPositionStateSyncAtMs >= POSITION_STATE_SYNC_MIN_INTERVAL_MS) {
+        lastPositionStateSyncAtMs = now
+        _state.update { it.copy(playerPositionMs = ms, currentTimeMs = ms) }
+    }
 }
 
 fun EditorViewModel.setPlayerDuration(ms: Long) = _state.update { it.copy(playerDurationMs = ms) }
@@ -173,10 +208,18 @@ fun EditorViewModel.applySpeedCurvePreset(clipId: String, preset: SpeedCurveMath
  * into the new total so it can never strand past the end.
  */
 fun EditorViewModel.refreshTimelineDuration() {
+    // Clamp from the LIVE playhead (the state mirror can lag it by up
+    // to 100ms) and mirror the result back so live and state agree.
+    // Only sync live when the update actually ran (project present) —
+    // otherwise a no-op refresh would snap the live playhead back to
+    // the (possibly stale) state mirror.
+    val liveBefore = livePlayheadMs()
+    var clamped: Long? = null
     _state.update { s ->
         val clips = s.project?.clips ?: return@update s
         val newDuration = computeTimelineDurationMs(clips, s.project?.audioTracks ?: emptyList())
-        val newPlayhead = s.playerPositionMs.coerceIn(0L, newDuration)
+        val newPlayhead = liveBefore.coerceIn(0L, newDuration)
+        clamped = newPlayhead
         s.copy(
             project = s.project?.copy(clips = clips, durationMs = newDuration),
             durationMs = newDuration,
@@ -184,6 +227,7 @@ fun EditorViewModel.refreshTimelineDuration() {
             currentTimeMs = newPlayhead
         )
     }
+    clamped?.let { _playerPosition.value = it }
     // updateClip() already persisted once with the pre-refresh
     // duration; persist again so disk state matches.
     persistProject()
@@ -271,7 +315,7 @@ fun EditorViewModel.setKeyframePanelOpen(open: Boolean) =
 fun EditorViewModel.toggleKeyframeAtPlayhead() {
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val playheadMs = _state.value.playerPositionMs
+    val playheadMs = livePlayheadMs()
     val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
     if (existingKf != null) {
         removeKeyframe(clipId, existingKf.id)
@@ -285,7 +329,7 @@ fun EditorViewModel.toggleKeyframeAtPlayhead() {
 fun EditorViewModel.jumpToNextKeyframe() {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
         ?: _state.value.project?.clips?.firstOrNull() ?: return
-    val currentMs = _state.value.playerPositionMs
+    val currentMs = livePlayheadMs()
     val next = clip.keyframes.keyframes.filter { it.timeMs > currentMs + 50L }.minByOrNull { it.timeMs }
     if (next != null) {
         seekTo(next.timeMs)
@@ -296,7 +340,7 @@ fun EditorViewModel.jumpToNextKeyframe() {
 fun EditorViewModel.jumpToPrevKeyframe() {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
         ?: _state.value.project?.clips?.firstOrNull() ?: return
-    val currentMs = _state.value.playerPositionMs
+    val currentMs = livePlayheadMs()
     val prev = clip.keyframes.keyframes.filter { it.timeMs < currentMs - 50L }.maxByOrNull { it.timeMs }
     if (prev != null) {
         seekTo(prev.timeMs)
@@ -370,7 +414,7 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     pushUndo()
-    val playhead = _state.value.playerPositionMs
+    val playhead = livePlayheadMs()
     val clipDuration = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(600L)
     val animDuration = minOf(1200L, clipDuration)
     val startMs = if (playhead >= clip.timelineOffsetMs && playhead < clip.timelineOffsetMs + clipDuration) {
@@ -413,6 +457,11 @@ fun EditorViewModel.redo() = viewModelScope.launch {
 
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     pushUndo()
+    // Clamp from the LIVE playhead (the state mirror can lag it by up
+    // to 100ms) and mirror the result back so live and state agree.
+    // Only sync live when the update actually ran (project present).
+    val liveBefore = livePlayheadMs()
+    var clamped: Long? = null
     _state.update { s ->
         val proj = s.project ?: return@update s
         val updatedClips = proj.clips.map { c ->
@@ -426,7 +475,8 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
             } else c
         }
         val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
-        val newPlayhead = s.playerPositionMs.coerceIn(0L, newDuration)
+        val newPlayhead = liveBefore.coerceIn(0L, newDuration)
+        clamped = newPlayhead
         s.copy(
             project = proj.copy(clips = updatedClips, durationMs = newDuration),
             durationMs = newDuration,
@@ -436,6 +486,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
             canRedo = redoStack.isNotEmpty()
         )
     }
+    clamped?.let { _playerPosition.value = it }
     persistProject()
 }
 
@@ -446,7 +497,7 @@ fun EditorViewModel.closeTrimPanel() = _state.update { it.copy(trimPanelOpen = f
 
 
 fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
-    val playhead = _state.value.playerPositionMs
+    val playhead = livePlayheadMs()
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
     trimClip(clipId, newStart, clip.trimEndMs)
@@ -454,7 +505,7 @@ fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
 
 
 fun EditorViewModel.setTrimEndAtPlayhead(clipId: String) {
-    val playhead = _state.value.playerPositionMs
+    val playhead = livePlayheadMs()
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
     trimClip(clipId, clip.trimStartMs, newEnd)
@@ -847,7 +898,7 @@ internal fun EditorViewModel.pushUndo() {
  */
 fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val playheadMs = _state.value.playerPositionMs
+    val playheadMs = livePlayheadMs()
     val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
     if (existingKf != null) {
         removeKeyframe(clipId, existingKf.id)
@@ -887,7 +938,7 @@ fun EditorViewModel.moveKeyframe(clipId: String, keyframeId: String, newTimeMs: 
 fun EditorViewModel.toggleTextKeyframeAtPlayhead(clipId: String, overlayId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val overlay = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
-    val playheadMs = _state.value.playerPositionMs
+    val playheadMs = livePlayheadMs()
     val existingKf = overlay.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
     if (existingKf != null) {
         updateTextOverlay(clipId, overlayId) { ov ->

@@ -160,6 +160,14 @@ fun TimelineTrackArea(
     // id/uri/trim), cached in this map. A per-second generated fallback
     // is seeded first so the lane never shows a dark strip; the real
     // frames replace it when ready.
+    //
+    // Bitmaps are RECYCLED when replaced or when their clip leaves the
+    // project: without this, every trim (which re-extracts) leaked the
+    // old set's native memory, and removed clips' bitmaps lingered
+    // until GC finalization. The map is bounded PER CLIP by the
+    // extractor (≤180 frames); it intentionally holds every live clip
+    // (evicting a visible clip would blank its row), so there is no
+    // global eviction — the bound is per-clip.
     val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
     filmstripClips.forEach { clip ->
         LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
@@ -172,15 +180,28 @@ fun TimelineTrackArea(
             }
             try {
                 val real = extractClipThumbnails(context, clip)
-                if (real.isNotEmpty()) thumbnailsByClip[clip.id] = real
+                if (real.isNotEmpty()) {
+                    // Recycle the seeded fallback set before replacing —
+                    // it is never displayed again after this.
+                    thumbnailsByClip.remove(clip.id)?.values?.forEach { bmp ->
+                        if (!bmp.isRecycled) bmp.recycle()
+                    }
+                    thumbnailsByClip[clip.id] = real
+                }
             } catch (e: Exception) {
                 Log.w("TimelineTrackArea", "Thumbnail extraction failed for ${clip.id}: ${e.message}")
             }
         }
     }
-    // Drop thumbnails for clips that no longer exist.
+    // Drop thumbnails for clips that no longer exist (recycling them).
     LaunchedEffect(filmstripClips.map { it.id }) {
-        thumbnailsByClip.keys.retainAll(filmstripClips.map { it.id }.toSet())
+        val alive = filmstripClips.map { it.id }.toSet()
+        val removed = thumbnailsByClip.keys - alive
+        removed.forEach { id ->
+            thumbnailsByClip.remove(id)?.values?.forEach { bmp ->
+                if (!bmp.isRecycled) bmp.recycle()
+            }
+        }
     }
 
     Column(

@@ -139,7 +139,7 @@ fun FilterPanel(
                     onClick = { onFilterSelected(null) }
                 )
             }
-            items(presets) { preset ->
+            items(presets, key = { it.id }) { preset ->
                 val custom = com.apexstudio.app.data.filter.FilterThumbnailAssetHandler.getCustomThumbnail(LocalContext.current, preset.id)
                 FilterChip(
                     label = preset.name,

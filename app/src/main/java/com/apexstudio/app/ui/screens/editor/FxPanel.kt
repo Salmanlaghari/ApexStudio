@@ -115,7 +115,7 @@ fun FxPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(FxPreset.categories()) { cat ->
+            items(FxPreset.categories(), key = { it }) { cat ->
                 val selected = cat == activeCategory
                 Box(
                     modifier = Modifier
@@ -158,7 +158,7 @@ fun FxPanel(
                     onClick = { onFxSelected(null) }
                 )
             }
-            items(displayedPresets) { preset ->
+            items(displayedPresets, key = { it.id }) { preset ->
                 FxChip(
                     label = preset.label,
                     icon = iconFor(preset),

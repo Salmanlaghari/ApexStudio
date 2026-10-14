@@ -261,6 +261,20 @@ fun VideoTimeline(
         else if (kotlin.math.abs(playheadMs - uiPlayheadMs) > 500L) uiPlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
     }
     val safePlayheadMs = uiPlayheadMs
+    // Playhead provider: reads the 10Hz-sampled position at CALL time
+    // (drag end / draw phase), never during composition. Rows receive
+    // this stable lambda instead of a Long, so playhead ticks never
+    // recompose clip rows / waveform bars — they only re-read on demand.
+    // The lambda is remembered once and reads the State object, so its
+    // identity never changes across recompositions (rows stay skipped).
+    val playheadMsProvider = remember { { uiPlayheadMs } }
+    // Snap edges (every clip start/end across all video tracks) —
+    // hoisted + remembered: the old inline flatMap at the row call site
+    // rebuilt this list on every timeline recomposition (10x/s during
+    // playback) for every overlay row.
+    val allSnapEdges = remember(clips) {
+        clips.flatMap { listOf(it.timelineOffsetMs, it.timelineOffsetMs + it.effectiveDurationMs()) }
+    }
     val effectiveZoom = timelineZoom.coerceIn(0.5f, 10.0f)
 
     // Scaling: dp per second based on zoom factor (scales up to 540dp/sec for frame-level editing)
@@ -589,11 +603,13 @@ fun VideoTimeline(
                             )
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
+                            // No playhead param: TimelineVideoTrack never
+                            // used it (dead param) — the playhead is drawn
+                            // by TimelinePlayheadOverlay, not the V1 row.
                             TimelineVideoTrack(
                                 videoClips = videoClips,
                                 selectedClipId = selectedClipId,
                                 msToDp = msToDp,
-                                playheadMs = safePlayheadMs,
                                 thumbnailsByClip = thumbnailsByClip,
                                 draggingClipId = draggingClipId,
                                 dragAccumulatedOffsetPx = dragAccumulatedOffsetPx,
@@ -747,15 +763,14 @@ fun VideoTimeline(
                                     onAddClip = { onAddClipToLayer(layer) },
                                     onMoveClipOffset = onMoveClipOffset,
                                     onDeleteClip = onDeleteClip,
-                                    playheadMs = playheadMs,
+                                    // Provider, not the ticking Long: rows
+                                    // read the playhead only at drag end
+                                    // (snap), so ticks never recompose them.
+                                    playheadMsProvider = playheadMsProvider,
                                     // Snap edges: every clip's start/end
-                                    // across all video tracks.
-                                    snapEdges = clips.flatMap {
-                                        listOf(
-                                            it.timelineOffsetMs,
-                                            it.timelineOffsetMs + it.effectiveDurationMs()
-                                        )
-                                    },
+                                    // across all video tracks (remembered
+                                    // above, not rebuilt per recomposition).
+                                    snapEdges = allSnapEdges,
                                     onTrimClip = onTrimClip,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -835,7 +850,7 @@ fun VideoTimeline(
                                 audioWaveform = audioWaveform,
                                 beatMarkersMs = beatMarkersMs,
                                 snapToBeat = snapToBeat,
-                                playheadMs = safePlayheadMs,
+                                playheadMsProvider = playheadMsProvider,
                                 selectedAudioTrackId = selectedAudioTrackId,
                                 onSelectAudioTrack = onSelectAudioTrack,
                                 onAddAudio = onAddAudioTrack,
@@ -852,7 +867,7 @@ fun VideoTimeline(
                                 audioWaveform = audioWaveform,
                                 beatMarkersMs = beatMarkersMs,
                                 snapToBeat = snapToBeat,
-                                playheadMs = safePlayheadMs,
+                                playheadMsProvider = playheadMsProvider,
                                 selectedAudioTrackId = selectedAudioTrackId,
                                 onSelectAudioTrack = onSelectAudioTrack,
                                 onAddAudio = onOpenVoice,
@@ -1587,9 +1602,13 @@ private fun TimelineVideoLayerRow(
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit,
     onDeleteClip: (String) -> Unit,
     modifier: Modifier = Modifier,
-    // Playhead + every clip edge in the project: drag-to-move snaps
-    // the overlay's start/end to the nearest of these (200ms window).
-    playheadMs: Long = 0L,
+    // Playhead provider + every clip edge in the project: drag-to-move
+    // snaps the overlay's start/end to the nearest of these (200ms
+    // window). The playhead is a PROVIDER (read at drag end only), not
+    // a ticking Long — passing a Long recomposed this row on every
+    // playhead tick just to recompute a remember nobody reads unless
+    // a drag is in flight.
+    playheadMsProvider: () -> Long = { 0L },
     snapEdges: List<Long> = emptyList(),
     // Trim commit (called ONCE at drag end — the trim handles keep
     // local state during the drag so a trim never spams undo entries).
@@ -1631,13 +1650,9 @@ private fun TimelineVideoLayerRow(
                 var trimEndDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
                 val clipThumbs = thumbnailsByClip[clip.id] ?: emptyMap()
                 val density = LocalDensity.current
-                // Snap targets: playhead + every OTHER clip's start/end.
-                val snapTargets = remember(snapEdges, playheadMs, clip) {
-                    (snapEdges + playheadMs).filter {
-                        it != clip.timelineOffsetMs &&
-                            it != clip.timelineOffsetMs + clipDur
-                    }.distinct()
-                }
+                // Snap targets are computed at drag END (the only place
+                // they're read) from the live playhead — never
+                // remembered during composition.
                 // Live chip width while a trim handle is dragging.
                 val liveChipWidthDp = clipWidthDp -
                     with(density) { trimStartDxPx.toDp() } +
@@ -1684,6 +1699,13 @@ private fun TimelineVideoLayerRow(
                                             // Snap the start (and the end)
                                             // to the nearest playhead /
                                             // clip edge within 200ms.
+                                            // Targets: playhead (read live
+                                            // at drag end) + every OTHER
+                                            // clip's start/end.
+                                            val snapTargets = (snapEdges + playheadMsProvider()).filter {
+                                                it != clip.timelineOffsetMs &&
+                                                    it != clip.timelineOffsetMs + clipDur
+                                            }.distinct()
                                             var snapped = rawOffset
                                             var bestDist = 200L
                                             for (edge in snapTargets) {
@@ -2288,7 +2310,6 @@ private fun TimelineVideoTrack(
     videoClips: List<MediaClip>,
     selectedClipId: String?,
     msToDp: Float,
-    playheadMs: Long,
     thumbnailsByClip: Map<String, Map<Int, Bitmap>>,
     draggingClipId: String?,
     dragAccumulatedOffsetPx: Float,
@@ -3039,7 +3060,10 @@ private fun TimelineAudioTrack(
     audioWaveform: FloatArray,
     beatMarkersMs: List<Long>,
     snapToBeat: Boolean,
-    playheadMs: Long,
+    // Playhead provider (read in draw phase only): passing the ticking
+    // Long recomposed every audio row on every playhead tick just to
+    // re-tint 120 waveform boxes.
+    playheadMsProvider: () -> Long = { 0L },
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
     onAddAudio: () -> Unit = {},
@@ -3075,7 +3099,7 @@ private fun TimelineAudioTrack(
                 AudioWaveformBars(
                     samples = samples,
                     durationMs = durationMs,
-                    playheadMs = playheadMs,
+                    playheadMsProvider = playheadMsProvider,
                     beatMarkersMs = beatMarkersMs,
                     isMuted = isMuted,
                     modifier = Modifier.fillMaxSize()
@@ -3114,7 +3138,7 @@ private fun TimelineAudioTrack(
                     isSelected = isSelected,
                     samples = trackSamples,
                     durationMs = durationMs,
-                    playheadMs = playheadMs,
+                    playheadMsProvider = playheadMsProvider,
                     beatMarkersMs = beatMarkersMs,
                     isMuted = isMuted || track.isMuted,
                     onSelect = { onSelectAudioTrack(track.id) },
@@ -3136,7 +3160,8 @@ private fun AudioTrackLaneRow(
     isSelected: Boolean,
     samples: FloatArray,
     durationMs: Long,
-    playheadMs: Long,
+    // Playhead provider, read in the waveform's draw phase only.
+    playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
     isMuted: Boolean,
     onSelect: () -> Unit,
@@ -3194,7 +3219,7 @@ private fun AudioTrackLaneRow(
             AudioWaveformBars(
                 samples = samples,
                 durationMs = durationMs,
-                playheadMs = playheadMs,
+                playheadMsProvider = playheadMsProvider,
                 beatMarkersMs = beatMarkersMs,
                 isMuted = isMuted,
                 barColor = accent,
@@ -3207,57 +3232,65 @@ private fun AudioTrackLaneRow(
 /**
  * Shared waveform bar renderer used by the A1 lane rows: full-width bars
  * with played-progress tinting and beat-marker highlights.
+ *
+ * Drawn in ONE Canvas (draw phase), not 120 Box composables: the old
+ * Row-of-Boxes recomposed 120 composables on every playhead tick per
+ * audio row (1200+ compositions/sec), and the per-bar beat scan was
+ * O(bars × markers) inside composition. The playhead is read in the
+ * draw phase (redraw on ticks, never recomposition); beat bars are
+ * precomputed once per marker set.
  */
 @Composable
 private fun AudioWaveformBars(
     samples: FloatArray,
     durationMs: Long,
-    playheadMs: Long,
+    playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
     isMuted: Boolean,
     barColor: Color = ApexPalette.NeonCyan,
     modifier: Modifier = Modifier
 ) {
-    val barCount = 120
-    val progress = (playheadMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        repeat(barCount) { i ->
+    // Beat bars: the old per-bar window check (±1.2 bar widths) lit up
+    // to ~3 bars per marker — precompute the same set once here.
+    val beatBars = remember(beatMarkersMs, durationMs) {
+        val count = 120
+        val out = mutableSetOf<Int>()
+        for (beatMs in beatMarkersMs) {
+            val center = (beatMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f) * count).toInt()
+            for (d in -1..1) out.add((center + d).coerceIn(0, count - 1))
+        }
+        out
+    }
+    Canvas(modifier = modifier) {
+        val barCount = 120
+        // Draw-phase read: re-draws on playhead ticks, never recomposes.
+        val progress = (playheadMsProvider().toFloat() / durationMs.toFloat().coerceAtLeast(1f))
+            .coerceIn(0f, 1f)
+        val slotW = size.width / barCount
+        val barW = 2.dp.toPx()
+        val radius = 1.dp.toPx()
+        for (i in 0 until barCount) {
             val barFrac = i.toFloat() / barCount.toFloat()
-            val isPlayed = barFrac <= progress
-            val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
-            val amp = samples[sampleIdx].coerceIn(0.1f, 1.0f)
-
-            // Beat markers (from the Beats tool) render as bright bars
-            // whenever markers exist — independent of snap-to-beat.
-            val isBeat = beatMarkersMs.any { beatMs ->
-                val beatFrac = beatMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)
-                kotlin.math.abs(beatFrac - barFrac) < (1.2f / barCount)
+            val amp = if (samples.isEmpty()) {
+                0.1f
+            } else {
+                val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
+                samples[sampleIdx].coerceIn(0.1f, 1.0f)
             }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .fillMaxHeight(amp)
-                        .background(
-                            color = when {
-                                isMuted -> Color(0xFF475569)
-                                isBeat -> ApexPalette.NeonCyan
-                                isPlayed -> Color.White
-                                else -> barColor.copy(alpha = 0.85f)
-                            },
-                            shape = RoundedCornerShape(1.dp)
-                        )
-                )
+            val barH = size.height * amp
+            val x = i * slotW + (slotW - barW) / 2f
+            val color = when {
+                isMuted -> Color(0xFF475569)
+                i in beatBars -> ApexPalette.NeonCyan
+                barFrac <= progress -> Color.White
+                else -> barColor.copy(alpha = 0.85f)
             }
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(x, (size.height - barH) / 2f),
+                size = Size(barW, barH),
+                cornerRadius = CornerRadius(radius, radius)
+            )
         }
     }
 }

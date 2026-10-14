@@ -209,7 +209,7 @@ fun TextPanel(
                     }
                 }
             }
-            items(overlays) { o ->
+            items(overlays, key = { it.id }) { o ->
                 val sel = o.id == selectedId
                 Box(
                     modifier = Modifier
@@ -515,7 +515,7 @@ fun TextPanel(
                         modifier = Modifier.width(44.dp)
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        items(textColors()) { c ->
+                        items(textColors(), key = { it }) { c ->
                             Box(
                                 modifier = Modifier
                                     .size(24.dp)
@@ -758,7 +758,7 @@ fun TextPanel(
                                 Text("None", color = if (sel) ApexPalette.NeonCyan else Color.White, fontSize = 10.sp)
                             }
                         }
-                        items(TEXT_GRADIENTS) { (label, start, end) ->
+                        items(TEXT_GRADIENTS, key = { it.first }) { (label, start, end) ->
                             val sel = selected.gradientStartArgb == start && selected.gradientEndArgb == end
                             Box(
                                 modifier = Modifier
@@ -1036,7 +1036,7 @@ fun TextPanel(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(TextPresetEngine.categories) { cat ->
+                    items(TextPresetEngine.categories, key = { it }) { cat ->
                         val isSel = cat == selectedCategory
                         Box(
                             modifier = Modifier
@@ -1063,7 +1063,7 @@ fun TextPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(categoryPresets) { preset ->
+                    items(categoryPresets, key = { it.id }) { preset ->
                         val isCurrent = selected.presetId == preset.id
                         Box(
                             modifier = Modifier

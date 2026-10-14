@@ -425,7 +425,7 @@ fun EditorScreen(
 
     LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks) {
         val tracks = state.project?.audioTracks ?: emptyList()
-        audioPlaybackManager.sync(state.isPlaying, state.playerPositionMs, tracks)
+        audioPlaybackManager.sync(state.isPlaying, vm.playerPositionFlow.value, tracks)
         val player = exoPlayer ?: return@LaunchedEffect
         if (state.isPlaying) {
             if (player.playbackState == Player.STATE_ENDED) {
@@ -524,12 +524,14 @@ fun EditorScreen(
                         rawPos
                     }
                 } else {
-                    state.playerPositionMs + (delta * state.playbackSpeed).toLong()
+                    // Player-less playback (photo clips): extrapolate from
+                    // the LIVE position, not the ~10Hz state mirror.
+                    vm.playerPositionFlow.value + (delta * state.playbackSpeed).toLong()
                 }
 
                 if (newPos >= totalDur) {
                     // Seamless loop back to 0 for continuous professional timeline playback
-                    vm.setPlayerPosition(0L)
+                    vm.setPlayerPosition(0L, forceStateSync = true)
                     exoPlayer?.seekTo(0L)
                     val tracks = state.project?.audioTracks ?: emptyList()
                     audioPlaybackManager.sync(true, 0L, tracks)

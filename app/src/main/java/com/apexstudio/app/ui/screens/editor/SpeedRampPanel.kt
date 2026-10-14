@@ -150,7 +150,7 @@ fun SpeedRampPanel(
             "10x" to 10.0f
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(extendedPresets) { (label, mult) ->
+            items(extendedPresets, key = { it.first }) { (label, mult) ->
                 val selected = kotlin.math.abs(sliderValue - mult) < 0.05f
                 SpeedPresetChip(
                     label = label,

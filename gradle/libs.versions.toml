@@ -14,6 +14,9 @@ coroutines = "1.9.0"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 androidxCore = "1.6.1"
+baselineprofile = "1.4.1"
+benchmark = "1.4.1"
+uiautomator = "2.3.0"
 robolectric = "4.14.1"
 roborazzi = "1.39.0"
 secrets = "2.0.1"
@@ -49,6 +52,12 @@ roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi
 roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule", version.ref = "roborazzi" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+# Baseline Profile (editor smoothness): profileinstaller ships the
+# generated baseline-prof.txt into release builds; benchmark-macro
+# drives the on-device generator (see BaselineProfileGenerator).
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "baselineprofile" }
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -59,3 +68,4 @@ google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
 secrets = { id = "com.google.android.libraries.mapsplatform.secrets-gradle-plugin", version.ref = "secrets" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprofile" }

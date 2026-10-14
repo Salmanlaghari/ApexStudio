@@ -103,7 +103,7 @@ fun TransmissionTemplatesPanel(
                     onClick = { onTemplateApplied(null) }
                 )
             }
-            items(templates) { template ->
+            items(templates, key = { it.id }) { template ->
                 TransmissionTemplateTile(
                     label = template.name,
                     sublabel = resolveTransmissionTemplateSublabel(template),

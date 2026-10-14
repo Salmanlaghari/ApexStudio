@@ -289,7 +289,7 @@ fun AdjustPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(tabItems) { item ->
+            items(tabItems, key = { it.id }) { item ->
                 val isSelected = item.id == selectedAdjustId
                 val valForDisplay = item.getValue(adjustments)
                 val modified = isModified(item, adjustments)

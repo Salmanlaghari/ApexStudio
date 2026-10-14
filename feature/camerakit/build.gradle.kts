@@ -44,9 +44,19 @@ android {
         }.getProperty("SNAP_CAMERA_KIT_TOKEN")
       }
       ?: ""
+    // Kilo SUGGESTIONs (token escaping): escape the token for a Java string
+    // literal so the generated BuildConfig field is always valid. The token
+    // is RAW here (env vars are raw; Properties.load() already unescapes
+    // local.properties values), so backslash-escaping is required and
+    // correct — a raw backslash must become "\\" in source. Newlines /
+    // carriage returns / tabs are escaped (not stripped) so the value
+    // round-trips exactly instead of breaking the literal.
     val escapedToken = snapCameraKitToken
       .replace("\\", "\\\\")
       .replace("\"", "\\\"")
+      .replace("\n", "\\n")
+      .replace("\r", "\\r")
+      .replace("\t", "\\t")
     buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"$escapedToken\"")
   }
 

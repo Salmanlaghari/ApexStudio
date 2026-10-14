@@ -34,7 +34,7 @@ private data class StickerManifest(
 /** One sticker ready for the picker UI. */
 data class StickerEntry(
     val id: String,
-    /** Relative asset path, e.g. "stickers/love/red-heart.png". */
+    /** Relative asset path, e.g. "stickers/love/red-heart.webp". */
     val assetUri: String,
     val name: String,
     val category: String,

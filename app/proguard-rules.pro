@@ -15,7 +15,7 @@
     static <1>$Companion Companion;
 }
 -if @kotlinx.serialization.Serializable class **
--keepclassmembers class <1>$<2> {
+-keepclassmembers class <1>$Companion {
     kotlinx.serialization.KSerializer serializer(...);
 }
 
@@ -40,22 +40,20 @@
     public static final android.os.Parcelable$Creator *;
 }
 
-# --- LUT assets (loaded via dynamic paths — keep from resource shrinking) ---
--keepres "assets/luts/*"
+# NOTE (app-size): no keep rule needed for assets/ - AGP shrinkResources
+# only shrinks res/ resources, never assets/. (R8 rejects both forms of
+# this option as unknown, which broke the release build.)
 
 # --- Phase 2: R8 Guard additions ---
-# Snap Camera Kit SDK (restored PR #127 — reflection/JNI heavy)
--keep class com.snap.camerakit.** { *; }
--keep class com.snap.** { *; }
--dontwarn com.snap.**
+# (Snap Camera Kit keep rules moved to :feature:camerakit/consumer-rules.pro,
+# shipped with that module.)
 
 # Media3 (bundles own rules, belt-and-braces for Transformer GlEffects)
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 
-# Pack assets (loaded via dynamic asset paths — keep from resource shrinking)
--keepres "assets/packs/*"
--keepres "assets/stickers/*"
+# Pack/sticker assets: loaded via dynamic asset paths; assets/ are never
+# shrunk, so no keep rule is needed (see note above).
 
 # PackLoader data models are @Serializable — covered by kotlinx-serialization
 # rules above. GpuColorProfile / GpuFilterConfig are constructed reflectively
@@ -84,5 +82,3 @@
 -dontwarn com.airbnb.lottie.**
 
 # Phase 4: gl-transitions shader assets + Lottie animation assets
--keepres "assets/gl_transitions/*"
--keepres "assets/lottie/*"

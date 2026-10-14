@@ -59,14 +59,22 @@ object FilterThumbnailGenerator {
         val size = THUMB_SIZE
         if (context != null) {
             try {
-                val input = context.assets.open("filter_sample_portrait.jpg")
+                // App-size: the sample portrait is deduplicated — it lives only
+                // as R.drawable.filter_sample_portrait (used by the filter
+                // panels via painterResource). The old assets/ copy
+                // (filter_sample_portrait.jpg, 731 KB) was removed; this
+                // decodes the same drawable. The procedural fallback below
+                // still covers a missing resource.
+                val input = context.resources.openRawResource(
+                    com.apexstudio.app.R.drawable.filter_sample_portrait
+                )
                 val decoded = android.graphics.BitmapFactory.decodeStream(input)
                 input.close()
                 if (decoded != null) {
                     return centerCropAndScale(decoded, size)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Bundled filter sample portrait not found in assets, falling back to procedural image", e)
+                Log.w(TAG, "Bundled filter sample portrait not found, falling back to procedural image", e)
             }
         }
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)

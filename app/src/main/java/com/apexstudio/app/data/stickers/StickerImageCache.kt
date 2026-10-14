@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 
 /**
- * In-memory cache of decoded sticker PNGs (512px RGBA each).
+ * In-memory cache of decoded sticker images (512px RGBA each).
  *
  * Loaded lazily from `assets/stickers/...` on the calling thread — call
  * from a background dispatcher for first loads; subsequent reads are
@@ -17,7 +17,7 @@ class StickerImageCache(context: Context) {
     private val appContext = context.applicationContext
 
     // Byte-based budget: a 512×512 RGBA sticker is ~1 MB, so the cache
-    // holds roughly MAX_SIZE_KB worth of decoded PNGs instead of a fixed
+    // holds roughly MAX_SIZE_KB worth of decoded sticker bitmaps instead of a fixed
     // entry count that could balloon on large bitmaps.
     private val cache = object : LruCache<String, Bitmap>(MAX_SIZE_KB) {
         override fun sizeOf(key: String, value: Bitmap): Int =
@@ -25,7 +25,7 @@ class StickerImageCache(context: Context) {
     }
 
     /**
-     * Decode the sticker PNG at [assetPath] (e.g. "stickers/love/red-heart.png"),
+     * Decode the sticker image at [assetPath] (e.g. "stickers/love/red-heart.webp"),
      * or null when the asset is missing / undecodable.
      */
     @Synchronized

@@ -43,23 +43,6 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
 
-    // Snap Camera Kit API token: read from the SNAP_CAMERA_KIT_TOKEN environment
-    // variable (injected in CI from the GitHub Actions secret of the same name),
-    // falling back to local.properties for local builds. Never hardcode the token.
-    val snapCameraKitToken: String = System.getenv("SNAP_CAMERA_KIT_TOKEN")
-      ?: rootProject.file("local.properties").takeIf { it.exists() }?.let { propsFile ->
-        Properties().also { props ->
-          propsFile.inputStream().use { props.load(it) }
-        }.getProperty("SNAP_CAMERA_KIT_TOKEN")
-      }
-      ?: ""
-    // Escape every character that is special inside a Java string literal so the
-    // token survives verbatim into the generated BuildConfig field.
-    // (In Java source only backslash and the quote need escaping; '$' is literal.)
-    val escapedToken = snapCameraKitToken
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-    buildConfigField("String", "SNAP_CAMERA_KIT_TOKEN", "\"$escapedToken\"")
     // Royalty-free music library: free Jamendo API client ID (empty = offline mode).
     buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
@@ -163,18 +146,19 @@ dependencies {
   implementation("androidx.media3:media3-session:1.5.0")
   implementation("androidx.media3:media3-datasource:1.5.0")
 
-  // Snap Camera Kit SDK (AR lenses) — https://github.com/Snapchat/camera-kit-android-sdk
-  val cameraKitVersion = "1.50.0"
-  implementation("com.snap.camerakit:camerakit:$cameraKitVersion")
-  implementation("com.snap.camerakit:camerakit-kotlin:$cameraKitVersion")
-  implementation("com.snap.camerakit:support-camerax:$cameraKitVersion")
+  // Camera Kit SDK lives in :feature:camerakit (see that module's
+  // build.gradle.kts) — the app must not import the SDK directly, so the
+  // DFM follow-up (dynamic-feature + on-demand download) is mechanical.
+  implementation(project(":feature:camerakit"))
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
   implementation("com.google.mlkit:face-detection:16.1.7")
-  // Phase 3: on-device selfie segmentation for Background Remover pack.
-  implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+  // NOTE: ML Kit segmentation-selfie was removed (app-size work): it had zero
+  // imports — all person segmentation goes through MediaPipe Tasks Vision
+  // (PR-G, BackgroundReplaceEngine) with its model on-demand via PackManager.
+  // Keeping the dep would bundle its ~249 KB .tflite model asset for nothing.
 
   // Phase 4: GitHub open-source integrations (all Apache-2.0/MIT/OFL)
   // Lottie animated stickers/overlays — https://github.com/airbnb/lottie-android

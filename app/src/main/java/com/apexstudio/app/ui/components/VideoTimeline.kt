@@ -243,7 +243,13 @@ fun VideoTimeline(
     // (tiny composable). Everything else uses a 10Hz-sampled snapshot so
     // playback ticks don't recompose tracks/clips/thumbnails every frame.
     var uiPlayheadMs by remember { mutableStateOf(playheadMs.coerceIn(0L, safeDurationMs)) }
-    LaunchedEffect(playerPositionFlow) {
+    // The duration MUST be a key: this collector captures safeDurationMs
+    // from the composition that started it. Without the key it kept the
+    // FIRST composition's duration (empty project -> ~1000ms) forever and
+    // clamped the playhead to ~00:01 after a video was added — the ruler
+    // and auto-scroll froze near 00:00 while the preview timecode (which
+    // reads state directly) kept advancing.
+    LaunchedEffect(playerPositionFlow, safeDurationMs) {
         val flow = playerPositionFlow
         if (flow != null) {
             flow.sample(100).collect { uiPlayheadMs = it.coerceIn(0L, safeDurationMs) }
@@ -3203,11 +3209,18 @@ private fun TimelinePlayheadOverlay(
     scrollOffsetPx: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
-    val liveMs = if (playerPositionFlow != null) {
+    // The flow can stall (e.g. its collector was cancelled while a sheet
+    // opened) while state keeps advancing — the preview timecode reads
+    // state directly, so a stalled flow showed a frozen playhead next to
+    // a moving timecode. fallbackMs comes straight from the state-driven
+    // playheadMs param (via the snap sync above), so never let the
+    // rendered playhead fall BEHIND the authoritative state position.
+    val flowMs = if (playerPositionFlow != null) {
         playerPositionFlow.collectAsStateWithLifecycle().value
     } else {
         fallbackMs
     }
+    val liveMs = maxOf(flowMs, fallbackMs)
     val posMs = liveMs.coerceIn(0L, durationMs.coerceAtLeast(1L))
     // Content-space X (unscrolled); the scroll shift is applied as a
     // layer translation below, so scrolling never recomposes this.

@@ -61,8 +61,6 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.apexstudio.app.ui.components.AppTopBar
-import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
  * Snap Camera Kit lenses screen: live camera preview with an AR lens carousel.
@@ -84,7 +82,7 @@ fun LensesScreen(
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            AppTopBar(title = "Snap Lenses", onBack = onBack)
+            CameraKitTopBar(title = "Snap Lenses", onBack = onBack)
             TokenMissingMessage()
         }
         return
@@ -129,7 +127,7 @@ fun LensesScreen(
             }
         }
 
-        AppTopBar(title = "Snap Lenses", onBack = onBack)
+        CameraKitTopBar(title = "Snap Lenses", onBack = onBack)
 
         when {
             !deviceSupported -> UnsupportedDeviceMessage()
@@ -215,7 +213,7 @@ private fun CameraKitPreview(viewModel: LensesViewModel) {
                 ) {
                     Text(
                         text = visibleError.orEmpty(),
-                        color = ApexPalette.Danger,
+                        color = CameraKitColors.Danger,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f)
                     )
@@ -244,7 +242,7 @@ private fun CameraKitPreview(viewModel: LensesViewModel) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
-                        color = ApexPalette.NeonCyan
+                        color = CameraKitColors.NeonCyan
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -310,7 +308,7 @@ private fun LensCell(
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.08f))
                 .then(
-                    if (selected) Modifier.border(2.dp, ApexPalette.NeonCyan, CircleShape)
+                    if (selected) Modifier.border(2.dp, CameraKitColors.NeonCyan, CircleShape)
                     else Modifier
                 )
                 .clickable(onClick = onClick)
@@ -343,7 +341,7 @@ private fun LensCell(
         Spacer(Modifier.height(4.dp))
         Text(
             text = name,
-            color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
+            color = if (selected) CameraKitColors.NeonCyan else Color.White.copy(alpha = 0.75f),
             style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -355,7 +353,7 @@ private fun LensCell(
 @Composable
 private fun TokenMissingMessage() {
     CenteredMessage(
-        icon = { Icon(Icons.Default.Face, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(48.dp)) },
+        icon = { Icon(Icons.Default.Face, contentDescription = null, tint = CameraKitColors.NeonCyan, modifier = Modifier.size(48.dp)) },
         title = "Snap Camera Kit not configured",
         body = "Add your staging API token as SNAP_CAMERA_KIT_TOKEN " +
             "(env var, local.properties, or the GitHub Actions secret) and rebuild."
@@ -365,7 +363,7 @@ private fun TokenMissingMessage() {
 @Composable
 private fun UnsupportedDeviceMessage() {
     CenteredMessage(
-        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(48.dp)) },
+        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = CameraKitColors.NeonCyan, modifier = Modifier.size(48.dp)) },
         title = "Device not supported",
         body = "This device does not meet Camera Kit's requirements (OpenGL ES 3.0+)."
     )
@@ -374,7 +372,7 @@ private fun UnsupportedDeviceMessage() {
 @Composable
 private fun CameraPermissionPrompt(onRequest: () -> Unit) {
     CenteredMessage(
-        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(48.dp)) },
+        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = CameraKitColors.NeonCyan, modifier = Modifier.size(48.dp)) },
         title = "Camera access needed",
         body = "ApexStudio needs camera permission to show the AR lens preview.",
         action = {
@@ -389,7 +387,7 @@ private fun CameraPermissionPermanentlyDenied(
     onRetry: () -> Unit
 ) {
     CenteredMessage(
-        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(48.dp)) },
+        icon = { Icon(Icons.Default.VideocamOff, contentDescription = null, tint = CameraKitColors.NeonCyan, modifier = Modifier.size(48.dp)) },
         title = "Camera permission blocked",
         body = "You selected \"Don't ask again\". Enable the camera in app Settings to use AR lenses.",
         action = {

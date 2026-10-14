@@ -45,10 +45,8 @@
 # this option as unknown, which broke the release build.)
 
 # --- Phase 2: R8 Guard additions ---
-# Snap Camera Kit SDK (restored PR #127 — reflection/JNI heavy)
--keep class com.snap.camerakit.** { *; }
--keep class com.snap.** { *; }
--dontwarn com.snap.**
+# (Snap Camera Kit keep rules moved to :feature:camerakit/consumer-rules.pro,
+# shipped with that module.)
 
 # Media3 (bundles own rules, belt-and-braces for Transformer GlEffects)
 -keep class androidx.media3.** { *; }

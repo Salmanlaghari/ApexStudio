@@ -1,13 +1,12 @@
 package com.apexstudio.app.camerakit
 
-import com.apexstudio.app.BuildConfig
-
 /**
  * Static configuration for the Snap Camera Kit SDK integration.
  *
- * The API token is injected at build time into [BuildConfig.SNAP_CAMERA_KIT_TOKEN]:
- * Gradle reads it from the `SNAP_CAMERA_KIT_TOKEN` environment variable (CI injects it
- * from the `SNAP_CAMERA_KIT_TOKEN` GitHub Actions secret) and falls back to
+ * The API token is injected at build time into this module's
+ * [BuildConfig.SNAP_CAMERA_KIT_TOKEN]: Gradle reads it from the
+ * `SNAP_CAMERA_KIT_TOKEN` environment variable (CI injects it from the
+ * `SNAP_CAMERA_KIT_TOKEN` GitHub Actions secret) and falls back to
  * `local.properties` for local builds. It is never hardcoded here.
  */
 object CameraKitConfig {

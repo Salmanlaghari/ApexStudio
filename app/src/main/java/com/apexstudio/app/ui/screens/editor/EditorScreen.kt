@@ -266,9 +266,18 @@ fun EditorScreen(
             return@LaunchedEffect
         }
         val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
-        val mediaItem = MediaItem.fromUri(playableUri)
+        // MediaItem.fromUri leaves mediaId at the shared default, so
+        // comparing mediaIds can never distinguish two clips — after
+        // the first clip, selecting/adding a different clip NEVER
+        // replaced the player's media (playhead kept following the old
+        // clip). Compare the resolved URIs instead, and tag the item
+        // with the clip id so future comparisons are exact.
+        val mediaItem = androidx.media3.common.MediaItem.Builder()
+            .setUri(playableUri)
+            .setMediaId(clip.id)
+            .build()
         val currentUri = player.currentMediaItem?.localConfiguration?.uri
-        if (player.currentMediaItem?.mediaId != mediaItem.mediaId && currentUri != playableUri) {
+        if (currentUri != playableUri) {
             try {
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)

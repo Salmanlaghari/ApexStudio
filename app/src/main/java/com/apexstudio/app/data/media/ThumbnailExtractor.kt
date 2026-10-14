@@ -104,6 +104,15 @@ object ThumbnailExtractor {
      * Returns a map keyed by second (0, 1, 2, ...), enabling smooth
      * real-time scrubbed timeline filmstrips that stay perfectly in sync
      * with the playhead.
+     *
+     * Adaptive stepping: a long clip (e.g. 263s) would need one
+     * blocking getFrameAtTime per second — 90s+ on a mid-range phone —
+     * and any trim restarts the extraction, so real frames never
+     * arrived (the timeline showed placeholder tiles forever). When
+     * the second count exceeds [maxSeconds], sample every Nth second
+     * (N = ceil(range / maxSeconds), so at most [maxSeconds] decoder
+     * calls) and expand to a dense per-second map by repeating the
+     * nearest sampled frame — every cell then shows a real frame.
      */
     suspend fun extractPerSecondFrames(
         context: Context,
@@ -115,7 +124,9 @@ object ThumbnailExtractor {
         maxSeconds: Int = 30
     ): Map<Int, Bitmap> = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
-        val result = mutableMapOf<Int, Bitmap>()
+        val sampled = mutableMapOf<Int, Bitmap>()
+        var secCount = 1
+        var step = 1
         try {
             val effectiveUri = if (uri.startsWith("asset://") || uri.isBlank()) {
                 try {
@@ -134,9 +145,13 @@ object ThumbnailExtractor {
 
             val startSec = (trimStartMs / 1000L).toInt()
             val endSec = (trimEndMs / 1000L).toInt().coerceAtLeast(startSec + 1)
-            val secCount = (endSec - startSec).coerceIn(1, maxSeconds)
+            val rawSecCount = (endSec - startSec).coerceAtLeast(1)
+            secCount = rawSecCount.coerceIn(1, maxSeconds)
+            // Bound decoder calls to maxSeconds regardless of clip length.
+            step = ((rawSecCount + maxSeconds - 1) / maxSeconds).coerceAtLeast(1)
 
-            for (sec in 0 until secCount) {
+            var sec = 0
+            while (sec < secCount) {
                 val timeMs = trimStartMs + sec * 1000L
                 val frame = try {
                     retriever.getFrameAtTime(
@@ -149,8 +164,9 @@ object ThumbnailExtractor {
                 if (frame != null) {
                     val scaled = Bitmap.createScaledBitmap(frame, frameWidthPx, frameHeightPx, true)
                     if (scaled !== frame) frame.recycle()
-                    result[sec] = scaled
+                    sampled[sec] = scaled
                 }
+                sec += step
             }
         } catch (e: Exception) {
             Log.w(TAG, "extractPerSecondFrames error for $uri: ${e.message}")
@@ -158,11 +174,25 @@ object ThumbnailExtractor {
             try { retriever.release() } catch (_: Exception) {}
         }
 
-        if (result.isEmpty()) {
+        if (sampled.isEmpty()) {
             val fallbacks = generateFilmstripFrames(8, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
             fallbacks.forEachIndexed { index, bitmap ->
-                result[index] = bitmap
+                sampled[index] = bitmap
             }
+            // Fallbacks only cover 8 slots; expand them the same way so
+            // callers always get a dense map.
+            secCount = 8
+            step = 1
+        }
+        // Dense expansion: every second in [0, secCount) maps to the
+        // nearest sampled frame at or before it (else the first sampled
+        // frame), so no cell ever renders a placeholder while a real
+        // frame exists nearby.
+        val result = mutableMapOf<Int, Bitmap>()
+        val sortedKeys = sampled.keys.sorted()
+        for (s in 0 until secCount) {
+            val key = sortedKeys.lastOrNull { it <= s } ?: sortedKeys.firstOrNull()
+            if (key != null) result[s] = sampled.getValue(key)
         }
         result
     }

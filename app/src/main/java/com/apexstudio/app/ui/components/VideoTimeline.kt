@@ -747,6 +747,16 @@ fun VideoTimeline(
                                     onAddClip = { onAddClipToLayer(layer) },
                                     onMoveClipOffset = onMoveClipOffset,
                                     onDeleteClip = onDeleteClip,
+                                    playheadMs = playheadMs,
+                                    // Snap edges: every clip's start/end
+                                    // across all video tracks.
+                                    snapEdges = clips.flatMap {
+                                        listOf(
+                                            it.timelineOffsetMs,
+                                            it.timelineOffsetMs + it.effectiveDurationMs()
+                                        )
+                                    },
+                                    onTrimClip = onTrimClip,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         // Slim 32dp row when the layer is empty.
@@ -1252,7 +1262,7 @@ private fun TimelineLeftSidebar(
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Add layer", tint = ApexPalette.NeonCyan, modifier = Modifier.size(12.dp))
-                        Text("V${videoLayers.size + 1}", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("OVL${videoLayers.size}", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1270,7 +1280,7 @@ private fun TimelineLeftSidebar(
 }
 
 /**
- * Overlay layer pill (V2..V10) with show/hide (eye), lock and delete.
+ * Overlay layer pill (OVL1..OVL9) with show/hide (eye), lock and delete.
  */
 @Composable
 private fun VideoLayerPill(
@@ -1298,7 +1308,7 @@ private fun VideoLayerPill(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "V${layerIndex + 1}",
+                text = "OVL$layerIndex",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -1576,7 +1586,14 @@ private fun TimelineVideoLayerRow(
     onAddClip: () -> Unit,
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit,
     onDeleteClip: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Playhead + every clip edge in the project: drag-to-move snaps
+    // the overlay's start/end to the nearest of these (200ms window).
+    playheadMs: Long = 0L,
+    snapEdges: List<Long> = emptyList(),
+    // Trim commit (called ONCE at drag end — the trim handles keep
+    // local state during the drag so a trim never spams undo entries).
+    onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
     Column(
         modifier = modifier
@@ -1587,7 +1604,7 @@ private fun TimelineVideoLayerRow(
     ) {
         if (isHidden) {
             Text(
-                "Layer V${layerIndex + 1} hidden",
+                "Layer OVL$layerIndex hidden",
                 color = Color(0xFF475569),
                 fontSize = 10.sp,
                 modifier = Modifier.padding(start = 8.dp, top = 2.dp)
@@ -1609,7 +1626,22 @@ private fun TimelineVideoLayerRow(
                 val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
                 var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
                 var isDragging by remember(clip.id) { mutableStateOf(false) }
+                // Trim-handle drag state (pixels, local until commit).
+                var trimStartDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
+                var trimEndDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
                 val clipThumbs = thumbnailsByClip[clip.id] ?: emptyMap()
+                val density = LocalDensity.current
+                // Snap targets: playhead + every OTHER clip's start/end.
+                val snapTargets = remember(snapEdges, playheadMs, clip) {
+                    (snapEdges + playheadMs).filter {
+                        it != clip.timelineOffsetMs &&
+                            it != clip.timelineOffsetMs + clipDur
+                    }.distinct()
+                }
+                // Live chip width while a trim handle is dragging.
+                val liveChipWidthDp = clipWidthDp -
+                    with(density) { trimStartDxPx.toDp() } +
+                    with(density) { trimEndDxPx.toDp() }
 
                 Column(
                     modifier = Modifier
@@ -1618,7 +1650,10 @@ private fun TimelineVideoLayerRow(
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(clipWidthDp)
+                            .offset {
+                                IntOffset(trimStartDxPx.roundToInt(), 0)
+                            }
+                            .width(liveChipWidthDp.coerceAtLeast(24.dp))
                             .height(32.dp)
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(5.dp))
@@ -1644,12 +1679,31 @@ private fun TimelineVideoLayerRow(
                                         },
                                         onDragEnd = {
                                             val deltaMs = (dragDx / msToDp).toLong()
-                                            val newOffset =
+                                            val rawOffset =
                                                 (clip.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+                                            // Snap the start (and the end)
+                                            // to the nearest playhead /
+                                            // clip edge within 200ms.
+                                            var snapped = rawOffset
+                                            var bestDist = 200L
+                                            for (edge in snapTargets) {
+                                                val dStart = kotlin.math.abs(rawOffset - edge)
+                                                if (dStart < bestDist) {
+                                                    bestDist = dStart
+                                                    snapped = edge
+                                                }
+                                                val dEnd = kotlin.math.abs(
+                                                    (rawOffset + clipDur) - edge
+                                                )
+                                                if (dEnd < bestDist) {
+                                                    bestDist = dEnd
+                                                    snapped = (edge - clipDur).coerceAtLeast(0L)
+                                                }
+                                            }
                                             dragDx = 0f
                                             isDragging = false
-                                            if (newOffset != clip.timelineOffsetMs) {
-                                                onMoveClipOffset(clip.id, newOffset)
+                                            if (snapped != clip.timelineOffsetMs) {
+                                                onMoveClipOffset(clip.id, snapped)
                                             }
                                         },
                                         onDragCancel = { dragDx = 0f; isDragging = false }
@@ -1696,7 +1750,7 @@ private fun TimelineVideoLayerRow(
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                clip.name.ifEmpty { "V${layerIndex + 1}" },
+                                clip.name.ifEmpty { "OVL$layerIndex" },
                                 color = Color.White,
                                 fontSize = 8.sp,
                                 maxLines = 1
@@ -1711,6 +1765,71 @@ private fun TimelineVideoLayerRow(
                                     .align(Alignment.TopEnd)
                                     .padding(2.dp)
                                     .size(10.dp)
+                            )
+                        }
+                        // Trim handles (both edges): drag to trim, commit
+                        // once at drag end. Children win the gesture over
+                        // the chip's move-drag (they consume the drag).
+                        // Minimum trimmed span is 100ms (matches
+                        // trimClip's own enforcement).
+                        if (!isLocked) {
+                            // Left edge → trimStartMs.
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .width(12.dp)
+                                    .fillMaxHeight()
+                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .pointerInput(clip.id) {
+                                        detectDragGestures(
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                val minPx = -(clip.trimStartMs * msToDp)
+                                                val maxPx = ((clip.trimEndMs - clip.trimStartMs - 100L)
+                                                    .coerceAtLeast(0L)) * msToDp
+                                                trimStartDxPx = (trimStartDxPx + dragAmount.x)
+                                                    .coerceIn(minPx, maxPx)
+                                            },
+                                            onDragEnd = {
+                                                val newStart = (clip.trimStartMs + (trimStartDxPx / msToDp).toLong())
+                                                    .coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
+                                                trimStartDxPx = 0f
+                                                if (newStart != clip.trimStartMs) {
+                                                    onTrimClip(clip.id, newStart, clip.trimEndMs)
+                                                }
+                                            },
+                                            onDragCancel = { trimStartDxPx = 0f }
+                                        )
+                                    }
+                            )
+                            // Right edge → trimEndMs.
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .width(12.dp)
+                                    .fillMaxHeight()
+                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .pointerInput(clip.id) {
+                                        detectDragGestures(
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                val minPx = -((clip.trimEndMs - clip.trimStartMs - 100L)
+                                                    .coerceAtLeast(0L)) * msToDp
+                                                val maxPx = (clip.durationMs - clip.trimEndMs) * msToDp
+                                                trimEndDxPx = (trimEndDxPx + dragAmount.x)
+                                                    .coerceIn(minPx, maxPx)
+                                            },
+                                            onDragEnd = {
+                                                val newEnd = (clip.trimEndMs + (trimEndDxPx / msToDp).toLong())
+                                                    .coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+                                                trimEndDxPx = 0f
+                                                if (newEnd != clip.trimEndMs) {
+                                                    onTrimClip(clip.id, clip.trimStartMs, newEnd)
+                                                }
+                                            },
+                                            onDragCancel = { trimEndDxPx = 0f }
+                                        )
+                                    }
                             )
                         }
                     }
@@ -1748,7 +1867,7 @@ private fun TimelineVideoLayerRow(
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        "+ Add clip (V${layerIndex + 1})",
+                        "+ Add overlay (OVL$layerIndex)",
                         color = Color(0xFF67E8F9),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium

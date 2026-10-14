@@ -158,25 +158,49 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             }
             return@launch
         }
-        val newClips = mediaList.mapNotNull { meta ->
+        val playheadMs = s.playerPositionMs.coerceAtLeast(0L)
+        // First free overlay layer for this batch (multi-pick spreads
+        // across consecutive free layers instead of stacking all clips
+        // on one track at the same offset).
+        val firstFreeLayer = nextFreeVideoLayer()
+            .takeIf { it in 1 until MAX_VIDEO_LAYERS } ?: 1
+        val newClips = mediaList.mapIndexedNotNull { batchIndex, meta ->
             val resolvedMeta = if (context != null) {
                 meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
             } else meta
             val created = mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
-            // Phase D: when the user picked from the "Overlay clip"
-            // entry point, re-tag the clip as OVERLAY + trackIndex 1
-            // and register it as the active overlay. A new overlay
-            // replaces any prior one (single-overlay v1 limit).
-            // Multi-layer: route to the requested overlay layer (1..9).
-            if (targetLayer != null && created != null) {
+            // Overlay (PiP) add path: the picked media becomes an
+            // OVERLAY clip on a dedicated overlay track at the
+            // playhead — NOT at 00:00 (the old behaviour, which made
+            // new overlays invisible whenever the playhead was past
+            // their span). Images get a 5s default (CapCut-style);
+            // videos keep their source length. The intrinsic aspect
+            // is stored so the preview box and the export PiP box
+            // never stretch the media into the legacy 16:9 box.
+            // Video overlays are audible at unity gain; image
+            // overlays have no audio (volume ignored).
+            val isOverlayPick = targetLayer != null || asOverlay
+            if (isOverlayPick && created != null) {
+                val isImage = resolvedMeta.type == ClipType.IMAGE
+                val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
+                val aspect = if (resolvedMeta.width > 0 && resolvedMeta.height > 0) {
+                    (resolvedMeta.width.toFloat() / resolvedMeta.height.toFloat())
+                        .coerceIn(0.1f, 10f)
+                } else 16f / 9f
+                // First free overlay layer (OVL1 = trackIndex 1, ...),
+                // or the explicitly requested layer from the V2 "+".
+                // Multi-pick spreads across consecutive free layers.
+                val layer = targetLayer
+                    ?: (firstFreeLayer + batchIndex).coerceAtMost(MAX_VIDEO_LAYERS - 1)
                 created.copy(
                     type = ClipType.OVERLAY,
-                    trackIndex = targetLayer
-                )
-            } else if (asOverlay && created != null) {
-                created.copy(
-                    type = ClipType.OVERLAY,
-                    trackIndex = 1
+                    trackIndex = layer,
+                    timelineOffsetMs = playheadMs,
+                    durationMs = overlayDurationMs,
+                    trimStartMs = 0L,
+                    trimEndMs = overlayDurationMs,
+                    overlayAspect = aspect,
+                    overlayVolume = if (isImage) 0f else 1f
                 )
             } else created
         }
@@ -190,6 +214,8 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val maxDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
 
         // Immediate state update so video preview loads in 0ms without delay
+        // Undo: adding clips is undoable — snapshot BEFORE the mutation.
+        if (newClips.isNotEmpty()) pushUndo()
         _state.update {
             it.copy(
                 project = updatedProject,
@@ -197,6 +223,9 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 pickedMedia = mediaList,
                 isMediaPickerOpen = false,
                 selectedClipId = when {
+                    // Overlay picks select the new overlay (so the clip
+                    // bar + properties panel target it, not the old clip).
+                    asOverlay || targetLayer != null -> newClips.firstOrNull()?.id
                     replace -> newClips.firstOrNull()?.id
                     it.selectedClipId != null -> it.selectedClipId
                     else -> newClips.firstOrNull()?.id

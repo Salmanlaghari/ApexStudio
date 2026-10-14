@@ -127,6 +127,9 @@ fun ContextualBottomToolbar(
     onArFace: () -> Unit = {},
     onLenses: () -> Unit = {},
     onFilters: () -> Unit = {},
+    // Global tools: Overlay opens the system photo/video picker and
+    // adds the chosen media as an overlay (PiP) clip at the playhead.
+    onOverlay: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
     onReplace: () -> Unit = {},
@@ -166,6 +169,14 @@ fun ContextualBottomToolbar(
     // onAnimation (opens the keyframe/animation panel) — the old bar had
     // both Keyframe and Animation opening the same panel.
     onToggleKeyframe: () -> Unit = {},
+    // Overlay properties: opens the overlay (PiP) properties panel
+    // (opacity / blend / mask / border / shadow / flip / volume /
+    // track / keyframes). Only shown when the selected clip is an
+    // overlay — see [isOverlaySelected].
+    onOverlayProps: () -> Unit = {},
+    // True when the selected clip is an overlay (PiP) clip. The VIDEO
+    // clip bar then also shows the "Properties" entry.
+    isOverlaySelected: Boolean = false,
     // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
     onAudioMix: () -> Unit = {},
     onRecord: () -> Unit = {},
@@ -194,6 +205,9 @@ fun ContextualBottomToolbar(
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
             CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
+            // Overlay: system photo/video picker → PiP clip at the
+            // playhead (images 5s, videos source length).
+            CtxToolItem("Overlay", Icons.Default.PictureInPicture, onClick = onOverlay),
             CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust),
             // Phase 3: pack panels + Auto Clip + Music + History.
             CtxToolItem("Edit Pack", Icons.Default.ContentCut, onClick = onEditPack),
@@ -228,7 +242,17 @@ fun ContextualBottomToolbar(
             CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
             CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
-        )
+        ).let { items ->
+            // Overlay selected: the properties panel (opacity / blend /
+            // mask / border / shadow / flip / volume / track /
+            // keyframes) is the overlay's main editing surface.
+            if (isOverlaySelected) {
+                items + CtxToolItem(
+                    "Properties", Icons.Default.Tune,
+                    tint = ApexPalette.NeonCyan, onClick = onOverlayProps
+                )
+            } else items
+        }
         ToolbarSelectionKind.AUDIO -> listOf(
             CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
             CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
@@ -701,6 +725,24 @@ fun EditorBottomToolbarSection(
         onLenses = { vm.openLensesPanel() },
         onFilters = { vm.openFilterPanel() },
         onAdjust = { vm.openAdjustmentsPanel() },
+        // Overlay: system photo/video picker → overlay (PiP) clip at
+        // the playhead. Same picker path as the V2-track "+" button.
+        onOverlay = {
+            vm.setPendingAddToLayer(null)
+            vm.setPendingAddAsOverlay(true)
+            vm.setPendingAddAsAudio(false)
+            mediaPicker.pickMultipleMedia.launch(
+                androidx.activity.result.PickVisualMediaRequest(
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                )
+            )
+        },
+        // Overlay properties panel (only shown in the clip bar when
+        // the selected clip is an overlay — see isOverlaySelected).
+        onOverlayProps = { vm.openOverlayPropsPanel() },
+        isOverlaySelected = state.project?.clips?.firstOrNull {
+            it.id == state.selectedClipId
+        }?.type == ClipType.OVERLAY,
         // Phase 3 tools.
         onMusic = { vm.openMusicLibraryPanel() },
         onAutoClip = { vm.openAutoClipPanel() },

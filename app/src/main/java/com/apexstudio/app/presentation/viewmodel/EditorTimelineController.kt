@@ -42,6 +42,10 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
     val clip = id?.let { clipId -> state.project?.clips?.firstOrNull { it.id == clipId } }
     state.copy(
         selectedClipId = id,
+        // Single selection: picking an OVERLAY clip on the timeline
+        // also selects it on the preview canvas (so the transform box
+        // shows); picking anything else clears the canvas selection.
+        selectedOverlayClipId = if (clip?.type == ClipType.OVERLAY) id else null,
         // CapCut-style single selection: picking a clip clears the audio-lane
         // selection, and also any text/sticker selection — otherwise the
         // TEXT/STICKER bar (higher precedence in resolveToolbarSelection)
@@ -217,6 +221,9 @@ internal fun EditorViewModel.updateClip(
 
 
 fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: AnimatedTransform = AnimatedTransform.Identity) {
+    // Keyframe add is a discrete, undoable action (including overlay
+    // keyframes added from the clip bar's Keyframe button).
+    pushUndo()
     updateClip(clipId) { clip ->
         val kf = Keyframe(
             id = java.util.UUID.randomUUID().toString(),
@@ -245,6 +252,7 @@ fun EditorViewModel.updateKeyframe(clipId: String, keyframeId: String, transform
 
 
 fun EditorViewModel.removeKeyframe(clipId: String, keyframeId: String) {
+    pushUndo()
     updateClip(clipId) { clip ->
         clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.id != keyframeId }))
     }
@@ -578,18 +586,41 @@ fun EditorViewModel.clearTransformerTrimStatus() {
 
 
 fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
+    // Overlay no-op guard BEFORE pushUndo: splitting with the playhead
+    // outside the overlay's span must not burn an undo entry.
+    val preClip = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+    if (preClip != null && preClip.type == com.apexstudio.app.domain.model.ClipType.OVERLAY) {
+        val span = preClip.trimEndMs - preClip.trimStartMs
+        if (atMs < preClip.timelineOffsetMs || atMs > preClip.timelineOffsetMs + span) return
+    }
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val c = p.clips.firstOrNull { it.id == clipId } ?: return@update s
-        val safeSplit = atMs.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
+        // OVERLAY clips are positioned by timelineOffsetMs, so the
+        // playhead (timeline time) must be converted to a SOURCE time:
+        // sourceSplit = trimStart + (playhead - offset). The old code
+        // fed the timeline time straight into trimStartMs/trimEndMs,
+        // which splits at the wrong source frame whenever the overlay
+        // does not start at 00:00. The second half also starts at
+        // offset + (sourceSplit - trimStart) — the old code kept the
+        // original offset, so both halves overlapped exactly.
+        val isOverlay = c.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        val sourceSplit = if (isOverlay) {
+            c.trimStartMs + (atMs - c.timelineOffsetMs)
+        } else atMs
+        val safeSplit = sourceSplit.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
 
         val originalEnd = c.trimEndMs
         val newClip = c.copy(
             id = "clip_${System.currentTimeMillis()}_split",
             trimStartMs = safeSplit,
             trimEndMs = originalEnd,
-            durationMs = originalEnd - safeSplit
+            durationMs = originalEnd - safeSplit,
+            // Second half starts where the first half ends.
+            timelineOffsetMs = if (isOverlay) {
+                c.timelineOffsetMs + (safeSplit - c.trimStartMs)
+            } else c.timelineOffsetMs
         )
         val updatedClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
         for (clip in p.clips) {
@@ -605,6 +636,7 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             project = p.copy(clips = updatedClips, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newClip.id,
+            selectedOverlayClipId = if (isOverlay) newClip.id else s.selectedOverlayClipId,
             canUndo = true,
             canRedo = redoStack.isNotEmpty()
         )
@@ -618,8 +650,16 @@ fun EditorViewModel.duplicateClip(clipId: String) {
     _state.update { s ->
         val p = s.project ?: return@update s
         val target = p.clips.firstOrNull { it.id == clipId } ?: return@update s
+        val isOverlay = target.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        // Overlays are positioned by timelineOffsetMs: an exact copy
+        // would land precisely on top of the original (invisible,
+        // unselectable underneath). CapCut-style: place the duplicate
+        // right after the original on the same track.
         val newClip = target.copy(
-            id = "clip_${System.currentTimeMillis()}_dup"
+            id = "clip_${System.currentTimeMillis()}_dup",
+            timelineOffsetMs = if (isOverlay) {
+                target.timelineOffsetMs + (target.trimEndMs - target.trimStartMs)
+            } else target.timelineOffsetMs
         )
         val updated = p.clips + newClip
         val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
@@ -627,6 +667,7 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             project = p.copy(clips = updated, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newClip.id,
+            selectedOverlayClipId = if (isOverlay) newClip.id else s.selectedOverlayClipId,
             canUndo = true,
             canRedo = redoStack.isNotEmpty()
         )
@@ -811,7 +852,23 @@ fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
     if (existingKf != null) {
         removeKeyframe(clipId, existingKf.id)
     } else {
-        addKeyframe(clipId, playheadMs, clip.keyframes.interpolateAt(playheadMs))
+        // Overlays: keyframe transforms are ABSOLUTE overlay transforms
+        // (translateX = pipX, ...). With no keyframes yet, the current
+        // transform is the pip base values — capturing Identity (the
+        // V1 default) would teleport the overlay to the top-left at
+        // full scale. With keyframes, interpolate as usual.
+        val transform = if (clip.type == ClipType.OVERLAY && clip.keyframes.keyframes.isEmpty()) {
+            AnimatedTransform(
+                translateX = clip.pipX,
+                translateY = clip.pipY,
+                scale = clip.pipScale,
+                rotationDeg = clip.pipRotationDeg,
+                opacity = clip.pipOpacity
+            )
+        } else {
+            clip.keyframes.interpolateAt(playheadMs)
+        }
+        addKeyframe(clipId, playheadMs, transform)
     }
 }
 

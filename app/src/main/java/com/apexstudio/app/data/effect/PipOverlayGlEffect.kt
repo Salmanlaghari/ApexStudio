@@ -24,12 +24,21 @@ import androidx.media3.effect.GlShaderProgram
  * The overlay video is decoded with [MediaCodec] to a [SurfaceTexture] (as an
  * external OES texture) and alpha-composited over the main video at the
  * overlay's persisted transform — centre ([centerX], [centerY]) normalised
- * 0..1, width [widthFraction] of the output width in a 16:9 box, and
- * [rotationDeg] clockwise — exactly matching the preview's PipOverlayCanvas.
+ * 0..1, width [widthFraction] of the output width in a box of aspect
+ * [aspect] (the overlay's intrinsic media aspect, matching the preview's
+ * PipOverlayCanvas), and [rotationDeg] clockwise — exactly matching the
+ * preview.
  *
  * Still-image overlays (no video track in the URI) are decoded to a bitmap
  * and composited through a regular 2D texture for the same timeline window,
  * so picture overlays are no longer silently dropped from the export.
+ *
+ * [keyframes] (when non-empty) animate the overlay per frame: each
+ * keyframe holds an ABSOLUTE overlay transform (translateX = centerX,
+ * translateY = centerY, scale = widthFraction, rotationDeg, opacity),
+ * interpolated at the frame's timeline time — the same numbers the
+ * preview resolves. Blend / border / shadow / flip come from the
+ * properties panel and are applied in the shader.
  *
  * The PiP is positioned at [offsetMs] on the export timeline and shows the
  * overlay's [trimStartMs, trimEndMs] range. If the decoder fails for any
@@ -50,7 +59,17 @@ class PipOverlayGlEffect(
     private val centerY: Float = 0.85f,
     private val rotationDeg: Float = 0f,
     private val opacity: Float = 1f,
-    private val mask: com.apexstudio.app.domain.model.VideoMask? = null
+    private val mask: com.apexstudio.app.domain.model.VideoMask? = null,
+    // Overlay properties (properties panel). Defaults preserve the old
+    // behaviour for callers that do not pass them.
+    private val aspect: Float = 16f / 9f,
+    private val blendMode: Int = 0,
+    private val borderWidth: Float = 0f,
+    private val borderColor: Int = 0xFFFFFFFF.toInt(),
+    private val shadow: Float = 0f,
+    private val flipH: Boolean = false,
+    private val flipV: Boolean = false,
+    private val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -66,6 +85,14 @@ class PipOverlayGlEffect(
             rotationDeg = rotationDeg,
             opacity = opacity,
             mask = mask,
+            aspect = aspect,
+            blendMode = blendMode,
+            borderWidth = borderWidth,
+            borderColor = borderColor,
+            shadow = shadow,
+            flipH = flipH,
+            flipV = flipV,
+            keyframes = keyframes,
             useHdr = useHdr
         )
     }
@@ -83,6 +110,14 @@ class PipOverlayGlEffect(
         private val rotationDeg: Float,
         private val opacity: Float,
         private val mask: com.apexstudio.app.domain.model.VideoMask?,
+        private val aspect: Float,
+        private val blendMode: Int,
+        private val borderWidth: Float,
+        private val borderColor: Int,
+        private val shadow: Float,
+        private val flipH: Boolean,
+        private val flipV: Boolean,
+        private val keyframes: List<com.apexstudio.app.domain.model.Keyframe>,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY),
         SurfaceTexture.OnFrameAvailableListener {
@@ -99,11 +134,9 @@ class PipOverlayGlEffect(
         private var lastOverlayTimeUs: Long = -1L
         private var inputEos: Boolean = false
 
-        // PiP geometry in normalized device coordinates (computed in configure()).
-        // Centre (uPipCenter, NDC) + full size (uPipSize, NDC) + clockwise
-        // rotation (uPipAngle, radians) — mirrors the preview canvas geometry.
-        private var pipCenterNdc = floatArrayOf(0.7f, -0.7f)
-        private var pipSizeNdc = floatArrayOf(0.5f, 0.28125f)
+        // PiP geometry in normalized device coordinates is computed
+        // per frame in drawFrame() (computeGeometry) so keyframes can
+        // animate it; configure() only records the output size.
         private var pipOutputPx = floatArrayOf(1920f, 1080f)
 
         // Image-overlay path: when the overlay URI has no video track
@@ -314,19 +347,58 @@ class PipOverlayGlEffect(
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
             // Compute PiP geometry. Output is inputWidth x inputHeight.
             // PiP width = widthFraction of output width; height preserves
-            // the 16:9 box the preview canvas uses (PIP_BOX_ASPECT).
+            // the overlay's intrinsic aspect (overlayAspect), matching
+            // the preview canvas box.
             val outW = inputWidth.toFloat()
             val outH = inputHeight.toFloat()
-            val pipW = outW * widthFraction.coerceIn(0.05f, 0.9f)
-            val pipH = pipW * 9f / 16f
-            // NDC: x in [-1, 1] left-to-right, y in [-1, 1] bottom-to-top.
-            // centre x/y are normalised 0..1 from the left / top.
-            val cx = (centerX.coerceIn(0f, 1f) * 2f) - 1f
-            val cy = 1f - (centerY.coerceIn(0f, 1f) * 2f)
-            pipCenterNdc = floatArrayOf(cx, cy)
-            pipSizeNdc = floatArrayOf((pipW / outW) * 2f, (pipH / outH) * 2f)
             pipOutputPx = floatArrayOf(outW, outH)
             return Size(inputWidth, inputHeight)
+        }
+
+        /** Overlay transform resolved for [timeMs] (timeline time). */
+        private data class EffOverlay(
+            val centerX: Float,
+            val centerY: Float,
+            val widthFraction: Float,
+            val rotationDeg: Float,
+            val opacity: Float
+        )
+
+        private fun effectiveOverlayTransformAt(timeMs: Long): EffOverlay {
+            if (keyframes.isEmpty()) {
+                return EffOverlay(centerX, centerY, widthFraction, rotationDeg, opacity)
+            }
+            val t = com.apexstudio.app.domain.model.KeyframeTrack(keyframes)
+                .interpolateAt(timeMs)
+            return EffOverlay(
+                centerX = t.translateX,
+                centerY = t.translateY,
+                widthFraction = t.scale,
+                rotationDeg = t.rotationDeg,
+                opacity = t.opacity
+            )
+        }
+
+        /**
+         * PiP geometry (centre + size, NDC) for a given normalised
+         * transform. Used by configure() for the static case and by
+         * drawFrame() per frame when keyframes animate the overlay.
+         */
+        private fun computeGeometry(
+            cxNorm: Float,
+            cyNorm: Float,
+            widthFrac: Float,
+            outW: Float,
+            outH: Float
+        ): Pair<FloatArray, FloatArray> {
+            val pipW = outW * widthFrac.coerceIn(0.05f, 0.9f)
+            val pipH = pipW / aspect.coerceIn(0.1f, 10f)
+            // NDC: x in [-1, 1] left-to-right, y in [-1, 1] bottom-to-top.
+            // centre x/y are normalised 0..1 from the left / top.
+            val cx = (cxNorm.coerceIn(0f, 1f) * 2f) - 1f
+            val cy = 1f - (cyNorm.coerceIn(0f, 1f) * 2f)
+            return floatArrayOf(cx, cy) to
+                floatArrayOf((pipW / outW) * 2f, (pipH / outH) * 2f)
         }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
@@ -383,16 +455,39 @@ class PipOverlayGlEffect(
                     } else {
                         glProgram.setSamplerTexIdUniform("uPipSampler", pipTex, 1)
                     }
-                    glProgram.setFloatsUniform("uPipCenter", pipCenterNdc)
-                    glProgram.setFloatsUniform("uPipSize", pipSizeNdc)
+                    // Effective transform this frame: keyframes (when
+                    // present) animate position / scale / rotation /
+                    // opacity; otherwise the static pip values.
+                    val eff = effectiveOverlayTransformAt(timeMs)
+                    val (center, size) = computeGeometry(
+                        eff.centerX, eff.centerY, eff.widthFraction,
+                        pipOutputPx[0], pipOutputPx[1]
+                    )
+                    glProgram.setFloatsUniform("uPipCenter", center)
+                    glProgram.setFloatsUniform("uPipSize", size)
                     glProgram.setFloatsUniform("uOutputSize", pipOutputPx)
                     glProgram.setFloatsUniform(
                         "uPipAngle",
-                        floatArrayOf(Math.toRadians(rotationDeg.toDouble()).toFloat())
+                        floatArrayOf(Math.toRadians(eff.rotationDeg.toDouble()).toFloat())
                     )
                     glProgram.setFloatsUniform("uPipIsImage", floatArrayOf(pipIsImage))
-                    glProgram.setFloatsUniform("uPipOpacity", floatArrayOf(opacity.coerceIn(0f, 1f)))
+                    glProgram.setFloatsUniform("uPipOpacity", floatArrayOf(eff.opacity.coerceIn(0f, 1f)))
                     glProgram.setFloatsUniform("uPipEnabled", floatArrayOf(1f))
+                    // Properties-panel uniforms (static per effect).
+                    glProgram.setFloatsUniform("uPipBlend", floatArrayOf(blendMode.toFloat()))
+                    glProgram.setFloatsUniform("uPipBorderWidth", floatArrayOf(borderWidth.coerceIn(0f, 0.05f)))
+                    glProgram.setFloatsUniform(
+                        "uPipBorderColor",
+                        floatArrayOf(
+                            android.graphics.Color.red(borderColor) / 255f,
+                            android.graphics.Color.green(borderColor) / 255f,
+                            android.graphics.Color.blue(borderColor) / 255f
+                        )
+                    )
+                    glProgram.setFloatsUniform("uPipShadow", floatArrayOf(shadow.coerceIn(0f, 1f)))
+                    glProgram.setFloatsUniform("uPipFlipH", floatArrayOf(if (flipH) 1f else 0f))
+                    glProgram.setFloatsUniform("uPipFlipV", floatArrayOf(if (flipV) 1f else 0f))
+                    glProgram.setFloatsUniform("uBoxAspect", floatArrayOf(aspect.coerceIn(0.1f, 10f)))
                 } else {
                     glProgram.setFloatsUniform("uPipEnabled", floatArrayOf(0f))
                 }
@@ -558,6 +653,13 @@ class PipOverlayGlEffect(
             uniform float uPipAngle; // radians, clockwise-positive
             uniform float uPipOpacity;
             uniform float uPipEnabled;
+            uniform float uPipBlend;       // 0 normal, 1 screen, 2 multiply, 3 overlay
+            uniform float uPipBorderWidth; // fraction of box width, 0 = no border
+            uniform vec3 uPipBorderColor;
+            uniform float uPipShadow;      // 0..1 drop-shadow strength
+            uniform float uPipFlipH;       // 0 or 1
+            uniform float uPipFlipV;       // 0 or 1
+            uniform float uBoxAspect;      // overlay box width / height
             uniform vec2 uMaskCenter;   // overlay-frame normalised, top-left origin
             uniform vec2 uMaskSize;     // full width/height, 0..1
             uniform float uMaskFeather; // 0..1
@@ -567,14 +669,14 @@ class PipOverlayGlEffect(
             uniform float uMaskEnabled; // 0 or 1
 
             // Shape-mask factor for the overlay's own frame (pipUv space,
-            // top-left origin). The PiP box is always 16:9, so distances
-            // are aspect-corrected with 16/9 — the same geometry the
-            // preview canvas uses. LINEAR is a vertical wipe: the line
+            // top-left origin). Distances are aspect-corrected with the
+            // overlay's own box aspect (uBoxAspect) — the same geometry
+            // the preview canvas uses. LINEAR is a vertical wipe: the line
             // sits at uMaskCenter.x, the left side is kept, uMaskSize.x
             // sets the transition width.
             float pipMaskFactor(vec2 uv) {
                 if (uMaskEnabled < 0.5) return 1.0;
-                float aspect = 16.0 / 9.0;
+                float aspect = uBoxAspect;
                 float m;
                 if (uMaskShape < 1.5) {
                     vec2 q = (uv - uMaskCenter) * vec2(aspect, 1.0);
@@ -599,6 +701,23 @@ class PipOverlayGlEffect(
                 return m * uMaskOpacity;
             }
 
+            // Per-channel Overlay blend (base = video, blend = overlay).
+            vec3 blendOverlay(vec3 base, vec3 blend) {
+                vec3 r1 = 2.0 * base * blend;
+                vec3 r2 = 1.0 - 2.0 * (1.0 - base) * (1.0 - blend);
+                return mix(r2, r1, step(base, vec3(0.5)));
+            }
+
+            // Soft rectangular shadow factor for a point in the box's
+            // local frame (half-extents half_). The shadow rect is the
+            // box shifted by `shift` (local coords) with a feathered
+            // edge; 1 inside, fading to 0 outside.
+            float shadowBox(vec2 p, vec2 half_, vec2 shift) {
+                vec2 d = abs(p - shift) - half_;
+                float dist = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+                return 1.0 - smoothstep(-half_.x * 0.25, 0.0, dist);
+            }
+
             void main() {
                 vec4 video = texture2D(uTexSampler, vTextureCoord);
                 if (uPipEnabled < 0.5) {
@@ -614,25 +733,61 @@ class PipOverlayGlEffect(
                 vec2 halfPx = uPipSize * 0.5 * uOutputSize;
                 float c = cos(uPipAngle);
                 float s = sin(uPipAngle);
-                // Axis-aligned bounding box of the rotated rect.
+                // Axis-aligned bounding box of the rotated rect, expanded
+                // for the drop shadow (shifted + feathered, up to ~1.4x).
                 vec2 hb = vec2(abs(halfPx.x * c) + abs(halfPx.y * s),
                                abs(halfPx.x * s) + abs(halfPx.y * c));
                 vec2 d = fragPx - centerPx;
                 vec4 outColor = video;
-                if (abs(d.x) <= hb.x && abs(d.y) <= hb.y) {
+                if (abs(d.x) <= hb.x * 1.4 && abs(d.y) <= hb.y * 1.4) {
                     // Inverse-rotate into the overlay's local frame.
                     vec2 local = vec2(d.x * c + d.y * s, -d.x * s + d.y * c);
+                    // Drop shadow UNDER the overlay (same local frame as
+                    // the preview's blurred rect: shifted down-right).
+                    if (uPipShadow > 0.001) {
+                        vec2 shift = vec2(halfPx.x * 0.08, halfPx.y * 0.10);
+                        float sh = shadowBox(local, halfPx, shift);
+                        outColor = vec4(mix(outColor.rgb, vec3(0.0),
+                                            uPipShadow * 0.45 * sh), video.a);
+                    }
                     if (abs(local.x) <= halfPx.x && abs(local.y) <= halfPx.y) {
                         // Map to PiP texture coords (v = 1 at the rect's
                         // bottom edge): upright for both the OES video
                         // texture and the 2D bitmap texture.
                         vec2 pipUv = vec2(local.x / halfPx.x * 0.5 + 0.5,
                                           local.y / halfPx.y * 0.5 + 0.5);
+                        // Mirror (properties-panel flip), before sampling
+                        // so the texture itself flips, not the box.
+                        if (uPipFlipH > 0.5) pipUv.x = 1.0 - pipUv.x;
+                        if (uPipFlipV > 0.5) pipUv.y = 1.0 - pipUv.y;
                         vec4 pip = uPipIsImage > 0.5
                             ? texture2D(uPipImageSampler, pipUv)
                             : texture2D(uPipSampler, pipUv);
-                        float a = uPipOpacity * pipMaskFactor(pipUv);
-                        vec3 outRgb = pip.rgb * a + video.rgb * (1.0 - a);
+                        // Border (properties panel): an opaque frame
+                        // inside the box edges. The same physical width
+                        // on all sides: bw in uv-x, bw * aspect in uv-y.
+                        if (uPipBorderWidth > 0.0) {
+                            float bw = uPipBorderWidth;
+                            vec2 edgeDist = min(pipUv, 1.0 - pipUv);
+                            float borderMask = clamp(
+                                step(edgeDist.x, bw) +
+                                step(edgeDist.y, bw * uBoxAspect),
+                                0.0, 1.0);
+                            pip = vec4(mix(pip.rgb, uPipBorderColor, borderMask),
+                                       max(pip.a, borderMask));
+                        }
+                        float a = uPipOpacity * pipMaskFactor(pipUv) * pip.a;
+                        vec3 blended;
+                        if (uPipBlend < 0.5) {
+                            blended = pip.rgb;
+                        } else if (uPipBlend < 1.5) {
+                            blended = 1.0 - (1.0 - pip.rgb) * (1.0 - video.rgb);
+                        } else if (uPipBlend < 2.5) {
+                            blended = pip.rgb * video.rgb;
+                        } else {
+                            blended = blendOverlay(video.rgb, pip.rgb);
+                        }
+                        vec3 outRgb = blended * a + video.rgb * (1.0 - a);
                         outColor = vec4(outRgb, video.a);
                     }
                 }

@@ -46,12 +46,19 @@ fun VideoPreviewArea(
     selectedOverlayClipId: String? = null,
     overlayPlayer: ExoPlayer? = null,
     overlayPlayerClipId: String? = null,
+    // Per-clip probe result: is this overlay's media a video?
+    // (OverlayMediaProbe — the clip type is always OVERLAY, so the
+    // media itself answers. Missing entry = probe still running.)
+    overlayIsVideo: Map<String, Boolean> = emptyMap(),
     onSelectOverlayClip: ((String?) -> Unit)? = null,
     onMoveOverlayClip: ((id: String, dx: Float, dy: Float, persist: Boolean) -> Unit)? = null,
     onScaleOverlayClip: ((id: String, scale: Float, persist: Boolean) -> Unit)? = null,
     onRotateOverlayClip: ((id: String, deltaDeg: Float, persist: Boolean) -> Unit)? = null,
     onOverlayGestureEnd: ((String) -> Unit)? = null,
     onRemoveOverlayClip: ((String) -> Unit)? = null,
+    // Keyframe upsert for canvas gestures while the selected overlay
+    // has keyframes (gesture edits the keyframe, not pip base values).
+    onUpsertOverlayKeyframe: ((id: String, timeMs: Long, x: Float, y: Float, scale: Float, rotationDeg: Float, opacity: Float, persist: Boolean) -> Unit)? = null,
     isCoverMode: Boolean = true,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
@@ -312,6 +319,7 @@ fun VideoPreviewArea(
                 currentTimeMs = currentTimeMs,
                 overlayPlayer = overlayPlayer,
                 overlayPlayerClipId = overlayPlayerClipId,
+                overlayIsVideo = overlayIsVideo,
                 onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
                 onMoveOverlayClip = { id, dx, dy, persist ->
                     onMoveOverlayClip?.invoke(id, dx, dy, persist)
@@ -324,6 +332,7 @@ fun VideoPreviewArea(
                 },
                 onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
                 onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
+                onUpsertOverlayKeyframe = onUpsertOverlayKeyframe,
                 modifier = Modifier.fillMaxSize()
             )
         }

@@ -31,11 +31,15 @@ fun EditorViewModel.clearSelection() = _state.update {
     // Clear every selection kind: the merged clip bar's visibility is
     // derived from these ids, so leaving text/sticker selection behind
     // would keep the TEXT/STICKER bar visible after a deselect.
+    // The overlay canvas selection and its properties panel close with
+    // the rest (a deselect must not leave a PiP box selected).
     it.copy(
         selectedClipId = null,
         selectedAudioTrackId = null,
         selectedTextOverlayId = null,
-        selectedStickerId = null
+        selectedStickerId = null,
+        selectedOverlayClipId = null,
+        overlayPropsOpen = false
     )
 }
 

@@ -23,9 +23,19 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * This probe asks the media itself (MediaMetadataRetriever HAS_VIDEO),
  * which matches the export's own probe in PipOverlayGlEffect, so preview
- * and export can never disagree about video-vs-image. Results are cached
- * per URI for the process lifetime; failures default to image (false)
- * so a broken URI degrades to the image path instead of crashing.
+ * and export can never disagree about video-vs-image.
+ *
+ * FAILURE SEMANTICS (black-box fix): a failed probe must NEVER be
+ * cached as "image". The old code cached every result — including
+ * `false` from a retriever exception — so a video overlay whose first
+ * probe failed transiently (e.g. the URI was not yet readable) was
+ * treated as an image for the rest of the process: Coil tried to
+ * decode video bytes as an image, failed silently, and the preview
+ * showed an empty black box. Now: a retriever failure falls back to
+ * the ContentResolver MIME type (`video/*` → video, `image/*` →
+ * image); only a successful probe (or a MIME-backed answer) is
+ * cached, and an unanswerable probe returns `false` WITHOUT caching
+ * so a later retry can still succeed.
  */
 object OverlayMediaProbe {
 
@@ -34,18 +44,44 @@ object OverlayMediaProbe {
     suspend fun isVideo(context: Context, uri: String): Boolean {
         cache[uri]?.let { return it }
         val result = withContext(Dispatchers.IO) {
+            // 1. Ask the media itself.
             try {
                 MediaMetadataRetriever().use { retriever ->
                     retriever.setDataSource(context, Uri.parse(uri))
-                    retriever.extractMetadata(
+                    val hasVideo = retriever.extractMetadata(
                         MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO
-                    ) == "yes"
+                    )
+                    if (hasVideo != null) {
+                        val answer = hasVideo == "yes"
+                        cache[uri] = answer
+                        return@withContext answer
+                    }
+                    // Retriever opened the file but reports no
+                    // HAS_VIDEO — fall through to the MIME check.
                 }
             } catch (_: Exception) {
-                false
+                // Retriever could not open the URI — MIME fallback below.
+            }
+            // 2. MIME fallback: cheap, needs no codec. A video/* URI
+            // whose retriever probe failed (permissions, odd container)
+            // must still take the video-player path, not Coil.
+            try {
+                val mime = context.contentResolver.getType(Uri.parse(uri)) ?: ""
+                when {
+                    mime.startsWith("video/") -> {
+                        cache[uri] = true
+                        true
+                    }
+                    mime.startsWith("image/") -> {
+                        cache[uri] = false
+                        false
+                    }
+                    else -> false // Unanswerable: do NOT cache.
+                }
+            } catch (_: Exception) {
+                false // Unanswerable: do NOT cache.
             }
         }
-        cache[uri] = result
         return result
     }
 }

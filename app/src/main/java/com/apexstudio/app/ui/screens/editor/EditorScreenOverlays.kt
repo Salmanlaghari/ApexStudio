@@ -1436,44 +1436,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onFullscreenToggle = { vm.toggleFullscreenPreview() }
     )
 
-    // Elevate all 14 Adjust features to the top right below the video player preview
-    TopAdjustBar(
-        adjustments = state.adjustments,
-        onOpenAdjustPanel = { vm.openAdjustmentsPanel() },
-        onUpdate = { vm.updateAdjustments(it) },
-        onResetAll = { vm.resetAllAdjustments() },
-        modifier = Modifier.fillMaxWidth()
-    )
-
+    // BUG FIX (clutter above the timeline): the Adjust chips row, the
+    // Curves/Split quick-action row, and the Overlay/Transition/Effects
+    // centre-add row used to stack ABOVE the timeline, squeezing the
+    // timeline and covering the preview. They now live in the BOTTOM
+    // lines below the timeline (see the bottom-lines block after
+    // TimelineTrackArea) — same callbacks, no function lost. The
+    // timeline area is just the timeline.
     val activeClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId } ?: state.project?.clips?.firstOrNull()
     val clipList = state.project?.clips ?: emptyList()
     val currentClipIdx = clipList.indexOfFirst { it.id == activeClip?.id }
-
-    TimelineQuickActionBar(
-        hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
-        timelineZoom = state.timelineZoom,
-        canSplit = activeClip != null,
-        canMoveLeft = currentClipIdx > 0,
-        canMoveRight = currentClipIdx in 0 until (clipList.size - 1),
-        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
-        onPrevKeyframe = { vm.jumpToPrevKeyframe() },
-        onNextKeyframe = { vm.jumpToNextKeyframe() },
-        onSplit = {
-            activeClip?.let { vm.splitClip(it.id, state.playerPositionMs) }
-        },
-        onMoveLeft = {
-            activeClip?.let { vm.moveClipLeft(it.id) }
-        },
-        onMoveRight = {
-            activeClip?.let { vm.moveClipRight(it.id) }
-        },
-        onZoomIn = { vm.zoomInTimeline() },
-        onZoomOut = { vm.zoomOutTimeline() },
-        onOpenKeyframes = { vm.setKeyframePanelOpen(true) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-    )
 
     TimelineTrackArea(
         state = state,
@@ -1581,6 +1553,71 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         modifier = Modifier
             .fillMaxWidth()
             .weight(1f)
+    )
+
+    // ---- BOTTOM LINES (below the timeline) ----
+    // Everything that used to stack ABOVE the timeline now lives here,
+    // in the bottom lines — same callbacks, no function lost:
+    //  Line 1: the 14 Adjust quick chips (ADJUST / HDR+ / Bright / …).
+    //  Line 2: Overlay / Transition / Effects (add AT THE PLAYHEAD) +
+    //          Curves / Split / Adjust + keyframe nav + move + zoom.
+    AdjustQuickBar(
+        adjustments = state.adjustments,
+        onOpenAdjustPanel = { vm.openAdjustmentsPanel() },
+        onUpdate = { vm.updateAdjustments(it) },
+        onResetAll = { vm.resetAllAdjustments() },
+        modifier = Modifier.fillMaxWidth()
+    )
+    val v1ClipsBottom = clipList.filter {
+        (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
+    }
+    BottomTimelineActionRow(
+        hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+        timelineZoom = state.timelineZoom,
+        canSplit = activeClip != null,
+        canMoveLeft = currentClipIdx > 0,
+        canMoveRight = currentClipIdx in 0 until (clipList.size - 1),
+        canAddTransition = v1ClipsBottom.size >= 2,
+        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+        onPrevKeyframe = { vm.jumpToPrevKeyframe() },
+        onNextKeyframe = { vm.jumpToNextKeyframe() },
+        onSplit = {
+            activeClip?.let { vm.splitClip(it.id, state.playerPositionMs) }
+        },
+        onMoveLeft = {
+            activeClip?.let { vm.moveClipLeft(it.id) }
+        },
+        onMoveRight = {
+            activeClip?.let { vm.moveClipRight(it.id) }
+        },
+        onZoomIn = { vm.zoomInTimeline() },
+        onZoomOut = { vm.zoomOutTimeline() },
+        onOpenKeyframes = { vm.setKeyframePanelOpen(true) },
+        onAddOverlay = { onOpenAddMediaMenu(ClipType.OVERLAY) },
+        onOpenTransition = {
+            // Same as the old centre-add row: open the V1 junction
+            // nearest the playhead. playerPositionMs is read at tap
+            // time, so the junction always matches the playhead.
+            if (v1ClipsBottom.size >= 2) {
+                var acc = 0L
+                var best: Pair<String, String>? = null
+                var bestDist = Long.MAX_VALUE
+                for (i in 0 until v1ClipsBottom.size - 1) {
+                    acc += v1ClipsBottom[i].effectiveDurationMs()
+                    val d = kotlin.math.abs(acc - state.playerPositionMs)
+                    if (d < bestDist) {
+                        bestDist = d
+                        best = v1ClipsBottom[i].id to v1ClipsBottom[i + 1].id
+                    }
+                }
+                best?.let { (fromId, toId) -> vm.openTransitionPicker(fromId, toId) }
+            }
+        },
+        onOpenEffects = { vm.openFxPanel() },
+        onOpenAdjust = { vm.openAdjustmentsPanel() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
     )
 }
 

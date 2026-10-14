@@ -356,6 +356,29 @@ fun VideoTimeline(
         }
     }
 
+    // Reveal: when the selection moves to an OVERLAY clip whose chip is
+    // off-screen, scroll the timeline so the chip is visible. An overlay
+    // added at the playhead sits at timelineOffsetMs — if the viewport
+    // is elsewhere, its OVL row looks EMPTY and the overlay cannot be
+    // tapped/edited, which reads as "overlay missing from the timeline"
+    // even though the clip exists. Overlay-only: V1 chips are laid out
+    // cumulatively, not by timelineOffsetMs, so their reveal needs
+    // different math (the centre-playhead logic already covers V1).
+    LaunchedEffect(selectedClipId) {
+        val clip = clips.firstOrNull { it.id == selectedClipId } ?: return@LaunchedEffect
+        if (clip.type != ClipType.OVERLAY) return@LaunchedEffect
+        val viewportWidth = scrollState.viewportSize
+        if (viewportWidth <= 0) return@LaunchedEffect
+        val clipStartPx = with(density) { (clip.timelineOffsetMs * msToDp).dp.toPx() }.roundToInt()
+        val clipEndPx = with(density) {
+            ((clip.timelineOffsetMs + clip.effectiveDurationMs()) * msToDp).dp.toPx()
+        }.roundToInt()
+        val scroll = scrollState.value
+        if (clipStartPx < scroll || clipEndPx > scroll + viewportWidth) {
+            scrollState.scrollTo((clipStartPx - 32).coerceAtLeast(0))
+        }
+    }
+
     // Drag-and-drop state for video clips
     // V1 lane: main video clips + photo (IMAGE) clips on layer 0 share the
     // filmstrip lane (photo clips previously rendered nowhere -> empty V1

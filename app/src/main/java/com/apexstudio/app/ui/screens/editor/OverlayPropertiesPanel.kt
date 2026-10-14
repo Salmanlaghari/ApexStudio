@@ -6,10 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,7 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.MaskShape
@@ -80,7 +85,6 @@ fun OverlayPropertiesPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val mask = clip.mask
     val activeShape = when {
         mask == null || !mask.enabled -> OverlayMaskShape.NONE
@@ -99,6 +103,13 @@ fun OverlayPropertiesPanel(
         0xFF00E676.toInt(), 0xFF7C4DFF.toInt()
     )
 
+    // Half-height sheet (same 0.55 cap as the FX sheets): the panel must
+    // NEVER cover the full screen — preview + timeline stay visible.
+    // The controls live in HORIZONTAL cards (swipe left/right between
+    // control groups) instead of one tall vertical column.
+    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+    val cardsHeight = (maxSheetHeight - 110.dp).coerceAtLeast(160.dp)
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -106,7 +117,7 @@ fun OverlayPropertiesPanel(
             .background(Color(0xFF141420))
             .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
-            .verticalScroll(scrollState)
+            .heightIn(max = maxSheetHeight)
     ) {
         // Header
         Row(
@@ -144,35 +155,53 @@ fun OverlayPropertiesPanel(
             modifier = Modifier.padding(top = 2.dp)
         )
 
-        // Opacity
-        PanelSliderRow(
-            label = "Opacity",
-            valueLabel = "${(clip.pipOpacity * 100).toInt()}%",
-            value = clip.pipOpacity,
-            onValueChange = onOpacity
-        )
+        // Horizontal control cards: swipe left/right between groups.
+        // Each card scrolls vertically on its own if its content
+        // overflows (e.g. a long keyframe list).
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(cardsHeight)
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Card 1: Opacity + Blend.
+            PropsCard {
+                // Opacity
+                PanelSliderRow(
+                    label = "Opacity",
+                    valueLabel = "${(clip.pipOpacity * 100).toInt()}%",
+                    value = clip.pipOpacity,
+                    onValueChange = onOpacity
+                )
 
-        // Blend mode
-        PanelSectionLabel("Blend mode")
+                // Blend mode
+                PanelSectionLabel("Blend mode", topPadding = 8.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OverlayBlend.entries.forEach { blend ->
+                        PanelChip(
+                            label = blend.label,
+                            selected = clip.overlayBlend == blend,
+                            onClick = { onBlend(blend) }
+                        )
+                    }
+                }
+            }
+
+            // Card 2: Mask + Border + Shadow.
+            PropsCard {
+        // Mask shape
+        PanelSectionLabel("Mask shape")
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OverlayBlend.entries.forEach { blend ->
-                PanelChip(
-                    label = blend.label,
-                    selected = clip.overlayBlend == blend,
-                    onClick = { onBlend(blend) }
-                )
-            }
-        }
-
-        // Mask shape
-        PanelSectionLabel("Mask shape")
-        Row(
-            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OverlayMaskShape.entries.forEach { shape ->
@@ -202,14 +231,14 @@ fun OverlayPropertiesPanel(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             borderColors.forEach { argb ->
                 val selected = clip.overlayBorderColor == argb
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(Color(argb))
                         .border(
@@ -232,7 +261,10 @@ fun OverlayPropertiesPanel(
             value = clip.overlayShadow,
             onValueChange = onShadow
         )
+            } // Card 2
 
+            // Card 3: Flip + Volume + Track.
+            PropsCard {
         // Flip
         PanelSectionLabel("Flip")
         Row(
@@ -277,7 +309,10 @@ fun OverlayPropertiesPanel(
                 )
             }
         }
+            } // Card 3
 
+            // Card 4: Keyframes (position / scale / rotation / opacity).
+            PropsCard {
         // Keyframes: position / scale / rotation / opacity.
         PanelSectionLabel("Keyframes")
         Row(
@@ -355,7 +390,8 @@ fun OverlayPropertiesPanel(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+            } // Card 4
+        } // Horizontal cards row
     }
 }
 
@@ -401,13 +437,33 @@ enum class OverlayMaskShape(val label: String) {
 }
 
 @Composable
-private fun PanelSectionLabel(text: String) {
+private fun PanelSectionLabel(text: String, topPadding: Dp = 16.dp) {
     Text(
         text = text,
         color = Color.White,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+        modifier = Modifier.padding(top = topPadding, bottom = 8.dp)
+    )
+}
+
+/**
+ * One horizontal card of the properties panel: a fixed-width,
+ * full-cards-height column that scrolls vertically on its own when
+ * its content overflows (e.g. a long keyframe list).
+ */
+@Composable
+private fun PropsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(264.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.04f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+        content = content
     )
 }
 

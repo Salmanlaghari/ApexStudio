@@ -205,6 +205,12 @@ jobs:
           curl -sL -o bundletool.jar \
             https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
           if [ ! -s bundletool.jar ]; then echo "bundletool download failed, skipping"; exit 0; fi
+          # Kilo WARNING: verify integrity before executing the downloaded
+          # jar (supply-chain risk). SHA-256 pinned for bundletool 1.18.1
+          # (official GitHub release asset, verified 2026-10-14). A
+          # mismatch is a hard failure: never run an unverified binary.
+          echo "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c  bundletool.jar" | sha256sum -c -
+          if [ $? -ne 0 ]; then echo "bundletool checksum MISMATCH, refusing to run"; exit 1; fi
           cat > /tmp/device-spec.json <<'JSON'
           {"supportedAbis": ["arm64-v8a"], "supportedLocales": ["en"],
            "screenDensity": 640, "sdkVersion": 34}

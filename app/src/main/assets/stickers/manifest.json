@@ -6,7 +6,7 @@
   "stickers": [
     {
       "id": "red-heart",
-      "file": "love/red-heart.png",
+      "file": "love/red-heart.webp",
       "name": "Red Heart",
       "category": "love",
       "tags": [
@@ -20,7 +20,7 @@
     },
     {
       "id": "sparkling-heart",
-      "file": "love/sparkling-heart.png",
+      "file": "love/sparkling-heart.webp",
       "name": "Sparkling Heart",
       "category": "love",
       "tags": [
@@ -33,7 +33,7 @@
     },
     {
       "id": "two-hearts",
-      "file": "love/two-hearts.png",
+      "file": "love/two-hearts.webp",
       "name": "Two Hearts",
       "category": "love",
       "tags": [
@@ -46,7 +46,7 @@
     },
     {
       "id": "heart-with-arrow",
-      "file": "love/heart-with-arrow.png",
+      "file": "love/heart-with-arrow.webp",
       "name": "Heart With Arrow",
       "category": "love",
       "tags": [
@@ -59,7 +59,7 @@
     },
     {
       "id": "heart-with-ribbon",
-      "file": "love/heart-with-ribbon.png",
+      "file": "love/heart-with-ribbon.webp",
       "name": "Heart With Ribbon",
       "category": "love",
       "tags": [
@@ -72,7 +72,7 @@
     },
     {
       "id": "beating-heart",
-      "file": "love/beating-heart.png",
+      "file": "love/beating-heart.webp",
       "name": "Beating Heart",
       "category": "love",
       "tags": [
@@ -85,7 +85,7 @@
     },
     {
       "id": "kiss-mark",
-      "file": "love/kiss-mark.png",
+      "file": "love/kiss-mark.webp",
       "name": "Kiss Mark",
       "category": "love",
       "tags": [
@@ -97,7 +97,7 @@
     },
     {
       "id": "heart-eyes-face",
-      "file": "love/heart-eyes-face.png",
+      "file": "love/heart-eyes-face.webp",
       "name": "Heart Eyes Face",
       "category": "love",
       "tags": [
@@ -112,7 +112,7 @@
     },
     {
       "id": "couple-with-heart",
-      "file": "love/couple-with-heart.png",
+      "file": "love/couple-with-heart.webp",
       "name": "Couple With Heart",
       "category": "love",
       "tags": [
@@ -124,7 +124,7 @@
     },
     {
       "id": "growing-heart",
-      "file": "love/growing-heart.png",
+      "file": "love/growing-heart.webp",
       "name": "Growing Heart",
       "category": "love",
       "tags": [
@@ -136,7 +136,7 @@
     },
     {
       "id": "grinning-face",
-      "file": "happy/grinning-face.png",
+      "file": "happy/grinning-face.webp",
       "name": "Grinning Face",
       "category": "happy",
       "tags": [
@@ -149,7 +149,7 @@
     },
     {
       "id": "beaming-face",
-      "file": "happy/beaming-face.png",
+      "file": "happy/beaming-face.webp",
       "name": "Beaming Face",
       "category": "happy",
       "tags": [
@@ -162,7 +162,7 @@
     },
     {
       "id": "rofl-face",
-      "file": "happy/rofl-face.png",
+      "file": "happy/rofl-face.webp",
       "name": "Rofl Face",
       "category": "happy",
       "tags": [
@@ -176,7 +176,7 @@
     },
     {
       "id": "cool-sunglasses",
-      "file": "happy/cool-sunglasses.png",
+      "file": "happy/cool-sunglasses.webp",
       "name": "Cool Sunglasses",
       "category": "happy",
       "tags": [
@@ -190,7 +190,7 @@
     },
     {
       "id": "star-struck",
-      "file": "happy/star-struck.png",
+      "file": "happy/star-struck.webp",
       "name": "Star Struck",
       "category": "happy",
       "tags": [
@@ -204,7 +204,7 @@
     },
     {
       "id": "partying-face",
-      "file": "happy/partying-face.png",
+      "file": "happy/partying-face.webp",
       "name": "Partying Face",
       "category": "happy",
       "tags": [
@@ -217,7 +217,7 @@
     },
     {
       "id": "smiling-face",
-      "file": "happy/smiling-face.png",
+      "file": "happy/smiling-face.webp",
       "name": "Smiling Face",
       "category": "happy",
       "tags": [
@@ -230,7 +230,7 @@
     },
     {
       "id": "zany-face",
-      "file": "happy/zany-face.png",
+      "file": "happy/zany-face.webp",
       "name": "Zany Face",
       "category": "happy",
       "tags": [
@@ -243,7 +243,7 @@
     },
     {
       "id": "smiling-with-hearts",
-      "file": "happy/smiling-with-hearts.png",
+      "file": "happy/smiling-with-hearts.webp",
       "name": "Smiling With Hearts",
       "category": "happy",
       "tags": [
@@ -257,7 +257,7 @@
     },
     {
       "id": "hugging-face",
-      "file": "happy/hugging-face.png",
+      "file": "happy/hugging-face.webp",
       "name": "Hugging Face",
       "category": "happy",
       "tags": [
@@ -270,7 +270,7 @@
     },
     {
       "id": "crying-face",
-      "file": "sad/crying-face.png",
+      "file": "sad/crying-face.webp",
       "name": "Crying Face",
       "category": "sad",
       "tags": [
@@ -283,7 +283,7 @@
     },
     {
       "id": "loudly-crying",
-      "file": "sad/loudly-crying.png",
+      "file": "sad/loudly-crying.webp",
       "name": "Loudly Crying",
       "category": "sad",
       "tags": [
@@ -296,7 +296,7 @@
     },
     {
       "id": "pensive-face",
-      "file": "sad/pensive-face.png",
+      "file": "sad/pensive-face.webp",
       "name": "Pensive Face",
       "category": "sad",
       "tags": [
@@ -308,7 +308,7 @@
     },
     {
       "id": "disappointed-face",
-      "file": "sad/disappointed-face.png",
+      "file": "sad/disappointed-face.webp",
       "name": "Disappointed Face",
       "category": "sad",
       "tags": [
@@ -319,7 +319,7 @@
     },
     {
       "id": "sad-relieved-face",
-      "file": "sad/sad-relieved-face.png",
+      "file": "sad/sad-relieved-face.webp",
       "name": "Sad Relieved Face",
       "category": "sad",
       "tags": [
@@ -331,7 +331,7 @@
     },
     {
       "id": "sleepy-face",
-      "file": "sad/sleepy-face.png",
+      "file": "sad/sleepy-face.webp",
       "name": "Sleepy Face",
       "category": "sad",
       "tags": [
@@ -343,7 +343,7 @@
     },
     {
       "id": "weary-face",
-      "file": "sad/weary-face.png",
+      "file": "sad/weary-face.webp",
       "name": "Weary Face",
       "category": "sad",
       "tags": [
@@ -356,7 +356,7 @@
     },
     {
       "id": "pleading-face",
-      "file": "sad/pleading-face.png",
+      "file": "sad/pleading-face.webp",
       "name": "Pleading Face",
       "category": "sad",
       "tags": [
@@ -369,7 +369,7 @@
     },
     {
       "id": "broken-heart",
-      "file": "sad/broken-heart.png",
+      "file": "sad/broken-heart.webp",
       "name": "Broken Heart",
       "category": "sad",
       "tags": [
@@ -381,7 +381,7 @@
     },
     {
       "id": "party-popper",
-      "file": "party/party-popper.png",
+      "file": "party/party-popper.webp",
       "name": "Party Popper",
       "category": "party",
       "tags": [
@@ -394,7 +394,7 @@
     },
     {
       "id": "confetti-ball",
-      "file": "party/confetti-ball.png",
+      "file": "party/confetti-ball.webp",
       "name": "Confetti Ball",
       "category": "party",
       "tags": [
@@ -406,7 +406,7 @@
     },
     {
       "id": "birthday-cake",
-      "file": "party/birthday-cake.png",
+      "file": "party/birthday-cake.webp",
       "name": "Birthday Cake",
       "category": "party",
       "tags": [
@@ -418,7 +418,7 @@
     },
     {
       "id": "cheers-mugs",
-      "file": "party/cheers-mugs.png",
+      "file": "party/cheers-mugs.webp",
       "name": "Cheers Mugs",
       "category": "party",
       "tags": [
@@ -431,7 +431,7 @@
     },
     {
       "id": "tropical-drink",
-      "file": "party/tropical-drink.png",
+      "file": "party/tropical-drink.webp",
       "name": "Tropical Drink",
       "category": "party",
       "tags": [
@@ -443,7 +443,7 @@
     },
     {
       "id": "dancing-person",
-      "file": "party/dancing-person.png",
+      "file": "party/dancing-person.webp",
       "name": "Dancing Person",
       "category": "party",
       "tags": [
@@ -455,7 +455,7 @@
     },
     {
       "id": "musical-notes",
-      "file": "party/musical-notes.png",
+      "file": "party/musical-notes.webp",
       "name": "Musical Notes",
       "category": "party",
       "tags": [
@@ -468,7 +468,7 @@
     },
     {
       "id": "gold-medal",
-      "file": "party/gold-medal.png",
+      "file": "party/gold-medal.webp",
       "name": "Gold Medal",
       "category": "party",
       "tags": [
@@ -481,7 +481,7 @@
     },
     {
       "id": "star",
-      "file": "party/star.png",
+      "file": "party/star.webp",
       "name": "Star",
       "category": "party",
       "tags": [
@@ -492,7 +492,7 @@
     },
     {
       "id": "balloon",
-      "file": "party/balloon.png",
+      "file": "party/balloon.webp",
       "name": "Balloon",
       "category": "party",
       "tags": [
@@ -504,7 +504,7 @@
     },
     {
       "id": "fire",
-      "file": "fire/fire.png",
+      "file": "fire/fire.webp",
       "name": "Fire",
       "category": "fire",
       "tags": [
@@ -516,7 +516,7 @@
     },
     {
       "id": "collision",
-      "file": "fire/collision.png",
+      "file": "fire/collision.webp",
       "name": "Collision",
       "category": "fire",
       "tags": [
@@ -528,7 +528,7 @@
     },
     {
       "id": "anger-symbol",
-      "file": "fire/anger-symbol.png",
+      "file": "fire/anger-symbol.webp",
       "name": "Anger Symbol",
       "category": "fire",
       "tags": [
@@ -540,7 +540,7 @@
     },
     {
       "id": "high-voltage",
-      "file": "fire/high-voltage.png",
+      "file": "fire/high-voltage.webp",
       "name": "High Voltage",
       "category": "fire",
       "tags": [
@@ -552,7 +552,7 @@
     },
     {
       "id": "hundred-points",
-      "file": "fire/hundred-points.png",
+      "file": "fire/hundred-points.webp",
       "name": "Hundred Points",
       "category": "fire",
       "tags": [
@@ -564,7 +564,7 @@
     },
     {
       "id": "light-bulb",
-      "file": "fire/light-bulb.png",
+      "file": "fire/light-bulb.webp",
       "name": "Light Bulb",
       "category": "fire",
       "tags": [
@@ -576,7 +576,7 @@
     },
     {
       "id": "flexed-biceps",
-      "file": "fire/flexed-biceps.png",
+      "file": "fire/flexed-biceps.webp",
       "name": "Flexed Biceps",
       "category": "fire",
       "tags": [
@@ -588,7 +588,7 @@
     },
     {
       "id": "rocket",
-      "file": "fire/rocket.png",
+      "file": "fire/rocket.webp",
       "name": "Rocket",
       "category": "fire",
       "tags": [
@@ -600,7 +600,7 @@
     },
     {
       "id": "sparkles",
-      "file": "fire/sparkles.png",
+      "file": "fire/sparkles.webp",
       "name": "Sparkles",
       "category": "fire",
       "tags": [
@@ -612,7 +612,7 @@
     },
     {
       "id": "panda",
-      "file": "animals/panda.png",
+      "file": "animals/panda.webp",
       "name": "Panda",
       "category": "animals",
       "tags": [
@@ -624,7 +624,7 @@
     },
     {
       "id": "unicorn",
-      "file": "animals/unicorn.png",
+      "file": "animals/unicorn.webp",
       "name": "Unicorn",
       "category": "animals",
       "tags": [
@@ -637,7 +637,7 @@
     },
     {
       "id": "frog",
-      "file": "animals/frog.png",
+      "file": "animals/frog.webp",
       "name": "Frog",
       "category": "animals",
       "tags": [
@@ -649,7 +649,7 @@
     },
     {
       "id": "chipmunk",
-      "file": "animals/chipmunk.png",
+      "file": "animals/chipmunk.webp",
       "name": "Chipmunk",
       "category": "animals",
       "tags": [
@@ -661,7 +661,7 @@
     },
     {
       "id": "cat-face",
-      "file": "animals/cat-face.png",
+      "file": "animals/cat-face.webp",
       "name": "Cat Face",
       "category": "animals",
       "tags": [
@@ -674,7 +674,7 @@
     },
     {
       "id": "dog-face",
-      "file": "animals/dog-face.png",
+      "file": "animals/dog-face.webp",
       "name": "Dog Face",
       "category": "animals",
       "tags": [
@@ -687,7 +687,7 @@
     },
     {
       "id": "hear-no-evil",
-      "file": "animals/hear-no-evil.png",
+      "file": "animals/hear-no-evil.webp",
       "name": "Hear No Evil",
       "category": "animals",
       "tags": [
@@ -701,7 +701,7 @@
     },
     {
       "id": "speak-no-evil",
-      "file": "animals/speak-no-evil.png",
+      "file": "animals/speak-no-evil.webp",
       "name": "Speak No Evil",
       "category": "animals",
       "tags": [
@@ -715,7 +715,7 @@
     },
     {
       "id": "pizza",
-      "file": "food/pizza.png",
+      "file": "food/pizza.webp",
       "name": "Pizza",
       "category": "food",
       "tags": [
@@ -727,7 +727,7 @@
     },
     {
       "id": "burger",
-      "file": "food/burger.png",
+      "file": "food/burger.webp",
       "name": "Burger",
       "category": "food",
       "tags": [
@@ -739,7 +739,7 @@
     },
     {
       "id": "soft-ice-cream",
-      "file": "food/soft-ice-cream.png",
+      "file": "food/soft-ice-cream.webp",
       "name": "Soft Ice Cream",
       "category": "food",
       "tags": [
@@ -752,7 +752,7 @@
     },
     {
       "id": "doughnut",
-      "file": "food/doughnut.png",
+      "file": "food/doughnut.webp",
       "name": "Doughnut",
       "category": "food",
       "tags": [
@@ -764,7 +764,7 @@
     },
     {
       "id": "watermelon",
-      "file": "food/watermelon.png",
+      "file": "food/watermelon.webp",
       "name": "Watermelon",
       "category": "food",
       "tags": [
@@ -776,7 +776,7 @@
     },
     {
       "id": "red-apple",
-      "file": "food/red-apple.png",
+      "file": "food/red-apple.webp",
       "name": "Red Apple",
       "category": "food",
       "tags": [
@@ -788,7 +788,7 @@
     },
     {
       "id": "cherries",
-      "file": "food/cherries.png",
+      "file": "food/cherries.webp",
       "name": "Cherries",
       "category": "food",
       "tags": [
@@ -800,7 +800,7 @@
     },
     {
       "id": "strawberry",
-      "file": "food/strawberry.png",
+      "file": "food/strawberry.webp",
       "name": "Strawberry",
       "category": "food",
       "tags": [
@@ -812,7 +812,7 @@
     },
     {
       "id": "thumbs-up",
-      "file": "hands/thumbs-up.png",
+      "file": "hands/thumbs-up.webp",
       "name": "Thumbs Up",
       "category": "hands",
       "tags": [
@@ -825,7 +825,7 @@
     },
     {
       "id": "clapping-hands",
-      "file": "hands/clapping-hands.png",
+      "file": "hands/clapping-hands.webp",
       "name": "Clapping Hands",
       "category": "hands",
       "tags": [
@@ -837,7 +837,7 @@
     },
     {
       "id": "raising-hands",
-      "file": "hands/raising-hands.png",
+      "file": "hands/raising-hands.webp",
       "name": "Raising Hands",
       "category": "hands",
       "tags": [
@@ -850,7 +850,7 @@
     },
     {
       "id": "victory-hand",
-      "file": "hands/victory-hand.png",
+      "file": "hands/victory-hand.webp",
       "name": "Victory Hand",
       "category": "hands",
       "tags": [
@@ -862,7 +862,7 @@
     },
     {
       "id": "rock-horns",
-      "file": "hands/rock-horns.png",
+      "file": "hands/rock-horns.webp",
       "name": "Rock Horns",
       "category": "hands",
       "tags": [
@@ -874,7 +874,7 @@
     },
     {
       "id": "ok-hand",
-      "file": "hands/ok-hand.png",
+      "file": "hands/ok-hand.webp",
       "name": "Ok Hand",
       "category": "hands",
       "tags": [
@@ -886,7 +886,7 @@
     },
     {
       "id": "praying-hands",
-      "file": "hands/praying-hands.png",
+      "file": "hands/praying-hands.webp",
       "name": "Praying Hands",
       "category": "hands",
       "tags": [
@@ -898,7 +898,7 @@
     },
     {
       "id": "open-hands",
-      "file": "hands/open-hands.png",
+      "file": "hands/open-hands.webp",
       "name": "Open Hands",
       "category": "hands",
       "tags": [
@@ -910,7 +910,7 @@
     },
     {
       "id": "fingers-crossed",
-      "file": "hands/fingers-crossed.png",
+      "file": "hands/fingers-crossed.webp",
       "name": "Fingers Crossed",
       "category": "hands",
       "tags": [
@@ -922,7 +922,7 @@
     },
     {
       "id": "sun-face",
-      "file": "nature/sun-face.png",
+      "file": "nature/sun-face.webp",
       "name": "Sun Face",
       "category": "nature",
       "tags": [
@@ -934,7 +934,7 @@
     },
     {
       "id": "crescent-moon",
-      "file": "nature/crescent-moon.png",
+      "file": "nature/crescent-moon.webp",
       "name": "Crescent Moon",
       "category": "nature",
       "tags": [
@@ -945,7 +945,7 @@
     },
     {
       "id": "sun-behind-cloud",
-      "file": "nature/sun-behind-cloud.png",
+      "file": "nature/sun-behind-cloud.webp",
       "name": "Sun Behind Cloud",
       "category": "nature",
       "tags": [
@@ -956,7 +956,7 @@
     },
     {
       "id": "sun",
-      "file": "nature/sun.png",
+      "file": "nature/sun.webp",
       "name": "Sun",
       "category": "nature",
       "tags": [
@@ -968,7 +968,7 @@
     },
     {
       "id": "rainbow",
-      "file": "nature/rainbow.png",
+      "file": "nature/rainbow.webp",
       "name": "Rainbow",
       "category": "nature",
       "tags": [
@@ -979,7 +979,7 @@
     },
     {
       "id": "snowflake",
-      "file": "nature/snowflake.png",
+      "file": "nature/snowflake.webp",
       "name": "Snowflake",
       "category": "nature",
       "tags": [
@@ -991,7 +991,7 @@
     },
     {
       "id": "snow-cloud",
-      "file": "nature/snow-cloud.png",
+      "file": "nature/snow-cloud.webp",
       "name": "Snow Cloud",
       "category": "nature",
       "tags": [
@@ -1003,7 +1003,7 @@
     },
     {
       "id": "thunderstorm",
-      "file": "nature/thunderstorm.png",
+      "file": "nature/thunderstorm.webp",
       "name": "Thunderstorm",
       "category": "nature",
       "tags": [
@@ -1015,7 +1015,7 @@
     },
     {
       "id": "gem-stone",
-      "file": "luxury/gem-stone.png",
+      "file": "luxury/gem-stone.webp",
       "name": "Gem Stone",
       "category": "luxury",
       "tags": [
@@ -1027,7 +1027,7 @@
     },
     {
       "id": "money-bag",
-      "file": "luxury/money-bag.png",
+      "file": "luxury/money-bag.webp",
       "name": "Money Bag",
       "category": "luxury",
       "tags": [
@@ -1039,7 +1039,7 @@
     },
     {
       "id": "money-with-wings",
-      "file": "luxury/money-with-wings.png",
+      "file": "luxury/money-with-wings.webp",
       "name": "Money With Wings",
       "category": "luxury",
       "tags": [
@@ -1051,7 +1051,7 @@
     },
     {
       "id": "money-mouth-face",
-      "file": "luxury/money-mouth-face.png",
+      "file": "luxury/money-mouth-face.webp",
       "name": "Money Mouth Face",
       "category": "luxury",
       "tags": [
@@ -1063,7 +1063,7 @@
     },
     {
       "id": "crown",
-      "file": "luxury/crown.png",
+      "file": "luxury/crown.webp",
       "name": "Crown",
       "category": "luxury",
       "tags": [
@@ -1076,7 +1076,7 @@
     },
     {
       "id": "ring",
-      "file": "luxury/ring.png",
+      "file": "luxury/ring.webp",
       "name": "Ring",
       "category": "luxury",
       "tags": [
@@ -1088,7 +1088,7 @@
     },
     {
       "id": "bomb",
-      "file": "luxury/bomb.png",
+      "file": "luxury/bomb.webp",
       "name": "Bomb",
       "category": "luxury",
       "tags": [
@@ -1098,7 +1098,7 @@
     },
     {
       "id": "bell",
-      "file": "luxury/bell.png",
+      "file": "luxury/bell.webp",
       "name": "Bell",
       "category": "luxury",
       "tags": [
@@ -1109,7 +1109,7 @@
     },
     {
       "id": "pro3d-social-like",
-      "file": "social/like.png",
+      "file": "social/like.webp",
       "name": "Like (3D)",
       "category": "3D Social",
       "tags": [
@@ -1121,7 +1121,7 @@
     },
     {
       "id": "pro3d-social-heart",
-      "file": "social/heart.png",
+      "file": "social/heart.webp",
       "name": "Heart (3D)",
       "category": "3D Social",
       "tags": [
@@ -1133,7 +1133,7 @@
     },
     {
       "id": "pro3d-social-share",
-      "file": "social/share.png",
+      "file": "social/share.webp",
       "name": "Share (3D)",
       "category": "3D Social",
       "tags": [
@@ -1145,7 +1145,7 @@
     },
     {
       "id": "pro3d-social-subscribe",
-      "file": "social/subscribe.png",
+      "file": "social/subscribe.webp",
       "name": "Subscribe (3D)",
       "category": "3D Social",
       "tags": [
@@ -1157,7 +1157,7 @@
     },
     {
       "id": "pro3d-social-bell",
-      "file": "social/bell.png",
+      "file": "social/bell.webp",
       "name": "Notification Bell (3D)",
       "category": "3D Social",
       "tags": [
@@ -1170,7 +1170,7 @@
     },
     {
       "id": "pro3d-social-comment",
-      "file": "social/comment.png",
+      "file": "social/comment.webp",
       "name": "Comment (3D)",
       "category": "3D Social",
       "tags": [
@@ -1182,7 +1182,7 @@
     },
     {
       "id": "pro3d-social-follow",
-      "file": "social/follow.png",
+      "file": "social/follow.webp",
       "name": "Follow (3D)",
       "category": "3D Social",
       "tags": [
@@ -1194,7 +1194,7 @@
     },
     {
       "id": "pro3d-social-mention",
-      "file": "social/mention.png",
+      "file": "social/mention.webp",
       "name": "Mention (3D)",
       "category": "3D Social",
       "tags": [
@@ -1206,7 +1206,7 @@
     },
     {
       "id": "pro3d-social-hashtag",
-      "file": "social/hashtag.png",
+      "file": "social/hashtag.webp",
       "name": "Hashtag (3D)",
       "category": "3D Social",
       "tags": [
@@ -1218,7 +1218,7 @@
     },
     {
       "id": "pro3d-social-thumbsup",
-      "file": "social/thumbsup.png",
+      "file": "social/thumbsup.webp",
       "name": "Thumbs Up (3D)",
       "category": "3D Social",
       "tags": [
@@ -1231,7 +1231,7 @@
     },
     {
       "id": "pro3d-social-thumbsdown",
-      "file": "social/thumbsdown.png",
+      "file": "social/thumbsdown.webp",
       "name": "Thumbs Down (3D)",
       "category": "3D Social",
       "tags": [
@@ -1244,7 +1244,7 @@
     },
     {
       "id": "pro3d-social-star",
-      "file": "social/star.png",
+      "file": "social/star.webp",
       "name": "Star (3D)",
       "category": "3D Social",
       "tags": [
@@ -1256,7 +1256,7 @@
     },
     {
       "id": "pro3d-social-fire",
-      "file": "social/fire.png",
+      "file": "social/fire.webp",
       "name": "Fire (3D)",
       "category": "3D Social",
       "tags": [
@@ -1268,7 +1268,7 @@
     },
     {
       "id": "pro3d-social-clap",
-      "file": "social/clap.png",
+      "file": "social/clap.webp",
       "name": "Clap (3D)",
       "category": "3D Social",
       "tags": [
@@ -1280,7 +1280,7 @@
     },
     {
       "id": "pro3d-social-message",
-      "file": "social/message.png",
+      "file": "social/message.webp",
       "name": "Message (3D)",
       "category": "3D Social",
       "tags": [
@@ -1292,7 +1292,7 @@
     },
     {
       "id": "pro3d-social-live",
-      "file": "social/live.png",
+      "file": "social/live.webp",
       "name": "Live (3D)",
       "category": "3D Social",
       "tags": [
@@ -1304,7 +1304,7 @@
     },
     {
       "id": "pro3d-social-verified",
-      "file": "social/verified.png",
+      "file": "social/verified.webp",
       "name": "Verified (3D)",
       "category": "3D Social",
       "tags": [
@@ -1316,7 +1316,7 @@
     },
     {
       "id": "pro3d-social-trending",
-      "file": "social/trending.png",
+      "file": "social/trending.webp",
       "name": "Trending (3D)",
       "category": "3D Social",
       "tags": [
@@ -1328,7 +1328,7 @@
     },
     {
       "id": "pro3d-social-repost",
-      "file": "social/repost.png",
+      "file": "social/repost.webp",
       "name": "Repost (3D)",
       "category": "3D Social",
       "tags": [
@@ -1340,7 +1340,7 @@
     },
     {
       "id": "pro3d-social-bookmark",
-      "file": "social/bookmark.png",
+      "file": "social/bookmark.webp",
       "name": "Bookmark (3D)",
       "category": "3D Social",
       "tags": [
@@ -1352,7 +1352,7 @@
     },
     {
       "id": "pro3d-daily-coffee",
-      "file": "daily/coffee.png",
+      "file": "daily/coffee.webp",
       "name": "Coffee (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1364,7 +1364,7 @@
     },
     {
       "id": "pro3d-daily-home",
-      "file": "daily/home.png",
+      "file": "daily/home.webp",
       "name": "Home (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1376,7 +1376,7 @@
     },
     {
       "id": "pro3d-daily-sleep",
-      "file": "daily/sleep.png",
+      "file": "daily/sleep.webp",
       "name": "Sleep (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1388,7 +1388,7 @@
     },
     {
       "id": "pro3d-daily-burger",
-      "file": "daily/burger.png",
+      "file": "daily/burger.webp",
       "name": "Burger (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1400,7 +1400,7 @@
     },
     {
       "id": "pro3d-daily-shopping",
-      "file": "daily/shopping.png",
+      "file": "daily/shopping.webp",
       "name": "Shopping (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1412,7 +1412,7 @@
     },
     {
       "id": "pro3d-daily-car",
-      "file": "daily/car.png",
+      "file": "daily/car.webp",
       "name": "Car (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1424,7 +1424,7 @@
     },
     {
       "id": "pro3d-daily-phone",
-      "file": "daily/phone.png",
+      "file": "daily/phone.webp",
       "name": "Phone (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1436,7 +1436,7 @@
     },
     {
       "id": "pro3d-daily-laptop",
-      "file": "daily/laptop.png",
+      "file": "daily/laptop.webp",
       "name": "Laptop (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1448,7 +1448,7 @@
     },
     {
       "id": "pro3d-daily-book",
-      "file": "daily/book.png",
+      "file": "daily/book.webp",
       "name": "Book (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1460,7 +1460,7 @@
     },
     {
       "id": "pro3d-daily-gym",
-      "file": "daily/gym.png",
+      "file": "daily/gym.webp",
       "name": "Gym (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1472,7 +1472,7 @@
     },
     {
       "id": "pro3d-daily-sun",
-      "file": "daily/sun.png",
+      "file": "daily/sun.webp",
       "name": "Sun (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1484,7 +1484,7 @@
     },
     {
       "id": "pro3d-daily-moon",
-      "file": "daily/moon.png",
+      "file": "daily/moon.webp",
       "name": "Moon (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1496,7 +1496,7 @@
     },
     {
       "id": "pro3d-daily-rain",
-      "file": "daily/rain.png",
+      "file": "daily/rain.webp",
       "name": "Rain (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1508,7 +1508,7 @@
     },
     {
       "id": "pro3d-daily-plant",
-      "file": "daily/plant.png",
+      "file": "daily/plant.webp",
       "name": "Plant (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1520,7 +1520,7 @@
     },
     {
       "id": "pro3d-daily-paw",
-      "file": "daily/paw.png",
+      "file": "daily/paw.webp",
       "name": "Pet Paw (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1533,7 +1533,7 @@
     },
     {
       "id": "pro3d-daily-music",
-      "file": "daily/music.png",
+      "file": "daily/music.webp",
       "name": "Music (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1545,7 +1545,7 @@
     },
     {
       "id": "pro3d-daily-clock",
-      "file": "daily/clock.png",
+      "file": "daily/clock.webp",
       "name": "Clock (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1557,7 +1557,7 @@
     },
     {
       "id": "pro3d-daily-calendar",
-      "file": "daily/calendar.png",
+      "file": "daily/calendar.webp",
       "name": "Calendar (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1569,7 +1569,7 @@
     },
     {
       "id": "pro3d-daily-gift",
-      "file": "daily/gift.png",
+      "file": "daily/gift.webp",
       "name": "Gift (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1581,7 +1581,7 @@
     },
     {
       "id": "pro3d-daily-bulb",
-      "file": "daily/bulb.png",
+      "file": "daily/bulb.webp",
       "name": "Lightbulb (3D)",
       "category": "3D Daily Life",
       "tags": [
@@ -1593,7 +1593,7 @@
     },
     {
       "id": "pro3d-vlog-videocam",
-      "file": "vlog/videocam.png",
+      "file": "vlog/videocam.webp",
       "name": "Video Camera (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1606,7 +1606,7 @@
     },
     {
       "id": "pro3d-vlog-photocam",
-      "file": "vlog/photocam.png",
+      "file": "vlog/photocam.webp",
       "name": "Photo Camera (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1619,7 +1619,7 @@
     },
     {
       "id": "pro3d-vlog-mic",
-      "file": "vlog/mic.png",
+      "file": "vlog/mic.webp",
       "name": "Microphone (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1631,7 +1631,7 @@
     },
     {
       "id": "pro3d-vlog-play",
-      "file": "vlog/play.png",
+      "file": "vlog/play.webp",
       "name": "Play (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1643,7 +1643,7 @@
     },
     {
       "id": "pro3d-vlog-record",
-      "file": "vlog/record.png",
+      "file": "vlog/record.webp",
       "name": "Record (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1655,7 +1655,7 @@
     },
     {
       "id": "pro3d-vlog-clapper",
-      "file": "vlog/clapper.png",
+      "file": "vlog/clapper.webp",
       "name": "Clapperboard (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1667,7 +1667,7 @@
     },
     {
       "id": "pro3d-vlog-drone",
-      "file": "vlog/drone.png",
+      "file": "vlog/drone.webp",
       "name": "Drone (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1679,7 +1679,7 @@
     },
     {
       "id": "pro3d-vlog-pin",
-      "file": "vlog/pin.png",
+      "file": "vlog/pin.webp",
       "name": "Map Pin (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1692,7 +1692,7 @@
     },
     {
       "id": "pro3d-vlog-airplane",
-      "file": "vlog/airplane.png",
+      "file": "vlog/airplane.webp",
       "name": "Airplane (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1704,7 +1704,7 @@
     },
     {
       "id": "pro3d-vlog-suitcase",
-      "file": "vlog/suitcase.png",
+      "file": "vlog/suitcase.webp",
       "name": "Suitcase (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1716,7 +1716,7 @@
     },
     {
       "id": "pro3d-vlog-passport",
-      "file": "vlog/passport.png",
+      "file": "vlog/passport.webp",
       "name": "Passport (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1728,7 +1728,7 @@
     },
     {
       "id": "pro3d-vlog-ticket",
-      "file": "vlog/ticket.png",
+      "file": "vlog/ticket.webp",
       "name": "Ticket (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1740,7 +1740,7 @@
     },
     {
       "id": "pro3d-vlog-sunglasses",
-      "file": "vlog/sunglasses.png",
+      "file": "vlog/sunglasses.webp",
       "name": "Sunglasses (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1752,7 +1752,7 @@
     },
     {
       "id": "pro3d-vlog-beach",
-      "file": "vlog/beach.png",
+      "file": "vlog/beach.webp",
       "name": "Beach Umbrella (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1765,7 +1765,7 @@
     },
     {
       "id": "pro3d-vlog-mountain",
-      "file": "vlog/mountain.png",
+      "file": "vlog/mountain.webp",
       "name": "Mountains (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1777,7 +1777,7 @@
     },
     {
       "id": "pro3d-vlog-city",
-      "file": "vlog/city.png",
+      "file": "vlog/city.webp",
       "name": "City Skyline (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1790,7 +1790,7 @@
     },
     {
       "id": "pro3d-vlog-selfie",
-      "file": "vlog/selfie.png",
+      "file": "vlog/selfie.webp",
       "name": "Selfie Frame (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1803,7 +1803,7 @@
     },
     {
       "id": "pro3d-vlog-vlog-badge",
-      "file": "vlog/vlog-badge.png",
+      "file": "vlog/vlog-badge.webp",
       "name": "Vlog Badge (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1816,7 +1816,7 @@
     },
     {
       "id": "pro3d-vlog-subscribe-reminder",
-      "file": "vlog/subscribe-reminder.png",
+      "file": "vlog/subscribe-reminder.webp",
       "name": "Subscribe Reminder (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1829,7 +1829,7 @@
     },
     {
       "id": "pro3d-vlog-endscreen",
-      "file": "vlog/endscreen.png",
+      "file": "vlog/endscreen.webp",
       "name": "Next Arrow (3D)",
       "category": "3D Vlog",
       "tags": [
@@ -1842,7 +1842,7 @@
     },
     {
       "id": "pro3d-expressions-laugh",
-      "file": "expressions/laugh.png",
+      "file": "expressions/laugh.webp",
       "name": "Laughing (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1854,7 +1854,7 @@
     },
     {
       "id": "pro3d-expressions-cry",
-      "file": "expressions/cry.png",
+      "file": "expressions/cry.webp",
       "name": "Crying (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1866,7 +1866,7 @@
     },
     {
       "id": "pro3d-expressions-shocked",
-      "file": "expressions/shocked.png",
+      "file": "expressions/shocked.webp",
       "name": "Shocked (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1878,7 +1878,7 @@
     },
     {
       "id": "pro3d-expressions-angry",
-      "file": "expressions/angry.png",
+      "file": "expressions/angry.webp",
       "name": "Angry (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1890,7 +1890,7 @@
     },
     {
       "id": "pro3d-expressions-love",
-      "file": "expressions/love.png",
+      "file": "expressions/love.webp",
       "name": "In Love (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1903,7 +1903,7 @@
     },
     {
       "id": "pro3d-expressions-cool",
-      "file": "expressions/cool.png",
+      "file": "expressions/cool.webp",
       "name": "Cool (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1915,7 +1915,7 @@
     },
     {
       "id": "pro3d-expressions-sleepy",
-      "file": "expressions/sleepy.png",
+      "file": "expressions/sleepy.webp",
       "name": "Sleepy (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1927,7 +1927,7 @@
     },
     {
       "id": "pro3d-expressions-thinking",
-      "file": "expressions/thinking.png",
+      "file": "expressions/thinking.webp",
       "name": "Thinking (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1939,7 +1939,7 @@
     },
     {
       "id": "pro3d-expressions-party",
-      "file": "expressions/party.png",
+      "file": "expressions/party.webp",
       "name": "Party (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1951,7 +1951,7 @@
     },
     {
       "id": "pro3d-expressions-wink",
-      "file": "expressions/wink.png",
+      "file": "expressions/wink.webp",
       "name": "Wink (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1963,7 +1963,7 @@
     },
     {
       "id": "pro3d-expressions-thumbsup-hand",
-      "file": "expressions/thumbsup-hand.png",
+      "file": "expressions/thumbsup-hand.webp",
       "name": "Thumbs Up Hand (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1977,7 +1977,7 @@
     },
     {
       "id": "pro3d-expressions-peace",
-      "file": "expressions/peace.png",
+      "file": "expressions/peace.webp",
       "name": "Peace Sign (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -1990,7 +1990,7 @@
     },
     {
       "id": "pro3d-expressions-point",
-      "file": "expressions/point.png",
+      "file": "expressions/point.webp",
       "name": "Pointing (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2002,7 +2002,7 @@
     },
     {
       "id": "pro3d-expressions-wave",
-      "file": "expressions/wave.png",
+      "file": "expressions/wave.webp",
       "name": "Waving Hand (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2015,7 +2015,7 @@
     },
     {
       "id": "pro3d-expressions-ok-hand",
-      "file": "expressions/ok-hand.png",
+      "file": "expressions/ok-hand.webp",
       "name": "OK Hand (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2028,7 +2028,7 @@
     },
     {
       "id": "pro3d-expressions-pray",
-      "file": "expressions/pray.png",
+      "file": "expressions/pray.webp",
       "name": "Praying Hands (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2041,7 +2041,7 @@
     },
     {
       "id": "pro3d-expressions-muscle",
-      "file": "expressions/muscle.png",
+      "file": "expressions/muscle.webp",
       "name": "Muscle (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2053,7 +2053,7 @@
     },
     {
       "id": "pro3d-expressions-eyes",
-      "file": "expressions/eyes.png",
+      "file": "expressions/eyes.webp",
       "name": "Side Eyes (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2066,7 +2066,7 @@
     },
     {
       "id": "pro3d-expressions-hundred",
-      "file": "expressions/hundred.png",
+      "file": "expressions/hundred.webp",
       "name": "100 Points (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2079,7 +2079,7 @@
     },
     {
       "id": "pro3d-expressions-rock",
-      "file": "expressions/rock.png",
+      "file": "expressions/rock.webp",
       "name": "Rock On (3D)",
       "category": "3D Expressions",
       "tags": [
@@ -2092,7 +2092,7 @@
     },
     {
       "id": "pro3d-celebration-popper",
-      "file": "celebration/popper.png",
+      "file": "celebration/popper.webp",
       "name": "Party Popper (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2105,7 +2105,7 @@
     },
     {
       "id": "pro3d-celebration-confetti",
-      "file": "celebration/confetti.png",
+      "file": "celebration/confetti.webp",
       "name": "Confetti (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2117,7 +2117,7 @@
     },
     {
       "id": "pro3d-celebration-balloon",
-      "file": "celebration/balloon.png",
+      "file": "celebration/balloon.webp",
       "name": "Balloon (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2129,7 +2129,7 @@
     },
     {
       "id": "pro3d-celebration-cake",
-      "file": "celebration/cake.png",
+      "file": "celebration/cake.webp",
       "name": "Birthday Cake (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2142,7 +2142,7 @@
     },
     {
       "id": "pro3d-celebration-fireworks",
-      "file": "celebration/fireworks.png",
+      "file": "celebration/fireworks.webp",
       "name": "Fireworks (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2154,7 +2154,7 @@
     },
     {
       "id": "pro3d-celebration-champagne",
-      "file": "celebration/champagne.png",
+      "file": "celebration/champagne.webp",
       "name": "Champagne (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2166,7 +2166,7 @@
     },
     {
       "id": "pro3d-celebration-trophy",
-      "file": "celebration/trophy.png",
+      "file": "celebration/trophy.webp",
       "name": "Trophy (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2178,7 +2178,7 @@
     },
     {
       "id": "pro3d-celebration-medal",
-      "file": "celebration/medal.png",
+      "file": "celebration/medal.webp",
       "name": "Medal (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2190,7 +2190,7 @@
     },
     {
       "id": "pro3d-celebration-crown",
-      "file": "celebration/crown.png",
+      "file": "celebration/crown.webp",
       "name": "Crown (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2202,7 +2202,7 @@
     },
     {
       "id": "pro3d-celebration-ribbon",
-      "file": "celebration/ribbon.png",
+      "file": "celebration/ribbon.webp",
       "name": "Award Ribbon (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2215,7 +2215,7 @@
     },
     {
       "id": "pro3d-celebration-sale",
-      "file": "celebration/sale.png",
+      "file": "celebration/sale.webp",
       "name": "Sale Tag (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2228,7 +2228,7 @@
     },
     {
       "id": "pro3d-celebration-new",
-      "file": "celebration/new.png",
+      "file": "celebration/new.webp",
       "name": "New Badge (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2241,7 +2241,7 @@
     },
     {
       "id": "pro3d-celebration-discount",
-      "file": "celebration/discount.png",
+      "file": "celebration/discount.webp",
       "name": "Discount (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2253,7 +2253,7 @@
     },
     {
       "id": "pro3d-celebration-giftbox",
-      "file": "celebration/giftbox.png",
+      "file": "celebration/giftbox.webp",
       "name": "Gift Box (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2266,7 +2266,7 @@
     },
     {
       "id": "pro3d-celebration-sparkles",
-      "file": "celebration/sparkles.png",
+      "file": "celebration/sparkles.webp",
       "name": "Sparkles (3D)",
       "category": "3D Celebration",
       "tags": [
@@ -2278,7 +2278,7 @@
     },
     {
       "id": "pro3d-business-briefcase",
-      "file": "business/briefcase.png",
+      "file": "business/briefcase.webp",
       "name": "Briefcase (3D)",
       "category": "3D Business",
       "tags": [
@@ -2290,7 +2290,7 @@
     },
     {
       "id": "pro3d-business-chart",
-      "file": "business/chart.png",
+      "file": "business/chart.webp",
       "name": "Growth Chart (3D)",
       "category": "3D Business",
       "tags": [
@@ -2303,7 +2303,7 @@
     },
     {
       "id": "pro3d-business-moneybag",
-      "file": "business/moneybag.png",
+      "file": "business/moneybag.webp",
       "name": "Money Bag (3D)",
       "category": "3D Business",
       "tags": [
@@ -2316,7 +2316,7 @@
     },
     {
       "id": "pro3d-business-coin",
-      "file": "business/coin.png",
+      "file": "business/coin.webp",
       "name": "Dollar Coin (3D)",
       "category": "3D Business",
       "tags": [
@@ -2329,7 +2329,7 @@
     },
     {
       "id": "pro3d-business-creditcard",
-      "file": "business/creditcard.png",
+      "file": "business/creditcard.webp",
       "name": "Credit Card (3D)",
       "category": "3D Business",
       "tags": [
@@ -2342,7 +2342,7 @@
     },
     {
       "id": "pro3d-business-handshake",
-      "file": "business/handshake.png",
+      "file": "business/handshake.webp",
       "name": "Handshake (3D)",
       "category": "3D Business",
       "tags": [
@@ -2354,7 +2354,7 @@
     },
     {
       "id": "pro3d-business-target",
-      "file": "business/target.png",
+      "file": "business/target.webp",
       "name": "Target (3D)",
       "category": "3D Business",
       "tags": [
@@ -2366,7 +2366,7 @@
     },
     {
       "id": "pro3d-business-rocket",
-      "file": "business/rocket.png",
+      "file": "business/rocket.webp",
       "name": "Rocket Launch (3D)",
       "category": "3D Business",
       "tags": [
@@ -2379,7 +2379,7 @@
     },
     {
       "id": "pro3d-business-idea",
-      "file": "business/idea.png",
+      "file": "business/idea.webp",
       "name": "Bright Idea (3D)",
       "category": "3D Business",
       "tags": [
@@ -2392,7 +2392,7 @@
     },
     {
       "id": "pro3d-business-checklist",
-      "file": "business/checklist.png",
+      "file": "business/checklist.webp",
       "name": "Checklist (3D)",
       "category": "3D Business",
       "tags": [
@@ -2404,7 +2404,7 @@
     },
     {
       "id": "pro3d-business-event",
-      "file": "business/event.png",
+      "file": "business/event.webp",
       "name": "Calendar Event (3D)",
       "category": "3D Business",
       "tags": [
@@ -2417,7 +2417,7 @@
     },
     {
       "id": "pro3d-business-email",
-      "file": "business/email.png",
+      "file": "business/email.webp",
       "name": "Email (3D)",
       "category": "3D Business",
       "tags": [
@@ -2429,7 +2429,7 @@
     },
     {
       "id": "pro3d-business-call",
-      "file": "business/call.png",
+      "file": "business/call.webp",
       "name": "Phone Call (3D)",
       "category": "3D Business",
       "tags": [
@@ -2442,7 +2442,7 @@
     },
     {
       "id": "pro3d-business-wifi",
-      "file": "business/wifi.png",
+      "file": "business/wifi.webp",
       "name": "WiFi Signal (3D)",
       "category": "3D Business",
       "tags": [
@@ -2455,7 +2455,7 @@
     },
     {
       "id": "pro3d-business-battery",
-      "file": "business/battery.png",
+      "file": "business/battery.webp",
       "name": "Battery Full (3D)",
       "category": "3D Business",
       "tags": [

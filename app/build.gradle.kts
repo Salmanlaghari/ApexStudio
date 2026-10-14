@@ -173,8 +173,10 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
   implementation("com.google.mlkit:face-detection:16.1.7")
-  // Phase 3: on-device selfie segmentation for Background Remover pack.
-  implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+  // NOTE: ML Kit segmentation-selfie was removed (app-size work): it had zero
+  // imports — all person segmentation goes through MediaPipe Tasks Vision
+  // (PR-G, BackgroundReplaceEngine) with its model on-demand via PackManager.
+  // Keeping the dep would bundle its ~249 KB .tflite model asset for nothing.
 
   // Phase 4: GitHub open-source integrations (all Apache-2.0/MIT/OFL)
   // Lottie animated stickers/overlays — https://github.com/airbnb/lottie-android

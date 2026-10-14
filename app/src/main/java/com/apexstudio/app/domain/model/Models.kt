@@ -964,7 +964,7 @@ data class StickerOverlay(
     val endMs: Long = Long.MAX_VALUE,
     val keyframes: KeyframeTrack = KeyframeTrack(),
     /**
-     * Bundled PNG sticker from `assets/stickers/` (e.g. "love/red-heart.png"),
+     * Bundled sticker from `assets/stickers/` (e.g. "love/red-heart.webp"),
      * loaded via [com.apexstudio.app.data.stickers.StickerPack]. Null means
      * this is a legacy emoji sticker rendered from [symbolOrUri] as text.
      * Default-null keeps old saved projects deserialising unchanged.

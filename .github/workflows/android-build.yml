@@ -177,23 +177,37 @@ jobs:
           fi
           chmod +x gradlew
 
+      # Kilo WARNING (hardcoded keystore password): the throwaway CI
+      # keystore gets a fresh random password every run (masked in logs),
+      # so no credential is ever hardcoded in the workflow.
+      - name: Generate ephemeral keystore password
+        run: |
+          PASS=$(openssl rand -hex 24)
+          echo "::add-mask::$PASS"
+          echo "CI_KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+
       - name: Generate throwaway CI release keystore
         run: |
-          keytool -genkey -v -keystore ci-release.keystore -storepass ci-release \
-            -alias upload -keypass ci-release -keyalg RSA -keysize 2048 \
+          keytool -genkey -v -keystore ci-release.keystore -storepass "$CI_KEYSTORE_PASSWORD" \
+            -alias upload -keypass "$CI_KEYSTORE_PASSWORD" -keyalg RSA -keysize 2048 \
             -validity 1 -dname "CN=CI Size Measurement,O=ApexStudio,C=US"
 
       - name: Build release AAB + APK
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/ci-release.keystore
-          STORE_PASSWORD: ci-release
-          KEY_PASSWORD: ci-release
+          STORE_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
         run: ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon
 
       - name: Size report (release APK + AAB)
         run: |
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          AAB=$(ls app/build/outputs/bundle/release/*.aab | head -1)
+          # Kilo WARNING (ls | head -1): deterministic paths — the release
+          # build produces exactly these two files. Fail loudly if a
+          # renamed/extra output ever appears instead of guessing.
+          APK=app/build/outputs/apk/release/app-release.apk
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          test -f "$APK" || { echo "missing expected APK: $APK"; exit 1; }
+          test -f "$AAB" || { echo "missing expected AAB: $AAB"; exit 1; }
           echo "APK=$APK" >> "$GITHUB_ENV"
           echo "AAB=$AAB" >> "$GITHUB_ENV"
           python3 scripts/size-report.py "$APK" "release arm64 APK" | tee size-report-apk.txt
@@ -205,13 +219,21 @@ jobs:
           curl -sL -o bundletool.jar \
             https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
           if [ ! -s bundletool.jar ]; then echo "bundletool download failed, skipping"; exit 0; fi
+          # Kilo WARNING: verify integrity before executing the downloaded
+          # jar (supply-chain risk). SHA-256 pinned for bundletool 1.18.1
+          # (official GitHub release asset, verified 2026-10-14). A
+          # mismatch is a hard failure: never run an unverified binary.
+          echo "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c  bundletool.jar" | sha256sum -c -
+          if [ $? -ne 0 ]; then echo "bundletool checksum MISMATCH, refusing to run"; exit 1; fi
           cat > /tmp/device-spec.json <<'JSON'
           {"supportedAbis": ["arm64-v8a"], "supportedLocales": ["en"],
            "screenDensity": 640, "sdkVersion": 34}
           JSON
+          # Kilo WARNING: bundletool output was suppressed (>/dev/null),
+          # hiding diagnostics. Keep it visible so failures are diagnosable.
           java -jar bundletool.jar build-apks --bundle="$AAB" --output=/tmp/app.apks \
-            --ks=ci-release.keystore --ks-pass=pass:ci-release \
-            --ks-key-alias=upload --key-pass=pass:ci-release > /dev/null 2>&1
+            --ks=ci-release.keystore --ks-pass=pass:"$CI_KEYSTORE_PASSWORD" \
+            --ks-key-alias=upload --key-pass=pass:"$CI_KEYSTORE_PASSWORD"
           java -jar bundletool.jar get-size total --apks=/tmp/app.apks \
             --device-spec=/tmp/device-spec.json | tee bundletool-download-size.txt
           echo "bundletool exit: $?"

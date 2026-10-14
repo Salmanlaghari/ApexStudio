@@ -209,17 +209,19 @@ fun EditorViewModel.applySpeedCurvePreset(clipId: String, preset: SpeedCurveMath
  */
 fun EditorViewModel.refreshTimelineDuration() {
     // Clamp from the LIVE playhead (the state mirror can lag it by up
-    // to 100ms) and mirror the result back so live and state agree.
-    // Only sync live when the update actually ran (project present) —
-    // otherwise a no-op refresh would snap the live playhead back to
-    // the (possibly stale) state mirror.
+    // to 100ms) for the STATE mirror. The LIVE flow is clamped
+    // separately below from its CURRENT value (atomic update) — NOT
+    // from the stale liveBefore snapshot: the 33ms playback loop keeps
+    // advancing live while _state.update runs, so writing liveBefore
+    // back would clobber the loop's newer tick and snap the playhead
+    // backward during playback.
     val liveBefore = livePlayheadMs()
-    var clamped: Long? = null
+    var newDurationMs: Long? = null
     _state.update { s ->
         val clips = s.project?.clips ?: return@update s
         val newDuration = computeTimelineDurationMs(clips, s.project?.audioTracks ?: emptyList())
+        newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
-        clamped = newPlayhead
         s.copy(
             project = s.project?.copy(clips = clips, durationMs = newDuration),
             durationMs = newDuration,
@@ -227,7 +229,10 @@ fun EditorViewModel.refreshTimelineDuration() {
             currentTimeMs = newPlayhead
         )
     }
-    clamped?.let { _playerPosition.value = it }
+    // Live clamp: only ever pulls live DOWN to the new duration bound
+    // (when the duration shrank below the current position); if live
+    // is already within bounds this is a no-op, never a backward snap.
+    newDurationMs?.let { d -> _playerPosition.update { it.coerceIn(0L, d) } }
     // updateClip() already persisted once with the pre-refresh
     // duration; persist again so disk state matches.
     persistProject()
@@ -458,10 +463,14 @@ fun EditorViewModel.redo() = viewModelScope.launch {
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
-    // to 100ms) and mirror the result back so live and state agree.
-    // Only sync live when the update actually ran (project present).
+    // to 100ms) for the STATE mirror. The LIVE flow is clamped
+    // separately below from its CURRENT value (atomic update) — NOT
+    // from the stale liveBefore snapshot: the 33ms playback loop keeps
+    // advancing live while _state.update runs, so writing liveBefore
+    // back would clobber the loop's newer tick and snap the playhead
+    // backward during playback.
     val liveBefore = livePlayheadMs()
-    var clamped: Long? = null
+    var newDurationMs: Long? = null
     _state.update { s ->
         val proj = s.project ?: return@update s
         val updatedClips = proj.clips.map { c ->
@@ -475,8 +484,8 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
             } else c
         }
         val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
+        newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
-        clamped = newPlayhead
         s.copy(
             project = proj.copy(clips = updatedClips, durationMs = newDuration),
             durationMs = newDuration,
@@ -486,7 +495,10 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
             canRedo = redoStack.isNotEmpty()
         )
     }
-    clamped?.let { _playerPosition.value = it }
+    // Live clamp: only ever pulls live DOWN to the new duration bound
+    // (when the trim shrank the timeline below the current position);
+    // otherwise a no-op, never a backward snap.
+    newDurationMs?.let { d -> _playerPosition.update { it.coerceIn(0L, d) } }
     persistProject()
 }
 

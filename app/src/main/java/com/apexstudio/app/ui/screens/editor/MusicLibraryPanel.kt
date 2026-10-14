@@ -186,7 +186,7 @@ fun MusicLibraryPanel(
 
         // Mood categories
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(MUSIC_MOODS) { mood ->
+            items(MUSIC_MOODS, key = { it.id }) { mood ->
                 val selected = mood.id == selectedMood.id
                 Box(
                     modifier = Modifier

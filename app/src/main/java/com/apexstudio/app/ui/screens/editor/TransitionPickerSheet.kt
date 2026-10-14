@@ -307,7 +307,7 @@ fun TransitionPickerSheet(
                 }
             }
 
-            items(displayedTransitions) { trans ->
+            items(displayedTransitions, key = { it.id }) { trans ->
                 val isSelected = trans.id == selectedTypeId
                 Box(
                     modifier = Modifier

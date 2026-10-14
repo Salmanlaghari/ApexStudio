@@ -19,12 +19,8 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -65,19 +61,28 @@ class EditorViewModel(
     internal var backgroundJob: Job? = null
 
     /**
-     * 60fps-safe playhead position stream. The timeline playhead collects
-     * this flow directly so playback ticks do NOT recompose the whole
-     * timeline — only the playhead + ruler move. (Passing playerPositionMs
-     * as a plain Long recomposed all tracks/clips/thumbnails every tick.)
+     * Live playback position, updated on EVERY position tick (~30/s) by
+     * [setPlayerPosition]. This is the 60fps-safe playhead stream: the
+     * timeline playhead overlay collects it in a tiny composable, so
+     * playback ticks do NOT recompose the whole timeline.
+     *
+     * Deliberately separate from [_state]: pushing every tick through
+     * [EditorState] recomposed the ENTIRE EditorScreen (all panels,
+     * preview, transport, toolbar) 30x/s. The state's
+     * [EditorState.playerPositionMs] is now a ~10Hz mirror, synced by
+     * [setPlayerPosition] (throttled) and forced on every seek / pause /
+     * user action. UI that needs the live value reads this flow (or
+     * [livePlayheadMs]); UI that reads the state copy gets the 10Hz
+     * mirror, which is plenty for timecode text and panel playheads.
      */
-    val playerPositionFlow: StateFlow<Long> = _state
-        .map { it.playerPositionMs }
-        .distinctUntilChanged()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = 0L
-        )
+    internal val _playerPosition = MutableStateFlow(0L)
+    val playerPositionFlow: StateFlow<Long> = _playerPosition.asStateFlow()
+
+    /** Current live playhead (ms) — the authoritative "now" for user actions (split / trim / keyframe). */
+    internal fun livePlayheadMs(): Long = _playerPosition.value
+
+    /** Wall-clock (uptimeMillis) of the last position mirror sync into [_state]. */
+    internal var lastPositionStateSyncAtMs: Long = 0L
 
     internal val _export = MutableStateFlow(ExportState())
     val export: StateFlow<ExportState> = _export.asStateFlow()

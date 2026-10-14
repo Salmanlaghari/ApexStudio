@@ -187,7 +187,7 @@ fun ChromaKeyPanel(
             )
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(bgTypes) { (type, label) ->
+                items(bgTypes, key = { it.first }) { (type, label) ->
                     val isSelected = settings.backgroundType == type
                     Box(
                         modifier = Modifier

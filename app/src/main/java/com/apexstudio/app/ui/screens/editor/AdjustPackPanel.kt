@@ -205,7 +205,7 @@ fun AdjustPackPanel(
                 item {
                     PresetChip(label = "All", selected = selectedCategory == null, onClick = { selectedCategory = null })
                 }
-                items(categories) { cat ->
+                items(categories, key = { it }) { cat ->
                     PresetChip(label = cat, selected = selectedCategory == cat, onClick = { selectedCategory = cat })
                 }
             }

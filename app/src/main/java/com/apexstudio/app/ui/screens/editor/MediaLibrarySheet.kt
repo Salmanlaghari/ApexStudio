@@ -143,7 +143,7 @@ fun MediaLibrarySheet(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(categories) { cat ->
+            items(categories, key = { it }) { cat ->
                 val isSelected = cat == selectedCategory
                 Box(
                     modifier = Modifier
@@ -194,7 +194,7 @@ fun MediaLibrarySheet(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(filteredItems) { item ->
+            items(filteredItems, key = { it.id }) { item ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

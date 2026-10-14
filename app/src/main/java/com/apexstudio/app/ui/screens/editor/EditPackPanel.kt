@@ -206,7 +206,7 @@ fun EditPackPanel(
             item {
                 FilterChip(label = "All", selected = selectedType == null, onClick = { selectedType = null })
             }
-            items(types) { t ->
+            items(types, key = { it }) { t ->
                 FilterChip(label = labelFor(t), selected = selectedType == t, onClick = { selectedType = t })
             }
         }

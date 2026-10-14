@@ -310,7 +310,7 @@ private fun DiscoverTab(
                     onClick = { controller.browsePopular() }
                 )
             }
-            items(MusicLibraryController.GENRE_TAGS) { tag ->
+            items(MusicLibraryController.GENRE_TAGS, key = { it }) { tag ->
                 GenreChip(
                     label = tag.replaceFirstChar { it.uppercase() },
                     selected = uiState.activeTag == tag,

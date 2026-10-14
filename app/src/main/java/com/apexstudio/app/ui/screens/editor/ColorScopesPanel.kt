@@ -220,7 +220,7 @@ fun ColorScopesPanel(
                         PackLoader.ScopeDef("histogram", "Histogram"),
                         PackLoader.ScopeDef("rgb_parade", "RGB Parade")
                     )
-                }) { scope ->
+                }, key = { it.id }) { scope ->
                     ScopeChip(
                         label = scope.name,
                         emoji = emojiForScope(scope.id),

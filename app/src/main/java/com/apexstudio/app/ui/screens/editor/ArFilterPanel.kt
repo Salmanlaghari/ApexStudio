@@ -188,7 +188,7 @@ fun ArFilterPanel(
                 )
             }
 
-            items(filters) { item ->
+            items(filters, key = { it.id }) { item ->
                 ArFilterThumbnailCard(
                     title = item.title,
                     subtitle = item.subtitle,

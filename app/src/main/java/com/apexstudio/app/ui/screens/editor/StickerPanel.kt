@@ -183,7 +183,7 @@ fun StickerPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(categories) { cat ->
+            items(categories, key = { it }) { cat ->
                 val isSelected = cat == selectedCategory
                 Box(
                     modifier = Modifier
@@ -337,7 +337,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(animations) { (file, name) ->
+            items(animations, key = { it.first }) { (file, name) ->
                 val composition by rememberLottieComposition(
                     LottieCompositionSpec.Asset("lottie/$file")
                 )

@@ -225,7 +225,7 @@ fun CameraCapturePanel(
                     }
                 }
 
-                items(ArFilterCatalog.FILTERS) { item ->
+                items(ArFilterCatalog.FILTERS, key = { it.id }) { item ->
                     val isSel = activeArId == item.id
                     val col = Color(item.accentHex)
                     Box(

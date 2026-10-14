@@ -10,6 +10,9 @@ plugins {
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
+  // Baseline Profile (editor smoothness): registers the
+  // generateReleaseBaselineProfile task used by BaselineProfileGenerator.
+  alias(libs.plugins.androidx.baselineprofile)
 }
 
 // Royalty-free music library (Jamendo API): the free client ID is read from the
@@ -194,6 +197,20 @@ dependencies {
 
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+
+  // Baseline Profile: installs the generated baseline-prof.txt into
+  // release builds (faster cold start + first editor open). The profile
+  // itself is generated on-device (BaselineProfileGenerator) — until it
+  // lands in src/main/baseline-prof.txt this dep is a harmless no-op.
+  implementation(libs.androidx.profileinstaller)
+
+  // Baseline Profile generator (on-device only; never runs in CI).
+  androidTestImplementation(libs.androidx.benchmark.macro.junit4)
+  androidTestImplementation(libs.androidx.uiautomator)
+  androidTestImplementation(libs.androidx.junit)
+  // Explicit: BaselineProfileGenerator imports InstrumentationRegistry
+  // from here (do not rely on the transitive copy).
+  androidTestImplementation(libs.androidx.test.platform)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

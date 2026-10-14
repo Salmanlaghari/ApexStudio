@@ -25,12 +25,13 @@ import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
- * Top Adjustment Bar: Elevates all 14 color, light & HDR features from the
- * bottom to the top directly below the preview player.
- * Allows instant 1-tap adjustment preview and 1-tap expansion of the full top panel.
+ * Adjust quick bar: all 14 color, light & HDR features as 1-tap chips
+ * plus the full Adjust panel trigger. Lives in the BOTTOM lines below
+ * the timeline (moved from above the timeline so the timeline area
+ * stays clean) — same chips, same callbacks, only relocated.
  */
 @Composable
-fun TopAdjustBar(
+fun AdjustQuickBar(
     adjustments: VideoAdjustments,
     onOpenAdjustPanel: () -> Unit,
     onUpdate: ((VideoAdjustments) -> VideoAdjustments) -> Unit,

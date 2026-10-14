@@ -173,19 +173,11 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
  * Audio-track volume that is real everywhere: updates both the project
  * list (timeline preview via AudioPlaybackManager) and the mixer list
  * (audio export), following the toggleAudioTrackMute dual-write pattern.
+ *
+ * Delegates to [setAudioTrackVolume], the single entry point — the two
+ * must never drift apart again (the old split-brain bug: one wrote
+ * only the project list, the other only the mixer list).
  */
 fun EditorViewModel.setAudioTrackVolumeFull(trackId: String, volume: Float) {
-    val safe = volume.coerceIn(0f, 1f)
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(volume = safe) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map {
-            if (it.id == trackId) it.copy(volume = safe) else it
-        })
-    }
-    persistProject()
+    setAudioTrackVolume(trackId, volume)
 }

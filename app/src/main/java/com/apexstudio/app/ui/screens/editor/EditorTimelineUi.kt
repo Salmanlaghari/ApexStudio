@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.ThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 
@@ -41,12 +43,19 @@ import com.apexstudio.app.ui.theme.ApexPalette
  *
  * Keyed by second (0, 1, 2, …) so the V1 lane renders one cell per
  * second, each exactly 1s wide — frames scroll and scale with zoom
- * exactly like the ruler and playhead. Capped at 180s (3 min); longer
- * clips show the generated placeholder past the cap.
+ * exactly like the ruler and playhead. The extractor samples evenly
+ * across the FULL trimmed range (capped decoder calls) and expands to
+ * a dense map, so long clips show real frames across their whole
+ * length, not just the first [maxSeconds].
+ *
+ * [onFrame] is invoked per decoded frame (progressive fill) — the
+ * caller merges it into the lane immediately instead of waiting for
+ * the whole set.
  */
 private suspend fun extractClipThumbnails(
     context: android.content.Context,
-    clip: com.apexstudio.app.domain.model.MediaClip
+    clip: com.apexstudio.app.domain.model.MediaClip,
+    onFrame: (suspend (second: Int, bitmap: Bitmap) -> Unit)? = null
 ): Map<Int, Bitmap> {
     // OVERLAY clips can be image-backed too (overlay picker allows
     // ImageAndVideo). Try the still loader first for them as well;
@@ -68,7 +77,8 @@ private suspend fun extractClipThumbnails(
         trimEndMs = trimEnd,
         frameWidthPx = 120,
         frameHeightPx = 80,
-        maxSeconds = 180
+        maxSeconds = 180,
+        onFrame = onFrame
     )
 }
 
@@ -139,14 +149,6 @@ fun TimelineTrackArea(
     val context = LocalContext.current
     val clips = state.project?.clips ?: emptyList()
 
-    // V1 clips in timeline order — for the centre-add Transition
-    // button, which opens the junction nearest the playhead.
-    val v1Clips = remember(clips) {
-        clips.filter {
-            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
-        }
-    }
-
     // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
     // opening/closing any bottom sheet can never reset the scroll to
     // 00:00 and strand the playhead off-screen.
@@ -179,23 +181,62 @@ fun TimelineTrackArea(
     val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
     filmstripClips.forEach { clip ->
         LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
+            // Bitmaps seeded as the placeholder set for this clip, so a
+            // progressive real frame can recycle exactly the placeholder
+            // it replaces. Placeholders are DISTINCT bitmaps (one per
+            // cell), so per-frame recycling is safe for them.
+            val fallbackBitmaps = mutableSetOf<Bitmap>()
+            // On re-extraction (e.g. trim change) the existing map is a
+            // DENSE map whose bitmaps are ALIASED (one instance under
+            // several seconds) — never recycle those one-by-one while
+            // other cells still display the same instance. Snapshot
+            // them and recycle the whole set only once the new map has
+            // fully replaced the old one.
+            val previousBitmaps = thumbnailsByClip[clip.id]?.values?.toSet() ?: emptySet()
             if (!thumbnailsByClip.containsKey(clip.id)) {
                 val clipSeconds = ((clip.trimEndMs - clip.trimStartMs)
                     .coerceAtLeast(1000L) / 1000L).toInt().coerceIn(1, 180)
-                thumbnailsByClip[clip.id] = com.apexstudio.app.data.media.ThumbnailExtractor
+                val seeded = com.apexstudio.app.data.media.ThumbnailExtractor
                     .generateFilmstripFrames(clipSeconds, 120, 80, clip.uri.hashCode().toLong())
                     .mapIndexed { i, b -> i to b }.toMap()
+                fallbackBitmaps += seeded.values
+                thumbnailsByClip[clip.id] = seeded
             }
             try {
-                val real = extractClipThumbnails(context, clip)
-                if (real.isNotEmpty()) {
-                    // Recycle the seeded fallback set before replacing —
-                    // it is never displayed again after this.
-                    thumbnailsByClip.remove(clip.id)?.values?.forEach { bmp ->
-                        if (!bmp.isRecycled) bmp.recycle()
+                // Progressive fill: each decoded frame replaces its
+                // placeholder the moment it arrives (first frame
+                // appears in ~100–300ms), instead of the lane waiting
+                // for the whole set. onFrame runs on the extractor's
+                // IO thread — bounce to Main for Compose state.
+                val real = extractClipThumbnails(context, clip) { second, bitmap ->
+                    withContext(Dispatchers.Main) {
+                        val current = thumbnailsByClip[clip.id] ?: emptyMap()
+                        val old = current[second]
+                        thumbnailsByClip[clip.id] = current + (second to bitmap)
+                        // Recycle a replaced placeholder, never a real
+                        // frame (dense-map aliases share instances).
+                        if (old != null && old !== bitmap && fallbackBitmaps.remove(old)) {
+                            if (!old.isRecycled) old.recycle()
+                        }
                     }
-                    thumbnailsByClip[clip.id] = real
                 }
+                if (real.isNotEmpty()) {
+                    // Wholesale replace with the complete new dense map
+                    // (a shorter re-trim must not leave stale old
+                    // seconds behind). The progressive pass already put
+                    // the same new instances in for sampled seconds, so
+                    // this only adds the dense-expansion tail. After
+                    // the swap, no cell references the previous
+                    // bitmaps, so the whole previous set can be
+                    // recycled — as can any placeholder never replaced.
+                    thumbnailsByClip[clip.id] = real
+                    previousBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    // Recycle any placeholder never replaced by a real frame.
+                    fallbackBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    fallbackBitmaps.clear()
+                }
+                // If extraction failed (real empty), the placeholders
+                // stay displayed — never recycle them.
             } catch (e: Exception) {
                 Log.w("TimelineTrackArea", "Thumbnail extraction failed for ${clip.id}: ${e.message}")
             }
@@ -219,37 +260,6 @@ fun TimelineTrackArea(
             .padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        // Centre-add row: Overlay / Transition / Effects, all acting AT
-        // THE PLAYHEAD. The playhead is pinned at the viewport centre,
-        // so this centred row sits on the playhead's line. All three
-        // reuse the existing flows — nothing new is invented here:
-        // overlay → the overlay picker (lands at playhead, first free
-        // layer); transition → the junction nearest the playhead;
-        // effects → the existing FX panel.
-        CentreAddRow(
-            canAddTransition = v1Clips.size >= 2,
-            onAddOverlay = { onAddMedia(ClipType.OVERLAY) },
-            onAddTransition = {
-                if (v1Clips.size >= 2) {
-                    // V1 clips run end to end; junctions are the
-                    // cumulative boundaries. Open the one nearest the
-                    // playhead. playerPositionMs is read at tap time.
-                    var acc = 0L
-                    var best: Pair<String, String>? = null
-                    var bestDist = Long.MAX_VALUE
-                    for (i in 0 until v1Clips.size - 1) {
-                        acc += v1Clips[i].effectiveDurationMs()
-                        val d = kotlin.math.abs(acc - state.playerPositionMs)
-                        if (d < bestDist) {
-                            bestDist = d
-                            best = v1Clips[i].id to v1Clips[i + 1].id
-                        }
-                    }
-                    best?.let { (fromId, toId) -> onOpenClipTransition(fromId, toId) }
-                }
-            },
-            onAddEffects = onOpenFx
-        )
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering
         com.apexstudio.app.ui.components.VideoTimeline(
             state = state,
@@ -303,91 +313,22 @@ fun TimelineTrackArea(
 }
 
 /**
- * CapCut-style centre-add row: three compact pills centred above the
- * timeline, all acting AT THE PLAYHEAD (the playhead is pinned at the
- * viewport centre, so this centred row sits on the playhead's line).
- * Small and unobtrusive — a single 32dp strip that never covers the
- * preview. Transition is disabled when fewer than two V1 clips exist
- * (there is no junction to open).
+ * Bottom timeline action row: EVERY function that used to stack above
+ * the timeline now lives in this single horizontally-scrollable line
+ * BELOW the timeline (plus the Adjust quick-chips line above it):
+ * Overlay / Transition / Effects (all acting AT THE PLAYHEAD, same
+ * callbacks as the old centre-add row), Curves (Keyframe Studio),
+ * Split, Adjust, keyframe nav (±KF / prev / next), clip move ←/→,
+ * and timeline zoom. No function lost — only relocated.
  */
 @Composable
-private fun CentreAddRow(
-    canAddTransition: Boolean,
-    onAddOverlay: () -> Unit,
-    onAddTransition: () -> Unit,
-    onAddEffects: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(0xFF0C0E14))
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CentreAddPill(
-            icon = Icons.Default.AddPhotoAlternate,
-            label = "Overlay",
-            onClick = onAddOverlay
-        )
-        Spacer(Modifier.width(8.dp))
-        CentreAddPill(
-            icon = Icons.Default.Transform,
-            label = "Transition",
-            enabled = canAddTransition,
-            onClick = onAddTransition
-        )
-        Spacer(Modifier.width(8.dp))
-        CentreAddPill(
-            icon = Icons.Default.AutoFixHigh,
-            label = "Effects",
-            onClick = onAddEffects
-        )
-    }
-}
-
-@Composable
-private fun CentreAddPill(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val contentColor = if (enabled) Color.White else Color(0xFF64748B)
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (enabled) Color(0xFF1A1E2A) else Color(0xFF141420))
-            .border(1.dp, Color(0xFF2E384D), RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(14.dp)
-        )
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
-fun TimelineQuickActionBar(
+fun BottomTimelineActionRow(
     hasKeyframeAtPlayhead: Boolean,
     timelineZoom: Float,
     canSplit: Boolean,
     canMoveLeft: Boolean,
     canMoveRight: Boolean,
+    canAddTransition: Boolean,
     onToggleKeyframe: () -> Unit,
     onPrevKeyframe: () -> Unit,
     onNextKeyframe: () -> Unit,
@@ -397,6 +338,10 @@ fun TimelineQuickActionBar(
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onOpenKeyframes: () -> Unit,
+    onAddOverlay: () -> Unit,
+    onOpenTransition: () -> Unit,
+    onOpenEffects: () -> Unit,
+    onOpenAdjust: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -406,233 +351,150 @@ fun TimelineQuickActionBar(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0F0F1A))
             .border(1.dp, Color(0xFF232336), RoundedCornerShape(8.dp))
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Left: Keyframe jump & toggle group
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Jump Prev Keyframe
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF1A1A28))
-                    .clickable(onClick = onPrevKeyframe),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FastRewind,
-                    contentDescription = "Prev Keyframe",
-                    tint = ApexPalette.NeonCyan,
-                    modifier = Modifier.size(15.dp)
-                )
-            }
-
-            // Keyframe Diamond Add/Remove
-            Box(
-                modifier = Modifier
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF222234))
-                    .border(
-                        1.dp,
-                        if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color(0xFF383852),
-                        RoundedCornerShape(6.dp)
-                    )
-                    .clickable(onClick = onToggleKeyframe)
-                    .padding(horizontal = 7.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .graphicsLayer { rotationZ = 45f }
-                            .background(if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White)
-                    )
-                    Text(
-                        text = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
-                        color = if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            // Jump Next Keyframe
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF1A1A28))
-                    .clickable(onClick = onNextKeyframe),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FastForward,
-                    contentDescription = "Next Keyframe",
-                    tint = ApexPalette.NeonCyan,
-                    modifier = Modifier.size(15.dp)
-                )
-            }
-
-            // Open Keyframe Studio Curves
-            Box(
-                modifier = Modifier
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF1E2235))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-                    .clickable(onClick = onOpenKeyframes)
-                    .padding(horizontal = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Animation,
-                        contentDescription = "Keyframe Studio",
-                        tint = ApexPalette.NeonCyan,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "Curves",
-                        color = ApexPalette.NeonCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-
-        // Center: Split & Reorder buttons
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Split button
-            Box(
-                modifier = Modifier
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (canSplit) Color(0xFF242438) else Color(0xFF141420))
-                    .border(1.dp, if (canSplit) Color(0xFF42425E) else Color.Transparent, RoundedCornerShape(6.dp))
-                    .clickable(enabled = canSplit, onClick = onSplit)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCut,
-                        contentDescription = "Split",
-                        tint = if (canSplit) Color.White else Color(0xFF555566),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "Split",
-                        color = if (canSplit) Color.White else Color(0xFF555566),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            if (canMoveLeft) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF1A1A28))
-                        .clickable(onClick = onMoveLeft),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Move Clip Left",
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-
-            if (canMoveRight) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF1A1A28))
-                        .clickable(onClick = onMoveRight),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = "Move Clip Right",
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-
-        // Right: Timeline Zoom Controls
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF1A1A28))
-                    .clickable(onClick = onZoomOut),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ZoomOut,
-                    contentDescription = "Zoom Out",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            Text(
-                text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
-                color = Color(0xFF94A3B8),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(horizontal = 3.dp)
+        // Add-at-playhead group (was the centre-add row).
+        BottomActionChip(
+            icon = Icons.Default.AddPhotoAlternate,
+            label = "Overlay",
+            onClick = onAddOverlay
+        )
+        BottomActionChip(
+            icon = Icons.Default.Transform,
+            label = "Transition",
+            enabled = canAddTransition,
+            onClick = onOpenTransition
+        )
+        BottomActionChip(
+            icon = Icons.Default.AutoFixHigh,
+            label = "Effects",
+            onClick = onOpenEffects
+        )
+        BottomActionChip(
+            icon = Icons.Default.Tune,
+            label = "Adjust",
+            onClick = onOpenAdjust
+        )
+        // Curves (Keyframe Studio) + Split (was the quick-action row).
+        BottomActionChip(
+            icon = Icons.Default.Animation,
+            label = "Curves",
+            tint = ApexPalette.NeonCyan,
+            onClick = onOpenKeyframes
+        )
+        BottomActionChip(
+            icon = Icons.Default.ContentCut,
+            label = "Split",
+            enabled = canSplit,
+            onClick = onSplit
+        )
+        // Keyframe nav.
+        BottomActionChip(
+            icon = Icons.Default.FastRewind,
+            label = null,
+            tint = ApexPalette.NeonCyan,
+            onClick = onPrevKeyframe
+        )
+        BottomActionChip(
+            icon = null,
+            label = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
+            selected = hasKeyframeAtPlayhead,
+            onClick = onToggleKeyframe
+        )
+        BottomActionChip(
+            icon = Icons.Default.FastForward,
+            label = null,
+            tint = ApexPalette.NeonCyan,
+            onClick = onNextKeyframe
+        )
+        // Clip move.
+        if (canMoveLeft) {
+            BottomActionChip(
+                icon = Icons.Default.ArrowBack,
+                label = null,
+                onClick = onMoveLeft
             )
+        }
+        if (canMoveRight) {
+            BottomActionChip(
+                icon = Icons.Default.ArrowForward,
+                label = null,
+                onClick = onMoveRight
+            )
+        }
+        // Timeline zoom.
+        BottomActionChip(
+            icon = Icons.Default.ZoomOut,
+            label = null,
+            onClick = onZoomOut
+        )
+        Text(
+            text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
+            color = Color(0xFF94A3B8),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(horizontal = 3.dp)
+        )
+        BottomActionChip(
+            icon = Icons.Default.ZoomIn,
+            label = null,
+            onClick = onZoomIn
+        )
+    }
+}
 
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF1A1A28))
-                    .clickable(onClick = onZoomIn),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ZoomIn,
-                    contentDescription = "Zoom In",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
+@Composable
+private fun BottomActionChip(
+    icon: ImageVector?,
+    label: String?,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val contentColor = when {
+        !enabled -> Color(0xFF555566)
+        selected -> ApexPalette.NeonCyan
+        else -> tint
+    }
+    Row(
+        modifier = modifier
+            .height(28.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF1A1A28))
+            .border(
+                1.dp,
+                if (selected) ApexPalette.NeonCyan else Color(0xFF383852),
+                RoundedCornerShape(6.dp)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+        if (label != null) {
+            Text(
+                text = label,
+                color = contentColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
+
 
 @Composable
 private fun TrackSidebarCell(

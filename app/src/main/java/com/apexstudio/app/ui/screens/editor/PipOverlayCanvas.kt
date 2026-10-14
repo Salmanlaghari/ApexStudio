@@ -9,8 +9,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.OpenInFull
@@ -27,7 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +52,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -515,15 +523,58 @@ private fun PipOverlayItem(
                     }
                 }
                 else -> {
-                    AsyncImage(
-                        model = clip.uri,
-                        contentDescription = "Overlay image",
-                        // Stretch to the box — matches the export GL
-                        // effect, which maps the full texture onto the box
-                        // (the box already carries the media's aspect).
-                        contentScale = ContentScale.FillBounds,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    // Image overlay: Coil decodes the still. A failed
+                    // load must NEVER render as a silent black box (the
+                    // box background is black, so a failed AsyncImage
+                    // looked exactly like the #146 black-box bug). Show
+                    // a visible "couldn't load" placeholder with the
+                    // clip name so the user knows the media — not the
+                    // editor — failed, and can re-pick it.
+                    var loadError by remember(clip.id, clip.uri) { mutableStateOf(false) }
+                    if (loadError) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF2A1215))
+                                .padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BrokenImage,
+                                contentDescription = null,
+                                tint = Color(0xFFE57373),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Couldn't load media",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = clip.name,
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 8.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        AsyncImage(
+                            model = clip.uri,
+                            contentDescription = "Overlay image",
+                            // Stretch to the box — matches the export GL
+                            // effect, which maps the full texture onto the box
+                            // (the box already carries the media's aspect).
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier.fillMaxSize(),
+                            onError = { loadError = true },
+                            onSuccess = { loadError = false }
+                        )
+                    }
                 }
             }
         } // inner mask-clip box

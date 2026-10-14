@@ -164,11 +164,11 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         // on one track at the same offset).
         val firstFreeLayer = nextFreeVideoLayer()
             .takeIf { it in 1 until MAX_VIDEO_LAYERS } ?: 1
-        val newClips = mediaList.mapIndexedNotNull { batchIndex, meta ->
+        val newClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
+        for ((batchIndex, meta) in mediaList.withIndex()) {
             val resolvedMeta = if (context != null) {
                 meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
             } else meta
-            val created = mediaPicker?.toMediaClip(resolvedMeta, s.project?.clips?.size ?: 0)
             // Overlay (PiP) add path: the picked media becomes an
             // OVERLAY clip on a dedicated overlay track at the
             // playhead — NOT at 00:00 (the old behaviour, which made
@@ -180,6 +180,21 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             // Video overlays are audible at unity gain; image
             // overlays have no audio (volume ignored).
             val isOverlayPick = targetLayer != null || asOverlay
+            // Overlay media is persisted into app-private storage
+            // BEFORE the clip is created: a picked content:// URI
+            // carries only a grant-scoped read permission, so a saved
+            // project referencing the original URI can go unreadable
+            // after process death — the preview then shows a black
+            // box and the overlay is uneditable. The copy is
+            // best-effort (falls back to the original URI) and runs
+            // on IO so the add path never blocks the UI thread.
+            val effectiveMeta = if (isOverlayPick && context != null) {
+                val persisted = com.apexstudio.app.data.picker.persistPickedMediaToAppStorage(
+                    context!!, resolvedMeta.uri, resolvedMeta.name
+                )
+                resolvedMeta.copy(uri = persisted)
+            } else resolvedMeta
+            val created = mediaPicker?.toMediaClip(effectiveMeta, s.project?.clips?.size ?: 0)
             if (isOverlayPick && created != null) {
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
@@ -192,7 +207,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 // Multi-pick spreads across consecutive free layers.
                 val layer = targetLayer
                     ?: (firstFreeLayer + batchIndex).coerceAtMost(MAX_VIDEO_LAYERS - 1)
-                created.copy(
+                newClips += created.copy(
                     type = ClipType.OVERLAY,
                     trackIndex = layer,
                     timelineOffsetMs = playheadMs,
@@ -202,7 +217,9 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                     overlayAspect = aspect,
                     overlayVolume = if (isImage) 0f else 1f
                 )
-            } else created
+            } else if (created != null) {
+                newClips += created
+            }
         }
         val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 

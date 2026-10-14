@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
@@ -211,3 +212,42 @@ class MediaPickerHelper(private val context: Context) {
         )
     }
 }
+
+/**
+ * Persist a picked media URI into app-private storage and return the
+ * copy's `file://` URI. Picked `content://` URIs carry only a
+ * grant-scoped read permission: once the process dies (or the grant
+ * lapses), a saved project that still references the original URI can
+ * no longer open its media — the overlay preview shows a black box
+ * and thumbnails never load. A project-owned copy can never expire.
+ *
+ * Returns the ORIGINAL uri on any failure (copy is best-effort — a
+ * failed copy must never block adding the clip). Files already inside
+ * app storage are returned as-is.
+ */
+suspend fun persistPickedMediaToAppStorage(context: Context, uri: String, name: String): String =
+    withContext(Dispatchers.IO) {
+        try {
+            val parsed = Uri.parse(uri)
+            if (parsed.scheme == "file") {
+                val path = parsed.path ?: return@withContext uri
+                if (path.startsWith(context.filesDir.absolutePath)) return@withContext uri
+            }
+            val dir = File(context.filesDir, "project_media")
+            if (!dir.exists()) dir.mkdirs()
+            val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                .takeLast(64).ifBlank { "media" }
+            val dest = File(dir, "${UUID.randomUUID()}_$safeName")
+            context.contentResolver.openInputStream(parsed)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext uri
+            if (dest.length() <= 0L) {
+                dest.delete()
+                return@withContext uri
+            }
+            Uri.fromFile(dest).toString()
+        } catch (e: Exception) {
+            Log.w("MediaPickerHelper", "persistPickedMedia failed for $uri: ${e.message}")
+            uri
+        }
+    }

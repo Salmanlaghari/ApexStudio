@@ -40,6 +40,12 @@ fun EditorViewModel.addVoiceOverTrack(uri: String, durationMs: Long, name: Strin
         val updatedTracks = proj.audioTracks + newTrack
         st.copy(project = proj.copy(audioTracks = updatedTracks))
     }
+    // Keep the mixer list in sync (the old code added the voiceover
+    // only to the project list, so it never appeared in the mixer)
+    // and PERSIST it (the old code never saved, so a recorded
+    // voiceover vanished on reopen — "Voice edit nahi ho raha").
+    _audio.update { s -> s.copy(tracks = s.tracks + newTrack) }
+    persistProject()
 }
 
 

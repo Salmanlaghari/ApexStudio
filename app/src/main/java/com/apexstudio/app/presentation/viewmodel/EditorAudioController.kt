@@ -275,8 +275,25 @@ fun EditorViewModel.removeAudioTrack(trackId: String) {
 }
 
 
-fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol.coerceIn(0f, 1f)) else it })
+fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) {
+    // Dual-write: preview + video export read project.audioTracks,
+    // the mixer UI reads _audio.tracks, and persistence saves the
+    // project. Writing only _audio (the old behaviour) made mixer
+    // volume edits silently vanish — audible nowhere, lost on
+    // reopen, absent from export. See setAudioTrackVolumeFull.
+    val safe = vol.coerceIn(0f, 1f)
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(volume = safe) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map {
+            if (it.id == trackId) it.copy(volume = safe) else it
+        })
+    }
+    persistProject()
 }
 
 
@@ -295,25 +312,70 @@ fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
 }
 
 
-fun EditorViewModel.toggleAudioTrackSolo(trackId: String) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it })
+fun EditorViewModel.toggleAudioTrackSolo(trackId: String) {
+    // Dual-write + persist (same split-brain bug as volume: the old
+    // _audio-only write never reached preview/export/persistence).
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it })
+    }
+    persistProject()
 }
 
 
-fun EditorViewModel.setAudioTrackTrim(trackId: String, startMs: Long, endMs: Long) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map {
-        if (it.id == trackId) it.copy(trimStartMs = startMs.coerceAtLeast(0), trimEndMs = endMs.coerceAtLeast(startMs)) else it
-    })
+fun EditorViewModel.setAudioTrackTrim(trackId: String, startMs: Long, endMs: Long) {
+    // Dual-write + persist (same split-brain bug as volume: the old
+    // _audio-only write never reached preview/export/persistence).
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(
+                trimStartMs = startMs.coerceAtLeast(0),
+                trimEndMs = endMs.coerceAtLeast(startMs)
+            ) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map {
+            if (it.id == trackId) it.copy(trimStartMs = startMs.coerceAtLeast(0), trimEndMs = endMs.coerceAtLeast(startMs)) else it
+        })
+    }
+    persistProject()
 }
 
 
-fun EditorViewModel.setAudioTrackFadeIn(trackId: String, ms: Long) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it })
+fun EditorViewModel.setAudioTrackFadeIn(trackId: String, ms: Long) {
+    // Dual-write + persist (same split-brain bug as volume).
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it })
+    }
+    persistProject()
 }
 
 
-fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it })
+fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
+    // Dual-write + persist (same split-brain bug as volume).
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it })
+    }
+    persistProject()
 }
 
 
@@ -324,13 +386,17 @@ fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
 
 fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
     pushUndo()
+    // One shared id for the second half: the project list and the
+    // mixer list must carry the SAME track ids, or a later mixer edit
+    // to the split half would miss the project copy.
+    val part2Id = "audio_${System.currentTimeMillis()}"
     _state.update { s ->
         val p = s.project ?: return@update s
         val track = p.audioTracks.firstOrNull { it.id == trackId } ?: return@update s
         val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
         val part1 = track.copy(trimEndMs = splitPoint)
         val part2 = track.copy(
-            id = "audio_${System.currentTimeMillis()}",
+            id = part2Id,
             trimStartMs = splitPoint
         )
         val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
@@ -344,19 +410,36 @@ fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
         }
         s.copy(project = p.copy(audioTracks = updated))
     }
+    // Keep the mixer list in sync with the project list: the old code
+    // split only the project list, leaving _audio.tracks with the
+    // pre-split single track (mixer + project disagreed after a split).
+    _audio.update { s ->
+        val track = s.tracks.firstOrNull { it.id == trackId } ?: return@update s
+        val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
+        val part1 = track.copy(trimEndMs = splitPoint)
+        val part2 = track.copy(
+            id = part2Id,
+            trimStartMs = splitPoint
+        )
+        val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
+        for (t in s.tracks) {
+            if (t.id == trackId) {
+                updated.add(part1)
+                updated.add(part2)
+            } else {
+                updated.add(t)
+            }
+        }
+        s.copy(tracks = updated)
+    }
     persistProject()
 }
 
 
 fun EditorViewModel.updateAudioTrackVolume(trackId: String, volume: Float) {
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        val updated = p.audioTracks.map {
-            if (it.id == trackId) it.copy(volume = volume.coerceIn(0f, 1f)) else it
-        }
-        s.copy(project = p.copy(audioTracks = updated))
-    }
-    persistProject()
+    // Same dual-write as setAudioTrackVolume (single entry point for
+    // project + mixer + persistence so the two lists can never diverge).
+    setAudioTrackVolume(trackId, volume)
 }
 
 

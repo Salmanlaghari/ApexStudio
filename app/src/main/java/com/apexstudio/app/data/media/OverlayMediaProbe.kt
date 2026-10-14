@@ -32,10 +32,12 @@ import java.util.concurrent.ConcurrentHashMap
  * treated as an image for the rest of the process: Coil tried to
  * decode video bytes as an image, failed silently, and the preview
  * showed an empty black box. Now: a retriever failure falls back to
- * the ContentResolver MIME type (`video/*` → video, `image/*` →
- * image); only a successful probe (or a MIME-backed answer) is
+ * the ContentResolver MIME type (a video MIME type → video, an image
+ * MIME type → image); only a successful probe (or a MIME-backed answer) is
  * cached, and an unanswerable probe returns `false` WITHOUT caching
- * so a later retry can still succeed.
+ * so a later retry can still succeed. (Note: this KDoc deliberately
+ * avoids writing a MIME pattern like video-slash-star inline — the
+ * slash-star sequence would open a nested block comment.)
  */
 object OverlayMediaProbe {
 
@@ -62,7 +64,7 @@ object OverlayMediaProbe {
             } catch (_: Exception) {
                 // Retriever could not open the URI — MIME fallback below.
             }
-            // 2. MIME fallback: cheap, needs no codec. A video/* URI
+            // 2. MIME fallback: cheap, needs no codec. A video MIME type
             // whose retriever probe failed (permissions, odd container)
             // must still take the video-player path, not Coil.
             try {

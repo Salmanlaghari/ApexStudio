@@ -77,11 +77,20 @@ fun EditorViewModel.startExport(
                 centerX = ov.pipX,
                 centerY = ov.pipY,
                 rotationDeg = ov.pipRotationDeg,
-                opacity = (ov.pipOpacity *
-                        ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
-                    .coerceIn(0f, 1f),
+                // BASE opacity only: the effect multiplies the
+                // keyframe-interpolated opacity per frame.
+                opacity = ov.pipOpacity.coerceIn(0f, 1f),
                 // Shape mask (Mask tool) on the overlay clip.
-                mask = ov.mask
+                mask = ov.mask,
+                // Properties panel + intrinsic aspect + keyframes.
+                aspect = ov.overlayAspect,
+                blendMode = ov.overlayBlend.glId,
+                borderWidth = ov.overlayBorderWidth,
+                borderColor = ov.overlayBorderColor,
+                shadow = ov.overlayShadow,
+                flipH = ov.overlayFlipH,
+                flipV = ov.overlayFlipV,
+                keyframes = ov.keyframes.keyframes
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -294,11 +303,20 @@ fun EditorViewModel.startPhotoExport(
                         centerX = ov.pipX,
                         centerY = ov.pipY,
                         rotationDeg = ov.pipRotationDeg,
-                        opacity = (ov.pipOpacity *
-                                ov.keyframes.interpolateAt(ov.timelineOffsetMs).opacity)
-                            .coerceIn(0f, 1f),
+                        // BASE opacity only: the effect multiplies the
+                        // keyframe-interpolated opacity per frame.
+                        opacity = ov.pipOpacity.coerceIn(0f, 1f),
                         // Shape mask (Mask tool) on the overlay clip.
-                        mask = ov.mask
+                        mask = ov.mask,
+                        // Properties panel + intrinsic aspect + keyframes.
+                        aspect = ov.overlayAspect,
+                        blendMode = ov.overlayBlend.glId,
+                        borderWidth = ov.overlayBorderWidth,
+                        borderColor = ov.overlayBorderColor,
+                        shadow = ov.overlayShadow,
+                        flipH = ov.overlayFlipH,
+                        flipV = ov.overlayFlipV,
+                        keyframes = ov.keyframes.keyframes
                     )
                 }
             // Phase 4: gl-transitions shaders ride as transitionGlId.

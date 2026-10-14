@@ -94,6 +94,34 @@ data class MediaClip(
     val pipScale: Float = 0.25f,
     val pipRotationDeg: Float = 0f,
     val pipOpacity: Float = 1f,
+    // Overlay (PiP) properties-panel fields — only meaningful when
+    // type == ClipType.OVERLAY. All normalised / resolution-independent
+    // so preview and export resolve the same numbers:
+    // - overlayAspect: intrinsic media aspect (width / height) of the
+    //   overlay source. The preview box and the export PiP box both
+    //   derive their height from this (pipScale is the width fraction),
+    //   so a portrait photo is never stretched into the legacy 16:9
+    //   box. 16:9 default preserves older projects.
+    // - overlayBlend: how the overlay composites over V1 (Normal /
+    //   Screen / Multiply / Overlay), implemented in the preview
+    //   (saveLayer blendMode) and the export shader.
+    // - overlayBorderWidth: border thickness as a fraction of the
+    //   overlay box width (0 = no border). overlayBorderColor: ARGB.
+    // - overlayShadow: soft drop-shadow strength 0..1 (0 = none).
+    // - overlayFlipH / overlayFlipV: mirror the overlay.
+    // - overlayVolume: video-overlay audio gain 0..2 (preview
+    //   overlayPlayer volume). Default 0 keeps older projects muted
+    //   (previous behaviour); new video overlays are created at 1.
+    // Backwards-compatible: older project JSONs without these fields
+    // deserialise as the defaults above.
+    val overlayAspect: Float = 16f / 9f,
+    val overlayBlend: OverlayBlend = OverlayBlend.NORMAL,
+    val overlayBorderWidth: Float = 0f,
+    val overlayBorderColor: Int = 0xFFFFFFFF.toInt(),
+    val overlayShadow: Float = 0f,
+    val overlayFlipH: Boolean = false,
+    val overlayFlipV: Boolean = false,
+    val overlayVolume: Float = 0f,
     // Photo-editing tools for IMAGE clips (crop / adjust / LUT filter /
     // rotate+flip). Stored per-clip so every photo keeps its own edits;
     // the preview renderer and the export path both read this single
@@ -338,6 +366,34 @@ data class TextOverlay(
 }
 
 enum class ClipType { VIDEO, OVERLAY, AUDIO, SFX, IMAGE }
+
+/**
+ * Blend mode for an overlay (PiP) clip over the V1 frame.
+ * Implemented identically in the preview (saveLayer blendMode) and
+ * the export ([PipOverlayGlEffect] fragment shader), so WYSIWYG holds.
+ */
+@Serializable
+enum class OverlayBlend {
+    NORMAL,
+    SCREEN,
+    MULTIPLY,
+    OVERLAY;
+
+    val label: String get() = when (this) {
+        NORMAL -> "Normal"
+        SCREEN -> "Screen"
+        MULTIPLY -> "Multiply"
+        OVERLAY -> "Overlay"
+    }
+
+    /** ID consumed by the export shader's uPipBlend (do NOT use ordinal). */
+    val glId: Int get() = when (this) {
+        NORMAL -> 0
+        SCREEN -> 1
+        MULTIPLY -> 2
+        OVERLAY -> 3
+    }
+}
 
 /**
  * Shape of a [VideoMask].

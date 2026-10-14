@@ -171,7 +171,22 @@ class ExportEngine(private val context: Context) {
         val rotationDeg: Float = 0f,
         val opacity: Float = 1f,
         // Shape mask (Mask tool) on this overlay clip. Null = no mask.
-        val mask: com.apexstudio.app.domain.model.VideoMask? = null
+        val mask: com.apexstudio.app.domain.model.VideoMask? = null,
+        // Overlay properties (properties panel) + intrinsic aspect +
+        // keyframes. The effect resolves keyframes per frame, so the
+        // exported overlay animates exactly like the preview. Opacity
+        // here is the BASE opacity — the effect multiplies the
+        // keyframe-interpolated opacity per frame (it must NOT be
+        // pre-multiplied by the keyframe at the overlay start, which
+        // would freeze the animation at its first value).
+        val aspect: Float = 16f / 9f,
+        val blendMode: Int = 0,
+        val borderWidth: Float = 0f,
+        val borderColor: Int = 0xFFFFFFFF.toInt(),
+        val shadow: Float = 0f,
+        val flipH: Boolean = false,
+        val flipV: Boolean = false,
+        val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
     )
 
     /**
@@ -255,7 +270,15 @@ class ExportEngine(private val context: Context) {
                                 centerY = pip.centerY,
                                 rotationDeg = pip.rotationDeg,
                                 opacity = pip.opacity,
-                                mask = pip.mask
+                                mask = pip.mask,
+                                aspect = pip.aspect,
+                                blendMode = pip.blendMode,
+                                borderWidth = pip.borderWidth,
+                                borderColor = pip.borderColor,
+                                shadow = pip.shadow,
+                                flipH = pip.flipH,
+                                flipV = pip.flipV,
+                                keyframes = pip.keyframes
                             )
                         )
                     } catch (e: Exception) {

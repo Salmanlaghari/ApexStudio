@@ -858,6 +858,72 @@ fun MaskPanelOverlay(
     }
 }
 
+/** Overlay (PiP) properties panel overlay. */
+@Composable
+fun OverlayPropertiesPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.overlayPropsOpen) return
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    // Only overlays have a properties panel; if the selection moved to
+    // a non-overlay while the panel was open, close it.
+    if (selectedClip == null || selectedClip.type != ClipType.OVERLAY) {
+        LaunchedEffect(Unit) { vm.closeOverlayPropsPanel() }
+        return
+    }
+    // Probe result for this clip is owned by the preview section; the
+    // panel re-probes cheaply (cached) to decide whether to show volume.
+    val context = LocalContext.current
+    var isVideo by remember(selectedClip.id, selectedClip.uri) {
+        mutableStateOf<Boolean?>(null)
+    }
+    LaunchedEffect(selectedClip.id, selectedClip.uri) {
+        isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
+            context, selectedClip.uri
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeOverlayPropsPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            OverlayPropertiesPanel(
+                clip = selectedClip,
+                isVideo = isVideo == true,
+                playheadMs = state.playerPositionMs,
+                onOpacity = { vm.setOverlayClipOpacity(selectedClip.id, it) },
+                onBlend = { vm.setOverlayBlend(selectedClip.id, it) },
+                onMaskShape = { shape ->
+                    // Undo: one entry per panel session (armed flag).
+                    vm.armOverlayUndo()
+                    val mask = shape.toVideoMask()
+                    if (mask == null) vm.clearClipMask(selectedClip.id)
+                    else vm.setClipMask(selectedClip.id, mask)
+                },
+                onBorder = { width, color ->
+                    vm.setOverlayBorder(selectedClip.id, width, color)
+                },
+                onShadow = { vm.setOverlayShadow(selectedClip.id, it) },
+                onFlip = { h, v -> vm.setOverlayFlip(selectedClip.id, h, v) },
+                onVolume = { vm.setOverlayVolume(selectedClip.id, it) },
+                onTrack = { layer -> vm.moveClipToVideoLayer(selectedClip.id, layer) },
+                onAddKeyframe = {
+                    vm.captureOverlayKeyframe(selectedClip.id, state.playerPositionMs)
+                },
+                onSeekKeyframe = { vm.seekTo(it) },
+                onRemoveKeyframe = { kfId ->
+                    vm.removeOverlayKeyframe(selectedClip.id, kfId)
+                },
+                onClose = { vm.closeOverlayPropsPanel() }
+            )
+        }
+    }
+}
+
 /** Help dialog overlay. */
 @Composable
 fun HelpDialogOverlay(
@@ -995,7 +1061,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
             ?: state.project?.clips?.firstOrNull()
         val animatedTransform = remember(selectedClip, state.playerPositionMs) {
-            selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
+            // Overlay clips apply their own keyframes inside
+            // PipOverlayCanvas (absolute overlay transform); feeding
+            // them into the MAIN video's transform would animate V1
+            // whenever an overlay is selected.
+            if (selectedClip?.type == ClipType.OVERLAY) AnimatedTransform.Identity
+            else selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
                 ?: AnimatedTransform.Identity
         }
         // All overlay clips across video layers V2..V10 — the interactive
@@ -1006,10 +1077,27 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
             } ?: emptyList()
         }
+        // Probe: is each overlay clip a video? The clip type is always
+        // OVERLAY, so the media itself must answer (OverlayMediaProbe,
+        // cached per URI). The old code branched on
+        // `it.type == ClipType.VIDEO` over this OVERLAY-only list, so the
+        // player was never bound and video overlays rendered as an empty
+        // black box (Coil cannot decode video).
+        var overlayIsVideo by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+        LaunchedEffect(overlayClips.map { it.id to it.uri }) {
+            overlayClips.forEach { clip ->
+                if (!overlayIsVideo.containsKey(clip.id)) {
+                    val isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
+                        context, clip.uri
+                    )
+                    overlayIsVideo = overlayIsVideo + (clip.id to isVideo)
+                }
+            }
+        }
         // The video overlay clip the shared muted player is bound to:
         // the first VIDEO overlay active at the playhead.
         val activeOverlayVideoClip = overlayClips.firstOrNull {
-            it.type == ClipType.VIDEO && it.isOverlayActiveAt(state.playerPositionMs)
+            overlayIsVideo[it.id] == true && it.isOverlayActiveAt(state.playerPositionMs)
         }
 
         // Bind the overlay player to the active video overlay clip
@@ -1035,12 +1123,21 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 .build()
             player.setMediaItem(item)
             player.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
-            player.volume = 0f
+            // Overlay volume (properties panel): video overlays are
+            // audible at their own gain alongside V1 — NOT forced
+            // muted (the old `volume = 0f` made the volume control
+            // meaningless and video overlays silently voiceless).
+            player.volume = clip.overlayVolume.coerceIn(0f, 2f)
             player.prepare()
             player.pause()
             val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
             player.seekTo(rel)
             if (state.isPlaying) player.play()
+        }
+        // Volume follows the properties-panel slider without rebinding.
+        LaunchedEffect(overlayPlayer, activeOverlayVideoClip?.id, activeOverlayVideoClip?.overlayVolume) {
+            val player = overlayPlayer ?: return@LaunchedEffect
+            player.volume = (activeOverlayVideoClip?.overlayVolume ?: 0f).coerceIn(0f, 2f)
         }
         // Play/pause the overlay in sync with the main timeline.
         LaunchedEffect(overlayPlayer, state.isPlaying, activeOverlayVideoClip?.id) {
@@ -1088,6 +1185,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectedOverlayClipId = state.selectedOverlayClipId,
             overlayPlayer = overlayPlayer,
             overlayPlayerClipId = activeOverlayVideoClip?.id,
+            overlayIsVideo = overlayIsVideo,
             onSelectOverlayClip = { vm.selectOverlayClip(it) },
             onMoveOverlayClip = { id, dx, dy, persist ->
                 vm.moveOverlayClip(id, dx, dy, persist)
@@ -1100,6 +1198,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             },
             onOverlayGestureEnd = { vm.persistOverlayClipGesture(it) },
             onRemoveOverlayClip = { vm.removeOverlayClip(it) },
+            onUpsertOverlayKeyframe = { id, timeMs, x, y, scale, rotation, opacity, persist ->
+                vm.upsertOverlayKeyframe(id, timeMs, x, y, scale, rotation, opacity, persist)
+            },
             isCoverMode = isCoverMode,
             adjustments = state.adjustments,
             activeFilterId = state.activeFilterId,

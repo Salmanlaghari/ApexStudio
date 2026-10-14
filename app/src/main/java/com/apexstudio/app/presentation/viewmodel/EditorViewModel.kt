@@ -114,6 +114,11 @@ class EditorViewModel(
     internal val undoStack = ArrayDeque<List<MediaClip>>()
     internal val redoStack = ArrayDeque<List<MediaClip>>()
 
+    // Overlay editing: one undo entry per gesture / slider drag.
+    // Armed by the first live update of an interaction, disarmed when
+    // the interaction ends (see EditorPipOverlayController).
+    internal var overlayEditUndoArmed: Boolean = false
+
     internal val mediaPicker = context?.let { MediaPickerHelper(it) }
     internal val mediaAnalyzer = context?.let { MediaAnalyzer() }
     internal val exportEngine = context?.let { ExportEngine(it) }

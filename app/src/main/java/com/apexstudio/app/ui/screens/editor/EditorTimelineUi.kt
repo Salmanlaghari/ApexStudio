@@ -139,6 +139,14 @@ fun TimelineTrackArea(
     val context = LocalContext.current
     val clips = state.project?.clips ?: emptyList()
 
+    // V1 clips in timeline order — for the centre-add Transition
+    // button, which opens the junction nearest the playhead.
+    val v1Clips = remember(clips) {
+        clips.filter {
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
+        }
+    }
+
     // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
     // opening/closing any bottom sheet can never reset the scroll to
     // 00:00 and strand the playhead off-screen.
@@ -209,8 +217,39 @@ fun TimelineTrackArea(
             .fillMaxWidth()
             .background(Color(0xFF08080E))
             .padding(top = 2.dp, bottom = 4.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.Top
     ) {
+        // Centre-add row: Overlay / Transition / Effects, all acting AT
+        // THE PLAYHEAD. The playhead is pinned at the viewport centre,
+        // so this centred row sits on the playhead's line. All three
+        // reuse the existing flows — nothing new is invented here:
+        // overlay → the overlay picker (lands at playhead, first free
+        // layer); transition → the junction nearest the playhead;
+        // effects → the existing FX panel.
+        CentreAddRow(
+            canAddTransition = v1Clips.size >= 2,
+            onAddOverlay = { onAddMedia(ClipType.OVERLAY) },
+            onAddTransition = {
+                if (v1Clips.size >= 2) {
+                    // V1 clips run end to end; junctions are the
+                    // cumulative boundaries. Open the one nearest the
+                    // playhead. playerPositionMs is read at tap time.
+                    var acc = 0L
+                    var best: Pair<String, String>? = null
+                    var bestDist = Long.MAX_VALUE
+                    for (i in 0 until v1Clips.size - 1) {
+                        acc += v1Clips[i].effectiveDurationMs()
+                        val d = kotlin.math.abs(acc - state.playerPositionMs)
+                        if (d < bestDist) {
+                            bestDist = d
+                            best = v1Clips[i].id to v1Clips[i + 1].id
+                        }
+                    }
+                    best?.let { (fromId, toId) -> onOpenClipTransition(fromId, toId) }
+                }
+            },
+            onAddEffects = onOpenFx
+        )
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering
         com.apexstudio.app.ui.components.VideoTimeline(
             state = state,
@@ -259,6 +298,85 @@ fun TimelineTrackArea(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+        )
+    }
+}
+
+/**
+ * CapCut-style centre-add row: three compact pills centred above the
+ * timeline, all acting AT THE PLAYHEAD (the playhead is pinned at the
+ * viewport centre, so this centred row sits on the playhead's line).
+ * Small and unobtrusive — a single 32dp strip that never covers the
+ * preview. Transition is disabled when fewer than two V1 clips exist
+ * (there is no junction to open).
+ */
+@Composable
+private fun CentreAddRow(
+    canAddTransition: Boolean,
+    onAddOverlay: () -> Unit,
+    onAddTransition: () -> Unit,
+    onAddEffects: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0C0E14))
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CentreAddPill(
+            icon = Icons.Default.AddPhotoAlternate,
+            label = "Overlay",
+            onClick = onAddOverlay
+        )
+        Spacer(Modifier.width(8.dp))
+        CentreAddPill(
+            icon = Icons.Default.Transform,
+            label = "Transition",
+            enabled = canAddTransition,
+            onClick = onAddTransition
+        )
+        Spacer(Modifier.width(8.dp))
+        CentreAddPill(
+            icon = Icons.Default.AutoFixHigh,
+            label = "Effects",
+            onClick = onAddEffects
+        )
+    }
+}
+
+@Composable
+private fun CentreAddPill(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val contentColor = if (enabled) Color.White else Color(0xFF64748B)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (enabled) Color(0xFF1A1E2A) else Color(0xFF141420))
+            .border(1.dp, Color(0xFF2E384D), RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

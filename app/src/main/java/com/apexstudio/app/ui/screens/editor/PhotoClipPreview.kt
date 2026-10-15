@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
@@ -195,7 +197,7 @@ fun PhotoClipPreview(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 androidx.compose.material3.Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.BrokenImage,
+                    imageVector = Icons.Default.BrokenImage,
                     contentDescription = null,
                     tint = Color(0xFFE57373),
                     modifier = Modifier.size(32.dp)

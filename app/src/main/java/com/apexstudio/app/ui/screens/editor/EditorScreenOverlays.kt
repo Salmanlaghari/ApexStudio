@@ -1048,7 +1048,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     onOpenAddMediaMenu: () -> Unit,
     // Dedicated muted player for the live video PiP overlay. Created and
     // released by the screen; bound to the active video overlay clip below.
-    overlayPlayer: ExoPlayer? = null
+    overlayPlayer: ExoPlayer? = null,
+    // Overlay media-kind probe results, owned by EditorScreen (single
+    // source of truth shared with the player binding): true = video,
+    // false = image (positive evidence), ABSENT = pending or
+    // unanswerable (never defaulted to image).
+    overlayIsVideo: Map<String, Boolean> = emptyMap()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1077,23 +1082,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
             } ?: emptyList()
         }
-        // Probe: is each overlay clip a video? The clip type is always
-        // OVERLAY, so the media itself must answer (OverlayMediaProbe,
-        // cached per URI). The old code branched on
-        // `it.type == ClipType.VIDEO` over this OVERLAY-only list, so the
-        // player was never bound and video overlays rendered as an empty
-        // black box (Coil cannot decode video).
-        var overlayIsVideo by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
-        LaunchedEffect(overlayClips.map { it.id to it.uri }) {
-            overlayClips.forEach { clip ->
-                if (!overlayIsVideo.containsKey(clip.id)) {
-                    val isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
-                        context, clip.uri
-                    )
-                    overlayIsVideo = overlayIsVideo + (clip.id to isVideo)
-                }
-            }
-        }
+        // Media kind per overlay clip comes from the `overlayIsVideo`
+        // param (owned by EditorScreen, shared with the player
+        // binding — one probe, no lag, no disagreement). The clip
+        // type is always OVERLAY, so the media itself must answer
+        // (OverlayMediaProbe, cached per URI). The old code branched
+        // on `it.type == ClipType.VIDEO` over this OVERLAY-only list,
+        // so the player was never bound and video overlays rendered
+        // as an empty black box (Coil cannot decode video).
         // The video overlay clip the shared muted player is bound to:
         // the first VIDEO overlay active at the playhead.
         val activeOverlayVideoClip = overlayClips.firstOrNull {
@@ -1244,14 +1240,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // its edits; null for video clips. IMAGE-backed OVERLAY
             // clips take the same path: their type is OVERLAY, so a
             // bare type check would send a JPEG to ExoPlayer and the
-            // preview would go BLACK. The probe result is authoritative
-            // when available; while it is pending, the fallback is
-            // CONSERVATIVE (OverlayMediaProbe.isImageUri returns true
-            // only on positive image evidence — image MIME or a real
-            // image extension). An unknown URI takes the player path
-            // until the probe resolves — never the photo path on a
-            // guess — and the player binding awaits the same probe,
-            // so there is no wrong-path flash and no silent black.
+            // preview would go BLACK. The shared probe map
+            // (`overlayIsVideo`, owned by EditorScreen) is
+            // authoritative when it holds a result; while it is
+            // pending, the fallback is CONSERVATIVE
+            // (OverlayMediaProbe.isImageUri returns true only on
+            // positive image evidence). The player binding reads
+            // the SAME map value, so binding and preview can never
+            // disagree about a clip's kind — an unknown URI takes
+            // the player path until the probe resolves, never the
+            // photo path on a guess.
             photoClip = currentSelectedClip?.takeIf {
                 it.type == ClipType.IMAGE || (it.type == ClipType.OVERLAY &&
                     (overlayIsVideo[it.id]?.let { isVideo -> !isVideo }

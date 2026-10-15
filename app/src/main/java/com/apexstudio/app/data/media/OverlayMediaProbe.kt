@@ -35,10 +35,11 @@ import java.util.concurrent.ConcurrentHashMap
  * showed an empty black box. Now: a retriever failure falls back to
  * the ContentResolver MIME type (a video MIME type → video, an image
  * MIME type → image); only a successful probe (or a MIME-backed answer) is
- * cached, and an unanswerable probe returns `false` WITHOUT caching
- * so a later retry can still succeed. (Note: this KDoc deliberately
- * avoids writing a MIME pattern like video-slash-star inline — the
- * slash-star sequence would open a nested block comment.)
+ * cached, and an unanswerable probe returns `null` WITHOUT caching
+ * so callers treat it as unknown (never as image) and a later retry
+ * can still succeed. (Note: this KDoc deliberately avoids writing a
+ * MIME pattern like video-slash-star inline — the slash-star sequence
+ * would open a nested block comment.)
  */
 object OverlayMediaProbe {
 
@@ -99,7 +100,18 @@ object OverlayMediaProbe {
         return ext in IMAGE_EXTENSIONS
     }
 
-    suspend fun isVideo(context: Context, uri: String): Boolean {
+    /**
+     * Async media-kind probe: `true` = video, `false` = image, `null`
+     * = unanswerable (retriever could not open the URI AND the MIME
+     * type is unknown). `null` is NEVER cached and MUST never be
+     * read as "image" by callers: an unanswerable URI takes the
+     * video/player path (photo path requires positive image
+     * evidence), and a later re-probe can still resolve it.
+     * Positive `false` (image) requires real evidence: the retriever
+     * opened the file and reports no video track, or the MIME type
+     * is an image type.
+     */
+    suspend fun isVideo(context: Context, uri: String): Boolean? {
         cache[uri]?.let { return it }
         val result = withContext(Dispatchers.IO) {
             // 1. Ask the media itself.
@@ -139,12 +151,15 @@ object OverlayMediaProbe {
                         cache[uri] = false
                         false
                     }
-                    else -> false // Unanswerable: do NOT cache.
+                    // Unanswerable: return null, do NOT cache, and
+                    // do NOT collapse to false — callers must treat
+                    // unknown as unknown, never as image.
+                    else -> null
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                false // Unanswerable: do NOT cache.
+                null // Unanswerable: do NOT cache.
             }
         }
         return result

@@ -251,7 +251,41 @@ fun EditorScreen(
     }
     val currentClipUri = currentSelectedClip?.uri
 
-    LaunchedEffect(exoPlayer, state.selectedClipId, currentClipUri) {
+    // Overlay media-kind probe — SINGLE source of truth for every
+    // consumer (the player binding below, photoClip + PiP canvas in
+    // EditorPreviewSection, which receives this map as a param). The
+    // map is tri-state: true = video, false = image (positive
+    // evidence), ABSENT = pending OR unanswerable (never defaulted
+    // to image). One shared map means the binding and the preview
+    // section can never disagree about a clip's kind (no lag, no
+    // wrong-path flash): both read the same map value from the same
+    // composition snapshot. Probes ALL overlay clips (hidden
+    // layers included) so a selected clip always resolves.
+    var overlayIsVideo by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    val allOverlayClips = remember(state.project?.clips) {
+        state.project?.clips?.filter { it.type == ClipType.OVERLAY } ?: emptyList()
+    }
+    LaunchedEffect(allOverlayClips.map { it.id to it.uri }) {
+        allOverlayClips.forEach { clip ->
+            if (!overlayIsVideo.containsKey(clip.id)) {
+                val isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
+                    context, clip.uri
+                )
+                // Store only definite answers: null (unanswerable)
+                // stays absent, so consumers treat it as unknown —
+                // never as image — and a later re-probe can retry.
+                if (isVideo != null) {
+                    overlayIsVideo = overlayIsVideo + (clip.id to isVideo)
+                }
+            }
+        }
+    }
+    // Probe result for the clip the binding is about to decide on —
+    // a LaunchedEffect key below, so the binding re-runs exactly
+    // when the probe resolves (same snapshot the preview reads).
+    val currentClipProbeResult = overlayIsVideo[currentSelectedClip?.id]
+
+    LaunchedEffect(exoPlayer, state.selectedClipId, currentClipUri, currentClipProbeResult) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clip = currentSelectedClip ?: return@LaunchedEffect
         // Still-image clips are rendered by PhotoClipPreview (Compose),
@@ -260,23 +294,23 @@ fun EditorScreen(
         // OVERLAY, so the type check alone would bind a JPEG to the
         // player and the preview would go BLACK (the 00:00 black
         // preview: the selected clip was an image overlay, 42938.jpg).
-        // Media kind for OVERLAY clips comes from the probe, not a
-        // sync guess: isImageUri is only a fast path on POSITIVE
-        // image evidence (image MIME / real image extension).
-        // Anything else AWAITS the async probe — a wrong sync guess
-        // feeds a JPEG to ExoPlayer (black preview) or leaves a
-        // video unbound. While awaiting, the player is left
-        // untouched so the previous frame stays visible instead of
-        // flashing black; the probe is cached per URI, so the wait
-        // is ~free once the preview section has probed the same URI.
+        // Media kind for OVERLAY clips comes from the shared probe
+        // map (the same value the preview section reads — no lag, no
+        // disagreement). isImageUri is only a fast path on POSITIVE
+        // image evidence (image MIME / real image extension) while
+        // the probe is pending. A pending probe with no positive
+        // evidence WAITS (early return below; this effect re-runs
+        // when the map value arrives) instead of guessing — a wrong
+        // sync guess feeds a JPEG to ExoPlayer (black preview) or
+        // leaves a video unbound, and an unanswerable probe must
+        // never default to the photo path. While waiting, the
+        // player is left untouched so the previous frame stays
+        // visible instead of flashing black.
         val isPhotoClip = when (clip.type) {
             ClipType.IMAGE -> true
-            ClipType.OVERLAY ->
-                if (com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri)) {
-                    true
-                } else {
-                    !com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(context, clip.uri)
-                }
+            ClipType.OVERLAY -> currentClipProbeResult == false ||
+                (currentClipProbeResult == null &&
+                    com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri))
             else -> false
         }
         if (isPhotoClip) {
@@ -286,6 +320,12 @@ fun EditorScreen(
             } catch (_: Exception) {}
             vm.setPlayerReady(true)
             vm.setPlayerDuration(clip.durationMs)
+            return@LaunchedEffect
+        }
+        if (clip.type == ClipType.OVERLAY && currentClipProbeResult == null) {
+            // Probe still pending and no positive image evidence:
+            // wait for the probe result instead of guessing. This
+            // effect re-runs when the map value arrives (probe key).
             return@LaunchedEffect
         }
         val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
@@ -643,7 +683,8 @@ fun EditorScreen(
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
             onOpenAddMediaMenu = { showAddMediaMenu = true },
-            overlayPlayer = overlayPlayer
+            overlayPlayer = overlayPlayer,
+            overlayIsVideo = overlayIsVideo
         )
 
         EditorTransportSection(

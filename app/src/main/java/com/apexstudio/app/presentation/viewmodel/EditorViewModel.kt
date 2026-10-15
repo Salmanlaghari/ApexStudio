@@ -140,7 +140,10 @@ class EditorViewModel(
         loadProject()
         loadLuts()
         loadTransmissionTemplates()
-        loadAudioState()
+        // NOTE: no loadAudioState() — the audio list is synced from the
+        // loaded project inside loadProject() (the old function read
+        // the FIRST project from the stub repo, i.e. the wrong project
+        // whenever several exist, diverging the mixer list).
         // Mirror the engine's real export progress into the VM state
         // the Export screen renders (progress %, output uri, error).
         exportEngine?.exportState?.let { engineState ->

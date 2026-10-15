@@ -65,7 +65,13 @@ private suspend fun extractClipThumbnails(
             context, clip.uri, maxDim = 240
         )
         if (photo != null) return mapOf(0 to photo)
-        if (clip.type == ClipType.IMAGE) return emptyMap()
+        if (clip.type == ClipType.IMAGE) {
+            // Second chance: MediaMetadataRetriever can decode a still
+            // (JPEG/PNG) as a frame on many devices, so a loadBitmap
+            // failure (transient decode/OOM) must not strand the clip
+            // on placeholders — fall through to the retriever path
+            // below instead of returning empty here.
+        }
     }
     val trimStart = clip.trimStartMs
     val trimEnd =
@@ -203,21 +209,36 @@ fun TimelineTrackArea(
                 thumbnailsByClip[clip.id] = seeded
             }
             try {
-                // Progressive fill: each decoded frame replaces its
-                // placeholder the moment it arrives (first frame
-                // appears in ~100–300ms), instead of the lane waiting
-                // for the whole set. onFrame runs on the extractor's
-                // IO thread — bounce to Main for Compose state.
-                val real = extractClipThumbnails(context, clip) { second, bitmap ->
-                    withContext(Dispatchers.Main) {
-                        val current = thumbnailsByClip[clip.id] ?: emptyMap()
-                        val old = current[second]
-                        thumbnailsByClip[clip.id] = current + (second to bitmap)
-                        // Recycle a replaced placeholder, never a real
-                        // frame (dense-map aliases share instances).
-                        if (old != null && old !== bitmap && fallbackBitmaps.remove(old)) {
-                            if (!old.isRecycled) old.recycle()
+                // Bounded retry: a single transient extraction failure
+                // (retriever race, file still copying, grant timing)
+                // used to strand the clip on teal placeholders forever
+                // — the LaunchedEffect keys never change, so nothing
+                // ever re-ran the extraction. extractClipThumbnails
+                // returns an empty map on failure (never disguised
+                // placeholders), so retry up to 3 attempts with
+                // back-off before giving up and keeping placeholders.
+                var real: Map<Int, Bitmap> = emptyMap()
+                var attempt = 0
+                while (real.isEmpty() && attempt < 3) {
+                    if (attempt > 0) {
+                        kotlinx.coroutines.delay(if (attempt == 1) 1500L else 3000L)
+                    }
+                    attempt++
+                    try {
+                        real = extractClipThumbnails(context, clip) { second, bitmap ->
+                            withContext(Dispatchers.Main) {
+                                val current = thumbnailsByClip[clip.id] ?: emptyMap()
+                                val old = current[second]
+                                thumbnailsByClip[clip.id] = current + (second to bitmap)
+                                // Recycle a replaced placeholder, never a real
+                                // frame (dense-map aliases share instances).
+                                if (old != null && old !== bitmap && fallbackBitmaps.remove(old)) {
+                                    if (!old.isRecycled) old.recycle()
+                                }
+                            }
                         }
+                    } catch (e: Exception) {
+                        Log.w("TimelineTrackArea", "Thumbnail extraction attempt $attempt failed for ${clip.id}: ${e.message}")
                     }
                 }
                 if (real.isNotEmpty()) {
@@ -230,7 +251,15 @@ fun TimelineTrackArea(
                     // bitmaps, so the whole previous set can be
                     // recycled — as can any placeholder never replaced.
                     thumbnailsByClip[clip.id] = real
-                    previousBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    // Defensive identity guard (dense-map aliasing): only
+                    // recycle previous bitmaps that are NOT also in the
+                    // new map. The extractor always returns fresh
+                    // instances, so this set is normally everything —
+                    // but recycling an instance that is still displayed
+                    // would blank live cells, so never rely on that.
+                    val newInstances = real.values.toSet()
+                    previousBitmaps.filter { it !in newInstances }
+                        .forEach { if (!it.isRecycled) it.recycle() }
                     // Recycle any placeholder never replaced by a real frame.
                     fallbackBitmaps.forEach { if (!it.isRecycled) it.recycle() }
                     fallbackBitmaps.clear()

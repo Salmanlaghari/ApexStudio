@@ -2,8 +2,15 @@ package com.apexstudio.app.ui.screens.editor
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,7 +29,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.flaviofaria.kenburnsview.KenBurnsView
 import com.flaviofaria.kenburnsview.RandomTransitionGenerator
@@ -62,12 +71,25 @@ fun PhotoClipPreview(
 
     // Raw decoded photo (EXIF applied, downscaled for preview).
     var rawBitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
+    // Whether the load attempt for this uri has finished (success or
+    // failure). While false the preview is still loading; once true
+    // with rawBitmap == null the image failed to decode and the UI
+    // shows a visible retry affordance — never a silent black
+    // preview (a failed load used to render as an empty black box
+    // with no way to recover short of re-picking the clip).
+    var loadFinished by remember(uri) { mutableStateOf(false) }
+    var retryNonce by remember { mutableStateOf(0) }
     // Edited bitmap (declared early so the uri effect can check it).
     var edited by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(uri) {
+    LaunchedEffect(uri, retryNonce) {
         val old = rawBitmap
+        loadFinished = false
         val fresh = PhotoEditRenderer.loadBitmap(context, uri, maxDim = 1280)
         rawBitmap = fresh
+        loadFinished = true
+        if (fresh == null) {
+            android.util.Log.w("PhotoClipPreview", "Image failed to load: $uri (tap retry to reload)")
+        }
         // Recycle the superseded raw only if the pipeline isn't still
         // reading it (it isn't — this effect runs before the pipeline
         // effect sees the new value) and it isn't the displayed frame.
@@ -159,7 +181,41 @@ fun PhotoClipPreview(
     // Phase 4: Ken Burns motion preview — the real KenBurnsView
     // (Apache-2.0) pans/zooms the edited bitmap. Crop interactions stay
     // on the static canvas.
-    if (settings.kenBurns && !cropActive && bmp != null) {
+    if (loadFinished && rawBitmap == null) {
+        // Visible failure state: the image could not be decoded
+        // (expired grant, moved file, corrupt data). Tapping retries
+        // the load instead of leaving a silent black preview.
+        androidx.compose.foundation.layout.Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color(0xFF2A1215))
+                .clickable { retryNonce++ },
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.layout.Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Default.BrokenImage,
+                    contentDescription = null,
+                    tint = Color(0xFFE57373),
+                    modifier = Modifier.size(32.dp)
+                )
+                androidx.compose.material3.Text(
+                    text = "Couldn't load image",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                androidx.compose.material3.Text(
+                    text = "Tap to retry",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 11.sp
+                )
+            }
+        }
+    } else if (settings.kenBurns && !cropActive && bmp != null) {
         val kbBitmap = bmp
         AndroidView(
             factory = { ctx ->

@@ -3,6 +3,7 @@ package com.apexstudio.app.data.media
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -34,16 +35,83 @@ import java.util.concurrent.ConcurrentHashMap
  * showed an empty black box. Now: a retriever failure falls back to
  * the ContentResolver MIME type (a video MIME type → video, an image
  * MIME type → image); only a successful probe (or a MIME-backed answer) is
- * cached, and an unanswerable probe returns `false` WITHOUT caching
- * so a later retry can still succeed. (Note: this KDoc deliberately
- * avoids writing a MIME pattern like video-slash-star inline — the
- * slash-star sequence would open a nested block comment.)
+ * cached, and an unanswerable probe returns `null` WITHOUT caching
+ * so callers treat it as unknown (never as image) and a later retry
+ * can still succeed. (Note: this KDoc deliberately avoids writing a
+ * MIME pattern like video-slash-star inline — the slash-star sequence
+ * would open a nested block comment.)
  */
 object OverlayMediaProbe {
 
     private val cache = ConcurrentHashMap<String, Boolean>()
 
-    suspend fun isVideo(context: Context, uri: String): Boolean {
+    /** Extensions that unambiguously identify a still-image file. */
+    private val IMAGE_EXTENSIONS = setOf(
+        "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif"
+    )
+
+    /**
+     * Synchronous still-image check for a media URI. CONSERVATIVE:
+     * returns true ONLY on positive image evidence — an image MIME
+     * type from the ContentResolver, or a known image extension on a
+     * URI whose last path segment is a real filename (`file://`,
+     * plain paths). A `content://` URI is NEVER judged by an
+     * "extension" scraped from its string: content URIs carry no
+     * filename, so a dot in the authority, path or query (e.g. a
+     * provider ID or a `?…jpg` query) could misclassify a video as
+     * an image and route it to PhotoClipPreview. For `content://`
+     * URIs the MIME type is the only signal — unknown MIME means
+     * unknown, NOT image; the async [isVideo] probe (which the
+     * callers await / prefer) resolves those. Used as a fast path
+     * where the probe result is not yet available (player binding
+     * in EditorScreen, photoClip selection in
+     * EditorScreenOverlays): an image-backed OVERLAY clip must take
+     * the PhotoClipPreview path, never the ExoPlayer path — feeding
+     * a JPEG to ExoPlayer renders a black preview.
+     */
+    fun isImageUri(context: Context, uri: String): Boolean {
+        val parsed = try {
+            Uri.parse(uri)
+        } catch (_: Exception) {
+            null
+        }
+        // 1. MIME type is authoritative wherever the resolver can
+        // answer it: an image MIME is positive image evidence, a
+        // video MIME must never be overridden by a stray extension.
+        if (parsed != null) {
+            val mime = try {
+                context.contentResolver.getType(parsed) ?: ""
+            } catch (_: Exception) {
+                ""
+            }
+            if (mime.startsWith("image/")) return true
+            if (mime.startsWith("video/")) return false
+            // For content:// URIs the MIME type is the ONLY reliable
+            // signal — their paths carry no real filename. Unknown
+            // MIME here means unknown, not image.
+            if (parsed.scheme == "content") return false
+        }
+        // 2. Non-content URIs (file://, plain paths): the last path
+        // segment is a real filename, so a known image extension is
+        // positive image evidence. (Stripped of query/fragment by
+        // using lastPathSegment, never the raw URI string.)
+        val filename = parsed?.lastPathSegment ?: uri.substringAfterLast('/')
+        val ext = filename.substringAfterLast('.', "").lowercase()
+        return ext in IMAGE_EXTENSIONS
+    }
+
+    /**
+     * Async media-kind probe: `true` = video, `false` = image, `null`
+     * = unanswerable (retriever could not open the URI AND the MIME
+     * type is unknown). `null` is NEVER cached and MUST never be
+     * read as "image" by callers: an unanswerable URI takes the
+     * video/player path (photo path requires positive image
+     * evidence), and a later re-probe can still resolve it.
+     * Positive `false` (image) requires real evidence: the retriever
+     * opened the file and reports no video track, or the MIME type
+     * is an image type.
+     */
+    suspend fun isVideo(context: Context, uri: String): Boolean? {
         cache[uri]?.let { return it }
         val result = withContext(Dispatchers.IO) {
             // 1. Ask the media itself.
@@ -61,6 +129,11 @@ object OverlayMediaProbe {
                     // Retriever opened the file but reports no
                     // HAS_VIDEO — fall through to the MIME check.
                 }
+            } catch (e: CancellationException) {
+                // Callers await this probe inside LaunchedEffect: a
+                // cancelled probe must propagate cancellation, never
+                // fall through and bind a stale clip.
+                throw e
             } catch (_: Exception) {
                 // Retriever could not open the URI — MIME fallback below.
             }
@@ -78,10 +151,15 @@ object OverlayMediaProbe {
                         cache[uri] = false
                         false
                     }
-                    else -> false // Unanswerable: do NOT cache.
+                    // Unanswerable: return null, do NOT cache, and
+                    // do NOT collapse to false — callers must treat
+                    // unknown as unknown, never as image.
+                    else -> null
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
-                false // Unanswerable: do NOT cache.
+                null // Unanswerable: do NOT cache.
             }
         }
         return result

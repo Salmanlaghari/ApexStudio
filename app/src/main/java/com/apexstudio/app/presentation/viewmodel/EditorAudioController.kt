@@ -141,16 +141,45 @@ internal fun EditorViewModel.applyAudioPitchToMainPlayer(semitones: Float) {
     p.playbackParameters = androidx.media3.common.PlaybackParameters(1f, pitch)
 }
 
-fun EditorViewModel.toggleMute(trackId: String) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
+fun EditorViewModel.toggleMute(trackId: String) = toggleAudioTrackMute(trackId)
+
+fun EditorViewModel.setTrackVolume(trackId: String, vol: Float) = setAudioTrackVolume(trackId, vol)
+
+fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) {
+    // Dual-write (same split-brain rule as volume): the old
+    // _audio-only write never reached preview/export/persistence.
+    val solo = pan > 0.5f
+    logAudioTrackMismatch(trackId, "setTrackPanning")
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) it.copy(isSolo = solo) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = solo) else it })
+    }
+    persistProject()
 }
 
-fun EditorViewModel.setTrackVolume(trackId: String, vol: Float) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(volume = vol.coerceIn(0f, 1f)) else it })
-}
-
-fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) = _audio.update { s ->
-    s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = pan > 0.5f) else it })
+/**
+ * Dual-write guard (Kilo): the project list and the mixer list must
+ * carry the same track ids. If a setter targets a track missing from
+ * either list (diverged / old project), the map would silently do
+ * nothing — log a warning so the divergence is visible instead of
+ * silently dropping the edit. The lists are re-synced on project
+ * load (see loadProject), so a warning here means a genuinely
+ * diverged project, not normal operation.
+ */
+private fun EditorViewModel.logAudioTrackMismatch(trackId: String, where: String) {
+    val inProject = _state.value.project?.audioTracks?.any { it.id == trackId } == true
+    val inMixer = _audio.value.tracks.any { it.id == trackId }
+    if (!inProject || !inMixer) {
+        Log.w(
+            "EditorViewModel",
+            "AudioTrack $trackId missing from ${if (!inProject) "project " else ""}${if (!inMixer) "mixer" else ""} in $where — edit may not apply everywhere"
+        )
+    }
 }
 
 
@@ -282,6 +311,7 @@ fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) {
     // volume edits silently vanish — audible nowhere, lost on
     // reopen, absent from export. See setAudioTrackVolumeFull.
     val safe = vol.coerceIn(0f, 1f)
+    logAudioTrackMismatch(trackId, "setAudioTrackVolume")
     _state.update { s ->
         val p = s.project ?: return@update s
         s.copy(project = p.copy(audioTracks = p.audioTracks.map {
@@ -298,6 +328,7 @@ fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) {
 
 
 fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
+    logAudioTrackMismatch(trackId, "toggleAudioTrackMute")
     _audio.update { s ->
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
     }
@@ -315,6 +346,7 @@ fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
 fun EditorViewModel.toggleAudioTrackSolo(trackId: String) {
     // Dual-write + persist (same split-brain bug as volume: the old
     // _audio-only write never reached preview/export/persistence).
+    logAudioTrackMismatch(trackId, "toggleAudioTrackSolo")
     _state.update { s ->
         val p = s.project ?: return@update s
         s.copy(project = p.copy(audioTracks = p.audioTracks.map {
@@ -331,6 +363,7 @@ fun EditorViewModel.toggleAudioTrackSolo(trackId: String) {
 fun EditorViewModel.setAudioTrackTrim(trackId: String, startMs: Long, endMs: Long) {
     // Dual-write + persist (same split-brain bug as volume: the old
     // _audio-only write never reached preview/export/persistence).
+    logAudioTrackMismatch(trackId, "setAudioTrackTrim")
     _state.update { s ->
         val p = s.project ?: return@update s
         s.copy(project = p.copy(audioTracks = p.audioTracks.map {
@@ -351,6 +384,7 @@ fun EditorViewModel.setAudioTrackTrim(trackId: String, startMs: Long, endMs: Lon
 
 fun EditorViewModel.setAudioTrackFadeIn(trackId: String, ms: Long) {
     // Dual-write + persist (same split-brain bug as volume).
+    logAudioTrackMismatch(trackId, "setAudioTrackFadeIn")
     _state.update { s ->
         val p = s.project ?: return@update s
         s.copy(project = p.copy(audioTracks = p.audioTracks.map {
@@ -366,6 +400,7 @@ fun EditorViewModel.setAudioTrackFadeIn(trackId: String, ms: Long) {
 
 fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
     // Dual-write + persist (same split-brain bug as volume).
+    logAudioTrackMismatch(trackId, "setAudioTrackFadeOut")
     _state.update { s ->
         val p = s.project ?: return@update s
         s.copy(project = p.copy(audioTracks = p.audioTracks.map {

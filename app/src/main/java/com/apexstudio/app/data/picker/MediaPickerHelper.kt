@@ -224,25 +224,77 @@ class MediaPickerHelper(private val context: Context) {
  * Returns the ORIGINAL uri on any failure (copy is best-effort — a
  * failed copy must never block adding the clip). Files already inside
  * app storage are returned as-is.
+ *
+ * CLEANUP: copies live in `filesDir/project_media/`. They are reclaimed
+ * by [deletePersistedMediaForUris] (project deletion) and
+ * [cleanupStalePersistedMedia] (unreferenced files, run on project
+ * load) — without those, copies accumulated forever with no cleanup
+ * path. A `file://` / absolute-path source is NEVER copied: it
+ * carries no expiring grant, so copying would only duplicate a
+ * potentially huge file on disk.
  */
+const val MAX_PERSIST_COPY_BYTES = 500L * 1024L * 1024L
+
 suspend fun persistPickedMediaToAppStorage(context: Context, uri: String, name: String): String =
     withContext(Dispatchers.IO) {
         try {
             val parsed = Uri.parse(uri)
-            if (parsed.scheme == "file") {
-                val path = parsed.path ?: return@withContext uri
-                if (path.startsWith(context.filesDir.absolutePath)) return@withContext uri
+            // file:// and absolute-path sources never expire (no
+            // grant) — return as-is instead of duplicating them,
+            // regardless of size.
+            if (parsed.scheme == "file") return@withContext uri
+            if (uri.startsWith("/")) return@withContext uri
+            // Only content:// URIs need a project-owned copy.
+            if (parsed.scheme != "content") return@withContext uri
+            // Max-size guard: refuse to duplicate a very large
+            // source (a multi-GB video would double its disk cost).
+            val declaredSize = try {
+                context.contentResolver.openFileDescriptor(parsed, "r")?.use { it.statSize } ?: -1L
+            } catch (_: Exception) {
+                -1L
+            }
+            if (declaredSize > MAX_PERSIST_COPY_BYTES) {
+                Log.w(
+                    "MediaPickerHelper",
+                    "persist skipped: source is ${declaredSize / (1024L * 1024L)}MB, " +
+                        "over the ${MAX_PERSIST_COPY_BYTES / (1024L * 1024L)}MB copy cap — keeping original URI"
+                )
+                return@withContext uri
             }
             val dir = File(context.filesDir, "project_media")
             if (!dir.exists()) dir.mkdirs()
             val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
                 .takeLast(64).ifBlank { "media" }
             val dest = File(dir, "${UUID.randomUUID()}_$safeName")
+            // Stream-copy with a running byte cap (statSize can be
+            // -1 or lie for some providers): abort + delete the
+            // partial file instead of duplicating a huge source.
+            var copied = 0L
+            var aborted = false
             context.contentResolver.openInputStream(parsed)?.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+                dest.outputStream().use { output ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n <= 0) break
+                        copied += n
+                        if (copied > MAX_PERSIST_COPY_BYTES) {
+                            aborted = true
+                            break
+                        }
+                        output.write(buf, 0, n)
+                    }
+                }
             } ?: return@withContext uri
-            if (dest.length() <= 0L) {
+            if (aborted || dest.length() <= 0L) {
                 dest.delete()
+                if (aborted) {
+                    Log.w(
+                        "MediaPickerHelper",
+                        "persist aborted: source exceeded the " +
+                            "${MAX_PERSIST_COPY_BYTES / (1024L * 1024L)}MB copy cap — keeping original URI"
+                    )
+                }
                 return@withContext uri
             }
             Uri.fromFile(dest).toString()
@@ -251,3 +303,72 @@ suspend fun persistPickedMediaToAppStorage(context: Context, uri: String, name: 
             uri
         }
     }
+
+/**
+ * Delete the `project_media` copies referenced by [uris]. Call when
+ * their project is deleted so its copies do not accumulate forever.
+ * Only `file://` URIs under `filesDir/project_media/` are touched;
+ * anything else is ignored. Best-effort, never throws. Call off the
+ * main thread.
+ */
+fun deletePersistedMediaForUris(context: Context, uris: Collection<String>) {
+    try {
+        val dirPrefix = File(context.filesDir, "project_media").absolutePath
+        for (uri in uris) {
+            try {
+                val parsed = Uri.parse(uri)
+                if (parsed.scheme != "file") continue
+                val path = parsed.path ?: continue
+                if (!path.startsWith(dirPrefix)) continue
+                val f = File(path)
+                if (f.exists() && !f.delete()) {
+                    Log.w("MediaPickerHelper", "Could not delete persisted copy: $path")
+                }
+            } catch (e: Exception) {
+                Log.w("MediaPickerHelper", "deletePersistedMedia failed for $uri: ${e.message}")
+            }
+        }
+    } catch (e: Exception) {
+        Log.w("MediaPickerHelper", "deletePersistedMediaForUris failed: ${e.message}")
+    }
+}
+
+/**
+ * Delete every file in `filesDir/project_media/` that is NOT
+ * referenced by [activeUris] (the clip/audio URIs of all saved
+ * projects). Reclaims orphaned copies left by deleted projects,
+ * failed persists, or pre-cleanup builds. Best-effort, never throws.
+ * Call off the main thread (e.g. on project load).
+ */
+fun cleanupStalePersistedMedia(context: Context, activeUris: Collection<String>) {
+    try {
+        val dir = File(context.filesDir, "project_media")
+        val files = dir.listFiles() ?: return
+        // Compare by absolute path: active URIs may be file:// or
+        // plain paths.
+        val activePaths = activeUris.mapNotNull { uri ->
+            try {
+                val parsed = Uri.parse(uri)
+                when (parsed.scheme) {
+                    "file" -> parsed.path
+                    null, "" -> uri
+                    else -> null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }.toSet()
+        var reclaimed = 0L
+        for (f in files) {
+            if (f.absolutePath !in activePaths) {
+                val size = f.length()
+                if (f.delete()) reclaimed += size
+            }
+        }
+        if (reclaimed > 0L) {
+            Log.d("MediaPickerHelper", "cleanupStalePersistedMedia reclaimed ${reclaimed / 1024L}KB")
+        }
+    } catch (e: Exception) {
+        Log.w("MediaPickerHelper", "cleanupStalePersistedMedia failed: ${e.message}")
+    }
+}

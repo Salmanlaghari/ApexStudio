@@ -531,11 +531,20 @@ private fun PipOverlayItem(
                     // clip name so the user knows the media — not the
                     // editor — failed, and can re-pick it.
                     var loadError by remember(clip.id, clip.uri) { mutableStateOf(false) }
+                    // Retry counter: a transient I/O failure (slow
+                    // storage, grant timing) must not latch a
+                    // permanent error — tapping the placeholder
+                    // retries the load with a fresh Coil request.
+                    var loadAttempts by remember(clip.id, clip.uri) { mutableStateOf(0) }
                     if (loadError) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(Color(0xFF2A1215))
+                                .clickable {
+                                    loadError = false
+                                    loadAttempts++
+                                }
                                 .padding(6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
@@ -561,19 +570,40 @@ private fun PipOverlayItem(
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center
                             )
+                            Text(
+                                text = "Tap to retry",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 8.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     } else {
-                        AsyncImage(
-                            model = clip.uri,
-                            contentDescription = "Overlay image",
-                            // Stretch to the box — matches the export GL
-                            // effect, which maps the full texture onto the box
-                            // (the box already carries the media's aspect).
-                            contentScale = ContentScale.FillBounds,
-                            modifier = Modifier.fillMaxSize(),
-                            onError = { loadError = true },
-                            onSuccess = { loadError = false }
-                        )
+                        key(loadAttempts) {
+                            AsyncImage(
+                                model = clip.uri,
+                                contentDescription = "Overlay image",
+                                // Stretch to the box — matches the export
+                                // GL effect EXACTLY: PipOverlayGlEffect's
+                                // fragment shader maps the full texture
+                                // onto the box (pipUv = local/half * 0.5
+                                // + 0.5, full [0,1] range, no
+                                // letterboxing), and the box is sized
+                                // w x w/overlayAspect in BOTH preview
+                                // (pipBoxSizePx) and export
+                                // (computeGeometry: pipH = pipW /
+                                // aspect). FillBounds == export mapping.
+                                contentScale = ContentScale.FillBounds,
+                                modifier = Modifier.fillMaxSize(),
+                                onError = {
+                                    android.util.Log.w(
+                                        "PipOverlayCanvas",
+                                        "Overlay image failed to load (attempt $loadAttempts): ${clip.uri}"
+                                    )
+                                    loadError = true
+                                },
+                                onSuccess = { loadError = false }
+                            )
+                        }
                     }
                 }
             }

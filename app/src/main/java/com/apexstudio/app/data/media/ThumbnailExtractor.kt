@@ -118,6 +118,16 @@ object ThumbnailExtractor {
      * it decodes (suspend lambda — the caller may switch threads),
      * so the FIRST frame appears immediately and the rest fill in
      * instead of the lane waiting for the whole set.
+     *
+     * FAILURE SEMANTICS: returns an EMPTY map when no frame could be
+     * decoded — never generated placeholder tiles disguised as real
+     * frames. The old code returned [generateFilmstripFrames] tiles on
+     * total failure, so the caller cached them as a successful
+     * extraction and the clip stayed on blank teal placeholders
+     * forever (a single transient retriever failure became
+     * permanent, because the caller's LaunchedEffect keys never
+     * change). The caller keeps its own seeded placeholders on
+     * screen and retries a bounded number of times.
      */
     suspend fun extractPerSecondFrames(
         context: Context,
@@ -184,12 +194,8 @@ object ThumbnailExtractor {
             try { retriever.release() } catch (_: Exception) {}
         }
 
-        if (sampled.isEmpty()) {
-            val fallbacks = generateFilmstripFrames(8, frameWidthPx, frameHeightPx, uri.hashCode().toLong())
-            fallbacks.forEachIndexed { index, bitmap ->
-                sampled[index] = bitmap
-            }
-        }
+        // No fallback tiles here: an empty `sampled` map expands to an
+        // empty result, and the caller retries (see KDoc above).
         // Dense expansion: every second in [0, rawSecCount) maps to the
         // nearest sampled frame at or before it (else the first sampled
         // frame), so no cell ever renders a placeholder while a real

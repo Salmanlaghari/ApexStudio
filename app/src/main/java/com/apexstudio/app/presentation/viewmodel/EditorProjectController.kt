@@ -5,9 +5,39 @@ import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+
+/**
+ * Legacy overlay repair (Bug B): OVERLAY clips created before the
+ * overlay-track system (or by a buggy build) can carry trackIndex 0
+ * (or outside 1..9) — such a clip renders NOWHERE (the V1 lane only
+ * shows VIDEO/IMAGE, the OVL rows only show their own layer), which
+ * reads as "overlay missing from the timeline" even though the clip
+ * exists. On load, move those clips to the first free overlay layer.
+ * In-memory only until the next persist; idempotent.
+ */
+internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaClip> {
+    val used = clips.filter { it.type == ClipType.OVERLAY && it.trackIndex in 1..9 }
+        .map { it.trackIndex }.toMutableSet()
+    var changed = false
+    val out = clips.map { clip ->
+        if (clip.type == ClipType.OVERLAY && clip.trackIndex !in 1..9) {
+            val layer = (1..9).firstOrNull { it !in used } ?: 1
+            used += layer
+            changed = true
+            clip.copy(trackIndex = layer)
+        } else clip
+    }
+    if (changed) {
+        Log.w("EditorViewModel", "Normalized legacy overlay trackIndex values to free overlay layers")
+    }
+    return out
+}
 
 
 internal fun EditorViewModel.loadProject() {
@@ -50,7 +80,7 @@ internal fun EditorViewModel.loadProject() {
                     trackIndex = 0
                 )
             )
-        } else validClips
+        } else normalizeOverlayTrackIndices(validClips)
         val updatedP = p.copy(
             clips = effectiveClips,
             durationMs = computeTimelineDurationMs(effectiveClips, p.audioTracks)
@@ -66,6 +96,36 @@ internal fun EditorViewModel.loadProject() {
                 selectedClipId = it.selectedClipId ?: firstClipId,
                 isPlaying = firstClipId != null
             )
+        }
+
+        // Audio-list sync (Kilo): the project list is the source of
+        // truth. The mixer list (_audio.tracks) must carry the same
+        // tracks, or the dual-write setters silently no-op for tracks
+        // missing from one list (diverged / old project). The old
+        // loadAudioState() read the FIRST project from the stub repo —
+        // the wrong project when several exist — and is deleted.
+        val mixerIds = _audio.value.tracks.map { it.id }.toSet()
+        val projectIds = updatedP.audioTracks.map { it.id }.toSet()
+        if (mixerIds != projectIds) {
+            Log.w(
+                "EditorViewModel",
+                "Audio track lists diverged on load (mixer=${mixerIds.size}, project=${projectIds.size}) — syncing mixer from project"
+            )
+        }
+        _audio.update { it.copy(tracks = updatedP.audioTracks) }
+
+        // Reclaim orphaned project_media copies (Kilo): files in
+        // filesDir/project_media/ not referenced by any saved
+        // project (deleted projects, failed persists, pre-cleanup
+        // builds). URIs are the SAVED ones (pre-resolution), so
+        // persisted copies match.
+        if (ctx != null) {
+            val activeUris = projects.flatMap { proj ->
+                proj.clips.map { it.uri } + proj.audioTracks.map { it.uri }
+            }
+            withContext(Dispatchers.IO) {
+                com.apexstudio.app.data.picker.cleanupStalePersistedMedia(ctx, activeUris)
+            }
         }
 
         // Auto-apply the project's last transmission template so
@@ -115,11 +175,6 @@ internal fun EditorViewModel.loadTransmissionTemplates() {
         Log.w("EditorViewModel", "loadTransmissionTemplates failed", e)
         _transmissionTemplates.value = emptyList()
     }
-}
-
-
-internal fun EditorViewModel.loadAudioState() {
-    _audio.update { it.copy(tracks = repo.loadProjects().first().audioTracks) }
 }
 
 
@@ -391,7 +446,33 @@ fun EditorViewModel.deleteSavedProject(projectId: String) {
     val repo = projectRepository ?: return
     viewModelScope.launch {
         try {
+            // Snapshot the deleted project's URIs BEFORE deleting it,
+            // minus URIs still referenced by other projects (shared
+            // media must survive), so its persisted project_media
+            // copies can be reclaimed (Kilo) without breaking others.
+            var ownedUris: List<String> = emptyList()
+            val ctx = context
+            if (ctx != null) {
+                try {
+                    val all = repo.loadAll().first()
+                    val deleted = all.firstOrNull { it.id == projectId }
+                    if (deleted != null) {
+                        val others = all.filter { it.id != projectId }
+                            .flatMap { it.clips.map { c -> c.uri } + it.audioTracks.map { t -> t.uri } }
+                            .toSet()
+                        ownedUris = (deleted.clips.map { it.uri } + deleted.audioTracks.map { it.uri })
+                            .filter { it !in others }
+                    }
+                } catch (e: Exception) {
+                    Log.w("EditorViewModel", "Persisted-media snapshot on delete failed", e)
+                }
+            }
             repo.deleteProject(projectId)
+            if (ctx != null && ownedUris.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    com.apexstudio.app.data.picker.deletePersistedMediaForUris(ctx, ownedUris)
+                }
+            }
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Delete failed", e)
         }
@@ -400,7 +481,9 @@ fun EditorViewModel.deleteSavedProject(projectId: String) {
 
 /** Phase 3: opens a saved project/draft in the editor. */
 fun EditorViewModel.openSavedProject(project: com.apexstudio.app.domain.model.Project) {
-    _state.update { it.copy(project = project) }
+    _state.update {
+        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)))
+    }
     persistProject()
 }
 

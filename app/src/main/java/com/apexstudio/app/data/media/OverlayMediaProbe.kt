@@ -43,6 +43,40 @@ object OverlayMediaProbe {
 
     private val cache = ConcurrentHashMap<String, Boolean>()
 
+    /** Extensions that unambiguously identify a still-image file. */
+    private val IMAGE_EXTENSIONS = setOf(
+        "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif"
+    )
+
+    /**
+     * Synchronous still-image check for a media URI: ContentResolver
+     * MIME type when available (covers `content://` URIs, whose paths
+     * carry no extension), else the file extension (covers `file://`
+     * URIs, including the app-storage copies whose names keep the
+     * original extension). Used where the async [isVideo] probe result
+     * is not yet available (e.g. the main-player binding in
+     * EditorScreen): an image-backed OVERLAY clip must take the
+     * PhotoClipPreview path, never the ExoPlayer path — feeding a
+     * JPEG to ExoPlayer renders a black preview.
+     */
+    fun isImageUri(context: Context, uri: String): Boolean {
+        try {
+            val parsed = Uri.parse(uri)
+            val mime = try {
+                context.contentResolver.getType(parsed) ?: ""
+            } catch (_: Exception) {
+                ""
+            }
+            if (mime.startsWith("image/")) return true
+            if (mime.startsWith("video/")) return false
+        } catch (_: Exception) {
+            // Fall through to the extension check.
+        }
+        val ext = uri.substringAfterLast('.', "").substringBefore('?')
+            .substringBefore('#').lowercase()
+        return ext in IMAGE_EXTENSIONS
+    }
+
     suspend fun isVideo(context: Context, uri: String): Boolean {
         cache[uri]?.let { return it }
         val result = withContext(Dispatchers.IO) {

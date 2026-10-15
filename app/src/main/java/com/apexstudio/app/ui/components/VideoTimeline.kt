@@ -379,6 +379,37 @@ fun VideoTimeline(
         }
     }
 
+    // Reveal (new-clip appearance): an overlay clip that APPEARS in the
+    // project without a selection change (undo/redo restoring it, a
+    // paste, a project sync) must also scroll into view — otherwise
+    // its OVL row looks empty even though the clip exists. Gated on
+    // the previously-seen set being non-empty so the initial project
+    // load never yanks the scroll: opening a project shows 00:00,
+    // not a mid-timeline overlay.
+    var seenOverlayIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(clips) {
+        val previousIds = seenOverlayIds
+        val currentIds = clips.filter { it.type == ClipType.OVERLAY }.map { it.id }.toSet()
+        seenOverlayIds = currentIds
+        // Only reveal when a clip appeared mid-session (previous set
+        // non-empty): the initial project load must never yank the
+        // scroll to a mid-timeline overlay.
+        if (previousIds.isEmpty()) return@LaunchedEffect
+        val appeared = currentIds - previousIds
+        if (appeared.isEmpty()) return@LaunchedEffect
+        val clip = clips.firstOrNull { it.id == appeared.first() } ?: return@LaunchedEffect
+        val viewportWidth = scrollState.viewportSize
+        if (viewportWidth <= 0) return@LaunchedEffect
+        val clipStartPx = with(density) { (clip.timelineOffsetMs * msToDp).dp.toPx() }.roundToInt()
+        val clipEndPx = with(density) {
+            ((clip.timelineOffsetMs + clip.effectiveDurationMs()) * msToDp).dp.toPx()
+        }.roundToInt()
+        val scroll = scrollState.value
+        if (clipStartPx < scroll || clipEndPx > scroll + viewportWidth) {
+            scrollState.scrollTo((clipStartPx - 32).coerceAtLeast(0))
+        }
+    }
+
     // Drag-and-drop state for video clips
     // V1 lane: main video clips + photo (IMAGE) clips on layer 0 share the
     // filmstrip lane (photo clips previously rendered nowhere -> empty V1

@@ -256,7 +256,17 @@ fun EditorScreen(
         val clip = currentSelectedClip ?: return@LaunchedEffect
         // Still-image clips are rendered by PhotoClipPreview (Compose),
         // not ExoPlayer — feeding a JPEG to the player would just error.
-        if (clip.type == ClipType.IMAGE) {
+        // The same applies to IMAGE-backed OVERLAY clips: their type is
+        // OVERLAY, so the type check alone would bind a JPEG to the
+        // player and the preview would go BLACK (the 00:00 black
+        // preview: the selected clip was an image overlay, 42938.jpg).
+        // OverlayMediaProbe.isImageUri answers synchronously (MIME +
+        // extension); the probe-aware photoClip selection in
+        // EditorPreviewSection is the authoritative branch.
+        if (clip.type == ClipType.IMAGE ||
+            (clip.type == ClipType.OVERLAY &&
+                com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri))
+        ) {
             try {
                 player.stop()
                 player.clearMediaItems()

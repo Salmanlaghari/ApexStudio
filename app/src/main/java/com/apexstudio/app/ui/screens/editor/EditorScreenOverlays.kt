@@ -1245,8 +1245,13 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // clips take the same path: their type is OVERLAY, so a
             // bare type check would send a JPEG to ExoPlayer and the
             // preview would go BLACK. The probe result is authoritative
-            // when available; while it is pending, fall back to the
-            // synchronous MIME/extension check.
+            // when available; while it is pending, the fallback is
+            // CONSERVATIVE (OverlayMediaProbe.isImageUri returns true
+            // only on positive image evidence — image MIME or a real
+            // image extension). An unknown URI takes the player path
+            // until the probe resolves — never the photo path on a
+            // guess — and the player binding awaits the same probe,
+            // so there is no wrong-path flash and no silent black.
             photoClip = currentSelectedClip?.takeIf {
                 it.type == ClipType.IMAGE || (it.type == ClipType.OVERLAY &&
                     (overlayIsVideo[it.id]?.let { isVideo -> !isVideo }

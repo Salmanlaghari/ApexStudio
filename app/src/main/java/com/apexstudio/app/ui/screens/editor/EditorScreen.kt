@@ -260,13 +260,26 @@ fun EditorScreen(
         // OVERLAY, so the type check alone would bind a JPEG to the
         // player and the preview would go BLACK (the 00:00 black
         // preview: the selected clip was an image overlay, 42938.jpg).
-        // OverlayMediaProbe.isImageUri answers synchronously (MIME +
-        // extension); the probe-aware photoClip selection in
-        // EditorPreviewSection is the authoritative branch.
-        if (clip.type == ClipType.IMAGE ||
-            (clip.type == ClipType.OVERLAY &&
-                com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri))
-        ) {
+        // Media kind for OVERLAY clips comes from the probe, not a
+        // sync guess: isImageUri is only a fast path on POSITIVE
+        // image evidence (image MIME / real image extension).
+        // Anything else AWAITS the async probe — a wrong sync guess
+        // feeds a JPEG to ExoPlayer (black preview) or leaves a
+        // video unbound. While awaiting, the player is left
+        // untouched so the previous frame stays visible instead of
+        // flashing black; the probe is cached per URI, so the wait
+        // is ~free once the preview section has probed the same URI.
+        val isPhotoClip = when (clip.type) {
+            ClipType.IMAGE -> true
+            ClipType.OVERLAY ->
+                if (com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri)) {
+                    true
+                } else {
+                    !com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(context, clip.uri)
+                }
+            else -> false
+        }
+        if (isPhotoClip) {
             try {
                 player.stop()
                 player.clearMediaItems()

@@ -3,6 +3,7 @@ package com.apexstudio.app.data.media
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -49,19 +50,34 @@ object OverlayMediaProbe {
     )
 
     /**
-     * Synchronous still-image check for a media URI: ContentResolver
-     * MIME type when available (covers `content://` URIs, whose paths
-     * carry no extension), else the file extension (covers `file://`
-     * URIs, including the app-storage copies whose names keep the
-     * original extension). Used where the async [isVideo] probe result
-     * is not yet available (e.g. the main-player binding in
-     * EditorScreen): an image-backed OVERLAY clip must take the
-     * PhotoClipPreview path, never the ExoPlayer path — feeding a
-     * JPEG to ExoPlayer renders a black preview.
+     * Synchronous still-image check for a media URI. CONSERVATIVE:
+     * returns true ONLY on positive image evidence — an image MIME
+     * type from the ContentResolver, or a known image extension on a
+     * URI whose last path segment is a real filename (`file://`,
+     * plain paths). A `content://` URI is NEVER judged by an
+     * "extension" scraped from its string: content URIs carry no
+     * filename, so a dot in the authority, path or query (e.g. a
+     * provider ID or a `?…jpg` query) could misclassify a video as
+     * an image and route it to PhotoClipPreview. For `content://`
+     * URIs the MIME type is the only signal — unknown MIME means
+     * unknown, NOT image; the async [isVideo] probe (which the
+     * callers await / prefer) resolves those. Used as a fast path
+     * where the probe result is not yet available (player binding
+     * in EditorScreen, photoClip selection in
+     * EditorScreenOverlays): an image-backed OVERLAY clip must take
+     * the PhotoClipPreview path, never the ExoPlayer path — feeding
+     * a JPEG to ExoPlayer renders a black preview.
      */
     fun isImageUri(context: Context, uri: String): Boolean {
-        try {
-            val parsed = Uri.parse(uri)
+        val parsed = try {
+            Uri.parse(uri)
+        } catch (_: Exception) {
+            null
+        }
+        // 1. MIME type is authoritative wherever the resolver can
+        // answer it: an image MIME is positive image evidence, a
+        // video MIME must never be overridden by a stray extension.
+        if (parsed != null) {
             val mime = try {
                 context.contentResolver.getType(parsed) ?: ""
             } catch (_: Exception) {
@@ -69,11 +85,17 @@ object OverlayMediaProbe {
             }
             if (mime.startsWith("image/")) return true
             if (mime.startsWith("video/")) return false
-        } catch (_: Exception) {
-            // Fall through to the extension check.
+            // For content:// URIs the MIME type is the ONLY reliable
+            // signal — their paths carry no real filename. Unknown
+            // MIME here means unknown, not image.
+            if (parsed.scheme == "content") return false
         }
-        val ext = uri.substringAfterLast('.', "").substringBefore('?')
-            .substringBefore('#').lowercase()
+        // 2. Non-content URIs (file://, plain paths): the last path
+        // segment is a real filename, so a known image extension is
+        // positive image evidence. (Stripped of query/fragment by
+        // using lastPathSegment, never the raw URI string.)
+        val filename = parsed?.lastPathSegment ?: uri.substringAfterLast('/')
+        val ext = filename.substringAfterLast('.', "").lowercase()
         return ext in IMAGE_EXTENSIONS
     }
 
@@ -95,6 +117,11 @@ object OverlayMediaProbe {
                     // Retriever opened the file but reports no
                     // HAS_VIDEO — fall through to the MIME check.
                 }
+            } catch (e: CancellationException) {
+                // Callers await this probe inside LaunchedEffect: a
+                // cancelled probe must propagate cancellation, never
+                // fall through and bind a stale clip.
+                throw e
             } catch (_: Exception) {
                 // Retriever could not open the URI — MIME fallback below.
             }
@@ -114,6 +141,8 @@ object OverlayMediaProbe {
                     }
                     else -> false // Unanswerable: do NOT cache.
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 false // Unanswerable: do NOT cache.
             }

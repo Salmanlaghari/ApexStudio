@@ -382,10 +382,11 @@ fun VideoTimeline(
     // Reveal (new-clip appearance): an overlay clip that APPEARS in the
     // project without a selection change (undo/redo restoring it, a
     // paste, a project sync) must also scroll into view — otherwise
-    // its OVL row looks empty even though the clip exists. Gated on
-    // the previously-seen set being non-empty so the initial project
-    // load never yanks the scroll: opening a project shows 00:00,
-    // not a mid-timeline overlay.
+    // its OVL row looks empty even though the clip exists. A batch
+    // paste reveals the batch's full extent, not just its first
+    // clip. Gated on the previously-seen set being non-empty so the
+    // initial project load never yanks the scroll: opening a project
+    // shows 00:00, not a mid-timeline overlay.
     var seenOverlayIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(clips) {
         val previousIds = seenOverlayIds
@@ -397,16 +398,43 @@ fun VideoTimeline(
         if (previousIds.isEmpty()) return@LaunchedEffect
         val appeared = currentIds - previousIds
         if (appeared.isEmpty()) return@LaunchedEffect
-        val clip = clips.firstOrNull { it.id == appeared.first() } ?: return@LaunchedEffect
+        val appearedClips = clips.filter { it.id in appeared }
+        if (appearedClips.isEmpty()) return@LaunchedEffect
         val viewportWidth = scrollState.viewportSize
         if (viewportWidth <= 0) return@LaunchedEffect
-        val clipStartPx = with(density) { (clip.timelineOffsetMs * msToDp).dp.toPx() }.roundToInt()
-        val clipEndPx = with(density) {
+        // Batch reveal: a multi-clip paste can drop several overlays
+        // at once — revealing only the first leaves the rest
+        // off-screen. Scroll so the batch's full extent is visible:
+        // if the batch starts left of the viewport (or is wider
+        // than the viewport), show its start; if the start is
+        // already visible and the whole batch fits, scroll minimally
+        // to reveal its end.
+        fun clipStartPx(clip: MediaClip) = with(density) {
+            (clip.timelineOffsetMs * msToDp).dp.toPx()
+        }.roundToInt()
+        fun clipEndPx(clip: MediaClip) = with(density) {
             ((clip.timelineOffsetMs + clip.effectiveDurationMs()) * msToDp).dp.toPx()
         }.roundToInt()
         val scroll = scrollState.value
-        if (clipStartPx < scroll || clipEndPx > scroll + viewportWidth) {
-            scrollState.scrollTo((clipStartPx - 32).coerceAtLeast(0))
+        if (appearedClips.size == 1) {
+            // Single clip: unchanged behaviour — scroll so its start
+            // is visible whenever any part of it is off-screen.
+            val clip = appearedClips[0]
+            val clipStartPx = clipStartPx(clip)
+            val clipEndPx = clipEndPx(clip)
+            if (clipStartPx < scroll || clipEndPx > scroll + viewportWidth) {
+                scrollState.scrollTo((clipStartPx - 32).coerceAtLeast(0))
+            }
+            return@LaunchedEffect
+        }
+        val batchStartPx = appearedClips.minOf { clipStartPx(it) }
+        val batchEndPx = appearedClips.maxOf { clipEndPx(it) }
+        if (batchStartPx < scroll || batchEndPx > scroll + viewportWidth) {
+            if (batchStartPx < scroll || batchEndPx - batchStartPx > viewportWidth) {
+                scrollState.scrollTo((batchStartPx - 32).coerceAtLeast(0))
+            } else {
+                scrollState.scrollTo((batchEndPx - viewportWidth + 32).coerceAtLeast(0))
+            }
         }
     }
 

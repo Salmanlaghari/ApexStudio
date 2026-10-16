@@ -1806,7 +1806,6 @@ private fun TimelineTextLane(
     }
 }
 
-@Composable
 /**
  * Shared keyframe diamond strip: shows diamond markers for [keyframes] positioned
  * within [spanStartMs, spanStartMs + spanDurationMs].

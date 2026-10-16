@@ -282,6 +282,231 @@ fun EditorViewModel.moveSticker(stickerId: String, dx: Float, dy: Float, persist
 fun EditorViewModel.setStickerSizeScale(stickerId: String, scale: Float, persist: Boolean = true) =
     updateSticker(stickerId, persist) { it.copy(sizeScale = scale.coerceIn(0.1f, 8f)) }
 
+/**
+ * Toggles a sticker position keyframe at the current playhead
+ * (same 150ms window + pin-current-transform behaviour as
+ * [toggleTextKeyframeAtPlayhead]): removes the keyframe near the
+ * playhead, or adds one pinning the sticker's interpolated transform
+ * at the playhead so dragging the playhead then the sticker moves
+ * only that keyframe's offset.
+ */
+fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) {
+    val sticker = _state.value.project?.stickers?.firstOrNull { it.id == stickerId } ?: return
+    val playheadMs = livePlayheadMs()
+    val existingKf = sticker.keyframes.keyframes.firstOrNull {
+        kotlin.math.abs(it.timeMs - playheadMs) <= 150L
+    }
+    if (existingKf != null) {
+        updateSticker(stickerId) { st ->
+            st.copy(keyframes = KeyframeTrack(st.keyframes.keyframes.filter { it.id != existingKf.id }))
+        }
+    } else {
+        val t = sticker.effectiveTransformAt(playheadMs)
+        val kf = Keyframe(
+            id = java.util.UUID.randomUUID().toString(),
+            timeMs = playheadMs,
+            translateX = t.translateX,
+            translateY = t.translateY,
+            scale = t.scale,
+            rotationDeg = t.rotationDeg,
+            opacity = t.opacity
+        )
+        updateSticker(stickerId) { st ->
+            val without = st.keyframes.keyframes.filter { it.timeMs != playheadMs }
+            st.copy(keyframes = KeyframeTrack(without + kf).sorted())
+        }
+    }
+}
+
+/**
+ * Moves a sticker keyframe to a new timeline position (from diamond
+ * drag on the timeline sticker lane).
+ */
+fun EditorViewModel.moveStickerKeyframe(stickerId: String, keyframeId: String, newTimeMs: Long) {
+    updateSticker(stickerId) { st ->
+        st.copy(
+            keyframes = KeyframeTrack(
+                st.keyframes.keyframes.map {
+                    if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
+                }
+            ).sorted()
+        )
+    }
+}
+
+// ---- Text mask + mask keyframes (Text Reveal template) ----
+
+/**
+ * Sets/replaces the mask on a text overlay. Mask keyframes are kept:
+ * they ride on the new mask's shape/feather, only the centre is
+ * animated. Removing the mask also drops its keyframes (a mask with
+ * no shape has nothing to animate).
+ */
+fun EditorViewModel.updateTextMask(
+    clipId: String,
+    overlayId: String,
+    mask: VideoMask?
+) {
+    updateTextOverlay(clipId, overlayId) { ov ->
+        if (mask == null) ov.copy(mask = null, maskKeyframes = emptyList())
+        else ov.copy(mask = mask)
+    }
+}
+
+/**
+ * Toggles a mask-centre keyframe at the current playhead (same 150ms
+ * window as the transform strips): removes the keyframe near the
+ * playhead, or adds one pinning the mask's interpolated centre at
+ * the playhead — so the user can park the playhead mid-reveal,
+ * drag the wipe, and pin it there. No-op when the overlay has no mask.
+ */
+fun EditorViewModel.toggleTextMaskKeyframeAtPlayhead(clipId: String, overlayId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val overlay = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
+    if (overlay.mask == null) return
+    val playheadMs = livePlayheadMs()
+    val existing = overlay.maskKeyframes.firstOrNull {
+        kotlin.math.abs(it.timeMs - playheadMs) <= 150L
+    }
+    if (existing != null) {
+        updateTextOverlay(clipId, overlayId) { ov ->
+            ov.copy(maskKeyframes = ov.maskKeyframes.filter { it.id != existing.id })
+        }
+    } else {
+        val centre = overlay.effectiveMaskAt(playheadMs) ?: return
+        val kf = TextMaskKeyframe.at(playheadMs, centre.centerX, centre.centerY)
+        updateTextOverlay(clipId, overlayId) { ov ->
+            val without = ov.maskKeyframes.filter { it.timeMs != playheadMs }
+            ov.copy(maskKeyframes = (without + kf).sortedBy { it.timeMs })
+        }
+    }
+}
+
+/**
+ * Moves a mask keyframe to a new timeline position (from diamond
+ * drag on the timeline text lane's gold mask strip).
+ */
+fun EditorViewModel.moveTextMaskKeyframe(
+    clipId: String,
+    overlayId: String,
+    keyframeId: String,
+    newTimeMs: Long
+) {
+    updateTextOverlay(clipId, overlayId) { ov ->
+        ov.copy(
+            maskKeyframes = ov.maskKeyframes.map {
+                if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
+            }.sortedBy { it.timeMs }
+        )
+    }
+}
+
+/**
+ * One-tap "Text Reveal" template (CapCut-style): at the playhead,
+ * adds an editable "Beautiful" text clip, the original walking-cat
+ * sticker on the sticker track above it, and a LINEAR mask on the
+ * text keyframed so the text reveals exactly as the cat passes —
+ * the mask wipe follows the sticker (sticker-assisted reveal).
+ *
+ * Everything stays fully editable afterwards: text (word/font/size),
+ * sticker (position + its keyframes), mask (shape/feather + its
+ * keyframes), durations (trim the text/sticker spans on the timeline).
+ *
+ * Single undo step for the text part (the clip-level undo stack
+ * snapshots clips only — the project-level sticker follows the
+ * same rule as any manually added sticker: delete it to remove it).
+ * No-op when the project has no clip to attach the text to.
+ */
+fun EditorViewModel.applyTextRevealTemplate() {
+    val proj = _state.value.project ?: return
+    val clip = proj.clips.firstOrNull { it.id == _state.value.selectedClipId }
+        ?: proj.clips.firstOrNull() ?: return
+    val start = livePlayheadMs()
+    val duration = TEXT_REVEAL_TEMPLATE_DURATION_MS
+    val end = start + duration
+
+    // Walking cat: travels left -> right across the whole frame,
+    // starting/ending just off-screen (base x 0.5 + offsets).
+    val stickerKeyframes = KeyframeTrack(
+        listOf(
+            Keyframe(
+                id = java.util.UUID.randomUUID().toString(),
+                timeMs = start,
+                translateX = -0.55f
+            ),
+            Keyframe(
+                id = java.util.UUID.randomUUID().toString(),
+                timeMs = end,
+                translateX = 0.55f
+            )
+        ).sorted()
+    )
+    val sticker = StickerOverlay(
+        id = java.util.UUID.randomUUID().toString(),
+        symbolOrUri = "",
+        category = "animated",
+        name = "Walking Cat",
+        x = 0.5f,
+        y = 0.5f,
+        sizeScale = 1.0f,
+        startMs = start,
+        endMs = end,
+        keyframes = stickerKeyframes,
+        assetPath = "lottie/walking_cat.json"
+    )
+
+    // LINEAR wipe: the kept side is left of the edge, so sweeping
+    // centreX -0.1 -> 1.1 reveals the text left-to-right. The wipe
+    // leads the cat slightly (cat at -0.05 when the edge is at -0.1;
+    // cat at 1.05 when the edge is at 1.1), so the word appears
+    // exactly as the cat passes it.
+    val mask = VideoMask(
+        shape = MaskShape.LINEAR,
+        centerX = -0.1f,
+        centerY = 0.5f,
+        sizeX = 0.3f,
+        sizeY = 1.0f,
+        feather = 0.15f,
+        invert = false,
+        opacity = 1f,
+        enabled = true
+    )
+    val maskKeyframes = listOf(
+        TextMaskKeyframe.at(start, -0.1f, 0.5f),
+        TextMaskKeyframe.at(end, 1.1f, 0.5f)
+    )
+    val text = TextOverlay.of(
+        text = "Beautiful",
+        x = 0.5f,
+        y = 0.5f,
+        sizeScale = 1.8f,
+        colorArgb = 0xFFFFFFFFL,
+        isBold = true,
+        startMs = start,
+        endMs = end,
+        mask = mask,
+        maskKeyframes = maskKeyframes
+    )
+
+    pushUndo()
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(
+            project = p.copy(
+                clips = p.clips.map {
+                    if (it.id == clip.id) it.copy(textOverlays = it.textOverlays + text) else it
+                },
+                stickers = p.stickers + sticker
+            ),
+            selectedTextOverlayId = text.id
+        )
+    }
+    persistProject()
+}
+
+/** Duration of the Text Reveal template effect (matches the ~2s Reel). */
+const val TEXT_REVEAL_TEMPLATE_DURATION_MS = 2000L
+
 fun EditorViewModel.rotateSticker(stickerId: String, deltaDeg: Float, persist: Boolean = true) =
     updateSticker(stickerId, persist) {
         it.copy(rotationDeg = (it.rotationDeg + deltaDeg) % 360f)

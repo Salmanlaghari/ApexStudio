@@ -282,6 +282,28 @@ data class PhotoEditSettings(
  * Colours are stored as 0xAARRGGBB longs so the JSON project file
  * stays readable; null [bgArgb] means no pill behind the text.
  */
+/**
+ * One keyframe on a text overlay's [VideoMask]: pins the mask centre
+ * (normalised frame coords) at an absolute timeline position. The
+ * preview ([AnimatedTextOverlayView]) and the export
+ * ([TextSpriteRenderer] via [TextOverlayGlEffect]) both interpolate
+ * the centre linearly between neighbouring mask keyframes and clamp
+ * to the endpoints outside them — so a travelling wipe (the Text
+ * Reveal template) previews exactly as it bakes.
+ */
+@Serializable
+data class TextMaskKeyframe(
+    val id: String,
+    val timeMs: Long,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f
+) {
+    companion object {
+        fun at(timeMs: Long, centerX: Float, centerY: Float, id: String = java.util.UUID.randomUUID().toString()) =
+            TextMaskKeyframe(id = id, timeMs = timeMs, centerX = centerX, centerY = centerY)
+    }
+}
+
 @Serializable
 data class TextOverlay(
     val id: String,
@@ -319,9 +341,41 @@ data class TextOverlay(
     // Vertical gradient fill: both non-null to enable.
     val gradientStartArgb: Long? = null,
     val gradientEndArgb: Long? = null,
-    val keyframes: KeyframeTrack = KeyframeTrack()
+    val keyframes: KeyframeTrack = KeyframeTrack(),
+    // Shape mask (same [VideoMask] as video clips). Null = no mask.
+    // When set, only the masked region of the text is visible — the
+    // preview clips the text and the export bakes the same clip via
+    // the sprite renderer. Backwards-compatible: older project JSONs
+    // without this field deserialise as null.
+    val mask: VideoMask? = null,
+    // Keyframes animating the mask centre over time (travelling wipe).
+    // Empty = the mask stays at its static [mask] centre.
+    val maskKeyframes: List<TextMaskKeyframe> = emptyList()
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+
+    /**
+     * The mask to render at [timeMs]: the static [mask] with its
+     * centre replaced by the interpolated mask-keyframe centre.
+     * Null when no mask is set. Keyframes interpolate linearly and
+     * clamp to the endpoints outside their range.
+     */
+    fun effectiveMaskAt(timeMs: Long): VideoMask? {
+        val base = mask ?: return null
+        if (maskKeyframes.isEmpty()) return base
+        val sorted = maskKeyframes.sortedBy { it.timeMs }
+        val before = sorted.lastOrNull { it.timeMs <= timeMs }
+        val after = sorted.firstOrNull { it.timeMs >= timeMs }
+        if (before == null) return base.copy(centerX = sorted.first().centerX, centerY = sorted.first().centerY)
+        if (after == null) return base.copy(centerX = sorted.last().centerX, centerY = sorted.last().centerY)
+        if (before.id == after.id) return base.copy(centerX = before.centerX, centerY = before.centerY)
+        val span = (after.timeMs - before.timeMs).coerceAtLeast(1L)
+        val t = ((timeMs - before.timeMs).toFloat() / span.toFloat()).coerceIn(0f, 1f)
+        return base.copy(
+            centerX = before.centerX + (after.centerX - before.centerX) * t,
+            centerY = before.centerY + (after.centerY - before.centerY) * t
+        )
+    }
 
     companion object {
         fun of(
@@ -348,7 +402,11 @@ data class TextOverlay(
             letterSpacingEm: Float = 0f,
             gradientStartArgb: Long? = null,
             gradientEndArgb: Long? = null,
-            keyframes: KeyframeTrack = KeyframeTrack()
+            keyframes: KeyframeTrack = KeyframeTrack(),
+            startMs: Long = 0L,
+            endMs: Long = Long.MAX_VALUE,
+            mask: VideoMask? = null,
+            maskKeyframes: List<TextMaskKeyframe> = emptyList()
         ): TextOverlay = TextOverlay(
             id = id, text = text, x = x, y = y, sizeScale = sizeScale,
             colorArgb = colorArgb, bgArgb = bgArgb, strokeColorArgb = strokeColorArgb,
@@ -360,7 +418,8 @@ data class TextOverlay(
             rotationDeg = rotationDeg, opacity = opacity,
             textAlign = textAlign, letterSpacingEm = letterSpacingEm,
             gradientStartArgb = gradientStartArgb, gradientEndArgb = gradientEndArgb,
-            keyframes = keyframes
+            keyframes = keyframes, startMs = startMs, endMs = endMs,
+            mask = mask, maskKeyframes = maskKeyframes
         )
     }
 }
@@ -984,6 +1043,17 @@ data class StickerOverlay(
     val cutoutShape: String = "NONE"
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+
+    /**
+     * Keyframe-interpolated transform at [timeMs] (translate / scale /
+     * rotation / opacity offsets relative to the sticker's base
+     * [x]/[y]/[sizeScale]/[rotationDeg]/[opacity]). Identity when the
+     * sticker has no keyframes. Preview ([StickerCanvas]) and export
+     * ([StickerGlEffect]) both evaluate this single helper so a
+     * keyframed sticker moves identically on screen and in the MP4.
+     */
+    fun effectiveTransformAt(timeMs: Long): AnimatedTransform =
+        keyframes.interpolateAt(timeMs)
 
     /** True for bundled PNG stickers (asset library), false for legacy emoji stickers. */
     fun isPngSticker(): Boolean = !assetPath.isNullOrBlank()

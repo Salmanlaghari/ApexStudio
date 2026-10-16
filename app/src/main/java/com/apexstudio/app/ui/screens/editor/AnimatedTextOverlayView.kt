@@ -135,6 +135,19 @@ fun AnimatedTextOverlayView(
     val fontSizeSp = (20f * ((scaleXAnim + scaleYAnim) / 2f)).coerceIn(10f, 80f)
     val blurDp = with(density) { (anim.blurFrac * containerHeightPx).toDp() }
 
+    // Mask (Text Reveal template): evaluated at the playhead, applied
+    // to the whole text Box (pill + glyphs) in frame space. The Box's
+    // layout origin on screen = anchor offset + keyframe/anim offset +
+    // align shift - the 48dp/24dp centring fudge, plus the 10dp outer
+    // padding. Computed in px so the wipe edge lands exactly where the
+    // export shader puts it.
+    val mask = overlay.effectiveMaskAt(currentTimeMs)
+    val innerLeftPx = containerWidthPx * posX -
+        with(density) { 48.dp.toPx() } + offsetXPx +
+        with(density) { alignShiftDp.toPx() } + with(density) { 10.dp.toPx() }
+    val innerTopPx = containerHeightPx * posY -
+        with(density) { 24.dp.toPx() } + offsetYDp + with(density) { 10.dp.toPx() }
+
     Box(
         modifier = modifier
             .offset(
@@ -165,6 +178,15 @@ fun AnimatedTextOverlayView(
         // Main Text Box with Border and Background
         Box(
             modifier = Modifier
+                .textMaskClip(
+                    mask = mask,
+                    innerLeftPx = innerLeftPx,
+                    innerTopPx = innerTopPx,
+                    scaleX = scaleXAnim,
+                    scaleY = scaleYAnim,
+                    containerWidthPx = containerWidthPx,
+                    containerHeightPx = containerHeightPx
+                )
                 .graphicsLayer {
                     alpha = displayAlpha
                     rotationX = anim.rotXDeg

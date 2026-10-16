@@ -127,7 +127,7 @@ fun StickerCanvas(
                     detectTapGestures(
                         onTap = { pos ->
                             val hit = activeStickers.asReversed().firstOrNull { s ->
-                                stickerHitTest(s, pos, canvasWpx, canvasHpx)
+                                stickerHitTest(s, pos, canvasWpx, canvasHpx, currentTimeMs)
                             }
                             onSelectSticker(hit?.id)
                         }
@@ -139,6 +139,7 @@ fun StickerCanvas(
                     StickerItem(
                         sticker = sticker,
                         isSelected = sticker.id == selectedStickerId,
+                        currentTimeMs = currentTimeMs,
                         canvasWpx = canvasWpx,
                         canvasHpx = canvasHpx,
                         imageCache = imageCache,
@@ -153,8 +154,12 @@ fun StickerCanvas(
 
             // Floating action bar above the selected sticker.
             if (selected != null && cropTargetId == null) {
+                val selKf = selected.effectiveTransformAt(currentTimeMs)
                 StickerActionBar(
                     sticker = selected,
+                    effX = (selected.x + selKf.translateX).coerceIn(0f, 1f),
+                    effY = (selected.y + selKf.translateY).coerceIn(0f, 1f),
+                    effScale = (selected.sizeScale * selKf.scale).coerceIn(0.05f, 8f),
                     canvasWpx = canvasWpx,
                     canvasHpx = canvasHpx,
                     onCrop = { cropTargetId = selected.id },
@@ -196,12 +201,18 @@ private fun stickerHitTest(
     sticker: StickerOverlay,
     pos: Offset,
     canvasWpx: Float,
-    canvasHpx: Float
+    canvasHpx: Float,
+    timeMs: Long = 0L
 ): Boolean {
-    val side = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION *
-        sticker.sizeScale.coerceIn(0.05f, 8f)
-    val cx = sticker.x.coerceIn(0f, 1f) * canvasWpx
-    val cy = sticker.y.coerceIn(0f, 1f) * canvasHpx
+    // Hit-test the keyframe-interpolated position, so a moving
+    // sticker is tappable where it is drawn, not where its base is.
+    val kf = sticker.effectiveTransformAt(timeMs)
+    val effX = (sticker.x + kf.translateX).coerceIn(0f, 1f)
+    val effY = (sticker.y + kf.translateY).coerceIn(0f, 1f)
+    val effScale = (sticker.sizeScale * kf.scale).coerceIn(0.05f, 8f)
+    val side = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION * effScale
+    val cx = effX * canvasWpx
+    val cy = effY * canvasHpx
     val half = side / 2f + 12f
     return kotlin.math.abs(pos.x - cx) <= half && kotlin.math.abs(pos.y - cy) <= half
 }
@@ -210,6 +221,7 @@ private fun stickerHitTest(
 private fun StickerItem(
     sticker: StickerOverlay,
     isSelected: Boolean,
+    currentTimeMs: Long,
     canvasWpx: Float,
     canvasHpx: Float,
     imageCache: StickerImageCache,
@@ -222,6 +234,19 @@ private fun StickerItem(
     val density = LocalDensity.current
     val latest by rememberUpdatedState(sticker)
 
+    // Keyframe-interpolated transform at the playhead: the sticker's
+    // base x/y/scale/rotation/opacity PLUS the keyframe offsets —
+    // the same composition the export path uses. Without keyframes
+    // this is the identity, so static stickers render unchanged.
+    // Drags still move the BASE position (like keyframed text); the
+    // keyframe offsets ride on top.
+    val kfTransform = sticker.effectiveTransformAt(currentTimeMs)
+    val effX = (sticker.x + kfTransform.translateX).coerceIn(0f, 1f)
+    val effY = (sticker.y + kfTransform.translateY).coerceIn(0f, 1f)
+    val effScale = (sticker.sizeScale * kfTransform.scale).coerceIn(0.05f, 8f)
+    val effRotation = sticker.rotationDeg + kfTransform.rotationDeg
+    val effOpacity = (sticker.opacity * kfTransform.opacity).coerceIn(0f, 1f)
+
     val imageBitmap = produceState<ImageBitmap?>(
         initialValue = null,
         sticker.id, sticker.assetPath
@@ -233,11 +258,10 @@ private fun StickerItem(
         }
     }.value
 
-    val sidePx = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION *
-        sticker.sizeScale.coerceIn(0.05f, 8f)
+    val sidePx = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION * effScale
     val sideDp: Dp = with(density) { sidePx.toDp() }
-    val cxPx = sticker.x.coerceIn(0f, 1f) * canvasWpx
-    val cyPx = sticker.y.coerceIn(0f, 1f) * canvasHpx
+    val cxPx = effX * canvasWpx
+    val cyPx = effY * canvasHpx
 
     Box(
         modifier = Modifier
@@ -249,8 +273,8 @@ private fun StickerItem(
                 )
             }
             .graphicsLayer {
-                rotationZ = sticker.rotationDeg
-                alpha = sticker.opacity.coerceIn(0f, 1f)
+                rotationZ = effRotation
+                alpha = effOpacity
             }
             .pointerInput(sticker.id) {
                 // detectTransformGestures has no end callback, so re-arm it
@@ -427,6 +451,9 @@ private fun StickerItem(
 @Composable
 private fun StickerActionBar(
     sticker: StickerOverlay,
+    effX: Float,
+    effY: Float,
+    effScale: Float,
     canvasWpx: Float,
     canvasHpx: Float,
     onCrop: () -> Unit,
@@ -434,10 +461,9 @@ private fun StickerActionBar(
     onDelete: () -> Unit
 ) {
     val density = LocalDensity.current
-    val sidePx = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION *
-        sticker.sizeScale.coerceIn(0.05f, 8f)
-    val cxPx = sticker.x.coerceIn(0f, 1f) * canvasWpx
-    val cyPx = sticker.y.coerceIn(0f, 1f) * canvasHpx
+    val sidePx = canvasHpx * StickerSpriteRenderer.BASE_STICKER_FRACTION * effScale
+    val cxPx = effX * canvasWpx
+    val cyPx = effY * canvasHpx
     val barWidthPx = with(density) { 216.dp.toPx() }
     val barX = (cxPx - barWidthPx / 2f).coerceIn(4f, (canvasWpx - barWidthPx).coerceAtLeast(4f))
     val barY = (cyPx - sidePx / 2f - with(density) { 46.dp.toPx() }).coerceAtLeast(4f)

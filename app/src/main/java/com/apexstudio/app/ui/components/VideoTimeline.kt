@@ -206,6 +206,10 @@ fun VideoTimeline(
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
+    onMoveStickerKeyframe: (stickerId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     // Multi-layer video tracks (CapCut-style, up to 10). Layer 0 = main (V1),
     // layers 1..9 = overlay layers (V2..V10) composited PiP above the main.
     hiddenVideoLayers: Set<Int> = emptySet(),
@@ -877,6 +881,8 @@ fun VideoTimeline(
                                     onSeekToKeyframe = onScrub,
                                     onMoveTextKeyframe = onMoveTextKeyframe,
                                     onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
+                                    onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
+                                    onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(textLaneHeight.dp)
@@ -892,6 +898,9 @@ fun VideoTimeline(
                                     msToDp = msToDp,
                                     selectedStickerId = selectedStickerId,
                                     onSelectSticker = onSelectSticker,
+                                    onSeekToKeyframe = onScrub,
+                                    onMoveStickerKeyframe = onMoveStickerKeyframe,
+                                    onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(stickerLaneHeight.dp)
@@ -1109,6 +1118,10 @@ fun VideoTimeline(
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
+    onMoveStickerKeyframe: (stickerId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSelectAudioTrack: (String) -> Unit = {},
     // Multi-layer controls (wired by the editor screen).
     hiddenVideoLayers: Set<Int> = state.hiddenVideoLayers,
@@ -1186,6 +1199,10 @@ fun VideoTimeline(
         onMoveKeyframe = onMoveKeyframe,
         onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
         onMoveTextKeyframe = onMoveTextKeyframe,
+        onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
+        onMoveStickerKeyframe = onMoveStickerKeyframe,
+        onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
+        onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
         selectedAudioTrackId = state.selectedAudioTrackId,
         onSelectAudioTrack = onSelectAudioTrack,
         hiddenVideoLayers = hiddenVideoLayers,
@@ -1731,6 +1748,8 @@ private fun TimelineTextLane(
     onSeekToKeyframe: (Long) -> Unit = {},
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
+    onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
+    onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -1801,6 +1820,30 @@ private fun TimelineTextLane(
                     accentColor = ApexPalette.NeonPink,
                     modifier = Modifier.height(12.dp)
                 )
+                // Mask keyframe strip (gold) — only when the text has
+                // a mask. Mask keyframes carry (id, timeMs) only, so
+                // they ride the shared strip as lightweight Keyframes
+                // with the same tap/drag/+ UX.
+                if (textOverlay.mask != null) {
+                    KeyframeDiamondStrip(
+                        keyframes = textOverlay.maskKeyframes.map {
+                            Keyframe(id = it.id, timeMs = it.timeMs)
+                        },
+                        spanStartMs = ovStartMs,
+                        spanDurationMs = ovDur,
+                        stripWidthDp = ovWidthDp,
+                        msToDp = msToDp,
+                        onSeekToKeyframe = onSeekToKeyframe,
+                        onMoveKeyframe = { kfId, newTimeMs ->
+                            if (ownerClipId != null) onMoveTextMaskKeyframe(ownerClipId, textOverlay.id, kfId, newTimeMs)
+                        },
+                        onAddAtPlayhead = {
+                            if (ownerClipId != null) onToggleTextMaskKeyframeAtPlayhead(ownerClipId, textOverlay.id)
+                        },
+                        accentColor = Color(0xFFFFC107),
+                        modifier = Modifier.height(12.dp)
+                    )
+                }
             }
         }
     }
@@ -2276,6 +2319,9 @@ private fun TimelineStickerLane(
     msToDp: Float,
     selectedStickerId: String? = null,
     onSelectSticker: (String?) -> Unit = {},
+    onSeekToKeyframe: (Long) -> Unit = {},
+    onMoveStickerKeyframe: (stickerId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -2297,30 +2343,57 @@ private fun TimelineStickerLane(
                 !assetName.isNullOrBlank() -> assetName
                 else -> sticker.symbolOrUri.take(12)
             }
-            Box(
+            val segWidthDp = (dur * msToDp).dp.coerceAtLeast(52.dp)
+            Column(
                 modifier = Modifier
                     .offset(x = (start * msToDp).dp)
-                    .width((dur * msToDp).dp.coerceAtLeast(52.dp))
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(if (isSelected) Color(0xFF4A2B3D) else Color(0xFF2E1B28))
-                    .border(
-                        width = if (isSelected) 1.5.dp else 1.dp,
-                        color = if (isSelected) Color.White else Color(0xFFF472B6).copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(5.dp)
-                    )
-                    .clickable { onSelectSticker(sticker.id) }
-                    .padding(horizontal = 6.dp),
-                contentAlignment = Alignment.CenterStart
+                    .width(segWidthDp)
             ) {
-                Text(
-                    text = "🎨 $label",
-                    color = Color(0xFFFBCFE8),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Box(
+                    modifier = Modifier
+                        .width(segWidthDp)
+                        .height(24.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (isSelected) Color(0xFF4A2B3D) else Color(0xFF2E1B28))
+                        .border(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) Color.White else Color(0xFFF472B6).copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(5.dp)
+                        )
+                        .clickable { onSelectSticker(sticker.id) }
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = "🎨 $label",
+                        color = Color(0xFFFBCFE8),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // Position keyframe strip (same UX as text keyframes:
+                // tap diamond = seek, drag = move, "+" = add at playhead).
+                // Always shown for the selected sticker; for others it
+                // appears once they have keyframes — a static sticker
+                // stays a clean single row.
+                if (isSelected || sticker.keyframes.keyframes.isNotEmpty()) {
+                    KeyframeDiamondStrip(
+                        keyframes = sticker.keyframes.keyframes,
+                        spanStartMs = start,
+                        spanDurationMs = dur,
+                        stripWidthDp = segWidthDp,
+                        msToDp = msToDp,
+                        onSeekToKeyframe = onSeekToKeyframe,
+                        onMoveKeyframe = { kfId, newTimeMs ->
+                            onMoveStickerKeyframe(sticker.id, kfId, newTimeMs)
+                        },
+                        onAddAtPlayhead = { onToggleStickerKeyframeAtPlayhead(sticker.id) },
+                        accentColor = Color(0xFFF472B6),
+                        modifier = Modifier.height(12.dp)
+                    )
+                }
             }
         }
     }

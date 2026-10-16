@@ -321,7 +321,8 @@ private fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
             "heart_pop.json" to "Heart Pop",
             "pulse_ring.json" to "Pulse Ring",
             "rotating_star.json" to "Star Spin",
-            "swipe_arrow.json" to "Swipe Up"
+            "swipe_arrow.json" to "Swipe Up",
+            "walking_cat.json" to "Walking Cat"
         )
     }
     Column(modifier = Modifier.fillMaxWidth().weight(1f)) {

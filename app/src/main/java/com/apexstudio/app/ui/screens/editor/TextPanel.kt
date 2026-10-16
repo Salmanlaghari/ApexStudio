@@ -132,7 +132,15 @@ fun TextPanel(
     onClearCaptions: () -> Unit = {},
     onCaptionLanguageChange: (String) -> Unit = {},
     onCancelCaptions: () -> Unit = {},
-    hasAutoCaptions: Boolean = false
+    hasAutoCaptions: Boolean = false,
+    // One-tap templates: "Text Reveal" adds editable text + walking
+    // sticker + keyframed mask at the playhead. Disabled when the
+    // project has no clip to attach the text to.
+    onApplyTextReveal: () -> Unit = {},
+    canApplyTemplate: Boolean = true,
+    // Opens the mask panel (shape/feather/invert) for the selected
+    // text overlay; mask keyframes live on the timeline gold strip.
+    onOpenTextMask: () -> Unit = {}
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
     var activeTab by remember { mutableStateOf(TextPanelTab.EDIT) }
@@ -239,6 +247,47 @@ fun TextPanel(
 
         Spacer(Modifier.height(8.dp))
 
+        // One-tap templates: Text Reveal adds editable "Beautiful" text
+        // + the walking-cat sticker + a keyframed mask at the playhead.
+        // Everything stays editable afterwards (text / sticker / mask).
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    if (canApplyTemplate) Color(0xFF3B1D4D)
+                    else ApexPalette.BgElevated
+                )
+                .border(
+                    1.dp,
+                    if (canApplyTemplate) ApexPalette.NeonPink else ApexPalette.BorderGlass,
+                    RoundedCornerShape(10.dp)
+                )
+                .clickable(enabled = canApplyTemplate) { onApplyTextReveal() }
+                .padding(horizontal = 12.dp, vertical = 9.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("✨", fontSize = 16.sp)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Text Reveal",
+                        color = if (canApplyTemplate) Color.White else ApexPalette.TextTertiary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (canApplyTemplate) "Walking sticker reveals your text • tap to add at playhead"
+                        else "Add a video clip first",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         if (selected == null) {
             Text(
                 "Tap + Add to place a caption on the video. Drag or tap on video to edit.",
@@ -281,6 +330,44 @@ fun TextPanel(
                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                     )
                 }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Mask row: shape/feather/invert for the selected text, edited
+        // in the Mask panel. A mask with keyframes shows the gold
+        // strip on the timeline text lane (drag diamonds to retime).
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .clickable { onOpenTextMask() }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text("🎭", fontSize = 14.sp)
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Mask",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    if (selected.mask == null) "No mask — tap to add a reveal / shape mask"
+                    else {
+                        val shape = selected.mask?.shape?.label ?: "Mask"
+                        val kf = if (selected.maskKeyframes.isNotEmpty())
+                            " • ${selected.maskKeyframes.size} keyframes" else ""
+                        "$shape$ kf — tap to edit"
+                    },
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
             }
         }
 

@@ -778,6 +778,7 @@ fun EditorScreen(
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     MaskPanelOverlay(state = state, vm = vm)
+    TextMaskPanelOverlay(state = state, vm = vm)
     OverlayPropertiesPanelOverlay(state = state, vm = vm)
     HelpDialogOverlay(state = state, vm = vm)
     KeyframePanelOverlay(state = state, vm = vm)

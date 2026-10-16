@@ -493,6 +493,15 @@ fun TextPanelOverlay(
                     }
                 },
                 onClose = { vm.closeTextPanel() },
+                // One-tap Text Reveal template: needs a clip to attach
+                // the text to; applies at the playhead, then closes
+                // the panel so the result is visible immediately.
+                canApplyTemplate = textClip != null,
+                onApplyTextReveal = {
+                    vm.applyTextRevealTemplate()
+                    vm.closeTextPanel()
+                },
+                onOpenTextMask = { vm.openTextMaskPanel() },
                 captionUiState = captionUiState,
                 onAutoCaptions = {
                     textClip?.let {
@@ -853,6 +862,44 @@ fun MaskPanelOverlay(
                     if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)
                 },
                 onClose = { vm.closeMaskPanel() }
+            )
+        }
+    }
+}
+
+/**
+ * Mask tool bottom-sheet overlay for the selected TEXT overlay —
+ * the same MaskPanel as the clip mask (shape / feather / opacity /
+ * invert), bound to the text's mask via [updateTextMask]. Mask
+ * keyframes are edited on the timeline's gold mask strip; removing
+ * the mask here also drops its keyframes.
+ */
+@Composable
+fun TextMaskPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel
+) {
+    if (!state.textMaskPanelOpen) return
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+        ?: state.project?.clips?.firstOrNull()
+    val overlayId = state.selectedTextOverlayId
+    val overlay = selectedClip?.textOverlays?.firstOrNull { it.id == overlayId }
+    if (selectedClip == null || overlay == null) {
+        LaunchedEffect(Unit) { vm.closeTextMaskPanel() }
+        return
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeTextMaskPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            MaskPanel(
+                mask = overlay.mask,
+                onUpdate = { mask -> vm.updateTextMask(selectedClip.id, overlay.id, mask) },
+                onClose = { vm.closeTextMaskPanel() }
             )
         }
     }
@@ -1500,6 +1547,18 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         onMoveTextKeyframe = { clipId, overlayId, kfId, newTimeMs ->
             vm.moveTextKeyframe(clipId, overlayId, kfId, newTimeMs)
+        },
+        onToggleStickerKeyframeAtPlayhead = { stickerId ->
+            vm.toggleStickerKeyframeAtPlayhead(stickerId)
+        },
+        onMoveStickerKeyframe = { stickerId, kfId, newTimeMs ->
+            vm.moveStickerKeyframe(stickerId, kfId, newTimeMs)
+        },
+        onToggleTextMaskKeyframeAtPlayhead = { clipId, overlayId ->
+            vm.toggleTextMaskKeyframeAtPlayhead(clipId, overlayId)
+        },
+        onMoveTextMaskKeyframe = { clipId, overlayId, kfId, newTimeMs ->
+            vm.moveTextMaskKeyframe(clipId, overlayId, kfId, newTimeMs)
         },
         onZoomIn = { vm.zoomInTimeline() },
         onZoomOut = { vm.zoomOutTimeline() },

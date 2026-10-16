@@ -7,9 +7,13 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.Shader
+import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.VideoMask
 
 /**
  * Rasterises [TextOverlay]s onto a transparent full-frame bitmap.
@@ -48,13 +52,19 @@ object TextSpriteRenderer {
      * @param states per-overlay animation state from
      *   [TextAnimEngine.compute]; overlays without an entry render
      *   statically.
+     * @param masks per-overlay shape mask, already evaluated at the
+     *   frame time (see [TextOverlay.effectiveMaskAt]); overlays
+     *   without an entry render unmasked. Applied in FRAME space
+     *   after the animation transform, so a travelling wipe clips
+     *   exactly the pixels the preview shows.
      */
     fun render(
         overlays: List<TextOverlay>,
         width: Int,
         height: Int,
         highlightId: String? = null,
-        states: Map<String, TextAnimEngine.State> = emptyMap()
+        states: Map<String, TextAnimEngine.State> = emptyMap(),
+        masks: Map<String, VideoMask> = emptyMap()
     ): Bitmap {
         if (width <= 1 || height <= 1 || overlays.isEmpty()) {
             return Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
@@ -62,11 +72,28 @@ object TextSpriteRenderer {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         for (overlay in overlays) {
-            drawOverlay(
-                canvas, overlay, width, height,
-                state = states[overlay.id] ?: TextAnimEngine.State.Identity,
-                isHighlighted = overlay.id == highlightId
-            )
+            val mask = masks[overlay.id]?.takeIf { it.enabled }
+            if (mask == null) {
+                drawOverlay(
+                    canvas, overlay, width, height,
+                    state = states[overlay.id] ?: TextAnimEngine.State.Identity,
+                    isHighlighted = overlay.id == highlightId
+                )
+            } else {
+                // Isolate the overlay in a layer so the DST_IN mask
+                // only clips this overlay, never its neighbours.
+                val layer = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
+                try {
+                    drawOverlay(
+                        canvas, overlay, width, height,
+                        state = states[overlay.id] ?: TextAnimEngine.State.Identity,
+                        isHighlighted = overlay.id == highlightId
+                    )
+                    drawMask(canvas, mask, width, height)
+                } finally {
+                    canvas.restoreToCount(layer)
+                }
+            }
         }
         return bitmap
     }
@@ -75,6 +102,90 @@ object TextSpriteRenderer {
         val origA = ((argb shr 24) and 0xFF).toInt()
         val newA = (origA * alpha.coerceIn(0f, 1f)).toInt().coerceIn(0, 255)
         return ((newA shl 24) or (argb and 0xFFFFFFL).toInt())
+    }
+
+    /**
+     * Paints [mask] onto [canvas] with DST_IN (keep the shape) or
+     * DST_OUT (keep everything outside the shape), inside the caller's
+     * saveLayer so only the current overlay is clipped. Geometry is
+     * normalised frame coords (0..1), matching [MaskGlEffect]'s
+     * shader: LINEAR keeps the LEFT side with a feather ramp ending
+     * AT the centre, RECTANGLE/ELLIPSE keep the shape, and [VideoMask.opacity]
+     * scales the kept alpha.
+     */
+    private fun drawMask(canvas: Canvas, mask: VideoMask, width: Int, height: Int) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val alpha = (mask.opacity.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+        // Inverted LINEAR keeps the RIGHT side: DST_IN with a mirrored
+        // gradient. (DST_OUT with the normal gradient would also work,
+        // but DST_IN + mirror keeps every shape on one blend mode.)
+        // Shapes use DST_OUT for invert (erase the shape, keep outside).
+        val mode = if (mask.invert && mask.shape != MaskShape.LINEAR) {
+            PorterDuff.Mode.DST_OUT
+        } else {
+            PorterDuff.Mode.DST_IN
+        }
+        when (mask.shape) {
+            MaskShape.LINEAR -> {
+                // Same ramp as the shader: fw = sizeX/2; the keep
+                // region ends at centreX, feathered over
+                // feather * fw to its left. Inverted keeps the
+                // RIGHT side (gradient mirrored).
+                val edge = mask.centerX * w
+                val featherPx = (mask.feather * (mask.sizeX / 2f) * w).coerceAtLeast(1f)
+                val start = edge - featherPx
+                val keep = (alpha shl 24) or 0x00FFFFFF
+                val clear = 0x00000000
+                val colors = if (mask.invert) {
+                    intArrayOf(clear, clear, keep, keep)
+                } else {
+                    intArrayOf(keep, keep, clear, clear)
+                }
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(mode)
+                    shader = LinearGradient(
+                        start, 0f, edge, 0f,
+                        colors,
+                        floatArrayOf(0f, 0f, 1f, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+                }
+                canvas.drawRect(0f, 0f, w, h, paint)
+            }
+            MaskShape.RECTANGLE -> {
+                val rect = RectF(
+                    (mask.centerX - mask.sizeX / 2f) * w,
+                    (mask.centerY - mask.sizeY / 2f) * h,
+                    (mask.centerX + mask.sizeX / 2f) * w,
+                    (mask.centerY + mask.sizeY / 2f) * h
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(mode)
+                    color = (alpha shl 24) or 0x00FFFFFF
+                    maskFilter = if (mask.feather > 0f) {
+                        BlurMaskFilter(mask.feather * w * 0.25f, BlurMaskFilter.Blur.NORMAL)
+                    } else null
+                }
+                canvas.drawRoundRect(rect, h * 0.02f, h * 0.02f, paint)
+            }
+            MaskShape.ELLIPSE -> {
+                val rect = RectF(
+                    (mask.centerX - mask.sizeX / 2f) * w,
+                    (mask.centerY - mask.sizeY / 2f) * h,
+                    (mask.centerX + mask.sizeX / 2f) * w,
+                    (mask.centerY + mask.sizeY / 2f) * h
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(mode)
+                    color = (alpha shl 24) or 0x00FFFFFF
+                    maskFilter = if (mask.feather > 0f) {
+                        BlurMaskFilter(mask.feather * w * 0.25f, BlurMaskFilter.Blur.NORMAL)
+                    } else null
+                }
+                canvas.drawOval(rect, paint)
+            }
+        }
     }
 
     private fun drawOverlay(

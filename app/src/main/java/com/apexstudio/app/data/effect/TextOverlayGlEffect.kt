@@ -123,7 +123,15 @@ class TextOverlayGlEffect(
             } else {
                 emptyMap()
             }
-            val bitmap = TextSpriteRenderer.render(listOf(overlay), w, h, states = states)
+            // Mask evaluated at the frame time (animated path) or the
+            // static mask (single-upload path) — the sprite renderer
+            // clips the overlay to it in frame space.
+            val masks = if (timeMs != null) {
+                overlay.effectiveMaskAt(timeMs)?.let { mapOf(overlay.id to it) } ?: emptyMap()
+            } else {
+                overlay.mask?.let { mapOf(overlay.id to it) } ?: emptyMap()
+            }
+            val bitmap = TextSpriteRenderer.render(listOf(overlay), w, h, states = states, masks = masks)
             val tex = IntArray(1)
             try {
                 // Drop the previous frame's texture before uploading

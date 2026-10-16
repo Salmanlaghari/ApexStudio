@@ -118,6 +118,9 @@ object TextAnimEngine {
         if (!normalizeIntro(overlay.animationType).equals("NONE", ignoreCase = true)) return true
         if (!normalizeOutro(overlay.outroAnimationType).equals("NONE", ignoreCase = true)) return true
         if (overlay.keyframes.keyframes.isNotEmpty()) return true
+        // A keyframed mask (travelling wipe) must re-rasterise per frame
+        // too — otherwise the export would bake one static wipe.
+        if (overlay.mask != null && overlay.maskKeyframes.isNotEmpty()) return true
         return false
     }
 
@@ -186,7 +189,20 @@ object TextAnimEngine {
      */
     fun stateKeyFull(overlay: TextOverlay, timeMs: Long): Any {
         val base = stateKey(overlay, timeMs)
-        if (overlay.keyframes.keyframes.isEmpty()) return base
+        val mask = overlay.effectiveMaskAt(timeMs)
+        val maskKey = mask?.let {
+            listOf(
+                it.shape.name,
+                (it.centerX * 10000f).toInt(),
+                (it.centerY * 10000f).toInt(),
+                (it.sizeX * 10000f).toInt(),
+                (it.sizeY * 10000f).toInt(),
+                (it.feather * 1000f).toInt(),
+                (it.opacity * 255f).toInt(),
+                it.invert
+            )
+        }
+        if (overlay.keyframes.keyframes.isEmpty() && maskKey == null) return base
         val kf = overlay.keyframes.interpolateAt(timeMs)
         return listOf(
             base,
@@ -194,7 +210,8 @@ object TextAnimEngine {
             (kf.translateY * 10000f).toInt(),
             (kf.scale * 1000f).toInt(),
             (kf.rotationDeg * 10f).toInt(),
-            (kf.opacity * 255f).toInt()
+            (kf.opacity * 255f).toInt(),
+            maskKey
         )
     }
 

@@ -54,6 +54,12 @@ class StickerGlEffect(
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
+        // Constructor params captured as properties: init can use the
+        // params directly, but drawFrame (where keyframed stickers
+        // re-upload) cannot — plain params are out of scope there.
+        private val effectContext: Context = context
+        private val effectAspectRatio: Float = aspectRatio
+
         private val glProgram: GlProgram
         private val overlayTexId: IntArray = intArrayOf(0)
 
@@ -71,6 +77,11 @@ class StickerGlEffect(
         private var lottieW = 0
         private var lottieH = 0
         private var lastLottieFrame = -1
+        // Keyframe state: re-rasterise the sprite only when the
+        // keyframe-interpolated transform visibly changes (quantised),
+        // mirroring TextOverlayGlEffect's animated re-upload. Without
+        // keyframes this key is constant and the sprite uploads once.
+        private var lastKeyframeStateKey: Any? = null
 
         init {
             glProgram = try {
@@ -96,6 +107,7 @@ class StickerGlEffect(
             // Rasterise + upload the sticker sprite (best effort — a
             // missing PNG or upload failure leaves overlayTexId = 0
             // and drawFrame falls back to a video pass-through).
+            lastKeyframeStateKey = keyframeStateKey(sticker)
             val path = sticker.assetPath
             if (!path.isNullOrBlank()) {
                 try {
@@ -136,6 +148,13 @@ class StickerGlEffect(
             val sprite = StickerSpriteRenderer.render(bitmap, sticker, w, h)
             val tex = IntArray(1)
             try {
+                // Drop the previous texture before uploading the new
+                // keyframe state — otherwise every re-rasterise leaks
+                // a GPU texture (keyframed stickers re-upload often).
+                if (overlayTexId[0] != 0) {
+                    GLES20.glDeleteTextures(1, overlayTexId, 0)
+                    overlayTexId[0] = 0
+                }
                 GLES20.glGenTextures(1, tex, 0)
                 GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
@@ -157,8 +176,8 @@ class StickerGlEffect(
             return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
         }
 
-        private fun uploadLottieFrame(frame: android.graphics.Bitmap) {
-            val sprite = StickerSpriteRenderer.render(frame, sticker, lottieW, lottieH)
+        private fun uploadLottieFrame(frame: android.graphics.Bitmap, eff: StickerOverlay = sticker) {
+            val sprite = StickerSpriteRenderer.render(frame, eff, lottieW, lottieH)
             try {
                 GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, overlayTexId[0])
                 GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, sprite, 0)
@@ -180,6 +199,38 @@ class StickerGlEffect(
             overlayTexId[0] = tex[0]
         }
 
+        /**
+         * The sticker with its keyframe offsets applied at [timeMs] —
+         * base position/size/rotation/opacity PLUS the interpolated
+         * keyframe transform, exactly as the preview evaluates it.
+         * Without keyframes this is the sticker itself.
+         */
+        private fun effectiveStickerAt(timeMs: Long): StickerOverlay {
+            if (sticker.keyframes.keyframes.isEmpty()) return sticker
+            val kf = sticker.effectiveTransformAt(timeMs)
+            return sticker.copy(
+                x = (sticker.x + kf.translateX).coerceIn(0f, 1f),
+                y = (sticker.y + kf.translateY).coerceIn(0f, 1f),
+                sizeScale = (sticker.sizeScale * kf.scale).coerceIn(0.05f, 8f),
+                rotationDeg = sticker.rotationDeg + kf.rotationDeg,
+                opacity = (sticker.opacity * kf.opacity).coerceIn(0f, 1f)
+            )
+        }
+
+        /**
+         * Quantised keyframe state: the sprite only re-rasterises when
+         * the effective transform visibly changed (sub-pixel jitter
+         * collapses), so smooth keyframed motion bakes per-frame
+         * without re-uploading an identical sprite.
+         */
+        private fun keyframeStateKey(eff: StickerOverlay): Any = listOf(
+            (eff.x * 10000f).toInt(),
+            (eff.y * 10000f).toInt(),
+            (eff.sizeScale * 1000f).toInt(),
+            (eff.rotationDeg * 10f).toInt(),
+            (eff.opacity * 255f).toInt()
+        )
+
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
             return Size(inputWidth, inputHeight)
         }
@@ -189,15 +240,36 @@ class StickerGlEffect(
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
+                val inWindow = timeMs >= sticker.startMs && timeMs <= sticker.endMs
+                // Keyframed stickers: re-rasterise when the interpolated
+                // transform changed (or the Lottie frame advanced).
+                val eff = effectiveStickerAt(timeMs)
+                val kfKey = keyframeStateKey(eff)
+                val kfChanged = kfKey != lastKeyframeStateKey
+                if (inWindow && kfChanged) {
+                    try {
+                        val frames = lottieFrames
+                        if (frames != null && frames.isNotEmpty()) {
+                            val idx = LottieFrameCache.frameIndex(timeMs, sticker.startMs, frames.size)
+                            ensureLottieTexture()
+                            uploadLottieFrame(frames[idx], eff)
+                            lastLottieFrame = idx
+                        } else {
+                            val path = sticker.assetPath
+                            if (!path.isNullOrBlank()) uploadSprite(effectContext, eff, path, effectAspectRatio)
+                        }
+                        lastKeyframeStateKey = kfKey
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Sticker keyframe frame failed", e)
+                    }
+                }
                 // Phase 4: animated Lottie sticker — advance frames by time.
                 val frames = lottieFrames
-                if (frames != null && frames.isNotEmpty() &&
-                    timeMs >= sticker.startMs && timeMs <= sticker.endMs
-                ) {
+                if (frames != null && frames.isNotEmpty() && inWindow) {
                     val idx = LottieFrameCache.frameIndex(timeMs, sticker.startMs, frames.size)
                     if (idx != lastLottieFrame) {
                         ensureLottieTexture()
-                        uploadLottieFrame(frames[idx])
+                        uploadLottieFrame(frames[idx], eff)
                         lastLottieFrame = idx
                     }
                 }

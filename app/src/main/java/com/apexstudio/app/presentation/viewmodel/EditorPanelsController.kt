@@ -100,6 +100,11 @@ fun EditorViewModel.openMaskPanel() = _state.update { it.copy(maskPanelOpen = tr
 
 fun EditorViewModel.closeMaskPanel() = _state.update { it.copy(maskPanelOpen = false) }
 
+/** Mask tool bottom sheet for the selected text overlay. */
+fun EditorViewModel.openTextMaskPanel() = _state.update { it.copy(textMaskPanelOpen = true) }
+
+fun EditorViewModel.closeTextMaskPanel() = _state.update { it.copy(textMaskPanelOpen = false) }
+
 fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings) {
     _state.update { 
         it.copy(

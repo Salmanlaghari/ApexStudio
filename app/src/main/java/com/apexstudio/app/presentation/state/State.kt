@@ -176,6 +176,10 @@ data class EditorState(
     val chromaKeyPanelOpen: Boolean = false,
     // Mask tool bottom sheet (shape mask on the selected video clip).
     val maskPanelOpen: Boolean = false,
+    // Mask tool bottom sheet for the selected TEXT overlay (same
+    // MaskPanel as the clip mask, bound to the text's mask). Separate
+    // flag from maskPanelOpen so both panels can't fight over one.
+    val textMaskPanelOpen: Boolean = false,
     // Overlay (PiP) properties panel: opacity / blend / mask shape /
     // border / shadow / flip / volume / track / keyframes for the
     // selected overlay clip. Opened from the clip bar's "Properties"

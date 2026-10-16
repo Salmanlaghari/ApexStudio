@@ -117,7 +117,15 @@ object TextSpriteRenderer {
         val w = width.toFloat()
         val h = height.toFloat()
         val alpha = (mask.opacity.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
-        val mode = if (mask.invert) PorterDuff.Mode.DST_OUT else PorterDuff.Mode.DST_IN
+        // Inverted LINEAR keeps the RIGHT side: DST_IN with a mirrored
+        // gradient. (DST_OUT with the normal gradient would also work,
+        // but DST_IN + mirror keeps every shape on one blend mode.)
+        // Shapes use DST_OUT for invert (erase the shape, keep outside).
+        val mode = if (mask.invert && mask.shape != MaskShape.LINEAR) {
+            PorterDuff.Mode.DST_OUT
+        } else {
+            PorterDuff.Mode.DST_IN
+        }
         when (mask.shape) {
             MaskShape.LINEAR -> {
                 // Same ramp as the shader: fw = sizeX/2; the keep

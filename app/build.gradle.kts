@@ -151,6 +151,10 @@ dependencies {
   // DFM follow-up (dynamic-feature + on-demand download) is mechanical.
   implementation(project(":feature:camerakit"))
 
+  // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
+  // Full build includes libx264, libmp3lame, and concat protocol support.
+  implementation("com.arthenica:mobile-ffmpeg-full:4.4.LTS")
+
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   implementation("jp.co.cyberagent.android:gpuimage:2.1.0")

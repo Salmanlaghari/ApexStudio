@@ -33,6 +33,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.snapshotFlow
@@ -187,12 +188,30 @@ fun TimelineTrackArea(
         starts
     }
 
+    // Last-seen trim per clip: frames are keyed by clip-relative
+    // time from trimStart, so a trim move makes the old frames stale.
+    // The extraction effect invalidates them (below) before it starts
+    // collecting, so a re-trim re-fills with the new trim's frames.
+    val clipTrims = remember { mutableMapOf<String, Pair<Long, Long>>() }
+
     // Lazy viewport extraction: on every window move (sampled to
     // ~7/sec), compute the keys the visible window needs, prune keys
     // outside it, and extract the missing ones. collectLatest cancels
     // the previous batch when the window moves again, so a scrolled-
     // away range stops paying for frames it no longer needs.
     LaunchedEffect(filmstripClips, frameIntervalMs) {
+        // Trim invalidation FIRST (before collecting): a clip whose
+        // trim moved keeps its id but its frames are stale.
+        for (clip in filmstripClips) {
+            val trim = clip.trimStartMs to clip.trimEndMs
+            if (clipTrims[clip.id] != null && clipTrims[clip.id] != trim) {
+                filmstripFrames.keys.filter { it.first == clip.id }
+                    .forEach { filmstripFrames.remove(it) }
+            }
+            clipTrims[clip.id] = trim
+        }
+        (clipTrims.keys - filmstripClips.map { it.id }.toSet())
+            .forEach { clipTrims.remove(it) }
         snapshotFlow { timelineScrollState.value to timelineScrollState.viewportSize }
             .sample(150)
             .collectLatest { (scrollPx, viewportPx) ->
@@ -228,12 +247,15 @@ fun TimelineTrackArea(
                             ) {
                                 launch(thumbDispatcher) {
                                     try {
-                                        TimelineThumbnailCache.frameFor(
+                                        val bmp = TimelineThumbnailCache.frameFor(
                                             context, clip, keyMs,
                                             cellWidthPx, cellHeightPx
-                                        )?.let { bmp ->
-                                            filmstripFrames[key] = bmp
-                                        }
+                                        )
+                                        // Don't store a frame whose job
+                                        // was cancelled while it was
+                                        // extracting (stale trim/window).
+                                        ensureActive()
+                                        bmp?.let { filmstripFrames[key] = it }
                                     } finally {
                                         inFlightKeys.remove(key)
                                     }

@@ -73,7 +73,12 @@ object TimelineThumbnailCache {
         w: Int,
         h: Int
     ): Bitmap? = withContext(Dispatchers.IO) {
-        val key = cacheKey(clip.uri, keyMs, w, h)
+        // Key on the SOURCE time (trimStart + clip-relative key), NOT
+        // the clip-relative key alone: after a re-trim, key 0 is a
+        // different source frame, and a clip-relative key would return
+        // the old trim's frame. Same source frame -> same entry, so a
+        // re-trim to an overlapping range reuses cached frames.
+        val key = cacheKey(clip.uri, clip.trimStartMs + keyMs, w, h)
         synchronized(memoryCache) { memoryCache.get(key) }?.let { return@withContext it }
 
         // Disk hit: decode + promote to memory.

@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeCurve
+import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -75,7 +76,8 @@ enum class KeyframePropertyFilter(val label: String, val color: Color) {
     ROTATION("Rotation", ApexPalette.NeonPurple),
     OPACITY("Opacity", ApexPalette.NeonEmerald),
     VOLUME("Volume", Color(0xFF10B981)),
-    EFFECT("FX / Filter", Color(0xFFF59E0B))
+    EFFECT("FX / Filter", Color(0xFFF59E0B)),
+    SATURATION("Saturation", Color(0xFF22D3EE))
 }
 
 /**
@@ -86,8 +88,15 @@ enum class KeyframePropertyFilter(val label: String, val color: Color) {
  * 2. Draggable keyframes along ruler to dynamically adjust timeMs.
  * 3. Property filter tabs: Position, Scale, Rotation, Opacity, All.
  * 4. Add keyframe at playhead with current interpolated values.
- * 5. Value sliders and easing curve selectors for the active keyframe.
+ * 5. Value sliders (playhead model: they show the interpolated value
+ *    AT THE PLAYHEAD, and a change auto-generates a keyframe there —
+ *    CapCut behaviour) + easing curve selectors for the active keyframe.
  * 6. Visual playhead indicator synchronized with player.
+ *
+ * [onUpsertParam] is the CapCut-style auto-keyframe callback: a slider
+ * change at the playhead upserts one parameter there (no manual "+"
+ * needed once the track has keyframes). Null = fall back to editing
+ * the selected keyframe via [onUpdate] (legacy behaviour).
  */
 @Composable
 fun KeyframePanel(
@@ -99,7 +108,8 @@ fun KeyframePanel(
     onUpdate: (Keyframe) -> Unit,
     onRemove: (String) -> Unit,
     onClear: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onUpsertParam: ((KeyframeParam, Float) -> Unit)? = null
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
     var selectedKeyframeId by remember(sorted) {
@@ -110,6 +120,17 @@ fun KeyframePanel(
 
     val activeKeyframe = sorted.firstOrNull { it.id == selectedKeyframeId }
         ?: sorted.firstOrNull()
+
+    // CapCut-style playhead model: the sliders below show the
+    // interpolated value AT THE PLAYHEAD, and a change auto-generates
+    // a keyframe there (upsert) once the track has keyframes — no
+    // manual "+" needed. The inspector (curve chips, Delete) still
+    // operates on the SELECTED keyframe.
+    val atPlayhead = track.interpolateAt(playheadMs)
+    fun upsertParam(param: KeyframeParam, value: Float, fallback: (Keyframe) -> Keyframe) {
+        if (onUpsertParam != null) onUpsertParam(param, value)
+        else activeKeyframe?.let { onUpdate(fallback(it)) }
+    }
 
     Column(
         modifier = Modifier
@@ -369,11 +390,19 @@ fun KeyframePanel(
 
                 Spacer(Modifier.height(8.dp))
 
+                Text(
+                    text = "Sliders edit values at the playhead — changes auto-add a keyframe",
+                    color = ApexPalette.TextTertiary,
+                    fontSize = 10.sp
+                )
+
+                Spacer(Modifier.height(4.dp))
+
                 // Sliders based on selected tab
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.SCALE) {
                     EnhancedKeyframeSlider(
                         label = "Scale",
-                        value = activeKeyframe.scale,
+                        value = atPlayhead.scale,
                         range = 0.1f..4.0f,
                         unit = "x",
                         color = ApexPalette.TrackVideo,
@@ -387,7 +416,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(scale = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.SCALE, it) { kf -> kf.copy(scale = it) } }
                     )
                 }
 
@@ -408,7 +437,7 @@ fun KeyframePanel(
                         ),
                         step = 5f,
                         defaultValue = 0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(rotationDeg = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.ROTATION, it) { kf -> kf.copy(rotationDeg = it) } }
                     )
                 }
 
@@ -429,14 +458,14 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(opacity = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.OPACITY, it) { kf -> kf.copy(opacity = it) } }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.POSITION) {
                     EnhancedKeyframeSlider(
                         label = "Position X",
-                        value = activeKeyframe.translateX,
+                        value = atPlayhead.translateX,
                         range = -1f..1f,
                         unit = "",
                         color = ApexPalette.NeonCyan,
@@ -447,11 +476,11 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(translateX = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.TRANSLATE_X, it) { kf -> kf.copy(translateX = it) } }
                     )
                     EnhancedKeyframeSlider(
                         label = "Position Y",
-                        value = activeKeyframe.translateY,
+                        value = atPlayhead.translateY,
                         range = -1f..1f,
                         unit = "",
                         color = ApexPalette.NeonCyan,
@@ -462,14 +491,14 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(translateY = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.TRANSLATE_Y, it) { kf -> kf.copy(translateY = it) } }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.VOLUME) {
                     EnhancedKeyframeSlider(
                         label = "Volume",
-                        value = activeKeyframe.volume,
+                        value = atPlayhead.volume,
                         range = 0f..1f,
                         unit = "%",
                         displayMultiplier = 100f,
@@ -481,25 +510,25 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(volume = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.VOLUME, it) { kf -> kf.copy(volume = it) } }
                     )
                 }
 
                 if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.EFFECT) {
                     EnhancedKeyframeSlider(
                         label = "Light Shift",
-                        value = activeKeyframe.filterIntensity,
+                        value = atPlayhead.filterIntensity,
                         range = 0f..2f,
                         unit = "x",
                         color = Color(0xFFFBBF24),
                         quickChips = listOf(0f to "Off", 1f to "Normal", 1.5f to "High"),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(filterIntensity = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.FILTER_INTENSITY, it) { kf -> kf.copy(filterIntensity = it) } }
                     )
                     EnhancedKeyframeSlider(
                         label = "FX Intensity",
-                        value = activeKeyframe.effectIntensity,
+                        value = atPlayhead.effectIntensity,
                         range = 0f..1f,
                         unit = "%",
                         displayMultiplier = 100f,
@@ -507,7 +536,32 @@ fun KeyframePanel(
                         quickChips = listOf(0f to "0%", 0.5f to "50%", 1f to "100%"),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { onUpdate(activeKeyframe.copy(effectIntensity = it)) }
+                        onValueChange = { upsertParam(KeyframeParam.EFFECT_INTENSITY, it) { kf -> kf.copy(effectIntensity = it) } }
+                    )
+                }
+
+                // Per-clip saturation (CapCut "Color Change"): factor
+                // multiplying the global saturation — 0% = fully
+                // black-and-white, 100% = global grade unchanged.
+                // Null (nothing pinned) shows as 100%.
+                if (propertyFilter == KeyframePropertyFilter.ALL || propertyFilter == KeyframePropertyFilter.SATURATION) {
+                    EnhancedKeyframeSlider(
+                        label = "Saturation",
+                        value = atPlayhead.saturation ?: 1f,
+                        range = 0f..3f,
+                        unit = "%",
+                        displayMultiplier = 100f,
+                        color = Color(0xFF22D3EE),
+                        quickChips = listOf(
+                            0f to "0% (B&W)",
+                            0.5f to "50%",
+                            1.0f to "100% (Normal)",
+                            1.5f to "150%",
+                            2.0f to "200%"
+                        ),
+                        step = 0.05f,
+                        defaultValue = 1.0f,
+                        onValueChange = { upsertParam(KeyframeParam.SATURATION, it) { kf -> kf.copy(saturation = it) } }
                     )
                 }
 

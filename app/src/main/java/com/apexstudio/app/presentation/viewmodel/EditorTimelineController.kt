@@ -281,11 +281,110 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
             translateY = transform.translateY,
             scale = transform.scale,
             rotationDeg = transform.rotationDeg,
-            opacity = transform.opacity
+            opacity = transform.opacity,
+            // Pin the current effective saturation (1f when nothing
+            // pins it) so a later saturation pin interpolates from
+            // the value the clip actually had at this keyframe
+            // instead of clamping to the later pin's value.
+            saturation = transform.saturation ?: 1f
         )
         val without = clip.keyframes.keyframes.filter { it.timeMs != timeMs }
         clip.copy(keyframes = KeyframeTrack(without + kf).sorted())
     }
+}
+
+/**
+ * CapCut-style auto-keyframe: change one keyframeable parameter at
+ * [timeMs] (Key-frame Studio slider, V1 pinch-to-zoom, ...).
+ *
+ * - A keyframe within 150ms of [timeMs] is UPDATED in place — only
+ *   the changed parameter moves (all other fields, including the
+ *   saturation pin, are preserved). No new keyframe, no undo entry
+ *   (drag streams call this repeatedly).
+ * - Otherwise, if the track is non-empty, a NEW keyframe is inserted
+ *   at [timeMs] (other fields = interpolated values at [timeMs],
+ *   saturation pins the current effective factor) with one undo entry.
+ * - If the track is EMPTY this is a no-op returning false: the first
+ *   keyframe stays manual (the "+" button), exactly like CapCut.
+ */
+fun EditorViewModel.upsertKeyframeParam(
+    clipId: String,
+    timeMs: Long,
+    param: KeyframeParam,
+    value: Float
+): Boolean {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
+    if (clip.keyframes.keyframes.isEmpty()) return false
+    val at = clip.keyframes.interpolateAt(timeMs)
+    val near = clip.keyframes.keyframes.minByOrNull { kotlin.math.abs(it.timeMs - timeMs) }
+    if (near != null && kotlin.math.abs(near.timeMs - timeMs) <= 150L) {
+        updateClip(clipId) { c ->
+            c.copy(
+                keyframes = KeyframeTrack(
+                    c.keyframes.keyframes.map { kf ->
+                        if (kf.id == near.id) kf.copy(param = value) else kf
+                    }
+                ).sorted()
+            )
+        }
+        return true
+    }
+    // New keyframe at the playhead: one undo entry for the insert;
+    // subsequent drag ticks update it via the near-keyframe path.
+    pushUndo()
+    updateClip(clipId) { c ->
+        val kf = Keyframe(
+            id = java.util.UUID.randomUUID().toString(),
+            timeMs = timeMs,
+            translateX = at.translateX,
+            translateY = at.translateY,
+            scale = at.scale,
+            rotationDeg = at.rotationDeg,
+            opacity = at.opacity,
+            volume = at.volume,
+            effectIntensity = at.effectIntensity,
+            filterIntensity = at.filterIntensity,
+            saturation = at.saturation ?: 1f
+        ).copy(param = value)
+        c.copy(keyframes = KeyframeTrack((c.keyframes.keyframes + kf)).sorted())
+    }
+    return true
+}
+
+/**
+ * V1 pinch-to-zoom (CapCut "Smooth Zoom In"): a two-finger pinch on
+ * the video preview multiplies the selected VIDEO/IMAGE clip's scale
+ * at the live playhead. No-op when no clip is selected, the clip is
+ * an overlay (overlays have their own canvas gestures), or the clip
+ * has no keyframes yet (first keyframe stays manual — use "+").
+ * During playback the playhead moves between zoom events; the
+ * 150ms snap window collapses near-duplicates into one keyframe,
+ * so a long pinch-while-playing samples roughly one keyframe per
+ * 150ms instead of spraying one per frame.
+ */
+fun EditorViewModel.pinchZoomSelectedClip(zoomFactor: Float) {
+    if (zoomFactor == 1f || !zoomFactor.isFinite()) return
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
+        ?: _state.value.project?.clips?.firstOrNull() ?: return
+    if (clip.type == ClipType.OVERLAY) return
+    if (clip.keyframes.keyframes.isEmpty()) return
+    val playheadMs = livePlayheadMs()
+    val current = clip.keyframes.interpolateAt(playheadMs).scale
+    val next = (current * zoomFactor).coerceIn(0.1f, 4f)
+    upsertKeyframeParam(clip.id, playheadMs, KeyframeParam.SCALE, next)
+}
+
+/** Copy a keyframe with a single [KeyframeParam] replaced. */
+private fun Keyframe.copy(param: KeyframeParam, value: Float): Keyframe = when (param) {
+    KeyframeParam.TRANSLATE_X -> copy(translateX = value)
+    KeyframeParam.TRANSLATE_Y -> copy(translateY = value)
+    KeyframeParam.SCALE -> copy(scale = value)
+    KeyframeParam.ROTATION -> copy(rotationDeg = value)
+    KeyframeParam.OPACITY -> copy(opacity = value)
+    KeyframeParam.VOLUME -> copy(volume = value)
+    KeyframeParam.EFFECT_INTENSITY -> copy(effectIntensity = value)
+    KeyframeParam.FILTER_INTENSITY -> copy(filterIntensity = value)
+    KeyframeParam.SATURATION -> copy(saturation = value)
 }
 
 

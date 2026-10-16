@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -104,6 +105,16 @@ fun VideoPreviewArea(
     onMaskCenterFinished: (x: Float, y: Float) -> Unit = { _, _ -> },
     onMaskSizeLive: (sx: Float, sy: Float) -> Unit = { _, _ -> },
     onMaskSizeFinished: (sx: Float, sy: Float) -> Unit = { _, _ -> },
+    // CapCut-style pinch-to-zoom on the V1 video/photo layer: a
+    // two-finger pinch multiplies the selected clip's keyframed scale
+    // at the playhead (auto-keyframe; no-op with no keyframes yet).
+    // Attached to the INNER video box (below), so gestures starting
+    // on an overlay/sticker are consumed by their own canvases first
+    // and never reach this handler.
+    onPinchZoom: ((Float) -> Unit)? = null,
+    // Per-clip saturation keyframes: factor multiplying the global
+    // saturation in the preview grade (1f = global grade unchanged).
+    keyframedSaturationFactor: Float = 1f,
     // Photo-clip editing (PR F). When non-null the selected clip is a
     // still image: it is rendered by PhotoClipPreview with its
     // PhotoEditSettings instead of the ExoPlayer surface.
@@ -135,6 +146,14 @@ fun VideoPreviewArea(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(onPinchZoom) {
+                    // Two-finger pinch only: single taps fall through
+                    // to the outer tap handler (show controls).
+                    if (onPinchZoom == null) return@pointerInput
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom != 1f) onPinchZoom(zoom)
+                    }
+                }
                 .graphicsLayer {
                     scaleX = animatedTransform.scale
                     scaleY = animatedTransform.scale
@@ -187,6 +206,7 @@ fun VideoPreviewArea(
                 filterId = activeFilterId,
                 intensity = filterIntensity,
                 adjustments = adjustments,
+                saturationMultiplier = keyframedSaturationFactor,
                 compareMode = lutCompareMode,
                 splitPosition = lutCompareSplitPosition,
                 modifier = Modifier.fillMaxSize()

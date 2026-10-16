@@ -90,6 +90,11 @@ fun VideoPreviewArea(
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onTapVideo: () -> Unit = {},
+    // Small filename chip (bottom-left inside the preview): the
+    // selected clip/track name, moved here from the clip bar, where
+    // it crowded the clip bar's actions. Null = nothing selected.
+    // Hidden while playing (same rule as the clip bar).
+    selectionFileLabel: String? = null,
     // Shape mask (Mask tool) on the main video clip. Rendered as a
     // scrim-with-hole overlay so the user sees the kept region;
     // [maskEditMode] enables drag-to-move/resize directly on the preview.
@@ -256,6 +261,31 @@ fun VideoPreviewArea(
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
             )
+        }
+
+        // Small filename chip, bottom-left inside the preview
+        // (free corner — mirrors the time pill / HDR badge style).
+        // Shown only when something is selected and not playing.
+        if (selectionFileLabel != null && !isPlaying) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .widthIn(max = 150.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = selectionFileLabel,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
         }
 
         // Mockup: "HDR" badge, bottom-right inside the preview.

@@ -1,14 +1,12 @@
 package com.apexstudio.app.ui.screens.editor
 
 import android.graphics.Bitmap
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -20,73 +18,45 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.data.media.ThumbnailExtractor
+import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.snapshotFlow
+import kotlinx.coroutines.launch
 
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 
 /**
- * Extract per-second filmstrip thumbnails for a clip's trimmed range via
- * [ThumbnailExtractor.extractPerSecondFrames] (MediaMetadataRetriever,
- * off the main thread). Photo clips get a single decoded frame.
+ * Filmstrip frame interval: ONE frame per [FILMSTRIP_CELL_DP] of clip
+ * width. The ms interval follows zoom (narrow at high zoom, wide at
+ * overview zoom), so a 10-minute clip never decodes more frames than
+ * the screen can show.
  *
- * Keyed by second (0, 1, 2, …) so the V1 lane renders one cell per
- * second, each exactly 1s wide — frames scroll and scale with zoom
- * exactly like the ruler and playhead. The extractor samples evenly
- * across the FULL trimmed range (capped decoder calls) and expands to
- * a dense map, so long clips show real frames across their whole
- * length, not just the first [maxSeconds].
- *
- * [onFrame] is invoked per decoded frame (progressive fill) — the
- * caller merges it into the lane immediately instead of waiting for
- * the whole set.
+ * Frames are generated LAZILY for the visible window (+1 viewport of
+ * buffer), CANCELLED when the window moves away (collectLatest), and
+ * cached in memory (LruCache) + on disk (TimelineThumbnailCache, key
+ * uri + time + size). Cells render a placeholder until their frame
+ * arrives. The old pipeline decoded EVERY second of EVERY clip up
+ * front (up to 180 decoder calls per clip) — a 3-minute clip took tens
+ * of seconds to fill, so only its first seconds ever showed real
+ * frames. Clip block width is ALWAYS duration x pxPerSecond and never
+ * derives from how many thumbnails exist.
  */
-private suspend fun extractClipThumbnails(
-    context: android.content.Context,
-    clip: com.apexstudio.app.domain.model.MediaClip,
-    onFrame: (suspend (second: Int, bitmap: Bitmap) -> Unit)? = null
-): Map<Int, Bitmap> {
-    // OVERLAY clips can be image-backed too (overlay picker allows
-    // ImageAndVideo). Try the still loader first for them as well;
-    // if it fails, fall through to video-frame extraction below.
-    if (clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY) {
-        val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
-            context, clip.uri, maxDim = 240
-        )
-        if (photo != null) return mapOf(0 to photo)
-        if (clip.type == ClipType.IMAGE) {
-            // Second chance: MediaMetadataRetriever can decode a still
-            // (JPEG/PNG) as a frame on many devices, so a loadBitmap
-            // failure (transient decode/OOM) must not strand the clip
-            // on placeholders — fall through to the retriever path
-            // below instead of returning empty here.
-        }
-    }
-    val trimStart = clip.trimStartMs
-    val trimEnd =
-        if (clip.trimEndMs > trimStart) clip.trimEndMs else clip.durationMs.coerceAtLeast(1000L)
-    return ThumbnailExtractor.extractPerSecondFrames(
-        context = context,
-        uri = clip.uri,
-        trimStartMs = trimStart,
-        trimEndMs = trimEnd,
-        frameWidthPx = 120,
-        frameHeightPx = 80,
-        maxSeconds = 180,
-        onFrame = onFrame
-    )
-}
+private const val FILMSTRIP_CELL_DP = 64f
 
 @Composable
 fun TimelineTrackArea(
@@ -123,10 +93,7 @@ fun TimelineTrackArea(
     onOpenSpeed: () -> Unit = {},
     onOpenAudio: () -> Unit = {},
     onOpenTrim: () -> Unit = {},
-    onOpenText: () -> Unit = {},
-    onOpenStickers: () -> Unit = {},
     onOpenFx: () -> Unit = {},
-    onOpenVoice: () -> Unit = {},
     onOpenFilter: () -> Unit = {},
     onOpenAdjust: () -> Unit = {},
     onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
@@ -142,17 +109,11 @@ fun TimelineTrackArea(
     onOpenArFilters: () -> Unit = {},
     onOpenRoyaltyMusic: () -> Unit = {},
     onSelectAudioTrack: (String) -> Unit = {},
-    // Multi-layer video tracks (V1..V10) + 60fps playhead flow.
-    onToggleLayerVisibility: (Int) -> Unit = {},
-    onToggleLayerLock: (Int) -> Unit = {},
-    onDeleteLayer: (Int) -> Unit = {},
-    onAddLayer: () -> Unit = {},
-    onMoveClipToLayer: (String, Int) -> Unit = { _, _ -> },
-    onAddClipToLayer: (Int) -> Unit = {},
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val clips = state.project?.clips ?: emptyList()
 
     // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
@@ -172,114 +133,119 @@ fun TimelineTrackArea(
         }
     }
 
-    // Per-clip filmstrip thumbnails, extracted once per clip (keyed by
-    // id/uri/trim), cached in this map. A per-second generated fallback
-    // is seeded first so the lane never shows a dark strip; the real
-    // frames replace it when ready.
-    //
-    // Bitmaps are RECYCLED when replaced or when their clip leaves the
-    // project: without this, every trim (which re-extracts) leaked the
-    // old set's native memory, and removed clips' bitmaps lingered
-    // until GC finalization. The map is bounded PER CLIP by the
-    // extractor (≤180 frames); it intentionally holds every live clip
-    // (evicting a visible clip would blank its row), so there is no
-    // global eviction — the bound is per-clip.
-    val thumbnailsByClip = remember { mutableStateMapOf<String, Map<Int, Bitmap>>() }
-    filmstripClips.forEach { clip ->
-        LaunchedEffect(clip.id, clip.uri, clip.trimStartMs, clip.trimEndMs) {
-            // Bitmaps seeded as the placeholder set for this clip, so a
-            // progressive real frame can recycle exactly the placeholder
-            // it replaces. Placeholders are DISTINCT bitmaps (one per
-            // cell), so per-frame recycling is safe for them.
-            val fallbackBitmaps = mutableSetOf<Bitmap>()
-            // On re-extraction (e.g. trim change) the existing map is a
-            // DENSE map whose bitmaps are ALIASED (one instance under
-            // several seconds) — never recycle those one-by-one while
-            // other cells still display the same instance. Snapshot
-            // them and recycle the whole set only once the new map has
-            // fully replaced the old one.
-            val previousBitmaps = thumbnailsByClip[clip.id]?.values?.toSet() ?: emptySet()
-            if (!thumbnailsByClip.containsKey(clip.id)) {
-                val clipSeconds = ((clip.trimEndMs - clip.trimStartMs)
-                    .coerceAtLeast(1000L) / 1000L).toInt().coerceIn(1, 180)
-                val seeded = com.apexstudio.app.data.media.ThumbnailExtractor
-                    .generateFilmstripFrames(clipSeconds, 120, 80, clip.uri.hashCode().toLong())
-                    .mapIndexed { i, b -> i to b }.toMap()
-                fallbackBitmaps += seeded.values
-                thumbnailsByClip[clip.id] = seeded
+    // ms-per-dp at the current zoom — mirrors VideoTimeline's scaling
+    // (54dp/s x zoom, clamped to 24..540dp/s) so extraction windows,
+    // cell positions and the ruler all agree.
+    val msToDp = remember(state.timelineZoom) {
+        ((54.dp * state.timelineZoom.coerceIn(0.5f, 10f))
+            .coerceIn(24.dp, 540.dp)).value / 1000f
+    }
+    // One frame per 64dp of clip width; the ms interval follows zoom.
+    val frameIntervalMs = remember(msToDp) {
+        (FILMSTRIP_CELL_DP / msToDp).toLong().coerceIn(100L, 5000L)
+    }
+    // Cell pixel size for extraction (V1 row is 56dp tall; overlay rows
+    // reuse the same width at a shorter height — the cache keys on
+    // size, so the two don't collide).
+    val cellWidthPx = remember(density) {
+        (FILMSTRIP_CELL_DP * density.density).roundToInt().coerceAtLeast(32)
+    }
+    val cellHeightPx = remember(density) {
+        (48 * density.density).roundToInt().coerceAtLeast(24)
+    }
+
+    // Visible-window filmstrip frames: (clipId, clip-relative ms) ->
+    // bitmap. Only the visible window (+1 viewport buffer) is ever
+    // held: entries outside it are pruned on every window move, so
+    // scrolling a 10-minute clip can't accumulate hundreds of bitmaps.
+    // The LruCache + disk cache (TimelineThumbnailCache) own
+    // longer-term retention, and frames are re-fetched from them.
+    val filmstripFrames = remember { mutableStateMapOf<Pair<String, Long>, Bitmap>() }
+    val inFlightKeys = remember { mutableSetOf<Pair<String, Long>>() }
+    val thumbDispatcher = remember { Dispatchers.IO.limitedParallelism(4) }
+
+    // Content start (timeline ms) per clip: V1 clips (track 0) tile
+    // cumulatively from 0; every other clip sits at timelineOffsetMs
+    // (same layout rule the lanes use).
+    val contentStarts = remember(filmstripClips) {
+        val starts = mutableMapOf<String, Long>()
+        var acc = 0L
+        filmstripClips.forEach { clip ->
+            if (clip.trackIndex == 0 &&
+                (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
+            ) {
+                starts[clip.id] = acc
+                acc += clip.effectiveDurationMs().coerceAtLeast(0L)
+            } else {
+                starts[clip.id] = clip.timelineOffsetMs
             }
-            try {
-                // Bounded retry: a single transient extraction failure
-                // (retriever race, file still copying, grant timing)
-                // used to strand the clip on teal placeholders forever
-                // — the LaunchedEffect keys never change, so nothing
-                // ever re-ran the extraction. extractClipThumbnails
-                // returns an empty map on failure (never disguised
-                // placeholders), so retry up to 3 attempts with
-                // back-off before giving up and keeping placeholders.
-                var real: Map<Int, Bitmap> = emptyMap()
-                var attempt = 0
-                while (real.isEmpty() && attempt < 3) {
-                    if (attempt > 0) {
-                        kotlinx.coroutines.delay(if (attempt == 1) 1500L else 3000L)
-                    }
-                    attempt++
-                    try {
-                        real = extractClipThumbnails(context, clip) { second, bitmap ->
-                            withContext(Dispatchers.Main) {
-                                val current = thumbnailsByClip[clip.id] ?: emptyMap()
-                                val old = current[second]
-                                thumbnailsByClip[clip.id] = current + (second to bitmap)
-                                // Recycle a replaced placeholder, never a real
-                                // frame (dense-map aliases share instances).
-                                if (old != null && old !== bitmap && fallbackBitmaps.remove(old)) {
-                                    if (!old.isRecycled) old.recycle()
+        }
+        starts
+    }
+
+    // Lazy viewport extraction: on every window move (sampled to
+    // ~7/sec), compute the keys the visible window needs, prune keys
+    // outside it, and extract the missing ones. collectLatest cancels
+    // the previous batch when the window moves again, so a scrolled-
+    // away range stops paying for frames it no longer needs.
+    LaunchedEffect(filmstripClips, frameIntervalMs) {
+        snapshotFlow { timelineScrollState.value to timelineScrollState.viewportSize }
+            .sample(150)
+            .collectLatest { (scrollPx, viewportPx) ->
+                val viewport = if (viewportPx > 0) viewportPx
+                    else (360 * density.density).roundToInt()
+                val bufferPx = viewport
+                val winStartPx = (scrollPx - bufferPx).coerceAtLeast(0)
+                val winEndPx = scrollPx + viewportPx + bufferPx
+                val msToPx = msToDp * density.density
+                coroutineScope {
+                    for (clip in filmstripClips) {
+                        val startMs = contentStarts[clip.id] ?: continue
+                        val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
+                        val clipStartPx = startMs * msToPx
+                        val visStartMs = ((winStartPx - clipStartPx) / msToPx)
+                            .toLong().coerceAtLeast(0L)
+                        val visEndMs = ((winEndPx - clipStartPx) / msToPx).toLong()
+                        // Prune this clip's entries outside the window
+                        // (even for off-screen clips).
+                        val keepFrom = (visStartMs - frameIntervalMs).coerceAtLeast(0L)
+                        val keepTo = visEndMs + frameIntervalMs
+                        filmstripFrames.keys
+                            .filter { it.first == clip.id &&
+                                (it.second < keepFrom || it.second > keepTo) }
+                            .forEach { filmstripFrames.remove(it) }
+                        if (visEndMs < 0L || visStartMs > clipDur) continue
+                        var keyMs = (visStartMs / frameIntervalMs) * frameIntervalMs
+                        val endKeyMs = minOf(visEndMs, clipDur)
+                        while (keyMs <= endKeyMs) {
+                            val key = clip.id to keyMs
+                            if (!filmstripFrames.containsKey(key) &&
+                                inFlightKeys.add(key)
+                            ) {
+                                launch(thumbDispatcher) {
+                                    try {
+                                        TimelineThumbnailCache.frameFor(
+                                            context, clip, keyMs,
+                                            cellWidthPx, cellHeightPx
+                                        )?.let { bmp ->
+                                            filmstripFrames[key] = bmp
+                                        }
+                                    } finally {
+                                        inFlightKeys.remove(key)
+                                    }
                                 }
                             }
+                            keyMs += frameIntervalMs
                         }
-                    } catch (e: Exception) {
-                        Log.w("TimelineTrackArea", "Thumbnail extraction attempt $attempt failed for ${clip.id}: ${e.message}")
                     }
                 }
-                if (real.isNotEmpty()) {
-                    // Wholesale replace with the complete new dense map
-                    // (a shorter re-trim must not leave stale old
-                    // seconds behind). The progressive pass already put
-                    // the same new instances in for sampled seconds, so
-                    // this only adds the dense-expansion tail. After
-                    // the swap, no cell references the previous
-                    // bitmaps, so the whole previous set can be
-                    // recycled — as can any placeholder never replaced.
-                    thumbnailsByClip[clip.id] = real
-                    // Defensive identity guard (dense-map aliasing): only
-                    // recycle previous bitmaps that are NOT also in the
-                    // new map. The extractor always returns fresh
-                    // instances, so this set is normally everything —
-                    // but recycling an instance that is still displayed
-                    // would blank live cells, so never rely on that.
-                    val newInstances = real.values.toSet()
-                    previousBitmaps.filter { it !in newInstances }
-                        .forEach { if (!it.isRecycled) it.recycle() }
-                    // Recycle any placeholder never replaced by a real frame.
-                    fallbackBitmaps.forEach { if (!it.isRecycled) it.recycle() }
-                    fallbackBitmaps.clear()
-                }
-                // If extraction failed (real empty), the placeholders
-                // stay displayed — never recycle them.
-            } catch (e: Exception) {
-                Log.w("TimelineTrackArea", "Thumbnail extraction failed for ${clip.id}: ${e.message}")
             }
-        }
     }
-    // Drop thumbnails for clips that no longer exist (recycling them).
+    // Drop frames for clips that no longer exist.
     LaunchedEffect(filmstripClips.map { it.id }) {
         val alive = filmstripClips.map { it.id }.toSet()
-        val removed = thumbnailsByClip.keys - alive
-        removed.forEach { id ->
-            thumbnailsByClip.remove(id)?.values?.forEach { bmp ->
-                if (!bmp.isRecycled) bmp.recycle()
-            }
-        }
+        filmstripFrames.keys.filter { it.first !in alive }
+            .forEach { filmstripFrames.remove(it) }
     }
 
     Column(
@@ -306,7 +272,8 @@ fun TimelineTrackArea(
             onOpenTransition = { fromId, toId ->
                 onOpenClipTransition(fromId, toId)
             },
-            thumbnailsByClip = thumbnailsByClip,
+            filmstripFrames = filmstripFrames,
+            frameIntervalMs = frameIntervalMs,
             onTrimClip = onTrimClip,
             onMoveClipOffset = onSetClipOffset,
             onDeleteClips = onDeleteClips,
@@ -317,20 +284,10 @@ fun TimelineTrackArea(
             onSelectAudioTrack = onSelectAudioTrack,
             onSelectTextOverlay = onSelectTextOverlay,
             onSelectSticker = onSelectSticker,
-            onOpenText = onOpenText,
-            onOpenStickers = onOpenStickers,
             onOpenFilter = onOpenFilter,
             onOpenFxPanel = onOpenFx,
             onOpenAdjust = onOpenAdjust,
-            onOpenVoice = onOpenVoice,
-            onAddAudioTrack = { onAddMedia(ClipType.AUDIO) },
             onClearFx = onClearFx,
-            onToggleLayerVisibility = onToggleLayerVisibility,
-            onToggleLayerLock = onToggleLayerLock,
-            onDeleteLayer = onDeleteLayer,
-            onAddLayer = onAddLayer,
-            onMoveClipToLayer = onMoveClipToLayer,
-            onAddClipToLayer = onAddClipToLayer,
             playerPositionFlow = playerPositionFlow,
             scrollState = timelineScrollState,
             vScrollState = timelineVScrollState,
@@ -342,135 +299,112 @@ fun TimelineTrackArea(
 }
 
 /**
- * Bottom timeline action row: EVERY function that used to stack above
- * the timeline now lives in this single horizontally-scrollable line
- * BELOW the timeline (plus the Adjust quick-chips line above it):
- * Overlay / Transition / Effects (all acting AT THE PLAYHEAD, same
- * callbacks as the old centre-add row), Curves (Keyframe Studio),
- * Split, Adjust, keyframe nav (±KF / prev / next), clip move ←/→,
- * and timeline zoom. No function lost — only relocated.
+ * Bottom timeline action row: TIMELINE-ONLY tools. Everything that
+ * also exists in the bottom bars was removed from here (duplicates):
+ * - Overlay / Effects / Adjust -> main bottom bar (ContextualBottomToolbar)
+ * - Transition -> main bottom bar (nearest V1 junction to playhead)
+ * - Split -> clip bar (VIDEO clips)
+ * - Curves (Keyframe Studio) -> clip bar "Animation" (keyframes belong
+ *   to a selected clip; the no-selection shortcut was not a distinct
+ *   function, so nothing is lost)
+ * - Move <-/-> -> same operation as drag-reorder on the timeline
+ *   (reorderClips), which remains
+ * - Undo/redo were NEVER added here: they live in the transport row
+ *   above the timeline (PlaybackControlBar); duplicating them here
+ *   would create the duplicate this cleanup removes.
+ *
+ * Kept: keyframe nav (prev / +/-KF / next) + timeline zoom — these
+ * exist nowhere else. Content padding + edge fades so the first/last
+ * chip is never half-cut.
  */
 @Composable
 fun BottomTimelineActionRow(
     hasKeyframeAtPlayhead: Boolean,
     timelineZoom: Float,
-    canSplit: Boolean,
-    canMoveLeft: Boolean,
-    canMoveRight: Boolean,
-    canAddTransition: Boolean,
     onToggleKeyframe: () -> Unit,
     onPrevKeyframe: () -> Unit,
     onNextKeyframe: () -> Unit,
-    onSplit: () -> Unit,
-    onMoveLeft: () -> Unit,
-    onMoveRight: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
-    onOpenKeyframes: () -> Unit,
-    onAddOverlay: () -> Unit,
-    onOpenTransition: () -> Unit,
-    onOpenEffects: () -> Unit,
-    onOpenAdjust: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0F0F1A))
             .border(1.dp, Color(0xFF232336), RoundedCornerShape(8.dp))
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Add-at-playhead group (was the centre-add row).
-        BottomActionChip(
-            icon = Icons.Default.AddPhotoAlternate,
-            label = "Overlay",
-            onClick = onAddOverlay
-        )
-        BottomActionChip(
-            icon = Icons.Default.Transform,
-            label = "Transition",
-            enabled = canAddTransition,
-            onClick = onOpenTransition
-        )
-        BottomActionChip(
-            icon = Icons.Default.AutoFixHigh,
-            label = "Effects",
-            onClick = onOpenEffects
-        )
-        BottomActionChip(
-            icon = Icons.Default.Tune,
-            label = "Adjust",
-            onClick = onOpenAdjust
-        )
-        // Curves (Keyframe Studio) + Split (was the quick-action row).
-        BottomActionChip(
-            icon = Icons.Default.Animation,
-            label = "Curves",
-            tint = ApexPalette.NeonCyan,
-            onClick = onOpenKeyframes
-        )
-        BottomActionChip(
-            icon = Icons.Default.ContentCut,
-            label = "Split",
-            enabled = canSplit,
-            onClick = onSplit
-        )
-        // Keyframe nav.
-        BottomActionChip(
-            icon = Icons.Default.FastRewind,
-            label = null,
-            tint = ApexPalette.NeonCyan,
-            onClick = onPrevKeyframe
-        )
-        BottomActionChip(
-            icon = null,
-            label = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
-            selected = hasKeyframeAtPlayhead,
-            onClick = onToggleKeyframe
-        )
-        BottomActionChip(
-            icon = Icons.Default.FastForward,
-            label = null,
-            tint = ApexPalette.NeonCyan,
-            onClick = onNextKeyframe
-        )
-        // Clip move.
-        if (canMoveLeft) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Scrolling content padding: the first/last chip is fully
+            // visible at rest instead of starting half-cut.
+            Spacer(Modifier.width(6.dp))
+            // Keyframe nav (timeline-only).
             BottomActionChip(
-                icon = Icons.Default.ArrowBack,
+                icon = Icons.Default.FastRewind,
                 label = null,
-                onClick = onMoveLeft
+                tint = ApexPalette.NeonCyan,
+                onClick = onPrevKeyframe
             )
-        }
-        if (canMoveRight) {
             BottomActionChip(
-                icon = Icons.Default.ArrowForward,
-                label = null,
-                onClick = onMoveRight
+                icon = null,
+                label = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
+                selected = hasKeyframeAtPlayhead,
+                onClick = onToggleKeyframe
             )
+            BottomActionChip(
+                icon = Icons.Default.FastForward,
+                label = null,
+                tint = ApexPalette.NeonCyan,
+                onClick = onNextKeyframe
+            )
+            // Timeline zoom (timeline-only).
+            BottomActionChip(
+                icon = Icons.Default.ZoomOut,
+                label = null,
+                onClick = onZoomOut
+            )
+            Text(
+                text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
+                color = Color(0xFF94A3B8),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(horizontal = 3.dp)
+            )
+            BottomActionChip(
+                icon = Icons.Default.ZoomIn,
+                label = null,
+                onClick = onZoomIn
+            )
+            Spacer(Modifier.width(6.dp))
         }
-        // Timeline zoom.
-        BottomActionChip(
-            icon = Icons.Default.ZoomOut,
-            label = null,
-            onClick = onZoomOut
+        // Edge fades (no touch handling — gestures pass through to
+        // the scrollable Row below).
+        Box(
+            Modifier.align(Alignment.CenterStart)
+                .width(20.dp).fillMaxHeight()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF0F0F1A), Color.Transparent)
+                    )
+                )
         )
-        Text(
-            text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
-            color = Color(0xFF94A3B8),
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(horizontal = 3.dp)
-        )
-        BottomActionChip(
-            icon = Icons.Default.ZoomIn,
-            label = null,
-            onClick = onZoomIn
+        Box(
+            Modifier.align(Alignment.CenterEnd)
+                .width(20.dp).fillMaxHeight()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, Color(0xFF0F0F1A))
+                    )
+                )
         )
     }
 }
@@ -519,72 +453,6 @@ private fun BottomActionChip(
                 color = contentColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-
-@Composable
-private fun TrackSidebarCell(
-    badge: String,
-    label: String,
-    icon: ImageVector,
-    tint: Color,
-    height: androidx.compose.ui.unit.Dp,
-    isSelected: Boolean = false,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(height)
-            .padding(horizontal = 2.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) tint.copy(alpha = 0.25f) else Color(0xFF141420))
-            .border(
-                width = if (isSelected) 1.5.dp else 0.5.dp,
-                color = if (isSelected) tint else tint.copy(alpha = 0.45f),
-                shape = RoundedCornerShape(6.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 1.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(if (isSelected) tint else tint.copy(alpha = 0.25f))
-                        .padding(horizontal = 2.dp, vertical = 0.5.dp)
-                ) {
-                    Text(
-                        text = badge,
-                        color = if (isSelected) Color.Black else tint,
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = if (isSelected) tint else tint.copy(alpha = 0.9f),
-                    modifier = Modifier.size(11.dp)
-                )
-            }
-            Text(
-                text = label,
-                color = if (isSelected) tint else Color.White.copy(alpha = 0.85f),
-                fontSize = 7.5.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1
             )
         }
     }

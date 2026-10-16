@@ -549,9 +549,11 @@ fun AudioMixerPanelOverlay(
                 onRemoveTrack = { vm.removeAudioTrack(it) },
                 // Volume fader: routes to the volume-keyframe upsert
                 // when the track has volume keyframes, else to the
-                // scalar volume (behaviour unchanged).
+                // scalar volume (behaviour unchanged). Writes use
+                // the LIVE playhead — the ~10Hz state mirror can lag
+                // by up to 100ms and would misplace the pin.
                 onVolume = { trackId, vol ->
-                    vm.setAudioTrackVolumeAuto(trackId, vol, state.playerPositionMs)
+                    vm.setAudioTrackVolumeAuto(trackId, vol, vm.livePlayheadMs())
                 },
                 onMute = { trackId -> vm.toggleAudioTrackMute(trackId) },
                 onSolo = { trackId -> vm.toggleAudioTrackSolo(trackId) },
@@ -562,7 +564,7 @@ fun AudioMixerPanelOverlay(
                 audioSessionId = audioSessionId,
                 playheadMs = state.playerPositionMs,
                 onAddVolumeKeyframe = { trackId ->
-                    vm.addAudioVolumeKeyframe(trackId, state.playerPositionMs)
+                    vm.addAudioVolumeKeyframe(trackId, vm.livePlayheadMs())
                 },
                 onRemoveVolumeKeyframe = { trackId, kfId ->
                     vm.removeAudioVolumeKeyframe(trackId, kfId)
@@ -1036,10 +1038,13 @@ fun KeyframePanelOverlay(
                     },
                     // CapCut-style auto-keyframe: slider changes at the
                     // playhead upsert one parameter there (no manual
-                    // "+" needed once the clip has keyframes).
+                    // "+" needed once the clip has keyframes). Writes
+                    // use the LIVE playhead — the ~10Hz state mirror
+                    // can lag by up to 100ms and would misplace the
+                    // keyframe (same class as the mixer fix above).
                     onUpsertParam = { param, value ->
                         selectedClip?.let {
-                            vm.upsertKeyframeParam(it.id, state.playerPositionMs, param, value)
+                            vm.upsertKeyframeParam(it.id, vm.livePlayheadMs(), param, value)
                         }
                     },
                     onRemove = { kfId ->

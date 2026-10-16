@@ -364,8 +364,11 @@ fun EditorViewModel.upsertKeyframeParam(
  */
 fun EditorViewModel.pinchZoomSelectedClip(zoomFactor: Float) {
     if (zoomFactor == 1f || !zoomFactor.isFinite()) return
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == _state.value.selectedClipId }
-        ?: _state.value.project?.clips?.firstOrNull() ?: return
+    // No fallback to the first clip: pinching with no explicit
+    // selection must be a no-op, never a surprise keyframe on an
+    // unselected clip.
+    val clipId = _state.value.selectedClipId ?: return
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     if (clip.type == ClipType.OVERLAY) return
     if (clip.keyframes.keyframes.isEmpty()) return
     val playheadMs = livePlayheadMs()

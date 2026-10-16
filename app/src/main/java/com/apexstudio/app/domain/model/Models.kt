@@ -819,9 +819,16 @@ data class Keyframe(
      * the project-global saturation; 1f = global grade unchanged,
      * 0f = fully black-and-white). Null = this keyframe does not pin
      * saturation (old keyframes, and overlay/text/sticker keyframes
-     * which never touch saturation). Saturation interpolates only
-     * over the subsequence of keyframes with a non-null value — see
-     * [KeyframeTrack.interpolateAt].
+     * which never touch saturation).
+     *
+     * Saturation interpolates only over the subsequence of keyframes
+     * with a non-null value — see [KeyframeTrack.interpolateAt].
+     * Null vs 1f is NOT an inconsistency: null means "no pin" (the
+     * keyframe is invisible to the ramp), while 1f is an explicit
+     * pin at the current effective factor. New keyframes created via
+     * `addKeyframe` / upsert pin the current effective saturation,
+     * so a scale-only keyframe preserves the ramp instead of
+     * leaving a hole that would clamp backwards.
      */
     val saturation: Float? = null,
     val curve: KeyframeCurve = KeyframeCurve.LINEAR
@@ -945,13 +952,21 @@ data class KeyframeTrack(
     /**
      * Interpolated saturation factor at [timeMs] over the subsequence
      * of keyframes with a non-null [Keyframe.saturation], using the
-     * later pin's curve; clamps to the first/last pinned value outside
-     * the pinned range. Null when no keyframe pins saturation.
+     * later pin's curve. Null when no keyframe pins saturation.
+     *
+     * Boundary semantics (CapCut per-parameter behaviour):
+     * - BEFORE the first pin the clip keeps its BASE saturation
+     *   (factor 1f): a saturation pin never retroactively changes
+     *   earlier times. (Clamping to the first pin instead would make
+     *   a lone pin at t=2500 desaturate the whole clip from t=0.)
+     * - AFTER the last pin the value HOLDS at the last pin.
+     * - New keyframes pin the current effective saturation, so a
+     *   scale-only keyframe preserves — never resets — the ramp.
      */
     private fun interpolateSaturation(timeMs: Long): Float? {
         val pinned = keyframes.filter { it.saturation != null }.sortedBy { it.timeMs }
         if (pinned.isEmpty()) return null
-        if (timeMs <= pinned.first().timeMs) return pinned.first().saturation
+        if (timeMs < pinned.first().timeMs) return 1f
         if (timeMs >= pinned.last().timeMs) return pinned.last().saturation
         for (i in 0 until pinned.size - 1) {
             val a = pinned[i]

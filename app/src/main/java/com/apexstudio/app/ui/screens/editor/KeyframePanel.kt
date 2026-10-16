@@ -95,8 +95,8 @@ enum class KeyframePropertyFilter(val label: String, val color: Color) {
  *
  * [onUpsertParam] is the CapCut-style auto-keyframe callback: a slider
  * change at the playhead upserts one parameter there (no manual "+"
- * needed once the track has keyframes). Null = fall back to editing
- * the selected keyframe via [onUpdate] (legacy behaviour).
+ * needed once the track has keyframes). Required (no silent-drop
+ * fallback): every slider change must reach the upsert.
  */
 @Composable
 fun KeyframePanel(
@@ -109,7 +109,7 @@ fun KeyframePanel(
     onRemove: (String) -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
-    onUpsertParam: ((KeyframeParam, Float) -> Unit)? = null
+    onUpsertParam: (KeyframeParam, Float) -> Unit
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
     var selectedKeyframeId by remember(sorted) {
@@ -127,10 +127,6 @@ fun KeyframePanel(
     // manual "+" needed. The inspector (curve chips, Delete) still
     // operates on the SELECTED keyframe.
     val atPlayhead = track.interpolateAt(playheadMs)
-    fun upsertParam(param: KeyframeParam, value: Float, fallback: (Keyframe) -> Keyframe) {
-        if (onUpsertParam != null) onUpsertParam(param, value)
-        else activeKeyframe?.let { onUpdate(fallback(it)) }
-    }
 
     Column(
         modifier = Modifier
@@ -416,7 +412,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.SCALE, it) { kf -> kf.copy(scale = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.SCALE, it) }
                     )
                 }
 
@@ -437,7 +433,7 @@ fun KeyframePanel(
                         ),
                         step = 5f,
                         defaultValue = 0f,
-                        onValueChange = { upsertParam(KeyframeParam.ROTATION, it) { kf -> kf.copy(rotationDeg = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.ROTATION, it) }
                     )
                 }
 
@@ -458,7 +454,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.OPACITY, it) { kf -> kf.copy(opacity = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.OPACITY, it) }
                     )
                 }
 
@@ -476,7 +472,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 0f,
-                        onValueChange = { upsertParam(KeyframeParam.TRANSLATE_X, it) { kf -> kf.copy(translateX = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.TRANSLATE_X, it) }
                     )
                     EnhancedKeyframeSlider(
                         label = "Position Y",
@@ -491,7 +487,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 0f,
-                        onValueChange = { upsertParam(KeyframeParam.TRANSLATE_Y, it) { kf -> kf.copy(translateY = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.TRANSLATE_Y, it) }
                     )
                 }
 
@@ -510,7 +506,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.VOLUME, it) { kf -> kf.copy(volume = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.VOLUME, it) }
                     )
                 }
 
@@ -524,7 +520,7 @@ fun KeyframePanel(
                         quickChips = listOf(0f to "Off", 1f to "Normal", 1.5f to "High"),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.FILTER_INTENSITY, it) { kf -> kf.copy(filterIntensity = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.FILTER_INTENSITY, it) }
                     )
                     EnhancedKeyframeSlider(
                         label = "FX Intensity",
@@ -536,7 +532,7 @@ fun KeyframePanel(
                         quickChips = listOf(0f to "0%", 0.5f to "50%", 1f to "100%"),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.EFFECT_INTENSITY, it) { kf -> kf.copy(effectIntensity = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.EFFECT_INTENSITY, it) }
                     )
                 }
 
@@ -561,7 +557,7 @@ fun KeyframePanel(
                         ),
                         step = 0.05f,
                         defaultValue = 1.0f,
-                        onValueChange = { upsertParam(KeyframeParam.SATURATION, it) { kf -> kf.copy(saturation = it) } }
+                        onValueChange = { onUpsertParam(KeyframeParam.SATURATION, it) }
                     )
                 }
 

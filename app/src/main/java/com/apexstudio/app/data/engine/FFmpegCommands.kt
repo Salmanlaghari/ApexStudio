@@ -57,6 +57,8 @@ object FFmpegCommands {
      *
      * Uses `concat:file1|file2|...` — all inputs must have same codec parameters.
      * The concat protocol requires absolute paths or paths relative to CWD.
+     * Input paths are escaped so that spaces and pipe characters do not break
+     * the protocol parser.
      *
      * @param inputs list of input video file paths (must not be empty)
      * @param output path for the merged video file
@@ -64,7 +66,8 @@ object FFmpegCommands {
      */
     fun mergeVideos(inputs: List<String>, output: String): Array<String> {
         require(inputs.isNotEmpty()) { "inputs must not be empty" }
-        val concatInput = "concat:" + inputs.joinToString("|")
+        val escapedInputs = inputs.map { escapeConcatPath(it) }
+        val concatInput = "concat:" + escapedInputs.joinToString("|")
         return arrayOf(
             "-y",
             "-i", concatInput,
@@ -88,6 +91,18 @@ object FFmpegCommands {
             "-c:a", "aac",
             output
         )
+    }
+
+    /**
+     * Escapes a file path for use in the concat protocol.
+     * Backslashes, pipes, and spaces are escaped so the protocol parser
+     * does not split the path incorrectly.
+     */
+    private fun escapeConcatPath(path: String): String {
+        return path
+            .replace("\\", "\\\\")
+            .replace("|", "\\|")
+            .replace(" ", "\\ ")
     }
 
     /**

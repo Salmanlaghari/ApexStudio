@@ -24,7 +24,8 @@ class FFmpegEngine {
     fun execute(command: Array<String>): Int {
         // Let exceptions propagate — callers need the real error, not a fake -1.
         val session = FFmpegKit.execute(command.joinToString(" "))
-        return session.returnCode.value
+        return session?.returnCode?.value
+            ?: throw IllegalStateException("FFmpegKit.execute returned a null session")
     }
 
     /**

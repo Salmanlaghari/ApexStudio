@@ -48,9 +48,10 @@ class FFmpegEngineTest {
     @Test
     fun testMergeVideosSingleInput() {
         val command = FFmpegCommands.mergeVideos(listOf("/input1.mp4"), "/output.mp4")
-        // Single input uses direct copy, not concat protocol.
+        // mergeVideos always uses the concat protocol, even for a single input.
         assertTrue(command.contains("-i"))
         assertTrue(command.contains("copy"))
+        assertTrue(command.any { it.startsWith("concat:") })
     }
 
     @Test

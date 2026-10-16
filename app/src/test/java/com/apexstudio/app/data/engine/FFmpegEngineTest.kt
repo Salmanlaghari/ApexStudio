@@ -13,7 +13,8 @@ class FFmpegEngineTest {
 
     @Test
     fun testIsAvailableReturnsBoolean() {
-        val result = FFmpegEngine.isAvailable()
+        val engine = FFmpegEngine()
+        val result = engine.isAvailable()
         // isAvailable must not throw; result is a Boolean by type.
         assertTrue(result is Boolean)
     }

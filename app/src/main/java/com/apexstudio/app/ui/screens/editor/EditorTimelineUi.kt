@@ -36,8 +36,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 // === 4. CAPCUT-STYLE TIMELINE TRACK AREA ===
 

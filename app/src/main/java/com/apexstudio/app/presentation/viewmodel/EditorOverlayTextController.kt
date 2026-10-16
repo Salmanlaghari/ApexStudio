@@ -439,8 +439,8 @@ fun EditorViewModel.applyTextRevealTemplate() {
                 timeMs = end,
                 translateX = 0.55f
             )
-        ).sorted()
-    )
+        )
+    ).sorted()
     val sticker = StickerOverlay(
         id = java.util.UUID.randomUUID().toString(),
         symbolOrUri = "",

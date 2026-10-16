@@ -146,7 +146,7 @@ fun AnimatedTextOverlayView(
         with(density) { 48.dp.toPx() } + offsetXPx +
         with(density) { alignShiftDp.toPx() } + with(density) { 10.dp.toPx() }
     val innerTopPx = containerHeightPx * posY -
-        with(density) { 24.dp.toPx() } + offsetYDp + with(density) { 10.dp.toPx() }
+        with(density) { 24.dp.toPx() } + offsetYPx + with(density) { 10.dp.toPx() }
 
     Box(
         modifier = modifier

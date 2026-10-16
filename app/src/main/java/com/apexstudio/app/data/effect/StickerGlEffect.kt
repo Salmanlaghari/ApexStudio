@@ -54,6 +54,12 @@ class StickerGlEffect(
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
+        // Constructor params captured as properties: init can use the
+        // params directly, but drawFrame (where keyframed stickers
+        // re-upload) cannot — plain params are out of scope there.
+        private val effectContext: Context = context
+        private val effectAspectRatio: Float = aspectRatio
+
         private val glProgram: GlProgram
         private val overlayTexId: IntArray = intArrayOf(0)
 
@@ -250,7 +256,7 @@ class StickerGlEffect(
                             lastLottieFrame = idx
                         } else {
                             val path = sticker.assetPath
-                            if (!path.isNullOrBlank()) uploadSprite(context, eff, path, aspectRatio)
+                            if (!path.isNullOrBlank()) uploadSprite(effectContext, eff, path, effectAspectRatio)
                         }
                         lastKeyframeStateKey = kfKey
                     } catch (e: Exception) {

@@ -925,7 +925,7 @@ fun VideoTimeline(
                                         .fillMaxWidth()
                                         .height(fxLaneHeight.dp)
                                 )
-                            }                            }
+                            }
 
                             // TRACK 4: A1 (music) + TRACK 5: A2 (voice).
                             // Each renders only when it holds tracks.

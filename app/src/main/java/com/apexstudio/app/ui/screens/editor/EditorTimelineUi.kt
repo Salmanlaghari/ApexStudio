@@ -161,7 +161,11 @@ fun TimelineTrackArea(
     // The LruCache + disk cache (TimelineThumbnailCache) own
     // longer-term retention, and frames are re-fetched from them.
     val filmstripFrames = remember { mutableStateMapOf<Pair<String, Long>, Bitmap>() }
-    val inFlightKeys = remember { mutableSetOf<Pair<String, Long>>() }
+    // In-flight extraction keys: touched from up to 4 IO threads at
+    // once (launch children remove in finally), so a plain HashSet
+    // would corrupt — synchronized set. `add`'s return value is the
+    // atomic check-and-claim.
+    val inFlightKeys = remember { java.util.Collections.synchronizedSet(mutableSetOf<Pair<String, Long>>()) }
     val thumbDispatcher = remember { Dispatchers.IO.limitedParallelism(4) }
 
     // Content start (timeline ms) per clip: V1 clips (track 0) tile

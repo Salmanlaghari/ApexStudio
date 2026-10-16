@@ -153,7 +153,7 @@ dependencies {
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
   // Full build includes libx264, libmp3lame, and concat protocol support.
-  implementation("com.arthenica:mobile-ffmpeg-full:4.4.LTS")
+  implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

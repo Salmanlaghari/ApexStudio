@@ -307,6 +307,22 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
  * - If the track is EMPTY this is a no-op returning false: the first
  *   keyframe stays manual (the "+" button), exactly like CapCut.
  */
+/**
+ * Apply a single parameter change to a Keyframe.
+ * Maps KeyframeParam enum to the corresponding Keyframe field.
+ */
+private fun Keyframe.withParam(param: KeyframeParam, value: Float): Keyframe = when (param) {
+    KeyframeParam.TRANSLATE_X -> copy(translateX = value)
+    KeyframeParam.TRANSLATE_Y -> copy(translateY = value)
+    KeyframeParam.SCALE -> copy(scale = value)
+    KeyframeParam.ROTATION -> copy(rotationDeg = value)
+    KeyframeParam.OPACITY -> copy(opacity = value)
+    KeyframeParam.VOLUME -> copy(volume = value)
+    KeyframeParam.EFFECT_INTENSITY -> copy(effectIntensity = value)
+    KeyframeParam.FILTER_INTENSITY -> copy(filterIntensity = value)
+    KeyframeParam.SATURATION -> copy(saturation = value)
+}
+
 fun EditorViewModel.upsertKeyframeParam(
     clipId: String,
     timeMs: Long,
@@ -322,7 +338,7 @@ fun EditorViewModel.upsertKeyframeParam(
             c.copy(
                 keyframes = KeyframeTrack(
                     c.keyframes.keyframes.map { kf ->
-                        if (kf.id == near.id) kf.copy(param = value) else kf
+                        if (kf.id == near.id) kf.withParam(param, value) else kf
                     }
                 ).sorted()
             )
@@ -345,7 +361,7 @@ fun EditorViewModel.upsertKeyframeParam(
             effectIntensity = at.effectIntensity,
             filterIntensity = at.filterIntensity,
             saturation = at.saturation ?: 1f
-        ).copy(param = value)
+        ).withParam(param, value)
         c.copy(keyframes = KeyframeTrack((c.keyframes.keyframes + kf)).sorted())
     }
     return true

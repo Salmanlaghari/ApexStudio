@@ -4,6 +4,23 @@
   <img src="https://img.shields.io/badge/ApexStudio-Professional%20Video%20Editor-7F52FF?style=for-the-badge&logo=android&logoColor=white" alt="ApexStudio"/>
 </p>
 
+# 🚀 COMING SOON 🚀
+
+## ⏳ APEXSTUDIO IS COMING SOON ⏳
+
+### 🔥 SOMETHING BIG IS COMING 🔥
+
+<p align="center">
+  <strong><font size="6">🚀 COMING SOON 🚀</font></strong>
+</p>
+
+> ## ⚡ **APEXSTUDIO IS COMING SOON** ⚡
+> ### 🎬 **Professional Video Editor — Launching Soon!** 🎬
+> #### 📱 **Stay Tuned — Best Video Editor is Coming!** 📱
+
+---
+
+
 <h1 align="center">🎬 ApexStudio</h1>
 
 <p align="center">

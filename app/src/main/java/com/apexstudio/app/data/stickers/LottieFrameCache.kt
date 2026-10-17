@@ -44,9 +44,24 @@ object LottieFrameCache {
         }
     }
 
-    /** True for sticker asset paths that are Lottie animations. */
-    fun isLottieAsset(assetPath: String?): Boolean =
-        assetPath?.startsWith("lottie/") == true && assetPath.endsWith(".json")
+    /**
+     * True for sticker asset paths that are Lottie animations.
+     *
+     * Recognises BOTH asset locations so every pack resolves the
+     * same way: the seven original animations under `assets/lottie/`
+     * and the 22-entry animated pack under `assets/stickers/animated/`
+     * (Bug 2 — the old prefix-only check made the new pack invisible to
+     * the canvas and to the export shader).
+     *
+     * Anything else ending in `.json` is rejected on purpose: the static
+     * packs are `.webp` / `.svg` and must keep falling through to the
+     * image path.
+     */
+    fun isLottieAsset(assetPath: String?): Boolean {
+        if (assetPath == null || !assetPath.endsWith(".json")) return false
+        return assetPath.startsWith("lottie/") ||
+            assetPath.startsWith("stickers/animated/")
+    }
 
     /**
      * Returns the cached frame strip for [assetPath] (assets-relative, e.g.

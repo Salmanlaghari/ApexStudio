@@ -160,6 +160,17 @@ fun OverlayPropertiesPanel(
             modifier = Modifier.padding(top = 2.dp)
         )
 
+        // Bug 3: layout + trim. Above the scrolling card row on purpose -
+        // the cards are a horizontally-swiped strip, and burying POSITION
+        // or CUT inside one of them would make placement a second-class
+        // control. Full width = this is the overlay's primary edit surface.
+        OverlayEditor(
+            clip = clip,
+            onLayout = onLayout,
+            onTrim = onTrim,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+
         // Horizontal control cards: swipe left/right between groups.
         // Each card scrolls vertically on its own if its content
         // overflows (e.g. a long keyframe list).
@@ -184,16 +195,6 @@ fun OverlayPropertiesPanel(
                 PanelSliderRow(
                     label = "Opacity",
                     valueLabel = "${(effectiveOpacity * 100).toInt()}%",
-            // Bug 3: layout + trim, first section of the sheet because they
-            // are what an overlay editor MOST needs. Deliberately before the
-            // compositing options below: placing the element outranks how it
-            // blends.
-            OverlayEditor(
-                clip = clip,
-                onLayout = onLayout,
-                onTrim = onTrim,
-                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
-            )
                     value = effectiveOpacity,
                     onValueChange = onOpacity
                 )

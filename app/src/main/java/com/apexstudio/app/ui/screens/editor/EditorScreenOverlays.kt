@@ -45,6 +45,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.state.clipLayerAnchor
 import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
@@ -861,8 +862,11 @@ fun MaskPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.maskPanelOpen) return
-    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-        ?: state.project?.clips?.firstOrNull()
+    // Bug 4: the mask may edit ONLY the selected video/image layer. The
+    // old `?: clips.firstOrNull()` fallback silently retargeted it to the
+    // project's first clip, and openMaskPanelTopLevel() already guarantees
+    // a target whenever the sheet is called for without a selection.
+    val selectedClip = state.clipLayerAnchor() ?: return
     Box(
         modifier = Modifier
             .fillMaxSize()

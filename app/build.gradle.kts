@@ -104,6 +104,10 @@ android {
   }
   packaging {
     resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    jniLibs {
+      // FFmpegKit and other native libs both provide libc++_shared.so — pick first to avoid duplicate packaging conflict.
+      pickFirsts += "lib/**/libc++_shared.so"
+    }
   }
 }
 

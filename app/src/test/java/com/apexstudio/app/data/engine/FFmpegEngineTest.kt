@@ -1,5 +1,7 @@
 package com.apexstudio.app.data.engine
 
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,12 +13,28 @@ import org.junit.Test
  */
 class FFmpegEngineTest {
 
+    private val engine = FFmpegEngine()
+
+    @Test
+    fun testEngineTypeIsFFmpeg() {
+        assertEquals(EngineType.FFMPEG, engine.engineType)
+    }
+
     @Test
     fun testIsAvailableReturnsBoolean() {
-        val engine = FFmpegEngine()
         val result = engine.isAvailable()
         // isAvailable must not throw; result is a Boolean by type.
         assertTrue(result is Boolean)
+    }
+
+    @Test
+    fun testSupportsOperations() {
+        assertTrue(engine.supports(MediaOperation(OperationType.COMPLEX_FILTER)))
+        assertTrue(engine.supports(MediaOperation(OperationType.AUDIO_EXTRACT)))
+        assertTrue(engine.supports(MediaOperation(OperationType.CONCAT_MERGE)))
+        assertTrue(engine.supports(MediaOperation(OperationType.FORMAT_CONVERT)))
+        assertTrue(engine.supports(MediaOperation(OperationType.EXPORT, isComplex = true)))
+        assertFalse(engine.supports(MediaOperation(OperationType.PLAYBACK)))
     }
 
     @Test

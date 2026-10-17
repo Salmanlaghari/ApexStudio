@@ -375,20 +375,75 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
 }
 
 
+/**
+ * One resident decoded strip: the frames themselves plus the key they
+ * were decoded for, so re-trimming a clip is detected and re-decoded
+ * instead of serving frames from the old trim window.
+ */
+private class ClipThumbStrip(
+    val storeKey: String,
+    val frames: List<Pair<Long, android.graphics.Bitmap>>
+)
+
+/**
+ * Bounded LRU of decoded per-clip thumbnail strips (Bug 1).
+ *
+ * Replaces an unbounded `Map` on `_thumbnails` that a new clip was only
+ * ever ADDED to, so bitmaps of deleted clips stayed pinned for the life
+ * of the process. Eviction order here is by last update (entries are
+ * written from `Dispatchers.IO` on load, never read through `get`);
+ * 40 clips is far past a realistic project while still guaranteeing the
+ * map cannot grow without limit.
+ */
+private val clipThumbStrips =
+    com.apexstudio.editor.thumbnail.ThumbnailStripLru<String, ClipThumbStrip>(40)
+
+/**
+ * Extract the thumbnail strip for [clip] off the main thread and mirror
+ * it into `_thumbnails` for the UI.
+ *
+ * Bug 1 (timeline filmstrip blank after the first few seconds):
+ * the frame count is now derived from THIS CLIP'S OWN DURATION —
+ * `ThumbnailSequenceGenerator.sampleCount`, one frame per second
+ * clamped to [8, 300] — where it used to be a hard-coded `count = 8`.
+ * A 3-minute video therefore yields 180 frames covering 0..3:00 instead
+ * of 8 frames, and the video layer stays filled for the whole clip.
+ *
+ * Nothing here blocks the UI: the decode runs on `Dispatchers.IO`, the
+ * result is served from the LRU when the same trim is loaded again, and
+ * strips belonging to clips that have left the project are pruned on
+ * every publish so state cannot grow without bound.
+ */
 internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
     val ctx = context ?: return
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
         try {
             val playableUri = com.apexstudio.app.data.media.MediaUriResolver
                 .resolvePlayableUri(ctx, clip.uri).toString()
-            val thumbs = VideoThumbnailExtractor.extractStrip(
-                context = ctx,
-                videoUri = playableUri,
-                durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L),
-                count = 8
-            )
-            _thumbnails.update { current ->
-                current + (clip.id to thumbs)
+            val durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
+            val frameCount = com.apexstudio.editor.thumbnail.ThumbnailSequenceGenerator
+                .sampleCount(durationMs)
+            val storeKey = "${clip.id}|${clip.trimStartMs}|${clip.trimEndMs}|$frameCount"
+            val cached = clipThumbStrips.peek(clip.id)
+            if (cached == null || cached.storeKey != storeKey) {
+                val decoded = VideoThumbnailExtractor.extractStrip(
+                    context = ctx,
+                    videoUri = playableUri,
+                    durationMs = durationMs,
+                    count = frameCount
+                )
+                clipThumbStrips.put(clip.id, ClipThumbStrip(storeKey, decoded))
+            }
+            // Drop strips for clips the user has deleted — this, not the
+            // cap, is what an unbounded map could never do.
+            val liveIds = _state.value.project?.clips?.mapTo(HashSet<String>()) { it.id }
+                ?: HashSet<String>()
+            if (liveIds.isNotEmpty()) {
+                clipThumbStrips.keys().filter { it !in liveIds }
+                    .forEach { clipThumbStrips.remove(it) }
+            }
+            _thumbnails.update {
+                clipThumbStrips.snapshot().mapValues { (_, entry) -> entry.frames }
             }
         } catch (e: Exception) {
             Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)

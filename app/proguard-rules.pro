@@ -82,3 +82,8 @@
 -dontwarn com.airbnb.lottie.**
 
 # Phase 4: gl-transitions shader assets + Lottie animation assets
+
+# --- FFmpegKit (PR #156) ---
+-keep class com.arthenica.ffmpegkit.** { *; }
+-dontwarn com.arthenica.ffmpegkit.**
+-dontwarn com.arthenica.smartexception.**

@@ -106,7 +106,11 @@ android {
     resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     jniLibs {
       // FFmpegKit and other native libs both provide libc++_shared.so — pick first to avoid duplicate packaging conflict.
-      pickFirsts += "lib/**/libc++_shared.so"
+      pickFirsts += listOf(
+        "**/libc++_shared.so",
+        "lib/**/libc++_shared.so",
+        "**/libffmpegkit.so"
+      )
     }
   }
 }
@@ -158,6 +162,7 @@ dependencies {
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
   // Full build includes libx264, libmp3lame, and concat protocol support.
   implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7") // FFmpegKit retired Jan 2025, binaries removed from Maven Central Apr 2025 — using maintained fork (same API)
+  implementation("com.arthenica:smart-exception-java:0.2.1")
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

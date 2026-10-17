@@ -41,8 +41,7 @@ class GStreamerEngine(
     override fun isAvailable(): Boolean {
         return try {
             if (!Gst.isInitialized()) {
-                val args: Array<String> = emptyArray()
-                Gst.init("ApexStudio", args)
+                Gst.init("ApexStudio")
             }
             Gst.isInitialized()
         } catch (t: Throwable) {

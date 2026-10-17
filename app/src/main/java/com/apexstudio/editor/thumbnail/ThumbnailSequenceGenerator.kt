@@ -101,6 +101,11 @@ object ThumbnailSequenceGenerator {
         windowEndMs: Long,
         frameCount: Int
     ): LongArray {
+        // Kilo issue 3: an inverted window (RangeSlider dragged out of
+        // order) is a degenerate selection, not a one-pixel window.
+        // Reject it before clamping so two reversed handles can never
+        // resolve to a frame sitting on the clamped edge.
+        if (windowStartMs > windowEndMs) return LongArray(0)
         val span = durationMs.coerceAtLeast(0L)
         // No intersection with [0, span]: nothing is visible to lazy-load.
         if (windowEndMs < 0L || windowStartMs > span) return LongArray(0)

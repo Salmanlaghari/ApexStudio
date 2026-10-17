@@ -74,10 +74,21 @@ class ThumbnailStripLru<K : Any, V : Any>(val maxSize: Int) {
     fun peek(key: K): V? = synchronized(this) { map[key] }
 
     /**
-     * Insert or replace [key]. Returns the previous value, or the
-     * value evicted to make room (when both differ), so a caller that
-     * owns native resources can release them. Evicts eldest-first
-     * until [maxSize] is respected.
+     * Insert or replace [key], evicting eldest-first until [maxSize] is
+     * respected.
+     *
+     * The return value is what the caller must now let go of. When an
+     * entry left the store to make room, THAT value is returned — it is
+     * gone entirely, so a caller holding native resources (the thumbnail
+     * strips hold Bitmaps) has to be told about it to recycle. When
+     * nothing was evicted, the value this key overwrote is returned
+     * instead, which is its own kind of dropped reference. `null` means
+     * a new key landed in free space: nothing to release.
+     *
+     * Eviction deliberately wins over `previous` when both happen at
+     * once (replace + capacity overflow together), because the evicted
+     * entry is then unreferenced from here in every direction while the
+     * replaced value at least shares its key with the new one.
      */
     fun put(key: K, value: V): V? = synchronized(this) {
         val previous = map.put(key, value)
@@ -90,7 +101,11 @@ class ThumbnailStripLru<K : Any, V : Any>(val maxSize: Int) {
             evictions++
             if (entry.key != key) evictedValue = entry.value
         }
-        previous ?: evictedValue
+        // Kilo warning: eviction wins over `previous`. The evicted entry
+        // has left the store completely while a replaced value at least
+        // precedes a consistent story for its own key - and the caller
+        // that owns native resources recycles what this returns.
+        evictedValue ?: previous
     }
 
     /** Remove [key] entirely. Returns the removed value if present. */

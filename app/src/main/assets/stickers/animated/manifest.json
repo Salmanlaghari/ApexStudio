@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "pack": "ApexStudio Animated (original)",
+  "license": "Lottie Simple License",
+  "source": "https://lottiefiles.com/lottie-simple-license",
+  "attribution": "Original animation code written for ApexStudio. No third-party CapCut/TikTok/LottieFiles artwork was copied.",
+  "count": 22,
+  "animations": [
+    {
+      "id": "hearts/beating-heart",
+      "file": "hearts/beating-heart.json",
+      "name": "Heartbeat",
+      "category": "hearts",
+      "tags": [
+        "love",
+        "heart",
+        "beat",
+        "idol",
+        "red"
+      ]
+    },
+    {
+      "id": "hearts/floating-heart",
+      "file": "hearts/floating-heart.json",
+      "name": "Floating Heart",
+      "category": "hearts",
+      "tags": [
+        "love",
+        "heart",
+        "float",
+        "cute",
+        "pink"
+      ]
+    },
+    {
+      "id": "hearts/heart-burst",
+      "file": "hearts/heart-burst.json",
+      "name": "Heart Burst",
+      "category": "hearts",
+      "tags": [
+        "love",
+        "heart",
+        "pop",
+        "excited",
+        "party"
+      ]
+    },
+    {
+      "id": "hearts/wobbly-heart",
+      "file": "hearts/wobbly-heart.json",
+      "name": "Wobbly Heart",
+      "category": "hearts",
+      "tags": [
+        "love",
+        "heart",
+        "purple",
+        "silly",
+        "cute"
+      ]
+    },
+    {
+      "id": "stars/spinning-star",
+      "file": "stars/spinning-star.json",
+      "name": "Star Spin",
+      "category": "stars",
+      "tags": [
+        "star",
+        "spin",
+        "gold",
+        "shiny",
+        "yellow"
+      ]
+    },
+    {
+      "id": "stars/twinkle-star",
+      "file": "stars/twinkle-star.json",
+      "name": "Twinkle",
+      "category": "stars",
+      "tags": [
+        "star",
+        "twinkle",
+        "shine",
+        "night",
+        "yellow"
+      ]
+    },
+    {
+      "id": "stars/sparkle",
+      "file": "stars/sparkle.json",
+      "name": "Sparkle",
+      "category": "stars",
+      "tags": [
+        "sparkle",
+        "shine",
+        "magic",
+        "white",
+        "glitter"
+      ]
+    },
+    {
+      "id": "stars/wobble-star",
+      "file": "stars/wobble-star.json",
+      "name": "Wobbly Star",
+      "category": "stars",
+      "tags": [
+        "star",
+        "orange",
+        "silly",
+        "cute",
+        "wobble"
+      ]
+    },
+    {
+      "id": "fire/flame",
+      "file": "fire/flame.json",
+      "name": "Flame",
+      "category": "fire",
+      "tags": [
+        "fire",
+        "flame",
+        "lit",
+        "hot",
+        "orange"
+      ]
+    },
+    {
+      "id": "fire/rising-flame",
+      "file": "fire/rising-flame.json",
+      "name": "Rising Flame",
+      "category": "fire",
+      "tags": [
+        "fire",
+        "flame",
+        "rise",
+        "hot",
+        "ember"
+      ]
+    },
+    {
+      "id": "fire/fireball",
+      "file": "fire/fireball.json",
+      "name": "Fireball",
+      "category": "fire",
+      "tags": [
+        "fire",
+        "ball",
+        "lava",
+        "hot",
+        "round"
+      ]
+    },
+    {
+      "id": "fire/campfire",
+      "file": "fire/campfire.json",
+      "name": "Campfire",
+      "category": "fire",
+      "tags": [
+        "fire",
+        "campfire",
+        "warm",
+        "outdoor",
+        "bonfire"
+      ]
+    },
+    {
+      "id": "confetti/confetti-fall",
+      "file": "confetti/confetti-fall.json",
+      "name": "Confetti Fall",
+      "category": "confetti",
+      "tags": [
+        "confetti",
+        "fall",
+        "party",
+        "celebration",
+        "color"
+      ]
+    },
+    {
+      "id": "confetti/confetti-pop",
+      "file": "confetti/confetti-pop.json",
+      "name": "Confetti Pop",
+      "category": "confetti",
+      "tags": [
+        "confetti",
+        "pop",
+        "explosion",
+        "party",
+        "burst"
+      ]
+    },
+    {
+      "id": "confetti/party-arrow",
+      "file": "confetti/party-arrow.json",
+      "name": "Party Triangle",
+      "category": "confetti",
+      "tags": [
+        "party",
+        "triangle",
+        "flag",
+        "celebration",
+        "purple"
+      ]
+    },
+    {
+      "id": "confetti/ribbon",
+      "file": "confetti/ribbon.json",
+      "name": "Ribbon",
+      "category": "confetti",
+      "tags": [
+        "ribbon",
+        "confetti",
+        "green",
+        "streamer",
+        "party"
+      ]
+    },
+    {
+      "id": "emojis/smiley",
+      "file": "emojis/smiley.json",
+      "name": "Smiley",
+      "category": "emojis",
+      "tags": [
+        "emoji",
+        "smile",
+        "happy",
+        "face",
+        "joy"
+      ]
+    },
+    {
+      "id": "emojis/wink",
+      "file": "emojis/wink.json",
+      "name": "Wink",
+      "category": "emojis",
+      "tags": [
+        "emoji",
+        "wink",
+        "fun",
+        "face",
+        "playful"
+      ]
+    },
+    {
+      "id": "emojis/blush-face",
+      "file": "emojis/blush-face.json",
+      "name": "Blush",
+      "category": "emojis",
+      "tags": [
+        "emoji",
+        "blush",
+        "cute",
+        "face",
+        "shy"
+      ]
+    },
+    {
+      "id": "animals/kitty",
+      "file": "animals/kitty.json",
+      "name": "Kitty",
+      "category": "animals",
+      "tags": [
+        "animal",
+        "cat",
+        "kitty",
+        "pet",
+        "face"
+      ]
+    },
+    {
+      "id": "animals/bunny",
+      "file": "animals/bunny.json",
+      "name": "Bunny",
+      "category": "animals",
+      "tags": [
+        "animal",
+        "bunny",
+        "rabbit",
+        "pet",
+        "cute"
+      ]
+    },
+    {
+      "id": "animals/froggy",
+      "file": "animals/froggy.json",
+      "name": "Froggy",
+      "category": "animals",
+      "tags": [
+        "animal",
+        "frog",
+        "green",
+        "pond",
+        "face"
+      ]
+    }
+  ]
+}

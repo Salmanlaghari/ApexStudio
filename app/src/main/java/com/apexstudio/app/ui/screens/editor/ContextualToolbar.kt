@@ -218,6 +218,11 @@ fun ContextualBottomToolbar(
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
             CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
+            // Bug 4: Mask is a TOP-LEVEL tool, reachable straight from the
+            // main bottom bar rather than buried under the selected-clip
+            // bar. With nothing selected, openMaskPanelTopLevel() targets
+            // the first video layer so the tool is never a dead button.
+            CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
             // Overlay: system photo/video picker → PiP clip at the
             // playhead (images 5s, videos source length).
             CtxToolItem("Overlay", Icons.Default.PictureInPicture, onClick = onOverlay),
@@ -917,7 +922,7 @@ fun EditorBottomToolbarSection(
             state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
         },
         onTrim = { vm.openTrimPanel() },
-        onMask = { vm.openMaskPanel() },
+        onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
         onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
         onAudioMix = { vm.openAudioMixer() },

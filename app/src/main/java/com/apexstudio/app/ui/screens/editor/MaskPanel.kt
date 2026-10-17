@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.MaskKeyframe
+import com.apexstudio.app.domain.model.MaskPreset
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -40,6 +42,10 @@ fun MaskPanel(
     mask: VideoMask?,
     onUpdate: (VideoMask?) -> Unit,
     onClose: () -> Unit,
+    // Clip-relative playhead, the stamp point for the KEYFRAME control:
+    // add bakes the current geometry at exactly this position so the
+    // mask animates in preview and on export (resolveMaskAt).
+    keyframeTimeMs: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -100,37 +106,46 @@ fun MaskPanel(
         // Shape picker
         Text("SHAPE", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            MaskShape.entries.forEach { shape ->
-                val selected = mask?.shape == shape
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF1C1C2E))
-                        .border(
-                            1.5.dp,
-                            if (selected) ApexPalette.NeonCyan else Color.Transparent,
-                            RoundedCornerShape(12.dp)
+        // Ten chips no longer fit one row once the labels are longer than
+        // a glyph ("Blur Faces"), so shapes are laid out three per row:
+        // every mode keeps a readable label and stays tappable without a
+        // horizontal scroll. Behaviour is unchanged - tapping a shape with
+        // no mask creates one, with a mask switches it; the mask param
+        // (never a synthesized default) stays the source of truth.
+        MaskShape.entries.chunked(3).forEach { rowShapes ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowShapes.forEach { shape ->
+                    val selected = mask?.shape == shape
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
+                                else Color(0xFF1C1C2E)
+                            )
+                            .border(
+                                1.5.dp,
+                                if (selected) ApexPalette.NeonCyan else Color.Transparent,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = shape.label,
+                            color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                         )
-                        // Tapping a shape with no mask creates one; with a
-                        // mask it switches shape. Either way the mask param
-                        // (not a synthesized default) is the source of truth.
-                        .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = shape.label,
-                        color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                    )
+                    }
                 }
             }
+            Spacer(Modifier.height(6.dp))
         }
 
         // Sliders + invert only exist when there IS a mask. When the mask
@@ -184,6 +199,128 @@ fun MaskPanel(
                     checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
                 )
             )
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // Rotation: the shape spins about its own centre, independent of
+        // feather/opacity so a nudge on one slider can never move another.
+        MaskSliderRow(
+            label = "Rotation",
+            valueLabel = "${activeMask.rotationDeg.toInt()}°",
+            value = ((activeMask.rotationDeg + 180f) / 360f).coerceIn(0f, 1f),
+            onValueChange = { onUpdate(activeMask.copy(rotationDeg = it.coerceIn(0f, 1f) * 360f - 180f)) }
+        )
+        Spacer(Modifier.height(14.dp))
+
+        // Presets ship a COMPLETE look - shape, extent, feather, rotation
+        // and inversion together - so one tap reproduces it rather than
+        // editing five settings by hand. Choosing one overwrites every
+        // geometry field (documented on MaskPreset.apply), which is what
+        // users expect from a recipe.
+        Text(
+            "PRESETS",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        MaskPreset.ALL.chunked(3).forEach { rowPresets ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowPresets.forEach { preset ->
+                    val active = activeMask.presetId == preset.id
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (active) ApexPalette.NeonPink.copy(alpha = 0.18f)
+                                else Color(0xFF1C1C2E)
+                            )
+                            .border(
+                                1.dp,
+                                if (active) ApexPalette.NeonPink else Color.Transparent,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable {
+                                onUpdate(preset.apply().copy(presetId = preset.id))
+                            }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = preset.label,
+                            color = if (active) ApexPalette.NeonPink else Color.White.copy(alpha = 0.75f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // KEYFRAME ANIMATION: the eighth control in the task's list.
+        // "Add mask key" freezes the CURRENT geometry at the playhead, so
+        // the mask can be moved / resized / rotated / faded over time;
+        // resolveMaskAt() interpolates between stamps on preview and on
+        // export. Stamps already existing at this exact time are replaced
+        // (move a handle and re-press = adjust that key, not a second one).
+        val keyframes = activeMask.maskKeyframes
+        val stamped = keyframes.any { it.timeMs == keyframeTimeMs }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = {
+                    val stamp = MaskKeyframe(
+                        id = "mask-$keyframeTimeMs",
+                        timeMs = keyframeTimeMs,
+                        centerX = activeMask.centerX,
+                        centerY = activeMask.centerY,
+                        sizeX = activeMask.sizeX,
+                        sizeY = activeMask.sizeY,
+                        rotationDeg = activeMask.rotationDeg,
+                        feather = activeMask.feather,
+                        opacity = activeMask.opacity,
+                        invert = activeMask.invert
+                    )
+                    onUpdate(
+                        activeMask.copy(
+                            maskKeyframes = (keyframes.filterNot { it.timeMs == keyframeTimeMs } + stamp)
+                                .sortedBy { it.timeMs }
+                        )
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF103640)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = if (stamped) "Update mask key" else "Add mask key",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (keyframes.isNotEmpty()) {
+                Button(
+                    onClick = { onUpdate(activeMask.copy(maskKeyframes = emptyList())) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A1520)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Clear keys (${keyframes.size})",
+                        color = ApexPalette.NeonPink,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
         } else {
             Spacer(Modifier.height(16.dp))

@@ -203,3 +203,28 @@ fun EditorViewModel.setHistoryDraftsTab(
 /** Records an auto-save tick (called every 30s while editing). */
 fun EditorViewModel.markAutoSaved(nowMs: Long = System.currentTimeMillis()) =
     _state.update { it.copy(lastAutoSaveMs = nowMs) }
+
+/**
+ * Open the Mask tool from the MAIN bottom bar — Bug 4, Mask as a
+ * TOP-LEVEL feature rather than something you can only reach once the
+ * selected-clip bar is showing.
+ *
+ * The clip bar only appears while a layer is selected, so before this
+ * the mask entry point was unreachable with an empty selection, and
+ * since `MaskPanelOverlay` stopped falling back to the first clip it
+ * would have had no target at all — a dead button. This opens the sheet
+ * and, when nothing editable is selected, targets the first layer the
+ * mask can act on so the tool always affects something on screen.
+ *
+ * Selecting a different layer afterwards re-targets immediately, the
+ * sheet re-reads `clipLayerAnchor()` on every recomposition.
+ */
+fun EditorViewModel.openMaskPanelTopLevel() {
+    if (_state.value.clipLayerAnchor() == null) {
+        val first = _state.value.project?.clips
+            ?.firstOrNull { it.isKeyframeTarget() }
+            ?: return
+        selectClip(first.id)
+    }
+    openMaskPanel()
+}

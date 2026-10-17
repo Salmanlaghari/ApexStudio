@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
 
 /**
  * Applies a [VideoMask] to a text overlay in the live preview.
@@ -123,6 +125,57 @@ private fun DrawScope.drawTextMask(
             val right = frameToLocalX((mask.centerX + mask.sizeX / 2f) * containerWidthPx)
             val bottom = frameToLocalY((mask.centerY + mask.sizeY / 2f) * containerHeightPx)
             val path = Path().apply { addOval(Rect(left, top, right, bottom)) }
+            drawPath(
+                path = path,
+                color = Color.White.copy(alpha = alpha),
+                blendMode = if (mask.invert) androidx.compose.ui.graphics.BlendMode.DstOut
+                else androidx.compose.ui.graphics.BlendMode.DstIn
+            )
+        }
+        else -> {
+            // Bug 4: the modes added with the top-level Mask tool.
+            // Analytic modes (circle / mirror / blur-faces) become an oval
+            // of the same extent; the polygonal ones (heart, star,
+            // triangle, pen) are stroked from the SHARED MaskModel points
+            // after rotation + normalised->frame->local mapping, so a text
+            // mask agrees with the clip mask's geometry instead of silently
+            // falling back to the rectangle.
+            val left = frameToLocalX((mask.centerX - mask.sizeX / 2f) * containerWidthPx)
+            val top = frameToLocalY((mask.centerY - mask.sizeY / 2f) * containerHeightPx)
+            val right = frameToLocalX((mask.centerX + mask.sizeX / 2f) * containerWidthPx)
+            val bottom = frameToLocalY((mask.centerY + mask.sizeY / 2f) * containerHeightPx)
+            val cxE = (left + right) / 2f
+            val cyE = (top + bottom) / 2f
+            val radT = Math.toRadians(mask.rotationDeg.toDouble())
+            val cuT = Math.cos(radT).toFloat()
+            val suT = Math.sin(radT).toFloat()
+
+            val path = Path().apply {
+                when (mask.shape) {
+                    MaskShape.CIRCLE -> {
+                        val r = minOf(right - left, bottom - top) / 2f
+                        addOval(Rect(cxE - r, cyE - r, cxE + r, cyE + r))
+                    }
+                    MaskShape.MIRROR, MaskShape.BLUR_FACE ->
+                        addOval(Rect(left, top, right, bottom))
+                    MaskShape.RECTANGLE, MaskShape.ELLIPSE, MaskShape.LINEAR ->
+                        addOval(Rect(left, top, right, bottom)) // unreachable
+                    else -> {
+                        val poly: List<MaskPoint> =
+                            MaskModel.outline(mask.shape, mask.drawPoints)
+                        if (poly.size >= 4) {
+                            poly.forEachIndexed { i, pt ->
+                                val rx = pt.x * cuT - pt.y * suT
+                                val ry = pt.x * suT + pt.y * cuT
+                                val fx = frameToLocalX((mask.centerX + rx * mask.sizeX / 2f) * containerWidthPx)
+                                val fy = frameToLocalY((mask.centerY + ry * mask.sizeY / 2f) * containerHeightPx)
+                                if (i == 0) moveTo(fx, fy) else lineTo(fx, fy)
+                            }
+                            close()
+                        }
+                    }
+                }
+            }
             drawPath(
                 path = path,
                 color = Color.White.copy(alpha = alpha),

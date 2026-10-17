@@ -72,6 +72,11 @@ fun OverlayPropertiesPanel(
     isVideo: Boolean,
     playheadMs: Long,
     onOpacity: (Float) -> Unit,
+    // Bug 3: overlay layout (position/scale/rotation) and source trim,
+    // both rendered by OverlayEditor - see its KDoc for why three
+    // floats go back together and why trim binds to the source window.
+    onLayout: (x: Float, y: Float, scale: Float, rotationDeg: Float) -> Unit,
+    onTrim: (startMs: Long, endMs: Long) -> Unit,
     onBlend: (OverlayBlend) -> Unit,
     onMaskShape: (OverlayMaskShape) -> Unit,
     onBorder: (widthFraction: Float, colorArgb: Int) -> Unit,
@@ -153,6 +158,17 @@ fun OverlayPropertiesPanel(
             color = Color.White.copy(alpha = 0.6f),
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 2.dp)
+        )
+
+        // Bug 3: layout + trim. Above the scrolling card row on purpose -
+        // the cards are a horizontally-swiped strip, and burying POSITION
+        // or CUT inside one of them would make placement a second-class
+        // control. Full width = this is the overlay's primary edit surface.
+        OverlayEditor(
+            clip = clip,
+            onLayout = onLayout,
+            onTrim = onTrim,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
         // Horizontal control cards: swipe left/right between groups.

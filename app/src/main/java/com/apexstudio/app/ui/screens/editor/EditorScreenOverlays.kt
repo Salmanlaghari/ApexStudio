@@ -45,6 +45,8 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.state.clipLayerAnchor
+import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -860,8 +862,11 @@ fun MaskPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.maskPanelOpen) return
-    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-        ?: state.project?.clips?.firstOrNull()
+    // Bug 4: the mask may edit ONLY the selected video/image layer. The
+    // old `?: clips.firstOrNull()` fallback silently retargeted it to the
+    // project's first clip, and openMaskPanelTopLevel() already guarantees
+    // a target whenever the sheet is called for without a selection.
+    val selectedClip = state.clipLayerAnchor() ?: return
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -872,6 +877,7 @@ fun MaskPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             MaskPanel(
                 mask = selectedClip?.mask,
+                keyframeTimeMs = state.playerPositionMs,
                 onUpdate = { mask ->
                     val clipId = selectedClip?.id ?: return@MaskPanel
                     if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)
@@ -958,6 +964,14 @@ fun OverlayPropertiesPanelOverlay(
                 isVideo = isVideo == true,
                 playheadMs = state.playerPositionMs,
                 onOpacity = { vm.setOverlayClipOpacity(selectedClip.id, it) },
+                // Bug 3: explicit layout mirroring the canvas gestures,
+                // plus the overlay's own source trim.
+                onLayout = { x, y, scale, rotation ->
+                    vm.setOverlayLayout(selectedClip.id, x, y, scale, rotation)
+                },
+                onTrim = { s, e ->
+                    vm.trimOverlayClip(selectedClip.id, s, e)
+                },
                 onBlend = { vm.setOverlayBlend(selectedClip.id, it) },
                 onMaskShape = { shape ->
                     // Undo: one entry per panel session (armed flag).
@@ -1008,8 +1022,11 @@ fun KeyframePanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.keyframePanelOpen) return
-    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-        ?: state.project?.clips?.firstOrNull()
+    // Bug 5: the panel may edit ONLY the video layer under selection.
+    // The old `?: clips.firstOrNull()` fallback silently retargeted it to
+    // the project's first clip when the selection was cleared, so an
+    // auto-keyframe slider write landed on a layer the user never touched.
+    val selectedClip = state.keyframeAnchor()
     val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
     var showManualPanel by remember { mutableStateOf(false) }
     Box(

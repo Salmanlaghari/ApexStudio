@@ -166,7 +166,9 @@ dependencies {
   implementation("com.arthenica:smart-exception-java:0.2.1")
 
   // GStreamer (Hybrid Engine PR #2 — pipeline-based real-time effects & streaming)
-  implementation("org.freedesktop.gstreamer:gst1-java-core:1.4.0")
+  implementation("org.freedesktop.gstreamer:gst1-java-core:1.4.0") {
+    exclude(group = "net.java.dev.jna", module = "jna")
+  }
   implementation("net.java.dev.jna:jna:5.14.0@aar")
 
   // Serialization & Data

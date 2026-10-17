@@ -439,6 +439,25 @@ class ExportEngine(private val context: Context) {
                     )
                 }
 
+                // 6b. Per-clip saturation keyframes (CapCut "Color
+                // Change"): the keyframed factor multiplies the global
+                // saturation at every frame (saturation composes
+                // exactly: sat(sat(c, g), f) == sat(c, g*f), so the
+                // ColorMatrix stage above + this stage = global x
+                // keyframed). Base = all-default adjustments so only
+                // the keyframed saturation applies here. Same frame
+                // time convention as KeyframeAnimationEffect above.
+                if (config.keyframes.hasSaturationPins()) {
+                    videoEffects.add(
+                        com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                            adjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+                            saturationAt = { frameTimeMs ->
+                                config.keyframes.saturationFactorAt(frameTimeMs)
+                            }
+                        )
+                    )
+                }
+
                 // 7. Caption / Text Overlays & Stickers
                 val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() } +
                     listOfNotNull(buildArGreetingOverlay(config))

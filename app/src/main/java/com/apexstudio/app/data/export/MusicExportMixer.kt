@@ -200,6 +200,12 @@ object MusicExportMixer {
         val mix = FloatArray(WINDOW_FRAMES * CHANNELS)
         val tmp = FloatArray(WINDOW_FRAMES * CHANNELS)
         val pcm = ByteArray(WINDOW_FRAMES * CHANNELS * 2)
+        // Volume keyframes, sorted once per track (sorting per sample
+        // would allocate on the audio hot path). Empty list = the
+        // track's scalar volume applies (see interpolate below).
+        val sortedVolumeKfsByTrack = placed.map {
+            it.track.volumeKeyframes.sortedBy { kf -> kf.timeMs }
+        }
 
         RandomAccessFile(wavFile, "rw").use { raf ->
             // Placeholder header; rewritten with real sizes at the end.
@@ -221,7 +227,7 @@ object MusicExportMixer {
                 }
 
                 // Music tracks.
-                for (p in placed) {
+                for ((trackIdx, p) in placed.withIndex()) {
                     if (p.done) continue
                     val w0 = globalFrame
                     val w1 = globalFrame + frames
@@ -230,14 +236,25 @@ object MusicExportMixer {
                     if (s1 > s0) {
                         val need = (s1 - s0).toInt()
                         val n = p.decoder.readFrames(tmp, need)
-                        val vol = p.track.effectiveVolume()
+                        val sortedVolumeKfs = sortedVolumeKfsByTrack[trackIdx]
                         for (i in 0 until n) {
                             val g = s0 + i
                             val env = fadeEnvelope(
                                 g - p.startFrame, p.playFrames,
                                 p.track.fadeInMs, p.track.fadeOutMs
                             )
-                            val v = vol * env
+                            // Volume keyframes: interpolated absolute
+                            // volume at this frame's timeline time
+                            // (sample-accurate; no keyframes = scalar
+                            // volume, muted = 0 — same as before).
+                            val kfVol = if (p.track.isMuted) 0f else
+                                com.apexstudio.app.domain.model.AudioTrack
+                                    .interpolateVolumeKeyframes(
+                                        sortedVolumeKfs,
+                                        p.track.volume,
+                                        (g * 1000L) / SAMPLE_RATE
+                                    ).coerceIn(0f, 1f)
+                            val v = kfVol * env
                             val idx = ((g - w0) * 2).toInt()
                             mix[idx] += tmp[i * 2] * v
                             mix[idx + 1] += tmp[i * 2 + 1] * v

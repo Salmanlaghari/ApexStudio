@@ -3,7 +3,9 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -85,7 +87,17 @@ fun AudioMixerPanel(
     onOpenRoyaltyFreeMusic: () -> Unit = {},
     onClose: () -> Unit,
     /** Phase 4: player audio session for the live visualizer (0 = none yet). */
-    audioSessionId: Int = 0
+    audioSessionId: Int = 0,
+    /** Timeline playhead (state mirror) — volume faders show the
+     * effective volume AT THE PLAYHEAD when volume keyframes exist. */
+    playheadMs: Long = 0L,
+    /** Manual first volume keyframe at the playhead (CapCut: the
+     * first keyframe is always manual; later fader moves auto-upsert). */
+    onAddVolumeKeyframe: (trackId: String) -> Unit = {},
+    /** Delete one volume keyframe pin. */
+    onRemoveVolumeKeyframe: (trackId: String, keyframeId: String) -> Unit = { _, _ -> },
+    /** Seek the playhead (tap a volume-keyframe chip). */
+    onSeekTo: (Long) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -117,7 +129,7 @@ fun AudioMixerPanel(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Mix V1 audio, music and SFX with per-track faders, mute and fades.",
+            text = "Mix V1 audio, music and SFX with per-track faders, mute, fades and volume keyframes.",
             color = ApexPalette.TextSecondary,
             fontSize = 12.sp
         )
@@ -180,12 +192,16 @@ fun AudioMixerPanel(
             items(state.tracks, key = { it.id }) { track ->
                 AudioTrackRow(
                     track = track,
+                    playheadMs = playheadMs,
                     onVolume = { onVolume(track.id, it) },
                     onMute = { onMute(track.id) },
                     onSolo = { onSolo(track.id) },
                     onRemove = { onRemoveTrack(track.id) },
                     onFadeIn = { onFadeIn(track.id, it) },
-                    onFadeOut = { onFadeOut(track.id, it) }
+                    onFadeOut = { onFadeOut(track.id, it) },
+                    onAddVolumeKeyframe = { onAddVolumeKeyframe(track.id) },
+                    onRemoveVolumeKeyframe = { kfId -> onRemoveVolumeKeyframe(track.id, kfId) },
+                    onSeekTo = onSeekTo
                 )
             }
         }
@@ -247,12 +263,16 @@ private fun AudioMixerRow(
 @Composable
 private fun AudioTrackRow(
     track: AudioTrack,
+    playheadMs: Long,
     onVolume: (Float) -> Unit,
     onMute: () -> Unit,
     onSolo: () -> Unit,
     onRemove: () -> Unit,
     onFadeIn: (Long) -> Unit,
-    onFadeOut: (Long) -> Unit
+    onFadeOut: (Long) -> Unit,
+    onAddVolumeKeyframe: () -> Unit,
+    onRemoveVolumeKeyframe: (String) -> Unit,
+    onSeekTo: (Long) -> Unit
 ) {
     val accent = when {
         track.isSolo -> ApexPalette.NeonCyan
@@ -271,7 +291,10 @@ private fun AudioTrackRow(
         AudioMixerRow(
             label = "${track.name} • $kindLabel",
             icon = if (track.isMuted) Icons.Default.MusicOff else Icons.Default.MusicNote,
-            volume = track.volume,
+            // Fader shows the effective volume AT THE PLAYHEAD when
+            // volume keyframes exist (falls back to the scalar
+            // volume); dragging it auto-upserts at the playhead.
+            volume = track.volumeAt(playheadMs),
             muted = track.isMuted,
             solo = track.isSolo,
             accent = accent,
@@ -296,7 +319,76 @@ private fun AudioTrackRow(
                 onChange = onFadeOut
             )
         }
+        Spacer(Modifier.height(6.dp))
+        // Volume keyframes (CapCut-style volume animation): "+ Vol
+        // KF" pins the current effective volume at the playhead
+        // (first keyframe is manual); once keyframes exist, the
+        // fader above auto-upserts at the playhead. Tap a chip to
+        // seek to that pin; tap its ✕ to delete the pin.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
+                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                    .clickable { onAddVolumeKeyframe() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "+ Vol KF",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "${track.volumeKeyframes.size} volume keyframe(s)",
+                color = ApexPalette.TextSecondary,
+                fontSize = 11.sp
+            )
+        }
+        if (track.volumeKeyframes.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                track.volumeKeyframes.forEach { kf ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.White.copy(alpha = 0.06f))
+                            .clickable { onSeekTo(kf.timeMs) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "${formatVolumeKfTime(kf.timeMs)} · ${(kf.volume * 100).toInt()}%",
+                            color = ApexPalette.TextPrimary,
+                            fontSize = 11.sp
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "✕",
+                            color = ApexPalette.TextTertiary,
+                            fontSize = 11.sp,
+                            modifier = Modifier
+                                .clickable { onRemoveVolumeKeyframe(kf.id) }
+                                .padding(2.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun formatVolumeKfTime(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    return String.format(java.util.Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
 }
 
 @Composable

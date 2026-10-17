@@ -547,14 +547,29 @@ fun AudioMixerPanelOverlay(
                 },
                 onOpenRoyaltyFreeMusic = onOpenRoyaltyFreeSheet,
                 onRemoveTrack = { vm.removeAudioTrack(it) },
-                onVolume = { trackId, vol -> vm.setAudioTrackVolume(trackId, vol) },
+                // Volume fader: routes to the volume-keyframe upsert
+                // when the track has volume keyframes, else to the
+                // scalar volume (behaviour unchanged). Writes use
+                // the LIVE playhead — the ~10Hz state mirror can lag
+                // by up to 100ms and would misplace the pin.
+                onVolume = { trackId, vol ->
+                    vm.setAudioTrackVolumeAuto(trackId, vol, vm.livePlayheadMs())
+                },
                 onMute = { trackId -> vm.toggleAudioTrackMute(trackId) },
                 onSolo = { trackId -> vm.toggleAudioTrackSolo(trackId) },
                 onTrim = { trackId, start, end -> vm.setAudioTrackTrim(trackId, start, end) },
                 onFadeIn = { trackId, ms -> vm.setAudioTrackFadeIn(trackId, ms) },
                 onFadeOut = { trackId, ms -> vm.setAudioTrackFadeOut(trackId, ms) },
                 onClose = { vm.closeAudioMixer() },
-                audioSessionId = audioSessionId
+                audioSessionId = audioSessionId,
+                playheadMs = state.playerPositionMs,
+                onAddVolumeKeyframe = { trackId ->
+                    vm.addAudioVolumeKeyframe(trackId, vm.livePlayheadMs())
+                },
+                onRemoveVolumeKeyframe = { trackId, kfId ->
+                    vm.removeAudioVolumeKeyframe(trackId, kfId)
+                },
+                onSeekTo = { targetMs -> vm.seekTo(targetMs) }
             )
         }
     }
@@ -1021,6 +1036,17 @@ fun KeyframePanelOverlay(
                             vm.updateKeyframe(it.id, kf.id) { _ -> kf }
                         }
                     },
+                    // CapCut-style auto-keyframe: slider changes at the
+                    // playhead upsert one parameter there (no manual
+                    // "+" needed once the clip has keyframes). Writes
+                    // use the LIVE playhead — the ~10Hz state mirror
+                    // can lag by up to 100ms and would misplace the
+                    // keyframe (same class as the mixer fix above).
+                    onUpsertParam = { param, value ->
+                        selectedClip?.let {
+                            vm.upsertKeyframeParam(it.id, vm.livePlayheadMs(), param, value)
+                        }
+                    },
                     onRemove = { kfId ->
                         selectedClip?.let {
                             vm.removeKeyframe(it.id, kfId)
@@ -1276,6 +1302,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             fxSpeed = state.fxSpeed,
             isPlaying = state.isPlaying,
             animatedTransform = animatedTransform,
+            // CapCut-style V1 pinch-to-zoom (stable lambda: the VM
+            // reads the current selection + playhead on each event).
+            onPinchZoom = remember(vm) { { zoom: Float -> vm.pinchZoomSelectedClip(zoom) } },
+            // Per-clip saturation keyframes: factor from the
+            // selected clip's track at the playhead (1f = no pins).
+            keyframedSaturationFactor = animatedTransform.saturation ?: 1f,
             currentTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with

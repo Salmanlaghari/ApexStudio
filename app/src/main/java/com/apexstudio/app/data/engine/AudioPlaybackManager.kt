@@ -76,8 +76,12 @@ class AudioPlaybackManager(private val context: Context) {
             }
 
             player?.let { p ->
-                // Support up to 2.0x volume with digital gain
-                val vol = (track.volume * 1.0f).coerceIn(0f, 1f)
+                // Volume keyframes: interpolated absolute volume at
+                // the timeline playhead (falls back to the scalar
+                // volume when the track has no volume keyframes).
+                // Sync runs at ~250ms cadence, so preview volume
+                // steps at that granularity; export is sample-accurate.
+                val vol = track.effectiveVolumeAt(positionMs)
                 p.setVolume(vol, vol)
 
                 val trackOffset = (positionMs - track.trimStartMs).coerceAtLeast(0L)

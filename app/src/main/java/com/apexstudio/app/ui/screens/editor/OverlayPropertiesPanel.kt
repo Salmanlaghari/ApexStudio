@@ -168,11 +168,18 @@ fun OverlayPropertiesPanel(
         ) {
             // Card 1: Opacity + Blend.
             PropsCard {
-                // Opacity
+                // Opacity — shows the EFFECTIVE opacity at the
+                // playhead when the overlay has keyframes (the slider
+                // auto-keyframes there), else the base pipOpacity.
+                val effectiveOpacity = if (clip.keyframes.keyframes.isNotEmpty()) {
+                    clip.keyframes.interpolateAt(playheadMs).opacity
+                } else {
+                    clip.pipOpacity
+                }
                 PanelSliderRow(
                     label = "Opacity",
-                    valueLabel = "${(clip.pipOpacity * 100).toInt()}%",
-                    value = clip.pipOpacity,
+                    valueLabel = "${(effectiveOpacity * 100).toInt()}%",
+                    value = effectiveOpacity,
                     onValueChange = onOpacity
                 )
 

@@ -101,6 +101,25 @@ fun EditorViewModel.rotateOverlayClip(
 }
 
 fun EditorViewModel.setOverlayClipOpacity(clipId: String, opacity: Float) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+    if (clip != null && clip.keyframes.keyframes.isNotEmpty()) {
+        // CapCut-style auto-keyframe: once the overlay has keyframes,
+        // the Opacity slider pins opacity at the playhead (snapping to
+        // the nearest keyframe within 1s, like canvas gestures) instead
+        // of moving the base value. With no keyframes the slider keeps
+        // its existing meaning: edit the base pipOpacity.
+        val t = clip.keyframes.interpolateAt(livePlayheadMs())
+        upsertOverlayKeyframe(
+            clipId,
+            livePlayheadMs(),
+            t.translateX,
+            t.translateY,
+            t.scale,
+            t.rotationDeg,
+            opacity
+        )
+        return
+    }
     armOverlayUndo()
     updateClip(clipId) { clip ->
         clip.copy(pipOpacity = opacity.coerceIn(0f, 1f))

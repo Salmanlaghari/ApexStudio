@@ -32,13 +32,21 @@ fun FilterPreviewOverlay(
     filterId: String?,
     intensity: Float,
     adjustments: VideoAdjustments,
+    /**
+     * Per-clip saturation keyframes: factor multiplying the global
+     * saturation in the preview grade (1f = global grade unchanged,
+     * 0f = black-and-white). The preview grade is an overlay
+     * approximation (a SurfaceView cannot be Compose-filtered); the
+     * export uses the exact shader.
+     */
+    saturationMultiplier: Float = 1f,
     compareMode: Boolean = false,
     splitPosition: Float = 0.5f,
     modifier: Modifier = Modifier
 ) {
     val clampedIntensity = intensity.coerceIn(0f, 1f)
     val hasFilter = filterId != null && clampedIntensity > 0f
-    val hasAdjust = !adjustments.isDefault
+    val hasAdjust = !adjustments.isDefault || saturationMultiplier != 1f
 
     if (!hasFilter && !hasAdjust) return
 
@@ -70,7 +78,7 @@ fun FilterPreviewOverlay(
 
         // 2. Manual Adjustments Layers (Brightness, Contrast, Temperature, Tint, Vignette)
         if (hasAdjust) {
-            AdjustmentsLayer(adjustments = adjustments)
+            AdjustmentsLayer(adjustments = adjustments, saturationMultiplier = saturationMultiplier)
         }
     }
 }
@@ -296,7 +304,7 @@ private fun LegacyFilterGradeWash(filterId: String, intensity: Float) {
 }
 
 @Composable
-private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
+private fun AdjustmentsLayer(adjustments: VideoAdjustments, saturationMultiplier: Float = 1f) {
     // 1. Exposure (-1..1)
     if (adjustments.exposure != 0f) {
         val exp = adjustments.exposure.coerceIn(-1f, 1f)
@@ -351,9 +359,12 @@ private fun AdjustmentsLayer(adjustments: VideoAdjustments) {
         }
     }
 
-    // 4. Saturation (0..2, default 1.0)
-    if (adjustments.saturation != 1f) {
-        val sDiff = adjustments.saturation - 1f
+    // 4. Saturation (0..2, default 1.0) — effective = global x
+    // keyframed factor, so a saturation keyframe of 0f desaturates
+    // even when the global grade is untouched.
+    val effectiveSaturation = adjustments.saturation * saturationMultiplier
+    if (effectiveSaturation != 1f) {
+        val sDiff = effectiveSaturation - 1f
         if (sDiff < 0f) {
             // Desaturation: gray overlay
             val alpha = (kotlin.math.abs(sDiff) * 0.75f).coerceIn(0f, 0.85f)

@@ -37,6 +37,15 @@ class AdjustmentsGlEffect(
     private val brightnessProvider: (() -> Float)? = null,
     private val contrastProvider: (() -> Float)? = null,
     private val saturationProvider: (() -> Float)? = null,
+    /**
+     * Per-frame saturation factor by TIMELINE time in ms — the
+     * keyframed-saturation hook for export (same time convention as
+     * [com.apexstudio.app.data.animation.KeyframeAnimationEffect]:
+     * presentationTimeUs is the frame's timeline time). Sampled after
+     * [saturationProvider] so the keyframed factor wins when both are
+     * set, and it MULTIPLIES the base saturation (1f = no change).
+     */
+    private val saturationAt: ((Long) -> Float)? = null,
     private val exposureProvider: (() -> Float)? = null,
     private val temperatureProvider: (() -> Float)? = null,
     private val tintProvider: (() -> Float)? = null,
@@ -64,6 +73,7 @@ class AdjustmentsGlEffect(
             brightnessProvider = brightnessProvider,
             contrastProvider = contrastProvider,
             saturationProvider = saturationProvider,
+            saturationAt = saturationAt,
             exposureProvider = exposureProvider,
             temperatureProvider = temperatureProvider,
             tintProvider = tintProvider,
@@ -92,6 +102,7 @@ class AdjustmentsGlEffect(
         private val brightnessProvider: (() -> Float)?,
         private val contrastProvider: (() -> Float)?,
         private val saturationProvider: (() -> Float)?,
+        private val saturationAt: ((Long) -> Float)?,
         private val exposureProvider: (() -> Float)?,
         private val temperatureProvider: (() -> Float)?,
         private val tintProvider: (() -> Float)?,
@@ -188,6 +199,10 @@ class AdjustmentsGlEffect(
                 brightnessProvider?.let { brightness = it() }
                 contrastProvider?.let { contrast = it() }
                 saturationProvider?.let { saturation = it() }
+                // Keyframed saturation: multiplies the base saturation
+                // by the interpolated factor at this frame's timeline
+                // time (same convention as KeyframeAnimationEffect).
+                saturationAt?.let { saturation *= it(presentationTimeUs / 1000L) }
                 exposureProvider?.let { exposure = it() }
                 temperatureProvider?.let { temperature = it() }
                 tintProvider?.let { tint = it() }

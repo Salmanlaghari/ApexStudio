@@ -72,6 +72,11 @@ fun OverlayPropertiesPanel(
     isVideo: Boolean,
     playheadMs: Long,
     onOpacity: (Float) -> Unit,
+    // Bug 3: overlay layout (position/scale/rotation) and source trim,
+    // both rendered by OverlayEditor - see its KDoc for why three
+    // floats go back together and why trim binds to the source window.
+    onLayout: (x: Float, y: Float, scale: Float, rotationDeg: Float) -> Unit,
+    onTrim: (startMs: Long, endMs: Long) -> Unit,
     onBlend: (OverlayBlend) -> Unit,
     onMaskShape: (OverlayMaskShape) -> Unit,
     onBorder: (widthFraction: Float, colorArgb: Int) -> Unit,
@@ -179,6 +184,16 @@ fun OverlayPropertiesPanel(
                 PanelSliderRow(
                     label = "Opacity",
                     valueLabel = "${(effectiveOpacity * 100).toInt()}%",
+            // Bug 3: layout + trim, first section of the sheet because they
+            // are what an overlay editor MOST needs. Deliberately before the
+            // compositing options below: placing the element outranks how it
+            // blends.
+            OverlayEditor(
+                clip = clip,
+                onLayout = onLayout,
+                onTrim = onTrim,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            )
                     value = effectiveOpacity,
                     onValueChange = onOpacity
                 )

@@ -964,6 +964,14 @@ fun OverlayPropertiesPanelOverlay(
                 isVideo = isVideo == true,
                 playheadMs = state.playerPositionMs,
                 onOpacity = { vm.setOverlayClipOpacity(selectedClip.id, it) },
+                // Bug 3: explicit layout mirroring the canvas gestures,
+                // plus the overlay's own source trim.
+                onLayout = { x, y, scale, rotation ->
+                    vm.setOverlayLayout(selectedClip.id, x, y, scale, rotation)
+                },
+                onTrim = { s, e ->
+                    vm.trimOverlayClip(selectedClip.id, s, e)
+                },
                 onBlend = { vm.setOverlayBlend(selectedClip.id, it) },
                 onMaskShape = { shape ->
                     // Undo: one entry per panel session (armed flag).

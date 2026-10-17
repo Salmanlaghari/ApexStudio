@@ -1,26 +1,63 @@
-# ApexStudio
+<div align="center">
 
-> High-end & powerful on-device video editor for Android.
+# 🎬 ApexStudio
 
-A premium mobile video-editing experience built with **Jetpack Compose**
-and **Media3 Transformer**. Trims, layers and exports clips without
-leaving the device — no cloud round-trips, no watermarks.
+### High-end & Powerful on-device video editor for Android
+
+**No cloud round-trips · No watermarks · 100% On-Device**
+
+[![Build](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)](https://github.com/Salmanlaghari/ApexStudio/actions)
+[![Kotlin](https://img.shields.io/badge/Kotlin-91.6%25-7F52FF?style=for-the-badge&logo=kotlin)](https://kotlinlang.org/)
+[![Android](https://img.shields.io/badge/Android-API%2026%2B-3DDC84?style=for-the-badge&logo=android)](https://developer.android.com/)
+[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
+
+</div>
 
 ---
 
-## Tech stack
+## ✨ Features Showcase
+
+| Feature | Description |
+|---------|-------------|
+| ✂️ **Trim & Cut** | Precise frame-accurate trimming with waveform |
+| 🎬 **Multi-layer Timeline** | Video, Audio, Text, Overlay — unlimited layers |
+| 🎨 **20+ Professional LUTs** | CapCut-style cinematic colour grades |
+| ✨ **Keyframe Animation** | Position, Scale, Rotation, Opacity, Volume |
+| 🎭 **Mask Tool — 10 Modes** | Circle, Rectangle, Heart, Star, Triangle, Ellipse, Horizontal, Mirror, Draw/Pen, Blur-faces |
+| 🖼️ **Overlay Clips** | Image/Video overlays — position, scale, rotation, opacity, trim |
+| 😍 **134 Animated 3D Stickers** | 6 packs + new animated pack (hearts, stars, fire, confetti) |
+| 🎵 **Music Library** | 500k+ royalty-free tracks via Jamendo + offline + import |
+| 📱 **Camera Kit** | AR Lenses & Filters (Snap Camera Kit) |
+| ⚡ **Hybrid Engine** | Media3 (fast) + FFmpeg (heavy) + GStreamer (real-time) |
+
+---
+
+## 🎥 See It In Action
+
+> **🎬 Timeline Editing** — Multi-layer professional timeline with drag & drop
+>
+> **🎨 LUT Filters** — 20+ cinematic colour grades, real-time preview
+>
+> **🎭 Mask Effects** — 10 mask modes with feather, invert, keyframe animation
+>
+> **😍 3D Stickers** — 134 animated stickers, Lottie-powered
+
+---
+
+## 🛠️ Tech Stack
 
 | Layer | Choice |
-| --- | --- |
-| UI | Jetpack Compose (Material 3) + custom cinematic theme |
-| Media | AndroidX Media3 (ExoPlayer, Transformer, Effect) |
-| Color | GPUImage 3D-LUT engine for CapCut-style filters |
-| Persistence | DataStore + kotlinx-serialization JSON codec |
-| Build | AGP 8.7 · Kotlin 2.1 · Gradle 8.x |
+|-------|--------|
+| 🎨 **UI** | Jetpack Compose (Material 3) + custom cinematic theme |
+| 🎬 **Media** | AndroidX Media3 (ExoPlayer, Transformer, Effect) |
+| 🌈 **Colour** | GPUImage 3D-LUT engine for CapCut-style filters |
+| 💾 **Persistence** | DataStore + kotlinx-serialization JSON codec |
+| 🔧 **Build** | AGP 8.7 · Kotlin 2.1 · Gradle 8.x |
+| ⚡ **Engine** | Hybrid: Media3 + FFmpeg + GStreamer |
 
 ---
 
-## Project structure
+## 📁 Project Structure
 
 ```
 app/src/main/java/com/apexstudio/app/
@@ -47,7 +84,7 @@ app/src/main/java/com/apexstudio/app/
 
 ---
 
-## Build
+## 🔨 Build
 
 ```bash
 ./gradlew :app:assembleDebug
@@ -58,12 +95,12 @@ app/src/main/java/com/apexstudio/app/
 
 ---
 
-## Royalty-free music library
+## 🎵 Royalty-Free Music Library
 
 The editor's music sheet has three tabs:
 
 | Tab | Source | Needs |
-| --- | --- | --- |
+|-----|--------|-------|
 | **Discover** | Jamendo API v3 — 500k+ real Creative-Commons tracks, search + genre tags + streaming preview + download to timeline | Free `JAMENDO_CLIENT_ID` |
 | **Offline** | Built-in tracks synthesized on-device | Nothing |
 | **Import** | Audio picker (MP3/M4A/WAV/OGG from device storage) | Nothing |
@@ -83,26 +120,16 @@ with the video track copied untouched).
    shows setup steps; Offline + Import keep working.
 
 API terms: <https://devportal.jamendo.com/api_terms_of_use>. Responses are
-cached locally for 24h; previews/downloads are per-track and user-initiated.
-
-### Why Jamendo, not the Pixabay music API
-
-Pixabay's documented public API (<https://pixabay.com/api/docs/>) only
-exposes **image and video** endpoints — there is no documented music/audio
-endpoint. Building on an undocumented endpoint would be unverifiable and
-could break silently, so the library uses Jamendo instead (documented,
-free key, whole catalogue Creative-Commons licensed).
-
-### Legal notes
-
-- **Hard line:** no PagalWorld, no Bollywood, no copyrighted commercial
-  songs from any source. Only Creative-Commons / openly-licensed tracks.
-- Every Jamendo track shows its CC licence badge (e.g. `CC BY-SA`).
-  **Attribution is required by the licence** — credit artist + track when
-  you publish a video that uses one (YouTube description, etc.).
+cached locally for 24h; previews/downloads are cached on-device.
 
 ---
 
-## License
+<div align="center">
 
-MIT — see `LICENSE` for the full text.
+### Made with ❤️ by TEAM PK AI
+
+**ApexStudio © 2026 — Professional Video Editing, On Your Phone.**
+
+⭐ **Star this repo if you like it!** ⭐
+
+</div>

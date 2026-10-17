@@ -153,7 +153,7 @@ dependencies {
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
   // Full build includes libx264, libmp3lame, and concat protocol support.
-  implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+  implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7") // FFmpegKit retired Jan 2025, binaries removed from Maven Central Apr 2025 — using maintained fork (same API)
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

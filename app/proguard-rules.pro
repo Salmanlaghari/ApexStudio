@@ -87,3 +87,9 @@
 -keep class com.arthenica.ffmpegkit.** { *; }
 -dontwarn com.arthenica.ffmpegkit.**
 -dontwarn com.arthenica.smartexception.**
+
+# --- GStreamer & JNA (Hybrid Engine PR #2) ---
+-keep class org.freedesktop.gstreamer.** { *; }
+-dontwarn org.freedesktop.gstreamer.**
+-keep class com.sun.jna.** { *; }
+-dontwarn com.sun.jna.**

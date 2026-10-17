@@ -109,7 +109,8 @@ android {
       pickFirsts += listOf(
         "**/libc++_shared.so",
         "lib/**/libc++_shared.so",
-        "**/libffmpegkit.so"
+        "**/libffmpegkit.so",
+        "**/libjnidispatch.so"
       )
     }
   }
@@ -163,6 +164,10 @@ dependencies {
   // Full build includes libx264, libmp3lame, and concat protocol support.
   implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7") // FFmpegKit retired Jan 2025, binaries removed from Maven Central Apr 2025 — using maintained fork (same API)
   implementation("com.arthenica:smart-exception-java:0.2.1")
+
+  // GStreamer (Hybrid Engine PR #2 — pipeline-based real-time effects & streaming)
+  implementation("org.freedesktop.gstreamer:gst1-java-core:1.4.0")
+  implementation("net.java.dev.jna:jna:5.14.0@aar")
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

@@ -34,13 +34,29 @@
 
 ## 🎥 See It In Action
 
-> **🎬 Timeline Editing** — Multi-layer professional timeline with drag & drop
->
-> **🎨 LUT Filters** — 20+ cinematic colour grades, real-time preview
->
-> **🎭 Mask Effects** — 10 mask modes with feather, invert, keyframe animation
->
-> **😍 3D Stickers** — 134 animated stickers, Lottie-powered
+<div align="center">
+
+### 🎬 Timeline Editing
+<img src="https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&q=80" alt="Video Editing Timeline" width="800"/>
+
+*Multi-layer professional timeline with drag & drop*
+
+### 🎨 LUT Filters & Colour Grading
+<img src="https://images.unsplash.com/photo-1536240478700-b869070f9279?w=800&q=80" alt="Colour Grading" width="800"/>
+
+*20+ cinematic colour grades, real-time preview*
+
+### 🎭 Mask Effects
+<img src="https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?w=800&q=80" alt="Mask Effects" width="800"/>
+
+*10 mask modes with feather, invert, keyframe animation*
+
+### 😍 3D Stickers & Overlays
+<img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800&q=80" alt="Stickers" width="800"/>
+
+*134 animated stickers, Lottie-powered + Overlay Clips*
+
+</div>
 
 ---
 

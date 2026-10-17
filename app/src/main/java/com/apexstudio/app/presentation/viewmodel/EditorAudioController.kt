@@ -327,6 +327,113 @@ fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) {
 }
 
 
+/**
+ * CapCut-style volume animation for music/SFX tracks: per-point
+ * volume keyframes over timeline time (distinct from fade in/out,
+ * which are envelope ramps at the track edges).
+ *
+ * - [addAudioVolumeKeyframe]: MANUAL first keyframe at [timeMs],
+ *   pinning the current effective volume. Discrete, undoable.
+ * - [upsertAudioVolumeKeyframe]: auto-keyframe — a keyframe within
+ *   150ms of [timeMs] is updated in place; otherwise a new keyframe
+ *   is inserted (one undo entry) when the track already has
+ *   keyframes. Returns false (no-op) when the track has no volume
+ *   keyframes yet — the first keyframe stays manual.
+ * - [setAudioTrackVolumeAuto]: mixer-slider entry point — routes to
+ *   the keyframe upsert when the track has volume keyframes, else to
+ *   the existing scalar [setAudioTrackVolume] (behaviour unchanged).
+ * - [removeAudioVolumeKeyframe]: delete one pin (undoable).
+ *
+ * All four dual-write (project.audioTracks + _audio.tracks) like
+ * every other audio setter, so preview, export and persistence can
+ * never disagree about a track's volume keyframes.
+ */
+fun EditorViewModel.addAudioVolumeKeyframe(trackId: String, timeMs: Long) {
+    pushUndo()
+    logAudioTrackMismatch(trackId, "addAudioVolumeKeyframe")
+    updateAudioTrackBoth(trackId) { track ->
+        val without = track.volumeKeyframes.filter { it.timeMs != timeMs }
+        track.copy(
+            volumeKeyframes = (without + VolumeKeyframe(
+                id = java.util.UUID.randomUUID().toString(),
+                timeMs = timeMs,
+                volume = track.effectiveVolumeAt(timeMs)
+            )).sortedBy { it.timeMs }
+        )
+    }
+}
+
+fun EditorViewModel.upsertAudioVolumeKeyframe(
+    trackId: String,
+    timeMs: Long,
+    volume: Float
+): Boolean {
+    val track = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId } ?: return false
+    if (track.volumeKeyframes.isEmpty()) return false
+    val safe = volume.coerceIn(0f, 1f)
+    logAudioTrackMismatch(trackId, "upsertAudioVolumeKeyframe")
+    val near = track.volumeKeyframes.minByOrNull { kotlin.math.abs(it.timeMs - timeMs) }
+    if (near != null && kotlin.math.abs(near.timeMs - timeMs) <= 150L) {
+        updateAudioTrackBoth(trackId) { t ->
+            t.copy(
+                volumeKeyframes = t.volumeKeyframes.map {
+                    if (it.id == near.id) it.copy(volume = safe) else it
+                }
+            )
+        }
+        return true
+    }
+    // New keyframe at the playhead: one undo entry for the insert;
+    // subsequent drag ticks update it via the near-keyframe path.
+    pushUndo()
+    updateAudioTrackBoth(trackId) { t ->
+        t.copy(
+            volumeKeyframes = (t.volumeKeyframes + VolumeKeyframe(
+                id = java.util.UUID.randomUUID().toString(),
+                timeMs = timeMs,
+                volume = safe
+            )).sortedBy { it.timeMs }
+        )
+    }
+    return true
+}
+
+fun EditorViewModel.setAudioTrackVolumeAuto(trackId: String, vol: Float, timeMs: Long) {
+    val track = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId }
+    if (track != null && track.volumeKeyframes.isNotEmpty()) {
+        upsertAudioVolumeKeyframe(trackId, timeMs, vol)
+    } else {
+        setAudioTrackVolume(trackId, vol)
+    }
+}
+
+fun EditorViewModel.removeAudioVolumeKeyframe(trackId: String, keyframeId: String) {
+    pushUndo()
+    logAudioTrackMismatch(trackId, "removeAudioVolumeKeyframe")
+    updateAudioTrackBoth(trackId) { track ->
+        track.copy(volumeKeyframes = track.volumeKeyframes.filter { it.id != keyframeId })
+    }
+}
+
+/** Dual-write one [AudioTrack] transform to project + mixer lists, then persist. */
+private fun EditorViewModel.updateAudioTrackBoth(
+    trackId: String,
+    transform: (AudioTrack) -> AudioTrack
+) {
+    _state.update { s ->
+        val p = s.project ?: return@update s
+        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
+            if (it.id == trackId) transform(it) else it
+        }))
+    }
+    _audio.update { s ->
+        s.copy(tracks = s.tracks.map {
+            if (it.id == trackId) transform(it) else it
+        })
+    }
+    persistProject()
+}
+
 fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
     logAudioTrackMismatch(trackId, "toggleAudioTrackMute")
     _audio.update { s ->

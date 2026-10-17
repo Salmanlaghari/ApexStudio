@@ -694,6 +694,21 @@ data class Project(
     val isDraft: Boolean = false
 )
 
+/**
+ * One volume keyframe on an [AudioTrack]: an absolute volume value
+ * pinned at a timeline-absolute [timeMs]. The track's effective
+ * volume interpolates linearly between adjacent pins and clamps to
+ * the first/last pin outside the pinned range. Empty list = the
+ * scalar [AudioTrack.volume] applies (backwards compatible with
+ * projects saved before volume keyframes existed).
+ */
+@Serializable
+data class VolumeKeyframe(
+    val id: String,
+    val timeMs: Long,
+    val volume: Float
+)
+
 @Serializable
 data class AudioTrack(
     val id: String,
@@ -702,6 +717,12 @@ data class AudioTrack(
     val volume: Float = 0.75f,
     val isMuted: Boolean = false,
     val isSolo: Boolean = false,
+    /**
+     * CapCut-style volume animation: per-point volume keyframes over
+     * timeline time (distinct from fade in/out, which are envelope
+     * ramps at the track edges). Empty = scalar [volume] applies.
+     */
+    val volumeKeyframes: List<VolumeKeyframe> = emptyList(),
     // Per-track trim + fade (all in ms, relative to the source media).
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
@@ -729,6 +750,46 @@ data class AudioTrack(
 
     /** Per-track volume multiplier in 0..1, with mute applied. */
     fun effectiveVolume(): Float = if (isMuted) 0f else volume.coerceIn(0f, 1f)
+
+    /**
+     * Interpolated absolute volume at timeline [timeMs] from the
+     * volume keyframes; falls back to the scalar [volume] when no
+     * volume keyframes exist.
+     */
+    fun volumeAt(timeMs: Long): Float =
+        interpolateVolumeKeyframes(volumeKeyframes.sortedBy { it.timeMs }, volume, timeMs)
+
+    /** [volumeAt] with mute applied (0 when muted). */
+    fun effectiveVolumeAt(timeMs: Long): Float =
+        if (isMuted) 0f else volumeAt(timeMs).coerceIn(0f, 1f)
+
+    companion object {
+        /**
+         * Pure interpolation over a pre-sorted volume-keyframe list.
+         * The export mixer calls this per sample with a list sorted
+         * once per track (sorting per sample would allocate on the
+         * audio hot path). [fallback] applies when [sorted] is empty.
+         */
+        fun interpolateVolumeKeyframes(
+            sorted: List<VolumeKeyframe>,
+            fallback: Float,
+            timeMs: Long
+        ): Float {
+            if (sorted.isEmpty()) return fallback
+            if (timeMs <= sorted.first().timeMs) return sorted.first().volume
+            if (timeMs >= sorted.last().timeMs) return sorted.last().volume
+            for (i in 0 until sorted.size - 1) {
+                val a = sorted[i]
+                val b = sorted[i + 1]
+                if (timeMs in a.timeMs..b.timeMs) {
+                    val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
+                    val frac = (timeMs - a.timeMs).toFloat() / span.toFloat()
+                    return a.volume + (b.volume - a.volume) * frac
+                }
+            }
+            return fallback
+        }
+    }
 }
 
 /**
@@ -753,12 +814,47 @@ data class Keyframe(
     val volume: Float = 1f,
     val effectIntensity: Float = 1f,
     val filterIntensity: Float = 1f,
+    /**
+     * Per-clip saturation factor pinned by this keyframe (multiplies
+     * the project-global saturation; 1f = global grade unchanged,
+     * 0f = fully black-and-white). Null = this keyframe does not pin
+     * saturation (old keyframes, and overlay/text/sticker keyframes
+     * which never touch saturation).
+     *
+     * Saturation interpolates only over the subsequence of keyframes
+     * with a non-null value — see [KeyframeTrack.interpolateAt].
+     * Null vs 1f is NOT an inconsistency: null means "no pin" (the
+     * keyframe is invisible to the ramp), while 1f is an explicit
+     * pin at the current effective factor. New keyframes created via
+     * `addKeyframe` / upsert pin the current effective saturation,
+     * so a scale-only keyframe preserves the ramp instead of
+     * leaving a hole that would clamp backwards.
+     */
+    val saturation: Float? = null,
     val curve: KeyframeCurve = KeyframeCurve.LINEAR
 ) {
     companion object {
         fun identity(timeMs: Long, id: String = java.util.UUID.randomUUID().toString()) =
             Keyframe(id = id, timeMs = timeMs)
     }
+}
+
+/**
+ * A single keyframeable parameter on a clip, for CapCut-style
+ * auto-keyframing: changing [KeyframeParam] at a playhead position
+ * with no keyframe nearby auto-generates one there (see
+ * `upsertKeyframeParam`). First keyframe stays manual.
+ */
+enum class KeyframeParam {
+    TRANSLATE_X,
+    TRANSLATE_Y,
+    SCALE,
+    ROTATION,
+    OPACITY,
+    VOLUME,
+    EFFECT_INTENSITY,
+    FILTER_INTENSITY,
+    SATURATION
 }
 
 @Serializable
@@ -810,9 +906,9 @@ data class KeyframeTrack(
     fun interpolateAt(timeMs: Long): AnimatedTransform {
         if (keyframes.isEmpty()) return AnimatedTransform.Identity
         val sorted = keyframes.sortedBy { it.timeMs }
-        if (timeMs <= sorted.first().timeMs) {
+        val base = if (timeMs <= sorted.first().timeMs) {
             val k = sorted.first()
-            return AnimatedTransform(
+            AnimatedTransform(
                 translateX = k.translateX,
                 translateY = k.translateY,
                 scale = k.scale,
@@ -822,10 +918,9 @@ data class KeyframeTrack(
                 effectIntensity = k.effectIntensity,
                 filterIntensity = k.filterIntensity
             )
-        }
-        if (timeMs >= sorted.last().timeMs) {
+        } else if (timeMs >= sorted.last().timeMs) {
             val k = sorted.last()
-            return AnimatedTransform(
+            AnimatedTransform(
                 translateX = k.translateX,
                 translateY = k.translateY,
                 scale = k.scale,
@@ -835,16 +930,69 @@ data class KeyframeTrack(
                 effectIntensity = k.effectIntensity,
                 filterIntensity = k.filterIntensity
             )
+        } else {
+            var pair: AnimatedTransform? = null
+            for (i in 0 until sorted.size - 1) {
+                val a = sorted[i]
+                val b = sorted[i + 1]
+                if (timeMs in a.timeMs..b.timeMs) {
+                    pair = interpolatePair(a, b, timeMs)
+                    break
+                }
+            }
+            pair ?: AnimatedTransform.Identity
         }
-        for (i in 0 until sorted.size - 1) {
-            val a = sorted[i]
-            val b = sorted[i + 1]
+        // Saturation interpolates over its own pinned subsequence
+        // (keyframes with a non-null saturation), not over the
+        // bracketing pair — a scale-only keyframe must not reset the
+        // saturation ramp. Null = nothing pins saturation.
+        return base.copy(saturation = interpolateSaturation(timeMs))
+    }
+
+    /**
+     * Interpolated saturation factor at [timeMs] over the subsequence
+     * of keyframes with a non-null [Keyframe.saturation], using the
+     * later pin's curve. Null when no keyframe pins saturation.
+     *
+     * Boundary semantics (CapCut per-parameter behaviour):
+     * - BEFORE the first pin the clip keeps its BASE saturation
+     *   (factor 1f): a saturation pin never retroactively changes
+     *   earlier times. (Clamping to the first pin instead would make
+     *   a lone pin at t=2500 desaturate the whole clip from t=0.)
+     * - AFTER the last pin the value HOLDS at the last pin.
+     * - New keyframes pin the current effective saturation, so a
+     *   scale-only keyframe preserves — never resets — the ramp.
+     */
+    private fun interpolateSaturation(timeMs: Long): Float? {
+        val pinned = keyframes.filter { it.saturation != null }.sortedBy { it.timeMs }
+        if (pinned.isEmpty()) return null
+        if (timeMs < pinned.first().timeMs) return 1f
+        if (timeMs >= pinned.last().timeMs) return pinned.last().saturation
+        for (i in 0 until pinned.size - 1) {
+            val a = pinned[i]
+            val b = pinned[i + 1]
             if (timeMs in a.timeMs..b.timeMs) {
-                return interpolatePair(a, b, timeMs)
+                val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
+                val raw = ((timeMs - a.timeMs).toDouble() / span.toDouble()).coerceIn(0.0, 1.0)
+                val eased = ease(raw, b.curve)
+                return lerp(a.saturation!!, b.saturation!!, eased)
             }
         }
-        return AnimatedTransform.Identity
+        return null
     }
+
+    /** True when at least one keyframe pins a saturation value. */
+    fun hasSaturationPins(): Boolean = keyframes.any { it.saturation != null }
+
+    /**
+     * Effective saturation factor at [timeMs]: the interpolated
+     * keyframed factor, or 1f (no change) when nothing pins
+     * saturation. The factor MULTIPLIES the project-global
+     * saturation — 1f leaves the global grade untouched, 0f is
+     * fully black-and-white.
+     */
+    fun saturationFactorAt(timeMs: Long): Float =
+        interpolateAt(timeMs).saturation ?: 1f
 
     private fun interpolatePair(a: Keyframe, b: Keyframe, t: Long): AnimatedTransform {
         val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
@@ -895,7 +1043,9 @@ data class AnimatedTransform(
     val opacity: Float,
     val volume: Float = 1f,
     val effectIntensity: Float = 1f,
-    val filterIntensity: Float = 1f
+    val filterIntensity: Float = 1f,
+    /** Interpolated saturation factor, or null when nothing pins it (factor 1f). */
+    val saturation: Float? = null
 ) {
     companion object {
         val Identity = AnimatedTransform(0f, 0f, 1f, 0f, 1f, 1f, 1f, 1f)

@@ -15,6 +15,7 @@ import kotlin.math.sin
  * corrected) so the preview path and the export shader build the SAME
  * polygon from the SAME numbers, which is what makes WYSIWYG hold.
  */
+@Serializable
 data class MaskPoint(val x: Float, val y: Float)
 
 /**

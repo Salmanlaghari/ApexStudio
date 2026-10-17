@@ -877,6 +877,7 @@ fun MaskPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             MaskPanel(
                 mask = selectedClip?.mask,
+                keyframeTimeMs = state.playerPositionMs,
                 onUpdate = { mask ->
                     val clipId = selectedClip?.id ?: return@MaskPanel
                     if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)

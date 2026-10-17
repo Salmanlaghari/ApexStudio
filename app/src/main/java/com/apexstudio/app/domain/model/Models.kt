@@ -458,17 +458,61 @@ enum class OverlayBlend {
  * Shape of a [VideoMask].
  */
 @Serializable
+/**
+ * Shape of a [VideoMask].
+ *
+ * Ten top-level mask modes (Bug 4). The three original values are kept
+ * FIRST and unchanged so previously saved projects deserialise exactly
+ * as before, and each keeps its numeric order so the export shader's
+ * `uShape` ids 0/1/2 stay stable:
+ *
+ *   0 rect | 1 ellipse | 2 linear(horizontal wipe) | 3 circle |
+ *   4 heart | 5 star | 6 triangle | 7 mirror | 8 pen | 9 blur faces
+ *
+ * `LINEAR` is the Horizontal mode; its legacy enum name is deliberate
+ * project-format compatibility — [label] is what the UI shows.
+ */
+@Serializable
 enum class MaskShape {
     RECTANGLE,
     ELLIPSE,
     /** Horizontal gradient wipe: the left side is kept, feathered edge. */
-    LINEAR;
+    LINEAR,
+    /** True circle: width and height are forced equal, unlike [ELLIPSE]. */
+    CIRCLE,
+    /** Heart silhouette, classic Valentine-style cut-out. */
+    HEART,
+    /** Five-pointed star. */
+    STAR,
+    /** Upward-pointing triangle. */
+    TRIANGLE,
+    /** Vertical mirror: the frame folds about the mask's centre line. */
+    MIRROR,
+    /** Freeform pen: the region the user draws by hand. */
+    DRAW,
+    /** Softens a circular region over detected faces. */
+    BLUR_FACE;
 
     val label: String get() = when (this) {
         RECTANGLE -> "Rectangle"
-        ELLIPSE -> "Circle"
-        LINEAR -> "Linear"
+        ELLIPSE -> "Ellipse"
+        LINEAR -> "Horizontal"
+        CIRCLE -> "Circle"
+        HEART -> "Heart"
+        STAR -> "Star"
+        TRIANGLE -> "Triangle"
+        MIRROR -> "Mirror"
+        DRAW -> "Pen"
+        BLUR_FACE -> "Blur Faces"
     }
+
+    /**
+     * Value passed to the export shader's `uShape` uniform — the index
+     * in this declaration order. Agrees with the enum ordinal today, and
+     * `MaskShapeTest` pins it so a reordering cannot silently remap an
+     * already-exported mask.
+     */
+    val shaderId: Float get() = ordinal.toFloat()
 }
 
 /**
@@ -495,7 +539,23 @@ data class VideoMask(
     val feather: Float = 0.15f,
     val invert: Boolean = false,
     val opacity: Float = 1f,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    // Bug 4 control (rotation): clockwise rotation of the mask geometry,
+    // in degrees. The preview rotates the shape path and the export
+    // shader rotates the same point set, so both agree.
+    val rotationDeg: Float = 0f,
+    // Bug 4 control (presets): id of the MaskPreset last applied, so the
+    // picker can highlight the active recipe. Null = hand-tuned mask.
+    val presetId: String? = null,
+    // Bug 4 control (keyframe animation): clip-relative ms keyframes
+    // animating centre / size / rotation / feather / opacity / invert.
+    // Empty = the static values above are used unchanged.
+    val maskKeyframes: List<MaskKeyframe> = emptyList(),
+    // Bug 4 control (draw/pen): normalised shape-space points of the
+    // hand-drawn region for MaskShape.DRAW, in draw order. Under 3 points
+    // is not an area - both consumers treat it as "no region" until the
+    // user has closed a shape. Empty for every other mode.
+    val drawPoints: List<MaskPoint> = emptyList()
 ) {
     fun withCenter(x: Float, y: Float) = copy(
         centerX = x.coerceIn(0f, 1f),

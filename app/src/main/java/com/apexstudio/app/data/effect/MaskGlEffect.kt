@@ -148,11 +148,11 @@ class MaskGlEffect private constructor(
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
 
-            val shapeId = when (mask.shape) {
-                MaskShape.RECTANGLE -> 0f
-                MaskShape.ELLIPSE -> 1f
-                MaskShape.LINEAR -> 2f
-            }
+            // Single source of truth: MaskShape.shaderId pins 0 rect,
+            // 1 ellipse, 2 horizontal, 3 circle, 4 heart, 5 star,
+            // 6 triangle, 7 mirror, 8 pen, 9 blur faces, so reordering
+            // the enum can never silently remap an exported mask.
+            val shapeId = mask.shape.shaderId
             glProgram.setFloatsUniform("uCenter", floatArrayOf(mask.centerX, mask.centerY))
             glProgram.setFloatsUniform("uSize", floatArrayOf(mask.sizeX, mask.sizeY))
             glProgram.setFloatUniform("uFeather", mask.feather.coerceIn(0f, 1f))

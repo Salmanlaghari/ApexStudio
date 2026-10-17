@@ -14,6 +14,8 @@ import android.graphics.Shader
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
 
 /**
  * Rasterises [TextOverlay]s onto a transparent full-frame bitmap.
@@ -184,6 +186,58 @@ object TextSpriteRenderer {
                     } else null
                 }
                 canvas.drawOval(rect, paint)
+            }
+            else -> {
+                // Bug 4: the modes added with the top-level Mask tool.
+                // Circle is forced square; mirror / blur-faces keep an
+                // oval of the mask extent; the polygonal modes (heart,
+                // star, triangle, pen) are stroked from the SAME
+                // MaskModel points the clip mask and the export shader
+                // use, so all three render one region, not three.
+                val rectNew = RectF(
+                    (mask.centerX - mask.sizeX / 2f) * w,
+                    (mask.centerY - mask.sizeY / 2f) * h,
+                    (mask.centerX + mask.sizeX / 2f) * w,
+                    (mask.centerY + mask.sizeY / 2f) * h
+                )
+                val paintNew = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(mode)
+                    color = (alpha shl 24) or 0x00FFFFFF
+                    isAntiAlias = true
+                    style = Paint.Style.FILL
+                    maskFilter = if (mask.feather > 0f) {
+                        BlurMaskFilter(mask.feather * w * 0.25f, BlurMaskFilter.Blur.NORMAL)
+                    } else null
+                }
+                when (mask.shape) {
+                    MaskShape.CIRCLE -> {
+                        val side = minOf(rectNew.width(), rectNew.height())
+                        val cxN = rectNew.left + rectNew.width() / 2f
+                        val cyN = rectNew.top + rectNew.height() / 2f
+                        val square = RectF(cxN - side / 2f, cyN - side / 2f, cxN + side / 2f, cyN + side / 2f)
+                        canvas.drawOval(square, paintNew)
+                    }
+                    MaskShape.MIRROR, MaskShape.BLUR_FACE -> canvas.drawOval(rectNew, paintNew)
+                    MaskShape.RECTANGLE, MaskShape.ELLIPSE, MaskShape.LINEAR -> Unit // above
+                    else -> {
+                        val poly: List<MaskPoint> = MaskModel.outline(mask.shape, mask.drawPoints)
+                        if (poly.size >= 4) {
+                            val rad = Math.toRadians(mask.rotationDeg.toDouble())
+                            val cu = Math.cos(rad).toFloat()
+                            val su = Math.sin(rad).toFloat()
+                            val rectPoly = android.graphics.Path()
+                            poly.forEachIndexed { i, pt ->
+                                val rx = pt.x * cu - pt.y * su
+                                val ry = pt.x * su + pt.y * cu
+                                val px = rectNew.centerX() + rx * rectNew.width() / 2f
+                                val py = rectNew.centerY() + ry * rectNew.height() / 2f
+                                if (i == 0) rectPoly.moveTo(px, py) else rectPoly.lineTo(px, py)
+                            }
+                            rectPoly.close()
+                            canvas.drawPath(rectPoly, paintNew)
+                        }
+                    }
+                }
             }
         }
     }

@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import android.graphics.BlurMaskFilter
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -136,6 +138,79 @@ fun Modifier.videoMaskFeatheredClip(mask: VideoMask): Modifier = this.then(
                         alpha = opacity,
                         blendMode = BlendMode.DstIn
                     )
+                }
+                else -> {
+                    // Bug 4: modes added alongside the top-level Mask tool.
+                    // Regions come from the SAME source the export shader
+                    // consumes - MaskModel.outline() for the polygonal
+                    // modes, analytic bounds for circle / mirror /
+                    // blur-faces - so preview and export cannot drift.
+                    val cxP = mask.centerX * size.width
+                    val cyP = mask.centerY * size.height
+                    val hwP = mask.sizeX * size.width / 2f
+                    val hhP = mask.sizeY * size.height / 2f
+                    val region = MaskModel.outline(mask.shape, mask.drawPoints)
+                    val rad = Math.toRadians(mask.rotationDeg.toDouble())
+                    val cosA = Math.cos(rad).toFloat()
+                    val sinA = Math.sin(rad).toFloat()
+
+                    fun Path.addPolyScaled(points: List<MaskPoint>) {
+                        points.forEachIndexed { i, pt ->
+                            // Clockwise rotation for the y-down frame,
+                            // then place into frame pixels - the same maths
+                            // the export shader applies in local space.
+                            val rx = pt.x * cosA - pt.y * sinA
+                            val ry = pt.x * sinA + pt.y * cosA
+                            if (i == 0) moveTo(cxP + rx * hwP, cyP + ry * hhP)
+                            else lineTo(cxP + rx * hwP, cyP + ry * hhP)
+                        }
+                        close()
+                    }
+
+                    val regionPath = Path()
+                    val drew = when (mask.shape) {
+                        MaskShape.CIRCLE -> {
+                            val r = minOf(hwP, hhP)
+                            regionPath.addOval(Rect(cxP - r, cyP - r, cxP + r, cyP + r))
+                            true
+                        }
+                        // Mirror folds about its centre and blur-faces is a
+                        // circular region over a face - both keep an oval.
+                        MaskShape.MIRROR, MaskShape.BLUR_FACE -> {
+                            regionPath.addOval(Rect(cxP - hwP, cyP - hhP, cxP + hwP, cyP + hhP))
+                            true
+                        }
+                        // Handled by the branches above; repeated so this
+                        // `when` stays exhaustive as modes are added.
+                        MaskShape.RECTANGLE, MaskShape.ELLIPSE, MaskShape.LINEAR -> false
+                        // heart, star, triangle, pen - true polygons
+                        else -> {
+                            if (region.size >= 4) { regionPath.addPolyScaled(region); true } else false
+                        }
+                    }
+
+                    if (drew) {
+                        val featherPxN = (mask.feather * 0.3f * size.height).coerceAtLeast(0f)
+                        val paintN = Paint().apply {
+                            blendMode = BlendMode.DstIn
+                            color = Color.White.copy(alpha = opacity)
+                            if (featherPxN > 0.5f) {
+                                asFrameworkPaint().maskFilter = BlurMaskFilter(
+                                    featherPxN, BlurMaskFilter.Blur.NORMAL
+                                )
+                            }
+                        }
+                        if (mask.invert) {
+                            val full = Path().apply {
+                                addRect(bounds)
+                                addPath(regionPath)
+                                fillType = PathFillType.EvenOdd
+                            }
+                            canvas.drawPath(full, paintN)
+                        } else {
+                            canvas.drawPath(regionPath, paintN)
+                        }
+                    }
                 }
             }
             canvas.restore()
@@ -260,6 +335,41 @@ fun MaskPreviewOverlay(
                 MaskShape.LINEAR -> {
                     // Kept = left of the wipe line at centerX.
                     addRect(Rect(0f, 0f, cx + expandPx, h))
+                }
+                else -> {
+                    // Bug 4: circle / mirror / blur-faces are analytic,
+                    // heart / star / triangle / pen come from the shared
+                    // polygon the export shader also reads (MaskModel).
+                    // grow by expandPx on both axes so feather rings still
+                    // produce a visible ladder.
+                    when (mask.shape) {
+                        MaskShape.CIRCLE -> {
+                            val r = minOf(hw, hh)
+                            addOval(Rect(cx - r, cy - r, cx + r, cy + r))
+                        }
+                        MaskShape.MIRROR, MaskShape.BLUR_FACE ->
+                            addOval(Rect(cx - hw, cy - hh, cx + hw, cy + hh))
+                        MaskShape.RECTANGLE, MaskShape.ELLIPSE, MaskShape.LINEAR ->
+                            Unit // reach only by mistake: handled above
+                        else -> {
+                            val region = MaskModel.outline(mask.shape, mask.drawPoints)
+                            if (region.size >= 4) {
+                                val rad2 = Math.toRadians(mask.rotationDeg.toDouble())
+                                val cu = Math.cos(rad2).toFloat()
+                                val su = Math.sin(rad2).toFloat()
+                                val halfW = hw + expandPx
+                                val halfH = hh + expandPx
+                                region.forEachIndexed { i, pt ->
+                                    val rx = pt.x * cu - pt.y * su
+                                    val ry = pt.x * su + pt.y * cu
+                                    val px = cx + rx * halfW
+                                    val py = cy + ry * halfH
+                                    if (i == 0) moveTo(px, py) else lineTo(px, py)
+                                }
+                                close()
+                            }
+                        }
+                    }
                 }
             }
         }

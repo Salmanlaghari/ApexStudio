@@ -45,6 +45,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -1008,8 +1009,11 @@ fun KeyframePanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.keyframePanelOpen) return
-    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-        ?: state.project?.clips?.firstOrNull()
+    // Bug 5: the panel may edit ONLY the video layer under selection.
+    // The old `?: clips.firstOrNull()` fallback silently retargeted it to
+    // the project's first clip when the selection was cleared, so an
+    // auto-keyframe slider write landed on a layer the user never touched.
+    val selectedClip = state.keyframeAnchor()
     val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
     var showManualPanel by remember { mutableStateOf(false) }
     Box(

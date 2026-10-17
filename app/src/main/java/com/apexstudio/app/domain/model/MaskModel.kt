@@ -99,7 +99,10 @@ object MaskModel {
         for (i in 0 until 10) {
             // Tip at 12 o'clock, alternating outer/inner every 36 degrees,
             // screen space y is down.
-            val angle = -PI.toFloat() / 2f + (i * PI / 10f).toFloat()
+            // 36 degrees per step: ten vertices (5 tips + 5 valleys) must close a
+            // full turn, so the step is PI/5 - half of it at the tip of a
+            // star sample, and the tip is pinned at 12 oclock.
+            val angle = (-PI.toFloat() / 2f) + (i * (PI / 5f)).toFloat()
             val radius = if (i % 2 == 0) 1f else innerRadius
             points += MaskPoint(radius * cos(angle), radius * sin(angle))
         }
@@ -205,6 +208,7 @@ data class MaskPreset(
  * can silently stop being animatable because it was left out of a pair.
  */
 @Serializable
+data class MaskKeyframe(
     val id: String,
     val timeMs: Long,
     val centerX: Float = 0.5f,

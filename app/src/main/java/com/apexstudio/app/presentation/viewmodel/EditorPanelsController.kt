@@ -204,9 +204,6 @@ fun EditorViewModel.setHistoryDraftsTab(
 fun EditorViewModel.markAutoSaved(nowMs: Long = System.currentTimeMillis()) =
     _state.update { it.copy(lastAutoSaveMs = nowMs) }
 
-/**
- * Open the Mask tool from the MAIN bottom bar (Bug 4: Mask as a
- * top-level feature).
 
 /**
  * Open the Mask tool from the MAIN bottom bar — Bug 4, Mask as a

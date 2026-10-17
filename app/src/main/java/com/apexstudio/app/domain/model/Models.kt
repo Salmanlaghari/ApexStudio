@@ -456,10 +456,6 @@ enum class OverlayBlend {
 
 /**
  * Shape of a [VideoMask].
- */
-@Serializable
-/**
- * Shape of a [VideoMask].
  *
  * Ten top-level mask modes (Bug 4). The three original values are kept
  * FIRST and unchanged so previously saved projects deserialise exactly

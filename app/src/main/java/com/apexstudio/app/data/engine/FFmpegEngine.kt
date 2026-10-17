@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.engine
 
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
 
 /**
  * Foundation engine for FFmpeg operations in ApexStudio.
@@ -36,7 +37,8 @@ class FFmpegEngine {
      */
     fun getVersion(): String {
         // Let exceptions propagate — hiding them as "unknown" masks real failures.
-        return FFmpegKit.getVersion()
+        // FFmpegKit.getVersion() removed in 8.x — use FFmpegKitConfig.getVersion().
+        return FFmpegKitConfig.getVersion()
     }
 
     /**
@@ -50,7 +52,8 @@ class FFmpegEngine {
     fun isAvailable(): Boolean {
         return try {
             getVersion().isNotEmpty()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Catch Throwable — native lib loading can throw UnsatisfiedLinkError (an Error, not Exception).
             false
         }
     }

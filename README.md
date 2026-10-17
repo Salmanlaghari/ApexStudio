@@ -32,6 +32,43 @@
 
 ---
 
+
+---
+
+## 💎 Why ApexStudio? — Benefits
+
+### 🚀 **100% On-Device — No Cloud, No Waiting**
+- Sab kuch tumhare phone par hota hai — koi upload, koi wait nahi
+- Internet ke baghair bhi kaam karta hai
+- Tumhara data tumhare paas hi rehta hai — privacy guaranteed
+
+### 🎬 **Professional Quality — CapCut se Behtar**
+- 20+ professional LUTs — Hollywood-style colour grading
+- Frame-accurate trimming — millisecond precision
+- Multi-layer timeline — unlimited layers, professional workflow
+
+### ⚡ **Hybrid Engine — 3x Faster**
+- **Media3** — Fast path, instant preview
+- **FFmpeg** — Heavy processing, 4K export
+- **GStreamer** — Real-time effects, zero lag
+
+### 🎨 **134 Animated 3D Stickers — FREE**
+- 6 packs + new animated pack — hearts, stars, fire, confetti
+- Lottie-powered — smooth 60fps animations
+- CapCut/TikTok se behtar quality — original designs
+
+### 💰 **100% FREE — No Watermark, No Ads**
+- Koi watermark nahi — export clean video
+- Koi ads nahi — distraction-free editing
+- Koi subscription nahi — sab features free
+
+### 📱 **Mobile-First Design**
+- Phone par bana hai, phone ke liye — desktop ki zaroorat nahi
+- Touch-optimized — drag, pinch, swipe se edit karo
+- Lightweight — 40MB APK, fast install
+
+---
+
 ## 🎥 See It In Action
 
 <div align="center">
@@ -52,9 +89,9 @@
 *10 mask modes with feather, invert, keyframe animation*
 
 ### 😍 3D Stickers & Overlays
-<img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800&q=80" alt="Stickers" width="800"/>
+<img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80" alt="3D Stickers" width="800"/>
 
-*134 animated stickers, Lottie-powered + Overlay Clips*
+*134 animated 3D stickers, Lottie-powered + Overlay Clips*
 
 </div>
 

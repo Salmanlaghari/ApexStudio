@@ -2,7 +2,7 @@ name: Android CI Build
 
 on:
   push:
-    branches: [ main, master, develop, 'session/**', 'perf/**', 'feature/capcut-real' ]
+    branches: [ main, master, develop, 'session/**', 'perf/**' ]
   pull_request:
     branches: [ main, master, develop ]
   workflow_dispatch:
@@ -287,4 +287,3 @@ jobs:
             bundletool-download-size.txt
           if-no-files-found: ignore
           retention-days: 14
-

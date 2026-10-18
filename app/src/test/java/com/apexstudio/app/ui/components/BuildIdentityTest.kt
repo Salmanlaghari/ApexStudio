@@ -37,7 +37,11 @@ class BuildIdentityTest {
         val identity = Properties().apply {
             context.assets.open("build-identity.properties").use { load(it) }
         }
-        assertTrue(BuildConfig.SOURCE_COMMIT.matches(Regex("[0-9a-f]{40}")))
+        val exactCommit = BuildConfig.SOURCE_COMMIT.matches(Regex("[0-9a-f]{40}"))
+        assertTrue(exactCommit || BuildConfig.SOURCE_COMMIT == "unknown")
+        if (BuildConfig.BUILD_RUN != "local") {
+            assertTrue("CI artifacts must identify the exact checkout", exactCommit)
+        }
         assertEquals(BuildConfig.SOURCE_COMMIT, identity.getProperty("commit"))
         assertEquals(BuildConfig.SOURCE_REF, identity.getProperty("ref"))
         assertEquals(BuildConfig.BUILD_RUN, identity.getProperty("run"))

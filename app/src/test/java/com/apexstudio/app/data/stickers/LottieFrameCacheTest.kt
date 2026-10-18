@@ -10,7 +10,7 @@ import org.junit.Test
  * bitmap.
  *
  * Regression risk: after adding the animated pack (Bug 2) the path
- * became `stickers/animated/*.json`. With the old `startsWith("lottie/")`
+ * became JSON files under `stickers/animated/`. With the old `startsWith("lottie/")`
  * check the pack previewed nowhere and exported as an empty layer, while
  * loosening the rule to "any `.json`" would mispaint nothing
  * today but would break the instant a manifest or other data file is

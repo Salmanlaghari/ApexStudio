@@ -114,9 +114,9 @@ class KeyframeAnimationTest {
                 kf("s1", 10_000L, saturation = 2f)
             )
         )
-        assertEquals(1f, track.interpolateAt(5_000L).saturation, 0.01f)
-        assertEquals(0.5f, track.interpolateAt(2_500L).saturation, 0.01f)
-        assertEquals(1.5f, track.interpolateAt(7_500L).saturation, 0.01f)
+        assertEquals(1f, requireNotNull(track.interpolateAt(5_000L).saturation), 0.01f)
+        assertEquals(0.5f, requireNotNull(track.interpolateAt(2_500L).saturation), 0.01f)
+        assertEquals(1.5f, requireNotNull(track.interpolateAt(7_500L).saturation), 0.01f)
     }
 
     @Test
@@ -132,7 +132,7 @@ class KeyframeAnimationTest {
         // The keyframe AT 5000 is itself a scale keyframe, so the track
         // reads its own value rather than an average of it.
         assertEquals(3f, track.interpolateAt(5_000L).scale, 0.01f)
-        assertEquals(0.5f, track.interpolateAt(5_000L).saturation, 0.01f)
+        assertEquals(0.5f, requireNotNull(track.interpolateAt(5_000L).saturation), 0.01f)
     }
 
     @Test

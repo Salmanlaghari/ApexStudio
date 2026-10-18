@@ -3,11 +3,14 @@ package com.apexstudio.app.ui.components
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import org.junit.Assert.assertEquals
@@ -28,8 +31,9 @@ class TimelineClipGestureTest {
         id = id,
         name = id,
         uri = "file:///test/$id.mp4",
-        durationMs = 1_000L,
-        trimEndMs = 1_000L,
+        // Leave a real body between the trim grips' minimum touch targets.
+        durationMs = 2_000L,
+        trimEndMs = 2_000L,
         type = ClipType.VIDEO,
     )
 
@@ -62,7 +66,7 @@ class TimelineClipGestureTest {
             timeline(selectedClipId = selected.value, onSelectClip = { selected.value = it })
         }
 
-        composeRule.onNodeWithTag("timeline-clip-clip-a").performTouchInput { click() }
+        composeRule.onNodeWithTag("timeline-clip-clip-a", useUnmergedTree = true).performTouchInput { click() }
 
         composeRule.runOnIdle { assertEquals("clip-a", selected.value) }
     }
@@ -82,7 +86,7 @@ class TimelineClipGestureTest {
         }
 
         // Long-press on an unselected clip selects it and opens its menu.
-        composeRule.onNodeWithTag("timeline-clip-clip-a").performTouchInput { longClick() }
+        composeRule.onNodeWithTag("timeline-clip-clip-a", useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText("Speed").assertExists().performClick()
         composeRule.runOnIdle {
             assertEquals("clip-a", selected.value)
@@ -91,7 +95,7 @@ class TimelineClipGestureTest {
 
         // Selection has now recomposed the row; long-press must still own the
         // gesture and expose the same menu on an already-selected clip.
-        composeRule.onNodeWithTag("timeline-clip-clip-a").performTouchInput { longClick() }
+        composeRule.onNodeWithTag("timeline-clip-clip-a", useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText("Trim").assertExists().performClick()
         composeRule.runOnIdle { assertEquals(1, trimOpens) }
     }
@@ -113,15 +117,18 @@ class TimelineClipGestureTest {
 
         // Move the first selected clip past the second clip's center. This is
         // an ordinary drag (no long-press delay), and should use direct reorder.
-        composeRule.onNodeWithTag("timeline-clip-clip-a").performTouchInput {
-            down(center)
-            moveBy(Offset(x = 320f, y = 0f), durationMillis = 300)
-            up()
+        val first = composeRule.onNodeWithTag("timeline-clip-clip-a", useUnmergedTree = true)
+        val firstBounds = first.fetchSemanticsNode().boundsInRoot
+        val nextBounds = composeRule.onNodeWithTag("timeline-clip-clip-b", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val distancePx = nextBounds.center.x - firstBounds.center.x + firstBounds.width / 2f
+        first.performTouchInput {
+            swipe(start = center, end = center + Offset(distancePx, 0f), durationMillis = 300)
         }
         composeRule.waitForIdle()
 
         composeRule.runOnIdle {
-            assertEquals(0, reorderedFrom)
+            assertEquals("first=$firstBounds next=$nextBounds distance=$distancePx", 0, reorderedFrom)
             assertEquals(1, reorderedTo)
         }
         composeRule.onNodeWithText("Speed").assertDoesNotExist()

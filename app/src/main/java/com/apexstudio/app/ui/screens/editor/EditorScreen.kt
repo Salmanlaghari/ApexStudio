@@ -47,6 +47,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Editing target may be any layer; do not confuse it with the V1 media source. */
+internal fun resolveEditorSelectionClip(clips: List<MediaClip>, selectedClipId: String?): MediaClip? =
+    if (selectedClipId != null) clips.firstOrNull { it.id == selectedClipId } else clips.firstOrNull()
+
 /** Resolve the clip feeding the main preview; OVERLAY/AUDIO selections never replace V1. */
 internal fun resolveMainPreviewClip(clips: List<MediaClip>, selectedClipId: String?): MediaClip? {
     val selected = selectedClipId?.let { id -> clips.firstOrNull { it.id == id } }
@@ -252,9 +256,7 @@ fun EditorScreen(
     }
 
     val currentSelectedClip = remember(state.project?.clips, state.selectedClipId) {
-        val cid = state.selectedClipId
-        if (cid != null) state.project?.clips?.firstOrNull { it.id == cid }
-        else state.project?.clips?.firstOrNull()
+        resolveEditorSelectionClip(state.project?.clips.orEmpty(), state.selectedClipId)
     }
     // Overlay selection is an editing target, not a new source for the
     // background/V1 preview player (which has its own dedicated PiP player).

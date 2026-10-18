@@ -1155,11 +1155,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
-        val selectedClip = resolveMainPreviewClip(
+        val selectedClip = resolveEditorSelectionClip(
             state.project?.clips.orEmpty(), state.selectedClipId
         )
-        val animatedTransform = remember(selectedClip, state.playerPositionMs) {
-            selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
+        val mainPreviewClip = resolveMainPreviewClip(
+            state.project?.clips.orEmpty(), state.selectedClipId
+        )
+        val animatedTransform = remember(mainPreviewClip, state.playerPositionMs) {
+            mainPreviewClip?.keyframes?.interpolateAt(state.playerPositionMs)
                 ?: AnimatedTransform.Identity
         }
         // All overlay clips across video layers V2..V10 — the interactive
@@ -1349,11 +1352,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             },
             // Only V1 images replace the background preview. Image overlays
             // are rendered independently in PipOverlayCanvas via Coil.
-            photoClip = selectedClip?.takeIf { it.type == ClipType.IMAGE },
+            photoClip = mainPreviewClip?.takeIf { it.type == ClipType.IMAGE },
             photoCropActive = state.photoEditPanelOpen &&
                     state.photoEditTab == com.apexstudio.app.presentation.state.PhotoEditTab.CROP,
             onPhotoCropRectChange = { rect ->
-                selectedClip?.id?.let { vm.setPhotoCrop(it, rect) }
+                mainPreviewClip?.id?.let { vm.setPhotoCrop(it, rect) }
             },
             onTapVideo = {
                 triggerScreenControls()
@@ -1490,7 +1493,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // Upcoming frames preview overlay triggered on screen tap
         UpcomingFramesPreviewOverlay(
             visible = showUpcomingPreview,
-            videoUri = selectedClip?.uri,
+            videoUri = mainPreviewClip?.uri,
             currentTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
             onSeekTo = { seekPlayerAndState(it) },

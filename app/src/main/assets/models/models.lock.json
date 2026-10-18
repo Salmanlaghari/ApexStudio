@@ -57,6 +57,38 @@
       "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-tokens.txt",
       "license": "MIT",
       "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "alignment/wav2vec2-base-960h-int8.onnx",
+      "bytes": 95212816,
+      "sha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/vocab.json",
+      "bytes": 358,
+      "sha256": "4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/preprocessor_config.json",
+      "bytes": 215,
+      "sha256": "8cdfd65ff4115423185a1512bdae100e2e0cd744f5b322417429944aaafd0827",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/preprocessor_config.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/config.json",
+      "bytes": 2157,
+      "sha256": "15c7cf6378153bdcb33fce27780ab9aae37fd154fbb674cacc3347992055d323",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/config.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
     }
   ]
 }

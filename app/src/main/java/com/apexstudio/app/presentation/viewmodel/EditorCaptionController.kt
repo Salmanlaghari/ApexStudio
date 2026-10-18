@@ -3,6 +3,9 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.ai.subtitles.EnglishWordAlignment
+import com.apexstudio.app.ai.subtitles.TimingPrecision
+import com.apexstudio.app.ai.subtitles.WordCue
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
@@ -12,7 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-/** Bundled, offline Whisper produces segment times, not word-aligned karaoke.
+/** Whisper provides phrase times. Optional English CTC alignment provides measured word times.
  * Native inference runs on its own IO dispatcher; all editor mutations resume on Main.
  * A request identity prevents late native callbacks from resurrecting cancelled/replaced jobs.
  */
@@ -23,8 +26,10 @@ data class CaptionUiState(
     val segmentsAdded: Int = 0,
     val language: String = WhisperCaptionEngine.LANG_AUTO,
     val requestId: String? = null,
+    val timingMode: CaptionTimingMode = CaptionTimingMode.PHRASE,
 )
 
+enum class CaptionTimingMode { PHRASE, ENGLISH_WORDS }
 enum class CaptionPhase { IDLE, NEED_DOWNLOAD, TRANSCRIBING, DONE, FAILED }
 
 /** Only this request may publish. Flow.update also protects native-worker progress callbacks. */
@@ -35,7 +40,16 @@ internal fun EditorViewModel.updateCaptionRequest(id: String, transform: (Captio
 fun EditorViewModel.setCaptionLanguage(code: String) {
     captionJob?.cancel()
     captionJob = null
-    _captionUi.value = CaptionUiState(language = code)
+    _captionUi.value = CaptionUiState(language = code,
+        timingMode = if (code == "en") _captionUi.value.timingMode else CaptionTimingMode.PHRASE)
+}
+
+/** Word mode requires explicit English, never an unverified auto-language guess. */
+fun EditorViewModel.setCaptionTimingMode(mode: CaptionTimingMode) {
+    if (mode == CaptionTimingMode.ENGLISH_WORDS && _captionUi.value.language != "en") return
+    captionJob?.cancel()
+    captionJob = null
+    _captionUi.value = CaptionUiState(language = _captionUi.value.language, timingMode = mode)
 }
 
 fun EditorViewModel.cancelAutoCaptions() {
@@ -78,6 +92,22 @@ internal fun captionOverlaysFor(clip: MediaClip, segments: List<WhisperCaptionEn
     }
 }
 
+/** Only genuine, ordered acoustic word intervals may enter the word-by-word editor path.
+ * Invalid results fail atomically: no partial captions and no equal-duration fallback.
+ */
+internal fun alignedCaptionSegments(words: List<WordCue>): List<WhisperCaptionEngine.CaptionSegment> {
+    require(words.isNotEmpty()) { "No aligned speech words" }
+    require(words.all { it.precision == TimingPrecision.CTC_FORCED_WORD_ALIGNMENT &&
+        it.text.isNotBlank() && it.startMs >= 0L && it.endMs > it.startMs &&
+        it.confidence != null && it.confidence.isFinite() && it.confidence in 0f..1f }) {
+        "Word captions require genuine acoustic intervals and confidence"
+    }
+    require(words.zipWithNext().all { (a, b) -> a.endMs <= b.startMs }) {
+        "Word caption intervals must be ordered and non-overlapping"
+    }
+    return words.map { WhisperCaptionEngine.CaptionSegment(it.text, it.startMs, it.endMs) }
+}
+
 /** Called on the editor/Main dispatcher only; stale inference never mutates history or media. */
 internal fun EditorViewModel.applyCaptionResult(
     snapshot: CaptionSourceSnapshot,
@@ -109,6 +139,12 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     captionJob?.cancel()
     val request = UUID.randomUUID().toString()
     val language = _captionUi.value.language
+    val timingMode = _captionUi.value.timingMode
+    if (timingMode == CaptionTimingMode.ENGLISH_WORDS && language != "en") {
+        _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED,
+            message = "Select English for acoustic word timing. Other languages keep phrase timing.")
+        return
+    }
     val snapshot = CaptionSourceSnapshot(project.id, clip)
     _captionUi.value = _captionUi.value.copy(
         phase = CaptionPhase.TRANSCRIBING, progress01 = 0f, segmentsAdded = 0,
@@ -131,7 +167,8 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
             ) { p ->
                 updateCaptionRequest(request) { it.copy(
-                    progress01 = p.coerceIn(0f, 1f), message = "Transcribing ${(p * 100).toInt()}%…",
+                    progress01 = p.coerceIn(0f, 1f) * if (timingMode == CaptionTimingMode.ENGLISH_WORDS) 0.65f else 1f,
+                    message = "Transcribing ${(p * 100).toInt()}%…",
                 ) }
             }
             ensureActive()
@@ -141,14 +178,26 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                     message = "Couldn't load the AI model or read this clip's audio.") }
                 return@launch
             }
-            val added = applyCaptionResult(snapshot, segments)
+            val finalSegments = if (timingMode == CaptionTimingMode.ENGLISH_WORDS && segments.isNotEmpty()) {
+                updateCaptionRequest(request) { it.copy(message = "Aligning English words offline…", progress01 = .65f) }
+                val words = EnglishWordAlignment.align(ctx.applicationContext, android.net.Uri.parse(clip.uri),
+                    segments, clip.trimStartMs, clip.trimEndMs) { progress ->
+                    updateCaptionRequest(request) { it.copy(progress01 = .65f + .35f * progress.coerceIn(0f, 1f),
+                        message = "Aligning English words ${(progress * 100).toInt()}%…") }
+                }
+                ensureActive()
+                if (_captionUi.value.requestId != request) return@launch
+                alignedCaptionSegments(words)
+            } else segments
+            val added = applyCaptionResult(snapshot, finalSegments)
             updateCaptionRequest(request) {
                 when (added) {
                     null -> it.copy(phase = CaptionPhase.FAILED,
                         message = "Clip, source, timing or captions changed while transcribing. Generate again; nothing was replaced.")
                     0 -> it.copy(phase = CaptionPhase.FAILED, message = "No speech detected in this clip.")
                     else -> it.copy(phase = CaptionPhase.DONE, progress01 = 1f,
-                        message = "Added $added captions", segmentsAdded = added)
+                        message = if (timingMode == CaptionTimingMode.ENGLISH_WORDS) "Added $added acoustically timed words"
+                            else "Added $added phrase captions", segmentsAdded = added)
                 }
             }
         } catch (cancelled: CancellationException) {

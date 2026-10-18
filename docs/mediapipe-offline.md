@@ -52,3 +52,9 @@ These models are on-device perception components, not a promise of perfect detec
 ## Verification
 
 The manifest SHA-256 values were computed from the exact committed files. Model task APIs use the already declared `com.google.mediapipe:tasks-vision:0.10.35` dependency. Runtime performance and visual quality still require representative device testing; this change does not claim device benchmark or privacy-anonymization certification.
+
+## Editor review and gesture-command follow-up
+
+AI → Offline analysis/review now includes a separate **face-track review** flow. It runs the real bounded `LocalFaceTrackAnalyzer` on the selected video with progress and cancellation, then exposes actual sampled timestamps, face counts, temporary local IDs and normalized crop candidates in horizontal review cards. Preview seeks the source frame in the existing editor; it does not draw or apply the candidate crop. Marking a sample reviewed is not safety approval and does not authorize a protected edit. No crop-track application, identity recognition, real-time renderer or export is claimed.
+
+`GestureCommandController` is a pure, tested temporal consumer of hand-center/pinch-ratio observations. It requires an explicitly armed session ID, rejects noisy single samples, debounces swipes/pinches, uses pinch hysteresis and a swipe rearm latch, resets on tracking loss/invalid timestamps/session changes, and emits bounded trim-fraction or zoom-factor **requests**. It is not a camera session or a wired editor control; consumers must still validate the current clip/tool context and apply undoable changes. No protected AI switch was enabled by this backend.

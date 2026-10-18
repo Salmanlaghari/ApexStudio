@@ -8,6 +8,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests 'com.apexstudio.app.ai.*' \
   --tests '*AiToolsCatalogTest' \
   --tests '*EditorLocalAnalysisTest' \
+  --tests '*EditorFaceTrackReviewTest' \
+  --tests '*EditorWordCaptionTest' \
   --tests '*WhisperCaptionBoundsTest' \
   --tests '*EditorCaptionReliabilityTest' \
   --tests '*EditorBackgroundControllerTest' \

@@ -754,9 +754,9 @@ fun EditorScreen(
         showLocalAnalysis = true
     })
     if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
-        onPreviewSourceTime = { sourceMs ->
+        onPreviewSourceTime = { analyzedClipId, sourceMs ->
             val clips = vm.state.value.project?.clips.orEmpty()
-            val analyzedClip = clips.firstOrNull { it.id == vm.localAnalysis.value.clipId }
+            val analyzedClip = clips.firstOrNull { it.id == analyzedClipId }
             if (analyzedClip != null) {
                 val projectMs = com.apexstudio.app.domain.model.ClipTimeMapping
                     .projectAtSourceTime(clips, analyzedClip, sourceMs)

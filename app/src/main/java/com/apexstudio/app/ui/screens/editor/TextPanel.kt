@@ -131,6 +131,7 @@ fun TextPanel(
     onAutoCaptions: () -> Unit = {},
     onClearCaptions: () -> Unit = {},
     onCaptionLanguageChange: (String) -> Unit = {},
+    onCaptionTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit = {},
     onCancelCaptions: () -> Unit = {},
     hasAutoCaptions: Boolean = false,
     // One-tap templates: "Text Reveal" adds editable text + walking
@@ -1185,6 +1186,7 @@ fun TextPanel(
                     onAutoCaptions = onAutoCaptions,
                     onClearCaptions = onClearCaptions,
                     onLanguageChange = onCaptionLanguageChange,
+                    onTimingChange = onCaptionTimingChange,
                     onCancelCaptions = onCancelCaptions,
                     hasAutoCaptions = hasAutoCaptions
                 )
@@ -1262,8 +1264,8 @@ private fun pillOptions(): List<Pair<String, Long?>> = listOf(
 )
 
 /**
- * AI auto-captions tab: on-device Whisper (tiny, multilingual) via
- * PackManager. Every state is surfaced — no dead buttons.
+ * Offline multilingual phrase captions and opt-in English acoustic word timing.
+ * Bundled weights need no first-run download; model errors never fabricate timings.
  */
 @Composable
 private fun AutoCaptionsTab(
@@ -1271,6 +1273,7 @@ private fun AutoCaptionsTab(
     onAutoCaptions: () -> Unit,
     onClearCaptions: () -> Unit,
     onLanguageChange: (String) -> Unit,
+    onTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit,
     onCancelCaptions: () -> Unit,
     hasAutoCaptions: Boolean
 ) {
@@ -1296,8 +1299,8 @@ private fun AutoCaptionsTab(
                 )
                 Text(
                     "Whisper AI listens to this clip's audio on-device and creates timed " +
-                        "lower-third captions. First use downloads the speech model " +
-                        "(~103MB in 3 parts, once). Urdu, Hindi and English work best.",
+                        "lower-third captions using bundled models, without a download. " +
+                        "Urdu/Hindi use phrase timing. English can use experimental acoustic word timing.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
                 )
@@ -1352,6 +1355,30 @@ private fun AutoCaptionsTab(
 
         val phase = captionUiState.phase
         val busy = phase == CaptionPhase.TRANSCRIBING
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries.size) { index ->
+                val mode = com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries[index]
+                val words = mode == com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_WORDS
+                val enabled = !busy && (!words || captionUiState.language == "en")
+                OutlinedButton(
+                    onClick = { onTimingChange(mode) }, enabled = enabled,
+                    border = androidx.compose.foundation.BorderStroke(1.dp,
+                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.BorderGlass),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor =
+                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
+                ) {
+                    Text(if (words) "Word by word · English" else "Phrase timing", fontSize = 11.sp)
+                }
+            }
+        }
+        Text(
+            if (captionUiState.language != "en") "Select English to enable measured word timing."
+            else "Word mode shows one word at a time in preview/export. No artificial equal-split timing; " +
+                "phrases over 14.4 seconds, unsupported text or low-confidence alignment fail without replacing captions. " +
+                "Not full-phrase karaoke highlighting.",
+            color = ApexPalette.TextSecondary, fontSize = 10.sp
+        )
 
         if (phase == CaptionPhase.NEED_DOWNLOAD) {
             // Model pack prompt — routed through PackManager (PR-C pattern).
@@ -1429,7 +1456,7 @@ private fun AutoCaptionsTab(
                     .padding(12.dp)
             ) {
                 Text(
-                    "✓ ${captionUiState.segmentsAdded} captions added — they appear as timed text overlays.",
+                    captionUiState.message + " — editable timed text overlays.",
                     color = Color(0xFF6EE7B7),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium

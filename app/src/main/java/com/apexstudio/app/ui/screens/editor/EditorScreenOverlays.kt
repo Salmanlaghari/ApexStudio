@@ -526,12 +526,12 @@ fun TextPanelOverlay(
                 captionUiState = captionUiState,
                 onAutoCaptions = {
                     textClip?.let {
-                        vm.resetCaptionUi()
                         vm.generateAutoCaptions(it.id)
                     }
                 },
                 onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
                 onCaptionLanguageChange = { vm.setCaptionLanguage(it) },
+                onCaptionTimingChange = { vm.setCaptionTimingMode(it) },
                 onCancelCaptions = { vm.cancelAutoCaptions() },
                 hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
             )

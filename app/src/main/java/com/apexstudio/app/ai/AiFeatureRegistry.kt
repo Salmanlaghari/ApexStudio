@@ -75,7 +75,9 @@ object AiFeatureRegistry {
         put(AiFeatureId.ONNX_BACKGROUND_REMOVAL, listOf(missingOnnx("onnx-background-removal.onnx")))
         put(AiFeatureId.ONNX_UPSCALING, listOf(missingOnnx("onnx-upscale.onnx")))
         put(AiFeatureId.ONNX_STYLE_TRANSFER, listOf(missingOnnx("onnx-style-transfer.onnx")))
-        put(AiFeatureId.WORD_TIMED_SUBTITLES, listOf(AiModelRequirement("forced-aligner-not-configured", "", "Not supplied", "")))
+        put(AiFeatureId.WORD_TIMED_SUBTITLES, listOf(AiModelRequirement("bundled:english-ctc-alignment",
+            "wav2vec2-base-960h-int8.onnx", "Apache-2.0; English-only wav2vec2-base-960h",
+            "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/tree/729c1a6730fb549c20a1c73a3d3f96f11020225e")))
         put(AiFeatureId.CONTENT_MODERATION, listOf(AiModelRequirement("validated-moderation-classifier-not-configured", "", "Not supplied", "")))
     }
 
@@ -96,7 +98,7 @@ object AiFeatureRegistry {
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
         AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Bundled hand landmarks and gesture primitives; camera gesture editing is not wired to timeline actions."),
         AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Bundled multilingual int8 Whisper uses the existing caption workflow. Segment timestamps, not word alignment."),
-        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Needs a validated compatible forced-aligner model/tokenizer; no word times are fabricated."),
+        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Experimental English acoustic word-by-word timing is in Text → Captions. Full multilingual phrase-highlighting karaoke and device validation remain incomplete."),
         AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Bundled segmentation model feeds the existing processed-file preview/export workflow."),
         AiFeatureId.MEDIAPIPE_FACE to AiFeatureDescription("Face landmarks", "Official bundled Face Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
@@ -120,7 +122,7 @@ object AiFeatureRegistry {
                 "Deterministic local signal analysis, not learned AI. Review suggestions before applying edits.")
         }
         if (id == AiFeatureId.WORD_TIMED_SUBTITLES) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "Segment timestamps are available; genuine word alignment needs a compatible validated model/tokenizer.", requirements)
+            "Bundled English CTC supports experimental word-by-word captions in Text → Captions. This protected AI switch remains OFF: multilingual/full-phrase karaoke and device/safety acceptance are incomplete.", requirements)
         if (id == AiFeatureId.CONTENT_MODERATION) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
             "No validated offline sexual/violent/hateful classifier. Protected AI actions remain OFF; pixel heuristics are not moderation.", requirements)
         val bundled = mediaPipeModelFor(id)

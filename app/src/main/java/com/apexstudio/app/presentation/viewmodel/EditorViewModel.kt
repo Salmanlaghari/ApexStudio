@@ -54,6 +54,12 @@ class EditorViewModel(
     internal var localAnalysisJob: Job? = null
     internal var localAnalysisToken: AiCancellationToken? = null
 
+    /** Sparse offline face-track suggestions are review-only and separate from protected AI actions. */
+    internal val _faceTrackReview = MutableStateFlow(FaceTrackReviewUiState())
+    val faceTrackReview: StateFlow<FaceTrackReviewUiState> = _faceTrackReview.asStateFlow()
+    internal var faceTrackReviewJob: Job? = null
+    internal var faceTrackReviewToken: AiCancellationToken? = null
+
     /**
      * Background-replace UI state (MediaPipe person segmentation,
      * PR-G). Instance-scoped so it can't bleed between editors.
@@ -183,6 +189,8 @@ class EditorViewModel(
         super.onCleared()
         localAnalysisToken?.cancel()
         localAnalysisJob?.cancel()
+        faceTrackReviewToken?.cancel()
+        faceTrackReviewJob?.cancel()
         audioEngine?.stopRecording()
         audioEngine?.release()
         exportEngine?.release()

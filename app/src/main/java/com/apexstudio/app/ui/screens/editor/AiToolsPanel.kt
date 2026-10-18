@@ -48,7 +48,7 @@ fun AiToolsPanel(
             if (onOpenLocalAnalysis != null) {
                 OutlinedButton(onClick = onOpenLocalAnalysis,
                     modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                    Text("Local analysis (non-AI) · scenes / trim / crop")
+                    Text("Offline review · face tracking + signal suggestions")
                 }
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

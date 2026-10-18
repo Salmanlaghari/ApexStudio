@@ -47,13 +47,13 @@ fun EditorViewModel.addVoiceOverTrack(uri: String, durationMs: Long, name: Strin
     _state.update { st ->
         val currentProject = st.project ?: return@update st
         val updatedTracks = currentProject.audioTracks + newTrack
-        val audioEndMs = updatedTracks.maxOfOrNull { it.startTimeMs + it.trimEndMs } ?: 0L
+        // Duration uses the playable span (trimEnd - trimStart), not the
+        // source out-point. Keep the project's persisted duration in sync
+        // with the editor mirror so reopening the draft retains the same end.
+        val duration = computeTimelineDurationMs(currentProject.clips, updatedTracks)
         st.copy(
-            project = currentProject.copy(audioTracks = updatedTracks),
-            durationMs = maxOf(
-                computeTimelineDurationMs(currentProject.clips, updatedTracks),
-                audioEndMs
-            ),
+            project = currentProject.copy(audioTracks = updatedTracks, durationMs = duration),
+            durationMs = duration,
             selectedAudioTrackId = newTrack.id
         )
     }

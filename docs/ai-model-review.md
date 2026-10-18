@@ -40,6 +40,14 @@ Still-image overlay export now uses independently closed bounds/pixel streams ra
 
 English transcript tokenization rejects segments above 4,096 characters before regex or per-character expansion. This is a defensive input bound, not multilingual alignment or moderation approval.
 
+## Crop-renderer, overlay targeting and voiceover follow-up
+
+The direct crop-effect factory now rejects every non-finite coordinate before clamping or shader creation, including the export path that does not pass through persisted crop sanitization. Finite out-of-bounds windows retain the existing clamp policy, and invalid/empty/full-frame windows add no effect. Crop release now deletes its linked custom GL program as well as the base class texture pool, including when base release fails. JVM tests cover factory rejection/valid windows; an EGL instrumentation regression checks repeated creation/release and output size, but compilation alone is not GPU execution or a preview/export acceptance result.
+
+Overlay-only move, scale, rotation, opacity, keyframe, layout and source-trim entry points reject non-overlay clips before mutating state or arming undo. An unchanged layout does not add undo history. This prevents a mistargeted overlay command from changing the main video; it does not establish physical-device gesture acceptance.
+
+Adding a voiceover uses playable audio spans rather than source out-points when recomputing duration and updates both editor and persisted project duration. The mixer labels tracks from their persisted kind rather than current volume, so a full-volume music track is no longer mislabeled SFX. These are editing consistency fixes, not microphone, audio-device or codec acceptance. All existing protected AI gates remain unchanged.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

@@ -29,6 +29,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \
   --tests '*LocalAudioImportPolicyTest' \
+  --tests '*AudioMixerPanelTest' \
   --tests '*MusicExportMixerTest' \
   --tests '*VoiceRecordingTimingTest' \
   --tests '*OverlayClipTest' \
@@ -43,5 +44,6 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*EditorManualCropTest' \
   --tests '*CameraKitConfigTest' \
   --tests '*VideoCropPresetTest' \
+  --tests '*VideoCropGlEffectTest' \
   --tests '*ModernFxShadersTest' \
   --tests '*LutAssetIntegrityTest'

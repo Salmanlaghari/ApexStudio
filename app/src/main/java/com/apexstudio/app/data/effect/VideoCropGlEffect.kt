@@ -49,6 +49,9 @@ class VideoCropGlEffect private constructor(
          */
         @JvmStatic
         fun fromRect(left: Float, top: Float, right: Float, bottom: Float): VideoCropGlEffect? {
+            // Export also calls this factory without persisted-settings sanitization.
+            // NaN survives coerceIn and size comparisons, poisoning shader uniforms/output.
+            if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) return null
             val l = left.coerceIn(0f, 1f)
             val t = top.coerceIn(0f, 1f)
             val r = right.coerceIn(0f, 1f)
@@ -161,7 +164,16 @@ class VideoCropGlEffect private constructor(
         }
 
         override fun release() {
-            super.release()
+            try {
+                super.release()
+            } finally {
+                // The base class owns the texture pool, not this linked shader program.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                }
+            }
         }
     }
 }

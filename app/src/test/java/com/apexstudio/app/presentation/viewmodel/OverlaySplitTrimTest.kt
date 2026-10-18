@@ -101,6 +101,68 @@ class OverlaySplitTrimTest {
     }
 
     @Test
+    fun overlayControllersIgnoreNonOverlayClips() {
+        val video = MediaClip(
+            id = "main-video",
+            name = "main-video",
+            uri = "file:///main.mp4",
+            durationMs = 15_000L,
+            trimStartMs = 1_000L,
+            trimEndMs = 12_000L
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(video)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.moveOverlayClip(video.id, 0.1f, -0.1f)
+        vm.scaleOverlayClip(video.id, 0.5f)
+        vm.rotateOverlayClip(video.id, 45f)
+        vm.setOverlayClipOpacity(video.id, 0.5f)
+        vm.setOverlayLayout(video.id, 0.1f, 0.2f, 0.5f, 45f)
+        vm.trimOverlayClip(video.id, 2_000L, 8_000L)
+        vm.upsertOverlayKeyframe(video.id, 1_000L, 0.1f, 0.2f, 0.5f, 45f, 0.5f)
+
+        assertEquals("overlay-specific writes must not alter V1 or its trim", video,
+            vm.state.value.project!!.clips.single())
+        assertFalse("rejected writes must not arm undo", vm.state.value.canUndo)
+    }
+
+    @Test
+    fun identicalOverlayLayoutDoesNotCreateAnUndoStep() {
+        val overlay = MediaClip(
+            id = "unchanged-layout",
+            name = "unchanged-layout",
+            uri = "file:///overlay.mp4",
+            durationMs = 10_000L,
+            trimEndMs = 10_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            pipX = 0.4f,
+            pipY = 0.6f,
+            pipScale = 0.35f,
+            pipRotationDeg = 12f
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 10_000L, clips = listOf(overlay)),
+                    durationMs = 10_000L
+                )
+            }
+        }
+
+        vm.setOverlayLayout(overlay.id, overlay.pipX, overlay.pipY, overlay.pipScale, overlay.pipRotationDeg)
+
+        assertEquals(overlay, vm.state.value.project!!.clips.single())
+        assertFalse("a no-op layout update must not create an undo step", vm.state.value.canUndo)
+    }
+
+    @Test
     fun trimmingOverlaySourceHeadAdvancesItsTimelineOffset() {
         val overlay = MediaClip(
             id = "left-trim-overlay",

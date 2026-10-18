@@ -108,4 +108,44 @@ class AudioTrackPlacementTest {
     fun timelineDurationUsesPlacedAudioSpanNotSourceOutPoint() {
         assertEquals(11_000L, computeTimelineDurationMs(emptyList(), listOf(track())))
     }
+
+    @Test
+    fun addingVoiceoverDoesNotCountTrimmedOffSourceAsTimelineDuration() {
+        val existing = track()
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 13_000L, audioTracks = listOf(existing)),
+                    durationMs = 13_000L
+                )
+            }
+            viewModel._audio.update { it.copy(tracks = listOf(existing)) }
+            viewModel.voiceOverStartMs = 0L
+        }
+
+        vm.addVoiceOverTrack(uri = "/voice/take.m4a", durationMs = 1_000L, name = "Take")
+
+        assertEquals(11_000L, vm.state.value.durationMs)
+        assertEquals(11_000L, vm.state.value.project!!.durationMs)
+        assertEquals(vm.state.value.project!!.audioTracks, vm.audio.value.tracks)
+    }
+
+    @Test
+    fun addingVoiceoverPastCurrentEndPersistsExtendedProjectDuration() {
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 1_000L),
+                    durationMs = 1_000L
+                )
+            }
+            viewModel.voiceOverStartMs = 12_000L
+        }
+
+        vm.addVoiceOverTrack(uri = "/voice/take.m4a", durationMs = 4_000L, name = "Take")
+
+        assertEquals(16_000L, vm.state.value.durationMs)
+        assertEquals(16_000L, vm.state.value.project!!.durationMs)
+        assertEquals(12_000L, vm.state.value.project!!.audioTracks.single().startTimeMs)
+    }
 }

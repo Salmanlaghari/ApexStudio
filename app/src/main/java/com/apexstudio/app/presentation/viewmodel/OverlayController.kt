@@ -71,12 +71,15 @@ fun EditorViewModel.setOverlayLayout(
     rotationDeg: Float
 ) {
     val current = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (current.type != ClipType.OVERLAY) return
     val target = OverlayClip.from(current).copy(
         x = x.coerceIn(0f, 1f),
         y = y.coerceIn(0f, 1f),
         scale = scale.coerceIn(OverlayClip.MIN_SCALE, OverlayClip.MAX_SCALE),
         rotationDeg = rotationDeg.coerceIn(-180f, 180f)
     )
+    val updated = target.writeTo(current)
+    if (updated == current) return
     armOverlayUndo()
     updateClip(clipId) { clip -> target.writeTo(clip) }
 }
@@ -97,6 +100,7 @@ fun EditorViewModel.trimOverlayClip(
     requestedEndMs: Long
 ) {
     val current = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (current.type != ClipType.OVERLAY) return
     val window = OverlayClip.from(current).trimmed(
         requestedStartMs,
         requestedEndMs

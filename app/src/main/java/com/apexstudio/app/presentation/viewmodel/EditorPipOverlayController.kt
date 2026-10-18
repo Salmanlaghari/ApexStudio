@@ -71,6 +71,7 @@ fun EditorViewModel.moveOverlayClip(
     dy: Float,
     persist: Boolean = true
 ) {
+    if (_state.value.project?.clips?.firstOrNull { it.id == clipId }?.type != ClipType.OVERLAY) return
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
         val x = clip.pipX.finiteOr(0.85f)
@@ -87,6 +88,7 @@ fun EditorViewModel.scaleOverlayClip(
     scale: Float,
     persist: Boolean = true
 ) {
+    if (_state.value.project?.clips?.firstOrNull { it.id == clipId }?.type != ClipType.OVERLAY) return
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
         clip.copy(
@@ -101,6 +103,7 @@ fun EditorViewModel.rotateOverlayClip(
     deltaDeg: Float,
     persist: Boolean = true
 ) {
+    if (_state.value.project?.clips?.firstOrNull { it.id == clipId }?.type != ClipType.OVERLAY) return
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
         // Reduce each operand before adding: two finite Floats can overflow to infinity.
@@ -112,7 +115,8 @@ fun EditorViewModel.rotateOverlayClip(
 
 fun EditorViewModel.setOverlayClipOpacity(clipId: String, opacity: Float) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId }
-    if (clip != null && clip.keyframes.keyframes.isNotEmpty()) {
+    if (clip?.type != ClipType.OVERLAY) return
+    if (clip.keyframes.keyframes.isNotEmpty()) {
         // CapCut-style auto-keyframe: once the overlay has keyframes,
         // the Opacity slider pins opacity at the playhead (snapping to
         // the nearest keyframe within 1s, like canvas gestures) instead
@@ -212,6 +216,7 @@ fun EditorViewModel.upsertOverlayKeyframe(
     opacity: Float,
     persist: Boolean = true
 ) {
+    if (_state.value.project?.clips?.firstOrNull { it.id == clipId }?.type != ClipType.OVERLAY) return
     armOverlayUndo()
     updateClip(clipId, persist = persist) { clip ->
         val kfs = clip.keyframes.keyframes

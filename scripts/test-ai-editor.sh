@@ -37,6 +37,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*VoiceRecordingTimingTest' \
   --tests 'com.apexstudio.app.domain.model.ModelsTest' \
   --tests '*OverlayClipTest' \
+  --tests '*OverlayEditorRefreshTest' \
   --tests '*ClipTimeMappingTest' \
   --tests '*OverlayFrameSelectionPolicyTest' \
   --tests '*TextPanelModerationTest' \

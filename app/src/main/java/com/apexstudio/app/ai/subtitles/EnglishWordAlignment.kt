@@ -53,13 +53,14 @@ object BundledEnglishAlignmentModel {
     private const val BUFFER_SIZE = 64 * 1024
 
     @Synchronized
-    fun modelFile(context: Context): File {
+    fun modelFile(context: Context, checkCancelled: () -> Unit = {}): File {
+        checkCancelled()
         val appContext = context.applicationContext
         val root = File(appContext.filesDir, "models/alignment")
         val targetDir = File(root, REVISION)
         val target = File(targetDir, FILE_NAME)
         val marker = File(targetDir, ".verified")
-        if (marker.isFile && marker.readText() == REVISION && isVerified(target)) return target
+        if (marker.isFile && marker.readText() == REVISION && isVerified(target, checkCancelled)) return target
 
         root.mkdirs()
         val staging = File(root, ".staging-${Thread.currentThread().id}-${System.nanoTime()}")
@@ -67,11 +68,14 @@ object BundledEnglishAlignmentModel {
             check(staging.mkdirs()) { "Cannot create English alignment model staging directory" }
             val staged = File(staging, FILE_NAME)
             val digest = MessageDigest.getInstance("SHA-256")
+            checkCancelled()
             appContext.assets.open(ASSET_PATH).use { input ->
                 FileOutputStream(staged).use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {
+                        checkCancelled()
                         val count = input.read(buffer)
+                        checkCancelled()
                         if (count < 0) break
                         digest.update(buffer, 0, count)
                         output.write(buffer, 0, count)
@@ -83,11 +87,21 @@ object BundledEnglishAlignmentModel {
             check(staged.length() == SIZE_BYTES && actual == SHA256) {
                 "Bundled English alignment model failed integrity verification"
             }
+            checkCancelled()
             File(staging, ".verified").writeText(REVISION)
+            checkCancelled()
             if (targetDir.exists()) check(targetDir.deleteRecursively()) { "Cannot replace invalid alignment model" }
+            checkCancelled()
             check(staging.renameTo(targetDir)) { "Could not atomically install English alignment model" }
-            check(isVerified(target)) { "Installed English alignment model failed verification" }
+            check(isVerified(target, checkCancelled)) { "Installed English alignment model failed verification" }
             return target
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            try {
+                staging.deleteRecursively()
+            } catch (_: Exception) {
+                // Preserve the caller's cancellation as the primary outcome.
+            }
+            throw cancelled
         } catch (error: Exception) {
             staging.deleteRecursively()
             throw EnglishWordAlignmentException(
@@ -98,13 +112,16 @@ object BundledEnglishAlignmentModel {
         }
     }
 
-    private fun isVerified(file: File): Boolean {
+    private fun isVerified(file: File, checkCancelled: () -> Unit): Boolean {
+        checkCancelled()
         if (!file.isFile || file.length() != SIZE_BYTES) return false
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered(BUFFER_SIZE).use { input ->
             val buffer = ByteArray(BUFFER_SIZE)
             while (true) {
+                checkCancelled()
                 val count = input.read(buffer)
+                checkCancelled()
                 if (count < 0) break
                 digest.update(buffer, 0, count)
             }
@@ -174,9 +191,10 @@ object EnglishWordAlignment {
         validateOrderedAlignmentSegments(segments)
         coroutineContext.ensureActive()
         onProgress(0.03f)
+        val modelContext = coroutineContext
         val modelFile = withContext(Dispatchers.IO) {
-            coroutineContext.ensureActive()
-            BundledEnglishAlignmentModel.modelFile(context.applicationContext)
+            modelContext.ensureActive()
+            BundledEnglishAlignmentModel.modelFile(context.applicationContext) { modelContext.ensureActive() }
         }
         val decodeContext = coroutineContext
         val fullPcm = withContext(Dispatchers.IO) {

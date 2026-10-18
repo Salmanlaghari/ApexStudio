@@ -88,6 +88,12 @@ External-audio export converts persisted millisecond placement and retained sour
 
 The generic public ONNX super-resolution adapter now checks the same global moderation policy as the dedicated ESPCN adapter before touching model files, inference or progress callbacks. Its regression requires a policy denial even when the model file is absent and verifies that the caller's bitmap stays owned by the caller. The generic reviewed model catalog remains empty and no moderation approval or protected feature was enabled.
 
+## Overlay panel refresh and alignment-install cancellation follow-up
+
+The overlay properties editor now refreshes its derived source-window model whenever the immutable clip changes, including trim and source duration changes that retain the same clip ID and layout. Subsequent Cut start/end callbacks no longer submit the panel's previous source window. Slider content descriptions identify the controls for accessibility and production Compose regression coverage. This is a panel-state correction, not physical gesture or speed-ramp rendering acceptance.
+
+English alignment model installation and cached-file SHA-256 verification now check the caller's cancellation around each chunk read and before publication. Cancellation keeps its original exception identity and removes unpublished staging instead of becoming a model-unavailable error. Tests cancel after an actual bundled asset read and a cached digest read. This does not interrupt an in-flight read, synchronous filesystem operation, monitor acquisition or native inference. A fully published verified cache may remain after later cancellation; Whisper and other model installers are unchanged. Protected alignment still fails closed before this path in normal user-content processing.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

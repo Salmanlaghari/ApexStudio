@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,7 +60,7 @@ fun OverlayEditor(
 ) {
     // Derive the view once per clip/property change instead of per frame:
     // a slider tick must not re-clamp its own outgoing value.
-    val view = remember(clip.id, clip.pipX, clip.pipY, clip.pipScale, clip.pipRotationDeg) {
+    val view = remember(clip) {
         OverlayClip.from(clip)
     }
     val source = clip.durationMs.coerceAtLeast(1L)
@@ -178,6 +180,7 @@ private fun SliderRow(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
+            modifier = Modifier.semantics { contentDescription = label },
             colors = SliderDefaults.colors(
                 thumbColor = ApexPalette.NeonCyan,
                 activeTrackColor = ApexPalette.NeonCyan

@@ -1,6 +1,8 @@
 package com.apexstudio.app.ai.onnx
 
 import android.graphics.Bitmap
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import java.io.File
 
 /** On-device image adapters require a caller-installed compatible ONNX file; no model is bundled or fetched. */
@@ -30,8 +32,11 @@ class SuperResolutionAdapter(
         require(artifact.task == ImageTask.SUPER_RESOLUTION)
         require(contract.outputChannels >= 3) { "Super-resolution model must return RGB channels" } }
     suspend fun availability(): ModelAvailability = OnnxImageModels.inspect(modelFile, contract, artifact)
-    suspend fun upscale(source: Bitmap, onProgress: (ModelProgress) -> Unit = {}): Bitmap =
-        OnnxImageModels.runImage(modelFile, source, contract, artifact, onProgress)
+    suspend fun upscale(source: Bitmap, onProgress: (ModelProgress) -> Unit = {}): Bitmap {
+        // Keep the public ONNX path behind the same fail-closed policy as the dedicated upscaler.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.ONNX_UPSCALING)
+        return OnnxImageModels.runImage(modelFile, source, contract, artifact, onProgress)
+    }
 }
 
 class StyleTransferAdapter(

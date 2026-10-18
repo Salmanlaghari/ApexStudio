@@ -80,6 +80,14 @@ Visual overlays now map elapsed timeline time through their normalized variable-
 
 Raw Whisper model loading and chunk inference now independently enforce the same global gate before file/native inference access, with module-internal entry points. Tests check that both missing files and existing unreviewed bytes are denied before native loading. The captions panel discloses the blocked action immediately and disables Generate while moderation is unavailable; existing caption clearing and manual editing remain usable. This closes a future raw-caller bypass and misleading UI state, not the missing classifier or usable protected AI generation.
 
+## Main-track trim, PCM placement and generic upscale follow-up
+
+Main-video trim handles now use physical display density when translating pointer pixels through the timeline's dp-per-millisecond scale, matching the existing overlay conversion. Both handlers restart when the immutable clip, scale or density changes, and source changes discard draft trim state rather than retaining the previous same-ID snapshot. Production-grip Compose regressions exercise head/tail drags at doubled density and a second edit after a same-ID clip update. This does not establish speed-ramp-aware handle geometry or physical touch/decoder acceptance.
+
+External-audio export converts persisted millisecond placement and retained source durations to PCM frames using quotient/remainder arithmetic with saturation instead of overflowing a full timestamp multiplication. Placed span ends also saturate, so a very long retained source cannot overflow and become inactive immediately. Negative source starts normalize before decoder setup and empty/reversed source intervals are skipped. This is defensive ordinary audio mixing, not overlay-source-audio mixing or speed-ramp audio export.
+
+The generic public ONNX super-resolution adapter now checks the same global moderation policy as the dedicated ESPCN adapter before touching model files, inference or progress callbacks. Its regression requires a policy denial even when the model file is absent and verifies that the caller's bitmap stays owned by the caller. The generic reviewed model catalog remains empty and no moderation approval or protected feature was enabled.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

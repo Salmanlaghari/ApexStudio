@@ -8,8 +8,8 @@ import org.robolectric.annotation.Config
 
 /**
  * Unit tests for the pure helpers in [MusicExportMixer].
- * (The MediaCodec pipeline itself is exercised on-device/CI via the build;
- * Robolectric cannot run real codecs.)
+ * The MediaCodec pipeline still needs on-device acceptance;
+ * building an APK or running Robolectric does not exercise real codecs.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -60,5 +60,40 @@ class MusicExportMixerTest {
     fun `degenerate windows are silent`() {
         assertEquals(0f, env(0, 0, 1_000, 1_000))
         assertEquals(0f, env(0, -5, 0, 0))
+    }
+
+    @Test
+    fun `timeline milliseconds map to frames without multiplication overflow`() {
+        assertEquals(0L, ExportAudioTimelineMapping.millisToFrames(-1L, 44_100))
+        assertEquals(44_100L, ExportAudioTimelineMapping.millisToFrames(1_000L, 44_100))
+        assertEquals(44L, ExportAudioTimelineMapping.millisToFrames(1L, 44_100))
+        assertEquals(
+            Long.MAX_VALUE,
+            ExportAudioTimelineMapping.millisToFrames(Long.MAX_VALUE, 44_100)
+        )
+    }
+
+    @Test
+    fun `placed span end saturates instead of making long sources inactive`() {
+        assertEquals(300L, ExportAudioTimelineMapping.endFrame(100L, 200L))
+        assertEquals(Long.MAX_VALUE, ExportAudioTimelineMapping.endFrame(44_100L, Long.MAX_VALUE))
+        assertEquals(Long.MAX_VALUE, ExportAudioTimelineMapping.endFrame(Long.MAX_VALUE - 10L, 11L))
+        assertEquals(100L, ExportAudioTimelineMapping.endFrame(100L, -1L))
+    }
+
+    @Test
+    fun `source trim mapping clamps negative start and rejects empty interval`() {
+        assertEquals(
+            ExportAudioTimelineMapping.SourceTrim(0L, 22_050L),
+            ExportAudioTimelineMapping.sourceTrim(-500L, 500L, 44_100)
+        )
+        assertEquals(
+            ExportAudioTimelineMapping.SourceTrim(2_000L, 0L),
+            ExportAudioTimelineMapping.sourceTrim(2_000L, 1_000L, 44_100)
+        )
+        assertEquals(
+            ExportAudioTimelineMapping.SourceTrim(0L, Long.MAX_VALUE),
+            ExportAudioTimelineMapping.sourceTrim(0L, Long.MAX_VALUE, 44_100)
+        )
     }
 }

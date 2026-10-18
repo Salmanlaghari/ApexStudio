@@ -135,13 +135,15 @@ object MusicExportMixer {
         var skipped = 0
         try {
             for (t in tracks) {
-                val playMs = t.trimEndMs - t.trimStartMs
-                if (playMs <= 0L) {
+                val sourceTrim = ExportAudioTimelineMapping.sourceTrim(
+                    t.trimStartMs, t.trimEndMs, SAMPLE_RATE
+                )
+                if (sourceTrim.frameCount <= 0L) {
                     skipped++
                     continue
                 }
                 val decoder = try {
-                    TrackDecoder.openUri(context, t.uri, t.trimStartMs)
+                    TrackDecoder.openUri(context, t.uri, sourceTrim.startMs)
                 } catch (e: Exception) {
                     Log.w(TAG, "Skipping undecodable music track: ${t.name}", e)
                     null
@@ -150,14 +152,15 @@ object MusicExportMixer {
                     skipped++
                     continue
                 }
-                val startFrame = (t.startTimeMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
+                val startFrame = ExportAudioTimelineMapping.millisToFrames(
+                    t.startTimeMs, SAMPLE_RATE
+                )
                 if (startFrame >= durationCapFrames) {
                     decoder.release()
                     skipped++
                     continue
                 }
-                val playFrames = (playMs * SAMPLE_RATE) / 1000L
-                placed.add(PlacedTrack(t, decoder, startFrame, playFrames))
+                placed.add(PlacedTrack(t, decoder, startFrame, sourceTrim.frameCount))
             }
 
             if (placed.isEmpty()) {
@@ -232,7 +235,8 @@ object MusicExportMixer {
                     val w0 = globalFrame
                     val w1 = globalFrame + frames
                     val s0 = maxOf(w0, p.startFrame)
-                    val s1 = minOf(w1, p.startFrame + p.playFrames)
+                    val endFrame = ExportAudioTimelineMapping.endFrame(p.startFrame, p.playFrames)
+                    val s1 = minOf(w1, endFrame)
                     if (s1 > s0) {
                         val need = (s1 - s0).toInt()
                         val n = p.decoder.readFrames(tmp, need)
@@ -260,7 +264,7 @@ object MusicExportMixer {
                             mix[idx + 1] += tmp[i * 2 + 1] * v
                         }
                     }
-                    if (w0 >= p.startFrame + p.playFrames || p.decoder.isEos()) {
+                    if (w0 >= endFrame || p.decoder.isEos()) {
                         p.done = true
                     }
                 }

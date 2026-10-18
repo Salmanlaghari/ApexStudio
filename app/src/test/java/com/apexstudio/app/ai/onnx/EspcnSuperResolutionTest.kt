@@ -75,4 +75,27 @@ class EspcnSuperResolutionTest {
             assertFalse(image.isRecycled)
         } finally { image.recycle(); model.delete() }
     }
+
+    @Test fun onnxSuperResolutionAdapterCannotBypassProtectedActionGate() = runBlocking {
+        val model = File.createTempFile("fake-onnx-super-resolution", ".onnx")
+        val image = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        val artifact = ImageModelArtifact(
+            "unreviewed", "1", "a".repeat(64), "https://example.invalid/model.onnx", "MIT", ImageTask.SUPER_RESOLUTION
+        )
+        val contract = ImageModelContract("input", "output", 1, 1, task = ImageTask.SUPER_RESOLUTION)
+        var progress = false
+        try {
+            val adapter = SuperResolutionAdapter(model, artifact, contract)
+            model.delete() // Gate must win over model availability/inspection.
+            try {
+                adapter.upscale(image) { progress = true }
+                fail("Unmoderated ONNX upscaling must be blocked")
+            } catch (blocked: AiModelUnavailableException) {
+                assertTrue(blocked.message.orEmpty().contains("hateful"))
+                assertTrue(blocked.message.orEmpty().contains("No protected AI processing was run"))
+            }
+            assertFalse(progress)
+            assertFalse(image.isRecycled)
+        } finally { image.recycle(); model.delete() }
+    }
 }

@@ -2072,6 +2072,7 @@ private fun TimelineVideoTrack(
 ) {
 
     // Which clip's long-press menu is open (null = dismissed).
+    val density = LocalDensity.current.density
     var contextMenuClipId by remember { mutableStateOf<String?>(null) }
     // Timeline-global start offset for each V1 clip (keyframes are timeline-global).
     val clipTimelineStarts = remember(videoClips) {
@@ -2102,8 +2103,8 @@ private fun TimelineVideoTrack(
                 val isBeingDragged = clip.id == draggingClipId
                 val isMultiSelected = clip.id in multiSelectedIds
                 // Live trim preview (updated during grip drag, committed on release).
-                var trimPreviewStart by remember(clip.id) { mutableStateOf<Long?>(null) }
-                var trimPreviewEnd by remember(clip.id) { mutableStateOf<Long?>(null) }
+                var trimPreviewStart by remember(clip) { mutableStateOf<Long?>(null) }
+                var trimPreviewEnd by remember(clip) { mutableStateOf<Long?>(null) }
                 val effTrimStart = trimPreviewStart ?: clip.trimStartMs
                 val effTrimEnd = trimPreviewEnd ?: clip.trimEndMs
                 // Speed-ramped clips occupy their OUTPUT length; during a
@@ -2241,13 +2242,14 @@ private fun TimelineVideoTrack(
 
                     // Trim Grips on active clip — draggable to trim start/end.
                     if (isSelected && !multiSelectMode) {
-                        var trimDragAccumX by remember(clip.id) { mutableFloatStateOf(0f) }
+                        var trimDragAccumX by remember(clip, msToDp, density) { mutableFloatStateOf(0f) }
                         // Left grip: trim start
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .width(16.dp).fillMaxHeight()
-                                .pointerInput(clip.id) {
+                                .testTag("timeline-trim-start-${clip.id}")
+                                .pointerInput(clip, msToDp, density) {
                                     detectDragGestures(
                                         onDragStart = {
                                             trimDragAccumX = 0f
@@ -2256,7 +2258,7 @@ private fun TimelineVideoTrack(
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                             trimDragAccumX += dragAmount.x
-                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val deltaMs = sourceTrimDeltaToMs(trimDragAccumX, msToDp, density)
                                             val end = trimPreviewEnd ?: clip.trimEndMs
                                             trimPreviewStart = (clip.trimStartMs + deltaMs)
                                                 .coerceIn(0L, (end - 100L).coerceAtLeast(0L))
@@ -2289,7 +2291,8 @@ private fun TimelineVideoTrack(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .width(16.dp).fillMaxHeight()
-                                .pointerInput(clip.id) {
+                                .testTag("timeline-trim-end-${clip.id}")
+                                .pointerInput(clip, msToDp, density) {
                                     detectDragGestures(
                                         onDragStart = {
                                             trimDragAccumX = 0f
@@ -2298,7 +2301,7 @@ private fun TimelineVideoTrack(
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                             trimDragAccumX += dragAmount.x
-                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val deltaMs = sourceTrimDeltaToMs(trimDragAccumX, msToDp, density)
                                             val start = trimPreviewStart ?: clip.trimStartMs
                                             trimPreviewEnd = (clip.trimEndMs + deltaMs)
                                                 .coerceIn(start + 100L, Long.MAX_VALUE)

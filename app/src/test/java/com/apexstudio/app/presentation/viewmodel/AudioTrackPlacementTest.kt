@@ -40,6 +40,36 @@ class AudioTrackPlacementTest {
     }
 
     @Test
+    fun overlongHeadTrimDragPreservesRightEdgeAtClampedSourcePoint() {
+        val original = track()
+        val clampedSourceStart = 7_750L // 250ms before the fixed source tail
+        val timelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(original, clampedSourceStart)
+
+        val trimmed = AudioTrackPlacement.trimmed(
+            original, clampedSourceStart, original.trimEndMs, timelineStart
+        )
+
+        assertEquals(10_750L, trimmed.startTimeMs)
+        assertEquals(11_000L, trimmed.startTimeMs + trimmed.trimEndMs - trimmed.trimStartMs)
+    }
+
+    @Test
+    fun headTrimPlacementSaturatesRatherThanWrappingToTimelineZero() {
+        val original = track().copy(startTimeMs = Long.MAX_VALUE - 100L)
+        assertEquals(Long.MAX_VALUE, AudioTrackPlacement.timelineStartAfterHeadTrim(original, 3_000L))
+        assertEquals(Long.MAX_VALUE - 1_100L, AudioTrackPlacement.timelineStartAfterHeadTrim(original, 1_000L))
+    }
+
+    @Test
+    fun headTrimBeforeSourceZeroUsesEffectiveSourceDelta() {
+        val original = track()
+        val placement = AudioTrackPlacement.timelineStartAfterHeadTrim(original, -5_000L)
+        val trimmed = AudioTrackPlacement.trimmed(original, -5_000L, original.trimEndMs, placement)
+        assertEquals(3_000L, placement)
+        assertEquals(11_000L, trimmed.startTimeMs + trimmed.trimEndMs - trimmed.trimStartMs)
+    }
+
+    @Test
     fun extendingAudioHeadAtTimelineZeroDoesNotMoveTheRightEdge() {
         val original = track().copy(startTimeMs = 1_000L, trimStartMs = 3_000L)
         val originalRightEdge = original.startTimeMs + original.trimEndMs - original.trimStartMs

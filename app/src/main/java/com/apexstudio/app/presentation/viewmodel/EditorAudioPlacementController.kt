@@ -9,6 +9,21 @@ object AudioTrackPlacement {
         track.copy(startTimeMs = timelineStartMs.coerceAtLeast(0L))
 
     /**
+     * Timeline position for a left-edge trim, based on the source point that
+     * actually survives UI clamping. This keeps the right edge anchored even
+     * when a drag runs past the minimum-duration boundary.
+     */
+    fun timelineStartAfterHeadTrim(track: AudioTrack, sourceStartMs: Long): Long {
+        val sourceEnd = track.sourceEndMs.coerceAtLeast(1L)
+        val effectiveStart = sourceStartMs.coerceIn(0L, sourceEnd - 1L)
+        val previousStart = track.trimStartMs.coerceIn(0L, sourceEnd - 1L)
+        val delta = effectiveStart - previousStart
+        val placement = track.startTimeMs.coerceAtLeast(0L)
+        return if (delta > 0L && placement > Long.MAX_VALUE - delta) Long.MAX_VALUE
+        else (placement + delta).coerceAtLeast(0L)
+    }
+
+    /**
      * Applies the two independent coordinate systems of an audio clip:
      * source trim bounds and project-time placement. A left-edge trim advances
      * both the source in-point and timeline start, preserving the right edge.

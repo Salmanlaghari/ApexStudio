@@ -141,7 +141,8 @@ class LocalVideoSceneAnalyzer(
         check(frames.isNotEmpty()) { "No video frames could be decoded for offline analysis" }
         val analysis = LocalVideoAnalysis.analyze(
             frames = frames,
-            cancellation = cancellation
+            cancellation = cancellation,
+            exclusiveEndMs = sourceEndMs,
         )
         val suggestions = LocalSceneSuggestionMapper.map(analysis, sourceStartMs, sourceEndMs)
         // This is a luma-gradient centroid suggestion, not face/subject detection.

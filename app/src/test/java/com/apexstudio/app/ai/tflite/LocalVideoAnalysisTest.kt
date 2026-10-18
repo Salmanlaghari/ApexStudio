@@ -30,6 +30,25 @@ class LocalVideoAnalysisTest {
         assertTrue(result.highlights.first().score > result.highlights.last().score)
     }
 
+    @Test fun finalHighlightUsesExclusiveClipEndInsteadOfExtrapolatingIrregularTail() {
+        val flat = FloatArray(4) { .5f }
+        val frames = listOf(
+            LumaFrame(0L, 2, 2, flat),
+            LumaFrame(1_000L, 2, 2, flat),
+            LumaFrame(2_000L, 2, 2, flat),
+            LumaFrame(2_499L, 2, 2, flat),
+        )
+
+        val highlight = LocalVideoAnalysis.analyze(
+            frames = frames,
+            highlightWindowMs = 3_000L,
+            exclusiveEndMs = 2_500L,
+        ).highlights.single()
+
+        assertEquals(0L, highlight.startMs)
+        assertEquals(2_500L, highlight.endMs)
+    }
+
     @Test fun cancellationIsPropagatedAndStyleIsExplicitlyRuleBased() {
         val token = AiCancellationToken().apply { cancel() }
         val frames = listOf(LumaFrame(0, 2, 2, FloatArray(4)), LumaFrame(1, 2, 2, FloatArray(4) { 1f }))

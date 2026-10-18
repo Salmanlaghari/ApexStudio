@@ -35,11 +35,15 @@ object LocalVideoAnalysis {
         histogramDistanceThreshold: Float = 0.34f,
         minimumCutGapMs: Long = 500,
         highlightWindowMs: Long = 3_000,
-        cancellation: AiCancellationToken = AiCancellationToken()
+        cancellation: AiCancellationToken = AiCancellationToken(),
+        exclusiveEndMs: Long? = null,
     ): SceneAnalysis {
         require(histogramDistanceThreshold in 0f..1f && minimumCutGapMs >= 0 && highlightWindowMs > 0)
         if (frames.isEmpty()) return SceneAnalysis(emptyList(), emptyList())
         require(frames.zipWithNext().all { (a, b) -> b.timestampMs >= a.timestampMs && a.width == b.width && a.height == b.height })
+        require(exclusiveEndMs == null || exclusiveEndMs > frames.last().timestampMs) {
+            "Exclusive source end must follow the final sampled frame"
+        }
         val cuts = mutableListOf<SceneBoundary>()
         val diffs = FloatArray(frames.size)
         for (i in 1 until frames.size) {
@@ -72,7 +76,10 @@ object LocalVideoAnalysis {
             ).joinToString(", ").ifEmpty { "balanced exposure" }
             val startMs = slice.first().timestampMs
             val estimatedEnd = saturatingAdd(slice.last().timestampMs, frameDurationEstimate(slice))
-            candidates += Highlight(startMs, maxOf(estimatedEnd, saturatingAdd(startMs, 1L)), score, reason)
+            val boundedEnd = if (end == frames.size && exclusiveEndMs != null) {
+                minOf(estimatedEnd, exclusiveEndMs)
+            } else estimatedEnd
+            candidates += Highlight(startMs, maxOf(boundedEnd, saturatingAdd(startMs, 1L)), score, reason)
             start = end
         }
         return SceneAnalysis(cuts, candidates.sortedByDescending { it.score })

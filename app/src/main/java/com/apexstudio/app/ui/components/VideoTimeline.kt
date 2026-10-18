@@ -125,6 +125,7 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
+import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -2869,12 +2870,17 @@ private fun AudioTrackLaneRow(
     val initialTrimEnd = track.trimEndMs.coerceIn(initialTrimStart + 1L, sourceEnd)
     val initialStart = track.startTimeMs.coerceAtLeast(0L)
     val deltaMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
+    val requestedHead = (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    val headPreview = if (gestureMode == AudioBlockGesture.LEFT) AudioTrackPlacement.trimmed(
+        track, requestedHead, initialTrimEnd, AudioTrackPlacement.timelineStartAfterHeadTrim(track, requestedHead)
+    ) else null
     val previewStart = when (gestureMode) {
-        AudioBlockGesture.MOVE, AudioBlockGesture.LEFT -> (initialStart + deltaMs).coerceAtLeast(0L)
+        AudioBlockGesture.MOVE -> (initialStart + deltaMs).coerceAtLeast(0L)
+        AudioBlockGesture.LEFT -> headPreview!!.startTimeMs
         else -> initialStart
     }
     val previewTrimStart = if (gestureMode == AudioBlockGesture.LEFT) {
-        (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+        headPreview!!.trimStartMs
     } else initialTrimStart
     val previewTrimEnd = if (gestureMode == AudioBlockGesture.RIGHT) {
         (initialTrimEnd + deltaMs).coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
@@ -2893,7 +2899,7 @@ private fun AudioTrackLaneRow(
                 .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
                 .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) Color.White else accent.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
                 .clickable(onClick = onSelect)
-                .pointerInput(track.id, msToDp) {
+                .pointerInput(track, msToDp) {
                     detectDragGestures(
                         onDragStart = { down ->
                             onSelect()
@@ -2915,7 +2921,8 @@ private fun AudioTrackLaneRow(
                                 AudioBlockGesture.MOVE -> onMove(track.id, (initialStart + changeMs).coerceAtLeast(0L))
                                 AudioBlockGesture.LEFT -> {
                                     val sourceStart = (initialTrimStart + changeMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
-                                    onTrim(track.id, sourceStart, initialTrimEnd, (initialStart + changeMs).coerceAtLeast(0L))
+                                    val timelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(track, sourceStart)
+                                    onTrim(track.id, sourceStart, initialTrimEnd, timelineStart)
                                 }
                                 AudioBlockGesture.RIGHT -> {
                                     val sourceEndMs = (initialTrimEnd + changeMs).coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))

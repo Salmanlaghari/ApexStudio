@@ -91,4 +91,51 @@ class EditorManualCropTest {
         assertEquals(VideoCropSettings(), vm.state.value.project!!.clips.first().videoCrop)
         assertTrue(vm.undoStack.isEmpty())
     }
+
+    @Test fun presetAndResetRejectStaleSelectionProjectSourceAndClipEdits() {
+        for (preset in listOf(com.apexstudio.app.data.effect.VideoCropPreset.SQUARE,
+            com.apexstudio.app.data.effect.VideoCropPreset.FREE)) {
+            for (change in listOf("selection", "project", "source", "trim")) {
+                val vm = editor()
+                vm.updateVideoCrop("selected", crop)
+                val captured = vm.state.value.project!!
+                val clip = captured.clips.first()
+                when (change) {
+                    "selection" -> vm.selectClip("other")
+                    "project" -> vm._state.value = vm.state.value.copy(project = captured.copy(id = "replacement"))
+                    "source" -> vm.updateClip(clip.id) { it.copy(uri = "file:///replacement.mp4") }
+                    "trim" -> vm.updateClip(clip.id) { it.copy(trimStartMs = 1000L) }
+                }
+                val current = vm.state.value.project
+                val historySize = vm.undoStack.size
+                assertFalse("$preset after $change", vm.applyVideoCropPreset(captured.id, clip, preset, 16f / 9f))
+                assertEquals(current, vm.state.value.project)
+                assertEquals(historySize, vm.undoStack.size)
+            }
+        }
+    }
+
+    @Test fun guardedPresetAndResetCommitOnceAndDoNotInventMissingDimensions() {
+        val vm = editor()
+        val before = vm.state.value.project!!
+        val square = com.apexstudio.app.data.effect.VideoCropPreset.SQUARE
+        for (aspect in listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            assertFalse(vm.applyVideoCropPreset(before.id, before.clips.first(), square, aspect))
+        }
+        assertTrue(vm.undoStack.isEmpty())
+        assertTrue(vm.applyVideoCropPreset(before.id, before.clips.first(), square, 16f / 9f))
+        val cropped = vm.state.value.project!!
+        assertEquals(square.centeredWindow(16f / 9f), cropped.clips.first().videoCrop)
+        assertEquals(1, vm.undoStack.size)
+        assertTrue(vm.applyVideoCropPreset(cropped.id, cropped.clips.first(), square, 16f / 9f))
+        assertEquals(1, vm.undoStack.size)
+        // Reset is valid even when metadata could not be read.
+        val free = com.apexstudio.app.data.effect.VideoCropPreset.FREE
+        assertTrue(vm.applyVideoCropPreset(cropped.id, cropped.clips.first(), free, Float.NaN))
+        assertEquals(VideoCropSettings(), vm.state.value.project!!.clips.first().videoCrop)
+        assertEquals(2, vm.undoStack.size)
+        val reset = vm.state.value.project!!
+        assertTrue(vm.applyVideoCropPreset(reset.id, reset.clips.first(), free, Float.NaN))
+        assertEquals(2, vm.undoStack.size)
+    }
 }

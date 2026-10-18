@@ -21,12 +21,23 @@ object AudioTrackPlacement {
     ): AudioTrack {
         val sourceEnd = track.sourceEndMs.coerceAtLeast(1L)
         val minSpan = 1L
-        val start = sourceStartMs.coerceIn(0L, (sourceEnd - minSpan).coerceAtLeast(0L))
+        var start = sourceStartMs.coerceIn(0L, (sourceEnd - minSpan).coerceAtLeast(0L))
+        val timelineStart = timelineStartMs.coerceAtLeast(0L)
+        val previousTimelineStart = track.startTimeMs.coerceAtLeast(0L)
+        // Extending the source head also moves the clip left by the same
+        // amount. If that would move it before project time zero, the UI
+        // clamps the placement at zero; clamp the source expansion to the
+        // amount of timeline room actually available or the right edge grows.
+        if (timelineStart == 0L && start < track.trimStartMs) {
+            val earliestPreservingStart = (track.trimStartMs.coerceAtLeast(0L) - previousTimelineStart)
+                .coerceIn(0L, (sourceEnd - minSpan).coerceAtLeast(0L))
+            start = maxOf(start, earliestPreservingStart)
+        }
         val end = sourceEndMs.coerceIn(start + minSpan, sourceEnd.coerceAtLeast(start + minSpan))
         return track.copy(
             trimStartMs = start,
             trimEndMs = end,
-            startTimeMs = timelineStartMs.coerceAtLeast(0L),
+            startTimeMs = timelineStart,
             sourceDurationMs = track.sourceDurationMs.takeIf { it > 0L } ?: sourceEnd
         )
     }

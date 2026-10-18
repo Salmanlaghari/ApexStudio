@@ -13,6 +13,17 @@ fun EditorViewModel.setVideoCropPreset(clipId: String, preset: VideoCropPreset, 
     updateVideoCrop(clipId, preset.centeredWindow(sourceAspect))
 }
 
+/** Preset callbacks, including Reset, must obey the same snapshot boundary as manual drafts. */
+fun EditorViewModel.applyVideoCropPreset(
+    expectedProjectId: String,
+    expectedClip: MediaClip,
+    preset: VideoCropPreset,
+    sourceAspect: Float
+): Boolean {
+    if (preset.aspectRatio != null && (!sourceAspect.isFinite() || sourceAspect <= 0f)) return false
+    return applyVideoCropDraft(expectedProjectId, expectedClip, preset.centeredWindow(sourceAspect))
+}
+
 private fun MediaClip.withManualCrop(crop: VideoCropSettings): MediaClip {
     val normalized = crop.sanitized()
     return if (type == ClipType.IMAGE) copy(

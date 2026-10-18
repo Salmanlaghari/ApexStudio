@@ -30,7 +30,7 @@ import com.apexstudio.app.domain.model.manualCropSettings
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.applyVideoCropDraft
-import com.apexstudio.app.presentation.viewmodel.setVideoCropPreset
+import com.apexstudio.app.presentation.viewmodel.applyVideoCropPreset
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -106,11 +106,15 @@ private fun CropToolsForClip(state: EditorState, vm: EditorViewModel, clip: Medi
                 activePresetId = if (activeCrop.presetId == "free" && !activeCrop.isFullFrame) "custom" else activeCrop.presetId,
                 onPresetSelected = { preset ->
                     if (preset == VideoCropPreset.FREE || size != null) {
-                        vm.setVideoCropPreset(clip.id, preset, size?.aspect ?: 1f)
+                        val projectId = state.project?.id
+                        applyError = projectId == null || !vm.applyVideoCropPreset(
+                            projectId, clip, preset, size?.aspect ?: 1f)
                     }
                 }, onClose = onClose, presetsEnabled = size != null,
                 onManualEdit = { manual = true; applyError = false }
             )
+            if (applyError) Text("The selected source changed. Close and reopen Crop before applying.",
+                color = Color.Red, modifier = Modifier.padding(horizontal = 16.dp), fontSize = 11.sp)
         }
     }
 }

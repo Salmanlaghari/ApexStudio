@@ -48,6 +48,12 @@ Overlay-only move, scale, rotation, opacity, keyframe, layout and source-trim en
 
 Adding a voiceover uses playable audio spans rather than source out-points when recomputing duration and updates both editor and persisted project duration. The mixer labels tracks from their persisted kind rather than current volume, so a full-volume music track is no longer mislabeled SFX. These are editing consistency fixes, not microphone, audio-device or codec acceptance. All existing protected AI gates remain unchanged.
 
+## Timeline-zero audio, crop callbacks and face target follow-up
+
+Expanding an audio source head now stops when its left edge reaches project time zero, rather than restoring extra source duration while silently moving the right edge. Crop preset and Reset callbacks use the same captured project/whole-clip/selection checks as manual Apply; stale callbacks cannot crop a replacement source or a reused clip ID. Failed stale actions explain that Crop must be reopened. These are controller regression fixes, not physical timeline/audio acceptance.
+
+Informational face review now actually uses the tracker's associated, smoothed detection for crop selection. It keeps the established temporary track ID while visible rather than jumping to the largest face on every sample; on loss it chooses the largest usable visible track, and empty detections remain an honest no-face fallback. Inverted, degenerate and non-finite boxes cannot become targets. Sparse IoU association is still not identity recognition or a guarantee against swaps/fast-motion misses. No protected AI action or moderation gate was enabled.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

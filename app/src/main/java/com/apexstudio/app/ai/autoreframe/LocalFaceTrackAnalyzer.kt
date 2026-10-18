@@ -51,6 +51,24 @@ data class FaceTrackAnalysisResult(
     )
 }
 
+/** Keep reframing on the established face identity while visible; otherwise start from the largest visible track. */
+internal object FaceTrackTargetSelector {
+    fun select(faces: List<TrackedFace>, currentTargetId: Long?): TrackedFace? {
+        val usable = faces.filter { face ->
+            val box = face.detection.box
+            val area = (box.right - box.left) * (box.bottom - box.top)
+            box.left.isFinite() && box.top.isFinite() && box.right.isFinite() && box.bottom.isFinite() &&
+                box.left < box.right && box.top < box.bottom &&
+                area.isFinite() && area > 0f
+        }
+        return usable.firstOrNull { it.id == currentTargetId }
+            ?: usable.maxByOrNull { face ->
+                val box = face.detection.box
+                (box.right - box.left) * (box.bottom - box.top)
+            }
+    }
+}
+
 /** Pure bounded sampling and bitmap-sizing helpers; exposed for deterministic unit tests. */
 object FaceTrackSampling {
     /** End-exclusive range, approximately [minimumIntervalMs] apart, spread to the end if capped. */
@@ -142,6 +160,7 @@ class LocalFaceTrackAnalyzer(
             BundledMediaPipeModels.openFace(context.applicationContext, maximumFaces).use { detector ->
                 val tracker = FaceTrackSmoother()
                 var previousCrop: NormalizedCrop? = null
+                var targetTrackId: Long? = null
                 timestamps.forEachIndexed { index, timestampMs ->
                     cancellation.throwIfCancelled()
                     currentCoroutineContext().ensureActive()
@@ -175,11 +194,13 @@ class LocalFaceTrackAnalyzer(
                         cancellation.throwIfCancelled()
                         currentCoroutineContext().ensureActive()
                         val tracked = tracker.update(timestampMs, detections)
+                        val target = FaceTrackTargetSelector.select(tracked, targetTrackId)
+                        if (target != null) targetTrackId = target.id
                         val cropFrame = FaceAwareReframeEngine.cropFor(
                             sourceWidth = sourceWidth,
                             sourceHeight = sourceHeight,
                             outputAspectRatio = outputAspectRatio,
-                            faces = detections,
+                            faces = target?.let { listOf(it.detection) }.orEmpty(),
                             margin = cropMargin,
                             previous = previousCrop,
                         ).copy(timestampMs = timestampMs)

@@ -10,6 +10,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutoReframeTest {
+    @Test fun faceTargetSelectorKeepsEstablishedIdentityInsteadOfSwitchingToLargestFace() {
+        val established = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            7L, FaceDetection(NormalizedBox(.1f, .2f, .3f, .4f), emptyList()),
+        )
+        val largerCompetitor = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            8L, FaceDetection(NormalizedBox(.5f, .1f, .95f, .8f), emptyList()),
+        )
+
+        assertEquals(established, FaceTrackTargetSelector.select(listOf(largerCompetitor, established), 7L))
+        assertEquals(largerCompetitor, FaceTrackTargetSelector.select(listOf(established, largerCompetitor), null))
+    }
+
+    @Test fun faceTargetSelectorFallsBackWhenTargetDisappearsAndNeverInventsADetection() {
+        val remaining = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            8L, FaceDetection(NormalizedBox(.5f, .1f, .95f, .8f), emptyList()))
+        assertEquals(remaining, FaceTrackTargetSelector.select(listOf(remaining), 7L))
+        assertEquals(null, FaceTrackTargetSelector.select(emptyList(), 7L))
+    }
+
+    @Test fun faceTargetSelectorRejectsInvertedDegenerateAndNonFiniteBoxes() {
+        val valid = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            8L, FaceDetection(NormalizedBox(.1f, .1f, .2f, .2f), emptyList()))
+        val invalidBoxes = listOf(
+            NormalizedBox(.9f, .9f, .1f, .1f),
+            NormalizedBox(.1f, .1f, .1f, .9f),
+            NormalizedBox(Float.NaN, 0f, 1f, 1f),
+            NormalizedBox(0f, 0f, Float.POSITIVE_INFINITY, 1f))
+        invalidBoxes.forEach { box ->
+            val invalid = com.apexstudio.app.ai.mediapipe.TrackedFace(7L, FaceDetection(box, emptyList()))
+            assertEquals(valid, FaceTrackTargetSelector.select(listOf(invalid, valid), 7L))
+            assertEquals(null, FaceTrackTargetSelector.select(listOf(invalid), 7L))
+        }
+    }
+
     @Test fun faceBoxMovesCropToEdgeWithoutLeavingSourceBounds() {
         val face = FaceDetection(NormalizedBox(.84f, .30f, .96f, .50f), emptyList())
         val frame = FaceAwareReframeEngine.cropFor(1920, 1080, 1f, listOf(face), margin = .25f)

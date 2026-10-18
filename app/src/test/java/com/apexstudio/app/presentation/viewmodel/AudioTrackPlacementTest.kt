@@ -40,6 +40,20 @@ class AudioTrackPlacementTest {
     }
 
     @Test
+    fun extendingAudioHeadAtTimelineZeroDoesNotMoveTheRightEdge() {
+        val original = track().copy(startTimeMs = 1_000L, trimStartMs = 3_000L)
+        val originalRightEdge = original.startTimeMs + original.trimEndMs - original.trimStartMs
+
+        // Asking for a 2s head expansion would place this clip at -1s.
+        // Placement clamps to zero, so only 1s of source can be restored.
+        val trimmed = AudioTrackPlacement.trimmed(original, 1_000L, 8_000L, 0L)
+
+        assertEquals(2_000L, trimmed.trimStartMs)
+        assertEquals(0L, trimmed.startTimeMs)
+        assertEquals(originalRightEdge, trimmed.startTimeMs + trimmed.trimEndMs - trimmed.trimStartMs)
+    }
+
+    @Test
     fun rightEdgeTrimOnlyChangesSourceOutPoint() {
         val trimmed = AudioTrackPlacement.trimmed(track(), 2_000L, 6_250L, 5_000L)
         assertEquals(2_000L, trimmed.trimStartMs)

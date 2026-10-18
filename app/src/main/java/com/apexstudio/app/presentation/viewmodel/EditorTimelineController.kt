@@ -663,9 +663,8 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 // and snaps back on commit. V1 is laid out cumulatively and
                 // deliberately does not use this adjustment.
                 val overlayStartShift = if (c.type == ClipType.OVERLAY && safeStart > c.trimStartMs) {
-                    com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                        safeStart - c.trimStartMs,
-                        c.speedPoints
+                    ClipTimeMapping.outputDurationBetweenSourceTimes(
+                        c, c.trimStartMs, safeStart
                     )
                 } else 0L
                 c.copy(

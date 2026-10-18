@@ -38,8 +38,9 @@ data class SubtitleResult(
 /** File-only, fully local wrapper over the app's existing multilingual Whisper implementation. */
 object LocalWhisperSubtitles {
     /**
-     * Transcribe an on-device audio file. This API accepts File (not arbitrary network/content URIs)
-     * and does not download models. Missing Whisper packs return null as in the underlying engine.
+     * Transcribe an on-device audio file. This API accepts File (not arbitrary network/content URIs).
+     * The bundled, pinned Whisper model is initialized locally without network access; existing
+     * PackManager-installed files are a fallback. Failure to load any usable model returns null.
      * Word cues are conservatively stamped with the complete Whisper phrase interval: no equal-split
      * timestamps are fabricated. Callers should highlight the whole phrase unless CTC alignment is run.
      */

@@ -138,6 +138,21 @@ class OverlayClipTest {
     }
 
     @Test
+    fun `trim handles at source end never create an out of source frame`() {
+        val view = OverlayClip.from(overlay())
+        val atEnd = view.trimmed(30_000L, 30_000L)
+        assertEquals(29_999L, atEnd.startMs)
+        assertEquals(30_000L, atEnd.endMs)
+        assertEquals(1L, atEnd.durationMs)
+
+        val emptySource = view.copy(sourceDurationMs = 0L).trimmed(0L, 0L)
+        assertEquals(0L, emptySource.startMs)
+        assertEquals(0L, emptySource.endMs)
+        assertEquals(0L, emptySource.durationMs)
+        assertEquals(emptySource, emptySource.withEnd(10_000L))
+    }
+
+    @Test
     fun `duration tracks the trimmed window`() {
         val view = OverlayClip.from(overlay())
         assertEquals(8_000L, view.durationMs)
@@ -158,7 +173,8 @@ class OverlayClipTest {
     fun `preferredLayer prefers a free lane`() {
         assertEquals(1, OverlayClip.preferredLayer(emptyList()))
         assertEquals(2, OverlayClip.preferredLayer(listOf(1)))
-        assertEquals(4, OverlayClip.preferredLayer(listOf(1, 2, 5)))
+        // Lane 3 is the first free lane; expecting 4 skipped an available lane.
+        assertEquals(3, OverlayClip.preferredLayer(listOf(1, 2, 5)))
         // All taken: fall back to the first legal lane rather than 0.
         val all = (1..9).toList()
         assertEquals(1, OverlayClip.preferredLayer(all))

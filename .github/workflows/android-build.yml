@@ -84,6 +84,11 @@ jobs:
       - name: Run Lint
         run: ./gradlew lintDebug --no-daemon || true
 
+      - name: Verify offline AI model integrity
+        run: |
+          python3 scripts/verify-ai-models.py
+          python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+
       - name: Editor interaction regression tests
         run: |
           ./gradlew :app:testDebugUnitTest --no-daemon \
@@ -101,7 +106,17 @@ jobs:
             --tests '*ResolveMainPreviewClipTest' \
             --tests '*OverlaySplitTrimTest' \
             --tests '*ModelsTest' \
-            --tests '*KeyframeAnimationTest'
+            --tests '*KeyframeAnimationTest' \
+            --tests 'com.apexstudio.app.ai.*' \
+            --tests '*AiToolsCatalogTest' \
+            --tests '*EditorTrimPositionTest' \
+            --tests '*EditorLocalAnalysisTest' \
+            --tests '*WhisperCaptionBoundsTest' \
+            --tests '*OverlayClipTest' \
+            --tests '*ClipTimeMappingTest' \
+            --tests '*VideoCropPresetTest' \
+            --tests '*ModernFxShadersTest' \
+            --tests '*LutAssetIntegrityTest'
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
 
       - name: Build debug APK

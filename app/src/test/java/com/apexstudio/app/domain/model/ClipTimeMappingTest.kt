@@ -37,4 +37,23 @@ class ClipTimeMappingTest {
         assertEquals(2_000L, ClipTimeMapping.sourceAtProjectTime(listOf(overlay), overlay, 0L))
         assertEquals(8_000L, ClipTimeMapping.sourceAtProjectTime(listOf(overlay), overlay, 99_000L))
     }
+
+    @Test fun overlayHeadTrimDurationUsesTheOriginalRampCoordinates() {
+        val overlay = clip("ramped", 10_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            speedPoints = listOf(
+                SpeedPoint(0f, 0.5f),
+                SpeedPoint(0.5f, 0.5f),
+                SpeedPoint(1f, 2f),
+            ),
+        )
+
+        val mapped = ClipTimeMapping.outputDurationBetweenSourceTimes(overlay, 0L, 2_500L)
+        assertEquals("first quarter is at 0.5x in the original curve", 5_000L, mapped)
+        assertTrue(
+            "mapping a shortened interval as a new curve would restart the ramp",
+            mapped != SpeedCurveMath.effectiveDurationMs(2_500L, overlay.speedPoints)
+        )
+    }
 }

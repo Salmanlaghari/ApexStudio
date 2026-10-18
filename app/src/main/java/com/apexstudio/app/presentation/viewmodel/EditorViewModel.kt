@@ -15,6 +15,7 @@ import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
+import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
@@ -46,6 +47,12 @@ class EditorViewModel(
      * the user taps Cancel, switches language, or leaves the editor.
      */
     internal var captionJob: Job? = null
+
+    /** Offline heuristic scene/trim/crop analysis; never a learned-model result. */
+    internal val _localAnalysis = MutableStateFlow(LocalAnalysisUiState())
+    val localAnalysis: StateFlow<LocalAnalysisUiState> = _localAnalysis.asStateFlow()
+    internal var localAnalysisJob: Job? = null
+    internal var localAnalysisToken: AiCancellationToken? = null
 
     /**
      * Background-replace UI state (MediaPipe person segmentation,
@@ -174,6 +181,8 @@ class EditorViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        localAnalysisToken?.cancel()
+        localAnalysisJob?.cancel()
         audioEngine?.stopRecording()
         audioEngine?.release()
         exportEngine?.release()

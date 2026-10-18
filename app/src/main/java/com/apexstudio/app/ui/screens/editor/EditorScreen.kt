@@ -95,6 +95,7 @@ fun EditorScreen(
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
     var showAiPanel by remember { mutableStateOf(false) }
+    var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
@@ -748,7 +749,20 @@ fun EditorScreen(
         }
     }
 
-    if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false })
+    if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
+        showAiPanel = false
+        showLocalAnalysis = true
+    })
+    if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
+        onPreviewSourceTime = { sourceMs ->
+            val clips = vm.state.value.project?.clips.orEmpty()
+            val analyzedClip = clips.firstOrNull { it.id == vm.localAnalysis.value.clipId }
+            if (analyzedClip != null) {
+                val projectMs = com.apexstudio.app.domain.model.ClipTimeMapping
+                    .projectAtSourceTime(clips, analyzedClip, sourceMs)
+                seekPlayerAndState(projectMs)
+            }
+        })
     if (showCropPanel) {
         Box(Modifier.fillMaxSize().clickable { showCropPanel = false }, contentAlignment = Alignment.BottomCenter) {
             Box(Modifier.fillMaxWidth().clickable(enabled = false) {}) {

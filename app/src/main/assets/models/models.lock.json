@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "notice": "Integrity and provenance only. This inventory is not moderation approval or device accuracy certification.",
+  "models": [
+    {
+      "path": "mediapipe/mediapipe-face-landmarker.task",
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+      "source": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/mediapipe-pose-landmarker.task",
+      "bytes": 5777746,
+      "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+      "source": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/mediapipe-hand-landmarker.task",
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+      "source": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/selfie_segmenter.tflite",
+      "bytes": 249537,
+      "sha256": "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+      "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-encoder.int8.onnx",
+      "bytes": 12937772,
+      "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-encoder.int8.onnx",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-decoder.int8.onnx",
+      "bytes": 89855401,
+      "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-decoder.int8.onnx",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-tokens.txt",
+      "bytes": 816730,
+      "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-tokens.txt",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    }
+  ]
+}

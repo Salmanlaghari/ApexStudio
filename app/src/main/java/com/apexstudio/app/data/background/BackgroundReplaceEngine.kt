@@ -16,7 +16,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
-import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.google.mediapipe.framework.image.BitmapExtractor
@@ -59,12 +59,10 @@ import kotlin.coroutines.coroutineContext
  * export read the *same pixels by construction*: the preview
  * plays the processed file, and the export exports it.
  *
- * ## Model delivery (PR-C "Blake")
- * The segmentation model (~244 KB) downloads on demand via
- * [PackManager] and is never bundled in the APK. It is loaded
- * into MediaPipe with `BaseOptions.setModelAssetBuffer` (a
- * `ByteBuffer`), which is what lets a PackManager-downloaded
- * file — not an asset — feed the segmenter.
+ * ## Model delivery
+ * The official ~244 KB selfie-segmentation model is bundled in the APK.
+ * [modelFile] materializes it into app-private storage after checking
+ * its pinned SHA-256; processing has no model download or network path.
  *
  * ## Honest limits (NOT VERIFIED on-device — see PR description)
  * - CPU delegate only: the GPU delegate has a history of wrong
@@ -82,7 +80,7 @@ object BackgroundReplaceEngine {
 
     private const val TAG = "BgReplaceEngine"
 
-    /** PackManager id for the MediaPipe selfie-segmentation model. */
+    /** Retained for pack-metadata compatibility; the engine no longer downloads a model pack. */
     const val PACK_ID = "mediapipe-selfie-segmenter"
 
     /** On-disk model file name (URL basename — see `DownloadEngine.fileNameFor`). */
@@ -111,13 +109,14 @@ object BackgroundReplaceEngine {
         Thread(r, "BgReplace").apply { isDaemon = true }
     }.asCoroutineDispatcher()
 
-    /** The downloaded model file, or null when not downloaded yet. */
-    fun modelFile(context: Context): File =
-        File(PackManager.packDir(context, PACK_ID), MODEL_FILE)
+    /** Verified app-private copy of the bundled model; available without a network connection. */
+    fun modelFile(context: Context): File = BundledMediaPipeModels.modelFile(
+        context, BundledMediaPipeModels.Model.SELFIE_SEGMENTER
+    )
 
-    /** True when the model pack is installed with the file on disk. */
+    /** Materialize and verify the packaged model off the UI thread. */
     suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
-        PackManager.isDownloaded(context, PACK_ID) && modelFile(context).exists()
+        runCatching { modelFile(context).isFile }.getOrDefault(false)
     }
 
     /**
@@ -176,7 +175,7 @@ object BackgroundReplaceEngine {
         val safe = settings.sanitized()
         val appContext = context.applicationContext
         val model = modelFile(appContext)
-        if (!model.exists()) throw IllegalStateException("Segmentation model not downloaded yet.")
+        if (!model.isFile) throw IllegalStateException("Bundled segmentation model is unavailable.")
         if (safe.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
             safe.imageUri.isNullOrBlank()
         ) {

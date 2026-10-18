@@ -18,7 +18,7 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
             "SMART_TRIM" -> "Smart trim suggestions"
             "SCENE_ANALYSIS" -> "Scene detection"
             "STYLE_ANALYSIS" -> "Local style analysis"
-            "AUTO_CROP" -> "Subject-aware crop"
+            "AUTO_CROP" -> "Signal-based crop · not subject AI"
             "FACE_AWARE_REFRAME" -> "Auto reframe · 9:16 / 1:1"
             "SUBTITLES" -> "Whisper auto subtitles"
             "WORD_TIMED_SUBTITLES" -> "Word-timed karaoke"
@@ -52,7 +52,7 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
 }
 
 @Composable
-fun AiToolsOverlay(onClose: () -> Unit) {
+fun AiToolsOverlay(onClose: () -> Unit, onOpenLocalAnalysis: (() -> Unit)? = null) {
     val context = LocalContext.current.applicationContext
     var cards by remember { mutableStateOf<List<AiToolCard>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -60,7 +60,7 @@ fun AiToolsOverlay(onClose: () -> Unit) {
     LaunchedEffect(context) {
         try {
             cards = withContext(Dispatchers.IO) { aiToolCards(AiFeatureRegistry.all(context)) }
-            message = "AI backend preview: unavailable features stay OFF. This build does not claim all requested AI tools are finished. No media is uploaded and no model download starts here."
+            message = "Bundled model availability is not safety or editor approval. Protected AI stays OFF without validated moderation and integration. Ordinary non-AI analysis is separate. Existing Captions and Background tools use bundled local models; no download starts here."
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -71,5 +71,5 @@ fun AiToolsOverlay(onClose: () -> Unit) {
     }
     AiToolsPanel(tools = cards, processing = loading, progress = 0f, message = message,
         onToggle = { _, _ -> message = "This feature is not ready; no changes were made." },
-        onCancel = onClose, onClose = onClose)
+        onCancel = onClose, onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis)
 }

@@ -119,4 +119,45 @@ class PipOverlayCanvasTest {
             assertEquals("gesture end must fire exactly once when the drag ends", 1, gestureEndCount)
         }
     }
+
+    @Test
+    fun draggingResizeHandleChangesScaleAndFinishesOnePersistableGesture() {
+        val scales = mutableListOf<Float>()
+        val persistFlags = mutableListOf<Boolean>()
+        var gestureEndCount = 0
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = "pip-image",
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, scale, persist ->
+                        scales += scale
+                        persistFlags += persist
+                    },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = { gestureEndCount++ },
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to true),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-resize-pip-image", useUnmergedTree = true)
+            .performTouchInput {
+                swipe(start = center, end = center + Offset(35f, 35f), durationMillis = 300)
+            }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertTrue("resize handle must invoke scale updates", scales.isNotEmpty())
+            assertTrue("dragging outward must increase scale", scales.any { it > 0.5f })
+            assertTrue("intermediate resize updates must defer persistence", persistFlags.all { !it })
+            assertEquals("release must persist one completed gesture", 1, gestureEndCount)
+        }
+    }
 }

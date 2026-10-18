@@ -44,6 +44,39 @@ class OverlaySplitTrimTest {
     }
 
     @Test
+    fun trimmingOverlayHeadUsesOutputTimeFromTheOriginalSpeedCurve() {
+        val overlay = MediaClip(
+            id = "ramped-overlay",
+            name = "ramped-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 10_000L,
+            trimEndMs = 10_000L,
+            timelineOffsetMs = 6_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            speedPoints = listOf(
+                com.apexstudio.app.domain.model.SpeedPoint(0f, 0.5f),
+                com.apexstudio.app.domain.model.SpeedPoint(0.5f, 0.5f),
+                com.apexstudio.app.domain.model.SpeedPoint(1f, 2f),
+            ),
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.trimClip(overlay.id, 2_500L, overlay.trimEndMs)
+
+        val trimmed = vm.state.value.project!!.clips.single()
+        assertEquals("first 2.5s source segment takes 5s at 0.5x", 11_000L, trimmed.timelineOffsetMs)
+        assertEquals(2_500L, trimmed.trimStartMs)
+    }
+
+    @Test
     fun splittingOverlayPreservesSourceDurationWhenRightHalfIsTrimmed() {
         val source = MediaClip(
             id = "overlay-source",

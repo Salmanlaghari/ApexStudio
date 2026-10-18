@@ -3,7 +3,6 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
-import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -16,15 +15,16 @@ import kotlinx.coroutines.launch
  * Auto-captions controller: on-device Whisper speech-to-text
  * (tiny, multilingual, int8 — via onnxruntime-android).
  *
- * Flow: user taps "Auto Captions" on a video clip -> if the Whisper model
- * files (~103MB in 3 file packs) aren't downloaded, the UI shows a
- * download prompt (routed through PackManager.requirePack /
- * PackManager.download) -> audio is extracted to 16 kHz mono PCM ->
+ * Flow: user taps "Auto Captions" on a video clip -> the bundled Whisper
+ * model is verified and materialized locally without network access (existing
+ * PackManager-installed files remain an optional fallback) -> audio is
+ * extracted to 16 kHz mono PCM ->
  * transcribed on-device in 30 s chunks with a cancellable progress UI ->
  * each timestamped segment becomes a timed [TextOverlay] (startMs/endMs)
  * on the clip, so preview AND export render them via the existing text
  * pipeline. No dead buttons: every state (need-download / transcribing /
- * done / failed / no-speech) is surfaced in the UI.
+ * done / failed / no-speech) is surfaced in the UI. The optional legacy-pack
+ * download is offered only if local bundled and installed files are unavailable.
  *
  * Language: "auto" (detect) or a whisper code ("ur", "hi", "en", …).
  * Prince's content is Urdu/Hindi songs + vlogs, so those are first-class.
@@ -87,15 +87,13 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     captionJob = viewModelScope.launch(Dispatchers.IO) {
         try {
             val language = _captionUi.value.language
-            // 1. Model pack gating: PackManager is the single source of
-            //    truth for heavy assets (PR-C). refreshSync first so the
-            //    check sees the latest catalog/registry.
-            PackManager.refreshSync(ctx.applicationContext)
+            // 1. Install/verify bundled model bytes on this IO worker. This
+            //    path is local-only; do not refresh the remote pack catalog.
             val ready = WhisperCaptionEngine.isModelReady(ctx.applicationContext)
             if (!ready) {
                 _captionUi.value = _captionUi.value.copy(
                     phase = CaptionPhase.NEED_DOWNLOAD,
-                    message = "The Whisper AI model (~103MB in 3 parts, one-time download) is needed for auto-captions."
+                    message = "The bundled Whisper model is unavailable. No network request was made; you may optionally install legacy model packs."
                 )
                 return@launch
             }

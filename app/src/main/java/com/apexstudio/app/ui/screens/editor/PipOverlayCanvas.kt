@@ -779,6 +779,7 @@ private fun PipOverlayItem(
                     .align(Alignment.BottomEnd)
                     .offset(x = (-6).dp, y = (-6).dp)
                     .size(32.dp)
+                    .testTag("pip-overlay-resize-${clip.id}")
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
                     .pointerInput(clip.id) {

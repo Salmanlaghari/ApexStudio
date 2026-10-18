@@ -32,7 +32,8 @@ fun AiToolsPanel(
     message: String,
     onToggle: (String, Boolean) -> Unit,
     onCancel: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onOpenLocalAnalysis: (() -> Unit)? = null
 ) {
     var group by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onClose, containerColor = ApexPalette.BgSurface) {
@@ -44,6 +45,12 @@ fun AiToolsPanel(
             Text("Local processing only. No cloud API. Model and safety requirements are checked before a feature can run.",
                 modifier = Modifier.padding(horizontal = 16.dp), color = ApexPalette.TextSecondary,
                 style = MaterialTheme.typography.bodySmall)
+            if (onOpenLocalAnalysis != null) {
+                OutlinedButton(onClick = onOpenLocalAnalysis,
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    Text("Local analysis (non-AI) · scenes / trim / crop")
+                }
+            }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { FilterChip(selected = group == null, onClick = { group = null }, label = { Text("All") }) }
                 items(tools.map { it.group }.distinct()) { value ->

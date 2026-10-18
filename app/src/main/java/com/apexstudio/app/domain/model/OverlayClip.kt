@@ -96,28 +96,30 @@ data class OverlayClip(
      * Move the start of the window, clamped to [0, endMs) — a drag can
      * slide the head against the tail but can never empty the overlay.
      */
-    fun withStart(millis: Long): OverlayClip {
-        val maxStart = (endMs - 1L).coerceAtLeast(0L)
-        return copy(startMs = millis.coerceIn(0L, maxStart))
-    }
+    fun withStart(millis: Long): OverlayClip = trimmed(millis, endMs)
 
     /**
      * Move the end of the window. Clamped inside the source so the
      * overlay can't out-grow the media it plays from.
      */
-    fun withEnd(millis: Long): OverlayClip {
-        val lo = startMs + 1L
-        val hi = sourceDurationMs.coerceAtLeast(lo)
-        return copy(endMs = millis.coerceIn(lo, hi))
-    }
+    fun withEnd(millis: Long): OverlayClip = trimmed(startMs, millis)
 
     /** A uniform clamp of both ends; tolerant of a reversed drag. */
     fun trimmed(start: Long, end: Long): OverlayClip {
-        val lo = start.coerceIn(0L, sourceDurationMs.coerceAtLeast(0L))
-        val hi = end.coerceAtLeast(lo + 1)
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        // A missing/zero-duration source has no legal one-millisecond
+        // window. Keep it empty instead of manufacturing a frame beyond
+        // the media boundary (notably when a trim drag starts at sourceEnd).
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+
+        // Reserve at least 1 ms for the end before clamping the head. This
+        // keeps even an end-handle drag from an empty window at sourceEnd
+        // inside the actual source.
+        val lo = start.coerceIn(0L, sourceEnd - 1L)
+        val hi = end.coerceIn(lo + 1L, sourceEnd)
         return copy(
             startMs = lo,
-            endMs = hi.coerceAtMost(sourceDurationMs.coerceAtLeast(hi))
+            endMs = hi
         )
     }
 
@@ -142,7 +144,7 @@ data class OverlayClip(
      * property survives untouched.
      */
     fun writeTo(clip: MediaClip): MediaClip {
-        require(clip.id == id) { "OverlayClip(${clip.id}) cannot write to ${clip.id}" }
+        require(clip.id == id) { "OverlayClip($id) cannot write to ${clip.id}" }
         return clip.copy(
             trimStartMs = startMs,
             trimEndMs = endMs,

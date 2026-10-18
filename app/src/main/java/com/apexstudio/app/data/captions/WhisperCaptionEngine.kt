@@ -9,34 +9,44 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
 /**
  * AI auto-captions: on-device Whisper (tiny, multilingual, int8).
  *
- * Pipeline: PackManager model pack -> PCM extract (16 kHz mono) ->
- * 30 s chunks -> log-mel -> Whisper encode/decode -> timestamp tokens ->
+ * Pipeline: bundled model (or existing PackManager pack) -> PCM extract
+ * (16 kHz mono) -> 30 s chunks -> log-mel -> Whisper encode/decode -> timestamp tokens ->
  * timed caption segments.
  *
- * The model pack is downloaded on demand and verified (sha256) by
- * PackManager; it is never bundled in the APK.
+ * The pinned multilingual tiny-int8 weights and tokens are bundled in the APK.
+ * On first use they are copied, SHA-256-verified, and atomically installed to
+ * app-private storage on an IO worker. No runtime network is required. Legacy
+ * PackManager installs remain a fallback.
  */
 object WhisperCaptionEngine {
 
     private const val TAG = "WhisperCaptionEngine"
 
-    /**
-     * The Whisper tiny model ships as 3 file packs (one URL per pack is
-     * all PackManager supports; a single zip can't be hosted — GitHub
-     * release uploads and 60MB+ git blobs are both blocked from here).
-     * Files live on HuggingFace (k2-fsa's canonical distribution) with
-     * sha256 verification, downloaded on demand, never in the APK.
-     * Total ~103MB.
-     */
+    /** Legacy pack IDs retained so already-installed downloads keep working. */
     const val PACK_ENCODER = "whisper-tiny-encoder"
     const val PACK_DECODER = "whisper-tiny-decoder"
     const val PACK_TOKENS = "whisper-tiny-tokens"
     val PACK_IDS = listOf(PACK_ENCODER, PACK_DECODER, PACK_TOKENS)
+
+    private const val BUNDLED_ASSET_DIR = "models/whisper"
+    private const val BUNDLED_REVISION = "65176e2deb88badc814a94058666cadccc29b61c"
+    private const val BUNDLED_MARKER = ".verified-revision"
+    private data class ModelAsset(val name: String, val size: Long, val sha256: String)
+    private val bundledAssets = listOf(
+        ModelAsset(WhisperModel.ENCODER_FILE, 12_937_772L,
+            "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"),
+        ModelAsset(WhisperModel.DECODER_FILE, 89_855_401L,
+            "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"),
+        ModelAsset(WhisperModel.TOKENS_FILE, 816_730L,
+            "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126")
+    )
 
     /** One timed caption segment. Times are absolute ms on the timeline. */
     data class CaptionSegment(val text: String, val startMs: Long, val endMs: Long)
@@ -47,17 +57,71 @@ object WhisperCaptionEngine {
     /** Heuristic tokens per 30 s chunk, for progress display only. */
     private const val EXPECTED_TOKENS_PER_CHUNK = 150
 
-    /** The 3 model files, or null when any is missing. */
+    /** Files from the bundled private install, or from a legacy PackManager install. */
     fun modelFiles(context: Context): Triple<File, File, File>? {
+        bundledModelFiles(context)?.let { return it }
+        return packModelFiles(context)
+    }
+
+    /** True offline once the bundled model is present in app-private storage. */
+    suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
+        installBundledModel(context.applicationContext)
+        bundledModelFiles(context) != null ||
+            (PACK_IDS.all { PackManager.isDownloaded(context, it) } && packModelFiles(context) != null)
+    }
+
+    private fun packModelFiles(context: Context): Triple<File, File, File>? {
         val enc = File(PackManager.packDir(context, PACK_ENCODER), WhisperModel.ENCODER_FILE)
         val dec = File(PackManager.packDir(context, PACK_DECODER), WhisperModel.DECODER_FILE)
         val tok = File(PackManager.packDir(context, PACK_TOKENS), WhisperModel.TOKENS_FILE)
-        return if (enc.exists() && dec.exists() && tok.exists()) Triple(enc, dec, tok) else null
+        return if (enc.isFile && dec.isFile && tok.isFile) Triple(enc, dec, tok) else null
     }
 
-    /** True when all 3 model packs are installed with files on disk. */
-    suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
-        PACK_IDS.all { PackManager.isDownloaded(context, it) } && modelFiles(context) != null
+    private fun bundledModelFiles(context: Context): Triple<File, File, File>? {
+        val dir = File(context.filesDir, "models/whisper/$BUNDLED_REVISION")
+        if (File(dir, BUNDLED_MARKER).takeIf { it.isFile }?.readText() != BUNDLED_REVISION) return null
+        val files = bundledAssets.map { File(dir, it.name) }
+        if (files.indices.any { !files[it].isFile || files[it].length() != bundledAssets[it].size }) return null
+        return Triple(files[0], files[1], files[2])
+    }
+
+    /** Copy bundled assets into versioned storage; directory rename publishes only a complete verified set. */
+    @Synchronized
+    private fun installBundledModel(context: Context) {
+        if (bundledModelFiles(context) != null) return
+        val root = File(context.filesDir, "models/whisper")
+        val target = File(root, BUNDLED_REVISION)
+        root.mkdirs()
+        val staging = File(root, ".staging-${Thread.currentThread().id}-${System.nanoTime()}")
+        try {
+            if (!staging.mkdirs()) throw IllegalStateException("Cannot create Whisper model staging directory")
+            for (asset in bundledAssets) {
+                val stagedFile = File(staging, asset.name)
+                val digest = MessageDigest.getInstance("SHA-256")
+                context.assets.open("$BUNDLED_ASSET_DIR/${asset.name}").use { input ->
+                    FileOutputStream(stagedFile).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                val actualHash = digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+                check(stagedFile.length() == asset.size && actualHash == asset.sha256) {
+                    "Bundled Whisper asset failed integrity verification: ${asset.name}"
+                }
+            }
+            File(staging, BUNDLED_MARKER).writeText(BUNDLED_REVISION)
+            if (target.exists()) target.deleteRecursively()
+            check(staging.renameTo(target)) { "Could not atomically install bundled Whisper model" }
+        } catch (error: Exception) {
+            staging.deleteRecursively()
+            Log.e(TAG, "Could not install bundled Whisper model", error)
+        }
     }
 
     /**
@@ -81,6 +145,7 @@ object WhisperCaptionEngine {
         onProgress: (Float) -> Unit = {}
     ): List<CaptionSegment>? = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
+        installBundledModel(appContext)
         val (encFile, decFile, tokFile) = modelFiles(appContext)
             ?: return@withContext null // model files missing
         val model = WhisperModel.load(encFile, decFile, tokFile)
@@ -92,13 +157,9 @@ object WhisperCaptionEngine {
                 ?: return@withContext null // no decodable audio
             // Slice to the clip's trim range (sample-exact) — captions
             // must cover only the active portion, on the clip's timeline.
-            val startSample = ((trimStartMs.coerceAtLeast(0L) *
-                WhisperMelSpectrogram.SAMPLE_RATE) / 1000)
-                .toInt().coerceIn(0, fullPcm.size)
+            val startSample = sampleIndexAtTime(trimStartMs, WhisperMelSpectrogram.SAMPLE_RATE, fullPcm.size)
             val endSample = if (trimEndMs == Long.MAX_VALUE) fullPcm.size
-            else ((trimEndMs.coerceAtLeast(0L) *
-                WhisperMelSpectrogram.SAMPLE_RATE) / 1000)
-                .toInt().coerceIn(startSample, fullPcm.size)
+                else sampleIndexAtTime(trimEndMs, WhisperMelSpectrogram.SAMPLE_RATE, fullPcm.size).coerceAtLeast(startSample)
             val pcm = fullPcm.copyOfRange(startSample, endSample)
             if (pcm.isEmpty()) return@withContext null
             onProgress(0.05f)
@@ -132,7 +193,8 @@ object WhisperCaptionEngine {
                     onProgress(0.05f + 0.9f * frac.coerceIn(0f, 1f))
                 }
                 if (langTokenId == null) langTokenId = result.langTokenId
-                all += tokensToSegments(model, result.tokenIds, chunkOffsetMs)
+                val chunkDurationMs = chunk.size.toLong() * 1000L / WhisperMelSpectrogram.SAMPLE_RATE
+                all += tokensToSegments(model, result.tokenIds, chunkOffsetMs, chunkDurationMs)
                 onProgress(0.05f + 0.9f * (c + 1).toFloat() / nChunks)
             }
             onProgress(1f)
@@ -152,7 +214,8 @@ object WhisperCaptionEngine {
     private fun tokensToSegments(
         model: WhisperModel,
         tokenIds: IntArray,
-        chunkOffsetMs: Long
+        chunkOffsetMs: Long,
+        chunkDurationMs: Long
     ): List<CaptionSegment> {
         val out = ArrayList<CaptionSegment>()
         val text = StringBuilder()
@@ -171,7 +234,10 @@ object WhisperCaptionEngine {
         for (id in tokenIds) {
             if (id == model.meta.eot) break
             if (id >= WhisperModel.TIMESTAMP_BEGIN) {
-                val tMs = (id - WhisperModel.TIMESTAMP_BEGIN) * WhisperModel.TIMESTAMP_UNIT_MS
+                val tMs = constrainWhisperTimestamp(
+                    (id - WhisperModel.TIMESTAMP_BEGIN) * WhisperModel.TIMESTAMP_UNIT_MS,
+                    segStartMs, chunkDurationMs
+                )
                 if (hasText) flush(tMs)
                 segStartMs = tMs
             } else {
@@ -182,7 +248,7 @@ object WhisperCaptionEngine {
             }
         }
         // Trailing text without a closing timestamp: close at chunk end.
-        if (hasText) flush(30_000L)
+        if (hasText) flush(chunkDurationMs)
         return out
     }
 
@@ -199,7 +265,8 @@ object WhisperCaptionEngine {
             val cur = segments[i]
             val dur = cur.endMs - cur.startMs
             val next = segments.getOrNull(i + 1)
-            if (dur < 1000 && next != null && next.startMs - cur.endMs < 1500) {
+            val gap = next?.startMs?.minus(cur.endMs)
+            if (dur in 1L until 1000L && next != null && gap != null && gap in 0L..1500L) {
                 merged.add(
                     CaptionSegment(
                         (cur.text + " " + next.text).trim(),
@@ -214,4 +281,21 @@ object WhisperCaptionEngine {
         }
         return merged
     }
+}
+
+/** Overflow-safe sample bound for trim times supplied by clips or callers. */
+internal fun sampleIndexAtTime(timeMs: Long, sampleRate: Int, sampleCount: Int): Int {
+    require(sampleRate > 0 && sampleCount >= 0)
+    if (timeMs <= 0L || sampleCount == 0) return 0
+    val maxTimeMs = (sampleCount.toLong() * 1000L + sampleRate - 1) / sampleRate
+    if (timeMs >= maxTimeMs) return sampleCount
+    val wholeSeconds = timeMs / 1000L
+    val fractionalSamples = (timeMs % 1000L) * sampleRate / 1000L
+    return (wholeSeconds * sampleRate + fractionalSamples).toInt().coerceIn(0, sampleCount)
+}
+
+/** Keep decoded timestamp tokens monotonic and inside the actual (possibly short) audio chunk. */
+internal fun constrainWhisperTimestamp(timestampMs: Long, previousStartMs: Long, chunkDurationMs: Long): Long {
+    require(chunkDurationMs >= 0L)
+    return timestampMs.coerceIn(previousStartMs.coerceIn(0L, chunkDurationMs), chunkDurationMs)
 }

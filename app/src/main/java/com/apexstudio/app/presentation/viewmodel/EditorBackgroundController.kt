@@ -3,7 +3,6 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
-import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
 import kotlinx.coroutines.CancellationException
@@ -16,9 +15,8 @@ import kotlinx.coroutines.launch
  * segmentation on a selected VIDEO clip.
  *
  * Flow: user picks a treatment in the Background panel -> Apply ->
- * if the segmentation model pack (~244 KB) isn't downloaded, the
- * panel shows the download prompt instead of silently doing
- * nothing -> the engine pre-renders a processed video (same
+ * the engine verifies/materializes its bundled ~244 KB segmentation
+ * model locally, then pre-renders a processed video (same
  * duration / resolution, audio passed through) off the UI thread
  * with cancellable progress -> the clip's [uri] swaps to the
  * processed file and [backgroundReplace] records the settings +
@@ -70,14 +68,22 @@ fun EditorViewModel.cancelBackgroundReplace() {
     )
 }
 
-/** Start (or resume) downloading the segmentation model pack. */
+/** Compatibility action for older UI: prepare the bundled model locally without network access. */
 fun EditorViewModel.downloadBackgroundModel() {
     val ctx = context ?: return
-    PackManager.download(ctx.applicationContext, BackgroundReplaceEngine.PACK_ID)
     _backgroundUi.value = _backgroundUi.value.copy(
-        phase = BackgroundPhase.NEED_DOWNLOAD,
-        message = "Downloading the segmentation model (~244 KB, one-time)…"
+        phase = BackgroundPhase.PROCESSING,
+        message = "Preparing the bundled segmentation model offline…"
     )
+    viewModelScope.launch(Dispatchers.IO) {
+        val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
+        _backgroundUi.value = if (ready) {
+            _backgroundUi.value.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Offline model ready.")
+        } else {
+            _backgroundUi.value.copy(phase = BackgroundPhase.FAILED, progress01 = 0f,
+                message = "Bundled person-segmentation model is unavailable.")
+        }
+    }
 }
 
 /**
@@ -120,15 +126,13 @@ fun EditorViewModel.applyBackgroundReplace(
 
     backgroundJob = viewModelScope.launch(Dispatchers.IO) {
         try {
-            // 1. Model pack gating: PackManager is the single source of
-            //    truth for heavy assets (PR-C). refreshSync first so the
-            //    check sees the latest catalog/registry.
-            PackManager.refreshSync(ctx.applicationContext)
+            // 1. Verify/materialize the packaged model locally. No pack-catalog
+            //    refresh or network call is part of this inference workflow.
             val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
             if (!ready) {
                 _backgroundUi.value = _backgroundUi.value.copy(
-                    phase = BackgroundPhase.NEED_DOWNLOAD,
-                    message = "The person-segmentation model (~244 KB, one-time download) is needed for background replace."
+                    phase = BackgroundPhase.FAILED,
+                    message = "Bundled person-segmentation model is unavailable."
                 )
                 return@launch
             }

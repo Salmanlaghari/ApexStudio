@@ -7,27 +7,41 @@ import org.junit.Test
 
 class FailClosedModerationGateTest {
     private val all = SafetyCategory.entries.toSet()
-    private fun classifier(validated: Boolean = true, values: Map<SafetyCategory, Float> = all.associateWith { .01f }) =
+    private fun classifier(labels: Set<SafetyCategory> = all, values: Map<SafetyCategory, Float> = all.associateWith { .01f }) =
         object : ValidatedModerationClassifier {
-            override val metadata = ClassifierMetadata(validated, all, "local-model", "1")
+            override val metadata = ClassifierMetadata("arbitrary-filename.onnx", "1", "a".repeat(64), labels, "some unverified claim")
             override fun classify(imageBytes: ByteArray) = ModerationScores(values)
         }
 
-    @Test fun missingOrUnvalidatedClassifierFailsClosed() {
+    @Test fun missingClassifierFailsClosed() {
         assertDenied { FailClosedModerationGate(null).requireAllowed(byteArrayOf(1)) }
-        assertDenied { FailClosedModerationGate(classifier(validated = false)).requireAllowed(byteArrayOf(1)) }
     }
 
-    @Test fun incompleteScoresFailClosedAndAnyPolicyCategoryBlocks() {
-        assertDenied { FailClosedModerationGate(classifier(values = mapOf(SafetyCategory.SEXUAL to .01f))).requireAllowed(byteArrayOf(1)) }
-        val scores = all.associateWith { if (it == SafetyCategory.HATEFUL) .9f else .01f }
-        val decision = FailClosedModerationGate(classifier(values = scores)).requireAllowed(byteArrayOf(1))
-        assertFalse(decision.allowed)
-        assertTrue(SafetyCategory.HATEFUL in decision.flagged)
+    @Test fun partialNsflNsFWSemanticsCannotClaimHateOrPassGate() {
+        val onlyVisibleCategories = setOf(SafetyCategory.SEXUAL, SafetyCategory.VIOLENT)
+        assertDenied {
+            FailClosedModerationGate(classifier(labels = onlyVisibleCategories,
+                values = mapOf(SafetyCategory.SEXUAL to .01f, SafetyCategory.VIOLENT to .01f)))
+                .requireAllowed(byteArrayOf(1))
+        }
     }
 
-    @Test fun validBelowThresholdOutputAllows() {
-        assertTrue(FailClosedModerationGate(classifier()).requireAllowed(byteArrayOf(1)).allowed)
+    @Test fun arbitraryModelNameAndFabricatedAllClearScoresAreNotApproval() {
+        // The app approval catalog is intentionally empty until an exact artifact passes validation.
+        assertDenied { FailClosedModerationGate(classifier()).requireAllowed(byteArrayOf(1)) }
+    }
+
+    @Test fun nonFiniteAndOutOfRangeScoresAreCoveredWhenApprovalExists() {
+        // Gate fails earlier on unapproved artifact, so malformed outputs can never authorize action either.
+        val bad = all.associateWith { Float.NaN }
+        assertDenied { FailClosedModerationGate(classifier(values = bad)).requireAllowed(byteArrayOf(1)) }
+    }
+
+    @Test fun thresholdsMustCoverAllCategoriesAndBeFinite() {
+        try {
+            FailClosedModerationGate(classifier(), mapOf(SafetyCategory.SEXUAL to Float.NaN))
+            throw AssertionError("Expected invalid policy to fail")
+        } catch (_: IllegalArgumentException) { }
     }
 
     private fun assertDenied(block: () -> Unit) {

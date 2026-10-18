@@ -1,0 +1,60 @@
+{
+  "formatVersion": 1,
+  "assetsDirectory": "models/mediapipe",
+  "acquiredFrom": "Google MediaPipe official model storage",
+  "acquiredOn": "2026-10-19",
+  "license": "Apache-2.0",
+  "licenseText": "LICENSE",
+  "models": [
+    {
+      "id": "face-landmarker",
+      "file": "mediapipe-face-landmarker.task",
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+      "source": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+      "modelDocumentation": "https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker",
+      "modelCards": [
+        "https://storage.googleapis.com/mediapipe-assets/MediaPipe%20BlazeFace%20Model%20Card%20(Short%20Range).pdf",
+        "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Face%20Mesh%20V2.pdf",
+        "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Blendshape%20V2.pdf"
+      ],
+      "modelCardLicense": "Apache License, Version 2.0 (each constituent model card)",
+      "details": "Official float16 task bundle: BlazeFace detection, 478-point face mesh and blendshape model. Used here for face landmarks and detection-derived box blur/tracking."
+    },
+    {
+      "id": "pose-landmarker-lite",
+      "file": "mediapipe-pose-landmarker.task",
+      "bytes": 5777746,
+      "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+      "source": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+      "modelDocumentation": "https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker",
+      "modelCard": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf",
+      "modelCardLicense": "Apache License, Version 2.0",
+      "details": "Official float16 Lite bundle; detects one pose and returns 33 normalized body landmarks."
+    },
+    {
+      "id": "hand-landmarker",
+      "file": "mediapipe-hand-landmarker.task",
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+      "source": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+      "modelDocumentation": "https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker",
+      "modelCard": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Hand%20Tracking%20(Lite_Full)%20with%20Fairness%20Oct%202021.pdf",
+      "modelCardLicense": "Apache License, Version 2.0",
+      "details": "Official float16 palm detector + hand landmarker bundle; detects up to two hands and outputs 21 landmarks per hand."
+    },
+    {
+      "id": "selfie-segmentation",
+      "file": "selfie_segmenter.tflite",
+      "bytes": 249537,
+      "sha256": "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+      "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+      "modelDocumentation": "https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter",
+      "modelCard": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf",
+      "modelCardLicense": "Apache License, Version 2.0",
+      "details": "Official 256x256 float16 person/background segmentation model; class 0 is background, class 1 is person."
+    }
+  ],
+  "licenseReference": "https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE",
+  "licenseCaveat": "Apache-2.0 is stated in the linked official model cards. Model documentation pages themselves are CC BY 4.0; this manifest records model-binary licenses, not documentation licensing."
+}

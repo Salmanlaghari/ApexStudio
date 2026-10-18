@@ -11,9 +11,13 @@ import kotlin.math.max
 data class AutoCropSuggestion(val crop: NormalizedCrop, val attentionCenterX: Float, val attentionCenterY: Float, val method: String)
 
 object SignalAutoCrop {
-    fun suggest(frame: LumaFrame, outputAspectRatio: Float, previous: NormalizedCrop? = null, smoothing: Float = 0.4f): AutoCropSuggestion {
+    fun suggest(frame: LumaFrame, outputAspectRatio: Float, previous: NormalizedCrop? = null,
+        smoothing: Float = 0.4f, sourceAspectRatio: Float = frame.width.toFloat() / frame.height): AutoCropSuggestion {
         require(outputAspectRatio.isFinite() && outputAspectRatio > 0f && smoothing in 0f..1f)
-        val inputAspect = frame.width.toFloat() / frame.height
+        require(sourceAspectRatio.isFinite() && sourceAspectRatio > 0f)
+        // Luma samples can be stretched to a fixed analysis size. Crop geometry must use the actual
+        // decoded source aspect, otherwise portrait and square inputs are mistakenly treated as 16:9.
+        val inputAspect = sourceAspectRatio
         val (cropW, cropH) = if (inputAspect >= outputAspectRatio) outputAspectRatio / inputAspect to 1f
             else 1f to inputAspect / outputAspectRatio
         var weightSum = 0.0; var xSum = 0.0; var ySum = 0.0

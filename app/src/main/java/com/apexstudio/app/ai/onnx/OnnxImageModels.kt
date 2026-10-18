@@ -10,8 +10,34 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 import java.nio.FloatBuffer
 import kotlin.coroutines.coroutineContext
+
+enum class ImageTask { BACKGROUND_REMOVAL, SUPER_RESOLUTION, STYLE_TRANSFER }
+
+/** No generic caller-supplied record is trusted; add entries only after model/license/behavior review. */
+internal object ImageModelReviewCatalog {
+    private val reviewedSha256ToTask: Map<String, ImageTask> = emptyMap()
+    fun isReviewed(artifact: ImageModelArtifact): Boolean =
+        reviewedSha256ToTask[artifact.sha256.lowercase()] == artifact.task
+}
+
+/** Reviewed identity for exact model bytes; shape/name alone never establishes model semantics. */
+data class ImageModelArtifact(
+    val modelId: String,
+    val version: String,
+    val sha256: String,
+    val sourceUrl: String,
+    val license: String,
+    val task: ImageTask,
+) {
+    init {
+        require(modelId.isNotBlank() && version.isNotBlank())
+        require(sha256.matches(Regex("[0-9a-fA-F]{64}"))) { "Model SHA-256 must contain 64 hex digits" }
+        require(sourceUrl.startsWith("https://") && license.isNotBlank())
+    }
+}
 
 /** Explicit NCHW RGB model contract. Dimensions are fixed by the declared local model pack. */
 data class ImageModelContract(
@@ -24,6 +50,7 @@ data class ImageModelContract(
     val outputChannels: Int = 3,
     val outputWidth: Int = width,
     val outputHeight: Int = height,
+    val task: ImageTask? = null,
 ) {
     init {
         require(inputName.isNotBlank() && outputName.isNotBlank())
@@ -41,7 +68,8 @@ data class ImageModelContract(
     private fun shapeMismatch(label: String, actual: LongArray, expected: LongArray): String? {
         if (actual.size != expected.size) return "$label rank ${actual.size}; expected ${expected.size} (NCHW)"
         for (i in expected.indices) {
-            if (actual[i] > 0 && actual[i] != expected[i])
+            if (actual[i] == 0L || actual[i] < -1L) return "$label dimension $i has invalid value ${actual[i]}"
+            if (actual[i] != -1L && actual[i] != expected[i])
                 return "$label dimension $i is ${actual[i]}; expected ${expected[i]}"
         }
         return null
@@ -49,11 +77,11 @@ data class ImageModelContract(
 }
 
 enum class FloatRange(val min: Float, val max: Float) {
-    ZERO_TO_ONE(0f, 1f), MINUS_ONE_TO_ONE(-1f, 1f)
+    ZERO_TO_ONE(0f, 1f), MINUS_ONE_TO_ONE(-1f, 1f), BYTE_0_TO_255(0f, 255f)
 }
 
 sealed interface ModelAvailability {
-    data class Ready(val inputShape: List<Long>, val outputShape: List<Long>) : ModelAvailability
+    data class Ready(val inputShape: List<Long>, val outputShape: List<Long>, val modelId: String, val sha256: String) : ModelAvailability
     data class Unavailable(val reason: String) : ModelAvailability
 }
 
@@ -66,11 +94,16 @@ object OnnxImageModels {
     private val env: OrtEnvironment by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { OrtEnvironment.getEnvironment() }
 
     /** Introspect the local file only; absent/unreadable/mismatched files are reported as unavailable. */
-    suspend fun inspect(modelFile: File, contract: ImageModelContract): ModelAvailability = withContext(Dispatchers.IO) {
+    suspend fun inspect(modelFile: File, contract: ImageModelContract, artifact: ImageModelArtifact? = null): ModelAvailability = withContext(Dispatchers.IO) {
+        if (artifact == null) return@withContext ModelAvailability.Unavailable("No reviewed model manifest is configured; filename and tensor shape are not proof of model identity")
+        if (contract.task == null || contract.task != artifact.task) return@withContext ModelAvailability.Unavailable("Reviewed model task does not match the image adapter")
+        if (!ImageModelReviewCatalog.isReviewed(artifact)) return@withContext ModelAvailability.Unavailable("Model identity is not in the app-reviewed artifact catalog")
         if (!modelFile.isFile) return@withContext ModelAvailability.Unavailable("Model file is not installed: ${modelFile.name}")
         try {
             val canonical = modelFile.canonicalFile
             if (!canonical.isFile || canonical.length() == 0L) return@withContext ModelAvailability.Unavailable("Model file is empty or unavailable")
+            val actualDigest = sha256(canonical)
+            if (!actualDigest.equals(artifact.sha256, ignoreCase = true)) return@withContext ModelAvailability.Unavailable("Model SHA-256 does not match the reviewed manifest")
             openSession(canonical).use { session ->
                 val input = (session.inputInfo[contract.inputName]?.info as? TensorInfo)?.shape
                     ?: return@withContext ModelAvailability.Unavailable("Missing ONNX input '${contract.inputName}'")
@@ -82,7 +115,7 @@ object OnnxImageModels {
                     return@withContext ModelAvailability.Unavailable("Image model input and output must be float32 tensors")
                 val mismatch = contract.validateShapes(input, output)
                 if (mismatch != null) ModelAvailability.Unavailable("Incompatible ONNX model: $mismatch")
-                else ModelAvailability.Ready(input.toList(), output.toList())
+                else ModelAvailability.Ready(input.toList(), output.toList(), artifact.modelId, actualDigest)
             }
         } catch (e: Exception) {
             ModelAvailability.Unavailable("Cannot open local ONNX model: ${e.message ?: e.javaClass.simpleName}")
@@ -95,11 +128,12 @@ object OnnxImageModels {
         modelFile: File,
         bitmap: Bitmap,
         contract: ImageModelContract,
+        artifact: ImageModelArtifact? = null,
         onProgress: (ModelProgress) -> Unit = {},
     ): Bitmap = withContext(Dispatchers.Default) {
         coroutineContext.ensureActive()
         onProgress(ModelProgress(0.05f, "validating local model"))
-        val availability = inspect(modelFile, contract)
+        val availability = inspect(modelFile, contract, artifact)
         if (availability !is ModelAvailability.Ready) {
             throw LocalModelException((availability as ModelAvailability.Unavailable).reason)
         }
@@ -134,6 +168,19 @@ object OnnxImageModels {
                 }
             }
         }
+    }
+
+    internal fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     private fun openSession(file: File): OrtSession = OrtSession.SessionOptions().use { options ->
@@ -179,14 +226,14 @@ object OnnxImageModels {
 /** Conventional fixed-shape contracts for task-specific model families. */
 object ImageModelContracts {
     fun backgroundMask(inputName: String, outputName: String, width: Int, height: Int) =
-        ImageModelContract(inputName, outputName, width, height, outputChannels = 1)
+        ImageModelContract(inputName, outputName, width, height, outputChannels = 1, task = ImageTask.BACKGROUND_REMOVAL)
 
     fun superResolution(inputName: String, outputName: String, width: Int, height: Int, scale: Int) : ImageModelContract {
         require(scale > 1)
         return ImageModelContract(inputName, outputName, width, height,
-            outputWidth = Math.multiplyExact(width, scale), outputHeight = Math.multiplyExact(height, scale))
+            outputWidth = Math.multiplyExact(width, scale), outputHeight = Math.multiplyExact(height, scale), task = ImageTask.SUPER_RESOLUTION)
     }
 
     fun styleTransfer(inputName: String, outputName: String, width: Int, height: Int, range: FloatRange = FloatRange.MINUS_ONE_TO_ONE) =
-        ImageModelContract(inputName, outputName, width, height, inputRange = range, outputRange = range)
+        ImageModelContract(inputName, outputName, width, height, inputRange = range, outputRange = range, task = ImageTask.STYLE_TRANSFER)
 }

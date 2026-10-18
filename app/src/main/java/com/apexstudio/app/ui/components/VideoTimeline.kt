@@ -180,6 +180,9 @@ fun VideoTimeline(
     selectedClipId: String? = null,
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
+    // Source trim bounds and project placement are independent audio values.
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     isPlaying: Boolean = false,
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
@@ -1013,6 +1016,8 @@ fun VideoTimeline(
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
                                     onSelectAudioTrack = onSelectAudioTrack,
+                                    onMoveAudioTrack = onMoveAudioTrack,
+                                    onTrimAudioTrack = onTrimAudioTrack,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a1Height)
@@ -1030,6 +1035,8 @@ fun VideoTimeline(
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
                                     onSelectAudioTrack = onSelectAudioTrack,
+                                    onMoveAudioTrack = onMoveAudioTrack,
+                                    onTrimAudioTrack = onTrimAudioTrack,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a2Height)
@@ -1166,6 +1173,8 @@ fun VideoTimeline(
     onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSelectAudioTrack: (String) -> Unit = {},
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     // Multi-layer controls (wired by the editor screen).
     hiddenVideoLayers: Set<Int> = state.hiddenVideoLayers,
     lockedVideoLayers: Set<Int> = state.lockedVideoLayers,
@@ -1250,6 +1259,8 @@ fun VideoTimeline(
         onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
         selectedAudioTrackId = state.selectedAudioTrackId,
         onSelectAudioTrack = onSelectAudioTrack,
+        onMoveAudioTrack = onMoveAudioTrack,
+        onTrimAudioTrack = onTrimAudioTrack,
         hiddenVideoLayers = hiddenVideoLayers,
         lockedVideoLayers = lockedVideoLayers,
         playerPositionFlow = playerPositionFlow,
@@ -2785,6 +2796,8 @@ private fun TimelineAudioTrack(
     playheadMsProvider: () -> Long = { 0L },
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val samples = remember(audioWaveform, audioTracks.map { it.id }) {
@@ -2818,6 +2831,9 @@ private fun TimelineAudioTrack(
                 beatMarkersMs = beatMarkersMs,
                 isMuted = isMuted || track.isMuted,
                 onSelect = { onSelectAudioTrack(track.id) },
+                msToDp = msToDp,
+                onMove = onMoveAudioTrack,
+                onTrim = onTrimAudioTrack,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -2835,74 +2851,113 @@ private fun AudioTrackLaneRow(
     isSelected: Boolean,
     samples: FloatArray,
     durationMs: Long,
-    // Playhead provider, read in the waveform's draw phase only.
     playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
     isMuted: Boolean,
     onSelect: () -> Unit,
+    msToDp: Float,
+    onMove: (trackId: String, startTimeMs: Long) -> Unit,
+    onTrim: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Accent follows the mixer's track-type language (AudioMixerPanel):
-    // SFX/voice tracks read amber, music tracks green.
     val accent = if (track.kind != AudioTrack.Kind.MUSIC) Color(0xFFFBBF24) else Color(0xFF34D399)
-    Row(
-        modifier = modifier
-            .height(40.dp)
-            .padding(horizontal = 6.dp, vertical = 3.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
-            .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) Color.White else accent.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(6.dp)
-            )
-            .clickable(onClick = onSelect)
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    val density = LocalDensity.current
+    var transientDxPx by remember(track.id) { mutableFloatStateOf(0f) }
+    var gestureMode by remember(track.id) { mutableStateOf(AudioBlockGesture.NONE) }
+    val sourceEnd = track.sourceEndMs.coerceAtLeast(1L)
+    val initialTrimStart = track.trimStartMs.coerceIn(0L, sourceEnd - 1L)
+    val initialTrimEnd = track.trimEndMs.coerceIn(initialTrimStart + 1L, sourceEnd)
+    val initialStart = track.startTimeMs.coerceAtLeast(0L)
+    val deltaMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
+    val previewStart = when (gestureMode) {
+        AudioBlockGesture.MOVE, AudioBlockGesture.LEFT -> (initialStart + deltaMs).coerceAtLeast(0L)
+        else -> initialStart
+    }
+    val previewTrimStart = if (gestureMode == AudioBlockGesture.LEFT) {
+        (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    } else initialTrimStart
+    val previewTrimEnd = if (gestureMode == AudioBlockGesture.RIGHT) {
+        (initialTrimEnd + deltaMs).coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
+    } else initialTrimEnd
+    val displayedSpanMs = (previewTrimEnd - previewTrimStart).coerceAtLeast(250L)
+    val displayedWidth = maxOf((displayedSpanMs * msToDp).dp, 42.dp)
+
+    Box(modifier = modifier.height(40.dp)) {
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .offset(x = (previewStart * msToDp).dp)
+                .width(displayedWidth)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp))
-                .background(accent)
-        )
-        Icon(
-            Icons.Default.MusicNote,
-            contentDescription = null,
-            tint = accent,
-            modifier = Modifier.size(13.dp)
-        )
-        Text(
-            text = track.name.ifBlank { "Audio" },
-            color = Color.White,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            modifier = Modifier.widthIn(max = 110.dp)
-        )
-        if (track.isMuted) {
-            Icon(
-                Icons.Default.VolumeOff,
-                contentDescription = "Muted",
-                tint = Color(0xFF64748B),
-                modifier = Modifier.size(12.dp)
-            )
-        }
-        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                .padding(vertical = 3.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
+                .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) Color.White else accent.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                .clickable(onClick = onSelect)
+                .pointerInput(track.id, msToDp) {
+                    detectDragGestures(
+                        onDragStart = { down ->
+                            onSelect()
+                            val edgePx = 14.dp.toPx()
+                            gestureMode = when {
+                                down.x <= edgePx -> AudioBlockGesture.LEFT
+                                down.x >= size.width - edgePx -> AudioBlockGesture.RIGHT
+                                else -> AudioBlockGesture.MOVE
+                            }
+                            transientDxPx = 0f
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            transientDxPx += amount.x
+                        },
+                        onDragEnd = {
+                            val changeMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
+                            when (gestureMode) {
+                                AudioBlockGesture.MOVE -> onMove(track.id, (initialStart + changeMs).coerceAtLeast(0L))
+                                AudioBlockGesture.LEFT -> {
+                                    val sourceStart = (initialTrimStart + changeMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+                                    onTrim(track.id, sourceStart, initialTrimEnd, (initialStart + changeMs).coerceAtLeast(0L))
+                                }
+                                AudioBlockGesture.RIGHT -> {
+                                    val sourceEndMs = (initialTrimEnd + changeMs).coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))
+                                    onTrim(track.id, initialTrimStart, sourceEndMs, initialStart)
+                                }
+                                AudioBlockGesture.NONE -> Unit
+                            }
+                            transientDxPx = 0f
+                            gestureMode = AudioBlockGesture.NONE
+                        },
+                        onDragCancel = {
+                            transientDxPx = 0f
+                            gestureMode = AudioBlockGesture.NONE
+                        }
+                    )
+                }
+        ) {
             AudioWaveformBars(
                 samples = samples,
-                durationMs = durationMs,
-                playheadMsProvider = playheadMsProvider,
+                durationMs = displayedSpanMs,
+                playheadMsProvider = { (playheadMsProvider() - previewStart).coerceAtLeast(0L) },
                 beatMarkersMs = beatMarkersMs,
                 isMuted = isMuted,
                 barColor = accent,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)
             )
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.MusicNote, contentDescription = null, tint = accent, modifier = Modifier.size(12.dp))
+                Text(track.name.ifBlank { "Audio" }, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
+                if (track.isMuted) Icon(Icons.Default.VolumeOff, contentDescription = "Muted", tint = Color(0xFF64748B), modifier = Modifier.size(12.dp))
+            }
+            Box(Modifier.align(Alignment.CenterStart).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
+            Box(Modifier.align(Alignment.CenterEnd).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
         }
     }
 }
+
+private enum class AudioBlockGesture { NONE, MOVE, LEFT, RIGHT }
 
 /**
  * Shared waveform bar renderer used by the A1 lane rows: full-width bars

@@ -50,13 +50,15 @@ class AnimatedFilterTest {
     }
 
     @Test
-    fun `exactly four animated presets exist`() {
-        val animated = FxPreset.values().filter { it.isAnimated }
+    fun `legacy Animated gallery keeps its four original presets`() {
+        val animated = FxPreset.values().filter { it.category == "Animated" && it.isAnimated }
         assertEquals(
-            "expected 4 animated presets, found: ${animated.map { it.id }}",
+            "expected 4 original Animated gallery presets, found: ${animated.map { it.id }}",
             4,
             animated.size
         )
+        assertEquals(animatedIds.toSet(), animated.map { it.id }.toSet())
+        assertEquals(20, FxPreset.values().count { it.category == "Creator Pack" && it.isAnimated })
     }
 
     @Test

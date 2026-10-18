@@ -94,6 +94,8 @@ fun EditorScreen(
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
+    var showAiPanel by remember { mutableStateOf(false) }
+    var showCropPanel by remember { mutableStateOf(false) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
     // Phase 3: saved projects for History/Drafts panel.
@@ -130,12 +132,38 @@ fun EditorScreen(
         }
     }
 
+    var localAudioImporting by remember { mutableStateOf(false) }
+    var audioImportStartMs by remember { mutableLongStateOf(0L) }
     val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            val name = it.lastPathSegment?.substringAfterLast('/') ?: "Imported Audio"
-            vm.addAudioTrack(name = name, uri = it.toString(), kind = AudioTrack.Kind.MUSIC)
+        if (uri != null && !localAudioImporting) {
+            val insertionTime = audioImportStartMs
+            scope.launch {
+                localAudioImporting = true
+                try {
+                    val imported = com.apexstudio.app.data.audio.importLocalAudio(context, uri)
+                    vm.addAudioTrack(name = imported.displayName, uri = imported.uri,
+                        kind = AudioTrack.Kind.MUSIC, sourceDurationMs = imported.durationMs,
+                        startTimeMs = insertionTime)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    android.widget.Toast.makeText(context, error.message ?: "Audio import failed", android.widget.Toast.LENGTH_LONG).show()
+                } finally {
+                    localAudioImporting = false
+                }
+            }
+        }
+    }
+    val importPhoneMusic: () -> Unit = {
+        if (!localAudioImporting) {
+            vm.setPlaying(false)
+            vm.setPendingAddAsAudio(false)
+            vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddToLayer(null)
+            audioImportStartMs = vm.playerPositionFlow.value
+            audioPickerLauncher.launch("audio/*")
         }
     }
 
@@ -695,7 +723,7 @@ fun EditorScreen(
                     // picker and lands in project.audioTracks (A1 lane).
                     vm.setPendingAddAsOverlay(false)
                     vm.setPendingAddAsAudio(true)
-                    mediaPicker.pickAudioMedia.launch("audio/*")
+                    importPhoneMusic()
                 } else {
                     vm.setPendingAddAsOverlay(false)
                     vm.setPendingAddAsAudio(false)
@@ -709,8 +737,24 @@ fun EditorScreen(
         EditorBottomToolbarSection(
             state = state,
             vm = vm,
-            mediaPicker = mediaPicker
+            mediaPicker = mediaPicker,
+            onAi = { showAiPanel = true },
+            onCrop = { showCropPanel = true },
+            onDeviceAudio = importPhoneMusic
         )
+        if (localAudioImporting) {
+            androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+        }
+    }
+
+    if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false })
+    if (showCropPanel) {
+        Box(Modifier.fillMaxSize().clickable { showCropPanel = false }, contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                CropToolsOverlay(state, vm, onClose = { showCropPanel = false })
+            }
+        }
     }
 
     // Modal overlays — each extracted to its own composable (see
@@ -739,7 +783,7 @@ fun EditorScreen(
         state = state,
         audioState = audioState,
         vm = vm,
-        audioPickerLauncher = audioPickerLauncher,
+        onImportLocalAudio = importPhoneMusic,
         onOpenRoyaltyFreeSheet = { showRoyaltyFreeSheet = true },
         // Phase 4: live visualizer needs the player audio session.
         audioSessionId = exoPlayer?.audioSessionId ?: 0
@@ -755,7 +799,7 @@ fun EditorScreen(
         onCloseRoyaltyFreeSheet = { showRoyaltyFreeSheet = false },
         state = state,
         vm = vm,
-        audioPickerLauncher = audioPickerLauncher
+        onImportLocalAudio = importPhoneMusic
     )
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
@@ -774,6 +818,7 @@ fun EditorScreen(
         show = showAddMediaMenu,
         vm = vm,
         mediaPicker = mediaPicker,
+        onImportLocalAudio = importPhoneMusic,
         onDismiss = { showAddMediaMenu = false }
     )
 

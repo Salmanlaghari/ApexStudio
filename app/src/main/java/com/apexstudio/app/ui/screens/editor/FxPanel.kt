@@ -350,6 +350,7 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     FxPreset.HUE_CYCLE, FxPreset.GRADIENT_SWEEP -> Icons.Default.Layers
 
     FxPreset.LIGHT_LEAK_SWEEP -> Icons.Default.CenterFocusWeak
+    else -> Icons.Default.Layers
 }
 
 private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
@@ -441,4 +442,6 @@ private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
     FxPreset.PULSE_BEAT -> listOf(Color(0xFFFF5252), Color(0xFF880E4F))
     FxPreset.GRADIENT_SWEEP -> listOf(Color(0xFF00E5FF), Color(0xFFFF00FF))
     FxPreset.LIGHT_LEAK_SWEEP -> listOf(Color(0xFFFFB74D), Color(0xFFE65100))
+    else -> listOf(Color.hsv((preset.ordinal * 31 % 360).toFloat(), 0.65f, 0.9f),
+        Color.hsv((preset.ordinal * 31 + 60).rem(360).toFloat(), 0.8f, 0.45f))
 }

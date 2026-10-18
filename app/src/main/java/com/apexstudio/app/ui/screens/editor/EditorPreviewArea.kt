@@ -29,6 +29,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -121,8 +123,20 @@ fun VideoPreviewArea(
     photoClip: MediaClip? = null,
     photoCropActive: Boolean = false,
     onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
+    // Main-track video crop; IMAGE clips use photoClip.photoEdit.crop instead.
+    videoCrop: VideoCropSettings? = null,
     modifier: Modifier = Modifier
 ) {
+    // Current preview grading remains Compose-based; this crop-only effect is
+    // attached to the real V1 decoder so its source pixels match Transformer.
+    LaunchedEffect(exoPlayer, videoCrop, photoClip?.id) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (photoClip == null) {
+            player.setVideoEffects(listOfNotNull(VideoCropGlEffect.fromSettings(videoCrop)))
+        } else {
+            player.setVideoEffects(emptyList())
+        }
+    }
     val currentResizeMode = if (isCoverMode) {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     } else {

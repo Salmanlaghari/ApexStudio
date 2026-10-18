@@ -23,7 +23,7 @@ import kotlin.math.min
  * all its audio effects, but it cannot mix extra timeline audio tracks on top.
  * This mixer closes that gap: it decodes the exported file's audio plus every
  * unmuted [AudioTrack], mixes them in software (per-track volume, fade
- * in/out, each placed at its [AudioTrack.trimStartMs] timeline offset),
+ * in/out, each placed at its [AudioTrack.startTimeMs] timeline offset),
  * re-encodes to AAC and muxes with the video track copied bit-for-bit.
  *
  * Pipeline (all streaming, bounded memory):
@@ -141,7 +141,7 @@ object MusicExportMixer {
                     continue
                 }
                 val decoder = try {
-                    TrackDecoder.openUri(context, t.uri)
+                    TrackDecoder.openUri(context, t.uri, t.trimStartMs)
                 } catch (e: Exception) {
                     Log.w(TAG, "Skipping undecodable music track: ${t.name}", e)
                     null
@@ -150,7 +150,7 @@ object MusicExportMixer {
                     skipped++
                     continue
                 }
-                val startFrame = (t.trimStartMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
+                val startFrame = (t.startTimeMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
                 if (startFrame >= durationCapFrames) {
                     decoder.release()
                     skipped++
@@ -540,7 +540,8 @@ object MusicExportMixer {
      */
     private class TrackDecoder private constructor(
         private val extractor: MediaExtractor,
-        private val decoder: MediaCodec
+        private val decoder: MediaCodec,
+        private val sourceStartUs: Long
     ) {
         private val info = MediaCodec.BufferInfo()
         private var inputDone = false
@@ -567,11 +568,11 @@ object MusicExportMixer {
                     ex.release()
                     throw e
                 }
-                return openSelected(ex, audioTrackIndex)
+                return openSelected(ex, audioTrackIndex, 0L)
             }
 
             /** Opens the first audio track of a path / file:// / content:// URI. */
-            fun openUri(context: Context, uri: String): TrackDecoder {
+            fun openUri(context: Context, uri: String, sourceStartMs: Long): TrackDecoder {
                 val ex = MediaExtractor()
                 try {
                     val clean = uri.removePrefix("file://")
@@ -596,19 +597,24 @@ object MusicExportMixer {
                     ex.release()
                     throw IllegalArgumentException("No audio track in $uri")
                 }
-                return openSelected(ex, audioIdx)
+                return openSelected(ex, audioIdx, sourceStartMs.coerceAtLeast(0L) * 1000L)
             }
 
-            private fun openSelected(ex: MediaExtractor, idx: Int): TrackDecoder {
+            private fun openSelected(ex: MediaExtractor, idx: Int, sourceStartUs: Long): TrackDecoder {
                 try {
                     val format = ex.getTrackFormat(idx)
                     val mime = format.getString(MediaFormat.KEY_MIME)
                         ?: throw IllegalArgumentException("Missing MIME")
                     ex.selectTrack(idx)
+                    // Seek near the source in-point, then discard decoded
+                    // preroll by presentation timestamp in convertAndAppend.
+                    if (sourceStartUs > 0L) {
+                        ex.seekTo(sourceStartUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    }
                     val dec = MediaCodec.createDecoderByType(mime)
                     dec.configure(format, null, null, 0)
                     dec.start()
-                    return TrackDecoder(ex, dec)
+                    return TrackDecoder(ex, dec, sourceStartUs)
                 } catch (e: Exception) {
                     ex.release()
                     throw e
@@ -682,7 +688,7 @@ object MusicExportMixer {
                         val ob = decoder.getOutputBuffer(outIdx)
                         if (ob != null && info.size > 0) {
                             updateFormat(decoder.outputFormat)
-                            convertAndAppend(ob, info.size)
+                            convertAndAppend(ob, info.size, info.presentationTimeUs)
                         }
                         decoder.releaseOutputBuffer(outIdx, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -722,7 +728,7 @@ object MusicExportMixer {
          * native rate differs. Resample state ([rsPos]/[rsCarry]) carries
          * across buffers so there are no clicks at buffer boundaries.
          */
-        private fun convertAndAppend(ob: ByteBuffer, size: Int) {
+        private fun convertAndAppend(ob: ByteBuffer, size: Int, presentationTimeUs: Long) {
             val le = ob.duplicate().order(ByteOrder.LITTLE_ENDIAN)
             val bytesPerSample = if (inPcm16) 2 else 4
             val frames = size / bytesPerSample / inChannels.coerceAtLeast(1)
@@ -740,12 +746,15 @@ object MusicExportMixer {
                 val i = floor(rsPos).toInt()
                 if (i + 1 >= frames) break
                 val frac = (rsPos - i).toFloat()
-                for (c in 0 until CHANNELS) {
-                    val s0 = s(i, c)
-                    val s1 = s(i + 1, c)
-                    pending[(pendingFrames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
+                val outputTimeUs = presentationTimeUs + ((rsPos * 1_000_000.0) / inSampleRate).toLong()
+                if (outputTimeUs >= sourceStartUs) {
+                    for (c in 0 until CHANNELS) {
+                        val s0 = s(i, c)
+                        val s1 = s(i + 1, c)
+                        pending[(pendingFrames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
+                    }
+                    f++
                 }
-                f++
                 rsPos += step
             }
             // Carry the last input frame and rebase the position for the next buffer.

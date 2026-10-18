@@ -208,7 +208,14 @@ fun ContextualBottomToolbar(
     // sidebar pills. Toggles the selected track's isMuted.
     onToggleTrackMute: () -> Unit,
     isTrackMuted: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // New top-level entry points. Defaults preserve existing callers until
+    // EditorScreen supplies its app-specific panel / media-picker routes.
+    onCrop: () -> Unit = {},
+    onAi: () -> Unit = {},
+    onDeviceAudio: () -> Unit = {},
+    onCamera: () -> Unit = {},
+    onChromaKey: () -> Unit = {}
 ) {
     // Main tool bar: always visible (also the only bar when nothing is
     // selected, or while playing).
@@ -219,8 +226,12 @@ fun ContextualBottomToolbar(
             CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
+            CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
+            CtxToolItem("AI", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
             CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
+            CtxToolItem("Camera", Icons.Default.PhotoCamera, onClick = onCamera),
+            CtxToolItem("Chroma Key", Icons.Default.Colorize, onClick = onChromaKey),
             // Bug 4: Mask is a TOP-LEVEL tool, reachable straight from the
             // main bottom bar rather than buried under the selected-clip
             // bar. With nothing selected, openMaskPanelTopLevel() targets
@@ -242,6 +253,9 @@ fun ContextualBottomToolbar(
             CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, onClick = onBgRemover),
             CtxToolItem("Auto Clip", Icons.Default.Bolt, tint = ApexPalette.NeonPink, onClick = onAutoClip),
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
+            CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
+            CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
+            CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory)
     )
 
@@ -260,6 +274,7 @@ fun ContextualBottomToolbar(
             // Phase 2: Filters on video clips too — filters were unreachable
             // when a video clip was selected (main use case).
             CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects),
             CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
@@ -291,6 +306,8 @@ fun ContextualBottomToolbar(
             } else items
         }
         ToolbarSelectionKind.AUDIO -> listOf(
+            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
             CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
             CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
             CtxToolItem(
@@ -302,6 +319,7 @@ fun ContextualBottomToolbar(
             CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
             CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix),
             CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic),
+            CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
             CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord),
             // Mute/Unmute for the selected track, relocated from the
             // removed left sidebar pills.
@@ -749,7 +767,16 @@ private fun FadeSliderRow(
 fun EditorBottomToolbarSection(
     state: EditorState,
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel,
-    mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper
+    mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
+    onAi: () -> Unit = {},
+    onDeviceAudio: () -> Unit = {
+        vm.setPendingAddAsOverlay(false)
+        vm.setPendingAddAsAudio(true)
+        mediaPicker.pickAudioMedia.launch("audio/*")
+    },
+    onCrop: () -> Unit = { vm.setCropMode(true) },
+    onCamera: () -> Unit = { vm.openCameraCapture() },
+    onChromaKey: () -> Unit = { vm.openChromaKeyPanel() }
 ) {
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
@@ -809,6 +836,11 @@ fun EditorBottomToolbarSection(
         onArFace = { vm.openArFilterPanel() },
         onLenses = { vm.openLensesPanel() },
         onFilters = { vm.openFilterPanel() },
+        onCrop = onCrop,
+        onAi = onAi,
+        onDeviceAudio = onDeviceAudio,
+        onCamera = onCamera,
+        onChromaKey = onChromaKey,
         onAdjust = { vm.openAdjustmentsPanel() },
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.
@@ -943,7 +975,8 @@ fun EditorBottomToolbarSection(
         onCollapse = { vm.clearSelection() },
         // Merged clip-bar actions (previously the timeline quick-actions row).
         onSplit = {
-            state.selectedClipId?.let { vm.splitClip(it, state.playerPositionMs) }
+            if (selectedAudioTrack != null) vm.splitAudioTrack(selectedAudioTrack.id, vm.playerPositionFlow.value)
+            else state.selectedClipId?.let { vm.splitClip(it, vm.playerPositionFlow.value) }
         },
         onTrim = { vm.openTrimPanel() },
         onMask = { vm.openMaskPanelTopLevel() },

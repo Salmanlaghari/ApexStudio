@@ -15,6 +15,35 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class OverlaySplitTrimTest {
     @Test
+    fun trimmingOverlaySourceHeadAdvancesItsTimelineOffset() {
+        val overlay = MediaClip(
+            id = "left-trim-overlay",
+            name = "left-trim-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 15_000L,
+            trimStartMs = 2_000L,
+            trimEndMs = 12_000L,
+            timelineOffsetMs = 6_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.trimClip(overlay.id, 5_000L, overlay.trimEndMs)
+
+        val trimmed = vm.state.value.project!!.clips.single()
+        assertEquals(9_000L, trimmed.timelineOffsetMs)
+        assertEquals(5_000L, trimmed.trimStartMs)
+    }
+
+    @Test
     fun splittingOverlayPreservesSourceDurationWhenRightHalfIsTrimmed() {
         val source = MediaClip(
             id = "overlay-source",

@@ -133,6 +133,17 @@
         "synthwave_blue",
         "laser_grid"
       ]
+    },
+    {
+      "id": "original",
+      "name": "Original Looks",
+      "filters": [
+        "apex_aurora_soft",
+        "apex_copper_city",
+        "apex_botanical_film",
+        "apex_midnight_cyan",
+        "apex_pastel_lift"
+      ]
     }
   ],
   "filters": [
@@ -723,6 +734,36 @@
       "name": "Cine Natural",
       "category": "Cinematic",
       "asset": "luts/cine_natural.cube"
+    },
+    {
+      "id": "apex_aurora_soft",
+      "name": "Apex Aurora Soft",
+      "category": "Original",
+      "asset": "luts/apex_aurora_soft.cube"
+    },
+    {
+      "id": "apex_copper_city",
+      "name": "Apex Copper City",
+      "category": "Original",
+      "asset": "luts/apex_copper_city.cube"
+    },
+    {
+      "id": "apex_botanical_film",
+      "name": "Apex Botanical Film",
+      "category": "Original",
+      "asset": "luts/apex_botanical_film.cube"
+    },
+    {
+      "id": "apex_midnight_cyan",
+      "name": "Apex Midnight Cyan",
+      "category": "Original",
+      "asset": "luts/apex_midnight_cyan.cube"
+    },
+    {
+      "id": "apex_pastel_lift",
+      "name": "Apex Pastel Lift",
+      "category": "Original",
+      "asset": "luts/apex_pastel_lift.cube"
     }
   ]
 }

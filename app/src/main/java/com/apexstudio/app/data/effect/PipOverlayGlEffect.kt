@@ -69,7 +69,8 @@ class PipOverlayGlEffect(
     private val shadow: Float = 0f,
     private val flipH: Boolean = false,
     private val flipV: Boolean = false,
-    private val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
+    private val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList(),
+    private val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings()
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -93,6 +94,7 @@ class PipOverlayGlEffect(
             flipH = flipH,
             flipV = flipV,
             keyframes = keyframes,
+            videoCrop = videoCrop.sanitized(),
             useHdr = useHdr
         )
     }
@@ -118,6 +120,7 @@ class PipOverlayGlEffect(
         private val flipH: Boolean,
         private val flipV: Boolean,
         private val keyframes: List<com.apexstudio.app.domain.model.Keyframe>,
+        private val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY),
         SurfaceTexture.OnFrameAvailableListener {
@@ -488,6 +491,11 @@ class PipOverlayGlEffect(
                     glProgram.setFloatsUniform("uPipFlipH", floatArrayOf(if (flipH) 1f else 0f))
                     glProgram.setFloatsUniform("uPipFlipV", floatArrayOf(if (flipV) 1f else 0f))
                     glProgram.setFloatsUniform("uBoxAspect", floatArrayOf(aspect.coerceIn(0.1f, 10f)))
+                    // Source rectangle only; the PiP's center/scale/rotation remain its own geometry.
+                    glProgram.setFloatsUniform("uPipCrop", floatArrayOf(
+                        videoCrop.left, 1f - videoCrop.bottom,
+                        videoCrop.right, 1f - videoCrop.top
+                    ))
                 } else {
                     glProgram.setFloatsUniform("uPipEnabled", floatArrayOf(0f))
                 }
@@ -660,6 +668,7 @@ class PipOverlayGlEffect(
             uniform float uPipFlipH;       // 0 or 1
             uniform float uPipFlipV;       // 0 or 1
             uniform float uBoxAspect;      // overlay box width / height
+            uniform vec4 uPipCrop;         // source UV rectangle (left,bottom,right,top)
             uniform vec2 uMaskCenter;   // overlay-frame normalised, top-left origin
             uniform vec2 uMaskSize;     // full width/height, 0..1
             uniform float uMaskFeather; // 0..1
@@ -760,6 +769,7 @@ class PipOverlayGlEffect(
                         // so the texture itself flips, not the box.
                         if (uPipFlipH > 0.5) pipUv.x = 1.0 - pipUv.x;
                         if (uPipFlipV > 0.5) pipUv.y = 1.0 - pipUv.y;
+                        pipUv = mix(uPipCrop.xy, uPipCrop.zw, pipUv);
                         vec4 pip = uPipIsImage > 0.5
                             ? texture2D(uPipImageSampler, pipUv)
                             : texture2D(uPipSampler, pipUv);

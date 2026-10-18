@@ -66,6 +66,14 @@ class VideoCropGlEffect private constructor(
             )
         }
 
+        /** Create an export/preview effect from a persisted clip crop. */
+        @JvmStatic
+        fun fromSettings(settings: com.apexstudio.app.domain.model.VideoCropSettings?): VideoCropGlEffect? {
+            if (settings == null || settings.isFullFrame) return null
+            val crop = settings.sanitized()
+            return fromRect(crop.left, crop.top, crop.right, crop.bottom)
+        }
+
         private val VERTEX_SHADER = """
             attribute vec4 aFramePosition;
             uniform mat4 uTransformationMatrix;
@@ -95,10 +103,10 @@ class VideoCropGlEffect private constructor(
 
     @UnstableApi
     private class CropShaderProgram(
-        u0: Float,
-        v0: Float,
-        u1: Float,
-        v1: Float,
+        private val u0: Float,
+        private val v0: Float,
+        private val u1: Float,
+        private val v1: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -134,7 +142,11 @@ class VideoCropGlEffect private constructor(
         }
 
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
-            return Size(inputWidth, inputHeight)
+            // Preserve the crop window's real pixel aspect. Returning the original
+            // dimensions would stretch e.g. a 9:16 crop back into a 16:9 frame.
+            val outputWidth = (inputWidth * (u1 - u0)).toInt().coerceAtLeast(1)
+            val outputHeight = (inputHeight * (v1 - v0)).toInt().coerceAtLeast(1)
+            return Size(outputWidth, outputHeight)
         }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {

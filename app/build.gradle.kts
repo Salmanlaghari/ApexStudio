@@ -222,6 +222,9 @@ dependencies {
   // downloads on first use via PackManager, NOT bundled in the APK.
   implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
+  // On-device inference only; reviewed model files are required separately.
+  implementation("org.tensorflow:tensorflow-lite:2.17.0")
+
   // PR-G: MediaPipe Tasks Vision for per-clip background replace
   // (person segmentation) — https://github.com/google-ai-edge/mediapipe
   // (Apache-2.0). Official Maven artifact (Google Maven). Only the

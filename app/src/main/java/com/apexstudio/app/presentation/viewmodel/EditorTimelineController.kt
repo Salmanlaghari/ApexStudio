@@ -657,9 +657,23 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                     minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
                     c.durationMs
                 )
+                // An overlay has an absolute timeline start. Trimming its
+                // source head must move that start by the removed playable
+                // time; otherwise the UI's left grip moves during the drag
+                // and snaps back on commit. V1 is laid out cumulatively and
+                // deliberately does not use this adjustment.
+                val overlayStartShift = if (c.type == ClipType.OVERLAY && safeStart > c.trimStartMs) {
+                    com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
+                        safeStart - c.trimStartMs,
+                        c.speedPoints
+                    )
+                } else 0L
                 c.copy(
                     trimStartMs = safeStart,
-                    trimEndMs = safeEnd
+                    trimEndMs = safeEnd,
+                    timelineOffsetMs = if (c.type == ClipType.OVERLAY) {
+                        (c.timelineOffsetMs + overlayStartShift).coerceAtLeast(0L)
+                    } else c.timelineOffsetMs
                 )
             } else c
         }
@@ -689,16 +703,18 @@ fun EditorViewModel.closeTrimPanel() = _state.update { it.copy(trimPanelOpen = f
 
 
 fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
     val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
     trimClip(clipId, newStart, clip.trimEndMs)
 }
 
 
 fun EditorViewModel.setTrimEndAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
     val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
     trimClip(clipId, clip.trimStartMs, newEnd)
 }
@@ -1352,6 +1368,10 @@ fun computeTimelineDurationMs(
         .filter { it.trackIndex != 0 }
         .maxOfOrNull { it.timelineOffsetMs + it.effectiveDurationMs() }
         ?: 0L
-    val audioMaxEndMs = audioTracks.maxOfOrNull { it.trimEndMs } ?: 0L
+    // Audio trim bounds are source coordinates. Its project end is the
+    // persisted placement plus the playable source span.
+    val audioMaxEndMs = audioTracks.maxOfOrNull {
+        it.startTimeMs.coerceAtLeast(0L) + (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L)
+    } ?: 0L
     return maxOf(v1SequentialMs, overlayMaxEndMs, audioMaxEndMs).coerceAtLeast(1000L)
 }

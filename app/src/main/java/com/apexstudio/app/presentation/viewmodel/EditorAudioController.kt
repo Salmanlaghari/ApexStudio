@@ -267,7 +267,14 @@ fun EditorViewModel.setRecordingState(recording: Boolean) {
 }
 
 
-fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC, sourceDurationMs: Long = 0L) {
+fun EditorViewModel.addAudioTrack(
+    name: String,
+    uri: String,
+    kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC,
+    sourceDurationMs: Long = 0L,
+    startTimeMs: Long = livePlayheadMs()
+) {
+    if (_state.value.project == null) return
     val finalDuration = if (sourceDurationMs > 0L) sourceDurationMs else 30000L
     val track = AudioTrack(
         id = java.util.UUID.randomUUID().toString(),
@@ -275,19 +282,22 @@ fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Ki
         uri = uri,
         volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.85f,
         kind = kind,
+        startTimeMs = startTimeMs.coerceAtLeast(0L),
+        sourceDurationMs = finalDuration,
         trimStartMs = 0L,
         trimEndMs = finalDuration
     )
-    _audio.update { it.copy(tracks = it.tracks + track) }
     _state.update { s ->
         val p = s.project ?: return@update s
         val updatedTracks = p.audioTracks + track
         val newDuration = computeTimelineDurationMs(p.clips, updatedTracks)
         s.copy(
-            project = p.copy(audioTracks = updatedTracks),
+            project = p.copy(audioTracks = updatedTracks, durationMs = newDuration),
             durationMs = newDuration
         )
     }
+    _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
+    selectAudioTrack(track.id)
     persistProject()
 }
 
@@ -527,53 +537,28 @@ fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
 
 
 fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
-    pushUndo()
-    // One shared id for the second half: the project list and the
-    // mixer list must carry the SAME track ids, or a later mixer edit
-    // to the split half would miss the project copy.
-    val part2Id = "audio_${System.currentTimeMillis()}"
+    val original = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId } ?: return
+    val elapsed = atMs - original.startTimeMs
+    val span = original.trimEndMs - original.trimStartMs
+    if (elapsed < 100L || elapsed > span - 100L) return
+    val part2Id = java.util.UUID.randomUUID().toString()
     _state.update { s ->
         val p = s.project ?: return@update s
         val track = p.audioTracks.firstOrNull { it.id == trackId } ?: return@update s
-        val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
+        val splitPoint = track.trimStartMs + elapsed
         val part1 = track.copy(trimEndMs = splitPoint)
         val part2 = track.copy(
             id = part2Id,
-            trimStartMs = splitPoint
+            trimStartMs = splitPoint,
+            startTimeMs = atMs
         )
-        val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
-        for (t in p.audioTracks) {
-            if (t.id == trackId) {
-                updated.add(part1)
-                updated.add(part2)
-            } else {
-                updated.add(t)
-            }
+        val updated = p.audioTracks.flatMap {
+            if (it.id == trackId) listOf(part1, part2) else listOf(it)
         }
         s.copy(project = p.copy(audioTracks = updated))
     }
-    // Keep the mixer list in sync with the project list: the old code
-    // split only the project list, leaving _audio.tracks with the
-    // pre-split single track (mixer + project disagreed after a split).
-    _audio.update { s ->
-        val track = s.tracks.firstOrNull { it.id == trackId } ?: return@update s
-        val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
-        val part1 = track.copy(trimEndMs = splitPoint)
-        val part2 = track.copy(
-            id = part2Id,
-            trimStartMs = splitPoint
-        )
-        val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
-        for (t in s.tracks) {
-            if (t.id == trackId) {
-                updated.add(part1)
-                updated.add(part2)
-            } else {
-                updated.add(t)
-            }
-        }
-        s.copy(tracks = updated)
-    }
+    _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
+    selectAudioTrack(part2Id)
     persistProject()
 }
 

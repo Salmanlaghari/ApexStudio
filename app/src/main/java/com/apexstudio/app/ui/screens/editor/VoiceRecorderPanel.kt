@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +52,9 @@ fun VoiceRecorderPanel(
     var recordingTimeMs by remember { mutableLongStateOf(0L) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var outputFile by remember { mutableStateOf<File?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val clock = remember { RecordingClock() }
+    val cleanupHolder = remember { RecordingCleanupHolder() }
     var hasRecordPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -60,50 +64,17 @@ fun VoiceRecorderPanel(
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasRecordPermission = granted
-    }
-
     val amplitudeHistory = remember { mutableStateListOf<Float>() }
 
-    // Clean up recorder on dispose
-    DisposableEffect(Unit) {
-        onDispose {
-            try {
-                recorder?.stop()
-                recorder?.release()
-            } catch (_: Exception) {}
-        }
-    }
-
-    // Timer & amplitude polling loop
-    LaunchedEffect(isRecording, isPaused) {
-        if (isRecording && !isPaused) {
-            val start = System.currentTimeMillis() - recordingTimeMs
-            while (isActive && isRecording && !isPaused) {
-                recordingTimeMs = System.currentTimeMillis() - start
-                val maxAmp = try { recorder?.maxAmplitude ?: 0 } catch (_: Exception) { 0 }
-                val normAmp = (maxAmp / 32767f).coerceIn(0.05f, 1f)
-                amplitudeHistory.add(normAmp)
-                if (amplitudeHistory.size > 50) amplitudeHistory.removeAt(0)
-                delay(80)
-            }
-        }
-    }
-
-    fun startRecording() {
-        if (!hasRecordPermission) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-
+    val startRecording: () -> Unit = {
+        errorMessage = null
+        var createdRecorder: MediaRecorder? = null
+        var createdFile: File? = null
         try {
-            val dir = File(context.getExternalFilesDir(null), "VoiceRecordings")
-            dir.mkdirs()
+            val dir = File(context.filesDir, "VoiceRecordings")
+            check(dir.exists() || dir.mkdirs()) { "Could not create the recordings folder" }
             val file = File(dir, "VoiceOver_${System.currentTimeMillis()}.m4a")
-            outputFile = file
+            createdFile = file
 
             val mr = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 MediaRecorder(context)
@@ -111,6 +82,7 @@ fun VoiceRecorderPanel(
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }
+            createdRecorder = mr
             mr.setAudioSource(MediaRecorder.AudioSource.MIC)
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -119,52 +91,173 @@ fun VoiceRecorderPanel(
             mr.setOutputFile(file.absolutePath)
             mr.prepare()
             mr.start()
+
             recorder = mr
-            isRecording = true
+            outputFile = file
+            cleanupHolder.recorder = mr
+            cleanupHolder.file = file
+            cleanupHolder.keepFile = false
+            clock.start(SystemClock.elapsedRealtime())
+            recordingTimeMs = 0L
+            amplitudeHistory.clear()
             isPaused = false
+            isRecording = true
         } catch (e: Exception) {
             Log.e("VoiceRecorderPanel", "Failed to start recording", e)
+            try { createdRecorder?.release() } catch (_: Exception) {}
+            createdFile?.delete()
+            cleanupHolder.recorder = null
+            cleanupHolder.file = null
+            recorder = null
+            outputFile = null
             isRecording = false
+            isPaused = false
+            errorMessage = "Could not start recording. Check microphone access and try again."
+        }
+    }
+
+    val latestStartRecording = rememberUpdatedState(startRecording)
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasRecordPermission = granted
+        if (granted) latestStartRecording.value()
+        else errorMessage = "Microphone permission was not granted."
+    }
+
+    fun requestOrStartRecording() {
+        if (hasRecordPermission) startRecording()
+        else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    fun cancelRecording() {
+        val activeRecorder = recorder
+        recorder = null
+        cleanupHolder.recorder = null
+        try {
+            // Releasing without stop intentionally abandons an unfinished file.
+            activeRecorder?.release()
+        } catch (e: Exception) {
+            Log.w("VoiceRecorderPanel", "Recorder release during cancel failed", e)
+        }
+        outputFile?.delete()
+        cleanupHolder.file?.delete()
+        cleanupHolder.file = null
+        cleanupHolder.keepFile = false
+        outputFile = null
+        clock.reset()
+        recordingTimeMs = 0L
+        isRecording = false
+        isPaused = false
+        onClose()
+    }
+
+    fun stopAndSave() {
+        val activeRecorder = recorder ?: return
+        val durationAtStop = clock.elapsedMs(SystemClock.elapsedRealtime())
+        var stopSucceeded = false
+        try {
+            activeRecorder.stop()
+            stopSucceeded = true
+        } catch (e: RuntimeException) {
+            // MediaRecorder.stop() throws for very short/empty recordings. Such
+            // output is not a valid audio asset and must never reach the editor.
+            Log.w("VoiceRecorderPanel", "Recording could not be finalized", e)
+        } finally {
+            try { activeRecorder.release() } catch (e: Exception) {
+                Log.w("VoiceRecorderPanel", "Recorder release failed", e)
+            }
+            recorder = null
+            cleanupHolder.recorder = null
+        }
+
+        clock.stop(SystemClock.elapsedRealtime())
+        recordingTimeMs = durationAtStop
+        isRecording = false
+        isPaused = false
+
+        val file = outputFile
+        val keep = VoiceRecordingSavePolicy.shouldKeep(
+            stopSucceeded = stopSucceeded,
+            durationMs = durationAtStop,
+            fileBytes = file?.takeIf { it.exists() }?.length() ?: 0L
+        )
+        if (keep && file != null) {
+            try {
+                onAddRecording(file.absolutePath, durationAtStop, file.name)
+            } catch (e: Exception) {
+                Log.e("VoiceRecorderPanel", "Could not add the recording to the project", e)
+                file.delete()
+                cleanupHolder.file = null
+                outputFile = null
+                errorMessage = "Could not add this recording to the project. Please try again."
+                return
+            }
+            cleanupHolder.keepFile = true
+            onClose()
+        } else {
+            file?.delete()
+            cleanupHolder.file?.delete()
+            cleanupHolder.file = null
+            outputFile = null
+            errorMessage = if (stopSucceeded) {
+                "Recording was too short to save. Try recording for a little longer."
+            } else {
+                "Recording could not be saved. Please try again."
+            }
         }
     }
 
     fun pauseRecording() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                recorder?.pause()
-            }
+            val activeRecorder = recorder ?: return
+            activeRecorder.pause()
+            clock.pause(SystemClock.elapsedRealtime())
             isPaused = true
         } catch (e: Exception) {
             Log.e("VoiceRecorderPanel", "Pause failed", e)
+            errorMessage = "Could not pause recording."
         }
     }
 
     fun resumeRecording() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                recorder?.resume()
-            }
+            val activeRecorder = recorder ?: return
+            activeRecorder.resume()
+            clock.resume(SystemClock.elapsedRealtime())
             isPaused = false
         } catch (e: Exception) {
             Log.e("VoiceRecorderPanel", "Resume failed", e)
+            errorMessage = "Could not resume recording."
         }
     }
 
-    fun stopAndSave() {
-        try {
-            recorder?.stop()
-            recorder?.release()
-            recorder = null
-            isRecording = false
-            outputFile?.let { f ->
-                if (f.exists() && f.length() > 0) {
-                    onAddRecording(f.absolutePath, recordingTimeMs, f.name)
-                }
+    // Any dismissal / configuration disposal abandons an unfinished file.
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                cleanupHolder.recorder?.release()
+            } catch (e: Exception) {
+                Log.w("VoiceRecorderPanel", "Recorder cleanup failed", e)
+            } finally {
+                cleanupHolder.recorder = null
+                if (!cleanupHolder.keepFile) cleanupHolder.file?.delete()
+                cleanupHolder.file = null
             }
-            onClose()
-        } catch (e: Exception) {
-            Log.e("VoiceRecorderPanel", "Stop failed", e)
-            onClose()
+        }
+    }
+
+    // The clock uses elapsedRealtime(), excluding paused intervals and wall-clock changes.
+    LaunchedEffect(isRecording, isPaused) {
+        if (isRecording && !isPaused) {
+            while (isActive && isRecording && !isPaused) {
+                recordingTimeMs = clock.elapsedMs(SystemClock.elapsedRealtime())
+                val maxAmp = try { recorder?.maxAmplitude ?: 0 } catch (_: Exception) { 0 }
+                val normAmp = (maxAmp / 32767f).coerceIn(0.05f, 1f)
+                amplitudeHistory.add(normAmp)
+                if (amplitudeHistory.size > 50) amplitudeHistory.removeAt(0)
+                delay(80)
+            }
         }
     }
 
@@ -193,10 +286,7 @@ fun VoiceRecorderPanel(
                     .size(30.dp)
                     .clip(CircleShape)
                     .background(ApexPalette.BgElevated)
-                    .clickable {
-                        recorder?.release()
-                        onClose()
-                    },
+                    .clickable { cancelRecording() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary, modifier = Modifier.size(16.dp))
@@ -262,7 +352,7 @@ fun VoiceRecorderPanel(
                                 listOf(ApexPalette.NeonPink, Color(0xFF8B0000))
                             )
                         )
-                        .clickable { startRecording() },
+                        .clickable { requestOrStartRecording() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.Mic, contentDescription = "Start Recording", tint = Color.White, modifier = Modifier.size(32.dp))
@@ -304,12 +394,62 @@ fun VoiceRecorderPanel(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            if (!hasRecordPermission) "Microphone permission required to record"
+            errorMessage ?: if (!hasRecordPermission) "Microphone permission required to record"
             else if (!isRecording) "Tap mic to start voice recording"
             else if (isPaused) "Recording paused"
             else "Recording voice over...",
-            color = ApexPalette.TextSecondary,
+            color = if (errorMessage != null) ApexPalette.NeonPink else ApexPalette.TextSecondary,
             fontSize = 11.sp
         )
     }
+}
+
+/** Monotonic elapsed recording time, with paused intervals excluded. */
+internal class RecordingClock {
+    private var accumulatedMs = 0L
+    private var segmentStartedAtMs: Long? = null
+
+    fun start(nowMs: Long) {
+        accumulatedMs = 0L
+        segmentStartedAtMs = nowMs
+    }
+
+    fun pause(nowMs: Long) {
+        val startedAt = segmentStartedAtMs ?: return
+        accumulatedMs += (nowMs - startedAt).coerceAtLeast(0L)
+        segmentStartedAtMs = null
+    }
+
+    fun resume(nowMs: Long) {
+        if (segmentStartedAtMs == null) segmentStartedAtMs = nowMs
+    }
+
+    fun elapsedMs(nowMs: Long): Long = accumulatedMs +
+        (segmentStartedAtMs?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L)
+
+    fun stop(nowMs: Long): Long {
+        val elapsed = elapsedMs(nowMs)
+        accumulatedMs = elapsed
+        segmentStartedAtMs = null
+        return elapsed
+    }
+
+    fun reset() {
+        accumulatedMs = 0L
+        segmentStartedAtMs = null
+    }
+}
+
+/** Only finalized, non-empty recordings of usable duration may be added. */
+internal object VoiceRecordingSavePolicy {
+    const val MIN_SAVE_DURATION_MS = 1_000L
+
+    fun shouldKeep(stopSucceeded: Boolean, durationMs: Long, fileBytes: Long): Boolean =
+        stopSucceeded && durationMs >= MIN_SAVE_DURATION_MS && fileBytes > 0L
+}
+
+private class RecordingCleanupHolder {
+    var recorder: MediaRecorder? = null
+    var file: File? = null
+    var keepFile: Boolean = false
 }

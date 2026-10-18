@@ -67,7 +67,9 @@ fun FxPreviewOverlay(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        when (fxId) {
+        if (fxId.startsWith("creator_")) {
+            CreatorPackFxPreview(fxId, clampedIntensity, animProgress)
+        } else when (fxId) {
             "vignette" -> {
                 Box(
                     modifier = Modifier
@@ -504,6 +506,119 @@ fun FxPreviewOverlay(
                         size = size
                     )
                 }
+            }
+        }
+    }
+}
+
+
+/**
+ * Compose preview approximation for the Creator Pack shader families. The
+ * pixel-sampling GLSL variant is also used by FxGlEffect for rendering/export;
+ * this overlay keeps new choices visible in the editor path that bypasses it.
+ */
+@Composable
+private fun CreatorPackFxPreview(fxId: String, intensity: Float, progress: Float) {
+    val tint = when {
+        fxId.contains("aurora") || fxId.contains("lagoon") || fxId.contains("quad") || fxId.contains("cobalt") || fxId.contains("ice") || fxId.contains("orbit") -> Color(0xFF28D9D0)
+        fxId.contains("candy") || fxId.contains("rose") || fxId.contains("berry") || fxId.contains("plum") || fxId.contains("hex") -> Color(0xFFFF4F91)
+        fxId.contains("copper") || fxId.contains("heat") || fxId.contains("honey") || fxId.contains("tangerine") || fxId.contains("solar") -> Color(0xFFFF9B35)
+        fxId.contains("arctic") || fxId.contains("cyan") || fxId.contains("silver") || fxId.contains("micro") || fxId.contains("twilight") -> Color(0xFF65BFFF)
+        fxId.contains("violet") || fxId.contains("lilac") || fxId.contains("kaleido") || fxId.contains("dream") -> Color(0xFFA46BFF)
+        fxId.contains("mint") || fxId.contains("rain") || fxId.contains("green") || fxId.contains("soft") || fxId.contains("lime") -> Color(0xFF53E68D)
+        fxId.contains("sunset") || fxId.contains("coral") || fxId.contains("pop") || fxId.contains("poster") || fxId.contains("rush") -> Color(0xFFFF5C56)
+        fxId.contains("newsprint") || fxId.contains("mono") -> Color(0xFFDDE5EE)
+        fxId.contains("riso") -> Color(0xFFFF762E)
+        fxId.contains("bold") || fxId.contains("diamond") || fxId.contains("tiles") || fxId.contains("fan") || fxId.contains("radial") -> Color(0xFFFFCF55)
+        else -> Color(0xFF66CFFF)
+    }
+    val family = fxId.removePrefix("creator_").substringBefore('_')
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val cx = w * 0.5f
+        val cy = h * 0.5f
+        val alpha = intensity
+        when (family) {
+            "prism" -> {
+                val band = (0.08f + progress * 0.05f) * w
+                drawRect(Brush.horizontalGradient(listOf(tint.copy(alpha = 0.22f * alpha), Color.Transparent, Color.White.copy(alpha = 0.08f * alpha))), size = size)
+                drawRect(tint.copy(alpha = 0.14f * alpha), Offset.Zero, Size(band, h))
+                drawRect(tint.copy(alpha = 0.14f * alpha), Offset(w - band, 0f), Size(band, h))
+            }
+            "tone" -> drawRect(Brush.verticalGradient(listOf(tint.copy(alpha = 0.22f * alpha), Color.Transparent, tint.copy(alpha = 0.07f * alpha))), size = size)
+            "ripple", "halation" -> {
+                val maxRadius = kotlin.math.max(w, h) * 0.68f
+                for (i in 1..7) {
+                    val radius = maxRadius * i / 7f * (if (family == "ripple") 0.82f + progress * 0.18f else 1f)
+                    drawCircle(tint.copy(alpha = 0.12f * alpha * (1f - i / 8f)), radius, Offset(cx, cy), style = androidx.compose.ui.graphics.drawscope.Stroke(width = if (family == "ripple") 2.2f else 1.2f))
+                }
+                if (family == "halation") drawRect(Brush.radialGradient(listOf(tint.copy(alpha = 0.20f * alpha), Color.Transparent), center = Offset(w * 0.36f, h * 0.42f), radius = maxRadius * 0.72f), size = size)
+            }
+            "mosaic" -> {
+                val step = when {
+                    fxId.contains("micro") -> 13f
+                    fxId.contains("bold") -> 38f
+                    fxId.contains("diamond") -> 29f
+                    else -> 23f
+                }
+                var y = 0f
+                var row = 0
+                while (y < h) {
+                    var x = if (row % 2 == 0) 0f else step * 0.5f
+                    while (x < w) {
+                        drawRect(tint.copy(alpha = 0.12f * alpha), Offset(x, y), Size(step * 0.45f, step * 0.45f))
+                        x += step
+                    }
+                    y += step
+                    row++
+                }
+            }
+            "crt" -> {
+                drawRect(tint.copy(alpha = 0.08f * alpha), size = size)
+                var y = progress * 6f % 7f
+                while (y < h) {
+                    drawLine(Color.Black.copy(alpha = 0.22f * alpha), Offset(0f, y), Offset(w, y), 1.5f)
+                    y += 7f
+                }
+                drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f * alpha)), center = Offset(cx, cy), radius = kotlin.math.max(w, h) * 0.72f), size = size)
+            }
+            "ink" -> {
+                val spacing = if (fxId.contains("newsprint")) 12f else 17f
+                var y = 0f
+                while (y < h) {
+                    var x = 0f
+                    while (x < w) {
+                        val radius = (1.7f + (kotlin.math.sin(x * 0.04f + y * 0.03f) + 1f) * 2.1f) * alpha
+                        drawCircle(tint.copy(alpha = 0.30f * alpha), radius, Offset(x, y))
+                        x += spacing
+                    }
+                    y += spacing
+                }
+            }
+            "mirror" -> {
+                for (i in 1..10) drawCircle(tint.copy(alpha = 0.07f * alpha), kotlin.math.max(w, h) * i / 12f, Offset(cx, cy), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f))
+                val spokes = if (fxId.contains("hex")) 6 else if (fxId.contains("quad")) 4 else 12
+                for (i in 0 until spokes) {
+                    val angle = i * (2.0 * Math.PI / spokes) + progress.toDouble() * 0.04
+                    drawLine(tint.copy(alpha = 0.18f * alpha), Offset(cx, cy), Offset(cx + kotlin.math.cos(angle).toFloat() * w, cy + kotlin.math.sin(angle).toFloat() * h), 1.5f)
+                }
+            }
+            "glitch" -> {
+                val rng = Random((progress * 80f).toInt() + fxId.hashCode())
+                repeat(7) {
+                    val y = rng.nextFloat() * h
+                    val barHeight = 2f + rng.nextFloat() * 15f
+                    val x = rng.nextFloat() * w * 0.25f
+                    drawRect(tint.copy(alpha = 0.25f * alpha), Offset(x, y), Size(w - x, barHeight))
+                }
+            }
+            "streak" -> {
+                for (i in 0 until 20) {
+                    val angle = i * (2.0 * Math.PI / 20.0) + progress.toDouble() * 0.06
+                    drawLine(tint.copy(alpha = 0.14f * alpha), Offset(cx, cy), Offset(cx + kotlin.math.cos(angle).toFloat() * w, cy + kotlin.math.sin(angle).toFloat() * h), 2f)
+                }
+                drawRect(Brush.radialGradient(listOf(Color.Transparent, tint.copy(alpha = 0.12f * alpha)), center = Offset(cx, cy), radius = kotlin.math.max(w, h) * 0.82f), size = size)
             }
         }
     }

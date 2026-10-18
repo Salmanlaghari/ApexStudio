@@ -96,7 +96,8 @@ fun EditorViewModel.startExport(
                 shadow = ov.overlayShadow,
                 flipH = ov.overlayFlipH,
                 flipV = ov.overlayFlipV,
-                keyframes = ov.keyframes.keyframes
+                keyframes = ov.keyframes.keyframes,
+                videoCrop = ov.videoCrop
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -121,6 +122,7 @@ fun EditorViewModel.startExport(
             filterPreset = filterPreset,
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,
+            videoCrop = selected?.videoCrop,
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,

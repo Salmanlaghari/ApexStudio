@@ -347,6 +347,28 @@ object FilterColorMatrix {
                 0f, 0f, 0f, 1f, 0f
             )
 
+            // Original Apex Studio looks: intentionally modest, separate grades.
+            "apex_aurora_soft" -> floatArrayOf(
+                0.98f, 0.03f, 0f, 0f, 0f, 0f, 0.98f, 0.04f, 0f, 0f,
+                0f, 0.02f, 1.04f, 0f, 0f, 0f, 0f, 0f, 1f, 0f
+            )
+            "apex_copper_city" -> floatArrayOf(
+                1.04f, 0.025f, 0f, 0f, 0f, 0f, 0.98f, 0f, 0f, 0f,
+                0f, 0f, 0.94f, 0f, 0f, 0f, 0f, 0f, 1f, 0f
+            )
+            "apex_botanical_film" -> floatArrayOf(
+                0.96f, 0f, 0f, 0f, 0f, 0f, 1.04f, 0f, 0f, 0f,
+                0f, 0f, 0.94f, 0f, 0f, 0f, 0f, 0f, 1f, 0f
+            )
+            "apex_midnight_cyan" -> floatArrayOf(
+                0.91f, 0f, 0f, 0f, 0f, 0f, 0.99f, 0f, 0f, 0f,
+                0f, 0f, 1.08f, 0f, 0f, 0f, 0f, 0f, 1f, 0f
+            )
+            "apex_pastel_lift" -> floatArrayOf(
+                0.94f, 0f, 0f, 0f, 10.2f, 0f, 0.94f, 0f, 0f, 10.2f,
+                0f, 0f, 0.94f, 0f, 10.2f, 0f, 0f, 0f, 1f, 0f
+            )
+
             // Original or Unknown fallback
             else -> IDENTITY
         }

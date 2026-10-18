@@ -84,10 +84,14 @@ class AudioPlaybackManager(private val context: Context) {
                 val vol = track.effectiveVolumeAt(positionMs)
                 p.setVolume(vol, vol)
 
-                val trackOffset = (positionMs - track.trimStartMs).coerceAtLeast(0L)
-                if (positionMs in track.trimStartMs..track.trimEndMs) {
-                    if (abs(p.currentPosition - trackOffset) > 80) {
-                        p.seekTo(trackOffset.toInt())
+                val sourceLengthMs = (track.trimEndMs - track.trimStartMs).coerceAtLeast(0L)
+                val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
+                val timelineEndMs = timelineStartMs + sourceLengthMs
+                if (sourceLengthMs > 0L && positionMs >= timelineStartMs && positionMs < timelineEndMs) {
+                    val sourcePositionMs = track.trimStartMs.coerceAtLeast(0L) +
+                        (positionMs - timelineStartMs).coerceIn(0L, sourceLengthMs)
+                    if (abs(p.currentPosition - sourcePositionMs) > 80) {
+                        p.seekTo(sourcePositionMs.toInt())
                     }
                     if (isPlaying && !p.isPlaying) {
                         p.start()

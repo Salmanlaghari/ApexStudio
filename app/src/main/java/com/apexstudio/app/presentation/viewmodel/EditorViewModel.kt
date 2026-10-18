@@ -60,6 +60,9 @@ class EditorViewModel(
      */
     internal var backgroundJob: Job? = null
 
+    /** Captured on opening the recorder, independent of recording-time playback. */
+    internal var voiceOverStartMs: Long = 0L
+
     /**
      * Live playback position, updated on EVERY position tick (~30/s) by
      * [setPlayerPosition]. This is the 60fps-safe playhead stream: the

@@ -93,6 +93,9 @@ class ExportEngine(private val context: Context) {
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+        // Preferred per-clip crop source. The legacy editor-state cropRect
+        // remains a fallback for older callers/projects.
+        val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
         // Variable speed curve (PR-E): when non-empty, the export
@@ -186,7 +189,9 @@ class ExportEngine(private val context: Context) {
         val shadow: Float = 0f,
         val flipH: Boolean = false,
         val flipV: Boolean = false,
-        val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
+        val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList(),
+        // Per-overlay source crop; affects only the PiP texture, not its canvas geometry.
+        val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings()
     )
 
     /**
@@ -278,7 +283,8 @@ class ExportEngine(private val context: Context) {
                                 shadow = pip.shadow,
                                 flipH = pip.flipH,
                                 flipV = pip.flipV,
-                                keyframes = pip.keyframes
+                                keyframes = pip.keyframes,
+                                videoCrop = pip.videoCrop
                             )
                         )
                     } catch (e: Exception) {
@@ -320,11 +326,16 @@ class ExportEngine(private val context: Context) {
                 // volume / speed effects.
                 denoiseProcessorOrNull(config)?.let { audioProcessors.add(0, it) }
 
-                // 1. Crop
-                config.cropRect?.let { r ->
-                    VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom)
-                        ?.let { videoEffects.add(it) }
+                // 1. Crop (clip-persisted setting takes precedence; old
+                // editor-state cropRect callers remain supported).
+                val cropEffect = if (config.videoCrop != null) {
+                    VideoCropGlEffect.fromSettings(config.videoCrop)
+                } else {
+                    config.cropRect?.let { r ->
+                        VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom)
+                    }
                 }
+                cropEffect?.let { videoEffects.add(it) }
 
                 // 1.5 Rotation and Flipping
                 if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {

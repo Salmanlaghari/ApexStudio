@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
@@ -58,6 +59,15 @@ import kotlin.math.roundToInt
  * derives from how many thumbnails exist.
  */
 private const val FILMSTRIP_CELL_DP = 64f
+
+/**
+ * State-map cap for the in-memory filmstrip: ~512 frames (≈1.8 MB of
+ * 176×132 ARGB bitmaps) is an hour-plus of thumbnails at the default
+ * zoom. Beyond this the extraction loop drops the entries farthest
+ * from the visible window. Longer content is always recovered from
+ * TimelineThumbnailCache (32 MB LRU + 128 MB disk) on scroll
+ */
+private const val MAX_STRIP_FRAMES = 512
 
 @Composable
 fun TimelineTrackArea(
@@ -197,12 +207,12 @@ fun TimelineTrackArea(
     // The extraction effect invalidates them (below) before it starts
     // collecting, so a re-trim re-fills with the new trim's frames.
     val clipTrims = remember { mutableMapOf<String, Pair<Long, Long>>() }
-
-    // Lazy viewport extraction: on every window move (sampled to
-    // ~7/sec), compute the keys the visible window needs, prune keys
-    // outside it, and extract the missing ones. collectLatest cancels
-    // the previous batch when the window moves again, so a scrolled-
-    // away range stops paying for frames it no longer needs.
+    // FULL-LENGTH FILMSTRIP EXTRACTION LOOP. Every pass recomputes the
+    // visible window, launches the keys the window needs FIRST, then the
+    // rest of each clip (leading/trailing remainder) so the whole video
+    // converges to one thumbnail per interval. Jobs run on the IO
+    // dispatcher and are never awaited by this coroutine, so a long clip
+    // fills in the background while the UI stays responsive.
     LaunchedEffect(filmstripClips, frameIntervalMs) {
         // Trim invalidation FIRST (before collecting): a clip whose
         // trim moved keeps its id but its frames are stale.
@@ -216,48 +226,74 @@ fun TimelineTrackArea(
         }
         (clipTrims.keys - filmstripClips.map { it.id }.toSet())
             .forEach { clipTrims.remove(it) }
-        snapshotFlow { timelineScrollState.value to timelineScrollState.viewportSize }
-            .sample(150)
-            .collectLatest { (scrollPx, viewportPx) ->
-                val viewport = if (viewportPx > 0) viewportPx
-                    else (360 * density.density).roundToInt()
-                val bufferPx = viewport
-                val winStartPx = (scrollPx - bufferPx).coerceAtLeast(0)
-                val winEndPx = scrollPx + viewportPx + bufferPx
-                val msToPx = msToDp * density.density
-                coroutineScope {
-                    for (clip in filmstripClips) {
-                        val startMs = contentStarts[clip.id] ?: continue
-                        val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
-                        val clipStartPx = startMs * msToPx
-                        val visStartMs = ((winStartPx - clipStartPx) / msToPx)
-                            .toLong().coerceAtLeast(0L)
-                        val visEndMs = ((winEndPx - clipStartPx) / msToPx).toLong()
-                        // Prune this clip's entries outside the window
-                        // (even for off-screen clips).
-                        val keepFrom = (visStartMs - frameIntervalMs).coerceAtLeast(0L)
-                        val keepTo = visEndMs + frameIntervalMs
-                        filmstripFrames.keys
-                            .filter { it.first == clip.id &&
-                                (it.second < keepFrom || it.second > keepTo) }
-                            .forEach { filmstripFrames.remove(it) }
-                        if (visEndMs < 0L || visStartMs > clipDur) continue
-                        var keyMs = (visStartMs / frameIntervalMs) * frameIntervalMs
-                        val endKeyMs = minOf(visEndMs, clipDur)
-                        while (keyMs <= endKeyMs) {
-                            val key = clip.id to keyMs
-                            if (!filmstripFrames.containsKey(key) &&
-                                inFlightKeys.add(key)
-                            ) {
+        // FULL-LENGTH FILMSTRIP: visible window first, then the REST of
+        // every clip. The old implementation wrapped extraction in
+        // `snapshotFlow{...}.sample(150).collectLatest { ... }` — every
+        // scroll tick CANCELLED the whole in-flight batch, so a batch for
+        // a deep window was always restarted before it could finish and
+        // long clips stayed stuck on their first seconds (~8s of frames).
+        // This loop is never cancelled by scrolling (only by a key
+        // change: new/edited clip = new list = restart), re-prioritises
+        // the on-screen window every pass, and back-fills the remainder
+        // of each clip in the background on the IO dispatcher.
+        while (true) {
+            val scrollPx = timelineScrollState.value
+            val viewportPx = timelineScrollState.viewportSize
+            val viewport = if (viewportPx > 0) viewportPx
+                else (360 * density.density).roundToInt()
+            val winStartPx = (scrollPx - viewport).coerceAtLeast(0)
+            val winEndPx = scrollPx + viewport + viewport
+            val msToPx = msToDp * density.density
+            var launched = 0
+            var pending = 0
+            for (clip in filmstripClips) {
+                val startMs = contentStarts[clip.id] ?: continue
+                val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
+                val clipStartPx = startMs * msToPx
+                val visStartMs = ((winStartPx - clipStartPx) / msToPx)
+                    .toLong().coerceAtLeast(0L)
+                val visEndMs = ((winEndPx - clipStartPx) / msToPx).toLong()
+                val onScreen = !(visEndMs < 0L || visStartMs > clipDur)
+                // Priority ranges for this clip: the visible window
+                // first, then the leading and trailing remainder, so
+                // the whole clip always converges to full coverage.
+                val ranges = ArrayList<Triple<Long, Long, Boolean>>(3)
+                if (onScreen) {
+                    val winFrom = ((visStartMs / frameIntervalMs) * frameIntervalMs)
+                        .coerceIn(0L, clipDur)
+                    val winTo = visEndMs.coerceIn(0L, clipDur)
+                    if (winFrom <= winTo) ranges.add(Triple(winFrom, winTo, true))
+                    if (winFrom > 0L) ranges.add(Triple(0L, winFrom - frameIntervalMs, false))
+                    if (winTo < clipDur) ranges.add(Triple(winTo + 1, clipDur, false))
+                } else {
+                    ranges.add(Triple(0L, clipDur, false))
+                }
+                for ((rangeFrom, rangeTo, isWindow) in ranges) {
+                    var keyMs = (rangeFrom / frameIntervalMs) * frameIntervalMs
+                    while (keyMs <= rangeTo) {
+                        val key = clip.id to keyMs
+                        if (!filmstripFrames.containsKey(key) &&
+                            !inFlightKeys.contains(key)
+                        ) {
+                            if (isWindow) pending++
+                            if (launched < 24 && inFlightKeys.add(key)) {
+                                launched++
+                                // IMMUTABLE captures only: `keyMs` is the loop
+                                // variable and keeps advancing while this job
+                                // sits queued on the IO dispatcher. Capturing it
+                                // directly made every job read the FINAL key: all
+                                // frames landed under one key and the strip only
+                                // ever showed its first seconds. These vals are
+                                // taken at launch time, so the job extracts the
+                                // frame it was actually asked for.
+                                val targetClip = clip
+                                val frameAtMs = keyMs
                                 launch(thumbDispatcher) {
                                     try {
                                         val bmp = TimelineThumbnailCache.frameFor(
-                                            context, clip, keyMs,
+                                            context, targetClip, frameAtMs,
                                             cellWidthPx, cellHeightPx
                                         )
-                                        // Don't store a frame whose job
-                                        // was cancelled while it was
-                                        // extracting (stale trim/window).
                                         ensureActive()
                                         bmp?.let { filmstripFrames[key] = it }
                                     } finally {
@@ -265,11 +301,35 @@ fun TimelineTrackArea(
                                     }
                                 }
                             }
-                            keyMs += frameIntervalMs
                         }
+                        keyMs += frameIntervalMs
                     }
                 }
             }
+            // Bounded memory: only prune when the strip grows past the
+            // cap, and then only the entries FARTHEST from the window —
+            // scrolling away no longer instantly destroys the frames the
+            // user just generated, but a long project still cannot pin
+            // hundreds of bitmaps forever.
+            if (filmstripFrames.size > MAX_STRIP_FRAMES) {
+                val winMid = (winStartPx + winEndPx) / 2.0
+                val overflow = filmstripFrames.size - MAX_STRIP_FRAMES
+                filmstripFrames.keys
+                    .mapNotNull { k ->
+                        val s = contentStarts[k.first] ?: return@mapNotNull null
+                        val px = s + k.second * msToPx
+                        k to kotlin.math.abs(px - winMid)
+                    }
+                    .filter { (_, dist) -> dist > viewport * 2.0 }
+                    .sortedByDescending { (_, dist) -> dist }
+                    .take(overflow)
+                    .forEach { (k, _) -> filmstripFrames.remove(k) }
+            }
+            // Pace: busy while work remains, slow to a crawl when the
+            // window is already drawn — the back-fill then still ticks
+            // once every ~400ms until the whole clip is covered.
+            delay(if (pending > 0) 40L else 400L)
+        }
     }
     // Drop frames for clips that no longer exist.
     LaunchedEffect(filmstripClips.map { it.id }) {
@@ -294,6 +354,8 @@ fun TimelineTrackArea(
             onReorderClips = onReorderClips,
             onAddMedia = { type -> onAddMedia(type) },
             onSplitClip = onSplitClip,
+            onOpenSpeed = onOpenSpeed,
+            onOpenTrim = onOpenTrim,
             onDuplicateClip = onDuplicateClip,
             onDeleteClip = onDeleteClip,
             onZoomChange = { newZoom ->

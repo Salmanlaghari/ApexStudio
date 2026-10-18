@@ -43,7 +43,7 @@ object TimelineThumbnailCache {
     private const val MEMORY_MAX_BYTES = 32 * 1024 * 1024
     private const val DISK_MAX_BYTES = 128L * 1024 * 1024
     private const val DISK_DIR = "timeline_thumbs"
-    private const val JPEG_QUALITY = 80
+    private const val JPEG_QUALITY = 92
 
     private val memoryCache = object : LruCache<String, Bitmap>(MEMORY_MAX_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int =

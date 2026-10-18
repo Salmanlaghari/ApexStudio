@@ -131,6 +131,10 @@ fun ContextualBottomToolbar(
     // Global tools: Overlay opens the system photo/video picker and
     // adds the chosen media as an overlay (PiP) clip at the playhead.
     onOverlay: () -> Unit = {},
+    // P4: two explicit overlay add actions instead of one combined
+    // chooser — image and video are separate buttons, same PiP route.
+    onAddOverlayImage: () -> Unit = {},
+    onAddOverlayVideo: () -> Unit = {},
     // Video-clip tools
     onAdjust: () -> Unit = {},
     onReplace: () -> Unit = {},
@@ -225,7 +229,10 @@ fun ContextualBottomToolbar(
             CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
             // Overlay: system photo/video picker → PiP clip at the
             // playhead (images 5s, videos source length).
-            CtxToolItem("Overlay", Icons.Default.PictureInPicture, onClick = onOverlay),
+            // P4: separate buttons for PNG/JPEG overlays and video
+            // overlays (both land on the V2..V9 PiP layers).
+            CtxToolItem("Add Image", Icons.Default.Image, onClick = onAddOverlayImage),
+            CtxToolItem("Add Video", Icons.Default.VideoLibrary, onClick = onAddOverlayVideo),
             // Transition: nearest V1 junction to the playhead
             // (relocated from the timeline tool row).
             CtxToolItem("Transition", Icons.Default.Transform, onClick = onTransition),
@@ -803,13 +810,25 @@ fun EditorBottomToolbarSection(
         onAdjust = { vm.openAdjustmentsPanel() },
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.
-        onOverlay = {
+        // P4: same overlay (PiP) route and pending flags as before —
+        // only the MIME filter differs per button.
+        onAddOverlayImage = {
             vm.setPendingAddToLayer(null)
             vm.setPendingAddAsOverlay(true)
             vm.setPendingAddAsAudio(false)
             mediaPicker.pickMultipleMedia.launch(
                 androidx.activity.result.PickVisualMediaRequest(
-                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                )
+            )
+        },
+        onAddOverlayVideo = {
+            vm.setPendingAddToLayer(null)
+            vm.setPendingAddAsOverlay(true)
+            vm.setPendingAddAsAudio(false)
+            mediaPicker.pickMultipleMedia.launch(
+                androidx.activity.result.PickVisualMediaRequest(
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.VideoOnly
                 )
             )
         },

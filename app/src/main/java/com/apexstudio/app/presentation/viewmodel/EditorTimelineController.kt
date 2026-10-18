@@ -859,7 +859,10 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             id = "clip_${System.currentTimeMillis()}_split",
             trimStartMs = safeSplit,
             trimEndMs = originalEnd,
-            durationMs = originalEnd - safeSplit,
+            // Overlay trim bounds remain in source-time coordinates;
+            // shortening durationMs would make OverlayClip.from() clamp
+            // later trim edits into this right-half duration.
+            durationMs = if (isOverlay) c.durationMs else originalEnd - safeSplit,
             // Second half starts where the first half ends.
             timelineOffsetMs = if (isOverlay) {
                 c.timelineOffsetMs + (safeSplit - c.trimStartMs)
@@ -868,7 +871,12 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
         val updatedClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
         for (clip in p.clips) {
             if (clip.id == clipId) {
-                updatedClips.add(clip.copy(trimEndMs = safeSplit, durationMs = safeSplit - clip.trimStartMs))
+                updatedClips.add(
+                    clip.copy(
+                        trimEndMs = safeSplit,
+                        durationMs = if (isOverlay) clip.durationMs else safeSplit - clip.trimStartMs
+                    )
+                )
                 updatedClips.add(newClip)
             } else {
                 updatedClips.add(clip)

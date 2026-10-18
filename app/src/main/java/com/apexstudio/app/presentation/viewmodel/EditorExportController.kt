@@ -25,6 +25,13 @@ fun EditorViewModel.updateExport(upd: (ExportSettings) -> ExportSettings) {
     _export.update { it.copy(settings = upd(it.settings)) }
 }
 
+/** Canvas selection is not an export source: an overlay remains a composited layer. */
+internal fun resolveExportBaseClip(state: EditorState): MediaClip? {
+    val mainClips = state.project?.clips?.filter {
+        it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+    } ?: return null
+    return mainClips.firstOrNull { it.id == state.selectedClipId } ?: mainClips.firstOrNull()
+}
 
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
@@ -35,8 +42,7 @@ fun EditorViewModel.startExport(
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     val s = _state.value
-    val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
-        ?: s.project?.clips?.firstOrNull()
+    val selected = resolveExportBaseClip(s)
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {

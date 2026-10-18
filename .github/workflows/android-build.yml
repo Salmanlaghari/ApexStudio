@@ -90,7 +90,16 @@ jobs:
             --tests '*PhaseZeroToolbarTest' \
             --tests '*TimelineClipGestureTest' \
             --tests '*BuildIdentityTest' \
-            --tests '*ContextualToolbarTest'
+            --tests '*ContextualToolbarTest' \
+            --tests '*ExportBaseSelectionTest' \
+            --tests '*TimelineRipplePreservationTest' \
+            --tests '*TimelineThumbnailBackfillTest' \
+            --tests '*PipOverlayCanvasTest' \
+            --tests '*OverlayPlayerViewFactoryTest' \
+            --tests '*ResolveMainPreviewClipTest' \
+            --tests '*OverlaySplitTrimTest' \
+            --tests '*ModelsTest' \
+            --tests '*KeyframeAnimationTest'
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
 
       - name: Build debug APK

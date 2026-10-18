@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
+import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -182,40 +184,37 @@ fun TimelineTrackArea(
         starts
     }
 
-    // Last-seen trim per clip: frames are keyed by clip-relative
-    // time from trimStart, so a trim move makes the old frames stale.
-    // The extraction effect invalidates them (below) before it starts
-    // collecting, so a re-trim re-fills with the new trim's frames.
-    val clipTrims = remember { mutableMapOf<String, Pair<Long, Long>>() }
+    val extractionSources = filmstripClips.map { TimelineThumbnailSourceKey.from(it) }
+    val latestContentStarts by rememberUpdatedState(contentStarts)
+    // URI replacement and speed edits also change the source frame behind
+    // a clip-relative key. Canvas movement/opacity do not, and must not
+    // cancel in-flight decodes after their backfill cursor has advanced.
+    val clipSources = remember { mutableMapOf<String, TimelineThumbnailSourceKey>() }
     // Persistent full-clip backfill cursor, clipId -> next ms to scan.
-    // Out on PURPOSE: the extraction LaunchedEffect is keyed on the clip
-    // list and restarts whenever the project object is copied (select,
-    // undo, autosave). With the cursor living inside the effect, V1 lost
-    // its sweep every restart and stayed stuck on the first seconds.
     val backfillCursor = remember { HashMap<String, Long>() }
+    var previousFrameIntervalMs by remember { mutableStateOf(frameIntervalMs) }
     // FULL-LENGTH FILMSTRIP EXTRACTION LOOP. Every pass recomputes the
     // visible window, launches the keys the window needs FIRST, then the
     // rest of each clip (leading/trailing remainder) so the whole video
     // converges to one thumbnail per interval. Jobs run on the IO
     // dispatcher and are never awaited by this coroutine, so a long clip
     // fills in the background while the UI stays responsive.
-    LaunchedEffect(filmstripClips, frameIntervalMs) {
-        // Trim invalidation FIRST (before collecting): a clip whose
-        // trim moved keeps its id but its frames are stale.
+    LaunchedEffect(extractionSources, frameIntervalMs) {
+        if (previousFrameIntervalMs != frameIntervalMs) {
+            backfillCursor.clear()
+            previousFrameIntervalMs = frameIntervalMs
+        }
         for (clip in filmstripClips) {
-            val trim = clip.trimStartMs to clip.trimEndMs
-            if (clipTrims[clip.id] != null && clipTrims[clip.id] != trim) {
+            val source = TimelineThumbnailSourceKey.from(clip)
+            if (clipSources[clip.id] != null && clipSources[clip.id] != source) {
                 filmstripFrames.keys.filter { it.first == clip.id }
                     .forEach { filmstripFrames.remove(it) }
-                // Kilo warning: a re-trim changes what a key points AT, so
-                // the parked backfill cursor would keep the off-screen tail
-                // blank — drop it and let the sweep start over.
                 backfillCursor.remove(clip.id)
             }
-            clipTrims[clip.id] = trim
+            clipSources[clip.id] = source
         }
-        (clipTrims.keys - filmstripClips.map { it.id }.toSet())
-            .forEach { clipTrims.remove(it) }
+        (clipSources.keys - filmstripClips.map { it.id }.toSet())
+            .forEach { clipSources.remove(it); backfillCursor.remove(it) }
         // FULL-LENGTH FILMSTRIP: visible window first, then the REST of
         // every clip. The old implementation wrapped extraction in
         // `snapshotFlow{...}.sample(150).collectLatest { ... }` — every
@@ -265,7 +264,7 @@ fun TimelineTrackArea(
                 }
             }
             for (clip in filmstripClips) {
-                val startMs = contentStarts[clip.id] ?: continue
+                val startMs = latestContentStarts[clip.id] ?: continue
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
                 val clipStartPx = startMs * msToPx
                 val visStartMs = ((winStartPx - clipStartPx) / msToPx)
@@ -285,22 +284,26 @@ fun TimelineTrackArea(
                     }
                 }
                 // PRIORITY 2 — the whole clip, resumed from the persistent
-                // cursor: 96 keys/pass either way, so one pass CLEARS a
-                // full 3-minute clip (180s / 1.18s-per-key ≈ 152 keys in
-                // two passes) instead of stalling at the first screen.
-                var cursor = backfillCursor[clip.id] ?: 0L
-                if (cursor <= clipDur) cursor = (cursor / frameIntervalMs) * frameIntervalMs
-                var scanned = 0
-                while (cursor <= clipDur && scanned < 96) {
-                    requestKey(clip, cursor)
-                    cursor += frameIntervalMs
-                    scanned += 1
-                }
-                // A cursor past clipDur means "done" — it stays parked so a
-                // restarted effect does not redo the whole clip; trimming the
-                // clip lowers clipDur and the parked value then scans again.
+                // cursor. Never plan more keys than the shared 24-job pass
+                // budget: the old loop scanned 96 keys while requestKey
+                // silently rejected everything after launch 24, then parked
+                // the cursor past those unrequested timestamps. At close zoom
+                // this permanently left the strip blank after ~8 seconds.
+                val cursor = backfillCursor[clip.id] ?: 0L
+                val backfillKeys = TimelineThumbnailBackfill.batch(
+                    cursorMs = cursor,
+                    durationMs = clipDur,
+                    intervalMs = frameIntervalMs,
+                    maxKeys = 24 - launched
+                )
+                backfillKeys.forEach { requestKey(clip, it) }
+                // A cursor past clipDur means "done"; an empty batch due to a
+                // full pass budget keeps the cursor unchanged for next pass.
+                val nextCursor = backfillKeys.lastOrNull()
+                    ?.plus(frameIntervalMs)
+                    ?: cursor
                 backfillCursor[clip.id] =
-                    if (cursor > clipDur) clipDur + frameIntervalMs else cursor
+                    if (nextCursor > clipDur) clipDur + frameIntervalMs else nextCursor
             }
             // Bounded memory: only prune when the strip grows past the
             // cap, and then only the entries FARTHEST from the window —
@@ -312,8 +315,8 @@ fun TimelineTrackArea(
                 val overflow = filmstripFrames.size - MAX_STRIP_FRAMES
                 filmstripFrames.keys
                     .mapNotNull { k ->
-                        val s = contentStarts[k.first] ?: return@mapNotNull null
-                        val px = s + k.second * msToPx
+                        val s = latestContentStarts[k.first] ?: return@mapNotNull null
+                        val px = (s + k.second) * msToPx
                         k to kotlin.math.abs(px - winMid)
                     }
                     .filter { (_, dist) -> dist > viewport * 2.0 }

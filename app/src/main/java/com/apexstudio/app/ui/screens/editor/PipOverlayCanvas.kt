@@ -6,8 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,8 +52,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +83,17 @@ import kotlin.math.roundToInt
  * a 16:9 box. The export GL effect uses the same per-clip aspect.
  */
 const val PIP_BOX_ASPECT = 16f / 9f
+
+/** Use the same TextureView-backed player surface as the main preview. */
+internal fun createOverlayPlayerView(
+    context: android.content.Context,
+    player: ExoPlayer?
+): PlayerView = (android.view.LayoutInflater.from(context)
+    .inflate(com.apexstudio.app.R.layout.view_player, null) as PlayerView).apply {
+    useController = false
+    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+    this.player = player
+}
 
 /**
  * Effective (resolved) overlay transform at a moment in time.
@@ -352,40 +368,59 @@ private fun PipOverlayItem(
                     (cyPx - boxHpx / 2f).roundToInt()
                 )
             }
-            .graphicsLayer {
+                .graphicsLayer {
                 rotationZ = eff.rotationDeg
                 alpha = eff.opacity.coerceIn(0f, 1f)
             }
+            .testTag("pip-overlay-item-${clip.id}")
             .pointerInput(clip.id) {
-                // detectTransformGestures has no end callback: re-arm in a
-                // loop and persist once per completed gesture.
-                while (true) {
+                // detectTransformGestures never returns after a pointer-up;
+                // wrapping it in finally only saved on disposal. Track each
+                // gesture explicitly so a completed drag/pinch saves once and
+                // the next interaction gets its own undo entry.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
                     var gestureActive = false
+                    var pastTouchSlop = false
+                    var accumulatedZoom = 1f
+                    var accumulatedRotation = 0f
+                    var accumulatedPan = Offset.Zero
                     try {
-                        detectTransformGestures { _, pan, zoom, rotation ->
-                            gestureActive = true
-                            val c = latest
-                            if (pan != Offset.Zero) {
-                                moveBy(pan.x / canvasWpx, pan.y / canvasHpx, false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val cancelled = event.changes.any { it.isConsumed }
+                            if (!cancelled) {
+                                val pan = event.calculatePan()
+                                val zoom = event.calculateZoom()
+                                val rotation = event.calculateRotation()
+                                if (!pastTouchSlop) {
+                                    accumulatedZoom *= zoom
+                                    accumulatedRotation += rotation
+                                    accumulatedPan += pan
+                                    val radius = event.calculateCentroidSize(useCurrent = false)
+                                    val zoomMotion = kotlin.math.abs(1f - accumulatedZoom) * radius
+                                    val rotationMotion = kotlin.math.abs(accumulatedRotation) *
+                                        kotlin.math.PI.toFloat() * radius / 180f
+                                    pastTouchSlop = maxOf(
+                                        zoomMotion, rotationMotion, accumulatedPan.getDistance()
+                                    ) > viewConfiguration.touchSlop
+                                }
+                                if (pastTouchSlop) {
+                                    gestureActive = true
+                                    if (pan != Offset.Zero) {
+                                        moveBy(pan.x / canvasWpx, pan.y / canvasHpx, false)
+                                    }
+                                    if (zoom != 1f) {
+                                        val e = effectiveOverlayTransform(latest, latestTimeMs)
+                                        scaleTo(e.scale * zoom, false)
+                                    }
+                                    if (rotation != 0f) rotateBy(rotation, false)
+                                    event.changes.forEach {
+                                        if (it.positionChanged()) it.consume()
+                                    }
+                                }
                             }
-                            if (zoom != 1f) {
-                                val e = effectiveOverlayTransform(c, latestTimeMs)
-                                scaleTo(
-                                    (e.scale * zoom).coerceIn(
-                                        MediaClipPipScale.MIN,
-                                        MediaClipPipScale.MAX
-                                    ),
-                                    false
-                                )
-                            }
-                            if (rotation != 0f) {
-                                // Same convention as the sticker canvas:
-                                // detectTransformGestures reports rotation in
-                                // the same clockwise-positive sense as
-                                // graphicsLayer rotationZ.
-                                rotateBy(rotation, false)
-                            }
-                        }
+                        } while (!cancelled && event.changes.any { it.pressed })
                     } finally {
                         if (gestureActive) {
                             onOverlayGestureEnd(latest.id)
@@ -477,13 +512,11 @@ private fun PipOverlayItem(
                 isVideo == true && overlayPlayer != null &&
                         overlayPlayerClipId == clip.id -> {
                     AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                player = overlayPlayer
-                            }
-                        },
+                        // A default PlayerView creates a SurfaceView, which
+                        // is outside Compose's transformed/clipped layers and
+                        // obscures overlay gestures. The shared layout uses a
+                        // TextureView, matching the main preview renderer.
+                        factory = { ctx -> createOverlayPlayerView(ctx, overlayPlayer) },
                         update = { view -> view.player = overlayPlayer },
                         modifier = Modifier.fillMaxSize()
                     )

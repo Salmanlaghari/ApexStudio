@@ -34,6 +34,7 @@ import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -46,6 +47,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Resolve the clip feeding the main preview; OVERLAY/AUDIO selections never replace V1. */
+internal fun resolveMainPreviewClip(clips: List<MediaClip>, selectedClipId: String?): MediaClip? {
+    val selected = selectedClipId?.let { id -> clips.firstOrNull { it.id == id } }
+    return selected?.takeIf { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
+        ?: clips.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
+}
 
 @Composable
 fun EditorScreen(
@@ -249,7 +256,11 @@ fun EditorScreen(
         if (cid != null) state.project?.clips?.firstOrNull { it.id == cid }
         else state.project?.clips?.firstOrNull()
     }
-    val currentClipUri = currentSelectedClip?.uri
+    // Overlay selection is an editing target, not a new source for the
+    // background/V1 preview player (which has its own dedicated PiP player).
+    val mainPreviewClip = remember(state.project?.clips, state.selectedClipId) {
+        resolveMainPreviewClip(state.project?.clips.orEmpty(), state.selectedClipId)
+    }
 
     // Overlay media-kind probe — SINGLE source of truth for every
     // consumer (the player binding below, photoClip + PiP canvas in
@@ -280,39 +291,20 @@ fun EditorScreen(
             }
         }
     }
-    // Probe result for the clip the binding is about to decide on —
-    // a LaunchedEffect key below, so the binding re-runs exactly
-    // when the probe resolves (same snapshot the preview reads).
-    val currentClipProbeResult = overlayIsVideo[currentSelectedClip?.id]
-
-    LaunchedEffect(exoPlayer, state.selectedClipId, currentClipUri, currentClipProbeResult) {
+    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.uri) {
         val player = exoPlayer ?: return@LaunchedEffect
-        val clip = currentSelectedClip ?: return@LaunchedEffect
+        val clip = mainPreviewClip
+        if (clip == null) {
+            try {
+                player.stop()
+                player.clearMediaItems()
+            } catch (_: Exception) {}
+            vm.setPlayerReady(true)
+            return@LaunchedEffect
+        }
         // Still-image clips are rendered by PhotoClipPreview (Compose),
         // not ExoPlayer — feeding a JPEG to the player would just error.
-        // The same applies to IMAGE-backed OVERLAY clips: their type is
-        // OVERLAY, so the type check alone would bind a JPEG to the
-        // player and the preview would go BLACK (the 00:00 black
-        // preview: the selected clip was an image overlay, 42938.jpg).
-        // Media kind for OVERLAY clips comes from the shared probe
-        // map (the same value the preview section reads — no lag, no
-        // disagreement). isImageUri is only a fast path on POSITIVE
-        // image evidence (image MIME / real image extension) while
-        // the probe is pending. A pending probe with no positive
-        // evidence WAITS (early return below; this effect re-runs
-        // when the map value arrives) instead of guessing — a wrong
-        // sync guess feeds a JPEG to ExoPlayer (black preview) or
-        // leaves a video unbound, and an unanswerable probe must
-        // never default to the photo path. While waiting, the
-        // player is left untouched so the previous frame stays
-        // visible instead of flashing black.
-        val isPhotoClip = when (clip.type) {
-            ClipType.IMAGE -> true
-            ClipType.OVERLAY -> currentClipProbeResult == false ||
-                (currentClipProbeResult == null &&
-                    com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, clip.uri))
-            else -> false
-        }
+        val isPhotoClip = clip.type == ClipType.IMAGE
         if (isPhotoClip) {
             try {
                 player.stop()
@@ -320,12 +312,6 @@ fun EditorScreen(
             } catch (_: Exception) {}
             vm.setPlayerReady(true)
             vm.setPlayerDuration(clip.durationMs)
-            return@LaunchedEffect
-        }
-        if (clip.type == ClipType.OVERLAY && currentClipProbeResult == null) {
-            // Probe still pending and no positive image evidence:
-            // wait for the probe result instead of guessing. This
-            // effect re-runs when the map value arrives (probe key).
             return@LaunchedEffect
         }
         val playableUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
@@ -362,11 +348,11 @@ fun EditorScreen(
         }
     }
 
-    // Per-clip Volume tool: live preview gain follows the selected clip's volume.
-    LaunchedEffect(exoPlayer, currentSelectedClip?.id, currentSelectedClip?.volume) {
+    // Editing a PiP layer must not change the background video's audio gain.
+    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.volume) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            player.volume = (currentSelectedClip?.volume ?: 1f).coerceIn(0f, 2f)
+            player.volume = (mainPreviewClip?.volume ?: 1f).coerceIn(0f, 2f)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set clip volume", e)
         }
@@ -379,11 +365,11 @@ fun EditorScreen(
     // toggling just flips its runtime fields — it takes effect on the
     // next queued audio buffer, no player rebuild, no seek.
     LaunchedEffect(
-        currentSelectedClip?.id,
-        currentSelectedClip?.denoiseEnabled,
-        currentSelectedClip?.denoiseStrength
+        mainPreviewClip?.id,
+        mainPreviewClip?.denoiseEnabled,
+        mainPreviewClip?.denoiseStrength
     ) {
-        val clip = currentSelectedClip ?: return@LaunchedEffect
+        val clip = mainPreviewClip ?: return@LaunchedEffect
         denoiseProcessor.denoiseSettings =
             com.apexstudio.app.data.audio.DenoiseSettings(
                 clip.denoiseEnabled,
@@ -400,7 +386,7 @@ fun EditorScreen(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
-    val selectedKeyframes = currentSelectedClip?.keyframes
+    val selectedKeyframes = mainPreviewClip?.keyframes
 
     val currentEffects = remember(
         activePreset,
@@ -519,8 +505,8 @@ fun EditorScreen(
         state.playbackSpeed,
         // Restart when the selected clip's curve changes so the loop
         // always reads the current points (not a stale snapshot).
-        currentSelectedClip?.speedPoints,
-        currentSelectedClip?.id
+        mainPreviewClip?.speedPoints,
+        mainPreviewClip?.id
     ) {
         val totalDur = state.durationMs.coerceAtLeast(1000L)
         var lastTime = android.os.SystemClock.uptimeMillis()
@@ -536,7 +522,7 @@ fun EditorScreen(
                 lastTime = now
 
                 val player = exoPlayer
-                val curveClip = currentSelectedClip
+                val curveClip = mainPreviewClip
                     ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
                     ?.takeIf { it.hasSpeedCurve() }
                 val newPos = if (player != null) {
@@ -620,7 +606,7 @@ fun EditorScreen(
 
     val seekPlayerAndState: (Long) -> Unit = remember(
         exoPlayer, state.durationMs, audioPlaybackManager,
-        currentSelectedClip?.id, currentSelectedClip?.speedPoints,
+        mainPreviewClip?.id, mainPreviewClip?.speedPoints,
         state.project?.clips
     ) {
         { targetMs ->
@@ -629,7 +615,7 @@ fun EditorScreen(
             // time; the player seeks in SOURCE time. Map through the
             // curve when the target lands inside the selected clip's
             // span; outside the span keep the legacy direct seek.
-            val curveClip = currentSelectedClip
+            val curveClip = mainPreviewClip
                 ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
                 ?.takeIf { it.hasSpeedCurve() }
             val playerTarget = if (curveClip != null) {

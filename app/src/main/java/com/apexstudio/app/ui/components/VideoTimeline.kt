@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollable
@@ -1530,6 +1531,7 @@ private fun TimelineVideoLayerRow(
                             }
                             .width(liveChipWidthDp.coerceAtLeast(24.dp))
                             .height(30.dp)
+                            .testTag("timeline-overlay-clip-${clip.id}")
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(5.dp))
                             .background(
@@ -1546,7 +1548,11 @@ private fun TimelineVideoLayerRow(
                             )
                             .pointerInput(clip.id, isLocked) {
                                 if (!isLocked) {
-                                    detectDragGestures(
+                                    // Let ordinary horizontal swipes pan the
+                                    // timeline; moving an overlay is an explicit
+                                    // long-press drag so the two gestures do not
+                                    // compete for the same pointer stream.
+                                    detectDragGesturesAfterLongPress(
                                         onDragStart = { isDragging = true },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
@@ -3153,4 +3159,3 @@ private fun TimelineTransitionJunctionBadge(
         }
     }
 }
-

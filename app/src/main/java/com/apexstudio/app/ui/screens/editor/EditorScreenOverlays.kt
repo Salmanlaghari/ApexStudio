@@ -1153,15 +1153,13 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             .weight(1f)
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-            ?: state.project?.clips?.firstOrNull()
+        // Selecting a V2+ overlay must not make its media/keyframes the
+        // background preview source; PipOverlayCanvas owns that layer.
+        val selectedClip = resolveMainPreviewClip(
+            state.project?.clips.orEmpty(), state.selectedClipId
+        )
         val animatedTransform = remember(selectedClip, state.playerPositionMs) {
-            // Overlay clips apply their own keyframes inside
-            // PipOverlayCanvas (absolute overlay transform); feeding
-            // them into the MAIN video's transform would animate V1
-            // whenever an overlay is selected.
-            if (selectedClip?.type == ClipType.OVERLAY) AnimatedTransform.Identity
-            else selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
+            selectedClip?.keyframes?.interpolateAt(state.playerPositionMs)
                 ?: AnimatedTransform.Identity
         }
         // All overlay clips across video layers V2..V10 — the interactive
@@ -1189,7 +1187,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // Bind the overlay player to the active video overlay clip
         // (trimmed range, looping, muted). Re-binds when the active
         // clip changes (including entering/leaving its window).
-        LaunchedEffect(overlayPlayer, activeOverlayVideoClip?.id) {
+        LaunchedEffect(
+            overlayPlayer, activeOverlayVideoClip?.id, activeOverlayVideoClip?.uri,
+            activeOverlayVideoClip?.trimStartMs, activeOverlayVideoClip?.trimEndMs
+        ) {
             val player = overlayPlayer ?: return@LaunchedEffect
             val clip = activeOverlayVideoClip
             if (clip == null) {
@@ -1346,29 +1347,13 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             onMaskSizeFinished = { sx, sy ->
                 currentSelectedClip?.id?.let { vm.setMaskSize(it, sx, sy, persist = true) }
             },
-            // Photo clip (PR F): rendered by PhotoClipPreview with
-            // its edits; null for video clips. IMAGE-backed OVERLAY
-            // clips take the same path: their type is OVERLAY, so a
-            // bare type check would send a JPEG to ExoPlayer and the
-            // preview would go BLACK. The shared probe map
-            // (`overlayIsVideo`, owned by EditorScreen) is
-            // authoritative when it holds a result; while it is
-            // pending, the fallback is CONSERVATIVE
-            // (OverlayMediaProbe.isImageUri returns true only on
-            // positive image evidence). The player binding reads
-            // the SAME map value, so binding and preview can never
-            // disagree about a clip's kind — an unknown URI takes
-            // the player path until the probe resolves, never the
-            // photo path on a guess.
-            photoClip = currentSelectedClip?.takeIf {
-                it.type == ClipType.IMAGE || (it.type == ClipType.OVERLAY &&
-                    (overlayIsVideo[it.id]?.let { isVideo -> !isVideo }
-                        ?: com.apexstudio.app.data.media.OverlayMediaProbe.isImageUri(context, it.uri)))
-            },
+            // Only V1 images replace the background preview. Image overlays
+            // are rendered independently in PipOverlayCanvas via Coil.
+            photoClip = selectedClip?.takeIf { it.type == ClipType.IMAGE },
             photoCropActive = state.photoEditPanelOpen &&
                     state.photoEditTab == com.apexstudio.app.presentation.state.PhotoEditTab.CROP,
             onPhotoCropRectChange = { rect ->
-                currentSelectedClip?.id?.let { vm.setPhotoCrop(it, rect) }
+                selectedClip?.id?.let { vm.setPhotoCrop(it, rect) }
             },
             onTapVideo = {
                 triggerScreenControls()

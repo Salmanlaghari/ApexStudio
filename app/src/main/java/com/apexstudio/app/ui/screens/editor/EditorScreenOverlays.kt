@@ -1569,24 +1569,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             val snapped = vm.findMagneticSnapPoint(targetMs)
             seekPlayerAndState(snapped)
         },
-        onToggleSnapToBeat = { vm.toggleSnapToBeat() },
-        onToggleMagneticSnapping = { vm.toggleMagneticSnapping() },
-        onToggleRippleEdit = { vm.toggleRippleEdit() },
         onSelectClip = { vm.selectClip(it) },
         // Tapping empty timeline space clears the selection (hides the
         // clip action bar again).
         onDeselect = { vm.clearSelection() },
-        onSelectFx = { fxId -> vm.selectFx(fxId, intensity = 0.85f) },
-        onSelectFilter = { filterId -> vm.selectFilter(filterId, intensity = 0.85f) },
         onAddMedia = onOpenAddMediaMenu,
         onSplitClip = { clipId, atMs -> vm.splitClip(clipId, atMs) },
         onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
         onDeleteClip = { clipId -> vm.deleteClip(clipId) },
         onDeleteClips = { ids -> vm.deleteClips(ids) },
-        onMoveClipLeft = { clipId -> vm.moveClipLeft(clipId) },
-        onMoveClipRight = { clipId -> vm.moveClipRight(clipId) },
         onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },
-        onShiftClipOffset = { clipId, deltaMs -> vm.shiftClipTimelineOffset(clipId, deltaMs) },
         onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
         onTrimClip = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
         onToggleKeyframeAtPlayhead = { clipId -> vm.toggleKeyframeAtPlayheadFor(clipId) },
@@ -1609,61 +1601,24 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onMoveTextMaskKeyframe = { clipId, overlayId, kfId, newTimeMs ->
             vm.moveTextMaskKeyframe(clipId, overlayId, kfId, newTimeMs)
         },
-        onZoomIn = { vm.zoomInTimeline() },
-        onZoomOut = { vm.zoomOutTimeline() },
-        onResetZoom = { vm.setTimelineZoom(1.0f) },
         onSetZoom = { zoom -> vm.setTimelineZoom(zoom) },
         playerPositionFlow = vm.playerPositionFlow,
         onOpenSpeed = { vm.openSpeedPanel() },
-        onOpenAudio = { vm.openAudioMixer() },
         onOpenTrim = { vm.openTrimPanel() },
         onOpenFx = { vm.openFxPanel() },
         onOpenFilter = { vm.openFilterPanel() },
         onOpenAdjust = { vm.openAdjustmentsPanel() },
         onSelectTextOverlay = { _, overlayId -> vm.selectTextOverlay(overlayId) },
-        onDeleteTextOverlay = { clipId, overlayId -> vm.removeTextOverlay(clipId, overlayId) },
         onSelectSticker = { vm.selectSticker(it) },
-        onDeleteSticker = { vm.removeSticker(it) },
         // Reset FX clears the whole lane: FX + LUT filter + adjustments.
         onClearFx = {
             vm.selectFx(null)
             vm.selectFilter(null)
             vm.resetAdjustments()
         },
-        onOpenAnimation = { vm.setKeyframePanelOpen(true) },
-        onOpenTransition = {
-            val clips = state.project?.clips ?: emptyList()
-            if (clips.size >= 2) {
-                val selIndex = clips.indexOfFirst { it.id == state.selectedClipId }
-                val fromIdx = if (selIndex in 0 until clips.size - 1) selIndex else 0
-                vm.openTransitionPicker(clips[fromIdx].id, clips[fromIdx + 1].id)
-            } else {
-                vm.openTransmissionTemplatesPanel()
-            }
-        },
         onOpenClipTransition = { fromId, toId ->
             vm.openTransitionPicker(fromId, toId)
         },
-        onOpenChromaKey = { vm.openChromaKeyPanel() },
-        onOpenMask = {
-            // Opening the Mask tool on a clip with no mask creates a
-            // default one immediately so the user sees it on the
-            // preview and can drag it straight away.
-            val clipId = state.selectedClipId
-                ?: state.project?.clips?.firstOrNull()?.id
-            if (clipId != null) {
-                val clip = state.project?.clips?.firstOrNull { it.id == clipId }
-                if (clip?.mask == null) {
-                    vm.setClipMask(
-                        clipId,
-                        com.apexstudio.app.domain.model.VideoMask.default()
-                    )
-                }
-            }
-            vm.openMaskPanel()
-        },
-        onOpenArFilters = { vm.openArFilterPanel() },
-        onOpenRoyaltyMusic = { vm.openRoyaltyMusicDialog() },
         onSelectAudioTrack = { vm.selectAudioTrack(it) },
         modifier = Modifier
             .fillMaxWidth()

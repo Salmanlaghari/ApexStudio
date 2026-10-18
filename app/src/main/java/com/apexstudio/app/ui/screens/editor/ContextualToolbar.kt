@@ -118,96 +118,95 @@ private val DiamondOutlineIcon: ImageVector by lazy {
 fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
     // Global tools
-    onText: () -> Unit = {},
-    onEffects: () -> Unit = {},
-    onStickers: () -> Unit = {},
+    onText: () -> Unit,
+    onEffects: () -> Unit,
+    onStickers: () -> Unit,
     // Global tools: AR Face opens the native AR face-filter card carousel
     // (tap a card → effect applies, no camera preview opens); Lenses opens
     // the Snap Camera Kit live-camera lens browser; Filters opens
     // the GPU filter gallery directly.
-    onArFace: () -> Unit = {},
-    onLenses: () -> Unit = {},
-    onFilters: () -> Unit = {},
+    onArFace: () -> Unit,
+    onLenses: () -> Unit,
+    onFilters: () -> Unit,
     // Global tools: Overlay opens the system photo/video picker and
     // adds the chosen media as an overlay (PiP) clip at the playhead.
-    onOverlay: () -> Unit = {},
     // P4: two explicit overlay add actions instead of one combined
     // chooser — image and video are separate buttons, same PiP route.
-    onAddOverlayImage: () -> Unit = {},
-    onAddOverlayVideo: () -> Unit = {},
+    onAddOverlayImage: () -> Unit,
+    onAddOverlayVideo: () -> Unit,
     // Video-clip tools
-    onAdjust: () -> Unit = {},
-    onReplace: () -> Unit = {},
-    onSpeed: () -> Unit = {},
-    onVolume: () -> Unit = {},
-    onAnimation: () -> Unit = {},
-    onDelete: () -> Unit = {},
+    onAdjust: () -> Unit,
+    onReplace: () -> Unit,
+    onSpeed: () -> Unit,
+    onVolume: () -> Unit,
+    onAnimation: () -> Unit,
+    onDelete: () -> Unit,
     // PR-G: per-clip Background replace (MediaPipe person segmentation).
-    onBackground: () -> Unit = {},
+    onBackground: () -> Unit,
     // Audio tools
-    onFade: () -> Unit = {},
-    onBeats: () -> Unit = {},
+    onFade: () -> Unit,
+    onBeats: () -> Unit,
     beatsActive: Boolean = false,
     beatsAnalyzing: Boolean = false,
     // Photo-clip tools (PR F) — shown when an IMAGE clip is selected.
-    onPhotoCrop: () -> Unit = {},
-    onPhotoAdjust: () -> Unit = {},
-    onPhotoFilters: () -> Unit = {},
-    onPhotoRotate: () -> Unit = {},
+    onPhotoCrop: () -> Unit,
+    onPhotoAdjust: () -> Unit,
+    onPhotoFilters: () -> Unit,
+    onPhotoRotate: () -> Unit,
     // Phase 3 tools
-    onMusic: () -> Unit = {},
-    onAutoClip: () -> Unit = {},
-    onHistory: () -> Unit = {},
-    onEditPack: () -> Unit = {},
-    onScopes: () -> Unit = {},
-    onBgRemover: () -> Unit = {},
+    onMusic: () -> Unit,
+    onAutoClip: () -> Unit,
+    onHistory: () -> Unit,
+    onEditPack: () -> Unit,
+    onScopes: () -> Unit,
+    onBgRemover: () -> Unit,
     // Collapse (deselect)
-    onCollapse: () -> Unit = {},
+    onCollapse: () -> Unit,
     // Merged clip-bar actions (previously the timeline quick-actions row
     // inside TimelineTrackArea — merged here so there is exactly one
     // clip bar, with no duplicated Split / Speed / Animation entries).
-    onSplit: () -> Unit = {},
-    onTrim: () -> Unit = {},
-    onMask: () -> Unit = {},
-    onDuplicate: () -> Unit = {},
+    onSplit: () -> Unit,
+    onTrim: () -> Unit,
+    onMask: () -> Unit,
+    onDuplicate: () -> Unit,
     // Keyframe: toggles a keyframe at the playhead. Distinct from
     // onAnimation (opens the keyframe/animation panel) — the old bar had
     // both Keyframe and Animation opening the same panel.
-    onToggleKeyframe: () -> Unit = {},
+    onToggleKeyframe: () -> Unit,
     // Overlay properties: opens the overlay (PiP) properties panel
     // (opacity / blend / mask / border / shadow / flip / volume /
     // track / keyframes). Only shown when the selected clip is an
     // overlay — see [isOverlaySelected].
-    onOverlayProps: () -> Unit = {},
+    onOverlayProps: () -> Unit,
     // True when the selected clip is an overlay (PiP) clip. The VIDEO
     // clip bar then also shows the "Properties" entry.
     isOverlaySelected: Boolean = false,
     // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
-    onAudioMix: () -> Unit = {},
-    onRecord: () -> Unit = {},
-    onRoyaltyMusic: () -> Unit = {},
+    onAudioMix: () -> Unit,
+    onRecord: () -> Unit,
+    onRoyaltyMusic: () -> Unit,
     // Text / sticker-bar actions (previously the TEXT_TXT / STICKER_STK
     // quick-actions rows).
-    onEditText: () -> Unit = {},
-    onToggleTextKeyframe: () -> Unit = {},
-    onDeleteText: () -> Unit = {},
-    onDeleteSticker: () -> Unit = {},
+    onEditText: () -> Unit,
+    onToggleTextKeyframe: () -> Unit,
+    onDeleteText: () -> Unit,
+    onDeleteSticker: () -> Unit,
     // While playing, only the main tool bar shows (clip bar hides).
     isPlaying: Boolean = false,
     // Transition (main bar): opens the V1 junction nearest the
     // playhead. Moved here from the old timeline tool row — the
     // function must stay reachable after the duplicate row is gone.
-    onTransition: () -> Unit = {},
+    onTransition: () -> Unit,
     // Overlay-layer hide/lock (VIDEO clip bar, overlay selected):
     // relocated from the removed left sidebar pills. The selected
     // overlay clip's layer (trackIndex 1..9) is toggled.
-    onToggleLayerVisibility: () -> Unit = {},
-    onToggleLayerLock: () -> Unit = {},
+    onToggleLayerVisibility: () -> Unit,
+    onToggleLayerLock: () -> Unit,
     isLayerHidden: Boolean = false,
     isLayerLocked: Boolean = false,
     // Audio-track mute (AUDIO bar): relocated from the removed left
     // sidebar pills. Toggles the selected track's isMuted.
-    onToggleTrackMute: () -> Unit = {},
+    onToggleTrackMute: () -> Unit,
     isTrackMuted: Boolean = false,
     modifier: Modifier = Modifier
 ) {

@@ -15,6 +15,32 @@ plugins {
   alias(libs.plugins.androidx.baselineprofile)
 }
 
+// Identify the checked-out tree, including CI's synthetic PR merge commit.
+val sourceCommit = providers.exec {
+  workingDir(rootProject.projectDir)
+  commandLine("git", "rev-parse", "HEAD")
+  isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }.get()
+val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
+  .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
+val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
+fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+val identityAssets = layout.buildDirectory.dir("generated/buildIdentityAssets")
+val generateBuildIdentity by tasks.registering {
+  // Capture plain values now; the task action must not capture this script.
+  val output = identityAssets.get().file("build-identity.properties").asFile
+  val identityText = "commit=$sourceCommit\nref=$sourceRef\nrun=$buildRun\n"
+  inputs.property("commit", sourceCommit)
+  inputs.property("ref", sourceRef)
+  inputs.property("run", buildRun)
+  outputs.dir(identityAssets)
+  doLast {
+    output.parentFile.mkdirs()
+    output.writeText(identityText)
+  }
+}
+tasks.named("preBuild").configure { dependsOn(generateBuildIdentity) }
+
 // Royalty-free music library (Jamendo API): the free client ID is read from the
 // JAMENDO_CLIENT_ID env var first, then from local.properties (same key).
 // Get a free key at https://developer.jamendo.com/ — see README "Music library".
@@ -43,10 +69,14 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
 
+    buildConfigField("String", "SOURCE_COMMIT", buildString(sourceCommit))
+    buildConfigField("String", "SOURCE_REF", buildString(sourceRef))
+    buildConfigField("String", "BUILD_RUN", buildString(buildRun))
     // Royalty-free music library: free Jamendo API client ID (empty = offline mode).
     buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
 
+  sourceSets.getByName("main").assets.srcDir(identityAssets)
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"

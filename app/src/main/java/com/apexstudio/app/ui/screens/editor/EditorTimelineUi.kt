@@ -18,10 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -409,8 +409,8 @@ fun TimelineTrackArea(
  *   would create the duplicate this cleanup removes.
  *
  * Kept: keyframe nav (prev / +/-KF / next) + timeline zoom — these
- * exist nowhere else. Content padding + edge fades so the first/last
- * chip is never half-cut.
+ * exist nowhere else. Controls are balanced into two groups so they remain
+ * fully visible on narrow screens.
  */
 @Composable
 fun BottomTimelineActionRow(
@@ -421,134 +421,104 @@ fun BottomTimelineActionRow(
     onNextKeyframe: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    canEditKeyframe: Boolean = true
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF0F0F1A))
-            .border(1.dp, Color(0xFF232336), RoundedCornerShape(8.dp))
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF101722))
+            .border(1.dp, Color(0xFF273447), RoundedCornerShape(12.dp))
     ) {
+        val viewportWidth = maxWidth
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp),
+                .widthIn(min = viewportWidth)
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Scrolling content padding: the first/last chip is fully
-            // visible at rest instead of starting half-cut.
-            Spacer(Modifier.width(6.dp))
-            // Keyframe nav (timeline-only).
-            BottomActionChip(
-                icon = Icons.Default.FastRewind,
-                label = null,
-                tint = ApexPalette.NeonCyan,
-                onClick = onPrevKeyframe
-            )
-            BottomActionChip(
-                icon = null,
-                label = if (hasKeyframeAtPlayhead) "- KF" else "+ KF",
-                selected = hasKeyframeAtPlayhead,
-                onClick = onToggleKeyframe
-            )
-            BottomActionChip(
-                icon = Icons.Default.FastForward,
-                label = null,
-                tint = ApexPalette.NeonCyan,
-                onClick = onNextKeyframe
-            )
-            // Timeline zoom (timeline-only).
-            BottomActionChip(
-                icon = Icons.Default.ZoomOut,
-                label = null,
-                onClick = onZoomOut
-            )
-            Text(
-                text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
-                color = Color(0xFF94A3B8),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(horizontal = 3.dp)
-            )
-            BottomActionChip(
-                icon = Icons.Default.ZoomIn,
-                label = null,
-                onClick = onZoomIn
-            )
-            Spacer(Modifier.width(6.dp))
+            // Keyframe navigation stays grouped on the left.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TimelinePrecisionButton(
+                    icon = Icons.Default.FastRewind,
+                    description = "Previous keyframe",
+                    enabled = canEditKeyframe,
+                    onClick = onPrevKeyframe
+                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (!canEditKeyframe) Color(0xFF151F2D) else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF192434))
+                        .clickable(enabled = canEditKeyframe, onClick = onToggleKeyframe, role = Role.Button)
+                        .semantics { contentDescription = if (!canEditKeyframe) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe at playhead" else "Add keyframe at playhead" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (hasKeyframeAtPlayhead) "−KF" else "+KF",
+                        color = if (!canEditKeyframe) Color(0xFF465365) else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color(0xFFB7C4D5),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TimelinePrecisionButton(
+                    icon = Icons.Default.FastForward,
+                    description = "Next keyframe",
+                    enabled = canEditKeyframe,
+                    onClick = onNextKeyframe
+                )
+            }
+            // Zoom controls and current zoom remain grouped on the right.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TimelinePrecisionButton(
+                    icon = Icons.Default.ZoomOut,
+                    description = "Zoom timeline out",
+                    onClick = onZoomOut
+                )
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
+                    color = Color(0xFF8C9AAF),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.widthIn(min = 34.dp).padding(horizontal = 2.dp)
+                )
+                TimelinePrecisionButton(
+                    icon = Icons.Default.ZoomIn,
+                    description = "Zoom timeline in",
+                    onClick = onZoomIn
+                )
+            }
         }
-        // Edge fades (no touch handling — gestures pass through to
-        // the scrollable Row below).
-        Box(
-            Modifier.align(Alignment.CenterStart)
-                .width(20.dp).fillMaxHeight()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0xFF0F0F1A), Color.Transparent)
-                    )
-                )
-        )
-        Box(
-            Modifier.align(Alignment.CenterEnd)
-                .width(20.dp).fillMaxHeight()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color.Transparent, Color(0xFF0F0F1A))
-                    )
-                )
-        )
     }
 }
 
 @Composable
-private fun BottomActionChip(
-    icon: ImageVector?,
-    label: String?,
+private fun TimelinePrecisionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
     enabled: Boolean = true,
-    selected: Boolean = false,
-    tint: Color = Color.White,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val contentColor = when {
-        !enabled -> Color(0xFF555566)
-        selected -> ApexPalette.NeonCyan
-        else -> tint
-    }
-    Row(
+    Box(
         modifier = modifier
-            .height(28.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF1A1A28))
-            .border(
-                1.dp,
-                if (selected) ApexPalette.NeonCyan else Color(0xFF383852),
-                RoundedCornerShape(6.dp)
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
+            .size(44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+            .semantics { contentDescription = if (enabled) description else "Keyframe editing unavailable" },
+        contentAlignment = Alignment.Center
     ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = contentColor,
-                modifier = Modifier.size(13.dp)
-            )
-        }
-        if (label != null) {
-            Text(
-                text = label,
-                color = contentColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) Color(0xFF8C9AAF) else Color(0xFF465365),
+            modifier = Modifier.size(19.dp)
+        )
     }
 }

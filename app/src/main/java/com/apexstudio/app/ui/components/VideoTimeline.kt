@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,12 +40,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -108,6 +113,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import com.apexstudio.app.data.media.SyntheticWaveform
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
@@ -459,8 +466,8 @@ fun VideoTimeline(
             it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY
         }.map { it.trackIndex.coerceIn(0, 9) }.toSortedSet().toList().take(10)
     }
-    // Overlay row height: 48dp (30dp chip + 10dp keyframe strip + slack).
-    val overlayLayerHeight = 48.dp
+    // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
+    val overlayLayerHeight = 60.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -499,14 +506,12 @@ fun VideoTimeline(
     val isPlayheadSnapped = snapToBeat &&
         beatMarkersMs.any { kotlin.math.abs(it - safePlayheadMs) <= snapThresholdMs }
 
-    // Mockup track geometry (CapCut/VN style): thin elegant tracks
-    // with generous dark spacing between rows.
+    // Shared lane geometry for the pinned identity rail and scrollable canvas.
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
-    val rulerHeight = 30.dp
-    // CapCut-style: the main track is the tallest strip (~56dp) —
-    // a continuous filmstrip, clearly above the slimmer overlay rows.
-    val v1Height = 56.dp
+    val rulerHeight = 36.dp
+    // The main video remains visually dominant above supporting layers.
+    val v1Height = 64.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -543,7 +548,7 @@ fun VideoTimeline(
     // Pinned header: ruler + gap + V1 (+ waveform strip when the clip
     // has audio) stays fixed while the other tracks scroll vertically
     // underneath it.
-    val fixedHeaderHeight = 30 + 10 + v1Height.value.toInt() +
+    val fixedHeaderHeight = rulerHeight.value.toInt() + 10 + v1Height.value.toInt() +
         (if (showWaveformStrip) 10 + waveformStripHeight else 0)
     val timelineTotalDp = fixedHeaderHeight +
         10 +
@@ -555,25 +560,88 @@ fun VideoTimeline(
         a2Total
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // No left sidebar: the timeline canvas uses the FULL screen
-    // width. The old sidebar pills (V1 / OVL1 / FX / A1 / A2 +
-    // buttons) are gone; hide/lock/mute now live in the contextual
-    // bar of the selected clip/track.
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            // Full-view: fill the height the editor gives the timeline
-            // instead of stopping at the content height — the scrollable
-            // section below grows, tracks stay top-aligned. (Only called
-            // from TimelineTrackArea with weight(1f), so this is safe.)
-            .fillMaxHeight()
-            .background(Color(0xFF090B10))
-            .border(1.dp, Color(0xFF171B26))
+    // One workspace, with a pinned identity rail outside horizontal content.
+    // The rail mirrors the same row geometry and vertical offset as the lanes.
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth().fillMaxHeight()
+            .background(Color(0xFF101722))
+            .border(1.dp, Color(0xFF273447))
     ) {
+        // In compact/landscape layouts let ALL rows scroll vertically,
+        // rather than letting a pinned V1 consume the whole track viewport.
+        val compactHeight = maxHeight < 240.dp
+        Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(44.dp)
+                .background(Color(0xFF151F2D)).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(4.dp, 14.dp).background(Color(0xFF39D9D0), RoundedCornerShape(2.dp)))
+            Text("TIMELINE", color = Color(0xFFE7EDF6), fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+            Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF8C9AAF),
+                fontSize = 10.sp, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 10.dp).testTag("timeline-duration"))
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = {
+                coroutineScope.launch {
+                    val positionPx = with(density) { (playheadMsProvider() * msToDp).dp.toPx() }
+                    scrollState.scrollTo((positionPx - scrollState.viewportSize / 2f).roundToInt().coerceAtLeast(0))
+                }
+            }, modifier = Modifier.size(44.dp).testTag("timeline-reveal-playhead")) {
+                Icon(Icons.Default.CenterFocusStrong, "Reveal playhead", tint = Color(0xFF8C9AAF), modifier = Modifier.size(19.dp))
+            }
+            IconButton(onClick = {
+                multiSelectMode = !multiSelectMode
+                if (!multiSelectMode) multiSelectedIds = emptySet()
+            }, modifier = Modifier.size(44.dp).testTag("timeline-multiselect")) {
+                Icon(Icons.Default.DoneAll,
+                    if (multiSelectMode) "Exit multi-select" else "Select multiple clips",
+                    tint = if (multiSelectMode) Color(0xFF39D9D0) else Color(0xFF8C9AAF),
+                    modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = { onAddMedia(ClipType.VIDEO) },
+                modifier = Modifier.size(44.dp).testTag("timeline-add-media")) {
+                Icon(Icons.Default.Add, "Add video to timeline", tint = Color(0xFF39D9D0), modifier = Modifier.size(22.dp))
+            }
+        }
+        Row(Modifier.fillMaxWidth().weight(1f)) {
+            Box(Modifier.width(48.dp).fillMaxHeight().clipToBounds().background(Color(0xFF151F2D))) {
+            Column(Modifier.fillMaxWidth().then(
+                if (compactHeight) Modifier.wrapContentHeight(Alignment.Top, unbounded = true)
+                    .height(timelineTotalDp.dp).graphicsLayer { translationY = -vScrollState.value.toFloat() }
+                else Modifier.fillMaxHeight()
+            )) {
+                TimelineLaneLabel("SEC", rulerHeight + 10.dp, Color(0xFF8C9AAF))
+                TimelineLaneLabel("V1", v1Height, Color(0xFF39D9D0),
+                    active = videoClips.any { it.id == selectedClipId }, description = "V1 main video")
+                if (showWaveformStrip) {
+                    TimelineLaneLabel("♫", (10 + waveformStripHeight).dp, Color(0xFF57C5A0), description = "Source audio")
+                }
+                Box(Modifier.fillMaxWidth().then(
+                    if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f)
+                ).clipToBounds()) {
+                    Column(Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true).height(scrollableTotalDp.dp)
+                        .graphicsLayer { translationY = if (compactHeight) 0f else -vScrollState.value.toFloat() }
+                        .padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        videoLayers.filter { it in 1..9 }.forEach { layer ->
+                            TimelineLaneLabel("V${layer + 1}", overlayLayerHeight, Color(0xFF9C9DFF),
+                                active = clips.any { it.trackIndex == layer && it.id == selectedClipId },
+                                description = "V${layer + 1} overlay")
+                        }
+                        if (textOverlays.isNotEmpty()) TimelineLaneLabel("TXT", textLaneHeight.dp, Color(0xFFF2BF72), selectedTextOverlayId != null, "Text")
+                        if (stickers.isNotEmpty()) TimelineLaneLabel("STK", stickerLaneHeight.dp, Color(0xFFF19CC3), selectedStickerId != null, "Stickers")
+                        if (hasFx) TimelineLaneLabel("FX", fxLaneHeight.dp, Color(0xFF9C9DFF), description = "Effects and filters")
+                        if (musicTracks.isNotEmpty()) TimelineLaneLabel("A1", a1Height, Color(0xFF57C5A0), musicTracks.any { it.id == selectedAudioTrackId }, "Music")
+                        if (voiceTracks.isNotEmpty()) TimelineLaneLabel("A2", a2Height, Color(0xFF74B4EC), voiceTracks.any { it.id == selectedAudioTrackId }, "Voice and sound effects")
+                    }
+                }
+            }
+            }
         // --- TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f).fillMaxHeight().clipToBounds()
                 .pointerInput(effectiveZoom) {
                     detectTimelinePinchZoom(
                         onPinchStart = {
@@ -620,7 +688,20 @@ fun VideoTimeline(
                     interactionSource = remember { MutableInteractionSource() }
                 ) { onDeselect() }
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            // Draw only visible grid lines. Scroll is read during drawing, not
+            // composition, so panning does not rebuild every thumbnail row.
+            Canvas(Modifier.fillMaxSize()) {
+                val step = secondWidthDp.toPx()
+                val offset = scrollState.value.toFloat() % step
+                var x = -offset
+                while (x <= size.width) {
+                    drawLine(Color(0xFF1B2736), Offset(x, rulerHeight.toPx()), Offset(x, size.height), 1.dp.toPx())
+                    x += step
+                }
+            }
+            Column(modifier = Modifier.fillMaxSize().then(
+                if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier
+            )) {
                 // PINNED HEADER: ruler + V1 stay fixed while the other
                 // tracks scroll vertically. Horizontally synced with the
                 // scrolling content via translationX (no recomposition
@@ -644,6 +725,10 @@ fun VideoTimeline(
                 ) {
                     Box(
                         modifier = Modifier
+                            // The pinned header is translated, not horizontally
+                            // scrolled. Release its viewport constraint BEFORE
+                            // measuring the full-duration ruler and V1 row.
+                            .wrapContentWidth(Alignment.Start, unbounded = true)
                             .width(timelineWidthDp)
                             .height(fixedHeaderHeight.dp)
                             .graphicsLayer { translationX = -scrollState.value.toFloat() }
@@ -663,6 +748,7 @@ fun VideoTimeline(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(rulerHeight)
+                                    .testTag("timeline-ruler")
                             )
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
@@ -781,10 +867,10 @@ fun VideoTimeline(
                 // tracks are never shown.
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
                         .horizontalScroll(scrollState)
-                        .verticalScroll(vScrollState)
+                        .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
                 ) {
                     Box(
                         modifier = Modifier
@@ -827,6 +913,9 @@ fun VideoTimeline(
                                     onSelectClip = onSelectClip,
                                     onMoveClipOffset = onMoveClipOffset,
                                     onDeleteClip = onDeleteClip,
+                                    onSeekToKeyframe = onScrub,
+                                    onMoveKeyframe = onMoveKeyframe,
+                                    onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
                                     // Provider, not the ticking Long: rows
                                     // read the playhead only at drag end
                                     // (snap), so ticks never recompose them.
@@ -991,30 +1080,6 @@ fun VideoTimeline(
             )
         }
 
-        // Multi-select toggle (pro timeline): tap to enter/exit multi-select mode.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 4.dp, end = 8.dp)
-                .zIndex(30f)
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(if (multiSelectMode) Color(0xFFFFB300) else Color(0xFF1A1E2A))
-                .border(1.dp, Color(0xFF3A415A), CircleShape)
-                .clickable {
-                    multiSelectMode = !multiSelectMode
-                    if (!multiSelectMode) multiSelectedIds = emptySet()
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = if (multiSelectMode) "✓" else "▣",
-                color = if (multiSelectMode) Color.Black else Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
         // Multi-select action bar: bulk delete + done.
         if (multiSelectMode) {
             Row(
@@ -1061,6 +1126,8 @@ fun VideoTimeline(
         }
     }
 }
+    }
+    }
 }
 
 /**
@@ -1195,6 +1262,24 @@ fun VideoTimeline(
 // SUB-COMPONENTS
 // ==========================================
 
+/** Informational lane identity, never a fake mute/lock control. */
+@Composable
+private fun TimelineLaneLabel(
+    label: String,
+    height: Dp,
+    color: Color,
+    active: Boolean = false,
+    description: String = label
+) {
+    Box(Modifier.fillMaxWidth().height(height)
+        .background(if (active) color.copy(alpha = 0.12f) else Color.Transparent)
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
+        if (active) Box(Modifier.align(Alignment.CenterStart).width(2.dp).fillMaxHeight().background(color))
+        Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace)
+    }
+}
+
 /**
  * Time Ruler with scale tick marks and beat diamond markers.
  */
@@ -1211,7 +1296,7 @@ private fun TimelineTimeRuler(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF0D1018))
+            .background(Color(0xFF111B28))
             .pointerInput(durationMs, msToDp) {
                 detectTapGestures { offset ->
                     val scrubMs = ((offset.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
@@ -1286,9 +1371,9 @@ private fun TimelineTimeRuler(
                 )
             }
 
-            // CapCut-style thin gold rule along the ruler's bottom edge.
+            // Neutral baseline keeps timing separate from clip selection accents.
             drawLine(
-                color = Color(0xFFD4AF37),
+                color = Color(0xFF344358),
                 start = Offset(0f, h - 0.75f),
                 end = Offset(size.width, h - 0.75f),
                 strokeWidth = 1.5f
@@ -1465,6 +1550,9 @@ private fun TimelineVideoLayerRow(
     onSelectClip: (String) -> Unit,
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit,
     onDeleteClip: (String) -> Unit,
+    onSeekToKeyframe: (Long) -> Unit,
+    onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit,
+    onToggleKeyframeAtPlayhead: (String) -> Unit,
     modifier: Modifier = Modifier,
     // Playhead provider + every clip edge in the project: drag-to-move
     // snaps the overlay's start/end to the nearest of these (200ms
@@ -1478,8 +1566,8 @@ private fun TimelineVideoLayerRow(
     // local state during the drag so a trim never spams undo entries).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
-    // CapCut-style flat row: no border/radius — thumbnails only.
-    // Vertical padding centres the 40dp content box in the 48dp row.
+    // Readable overlay filmstrip with its own name and keyframe strip.
+    // Vertical padding centres the 52dp content box in the 60dp row.
     // The row renders ONLY when the layer holds clips (the caller
     // never passes an empty layer), so there is no empty branch.
     Column(
@@ -1497,8 +1585,8 @@ private fun TimelineVideoLayerRow(
             return@Column
         }
 
-        // 40dp content box (30dp chip + 10dp keyframe strip).
-        Box(modifier = Modifier.fillMaxWidth().height(40.dp)) {
+        // Filmstrip plus keyframe strip, sharing the lane rail geometry.
+        Box(modifier = Modifier.fillMaxWidth().height(52.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 // Speed-ramped clips occupy their OUTPUT length.
@@ -1530,7 +1618,7 @@ private fun TimelineVideoLayerRow(
                                 IntOffset(trimStartDxPx.roundToInt(), 0)
                             }
                             .width(liveChipWidthDp.coerceAtLeast(24.dp))
-                            .height(30.dp)
+                            .height(42.dp)
                             .testTag("timeline-overlay-clip-${clip.id}")
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(5.dp))
@@ -1541,7 +1629,7 @@ private fun TimelineVideoLayerRow(
                             )
                             .border(
                                 width = if (isSelected || isDragging) 1.5.dp else 1.dp,
-                                color = if (isSelected) Color.White
+                                color = if (isSelected) Color(0xFF39D9D0)
                                 else if (isDragging) ApexPalette.NeonCyan
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(5.dp)
@@ -1559,7 +1647,7 @@ private fun TimelineVideoLayerRow(
                                             dragDx += dragAmount.x
                                         },
                                         onDragEnd = {
-                                            val deltaMs = (dragDx / msToDp).toLong()
+                                            val deltaMs = (dragDx / (msToDp * density.density)).toLong()
                                             val rawOffset =
                                                 (clip.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
                                             // Snap the start (and the end)
@@ -1615,8 +1703,10 @@ private fun TimelineVideoLayerRow(
                             placeholderIconSize = 12.dp,
                             modifier = Modifier.fillMaxSize()
                         )
-                        // (No name badge: CapCut-style overlay chips are
-                        // thumbnails only.)
+                        Text(clip.name, color = Color.White, fontSize = 9.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 14.dp, bottom = 3.dp)
+                                .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp))
                         if (isLocked) {
                             Icon(
                                 Icons.Default.Lock,
@@ -1702,9 +1792,9 @@ private fun TimelineVideoLayerRow(
                         spanDurationMs = clipDur,
                         stripWidthDp = clipWidthDp,
                         msToDp = msToDp,
-                        onSeekToKeyframe = {},
-                        onMoveKeyframe = { _, _ -> },
-                        onAddAtPlayhead = {},
+                        onSeekToKeyframe = onSeekToKeyframe,
+                        onMoveKeyframe = { id, time -> onMoveKeyframe(clip.id, id, time) },
+                        onAddAtPlayhead = { onToggleKeyframeAtPlayhead(clip.id) },
                         accentColor = ApexPalette.NeonCyan,
                         modifier = Modifier.height(10.dp)
                     )
@@ -1977,12 +2067,12 @@ private fun TimelineVideoTrack(
     // as the boundary marker between them.
     Box(
         modifier = modifier
-            .background(Color(0xFF0A0A0F))
+            .background(Color(0xFF111B28))
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             videoClips.forEachIndexed { index, clip ->
                 val isSelected = clip.id == selectedClipId
@@ -2055,7 +2145,10 @@ private fun TimelineVideoTrack(
                             // Direct finger-drag reorder for the SELECTED clip (no long-press
                             // needed).
                             // Long-press itself now opens the clip context menu (see below).
-                            if (isSelected && !multiSelectMode) {
+                            // One V1 clip cannot be reordered. Let the shared
+                            // timeline scroll own its swipe, including after
+                            // selection, instead of swallowing it as a no-op.
+                            if (isSelected && !multiSelectMode && videoClips.size > 1) {
                                 detectDragGestures(
                                     onDrag = { change, dragAmount ->
                                         change.consume()
@@ -2097,6 +2190,11 @@ private fun TimelineVideoTrack(
                         placeholderIconSize = 14.dp,
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    Text(clip.name, color = Color.White, fontSize = 9.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 4.dp)
+                            .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
 
                     // Mask badge (Mask tool): shown when a shape mask is
                     // attached to the clip.
@@ -2160,7 +2258,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 5.dp, height = 28.dp)
-                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                                    .background(Color(0xFF39D9D0), RoundedCornerShape(2.dp))
                             )
                         }
                         // Right grip: trim end
@@ -2202,7 +2300,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 5.dp, height = 28.dp)
-                                    .background(Color(0xFFFFD700), RoundedCornerShape(2.dp))
+                                    .background(Color(0xFF39D9D0), RoundedCornerShape(2.dp))
                             )
                         }
                     }
@@ -2884,17 +2982,18 @@ private fun TimelinePlayhead(
     isSnapped: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // CapCut-style: a thin (2dp) white vertical line, full height —
-    // no handle, no bubble. Scrubbing lives on the ruler, not the
-    // playhead, so the handle was dead affordance.
+    // A fine white cursor with a cyan locator cap; seeking stays on the ruler.
     Box(
         modifier = modifier
             .offset(x = playheadX - 1.dp)
             .width(2.dp)
             .fillMaxHeight()
             .zIndex(200f)
-            .background(if (isSnapped) ApexPalette.NeonCyan else Color.White)
-    )
+            .background(if (isSnapped) Color(0xFF39D9D0) else Color(0xFFE7EDF6))
+    ) {
+        Box(Modifier.align(Alignment.TopCenter).size(8.dp, 5.dp)
+            .background(Color(0xFF39D9D0), RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp)))
+    }
 }
 
 /**

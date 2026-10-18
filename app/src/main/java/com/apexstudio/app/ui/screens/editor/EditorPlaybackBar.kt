@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -15,8 +15,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -25,15 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
 
-// === 3. PLAYBACK CONTROL BAR (mockup transport row) ===
-// Layout matches the approved mockup exactly:
-// Left: Undo (dim when unavailable) + Redo (cyan when available).
-// Center: BIG circular play button with blue gradient.
-// Right of play: keyframe diamond with "+" badge — ALWAYS visible in the
-// new layout (tapping with no clip selected is a safe no-op; the call site
-// null-checks the clip). Far right: fullscreen corners icon.
-// No time counter and no prev/next buttons here: the time pill lives inside
-// the preview ("00:20 / 00:25") per the mockup.
+// Compact transport controls with consistent touch targets and stateful undo/redo.
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,
@@ -44,106 +37,121 @@ fun PlaybackControlBar(
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
     onToggleKeyframe: () -> Unit = {},
-    onFullscreenToggle: () -> Unit = {}
+    onFullscreenToggle: () -> Unit = {},
+    canEditKeyframe: Boolean = true
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp)
-            .padding(horizontal = 24.dp),
+            .height(52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF101722))
+            .border(1.dp, Color(0xFF273447), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Undo + Redo
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(28.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Icon(
+            TransportIconButton(
                 imageVector = Icons.AutoMirrored.Filled.Undo,
-                contentDescription = "Undo",
-                tint = if (canUndo) ApexPalette.NeonCyan else Color(0xFF4B5563),
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable(enabled = canUndo, onClick = onUndo)
+                description = "Undo",
+                enabled = canUndo,
+                onClick = onUndo
             )
-
-            Icon(
+            TransportIconButton(
                 imageVector = Icons.AutoMirrored.Filled.Redo,
-                contentDescription = "Redo",
-                tint = if (canRedo) ApexPalette.NeonCyan else Color(0xFF4B5563),
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable(enabled = canRedo, onClick = onRedo)
+                description = "Redo",
+                enabled = canRedo,
+                onClick = onRedo
             )
         }
 
-        // Center: BIG blue-gradient play button (mockup)
         Box(
             modifier = Modifier
-                .size(58.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(ApexPalette.NeonCyan, ApexPalette.NeonCyanGlow),
-                        start = Offset(0f, 0f),
-                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                    )
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
-                .clickable(onClick = onTogglePlay),
+                .width(52.dp)
+                .height(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(ApexPalette.NeonCyan)
+                .clickable(onClick = onTogglePlay, role = Role.Button)
+                .semantics { contentDescription = if (isPlaying) "Pause playback" else "Play playback" },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = Color.White,
-                modifier = Modifier.size(30.dp)
+                contentDescription = null,
+                tint = Color(0xFF101722),
+                modifier = Modifier.size(25.dp)
             )
         }
 
-        // Right: keyframe diamond+ (always visible) + fullscreen
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(28.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             KeyframeDiamondAddButton(
                 hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+                enabled = canEditKeyframe,
                 onClick = onToggleKeyframe
             )
-
-            Icon(
+            TransportIconButton(
                 imageVector = Icons.Default.Fullscreen,
-                contentDescription = "Fullscreen",
-                tint = Color.White,
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable(onClick = onFullscreenToggle)
+                description = "Toggle fullscreen",
+                onClick = onFullscreenToggle
             )
         }
     }
 }
 
-/**
- * Mockup keyframe control: white diamond outline with a cyan "+" badge
- * centered inside. Tints cyan while a keyframe sits at the playhead.
- */
+@Composable
+private fun TransportIconButton(
+    imageVector: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = if (enabled) Color(0xFF8C9AAF) else Color(0xFF465365),
+            modifier = Modifier.size(21.dp)
+        )
+    }
+}
+
 @Composable
 private fun KeyframeDiamondAddButton(
     hasKeyframeAtPlayhead: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val diamondColor = if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color.White
+    val diamondColor = when {
+        !enabled -> Color(0xFF465365)
+        hasKeyframeAtPlayhead -> ApexPalette.NeonCyan
+        else -> Color(0xFF8C9AAF)
+    }
     Box(
         modifier = Modifier
-            .size(30.dp)
-            .clickable(onClick = onClick),
+            .size(44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+            .semantics { contentDescription = if (!enabled) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe" else "Add keyframe" },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.size(22.dp)) {
             val cx = size.width / 2f
             val cy = size.height / 2f
-            val r = size.width / 2f - 3.dp.toPx()
+            val r = size.width / 2f - 2.dp.toPx()
             val diamond = Path().apply {
                 moveTo(cx, cy - r)
                 lineTo(cx + r, cy)
@@ -155,8 +163,8 @@ private fun KeyframeDiamondAddButton(
         }
         Text(
             text = "+",
-            color = ApexPalette.NeonCyan,
-            fontSize = 15.sp,
+            color = if (!enabled) Color(0xFF465365) else if (hasKeyframeAtPlayhead) Color(0xFF101722) else ApexPalette.NeonCyan,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
     }

@@ -24,6 +24,7 @@ class EditorLocalAnalysisTest {
             vm._localAnalysis.value = LocalAnalysisUiState(
                 status = LocalAnalysisStatus.READY, progress = 1f, clipId = clip.id, sourceUri = clip.uri,
                 sourceStartMs = clip.trimStartMs, sourceEndMs = clip.trimEndMs,
+                sourceSnapshot = FaceTrackSourceSnapshot.from("analysis", clip),
                 sceneCuts = listOf(SceneCutSuggestion("cut-6000", 6_000L, .9f)),
                 smartTrims = listOf(SmartTrimSuggestion("trim-4000-8000", 4_000L, 8_000L, .8f, "Heuristic")),
                 autoCrop = AutoCropSuggestion(NormalizedCrop(.25f, 0f, .75f, 1f), .5f, .5f, "Luma-gradient rule"))
@@ -116,5 +117,64 @@ class EditorLocalAnalysisTest {
         assertTrue(vm.localAnalysis.value.sceneCuts.isEmpty())
         assertTrue(vm.localAnalysis.value.smartTrims.isEmpty())
         assertNull(vm.localAnalysis.value.autoCrop)
+    }
+
+    @Test fun previewAcceptsOnlyActualCandidateTimes() {
+        val vm = editor()
+        listOf(6_000L, 4_000L, 7_999L, 2_000L).forEach { assertTrue(vm.canPreviewLocalAnalysisTime(it)) }
+        listOf(-1L, 0L, 8_000L, 999_999L).forEach { assertFalse(vm.canPreviewLocalAnalysisTime(it)) }
+    }
+
+    @Test fun sameClipIdInAnotherProjectCannotReceiveOldTrimOrCrop() {
+        val vm = editor()
+        vm.reviewLocalSuggestedTrim("trim-4000-8000")
+        vm.reviewLocalAutoCrop()
+        vm._state.update { it.copy(project = it.project!!.copy(id = "another-project")) }
+        val before = vm.state.value.project
+        assertFalse(vm.applyLocalSuggestedTrim("trim-4000-8000"))
+        assertFalse(vm.applyLocalAutoCrop())
+        assertEquals(before, vm.state.value.project)
+        assertTrue(vm.undoStack.isEmpty())
+        assertEquals(LocalAnalysisStatus.CANCELLED, vm.localAnalysis.value.status)
+        assertTrue(vm.localAnalysis.value.reviewedSuggestionIds.isEmpty())
+    }
+
+    @Test fun staleSpeedOrDurationCannotSeekOldSourceSuggestions() {
+        val mutations: List<(MediaClip) -> MediaClip> = listOf(
+            { it.copy(speedMultiplier = 2f) },
+            { it.copy(speedCurve = SpeedCurve.RAMP) },
+            { it.copy(rampStartSpeed = .5f) },
+            { it.copy(rampEndSpeed = 3f) },
+            { it.copy(speedPoints = listOf(SpeedPoint(0f, 1f), SpeedPoint(1f, 2f))) },
+            { it.copy(durationMs = 21_000L) },
+            { it.copy(type = ClipType.IMAGE) },
+        )
+        mutations.forEach { mutate ->
+            val vm = editor()
+            vm._state.update { state -> state.copy(project = state.project!!.copy(
+                clips = state.project!!.clips.map(mutate))) }
+            assertFalse(vm.canPreviewLocalAnalysisTime(6_000L))
+            assertEquals(LocalAnalysisStatus.CANCELLED, vm.localAnalysis.value.status)
+            assertTrue(vm.localAnalysis.value.sceneCuts.isEmpty())
+            assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun staleSourceCannotBeMarkedReviewed() {
+        val vm = editor()
+        vm._state.update { state -> state.copy(project = state.project!!.copy(
+            clips = state.project!!.clips.map { it.copy(uri = "file:///other.mp4") })) }
+        vm.reviewLocalSceneCut("cut-6000")
+        assertEquals(LocalAnalysisStatus.CANCELLED, vm.localAnalysis.value.status)
+        assertTrue(vm.localAnalysis.value.reviewedSuggestionIds.isEmpty())
+    }
+
+    @Test fun missingSourceSnapshotFailsClosedBeforeApply() {
+        val vm = editor()
+        vm.reviewLocalAutoCrop()
+        vm._localAnalysis.update { it.copy(sourceSnapshot = null) }
+        assertFalse(vm.applyLocalAutoCrop())
+        assertTrue(vm.undoStack.isEmpty())
+        assertEquals(VideoCropSettings(), vm.state.value.project!!.clips.single().videoCrop)
     }
 }

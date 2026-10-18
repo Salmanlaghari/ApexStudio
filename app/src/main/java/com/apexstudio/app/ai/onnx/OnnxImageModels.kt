@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 import java.nio.FloatBuffer
+import java.util.concurrent.CancellationException
 import kotlin.coroutines.coroutineContext
 
 enum class ImageTask { BACKGROUND_REMOVAL, SUPER_RESOLUTION, STYLE_TRANSFER }
@@ -54,8 +55,15 @@ data class ImageModelContract(
 ) {
     init {
         require(inputName.isNotBlank() && outputName.isNotBlank())
-        require(width > 0 && height > 0 && outputChannels in 1..4)
+        require(width > 0 && height > 0 && outputChannels in setOf(1, 3, 4))
         require(outputWidth > 0 && outputHeight > 0)
+        require(pixelCount(width, height) <= MAX_IMAGE_PIXELS) { "Input image tensor exceeds the safe pixel limit" }
+        // Match nchwToBitmap: a contract must not advertise readiness for an output the renderer
+        // will reject after expensive inference. Full 4K needs a separate tiled pipeline.
+        require(pixelCount(outputWidth, outputHeight) <= MAX_IMAGE_PIXELS) { "Output image exceeds the safe pixel limit" }
+        require(pixelCount(outputWidth, outputHeight) <= MAX_TENSOR_ELEMENTS / outputChannels) {
+            "Output image tensor exceeds the safe element limit"
+        }
     }
 
     val inputShape: LongArray get() = longArrayOf(1, 3, height.toLong(), width.toLong())
@@ -73,6 +81,13 @@ data class ImageModelContract(
                 return "$label dimension $i is ${actual[i]}; expected ${expected[i]}"
         }
         return null
+    }
+
+    companion object {
+        private const val MAX_IMAGE_PIXELS = 4_194_304L
+        private const val MAX_TENSOR_ELEMENTS = 16_777_216L
+
+        private fun pixelCount(width: Int, height: Int): Long = width.toLong() * height.toLong()
     }
 }
 
@@ -117,6 +132,8 @@ object OnnxImageModels {
                 if (mismatch != null) ModelAvailability.Unavailable("Incompatible ONNX model: $mismatch")
                 else ModelAvailability.Ready(input.toList(), output.toList(), artifact.modelId, actualDigest)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ModelAvailability.Unavailable("Cannot open local ONNX model: ${e.message ?: e.javaClass.simpleName}")
         }
@@ -154,11 +171,15 @@ object OnnxImageModels {
                         val shape = outputTensor.info.shape
                         val mismatch = contract.validateShapes(contract.inputShape, shape)
                         if (mismatch != null) throw LocalModelException("Invalid model output: $mismatch")
+                        if (!shape.contentEquals(contract.outputShape))
+                            throw LocalModelException("Runtime output shape ${shape.contentToString()} does not match ${contract.outputShape.contentToString()}")
                         val outputBuffer = outputTensor.floatBuffer
                         val output = FloatArray(outputBuffer.remaining())
                         outputBuffer.get(output)
-                        val expected = contract.outputChannels * contract.outputWidth * contract.outputHeight
+                        val expected = Math.multiplyExact(contract.outputChannels,
+                            Math.multiplyExact(contract.outputWidth, contract.outputHeight))
                         if (output.size != expected) throw LocalModelException("Output contains ${output.size} values; expected $expected")
+                        if (output.any { !it.isFinite() }) throw LocalModelException("Output contains non-finite values")
                         coroutineContext.ensureActive()
                         val image = nchwToBitmap(output, contract.outputChannels, contract.outputWidth,
                             contract.outputHeight, contract.outputRange)
@@ -188,27 +209,34 @@ object OnnxImageModels {
     }
 
     internal fun imageToNchw(bitmap: Bitmap, width: Int, height: Int, range: FloatRange): FloatArray {
+        require(width > 0 && height > 0 && width.toLong() * height <= 4_194_304L) { "Input dimensions exceed the safe pixel limit" }
         val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
-        val pixels = IntArray(width * height)
-        scaled.getPixels(pixels, 0, width, 0, 0, width, height)
-        if (scaled !== bitmap) scaled.recycle()
-        val out = FloatArray(3 * width * height)
-        val plane = width * height
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            out[i] = normalize((p shr 16) and 255, range)
-            out[plane + i] = normalize((p shr 8) and 255, range)
-            out[2 * plane + i] = normalize(p and 255, range)
+        try {
+            val plane = Math.multiplyExact(width, height)
+            val pixels = IntArray(plane)
+            scaled.getPixels(pixels, 0, width, 0, 0, width, height)
+            val out = FloatArray(Math.multiplyExact(3, plane))
+            for (i in pixels.indices) {
+                val p = pixels[i]
+                out[i] = normalize((p shr 16) and 255, range)
+                out[plane + i] = normalize((p shr 8) and 255, range)
+                out[2 * plane + i] = normalize(p and 255, range)
+            }
+            return out
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
         }
-        return out
     }
 
     private fun normalize(channel: Int, range: FloatRange): Float =
         range.min + channel / 255f * (range.max - range.min)
 
     internal fun nchwToBitmap(values: FloatArray, channels: Int, width: Int, height: Int, range: FloatRange): Bitmap {
-        require(channels == 1 || channels >= 3) { "Output must have one grayscale or at least three RGB channels" }
-        val plane = width * height
+        require(channels == 1 || channels == 3 || channels == 4) { "Output must have one grayscale, RGB, or RGBA channels" }
+        require(width > 0 && height > 0 && width.toLong() * height <= 4_194_304L) { "Output dimensions exceed the safe pixel limit" }
+        val plane = Math.multiplyExact(width, height)
+        require(values.size == Math.multiplyExact(channels, plane)) { "Output value count does not match image dimensions" }
+        require(values.all { it.isFinite() }) { "Output contains non-finite values" }
         val pixels = IntArray(plane)
         for (i in 0 until plane) {
             fun byte(v: Float): Int = (((v.coerceIn(range.min, range.max) - range.min) /

@@ -17,6 +17,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import com.apexstudio.app.domain.model.croppedOverlayAspect
 
 /**
  * Composites a video Picture-in-Picture overlay in the export.
@@ -86,7 +87,7 @@ class PipOverlayGlEffect(
             rotationDeg = rotationDeg,
             opacity = opacity,
             mask = mask,
-            aspect = aspect,
+            aspect = croppedOverlayAspect(aspect, videoCrop),
             blendMode = blendMode,
             borderWidth = borderWidth,
             borderColor = borderColor,

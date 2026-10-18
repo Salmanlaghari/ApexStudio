@@ -1359,8 +1359,13 @@ private fun AutoCaptionsTab(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries.size) { index ->
                 val mode = com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries[index]
-                val words = mode == com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_WORDS
-                val enabled = !busy && (!words || captionUiState.language == "en")
+                val englishMode = mode != com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.PHRASE
+                val label = when (mode) {
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.PHRASE -> "Phrase timing"
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_WORDS -> "Word by word · English"
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_KARAOKE -> "Full-phrase karaoke · English"
+                }
+                val enabled = !busy && (!englishMode || captionUiState.language == "en")
                 OutlinedButton(
                     onClick = { onTimingChange(mode) }, enabled = enabled,
                     border = androidx.compose.foundation.BorderStroke(1.dp,
@@ -1368,15 +1373,14 @@ private fun AutoCaptionsTab(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor =
                         if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
                 ) {
-                    Text(if (words) "Word by word · English" else "Phrase timing", fontSize = 11.sp)
+                    Text(label, fontSize = 11.sp)
                 }
             }
         }
         Text(
-            if (captionUiState.language != "en") "Select English to enable measured word timing."
-            else "Word mode shows one word at a time in preview/export. No artificial equal-split timing; " +
-                "phrases over 14.4 seconds, unsupported text or low-confidence alignment fail without replacing captions. " +
-                "Not full-phrase karaoke highlighting.",
+            if (captionUiState.language != "en") "Select English to enable measured word timing and karaoke."
+            else "Word mode shows one word at a time; Full-phrase karaoke keeps the original Whisper phrase and highlights the measured word. " +
+                "No artificial equal-split timing; unsupported text or low-confidence alignment fails without replacing captions.",
             color = ApexPalette.TextSecondary, fontSize = 10.sp
         )
 

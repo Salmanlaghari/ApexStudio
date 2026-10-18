@@ -8,8 +8,8 @@ import com.apexstudio.app.ai.tflite.SmartTrimSuggestion
 enum class LocalAnalysisStatus { IDLE, RUNNING, READY, CANCELLED, ERROR }
 
 /**
- * Public editor-facing analysis state. sourceUri and trim bounds capture the analyzed source window;
- * apply APIs reject stale suggestions if that clip or range has changed. Nothing is applied until
+ * Public editor-facing analysis state. The snapshot pins the project, source and full speed mapping;
+ * apply/preview APIs reject stale suggestions if those change. Nothing is applied until
  * the corresponding suggestion is explicitly reviewed and the user invokes an apply method.
  */
 data class LocalAnalysisUiState(
@@ -20,6 +20,7 @@ data class LocalAnalysisUiState(
     val sourceUri: String? = null,
     val sourceStartMs: Long? = null,
     val sourceEndMs: Long? = null,
+    val sourceSnapshot: FaceTrackSourceSnapshot? = null,
     val sceneCuts: List<SceneCutSuggestion> = emptyList(),
     val smartTrims: List<SmartTrimSuggestion> = emptyList(),
     val autoCrop: AutoCropSuggestion? = null,

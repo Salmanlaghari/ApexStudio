@@ -71,7 +71,10 @@ class LocalVideoSceneAnalyzer(
     private val lumaHeight: Int = 18
 ) {
     init {
-        require(sampleIntervalMs > 0 && maximumSamples >= 2 && lumaWidth > 0 && lumaHeight > 0)
+        require(sampleIntervalMs > 0 && maximumSamples in 2..10_000 && lumaWidth > 0 && lumaHeight > 0)
+        require(lumaWidth.toLong() * lumaHeight.toLong() <= 16_777_216L / maximumSamples) {
+            "Configured luma samples exceed the safe analysis memory limit"
+        }
     }
 
     suspend fun analyze(
@@ -83,9 +86,11 @@ class LocalVideoSceneAnalyzer(
         onProgress: (Float) -> Unit = {}
     ): LocalSceneAnalysisResult = withContext(Dispatchers.IO) {
         require(sourceStartMs >= 0L && sourceEndMs > sourceStartMs) { "Invalid source trim range" }
+        require(sourceEndMs - 1L <= Long.MAX_VALUE / 1_000L) { "Source timestamps exceed the platform decoder range" }
         cancellation.throwIfCancelled()
         val duration = sourceEndMs - sourceStartMs
-        val boundedStep = max(sampleIntervalMs, (duration + maximumSamples - 1L) / maximumSamples)
+        val minimumStep = duration / maximumSamples + if (duration % maximumSamples == 0L) 0L else 1L
+        val boundedStep = max(sampleIntervalMs, minimumStep)
         val timestamps = generateSequence(sourceStartMs) { previous ->
             if (previous > sourceEndMs - boundedStep) null else previous + boundedStep
         }.toMutableList()

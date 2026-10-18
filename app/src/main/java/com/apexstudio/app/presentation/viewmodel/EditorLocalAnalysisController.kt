@@ -35,6 +35,7 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
         )
         return
     }
+    val snapshot = FaceTrackSourceSnapshot.from(_state.value.project?.id ?: projectId, clip)
     val startMs = clip.trimStartMs.coerceAtLeast(0L)
     val endMs = minOf(clip.trimEndMs, clip.durationMs)
     if (endMs <= startMs) {
@@ -58,7 +59,8 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
         clipId = clip.id,
         sourceUri = clip.uri,
         sourceStartMs = startMs,
-        sourceEndMs = endMs
+        sourceEndMs = endMs,
+        sourceSnapshot = snapshot
     )
     localAnalysisJob = viewModelScope.launch {
         try {
@@ -69,13 +71,19 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
                 sourceEndMs = endMs,
                 cancellation = token
             ) { progress ->
-                if (localAnalysisToken === token) {
-                    _localAnalysis.update { state ->
-                        if (state.status == LocalAnalysisStatus.RUNNING) state.copy(progress = progress.coerceIn(0f, 1f)) else state
+                // Decoder callbacks run on IO. Serialize identity checks and lifecycle changes on
+                // Main so an old worker cannot overwrite or cancel a newer analysis request.
+                viewModelScope.launch {
+                    if (localAnalysisToken === token && ensureLocalAnalysisCurrent()) {
+                        _localAnalysis.update { state ->
+                            if (state.status == LocalAnalysisStatus.RUNNING && state.sourceSnapshot == snapshot) {
+                                state.copy(progress = if (progress.isFinite()) progress.coerceIn(0f, 1f) else state.progress)
+                            } else state
+                        }
                     }
                 }
             }
-            if (localAnalysisToken === token) {
+            if (localAnalysisToken === token && ensureLocalAnalysisCurrent()) {
                 _localAnalysis.value = _localAnalysis.value.copy(
                     status = LocalAnalysisStatus.READY,
                     progress = 1f,
@@ -93,7 +101,7 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
                 _localAnalysis.update { it.copy(status = LocalAnalysisStatus.CANCELLED, message = "Local analysis cancelled.") }
             }
         } catch (failure: Exception) {
-            if (localAnalysisToken === token) {
+            if (localAnalysisToken === token && ensureLocalAnalysisCurrent()) {
                 _localAnalysis.update {
                     it.copy(status = LocalAnalysisStatus.ERROR, message = "Local analysis failed.", error = failure.message ?: failure::class.java.simpleName)
                 }
@@ -121,7 +129,8 @@ fun EditorViewModel.cancelLocalAnalysis() {
             sceneCuts = emptyList(),
             smartTrims = emptyList(),
             autoCrop = null,
-            sampledFrameCount = 0
+            sampledFrameCount = 0,
+            reviewedSuggestionIds = emptySet()
         ) else it
     }
 }
@@ -132,6 +141,7 @@ fun EditorViewModel.setLocalSuggestionReviewed(id: String, reviewed: Boolean) {
     val exists = state.sceneCuts.any { it.id == id } || state.smartTrims.any { it.id == id } ||
         (id == LOCAL_CROP_REVIEW_ID && state.autoCrop != null)
     if (!exists || !state.isReady) return
+    if (!ensureLocalAnalysisCurrent()) return
     _localAnalysis.update {
         it.copy(reviewedSuggestionIds = if (reviewed) it.reviewedSuggestionIds + id else it.reviewedSuggestionIds - id)
     }
@@ -150,6 +160,7 @@ fun EditorViewModel.reviewLocalAutoCrop() = setLocalSuggestionReviewed(LOCAL_CRO
 fun EditorViewModel.applyLocalSceneCuts(): Boolean {
     val analysis = _localAnalysis.value
     if (!analysis.isReady || analysis.clipId == null || analysis.sourceStartMs == null || analysis.sourceEndMs == null) return false
+    if (!ensureLocalAnalysisCurrent()) return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
     if (clip.uri != analysis.sourceUri || clip.trimStartMs != analysis.sourceStartMs || minOf(clip.trimEndMs, clip.durationMs) != analysis.sourceEndMs) {
         return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
@@ -209,6 +220,7 @@ fun EditorViewModel.applyLocalSceneCuts(): Boolean {
 fun EditorViewModel.applyLocalSuggestedTrim(suggestionId: String): Boolean {
     val analysis = _localAnalysis.value
     if (!analysis.isReady || suggestionId !in analysis.reviewedSuggestionIds) return false
+    if (!ensureLocalAnalysisCurrent()) return false
     val suggestion = analysis.smartTrims.firstOrNull { it.id == suggestionId } ?: return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
     if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
@@ -223,6 +235,7 @@ fun EditorViewModel.applyLocalAutoCrop(): Boolean {
     val analysis = _localAnalysis.value
     val crop = analysis.autoCrop ?: return false
     if (!analysis.isReady || LOCAL_CROP_REVIEW_ID !in analysis.reviewedSuggestionIds) return false
+    if (!ensureLocalAnalysisCurrent()) return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
     if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
     pushUndo()
@@ -265,4 +278,38 @@ private fun EditorViewModel.matchesAnalyzedWindow(
 private fun EditorViewModel.staleLocalAnalysis(message: String): Boolean {
     _localAnalysis.update { it.copy(error = message, message = message) }
     return false
+}
+
+/** Recheck identity before preview, review, progress or committing an analysis result. */
+private fun EditorViewModel.ensureLocalAnalysisCurrent(): Boolean {
+    val analysis = _localAnalysis.value
+    val snapshot = analysis.sourceSnapshot
+    if (snapshot != null && isFaceTrackSnapshotCurrent(snapshot, _state.value.project, projectId)) return true
+    localAnalysisToken?.cancel()
+    localAnalysisToken = null
+    localAnalysisJob?.cancel()
+    localAnalysisJob = null
+    _localAnalysis.value = analysis.copy(
+        status = LocalAnalysisStatus.CANCELLED,
+        progress = 0f,
+        message = "The project, source or speed changed. Run local analysis again before previewing or applying.",
+        error = "The analyzed source changed or its identity is unavailable.",
+        sceneCuts = emptyList(),
+        smartTrims = emptyList(),
+        autoCrop = null,
+        sampledFrameCount = 0,
+        reviewedSuggestionIds = emptySet(),
+    )
+    return false
+}
+
+/** Only real reviewed-flow candidate times may seek the still-current analyzed source. */
+fun EditorViewModel.canPreviewLocalAnalysisTime(timestampMs: Long): Boolean {
+    val analysis = _localAnalysis.value
+    if (!analysis.isReady) return false
+    val exists = analysis.sceneCuts.any { it.timestampMs == timestampMs } ||
+        analysis.smartTrims.any { it.startMs == timestampMs || it.endMs - 1L == timestampMs } ||
+        (analysis.autoCrop != null && analysis.sourceStartMs == timestampMs)
+    if (!exists) return false
+    return ensureLocalAnalysisCurrent()
 }

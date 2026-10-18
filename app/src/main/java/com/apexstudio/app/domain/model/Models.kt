@@ -22,6 +22,11 @@ data class VideoCropSettings(
         get() = left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
 
     fun sanitized(): VideoCropSettings {
+        // NaN survives coerceIn and would poison GL transforms, overlay bounds and hit testing.
+        // Restore malformed geometry as an untouched frame, not an invisible layer.
+        if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) {
+            return VideoCropSettings()
+        }
         val l = left.coerceIn(0f, 0.99f)
         val t = top.coerceIn(0f, 0.99f)
         val r = right.coerceIn(l + 0.01f, 1f)
@@ -377,7 +382,13 @@ data class TextOverlay(
     val mask: VideoMask? = null,
     // Keyframes animating the mask centre over time (travelling wipe).
     // Empty = the mask stays at its static [mask] centre.
-    val maskKeyframes: List<TextMaskKeyframe> = emptyList()
+    val maskKeyframes: List<TextMaskKeyframe> = emptyList(),
+    // Optional static karaoke span. The source fingerprint prevents stale offsets
+    // from highlighting unrelated text after a manual caption edit.
+    val highlightStartUtf16: Int? = null,
+    val highlightEndUtf16: Int? = null,
+    val highlightSourceFingerprint: String? = null,
+    val highlightColorArgb: Long = 0xFFFFFF00L
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 

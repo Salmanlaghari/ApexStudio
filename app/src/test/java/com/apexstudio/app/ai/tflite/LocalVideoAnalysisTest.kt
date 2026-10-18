@@ -41,4 +41,25 @@ class LocalVideoAnalysisTest {
         assertEquals("vivid", style.label)
         assertTrue(style.explanation.contains("no learned style model"))
     }
+
+    @Test fun lumaFrameRejectsOverflowSizedDimensionsAndNonFiniteSamples() {
+        assertRejected { LumaFrame(0, 65_536, 65_537, FloatArray(1)) }
+        assertRejected { LumaFrame(0, 2, 2, floatArrayOf(0f, 0f, Float.NaN, 1f)) }
+        assertRejected { LumaFrame(0, 2, 2, floatArrayOf(0f, 0f, -0.1f, 1f)) }
+    }
+
+    @Test fun highlightEndSaturatesInsteadOfWrappingAtLongLimit() {
+        val frames = listOf(
+            LumaFrame(Long.MAX_VALUE - 2, 1, 1, floatArrayOf(.5f)),
+            LumaFrame(Long.MAX_VALUE - 1, 1, 1, floatArrayOf(.5f))
+        )
+        val highlight = LocalVideoAnalysis.analyze(frames, highlightWindowMs = 10).highlights.single()
+        assertEquals(Long.MAX_VALUE - 2, highlight.startMs)
+        assertEquals(Long.MAX_VALUE, highlight.endMs)
+    }
+
+    private fun assertRejected(block: () -> Unit) {
+        try { block(); throw AssertionError("Expected invalid frame to be rejected") }
+        catch (_: IllegalArgumentException) { }
+    }
 }

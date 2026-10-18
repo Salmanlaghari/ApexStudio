@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.apexstudio.app.data.captions.WhisperCaptionEngine.CaptionSegment
 
 class EnglishWordAlignmentTest {
     @Test fun tokenizerMapsLettersToPinnedWav2vecVocabularyAndKeepsDisplayedPunctuation() {
@@ -49,5 +50,30 @@ class EnglishWordAlignmentTest {
         assertFalse(isAllowedLocalAudioUri("file", "remote-host"))
         assertFalse(isAllowedLocalAudioUri("https", "example.com"))
         assertFalse(isAllowedLocalAudioUri("http", null))
+    }
+
+    @Test fun phraseAlignmentRejectsOverlappingOrOutOfOrderIntervalsBeforeInference() {
+        val overlap = assertThrows(EnglishWordAlignmentException::class.java) {
+            validateOrderedAlignmentSegments(listOf(
+                CaptionSegment("first phrase", 0L, 1_000L),
+                CaptionSegment("second phrase", 900L, 1_500L),
+            ))
+        }
+        assertEquals(EnglishAlignmentFailure.INVALID_RANGE, overlap.failure)
+
+        val outOfOrder = assertThrows(EnglishWordAlignmentException::class.java) {
+            validateOrderedAlignmentSegments(listOf(
+                CaptionSegment("later", 2_000L, 3_000L),
+                CaptionSegment("earlier", 0L, 1_000L),
+            ))
+        }
+        assertEquals(EnglishAlignmentFailure.INVALID_RANGE, outOfOrder.failure)
+    }
+
+    @Test fun adjacentPhraseIntervalsAreValidForIndependentAlignment() {
+        validateOrderedAlignmentSegments(listOf(
+            CaptionSegment("first", 0L, 1_000L),
+            CaptionSegment("next", 1_000L, 2_000L),
+        ))
     }
 }

@@ -1436,6 +1436,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             coverTextStyle = state.coverTextStyle,
             selectedTextOverlayId = state.selectedTextOverlayId,
             currentTimeMs = state.currentTimeMs,
+            captionTimeMs = selectedClip?.let { clip ->
+                com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), clip, state.currentTimeMs)
+            } ?: state.currentTimeMs,
             isPlaying = state.isPlaying,
             onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
             onMoveTextOverlay = { id, dx, dy ->

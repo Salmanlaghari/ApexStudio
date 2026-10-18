@@ -168,6 +168,7 @@ object EnglishWordAlignment {
             }
             tokenizeEnglish(segment.text, index)
         }
+        validateOrderedAlignmentSegments(segments)
         coroutineContext.ensureActive()
         onProgress(0.03f)
         val modelFile = withContext(Dispatchers.IO) {
@@ -431,6 +432,18 @@ internal fun tokenizeEnglishTranscript(text: String): EnglishTranscriptTokens {
         leading + text.substring(match.range.first, end).trimEnd()
     }
     return EnglishTranscriptTokens(displayed, ids.toIntArray(), wordMap.toIntArray())
+}
+
+/** Phrase intervals from Whisper must be ordered and disjoint before per-phrase alignment starts. */
+internal fun validateOrderedAlignmentSegments(segments: List<WhisperCaptionEngine.CaptionSegment>) {
+    segments.zipWithNext().forEachIndexed { index, (current, next) ->
+        if (next.startMs < current.endMs) {
+            throw EnglishWordAlignmentException(
+                EnglishAlignmentFailure.INVALID_RANGE,
+                "Caption segments $index and ${index + 1} overlap or are out of order",
+            )
+        }
+    }
 }
 
 private fun Char.isAsciiWhitespace(): Boolean = this == ' ' || this in '\t'..'\r'

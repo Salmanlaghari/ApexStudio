@@ -17,6 +17,19 @@ class FailClosedModerationGateTest {
         assertDenied { FailClosedModerationGate(null).requireAllowed(byteArrayOf(1)) }
     }
 
+    @Test fun emptyInputIsDeniedBeforeClassifierInvocation() {
+        var calls = 0
+        val counting = object : ValidatedModerationClassifier {
+            override val metadata = ClassifierMetadata("classifier", "1", "a".repeat(64), all, "evidence")
+            override fun classify(imageBytes: ByteArray): ModerationScores {
+                calls++
+                return ModerationScores(all.associateWith { 0f })
+            }
+        }
+        assertDenied { FailClosedModerationGate(counting).requireAllowed(byteArrayOf()) }
+        assertTrue(calls == 0)
+    }
+
     @Test fun partialNsflNsFWSemanticsCannotClaimHateOrPassGate() {
         val onlyVisibleCategories = setOf(SafetyCategory.SEXUAL, SafetyCategory.VIOLENT)
         assertDenied {

@@ -11,6 +11,7 @@ import com.apexstudio.app.ai.AiModelUnavailableException
 import com.apexstudio.app.ai.onnx.OnnxImageModels
 import java.io.File
 import java.nio.FloatBuffer
+import java.util.concurrent.CancellationException
 
 /** Deliberately distinct visual policy categories; NSFW/NSFL model labels do not imply hate detection. */
 enum class SafetyCategory { SEXUAL, VIOLENT, HATEFUL }
@@ -37,14 +38,18 @@ interface ValidatedModerationClassifier {
  */
 class FailClosedModerationGate(
     private val classifier: ValidatedModerationClassifier?,
-    private val thresholds: Map<SafetyCategory, Float> = SafetyCategory.entries.associateWith { 0.20f },
+    thresholds: Map<SafetyCategory, Float> = SafetyCategory.entries.associateWith { 0.20f },
 ) {
+    private val thresholds = thresholds.toMap()
+
     init {
         require(thresholds.keys.containsAll(SafetyCategory.entries))
         require(thresholds.values.all { it.isFinite() && it in 0f..1f })
     }
 
     fun requireAllowed(imageBytes: ByteArray): ModerationDecision {
+        if (imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES)
+            deny("image input is empty or exceeds the safe byte limit")
         val model = classifier ?: deny("no local classifier is configured")
         val meta = model.metadata
         if (meta.modelId.isBlank() || meta.modelVersion.isBlank() ||
@@ -58,7 +63,9 @@ class FailClosedModerationGate(
         if (!ApprovedModerationArtifacts.contains(meta)) {
             deny("classifier artifact is not on the app-reviewed moderation approval list")
         }
-        val scores = try { model.classify(imageBytes) } catch (e: Exception) {
+        val scores = try { model.classify(imageBytes) } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             deny("classifier failed (${e.message ?: "inference error"})")
         }
         if (!scores.scores.keys.containsAll(SafetyCategory.entries) ||
@@ -72,6 +79,10 @@ class FailClosedModerationGate(
     private fun deny(reason: String): Nothing = throw AiModelUnavailableException(
         "Content safety unavailable: $reason; protected AI action denied."
     )
+
+    private companion object {
+        const val MAX_IMAGE_BYTES = 32 * 1024 * 1024
+    }
 }
 
 /** There are currently no approved artifacts. Add a digest only after reproducible, app-specific validation. */
@@ -93,6 +104,8 @@ class OnnxNsfwNsflClassifier(private val modelFile: File) : ValidatedModerationC
         const val MODEL_CARD = "https://huggingface.co/OwenElliott/image-safety-classifier-xs"
         private const val INPUT = "image"
         private const val SIZE = 224
+        private const val MAX_IMAGE_BYTES = 32 * 1024 * 1024
+        private const val MAX_DECODED_PIXELS = 4_194_304L
     }
 
     override val metadata = ClassifierMetadata(
@@ -104,27 +117,33 @@ class OnnxNsfwNsflClassifier(private val modelFile: File) : ValidatedModerationC
     )
 
     override fun classify(imageBytes: ByteArray): ModerationScores {
-        require(imageBytes.isNotEmpty()) { "Image bytes are empty" }
+        require(imageBytes.isNotEmpty() && imageBytes.size <= MAX_IMAGE_BYTES) { "Image bytes are empty or exceed the safe byte limit" }
         if (!modelFile.isFile || OnnxImageModels.sha256(modelFile) != SHA256)
             throw IllegalStateException("Local classifier bytes do not match the pinned model digest")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0 &&
+            bounds.outWidth.toLong() * bounds.outHeight.toLong() <= MAX_DECODED_PIXELS) {
+            "Image dimensions are invalid or exceed the safe decoded pixel limit"
+        }
         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
             ?: throw IllegalArgumentException("Image bytes could not be decoded")
-        val scaled = Bitmap.createScaledBitmap(bitmap, SIZE, SIZE, true)
-        val pixels = IntArray(SIZE * SIZE)
-        scaled.getPixels(pixels, 0, SIZE, 0, 0, SIZE, SIZE)
-        if (scaled !== bitmap) scaled.recycle()
-        if (bitmap !== scaled) bitmap.recycle()
-        val plane = SIZE * SIZE
-        val inputValues = FloatArray(3 * plane)
-        for (i in pixels.indices) {
-            val px = pixels[i]
-            inputValues[i] = ((px shr 16) and 255).toFloat()
-            inputValues[plane + i] = ((px shr 8) and 255).toFloat()
-            inputValues[2 * plane + i] = (px and 255).toFloat()
-        }
-        val env = OrtEnvironment.getEnvironment()
-        OrtSession.SessionOptions().use { options ->
-            env.createSession(modelFile.absolutePath, options).use { session ->
+        val scaled = try { Bitmap.createScaledBitmap(bitmap, SIZE, SIZE, true) }
+        catch (e: Throwable) { bitmap.recycle(); throw e }
+        try {
+            val pixels = IntArray(SIZE * SIZE)
+            scaled.getPixels(pixels, 0, SIZE, 0, 0, SIZE, SIZE)
+            val plane = SIZE * SIZE
+            val inputValues = FloatArray(3 * plane)
+            for (i in pixels.indices) {
+                val px = pixels[i]
+                inputValues[i] = ((px shr 16) and 255).toFloat()
+                inputValues[plane + i] = ((px shr 8) and 255).toFloat()
+                inputValues[2 * plane + i] = (px and 255).toFloat()
+            }
+            val env = OrtEnvironment.getEnvironment()
+            OrtSession.SessionOptions().use { options ->
+                env.createSession(modelFile.absolutePath, options).use { session ->
                 val inputInfo = (session.inputInfo[INPUT]?.info as? TensorInfo)
                     ?: throw IllegalStateException("Expected float tensor input '$INPUT'")
                 if (inputInfo.type != OnnxJavaType.FLOAT || !matches(inputInfo.shape, longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong())))
@@ -152,6 +171,13 @@ class OnnxNsfwNsflClassifier(private val modelFile: File) : ValidatedModerationC
                         }
                     }
                 }
+                }
+            }
+        } finally {
+            try {
+                if (scaled !== bitmap) scaled.recycle()
+            } finally {
+                bitmap.recycle()
             }
         }
     }

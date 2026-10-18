@@ -17,6 +17,10 @@ import java.io.Closeable
 import java.io.File
 import java.nio.ByteOrder
 import kotlin.math.max
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /** Portrait background effect. The input frame must have already been decoded/oriented by the caller. */
 sealed interface PortraitEffect {
@@ -25,65 +29,77 @@ sealed interface PortraitEffect {
     data class Solid(val color: Int) : PortraitEffect
 }
 
-/** Selfie-segmentation model driven portrait effects; inference is synchronous, call on a worker thread. */
-class MediaPipePortraitEffects private constructor(private val segmenter: ImageSegmenter) : Closeable {
+/** Confidence values are row-major person probabilities in the range [0, 1]. */
+internal data class PortraitConfidenceMask(val width: Int, val height: Int, val values: FloatArray)
+
+/** Small seam around native inference; tests may supply mask data without pretending to run device inference. */
+internal interface PortraitSegmenter : Closeable {
+    fun segment(frame: Bitmap): PortraitConfidenceMask
+}
+
+/** Synchronous native inference is serialized with close; use [processCancellable] from coroutine workers. */
+class MediaPipePortraitEffects internal constructor(private val segmenter: PortraitSegmenter) : Closeable {
+    private var closed = false
+
     /** Segment the frame with the actual MediaPipe model, then blur or replace only the background. */
+    @Synchronized
     fun process(frame: Bitmap, effect: PortraitEffect): Bitmap {
-        require(!frame.isRecycled && frame.width > 0 && frame.height > 0) { "Frame must be a live bitmap" }
-        val image = BitmapImageBuilder(frame).build()
-        val personMask: FloatArray
-        val maskWidth: Int
-        val maskHeight: Int
-        try {
-            val result = segmenter.segment(image)
-            // The official selfie model has category 0=background, 1=person; request confidence maps.
-            val masks = result.confidenceMasks().orElse(null).orEmpty()
-            val mask = masks.lastOrNull()
-                ?: throw IllegalStateException("MediaPipe returned no person confidence mask")
-            try {
-                maskWidth = mask.width
-                maskHeight = mask.height
-                require(maskWidth > 0 && maskHeight > 0) { "MediaPipe returned an empty person mask" }
-                personMask = maskToFloatArray(mask, maskWidth, maskHeight)
-            } finally {
-                masks.forEach { it.close() }
+        check(!closed) { "Portrait effects processor is closed" }
+        requireLiveBitmap(frame, "Frame")
+        requirePixelCount(frame.width, frame.height, "Frame")
+        when (effect) {
+            is PortraitEffect.Blur -> require(effect.strength.isFinite()) { "Blur strength must be finite" }
+            is PortraitEffect.Replace -> {
+                requireLiveBitmap(effect.background, "Replacement background")
+                requirePixelCount(effect.background.width, effect.background.height, "Replacement background")
             }
-        } finally {
-            image.close()
+            is PortraitEffect.Solid -> Unit
         }
+
+        val personMask = segmenter.segment(frame)
+        validateMask(personMask)
         val background = when (effect) {
             is PortraitEffect.Blur -> makeBlurredBackground(frame, effect.strength)
             is PortraitEffect.Replace -> coverFit(effect.background, frame.width, frame.height)
             is PortraitEffect.Solid -> Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
                 .also { it.eraseColor(effect.color) }
         }
+        val callerOwnedBackground = (effect as? PortraitEffect.Replace)?.background
         return try {
-            composite(frame, background, personMask, maskWidth, maskHeight)
+            composite(frame, background, personMask)
         } finally {
-            if (background !== frame && background !== (effect as? PortraitEffect.Replace)?.background && !background.isRecycled) {
+            if (background !== frame && background !== callerOwnedBackground && !background.isRecycled) {
                 background.recycle()
             }
         }
     }
 
-    override fun close() = segmenter.close()
-
-    private fun maskToFloatArray(mask: MPImage, width: Int, height: Int): FloatArray {
-        val format = mask.getContainedImageProperties().firstOrNull()?.imageFormat
-        if (format == MPImage.IMAGE_FORMAT_VEC32F1) {
-            val buffer = ByteBufferExtractor.extract(mask).duplicate().order(ByteOrder.nativeOrder())
-            buffer.rewind()
-            val floatBuffer = buffer.asFloatBuffer()
-            check(floatBuffer.remaining() >= width * height) { "MediaPipe confidence mask buffer is truncated" }
-            return FloatArray(width * height).also(floatBuffer::get)
-        }
-        val bitmap = BitmapExtractor.extract(mask)
+    /** Runs synchronous inference on a worker and discards/recycles a result if cancellation arrives meanwhile. */
+    suspend fun processCancellable(frame: Bitmap, effect: PortraitEffect): Bitmap = withContext(Dispatchers.Default) {
+        currentCoroutineContext().ensureActive()
+        val output = process(frame, effect)
         try {
-            val pixels = IntArray(width * height)
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-            return FloatArray(pixels.size) { ((pixels[it] ushr 16) and 0xff) / 255f }
-        } finally {
-            if (!bitmap.isRecycled) bitmap.recycle()
+            currentCoroutineContext().ensureActive()
+            output
+        } catch (cancelled: Throwable) {
+            if (!output.isRecycled) output.recycle()
+            throw cancelled
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        if (closed) return
+        closed = true
+        segmenter.close()
+    }
+
+    private fun validateMask(mask: PortraitConfidenceMask) {
+        require(mask.width > 0 && mask.height > 0) { "MediaPipe returned an empty person mask" }
+        val count = requirePixelCount(mask.width, mask.height, "Person mask")
+        require(mask.values.size == count) { "MediaPipe confidence mask has an invalid buffer size" }
+        require(mask.values.all { it.isFinite() && it in 0f..1f }) {
+            "MediaPipe confidence mask contains an invalid confidence value"
         }
     }
 
@@ -93,46 +109,50 @@ class MediaPipePortraitEffects private constructor(private val segmenter: ImageS
         return try {
             Bitmap.createScaledBitmap(small, frame.width, frame.height, true)
         } finally {
+            // Android may return the input object when a requested scale is unchanged (notably 1x1 inputs).
             if (small !== frame && !small.isRecycled) small.recycle()
         }
     }
 
     private fun coverFit(source: Bitmap, width: Int, height: Int): Bitmap {
-        require(!source.isRecycled) { "Replacement background bitmap has been recycled" }
         val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val scale = max(width.toFloat() / source.width, height.toFloat() / source.height)
-        val transform = Matrix().apply {
-            setScale(scale, scale)
-            postTranslate((width - source.width * scale) / 2f, (height - source.height * scale) / 2f)
+        try {
+            val scale = max(width.toFloat() / source.width, height.toFloat() / source.height)
+            val transform = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate((width - source.width * scale) / 2f, (height - source.height * scale) / 2f)
+            }
+            Canvas(output).drawBitmap(source, transform, Paint(Paint.FILTER_BITMAP_FLAG))
+            return output
+        } catch (failure: Throwable) {
+            if (!output.isRecycled) output.recycle()
+            throw failure
         }
-        Canvas(output).drawBitmap(source, transform, Paint(Paint.FILTER_BITMAP_FLAG))
-        return output
     }
 
-    private fun composite(frame: Bitmap, background: Bitmap, mask: FloatArray, maskW: Int, maskH: Int): Bitmap {
+    private fun composite(frame: Bitmap, background: Bitmap, mask: PortraitConfidenceMask): Bitmap {
         val w = frame.width
         val h = frame.height
-        val foregroundPixels = IntArray(w * h)
-        val backgroundPixels = IntArray(w * h)
+        val foregroundPixels = IntArray(requirePixelCount(w, h, "Frame"))
+        val backgroundPixels = IntArray(foregroundPixels.size)
         frame.getPixels(foregroundPixels, 0, w, 0, 0, w, h)
         background.getPixels(backgroundPixels, 0, w, 0, 0, w, h)
-        val outputPixels = IntArray(w * h)
+        val outputPixels = IntArray(foregroundPixels.size)
         for (y in 0 until h) {
-            val my = ((y + 0.5f) * maskH / h - 0.5f).coerceIn(0f, (maskH - 1).toFloat())
+            val my = ((y + 0.5f) * mask.height / h - 0.5f).coerceIn(0f, (mask.height - 1).toFloat())
             val y0 = my.toInt()
-            val y1 = minOf(y0 + 1, maskH - 1)
+            val y1 = minOf(y0 + 1, mask.height - 1)
             val fy = my - y0
             for (x in 0 until w) {
-                val mx = ((x + 0.5f) * maskW / w - 0.5f).coerceIn(0f, (maskW - 1).toFloat())
+                val mx = ((x + 0.5f) * mask.width / w - 0.5f).coerceIn(0f, (mask.width - 1).toFloat())
                 val x0 = mx.toInt()
-                val x1 = minOf(x0 + 1, maskW - 1)
+                val x1 = minOf(x0 + 1, mask.width - 1)
                 val fx = mx - x0
-                val a = mask[y0 * maskW + x0]
-                val b = mask[y0 * maskW + x1]
-                val c = mask[y1 * maskW + x0]
-                val d = mask[y1 * maskW + x1]
-                val confidence = ((a * (1f - fx) + b * fx) * (1f - fy) + (c * (1f - fx) + d * fx) * fy)
-                    .coerceIn(0f, 1f)
+                val a = mask.values[y0 * mask.width + x0]
+                val b = mask.values[y0 * mask.width + x1]
+                val c = mask.values[y1 * mask.width + x0]
+                val d = mask.values[y1 * mask.width + x1]
+                val confidence = (a * (1f - fx) + b * fx) * (1f - fy) + (c * (1f - fx) + d * fx) * fy
                 val alpha = smoothstep(confidence, 0.35f, 0.65f)
                 val fg = foregroundPixels[y * w + x]
                 val bg = backgroundPixels[y * w + x]
@@ -142,8 +162,13 @@ class MediaPipePortraitEffects private constructor(private val segmenter: ImageS
                 outputPixels[y * w + x] = (0xff shl 24) or (red shl 16) or (green shl 8) or blue
             }
         }
-        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
-            it.setPixels(outputPixels, 0, w, 0, 0, w, h)
+        val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        try {
+            output.setPixels(outputPixels, 0, w, 0, 0, w, h)
+            return output
+        } catch (failure: Throwable) {
+            if (!output.isRecycled) output.recycle()
+            throw failure
         }
     }
 
@@ -167,7 +192,66 @@ class MediaPipePortraitEffects private constructor(private val segmenter: ImageS
                 .setOutputCategoryMask(false)
                 .setOutputConfidenceMasks(true)
                 .build()
-            return MediaPipePortraitEffects(ImageSegmenter.createFromOptions(context.applicationContext, options))
+            return MediaPipePortraitEffects(MediaPipeImageSegmenter(ImageSegmenter.createFromOptions(context.applicationContext, options)))
         }
+
+        private fun requireLiveBitmap(bitmap: Bitmap, label: String) {
+            require(!bitmap.isRecycled && bitmap.width > 0 && bitmap.height > 0) { "$label must be a live bitmap" }
+        }
+
+        private fun requirePixelCount(width: Int, height: Int, label: String): Int {
+            require(width > 0 && height > 0 && width <= Int.MAX_VALUE / height) { "$label dimensions are invalid or too large" }
+            return width * height
+        }
+    }
+}
+
+private class MediaPipeImageSegmenter(private val segmenter: ImageSegmenter) : PortraitSegmenter {
+    override fun segment(frame: Bitmap): PortraitConfidenceMask {
+        val image = BitmapImageBuilder(frame).build()
+        try {
+            val result = segmenter.segment(image)
+            val masks = result.confidenceMasks().orElse(null).orEmpty()
+            try {
+                val mask = masks.lastOrNull()
+                    ?: throw IllegalStateException("MediaPipe returned no person confidence mask")
+                val width = mask.width
+                val height = mask.height
+                val count = requireMaskPixelCount(width, height)
+                val values = maskToFloatArray(mask, width, height, count)
+                return PortraitConfidenceMask(width, height, values)
+            } finally {
+                masks.forEach { it.close() }
+            }
+        } finally {
+            image.close()
+        }
+    }
+
+    override fun close() = segmenter.close()
+
+    private fun maskToFloatArray(mask: MPImage, width: Int, height: Int, count: Int): FloatArray {
+        val format = mask.getContainedImageProperties().firstOrNull()?.imageFormat
+        if (format == MPImage.IMAGE_FORMAT_VEC32F1) {
+            val buffer = ByteBufferExtractor.extract(mask).duplicate().order(ByteOrder.nativeOrder())
+            buffer.rewind()
+            val floatBuffer = buffer.asFloatBuffer()
+            check(floatBuffer.remaining() >= count) { "MediaPipe confidence mask buffer is truncated" }
+            return FloatArray(count).also(floatBuffer::get)
+        }
+        val bitmap = BitmapExtractor.extract(mask)
+        try {
+            require(bitmap.width == width && bitmap.height == height) { "MediaPipe bitmap mask dimensions do not match" }
+            val pixels = IntArray(count)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            return FloatArray(count) { ((pixels[it] ushr 16) and 0xff) / 255f }
+        } finally {
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+    }
+
+    private fun requireMaskPixelCount(width: Int, height: Int): Int {
+        require(width > 0 && height > 0 && width <= Int.MAX_VALUE / height) { "MediaPipe returned an invalid person mask size" }
+        return width * height
     }
 }

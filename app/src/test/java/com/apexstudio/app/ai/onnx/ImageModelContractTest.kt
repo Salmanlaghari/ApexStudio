@@ -37,6 +37,33 @@ class ImageModelContractTest {
         assertFalse(ImageModelReviewCatalog.isReviewed(supplied))
     }
 
+    @Test fun contractsRejectUnsupportedChannelsAndOversizedInputOrOutputTensors() {
+        assertIllegalArgument {
+            ImageModelContract("in", "out", 2, 2, outputChannels = 2)
+        }
+        assertIllegalArgument {
+            ImageModelContract("in", "out", Int.MAX_VALUE, Int.MAX_VALUE)
+        }
+        assertIllegalArgument {
+            ImageModelContract("in", "out", 1, 1, outputChannels = 4,
+                outputWidth = Int.MAX_VALUE, outputHeight = Int.MAX_VALUE)
+        }
+        for (channels in listOf(1, 3, 4)) {
+            assertIllegalArgument {
+                ImageModelContract("in", "out", 1, 1, outputChannels = channels,
+                    outputWidth = 2_049, outputHeight = 2_048)
+            }
+            assertEquals(2_048, ImageModelContract("in", "out", 1, 1, outputChannels = channels,
+                outputWidth = 2_048, outputHeight = 2_048).outputWidth)
+        }
+        assertEquals(listOf(1L, 3L, 2L, 2L), ImageModelContract("in", "out", 2, 2).outputShape.toList())
+    }
+
+    private fun assertIllegalArgument(block: () -> Unit) {
+        try { block(); throw AssertionError("Expected IllegalArgumentException") }
+        catch (_: IllegalArgumentException) { }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun artifactRejectsUnpinnedOrMalformedIdentity() {
         ImageModelArtifact("model.onnx", "latest", "not-a-digest", "https://example.invalid/model", "MIT", ImageTask.STYLE_TRANSFER)

@@ -2,6 +2,8 @@ package com.apexstudio.app.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.ai.autoreframe.FaceAwareReframeEngine
+import com.apexstudio.app.ai.autoreframe.FaceTrackAnalysisResult
 import com.apexstudio.app.ai.autoreframe.LocalFaceTrackAnalyzer
 import com.apexstudio.app.domain.model.ClipType
 import kotlinx.coroutines.CancellationException
@@ -31,6 +33,7 @@ private fun EditorViewModel.invalidateStaleFaceTrackReview(snapshot: FaceTrackSo
 
 /** Analyze a selected video locally and retain samples only for explicit review in the editor. */
 fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
+    val reframeTarget = _faceTrackReview.value.reframeTarget
     faceTrackReviewToken?.cancel()
     faceTrackReviewJob?.cancel()
     faceTrackReviewToken = null
@@ -81,10 +84,11 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
         sourceStartMs = startMs,
         sourceEndMs = endMs,
         sourceSnapshot = snapshot,
+        reframeTarget = reframeTarget,
     )
     faceTrackReviewJob = viewModelScope.launch {
         try {
-            val result = LocalFaceTrackAnalyzer().analyze(
+            val result = LocalFaceTrackAnalyzer(outputAspectRatio = reframeTarget.aspectRatio).analyze(
                 context = appContext,
                 uri = snapshot.uri,
                 sourceStartMs = startMs,
@@ -193,4 +197,35 @@ fun EditorViewModel.setFaceTrackSampleReviewed(timestampMs: Long, reviewed: Bool
         else it.copy(reviewedSampleTimestamps = if (reviewed) it.reviewedSampleTimestamps + timestampMs
             else it.reviewedSampleTimestamps - timestampMs)
     }
+}
+
+/** Reuse actual detections for geometry review; there is no second inference or media mutation. */
+internal fun faceReviewForTarget(
+    result: FaceTrackAnalysisResult,
+    target: FaceReframeReviewTarget,
+): FaceTrackAnalysisResult {
+    val crops = FaceAwareReframeEngine.track(result.sourceWidth, result.sourceHeight, target.aspectRatio,
+        result.samples.map { sample -> sample.timestampMs to sample.faces.map { it.detection } })
+    return result.copy(samples = result.samples.zip(crops) { sample, crop -> sample.copy(reframe = crop) })
+}
+
+/** Target changes invalidate review marks because they describe a different crop, not a new edit. */
+fun EditorViewModel.setFaceReframeReviewTarget(target: FaceReframeReviewTarget): Boolean {
+    val review = _faceTrackReview.value
+    if (review.isRunning) return false
+    if (review.reframeTarget == target) return true
+    val snapshot = review.sourceSnapshot
+    if (review.isReady && (snapshot == null || !isFaceTrackSnapshotCurrent(snapshot))) {
+        if (snapshot != null) invalidateStaleFaceTrackReview(snapshot)
+        return false
+    }
+    val result = review.result?.let { faceReviewForTarget(it, target) }
+    _faceTrackReview.value = review.copy(
+        reframeTarget = target,
+        result = result,
+        reviewedSampleTimestamps = emptySet(),
+        message = if (review.isReady) "Reviewing ${target.label} crop candidates from the same sampled detections. No edit was applied."
+            else review.message,
+    )
+    return true
 }

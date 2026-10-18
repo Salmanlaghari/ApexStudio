@@ -9,6 +9,17 @@ class ClipTimeMappingTest {
         trimEndMs = duration, type = ClipType.VIDEO
     )
 
+    @Test fun captionOutputTimeIsClipRelativeWithoutApplyingSpeedTwiceOrClampingFutureClips() {
+        val first = clip("first")
+        val second = clip("second").copy(speedPoints = SpeedCurveMath.flat(2f))
+        val clips = listOf(first, second)
+        assertEquals(300L, ClipTimeMapping.outputAtProjectTime(clips, second, 10_300L))
+        assertEquals(-1L, ClipTimeMapping.outputAtProjectTime(clips, second, 9_999L))
+        val overlay = clip("pip").copy(type = ClipType.OVERLAY, trackIndex = 2, timelineOffsetMs = 20_000L)
+        assertEquals(300L, ClipTimeMapping.outputAtProjectTime(listOf(overlay), overlay, 20_300L))
+        assertEquals(-20_000L, ClipTimeMapping.outputAtProjectTime(listOf(overlay), overlay, 0L))
+    }
+
     @Test fun secondClipUsesItsOwnSourceNotAbsoluteProjectPlayhead() {
         val first = clip("first")
         val second = clip("second", 20_000L).copy(trimStartMs = 4_000L)

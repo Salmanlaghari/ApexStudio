@@ -8,9 +8,16 @@ import kotlin.math.sqrt
 /** Uniform low-resolution luma sample for offline scene analysis; luma values are normalized 0..1. */
 data class LumaFrame(val timestampMs: Long, val width: Int, val height: Int, val luma: FloatArray, val audioRms: Float = 0f) {
     init {
-        require(timestampMs >= 0 && width > 0 && height > 0 && luma.size == width * height)
+        require(timestampMs in 0 until Long.MAX_VALUE && width > 0 && height > 0)
+        val pixelCount = width.toLong() * height.toLong()
+        require(pixelCount <= MAX_LUMA_PIXELS && luma.size.toLong() == pixelCount) {
+            "Luma dimensions do not match the frame or exceed the safe pixel limit"
+        }
+        require(luma.all { it.isFinite() && it in 0f..1f }) { "Luma values must be finite and normalized to 0..1" }
         require(audioRms.isFinite() && audioRms >= 0f)
     }
+
+    private companion object { const val MAX_LUMA_PIXELS = 16_777_216L }
 }
 
 data class SceneBoundary(val timestampMs: Long, val changeScore: Float)
@@ -63,8 +70,9 @@ object LocalVideoAnalysis {
                 if (meanSharp > 0.12f) "frame detail" else null,
                 if (meanAudio > 0.08f) "audio energy" else null
             ).joinToString(", ").ifEmpty { "balanced exposure" }
-            candidates += Highlight(slice.first().timestampMs,
-                (slice.last().timestampMs + frameDurationEstimate(slice)).coerceAtLeast(slice.first().timestampMs + 1), score, reason)
+            val startMs = slice.first().timestampMs
+            val estimatedEnd = saturatingAdd(slice.last().timestampMs, frameDurationEstimate(slice))
+            candidates += Highlight(startMs, maxOf(estimatedEnd, saturatingAdd(startMs, 1L)), score, reason)
             start = end
         }
         return SceneAnalysis(cuts, candidates.sortedByDescending { it.score })
@@ -107,6 +115,9 @@ object LocalVideoAnalysis {
 
     private fun frameDurationEstimate(frames: List<LumaFrame>): Long =
         if (frames.size > 1) (frames.last().timestampMs - frames.first().timestampMs) / (frames.size - 1).coerceAtLeast(1) else 1L
+
+    private fun saturatingAdd(left: Long, right: Long): Long =
+        if (right > 0L && left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
 }
 
 data class RgbFrameStats(val meanRed: Float, val meanGreen: Float, val meanBlue: Float, val contrast: Float, val saturation: Float)

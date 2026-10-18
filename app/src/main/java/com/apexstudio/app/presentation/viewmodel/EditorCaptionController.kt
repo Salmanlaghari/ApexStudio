@@ -9,6 +9,7 @@ import com.apexstudio.app.ai.subtitles.WordCue
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.update
@@ -29,7 +30,7 @@ data class CaptionUiState(
     val timingMode: CaptionTimingMode = CaptionTimingMode.PHRASE,
 )
 
-enum class CaptionTimingMode { PHRASE, ENGLISH_WORDS }
+enum class CaptionTimingMode { PHRASE, ENGLISH_WORDS, ENGLISH_KARAOKE }
 enum class CaptionPhase { IDLE, NEED_DOWNLOAD, TRANSCRIBING, DONE, FAILED }
 
 /** Only this request may publish. Flow.update also protects native-worker progress callbacks. */
@@ -46,7 +47,7 @@ fun EditorViewModel.setCaptionLanguage(code: String) {
 
 /** Word mode requires explicit English, never an unverified auto-language guess. */
 fun EditorViewModel.setCaptionTimingMode(mode: CaptionTimingMode) {
-    if (mode == CaptionTimingMode.ENGLISH_WORDS && _captionUi.value.language != "en") return
+    if (mode != CaptionTimingMode.PHRASE && _captionUi.value.language != "en") return
     captionJob?.cancel()
     captionJob = null
     _captionUi.value = CaptionUiState(language = _captionUi.value.language, timingMode = mode)
@@ -92,6 +93,68 @@ internal fun captionOverlaysFor(clip: MediaClip, segments: List<WhisperCaptionEn
     }
 }
 
+/** Full original phrase is repeated for every measured CTC interval; ambiguous grouping fails closed. */
+internal fun karaokeCaptionOverlaysFor(
+    clip: MediaClip,
+    phrases: List<WhisperCaptionEngine.CaptionSegment>,
+    words: List<WordCue>,
+): List<TextOverlay> {
+    alignedCaptionSegments(words)
+    val span = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(0L)
+    require(span > 0L && phrases.isNotEmpty()) { "No phrase timing available for karaoke" }
+    require(phrases.zipWithNext().all { (a, b) -> a.endMs <= b.startMs }) {
+        "Karaoke phrases must be ordered and non-overlapping"
+    }
+    val tokenMatches = phrases.map { phrase ->
+        require(phrase.startMs >= 0L && phrase.endMs > phrase.startMs && phrase.endMs <= span && phrase.text.isNotBlank())
+        Regex("[A-Za-z]+(?:'[A-Za-z]+)*").findAll(phrase.text).toList()
+    }
+    require(tokenMatches.all { it.isNotEmpty() }) { "A phrase has no mappable English words" }
+    val assigned = phrases.indices.map { mutableListOf<WordCue>() }
+    words.forEach { word ->
+        val matches = phrases.indices.filter { i -> word.startMs >= phrases[i].startMs && word.endMs <= phrases[i].endMs }
+        require(matches.size == 1) { "An acoustic word cannot be mapped uniquely to a Whisper phrase" }
+        assigned[matches.single()] += word
+    }
+    val result = mutableListOf<TextOverlay>()
+    phrases.forEachIndexed { phraseIndex, phrase ->
+        val tokens = tokenMatches[phraseIndex]
+        val group = assigned[phraseIndex]
+        require(group.size == tokens.size) { "Acoustic words do not map one-to-one to the original phrase" }
+        val fingerprint = TextOverlayKaraoke.fingerprint(phrase.text)
+        fun emit(sourceStart: Long, sourceEnd: Long, token: MatchResult? = null) {
+            if (sourceEnd <= sourceStart) return
+            val start = SpeedCurveMath.sourceToOutputMs(sourceStart, span, clip.speedPoints)
+            val exclusiveEnd = SpeedCurveMath.sourceToOutputMs(sourceEnd, span, clip.speedPoints)
+            if (exclusiveEnd <= start) {
+                require(token == null) { "Measured word collapsed after speed mapping" }
+                return // A sub-millisecond silence has no output frame; never invent word timing.
+            }
+            result += TextOverlay.of(
+                text = phrase.text, x = 0.5f, y = 0.82f, sizeScale = 0.85f,
+                colorArgb = 0xFFFFFFFFL, bgArgb = 0xB3000000L, isBold = true, presetId = "caption_auto",
+            ).copy(
+                startMs = start, endMs = exclusiveEnd - 1L,
+                highlightStartUtf16 = token?.range?.first, highlightEndUtf16 = token?.range?.last?.plus(1),
+                highlightSourceFingerprint = fingerprint, highlightColorArgb = 0xFFFFFF00L,
+            )
+        }
+        var cursor = phrase.startMs
+        group.forEachIndexed { index, word ->
+            val token = tokens[index]
+            val cueTokens = Regex("[A-Za-z]+(?:'[A-Za-z]+)*").findAll(word.text).toList()
+            require(cueTokens.size == 1 && cueTokens.single().value.equals(token.value, ignoreCase = true)) {
+                "Acoustic word does not match the original phrase token"
+            }
+            emit(cursor, word.startMs) // Preserve phrase visibility in genuine gaps, without a highlighted word.
+            emit(word.startMs, word.endMs, token)
+            cursor = word.endMs
+        }
+        emit(cursor, phrase.endMs)
+    }
+    return result
+}
+
 /** Only genuine, ordered acoustic word intervals may enter the word-by-word editor path.
  * Invalid results fail atomically: no partial captions and no equal-duration fallback.
  */
@@ -112,11 +175,13 @@ internal fun alignedCaptionSegments(words: List<WordCue>): List<WhisperCaptionEn
 internal fun EditorViewModel.applyCaptionResult(
     snapshot: CaptionSourceSnapshot,
     segments: List<WhisperCaptionEngine.CaptionSegment>,
+    karaokeWords: List<WordCue>? = null,
 ): Int? {
     val project = _state.value.project ?: return null
     val current = project.clips.firstOrNull { it.id == snapshot.clip.id } ?: return null
     if (!snapshot.matches(project.id, current)) return null
-    val overlays = captionOverlaysFor(current, segments)
+    val overlays = karaokeWords?.let { karaokeCaptionOverlaysFor(current, segments, it) }
+        ?: captionOverlaysFor(current, segments)
     if (overlays.isEmpty()) return 0
     pushUndo()
     updateClip(current.id) { c ->
@@ -140,7 +205,7 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     val request = UUID.randomUUID().toString()
     val language = _captionUi.value.language
     val timingMode = _captionUi.value.timingMode
-    if (timingMode == CaptionTimingMode.ENGLISH_WORDS && language != "en") {
+    if (timingMode != CaptionTimingMode.PHRASE && language != "en") {
         _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED,
             message = "Select English for acoustic word timing. Other languages keep phrase timing.")
         return
@@ -167,7 +232,7 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
             ) { p ->
                 updateCaptionRequest(request) { it.copy(
-                    progress01 = p.coerceIn(0f, 1f) * if (timingMode == CaptionTimingMode.ENGLISH_WORDS) 0.65f else 1f,
+                    progress01 = p.coerceIn(0f, 1f) * if (timingMode != CaptionTimingMode.PHRASE) 0.65f else 1f,
                     message = "Transcribing ${(p * 100).toInt()}%…",
                 ) }
             }
@@ -178,7 +243,8 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                     message = "Couldn't load the AI model or read this clip's audio.") }
                 return@launch
             }
-            val finalSegments = if (timingMode == CaptionTimingMode.ENGLISH_WORDS && segments.isNotEmpty()) {
+            var karaokeWords: List<WordCue>? = null
+            val finalSegments = if (timingMode != CaptionTimingMode.PHRASE && segments.isNotEmpty()) {
                 updateCaptionRequest(request) { it.copy(message = "Aligning English words offline…", progress01 = .65f) }
                 val words = EnglishWordAlignment.align(ctx.applicationContext, android.net.Uri.parse(clip.uri),
                     segments, clip.trimStartMs, clip.trimEndMs) { progress ->
@@ -187,17 +253,25 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 }
                 ensureActive()
                 if (_captionUi.value.requestId != request) return@launch
-                alignedCaptionSegments(words)
+                val measuredSegments = alignedCaptionSegments(words)
+                if (timingMode == CaptionTimingMode.ENGLISH_KARAOKE) {
+                    karaokeWords = words
+                    // Keep the exact Whisper phrase transcript/grouping for karaoke construction.
+                    segments
+                } else measuredSegments
             } else segments
-            val added = applyCaptionResult(snapshot, finalSegments)
+            val added = applyCaptionResult(snapshot, finalSegments, karaokeWords)
             updateCaptionRequest(request) {
                 when (added) {
                     null -> it.copy(phase = CaptionPhase.FAILED,
                         message = "Clip, source, timing or captions changed while transcribing. Generate again; nothing was replaced.")
                     0 -> it.copy(phase = CaptionPhase.FAILED, message = "No speech detected in this clip.")
                     else -> it.copy(phase = CaptionPhase.DONE, progress01 = 1f,
-                        message = if (timingMode == CaptionTimingMode.ENGLISH_WORDS) "Added $added acoustically timed words"
-                            else "Added $added phrase captions", segmentsAdded = added)
+                        message = when (timingMode) {
+                            CaptionTimingMode.ENGLISH_WORDS -> "Added $added acoustically timed words"
+                            CaptionTimingMode.ENGLISH_KARAOKE -> "Added $added full-phrase karaoke windows"
+                            CaptionTimingMode.PHRASE -> "Added $added phrase captions"
+                        }, segmentsAdded = added)
                 }
             }
         } catch (cancelled: CancellationException) {

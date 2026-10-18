@@ -10,6 +10,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*EditorLocalAnalysisTest' \
   --tests '*EditorFaceTrackReviewTest' \
   --tests '*EditorWordCaptionTest' \
+  --tests '*TextSpriteRendererKaraokeTest' \
   --tests '*WhisperCaptionBoundsTest' \
   --tests '*EditorCaptionReliabilityTest' \
   --tests '*EditorBackgroundControllerTest' \
@@ -28,6 +29,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*ClipTimeMappingTest' \
   --tests '*OverlaySplitTrimTest' \
   --tests '*PipOverlayCanvasTest' \
+  --tests '*OverlayCropGeometryTest' \
+  --tests '*CameraKitConfigTest' \
   --tests '*VideoCropPresetTest' \
   --tests '*ModernFxShadersTest' \
   --tests '*LutAssetIntegrityTest'

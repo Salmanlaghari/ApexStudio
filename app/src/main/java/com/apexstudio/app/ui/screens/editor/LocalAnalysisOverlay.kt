@@ -1,5 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,8 +29,13 @@ fun LocalAnalysisOverlay(
     var tab by remember { mutableStateOf("Scenes") }
     val analyzedClip = editor.project?.clips?.firstOrNull { it.id == analysis.clipId }
     val close = { vm.cancelLocalAnalysis(); vm.cancelLocalFaceTrackReview(); onClose() }
+    val previewAnalysisSource: (Long) -> Unit = { timestamp ->
+        if (vm.canPreviewLocalAnalysisTime(timestamp)) {
+            vm.localAnalysis.value.clipId?.let { onPreviewSourceTime(it, timestamp) }
+        }
+    }
     ModalBottomSheet(onDismissRequest = close, containerColor = ApexPalette.BgSurface) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Offline analysis & face-track review", style = MaterialTheme.typography.titleLarge,
                     color = ApexPalette.TextPrimary, modifier = Modifier.weight(1f))
@@ -49,6 +56,14 @@ fun LocalAnalysisOverlay(
             Text("Samples local video frames with the bundled face model. Track IDs are temporary associations, not identities. Review sampled detections and crop candidates; nothing is applied. This is not real-time preview, export, or content moderation. Cancel takes effect between decoder/inference calls.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(FaceReframeReviewTarget.entries) { target ->
+                    FilterChip(selected = faceReview.reframeTarget == target,
+                        enabled = !faceReview.isRunning,
+                        onClick = { vm.setFaceReframeReviewTarget(target) },
+                        label = { Text(target.label) })
+                }
+            }
             OutlinedButton(onClick = { vm.startLocalFaceTrackReview() },
                 enabled = !faceReview.isRunning && !analysis.isRunning,
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
@@ -84,7 +99,7 @@ fun LocalAnalysisOverlay(
                             if (analysis.sceneCuts.isEmpty()) item { AnalysisNote("No candidate scene cuts found. Your video has not been changed.") }
                             items(analysis.sceneCuts, key = { it.id }) { cut ->
                                 AnalysisCard("Scene at ${analysisTime(cut.timestampMs)}", "A sampled frame-change candidate, not a frame-exact guaranteed cut.") {
-                                    TextButton(onClick = { onPreviewSourceTime(analysis.clipId.orEmpty(), cut.timestampMs) }) { Text("Preview in video") }
+                                    TextButton(onClick = { previewAnalysisSource(cut.timestampMs) }) { Text("Preview in video") }
                                     FilterChip(selected = cut.id in analysis.reviewedSuggestionIds,
                                         onClick = { vm.setLocalSuggestionReviewed(cut.id, cut.id !in analysis.reviewedSuggestionIds) },
                                         label = { Text(if (cut.id in analysis.reviewedSuggestionIds) "Reviewed / selected" else "Select reviewed cut") })
@@ -96,8 +111,8 @@ fun LocalAnalysisOverlay(
                             items(analysis.smartTrims, key = { it.id }) { trim ->
                                 AnalysisCard("${analysisTime(trim.startMs)} – ${analysisTime(trim.endMs)}", trim.rationale) {
                                     Row {
-                                        TextButton(onClick = { onPreviewSourceTime(analysis.clipId.orEmpty(), trim.startMs) }) { Text("Preview start") }
-                                        TextButton(onClick = { onPreviewSourceTime(analysis.clipId.orEmpty(), (trim.endMs - 1L).coerceAtLeast(trim.startMs)) }) { Text("End") }
+                                        TextButton(onClick = { previewAnalysisSource(trim.startMs) }) { Text("Preview start") }
+                                        TextButton(onClick = { previewAnalysisSource((trim.endMs - 1L).coerceAtLeast(trim.startMs)) }) { Text("End") }
                                     }
                                     FilterChip(selected = trim.id in analysis.reviewedSuggestionIds,
                                         onClick = { vm.setLocalSuggestionReviewed(trim.id, trim.id !in analysis.reviewedSuggestionIds) }, label = { Text("I reviewed this window") })
@@ -111,7 +126,7 @@ fun LocalAnalysisOverlay(
                             if (crop == null) AnalysisNote("No crop suggestion available for this video.")
                             else AnalysisCard("Signal crop · 9:16", "Luma-gradient suggestion, not subject detection. Apply is undoable; check the main video preview after applying.") {
                                 Text(crop.method, style = MaterialTheme.typography.bodySmall, maxLines = 3)
-                                TextButton(onClick = { onPreviewSourceTime(analysis.clipId.orEmpty(), analysis.sourceStartMs ?: 0L) }) { Text("Preview source") }
+                                TextButton(onClick = { previewAnalysisSource(analysis.sourceStartMs ?: 0L) }) { Text("Preview source") }
                                 FilterChip(selected = "local-auto-crop" in analysis.reviewedSuggestionIds,
                                     onClick = { vm.setLocalSuggestionReviewed("local-auto-crop", "local-auto-crop" !in analysis.reviewedSuggestionIds) }, label = { Text("I reviewed the source") })
                                 Button(onClick = { vm.applyLocalAutoCrop() },
@@ -146,7 +161,7 @@ fun LocalAnalysisOverlay(
                             AnalysisCard("Sample at ${analysisTime(sample.timestampMs)}",
                                 if (sample.faces.isEmpty()) "No face detected in this sampled frame. The centered crop is a fallback candidate, not a detection."
                                 else "Detected ${sample.faces.size} face(s); local track IDs: ${trackIds.joinToString()}. These IDs are ephemeral and may change.") {
-                                Text("Crop candidate (not applied): L ${samplePercent(crop.left)} · T ${samplePercent(crop.top)} · R ${samplePercent(crop.right)} · B ${samplePercent(crop.bottom)}",
+                                Text("${faceReview.reframeTarget.label} candidate (not applied): L ${samplePercent(crop.left)} · T ${samplePercent(crop.top)} · R ${samplePercent(crop.right)} · B ${samplePercent(crop.bottom)}",
                                     style = MaterialTheme.typography.bodySmall)
                                 TextButton(onClick = {
                                     if (vm.canPreviewFaceTrackSample(sample.timestampMs)) {

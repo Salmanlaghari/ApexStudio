@@ -83,6 +83,11 @@ class EditorFaceTrackReviewTest {
         assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(durationMs = 4_000L))), null))
         assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(trimStartMs = 600L))), null))
         assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(trimEndMs = 2_100L))), null))
+        assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(speedMultiplier = 2f))), null))
+        assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(
+            clip.copy(speedCurve = com.apexstudio.app.domain.model.SpeedCurve.RAMP))), null))
+        assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(rampStartSpeed = .5f))), null))
+        assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(clip.copy(rampEndSpeed = 3f))), null))
         assertFalse(isFaceTrackSnapshotCurrent(snapshot, project.copy(clips = listOf(
             clip.copy(speedPoints = listOf(SpeedPoint(0f, 1f), SpeedPoint(1f, 3f))))), null))
         assertFalse(isFaceTrackSnapshotCurrent(snapshot, null, null))
@@ -121,5 +126,55 @@ class EditorFaceTrackReviewTest {
         assertEquals(FaceTrackReviewStatus.READY, vm.faceTrackReview.value.status)
         assertEquals(result, vm.faceTrackReview.value.result)
         assertFalse(vm.faceTrackReview.value.isRunning)
+    }
+
+    @Test fun targetsRecomputeOnlyReviewGeometryAndResetReviewMarks() {
+        val vm = editor()
+        val project = vm.state.value.project
+        val original = vm.faceTrackReview.value.result!!
+        for (target in listOf(FaceReframeReviewTarget.SQUARE, FaceReframeReviewTarget.LANDSCAPE,
+            FaceReframeReviewTarget.PORTRAIT)) {
+            vm.setFaceTrackSampleReviewed(1_000L, true)
+            assertTrue(vm.setFaceReframeReviewTarget(target))
+            val result = vm.faceTrackReview.value.result!!
+            assertEquals(target, vm.faceTrackReview.value.reframeTarget)
+            assertEquals(original.samples.map { it.timestampMs }, result.samples.map { it.timestampMs })
+            assertEquals(original.samples.map { it.faces }, result.samples.map { it.faces })
+            result.samples.forEach { sample ->
+                val crop = sample.reframe.crop
+                val aspect = (crop.right - crop.left) * result.sourceWidth /
+                    ((crop.bottom - crop.top) * result.sourceHeight)
+                assertEquals(target.aspectRatio, aspect, .0001f)
+                assertTrue(crop.left >= 0f && crop.top >= 0f && crop.right <= 1f && crop.bottom <= 1f)
+            }
+            assertTrue(vm.faceTrackReview.value.reviewedSampleTimestamps.isEmpty())
+            assertEquals(project, vm.state.value.project)
+            assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun targetChangesAreRejectedWhileInferenceIsRunning() {
+        val vm = editor()
+        vm._faceTrackReview.value = vm.faceTrackReview.value.copy(status = FaceTrackReviewStatus.RUNNING)
+        val before = vm.faceTrackReview.value
+        assertFalse(vm.setFaceReframeReviewTarget(FaceReframeReviewTarget.SQUARE))
+        assertEquals(before, vm.faceTrackReview.value)
+    }
+
+    @Test fun staleSourceCannotBeReframedEvenForReview() {
+        val vm = editor()
+        val project = vm._state.value.project!!
+        vm._state.value = vm._state.value.copy(project = project.copy(id = "another-project"))
+        assertFalse(vm.setFaceReframeReviewTarget(FaceReframeReviewTarget.SQUARE))
+        assertEquals(FaceTrackReviewStatus.CANCELLED, vm.faceTrackReview.value.status)
+        assertNull(vm.faceTrackReview.value.result)
+    }
+
+    @Test fun targetCanBeSelectedBeforeAClipIsAnalyzed() {
+        val vm = EditorViewModel()
+        assertTrue(vm.setFaceReframeReviewTarget(FaceReframeReviewTarget.SQUARE))
+        assertEquals(FaceReframeReviewTarget.SQUARE, vm.faceTrackReview.value.reframeTarget)
+        assertNull(vm.faceTrackReview.value.result)
+        assertTrue(vm.undoStack.isEmpty())
     }
 }

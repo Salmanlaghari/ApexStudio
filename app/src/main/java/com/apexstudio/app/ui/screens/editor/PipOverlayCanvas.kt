@@ -71,6 +71,7 @@ import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
+import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.atan2
@@ -266,9 +267,9 @@ private fun pipHitTest(
 
 private fun pipBoxSizePx(clip: MediaClip, canvasWpx: Float, scale: Float): Pair<Float, Float> {
     val w = canvasWpx * scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX)
-    // Intrinsic media aspect — never the legacy forced 16:9 (a portrait
-    // photo keeps its portrait box). Matches the export GL effect.
-    val aspect = clip.overlayAspect.takeIf { it > 0f } ?: PIP_BOX_ASPECT
+    // Preserve the selected crop's aspect, not the original uncropped source. Otherwise a square
+    // crop of a landscape overlay is stretched back into a landscape box. Export uses this too.
+    val aspect = croppedOverlayAspect(clip.overlayAspect, clip.videoCrop)
     return w to (w / aspect)
 }
 

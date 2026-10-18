@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import kotlin.math.roundToInt
 import com.apexstudio.app.data.text.TextFontRegistry
 import androidx.compose.ui.Alignment
@@ -1277,6 +1279,7 @@ private fun AutoCaptionsTab(
     onCancelCaptions: () -> Unit,
     hasAutoCaptions: Boolean
 ) {
+    val generationAvailable = GlobalModerationEnforcement.readiness.approved
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1298,11 +1301,27 @@ private fun AutoCaptionsTab(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Whisper AI listens to this clip's audio on-device and creates timed " +
-                        "lower-third captions using bundled models, without a download. " +
-                        "Urdu/Hindi use phrase timing. English can use experimental acoustic word timing.",
+                    "Whisper caption generation uses bundled on-device models. Urdu/Hindi use phrase " +
+                        "timing; English can use experimental acoustic word timing.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
+                )
+            }
+        }
+
+        if (!generationAvailable) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF2E1A1A))
+                    .border(1.dp, Color(0xFFF87171), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    GlobalModerationEnforcement.statusMessage(ProtectedAiAction.WHISPER_CAPTIONS),
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 12.sp
                 )
             }
         }
@@ -1437,6 +1456,7 @@ private fun AutoCaptionsTab(
         } else if (phase != CaptionPhase.NEED_DOWNLOAD) {
             Button(
                 onClick = onAutoCaptions,
+                enabled = generationAvailable,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ApexPalette.NeonCyan,

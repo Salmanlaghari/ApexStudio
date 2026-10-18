@@ -67,4 +67,57 @@ class ClipTimeMappingTest {
             mapped != SpeedCurveMath.effectiveDurationMs(2_500L, overlay.speedPoints)
         )
     }
+
+    @Test fun speedRampedOverlayUsesOutputDurationForVisibilityAndMapsPreviewSourceTime() {
+        val overlay = clip("slow-pip", 12_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            timelineOffsetMs = 5_000L,
+            trimStartMs = 2_000L,
+            trimEndMs = 10_000L,
+            speedPoints = SpeedCurveMath.flat(0.5f)
+        )
+
+        assertEquals(16_000L, overlay.overlayTimelineDurationMs())
+        assertTrue(overlay.isOverlayActiveAt(20_999L))
+        assertFalse(overlay.isOverlayActiveAt(21_000L))
+        assertTrue(kotlin.math.abs(2_000L - overlay.overlaySourceOffsetMs(4_000L)) <= 2L)
+        assertEquals(0.5f, overlay.overlaySpeedAtOutputMs(4_000L), 0.0001f)
+        assertEquals(
+            overlay.overlaySourceOffsetMs(4_000L),
+            OverlayTimeMapping.sourceOffsetMs(4_000L, 8_000L, overlay.speedPoints)
+        )
+    }
+
+    @Test fun rampedOverlayOutputToSourceMappingRoundTripsForExportTimestamps() {
+        val points = listOf(
+            SpeedPoint(0f, 0.5f),
+            SpeedPoint(0.5f, 1f),
+            SpeedPoint(1f, 2f)
+        )
+        val sourceSpanMs = 8_000L
+        val durationMs = OverlayTimeMapping.timelineDurationMs(sourceSpanMs, points)
+
+        for (outputMs in listOf(0L, durationMs / 4L, durationMs / 2L, durationMs * 3L / 4L, durationMs)) {
+            val sourceMs = OverlayTimeMapping.sourceOffsetMs(outputMs, sourceSpanMs, points)
+            val mappedBack = SpeedCurveMath.sourceToOutputMs(sourceMs, sourceSpanMs, points)
+            assertTrue("output=$outputMs source=$sourceMs mappedBack=$mappedBack", kotlin.math.abs(mappedBack - outputMs) <= 5L)
+        }
+    }
+
+    @Test fun nonFiniteOverlaySpeedPointsFallBackToSafeNormalPlayback() {
+        val points = listOf(SpeedPoint(0f, Float.NaN), SpeedPoint(Float.POSITIVE_INFINITY, 2f))
+        assertTrue(SpeedCurveMath.sanitize(points).isEmpty())
+        assertEquals(8_000L, OverlayTimeMapping.timelineDurationMs(8_000L, points))
+        assertEquals(2_000L, OverlayTimeMapping.sourceOffsetMs(2_000L, 8_000L, points))
+        assertEquals(1f, OverlayTimeMapping.speedAtOutputMs(2_000L, 8_000L, points), 0f)
+    }
+
+    @Test fun validOverlaySpeedPointsSurviveInvalidNeighbors() {
+        val points = listOf(SpeedPoint(0f, 2f), SpeedPoint(0.5f, Float.NEGATIVE_INFINITY),
+            SpeedPoint(Float.NaN, 1f), SpeedPoint(1f, 2f))
+        assertEquals(SpeedCurveMath.flat(2f), SpeedCurveMath.sanitize(points))
+        assertEquals(4_000L, OverlayTimeMapping.timelineDurationMs(8_000L, points))
+        assertEquals(2f, OverlayTimeMapping.speedAtOutputMs(2_000L, 8_000L, points), 0.0001f)
+    }
 }

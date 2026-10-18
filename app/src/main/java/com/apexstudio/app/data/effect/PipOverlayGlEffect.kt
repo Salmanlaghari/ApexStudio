@@ -55,6 +55,7 @@ class PipOverlayGlEffect(
     private val offsetMs: Long = 0L,
     private val trimStartMs: Long = 0L,
     private val trimEndMs: Long = Long.MAX_VALUE,
+    private val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
     private val widthFraction: Float = 0.25f,
     private val centerX: Float = 0.85f,
     private val centerY: Float = 0.85f,
@@ -81,6 +82,7 @@ class PipOverlayGlEffect(
             offsetMs = offsetMs,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
+            speedPoints = speedPoints,
             widthFraction = widthFraction,
             centerX = centerX,
             centerY = centerY,
@@ -107,6 +109,7 @@ class PipOverlayGlEffect(
         private val offsetMs: Long,
         private val trimStartMs: Long,
         private val trimEndMs: Long,
+        private val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint>,
         private val widthFraction: Float,
         private val centerX: Float,
         private val centerY: Float,
@@ -136,7 +139,12 @@ class PipOverlayGlEffect(
         private var decoderReady: Boolean = false
         private var frameAvailable: Boolean = false
         private var lastOverlayTimeUs: Long = -1L
+        private var lastRequestedTargetTimeUs: Long? = null
+        private var pendingOutputIndex: Int = -1
+        private var pendingOutputTimeUs: Long = -1L
         private var inputEos: Boolean = false
+        private val sanitizedSpeedPoints =
+            com.apexstudio.app.domain.model.SpeedCurveMath.sanitize(speedPoints)
 
         // PiP geometry in normalized device coordinates is computed
         // per frame in drawFrame() (computeGeometry) so keyframes can
@@ -320,7 +328,10 @@ class PipOverlayGlEffect(
             dec.configure(format, surf, null, 0)
             // Seek to trim start.
             if (trimStartMs > 0) {
-                ext.seekTo(trimStartMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                ext.seekTo(
+                    OverlayFrameSelectionPolicy.millisecondsToMicroseconds(trimStartMs),
+                    MediaExtractor.SEEK_TO_CLOSEST_SYNC
+                )
             }
             dec.start()
             decoder = dec
@@ -411,15 +422,28 @@ class PipOverlayGlEffect(
                 // the source media, so it is visible for exactly the trimmed
                 // duration starting at offsetMs. overlayTimeMs is 0-based, so it
                 // must NOT be compared against trimStartMs directly.
-                val trimmedDurationMs = when {
-                    trimEndMs == Long.MAX_VALUE -> Long.MAX_VALUE
-                    trimEndMs > trimStartMs -> trimEndMs - trimStartMs
+                val sourceSpanMs = when {
+                    trimEndMs > trimStartMs && trimEndMs != Long.MAX_VALUE -> trimEndMs - trimStartMs
+                    trimEndMs == Long.MAX_VALUE && overlayDurationUs != Long.MAX_VALUE ->
+                        (overlayDurationUs / 1000L - trimStartMs).coerceAtLeast(0L)
                     else -> 0L
+                }
+                val hasSpeedRamp = sanitizedSpeedPoints.size >= 2
+                val trimmedDurationMs = when {
+                    hasSpeedRamp -> com.apexstudio.app.domain.model.SpeedCurveMath
+                        .effectiveDurationMs(sourceSpanMs, sanitizedSpeedPoints)
+                    trimEndMs == Long.MAX_VALUE -> Long.MAX_VALUE
+                    else -> sourceSpanMs
                 }
                 // Source-media timestamp of the frame to show. The decoder was
                 // seeked to trimStartMs in setupDecoder(), so decoded frames carry
                 // source-media timestamps — the trim offset must be added back.
-                val sourceTimeUs = (overlayTimeMs + trimStartMs) * 1000L
+                val sourceOffsetMs = if (hasSpeedRamp) {
+                    com.apexstudio.app.domain.model.SpeedCurveMath.outputToSourceMs(
+                        overlayTimeMs, sourceSpanMs, sanitizedSpeedPoints
+                    )
+                } else overlayTimeMs
+                val sourceTimeUs = OverlayFrameSelectionPolicy.sourceTimeUs(sourceOffsetMs, trimStartMs)
                 val inWindow = overlayTimeMs >= 0 && overlayTimeMs < trimmedDurationMs
                 val visible = decoderReady && inWindow && sourceTimeUs < overlayDurationUs
 
@@ -512,19 +536,59 @@ class PipOverlayGlEffect(
             if (!decoderReady) return 0
 
             try {
-                // If seeking backwards (or first frame), seek the extractor.
-                if (targetTimeUs < lastOverlayTimeUs) {
+                // Seek only when the requested source time moves backwards. A
+                // decoded frame may legitimately be slightly ahead of a slow
+                // timeline target and must not cause repeated flushes.
+                if (OverlayFrameSelectionPolicy.mustSeek(targetTimeUs, lastRequestedTargetTimeUs)) {
+                    if (pendingOutputIndex >= 0) {
+                        dec.releaseOutputBuffer(pendingOutputIndex, false)
+                        pendingOutputIndex = -1
+                        pendingOutputTimeUs = -1L
+                    }
                     ext.seekTo(targetTimeUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                     dec.flush()
                     inputEos = false
                     lastOverlayTimeUs = -1L
+                    lastRequestedTargetTimeUs = null
+                    synchronized(this) { frameAvailable = false }
+                }
+                lastRequestedTargetTimeUs = targetTimeUs
+
+                // A previously rendered frame in the tolerance window can be
+                // reused until the target passes it; its PTS is not a seek cursor.
+                if (OverlayFrameSelectionPolicy.canReuseFrame(
+                        targetTimeUs, lastOverlayTimeUs.takeIf { it >= 0L }, lastOverlayTimeUs >= 0L
+                    )
+                ) {
+                    updateSurfaceTextureIfAvailable()
+                    return pipTextureId
                 }
 
-                val timeoutUs = 10_000L
+                // Keep each output-frame request bounded. Short dequeue waits
+                // avoid stalling the export thread while still allowing the
+                // asynchronous decoder a few opportunities to produce output.
+                val timeoutUs = 1_000L
                 var attempts = 0
-                // Feed input and drain output until we reach the target timestamp.
+                // Feed input and drain through every eligible frame. Stop at
+                // (and retain) the first frame beyond the target tolerance so a
+                // later slow-motion request can consume that exact frame.
                 while (attempts < 30) {
                     attempts++
+                    if (pendingOutputIndex >= 0) {
+                        if (OverlayFrameSelectionPolicy.actionForOutput(
+                                pendingOutputTimeUs, targetTimeUs
+                            ) == OverlayFrameSelectionPolicy.OutputAction.HOLD_AND_STOP
+                        ) {
+                            break
+                        }
+                        dec.releaseOutputBuffer(pendingOutputIndex, true)
+                        lastOverlayTimeUs = pendingOutputTimeUs
+                        pendingOutputIndex = -1
+                        pendingOutputTimeUs = -1L
+                        updateSurfaceTextureIfAvailable()
+                        continue
+                    }
+
                     // Feed input.
                     if (!inputEos) {
                         val inIndex = dec.dequeueInputBuffer(timeoutUs)
@@ -548,25 +612,17 @@ class PipOverlayGlEffect(
                     val info = MediaCodec.BufferInfo()
                     val outIndex = dec.dequeueOutputBuffer(info, timeoutUs)
                     if (outIndex >= 0) {
-                        val render = info.presentationTimeUs <= targetTimeUs + 33_000L
-                        dec.releaseOutputBuffer(outIndex, render)
-                        if (render) {
+                        if (OverlayFrameSelectionPolicy.actionForOutput(
+                                info.presentationTimeUs, targetTimeUs
+                        ) == OverlayFrameSelectionPolicy.OutputAction.RENDER_AND_CONTINUE
+                        ) {
+                            dec.releaseOutputBuffer(outIndex, true)
                             lastOverlayTimeUs = info.presentationTimeUs
-                            // Check if a new frame is available.
-                            synchronized(this) {
-                                if (frameAvailable) {
-                                    frameAvailable = false
-                                    surfaceTexture?.updateTexImage()
-                                    return pipTextureId
-                                }
-                            }
-                            // Frame rendered but not yet available; return texture anyway
-                            // (it holds the previous frame).
-                            return pipTextureId
-                        }
-                        if (info.presentationTimeUs > targetTimeUs) {
-                            // We've passed the target; use the current texture.
-                            return pipTextureId
+                            updateSurfaceTextureIfAvailable()
+                        } else {
+                            pendingOutputIndex = outIndex
+                            pendingOutputTimeUs = info.presentationTimeUs
+                            break
                         }
                     } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                         break
@@ -575,10 +631,20 @@ class PipOverlayGlEffect(
                         break
                     }
                 }
+                updateSurfaceTextureIfAvailable()
                 return if (lastOverlayTimeUs >= 0) pipTextureId else 0
             } catch (e: Exception) {
                 Log.w(TAG, "PiP texture update failed", e)
                 return 0
+            }
+        }
+
+        private fun updateSurfaceTextureIfAvailable() {
+            synchronized(this) {
+                if (frameAvailable) {
+                    frameAvailable = false
+                    surfaceTexture?.updateTexImage()
+                }
             }
         }
 
@@ -602,6 +668,11 @@ class PipOverlayGlEffect(
 
         private fun releaseDecoder() {
             decoderReady = false
+            if (pendingOutputIndex >= 0) {
+                try { decoder?.releaseOutputBuffer(pendingOutputIndex, false) } catch (_: Exception) {}
+                pendingOutputIndex = -1
+                pendingOutputTimeUs = -1L
+            }
             try { decoder?.stop() } catch (_: Exception) {}
             try { decoder?.release() } catch (_: Exception) {}
             decoder = null

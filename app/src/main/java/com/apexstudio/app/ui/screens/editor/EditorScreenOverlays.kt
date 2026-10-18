@@ -1210,7 +1210,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // clip changes (including entering/leaving its window).
         LaunchedEffect(
             overlayPlayer, activeOverlayVideoClip?.id, activeOverlayVideoClip?.uri,
-            activeOverlayVideoClip?.trimStartMs, activeOverlayVideoClip?.trimEndMs
+            activeOverlayVideoClip?.trimStartMs, activeOverlayVideoClip?.trimEndMs,
+            activeOverlayVideoClip?.speedPoints, activeOverlayVideoClip?.timelineOffsetMs
         ) {
             val player = overlayPlayer ?: return@LaunchedEffect
             val clip = activeOverlayVideoClip
@@ -1238,8 +1239,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             player.volume = clip.overlayVolume.coerceIn(0f, 2f)
             player.prepare()
             player.pause()
-            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
-            player.seekTo(rel)
+            val relOutput = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(
+                clip.overlaySpeedAtOutputMs(relOutput)
+            )
+            player.seekTo(clip.overlaySourceOffsetMs(relOutput))
             if (state.isPlaying) player.play()
         }
         // Volume follows the properties-panel slider without rebinding.
@@ -1256,14 +1260,22 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // Drift correction: after a scrub (or clock drift) the overlay
         // player is re-seeked to the overlay-relative playhead position.
         // Cheap long comparisons; only seeks past a deadband.
-        LaunchedEffect(state.playerPositionMs) {
+        LaunchedEffect(
+            overlayPlayer, state.playerPositionMs, activeOverlayVideoClip?.id,
+            activeOverlayVideoClip?.speedPoints, state.isPlaying
+        ) {
             val player = overlayPlayer ?: return@LaunchedEffect
             val clip = activeOverlayVideoClip ?: return@LaunchedEffect
             if (player.playbackState != androidx.media3.common.Player.STATE_READY) return@LaunchedEffect
-            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            val relOutput = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            val relSource = clip.overlaySourceOffsetMs(relOutput)
+            val desiredSpeed = clip.overlaySpeedAtOutputMs(relOutput)
+            if (kotlin.math.abs(player.playbackParameters.speed - desiredSpeed) > 0.02f) {
+                player.playbackParameters = androidx.media3.common.PlaybackParameters(desiredSpeed)
+            }
             val deadband = if (state.isPlaying) 450L else 120L
-            if (kotlin.math.abs(player.currentPosition - rel) > deadband) {
-                player.seekTo(rel)
+            if (kotlin.math.abs(player.currentPosition - relSource) > deadband) {
+                player.seekTo(relSource)
             }
         }
 

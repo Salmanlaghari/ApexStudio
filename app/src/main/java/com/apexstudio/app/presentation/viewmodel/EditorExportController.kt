@@ -77,6 +77,7 @@ fun EditorViewModel.startExport(
                 offsetMs = ov.timelineOffsetMs,
                 trimStartMs = ov.trimStartMs,
                 trimEndMs = ov.trimEndMs,
+                speedPoints = ov.speedPoints,
                 // The overlay's canvas transform — preview and export
                 // resolve the same numbers against the frame geometry.
                 widthFraction = ov.pipScale,
@@ -305,6 +306,7 @@ fun EditorViewModel.startPhotoExport(
                         offsetMs = ov.timelineOffsetMs,
                         trimStartMs = ov.trimStartMs,
                         trimEndMs = ov.trimEndMs,
+                        speedPoints = ov.speedPoints,
                         // The overlay's canvas transform — preview and
                         // export resolve the same numbers against the
                         // frame geometry.

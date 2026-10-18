@@ -179,8 +179,9 @@ data class MediaClip(
      */
     fun isOverlayActiveAt(timeMs: Long): Boolean {
         if (type != ClipType.OVERLAY) return false
-        val trimmedMs = (trimEndMs - trimStartMs).coerceAtLeast(0L)
-        val endMs = if (trimEndMs == Long.MAX_VALUE ||
+        val trimmedMs = if (hasSpeedCurve()) overlayTimelineDurationMs() else
+            (trimEndMs - trimStartMs).coerceAtLeast(0L)
+        val endMs = if ((trimEndMs == Long.MAX_VALUE && !hasSpeedCurve()) ||
             (trimmedMs > 0L && timelineOffsetMs > Long.MAX_VALUE - trimmedMs)
         ) Long.MAX_VALUE else timelineOffsetMs + trimmedMs
         return timeMs in timelineOffsetMs until endMs
@@ -200,6 +201,27 @@ data class MediaClip(
      */
     fun effectiveDurationMs(): Long =
         SpeedCurveMath.effectiveDurationMs(trimEndMs - trimStartMs, speedPoints)
+
+    /** Timeline duration of an overlay's trimmed source under its variable-speed curve. */
+    fun overlayTimelineDurationMs(): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.timelineDurationMs(span, speedPoints)
+    }
+
+    /** Source-relative offset corresponding to elapsed output time on this overlay. */
+    fun overlaySourceOffsetMs(outputMs: Long): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.sourceOffsetMs(outputMs, span, speedPoints)
+    }
+
+    /** Instantaneous source playback rate at elapsed output time on this overlay. */
+    fun overlaySpeedAtOutputMs(outputMs: Long): Float {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.speedAtOutputMs(outputMs, span, speedPoints)
+    }
 }
 
 /**

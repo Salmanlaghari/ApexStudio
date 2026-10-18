@@ -55,6 +55,8 @@ object SpeedCurveMath {
         if (points.isEmpty()) return emptyList()
         val merged = linkedMapOf<Float, SpeedPoint>()
         for (p in points) {
+            // Never propagate non-finite persisted data into playback parameters or timing math.
+            if (!p.timeFraction.isFinite() || !p.speed.isFinite()) continue
             val f = p.timeFraction.coerceIn(0f, 1f)
             val s = p.speed.coerceIn(MIN_SPEED, MAX_SPEED)
             // Last wins on duplicate fractions, keeping the sharp flag.
@@ -321,5 +323,39 @@ object SpeedCurveMath {
         val lo = points[index - 1].timeFraction + minGap
         val hi = points[index + 1].timeFraction - minGap
         return fraction.coerceIn(min(lo, hi), max(lo, hi))
+    }
+}
+
+/**
+ * Timeline/source mapping shared by overlay preview and video export.
+ * Overlay speed curves use the same trimmed-source coordinate system as V1:
+ * an empty curve is 1x, and a populated curve determines both timeline
+ * duration and the source frame at each timeline timestamp.
+ */
+object OverlayTimeMapping {
+    fun timelineDurationMs(
+        sourceDurationMs: Long,
+        speedPoints: List<SpeedPoint>
+    ): Long = SpeedCurveMath.effectiveDurationMs(sourceDurationMs, SpeedCurveMath.sanitize(speedPoints))
+
+    /** Source-relative offset for an elapsed overlay timeline timestamp. */
+    fun sourceOffsetMs(
+        outputMs: Long,
+        sourceDurationMs: Long,
+        speedPoints: List<SpeedPoint>
+    ): Long = SpeedCurveMath.outputToSourceMs(
+        outputMs, sourceDurationMs, SpeedCurveMath.sanitize(speedPoints)
+    )
+
+    /** Instantaneous playback rate at an elapsed overlay timeline timestamp. */
+    fun speedAtOutputMs(
+        outputMs: Long,
+        sourceDurationMs: Long,
+        speedPoints: List<SpeedPoint>
+    ): Float {
+        val points = SpeedCurveMath.sanitize(speedPoints)
+        if (points.size < 2 || sourceDurationMs <= 0L) return 1f
+        val sourceMs = SpeedCurveMath.outputToSourceMs(outputMs, sourceDurationMs, points)
+        return SpeedCurveMath.speedAt(points, sourceMs.toFloat() / sourceDurationMs.toFloat())
     }
 }

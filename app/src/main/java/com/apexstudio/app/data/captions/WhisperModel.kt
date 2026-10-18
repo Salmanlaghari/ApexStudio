@@ -4,6 +4,8 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.util.Log
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import java.io.Closeable
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -76,8 +78,9 @@ class WhisperModel private constructor(
         const val TIMESTAMP_BEGIN = 50364
         const val TIMESTAMP_UNIT_MS = 20L
 
-        /** Returns null (with a log) on any failure — never throws. */
-        fun load(encoderFile: File, decoderFile: File, tokensFile: File): WhisperModel? {
+        /** Denies unapproved processing before file/native access; model-loading failures return null. */
+        internal fun load(encoderFile: File, decoderFile: File, tokensFile: File): WhisperModel? {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
             if (!encoderFile.exists() || !decoderFile.exists() || !tokensFile.exists()) {
                 Log.w(TAG, "whisper model files missing")
                 return null
@@ -174,11 +177,13 @@ class WhisperModel private constructor(
      * @param onStep invoked every few generated tokens with the count so
      *   far (for progress UI).
      */
-    fun transcribeChunk(
+    internal fun transcribeChunk(
         mel: FloatArray,
         langTokenId: Int?,
         onStep: (generated: Int) -> Unit = {}
     ): ChunkResult {
+        // Keep the boundary closed even for future in-module callers of the raw model.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
         val encIn = encoder.inputNames.toList()
         val melTensor = OnnxTensor.createTensor(
             env, FloatBuffer.wrap(mel),

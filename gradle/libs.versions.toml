@@ -18,9 +18,10 @@ baselineprofile = "1.4.1"
 benchmark = "1.4.1"
 uiautomator = "2.3.0"
 # androidx.test family used by androidTest (generator uses
-# InstrumentationRegistry from androidx.test:platform — declared
+# InstrumentationRegistry from androidx.test:monitor — declared
 # explicitly instead of relying on the transitive copy).
-androidxTestPlatform = "1.7.0"
+androidxTestMonitor = "1.7.2"
+androidxTestRunner = "1.6.2"
 robolectric = "4.14.1"
 roborazzi = "1.39.0"
 secrets = "2.0.1"
@@ -62,7 +63,8 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "baselineprofile" }
 androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmark" }
 androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
-androidx-test-platform = { group = "androidx.test", name = "platform", version.ref = "androidxTestPlatform" }
+androidx-test-monitor = { group = "androidx.test", name = "monitor", version.ref = "androidxTestMonitor" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

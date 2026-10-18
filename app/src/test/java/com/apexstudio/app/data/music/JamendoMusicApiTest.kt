@@ -69,7 +69,7 @@ class JamendoMusicApiTest {
         assertEquals("Neon Coast", t.artist)
         assertEquals("Afterglow", t.album)
         assertEquals(187_000L, t.durationMs)
-        assertEquals("1:27", t.durationLabel)
+        assertEquals("3:07", t.durationLabel)
         assertEquals("https://prod-1.storage.jamendo.com/stream.mp3", t.streamUrl)
         assertEquals("https://prod-1.storage.jamendo.com/download.mp3", t.downloadUrl)
         assertEquals("https://usercontent.jamendo.com/img.jpg", t.artworkUrl)
@@ -124,6 +124,7 @@ class JamendoMusicApiTest {
         val now = 1_700_000_000_000L
         assertTrue(JamendoMusicApi.isFresh(now - 1_000L, now))
         assertTrue(JamendoMusicApi.isFresh(now - 23 * 3_600_000L, now))
+        assertFalse(JamendoMusicApi.isFresh(now - JamendoMusicApi.CACHE_TTL_MS, now))
         assertFalse(JamendoMusicApi.isFresh(now - 25 * 3_600_000L, now))
         assertFalse(JamendoMusicApi.isFresh(0L, now))
         assertFalse(JamendoMusicApi.isFresh(now + 60_000L, now))

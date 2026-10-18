@@ -142,25 +142,11 @@ object BackgroundReplaceEngine {
     }
 
     /**
-     * Delete a processed file, but ONLY inside the `bg_replace` dir —
-     * never delete an arbitrary path (the clip's [uri] could be a
-     * user file when no processing has happened).
-     */
-    fun deleteProcessedFile(file: File) {
-        try {
-            if (file.parentFile?.name == "bg_replace" && file.exists()) file.delete()
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not delete processed file ${file.name}", e)
-        }
-    }
-
-    /**
      * Process [sourceUri] with [settings] into [outputFile].
-     * Writes to `<output>.tmp` and renames on success, so a
-     * cancelled / failed run never leaves a half-written file
-     * behind at the output path. The caller must delete the
-     * output on cancellation if it created a temp file — this
-     * function deletes the temp itself on any failure.
+     * Writes to a unique temporary sibling and renames on success,
+     * so a cancelled / failed run never leaves a half-written file
+     * behind at the output path. Existing output files are never
+     * deleted or overwritten: clip history may still reference them.
      *
      * @param onProgress 0..1, throttled to ~4 emissions/second.
      * @throws Exception with a user-readable message on failure.
@@ -182,9 +168,8 @@ object BackgroundReplaceEngine {
             throw IllegalArgumentException("Pick a background image first.")
         }
 
-        val tmp = File(outputFile.parentFile, outputFile.name + ".tmp")
-        tmp.delete()
-        outputFile.delete()
+        outputFile.parentFile?.mkdirs()
+        val tmp = File(outputFile.parentFile, outputFile.name + ".${java.util.UUID.randomUUID()}.tmp")
 
         var segmenter: ImageSegmenter? = null
         var extractor: MediaExtractor? = null
@@ -525,10 +510,8 @@ object BackgroundReplaceEngine {
             if (!tmp.exists() || tmp.length() == 0L) {
                 throw IllegalStateException("Encoding produced an empty file.")
             }
-            if (!tmp.renameTo(outputFile)) {
-                throw IllegalStateException("Could not save the processed video.")
-            }
-            outputFile
+            coroutineContext.ensureActive()
+            publishBackgroundOutput(tmp, outputFile)
         } catch (e: Exception) {
             // Never leave a half-written temp file behind.
             try { tmp.delete() } catch (_: Exception) {}

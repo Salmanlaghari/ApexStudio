@@ -11,6 +11,10 @@ import java.io.Closeable
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /** Coordinates and boxes are normalized against the input bitmap (0..1, origin top-left). */
 data class NormalizedPoint(val x: Float, val y: Float, val z: Float = 0f, val visibility: Float? = null)
@@ -25,7 +29,8 @@ data class HandDetection(val landmarks: List<NormalizedPoint>)
 /**
  * MediaPipe Tasks Vision IMAGE-mode CPU wrappers. Models are NOT bundled or downloaded here. Provide
  * the exact .task model file only after user-authorized acquisition and license review. Inference is
- * synchronous; call from a worker thread. The bitmap remains owned by the caller.
+ * synchronous; call from a worker thread. The bitmap remains owned by the caller and must not be
+ * mutated or recycled until detection returns. Calls and close are serialized per detector.
  */
 object MediaPipeLandmarkers {
     private fun options(model: File): BaseOptions {
@@ -71,7 +76,11 @@ object MediaPipeLandmarkers {
     }
 
     class FaceDetector internal constructor(private val detector: FaceLandmarker) : Closeable {
+        private var closed = false
+
+        @Synchronized
         fun detect(bitmap: Bitmap): List<FaceDetection> {
+            check(!closed) { "Face detector is closed" }
             val image = BitmapImageBuilder(bitmap).build()
             try {
                 return detector.detect(image).faceLandmarks().map { marks ->
@@ -84,11 +93,26 @@ object MediaPipeLandmarkers {
                 }
             } finally { image.close() }
         }
-        override fun close() = detector.close()
+        /** Runs CPU inference off the caller thread and drops any result if cancellation arrived meanwhile. */
+        suspend fun detectCancellable(bitmap: Bitmap): List<FaceDetection> = withContext(Dispatchers.Default) {
+            currentCoroutineContext().ensureActive()
+            detect(bitmap).also { currentCoroutineContext().ensureActive() }
+        }
+
+        @Synchronized
+        override fun close() {
+            if (closed) return
+            closed = true
+            detector.close()
+        }
     }
 
     class PoseDetector internal constructor(private val detector: PoseLandmarker) : Closeable {
+        private var closed = false
+
+        @Synchronized
         fun detect(bitmap: Bitmap): List<PoseDetection> {
+            check(!closed) { "Pose detector is closed" }
             val image = BitmapImageBuilder(bitmap).build()
             try {
                 return detector.detect(image).landmarks().map { marks ->
@@ -96,11 +120,26 @@ object MediaPipeLandmarkers {
                 }
             } finally { image.close() }
         }
-        override fun close() = detector.close()
+        /** Native inference itself is synchronous; cancellation prevents stale results from escaping after it returns. */
+        suspend fun detectCancellable(bitmap: Bitmap): List<PoseDetection> = withContext(Dispatchers.Default) {
+            currentCoroutineContext().ensureActive()
+            detect(bitmap).also { currentCoroutineContext().ensureActive() }
+        }
+
+        @Synchronized
+        override fun close() {
+            if (closed) return
+            closed = true
+            detector.close()
+        }
     }
 
     class HandDetector internal constructor(private val detector: HandLandmarker) : Closeable {
+        private var closed = false
+
+        @Synchronized
         fun detect(bitmap: Bitmap): List<HandDetection> {
+            check(!closed) { "Hand detector is closed" }
             val image = BitmapImageBuilder(bitmap).build()
             try {
                 return detector.detect(image).landmarks().map { marks ->
@@ -108,6 +147,17 @@ object MediaPipeLandmarkers {
                 }
             } finally { image.close() }
         }
-        override fun close() = detector.close()
+        /** Native inference itself is synchronous; cancellation prevents stale results from escaping after it returns. */
+        suspend fun detectCancellable(bitmap: Bitmap): List<HandDetection> = withContext(Dispatchers.Default) {
+            currentCoroutineContext().ensureActive()
+            detect(bitmap).also { currentCoroutineContext().ensureActive() }
+        }
+
+        @Synchronized
+        override fun close() {
+            if (closed) return
+            closed = true
+            detector.close()
+        }
     }
 }

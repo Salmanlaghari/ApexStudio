@@ -9,6 +9,10 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AiToolsCatalogTest' \
   --tests '*EditorLocalAnalysisTest' \
   --tests '*WhisperCaptionBoundsTest' \
+  --tests '*EditorCaptionReliabilityTest' \
+  --tests '*EditorBackgroundControllerTest' \
+  --tests '*EditorBackgroundHistoryTest' \
+  --tests '*BackgroundOutputPublicationTest' \
   --tests '*WhisperInferenceReliabilityTest' \
   --tests '*WhisperModelIntegrityTest' \
   --tests '*EditorTrimPositionTest' \

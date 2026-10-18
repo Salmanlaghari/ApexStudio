@@ -245,9 +245,11 @@ dependencies {
   androidTestImplementation(libs.androidx.benchmark.macro.junit4)
   androidTestImplementation(libs.androidx.uiautomator)
   androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.core)
   // Explicit: BaselineProfileGenerator imports InstrumentationRegistry
-  // from here (do not rely on the transitive copy).
-  androidTestImplementation(libs.androidx.test.platform)
+  // from the monitor artifact (do not rely on the transitive copy).
+  androidTestImplementation(libs.androidx.test.monitor)
+  androidTestImplementation(libs.androidx.test.runner)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

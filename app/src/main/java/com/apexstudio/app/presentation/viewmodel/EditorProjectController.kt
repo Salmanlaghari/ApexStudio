@@ -94,7 +94,9 @@ internal fun EditorViewModel.loadProject() {
                 durationMs = updatedP.durationMs,
                 canUndo = false, canRedo = false,
                 selectedClipId = it.selectedClipId ?: firstClipId,
-                isPlaying = firstClipId != null
+                // Loading a project establishes its initial playhead; it
+                // must not start playback before the user presses Play.
+                isPlaying = false
             )
         }
 

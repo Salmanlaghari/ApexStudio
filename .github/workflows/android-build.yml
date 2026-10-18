@@ -89,42 +89,13 @@ jobs:
           python3 scripts/verify-ai-models.py
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
 
-      - name: Editor interaction regression tests
+      - name: Full JVM regression suite
         run: |
-          ./gradlew :app:testDebugUnitTest --no-daemon \
-            --tests '*PhaseZeroToolbarTest' \
-            --tests '*TimelineClipGestureTest' \
-            --tests '*TimelineWorkspaceLayoutTest' \
-            --tests '*TimelineTransportLayoutTest' \
-            --tests '*BuildIdentityTest' \
-            --tests '*ContextualToolbarTest' \
-            --tests '*ExportBaseSelectionTest' \
-            --tests '*TimelineRipplePreservationTest' \
-            --tests '*TimelineThumbnailBackfillTest' \
-            --tests '*PipOverlayCanvasTest' \
-            --tests '*OverlayPlayerViewFactoryTest' \
-            --tests '*ResolveMainPreviewClipTest' \
-            --tests '*OverlaySplitTrimTest' \
-            --tests '*ModelsTest' \
-            --tests '*KeyframeAnimationTest' \
-            --tests 'com.apexstudio.app.ai.*' \
-            --tests '*AiToolsCatalogTest' \
-            --tests '*EditorTrimPositionTest' \
-            --tests '*AudioTrackPlacementTest' \
-            --tests '*LocalAudioImportPolicyTest' \
-            --tests '*MusicExportMixerTest' \
-            --tests '*VoiceRecordingTimingTest' \
-            --tests '*EditorLocalAnalysisTest' \
-            --tests '*WhisperCaptionBoundsTest' \
-            --tests '*WhisperInferenceReliabilityTest' \
-            --tests '*WhisperModelIntegrityTest' \
-            --tests '*OverlayClipTest' \
-            --tests '*ClipTimeMappingTest' \
-            --tests '*VideoCropPresetTest' \
-            --tests '*ModernFxShadersTest' \
-            --tests '*LutAssetIntegrityTest'
+          ./gradlew :app:testDebugUnitTest --no-daemon
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
 
+      - name: Compile Android instrumentation tests
+        run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 

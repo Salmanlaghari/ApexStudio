@@ -3,173 +3,162 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
-/**
- * Auto-captions controller: on-device Whisper speech-to-text
- * (tiny, multilingual, int8 — via onnxruntime-android).
- *
- * Flow: user taps "Auto Captions" on a video clip -> the bundled Whisper
- * model is verified and materialized locally without network access (existing
- * PackManager-installed files remain an optional fallback) -> audio is
- * extracted to 16 kHz mono PCM ->
- * transcribed on-device in 30 s chunks with a cancellable progress UI ->
- * each timestamped segment becomes a timed [TextOverlay] (startMs/endMs)
- * on the clip, so preview AND export render them via the existing text
- * pipeline. No dead buttons: every state (need-download / transcribing /
- * done / failed / no-speech) is surfaced in the UI. The optional legacy-pack
- * download is offered only if local bundled and installed files are unavailable.
- *
- * Language: "auto" (detect) or a whisper code ("ur", "hi", "en", …).
- * Prince's content is Urdu/Hindi songs + vlogs, so those are first-class.
+/** Bundled, offline Whisper produces segment times, not word-aligned karaoke.
+ * Native inference runs on its own IO dispatcher; all editor mutations resume on Main.
+ * A request identity prevents late native callbacks from resurrecting cancelled/replaced jobs.
  */
 data class CaptionUiState(
     val phase: CaptionPhase = CaptionPhase.IDLE,
     val progress01: Float = 0f,
     val message: String = "",
     val segmentsAdded: Int = 0,
-    val language: String = WhisperCaptionEngine.LANG_AUTO
+    val language: String = WhisperCaptionEngine.LANG_AUTO,
+    val requestId: String? = null,
 )
 
 enum class CaptionPhase { IDLE, NEED_DOWNLOAD, TRANSCRIBING, DONE, FAILED }
 
-// CaptionUiState lives on EditorViewModel (instance-scoped).
+/** Only this request may publish. Flow.update also protects native-worker progress callbacks. */
+internal fun EditorViewModel.updateCaptionRequest(id: String, transform: (CaptionUiState) -> CaptionUiState) {
+    _captionUi.update { if (it.requestId == id) transform(it) else it }
+}
 
-/** Switch the caption language (resets the phase so the user can retry). */
 fun EditorViewModel.setCaptionLanguage(code: String) {
     captionJob?.cancel()
     captionJob = null
     _captionUi.value = CaptionUiState(language = code)
 }
 
-/** Cancel an in-flight transcription. Never a dead button. */
 fun EditorViewModel.cancelAutoCaptions() {
     captionJob?.cancel()
     captionJob = null
     _captionUi.value = _captionUi.value.copy(
-        phase = CaptionPhase.IDLE, progress01 = 0f, message = "Cancelled"
+        phase = CaptionPhase.IDLE, progress01 = 0f, message = "Cancelled", requestId = null,
     )
 }
 
-/**
- * Generates timed captions for [clipId]'s audio. Safe to call repeatedly;
- * replaces previously auto-generated captions on the same clip.
+/** Snapshot of media/timing, not the entire clip: unrelated style/manual-text edits may survive. */
+internal data class CaptionSourceSnapshot(val projectId: String, val clip: MediaClip) {
+    fun matches(projectId: String, current: MediaClip): Boolean = this.projectId == projectId &&
+        clip.id == current.id && clip.uri == current.uri && clip.type == current.type &&
+        clip.durationMs == current.durationMs && clip.trimStartMs == current.trimStartMs &&
+        clip.trimEndMs == current.trimEndMs && clip.speedPoints == current.speedPoints &&
+        clip.speedMultiplier == current.speedMultiplier && clip.speedCurve == current.speedCurve &&
+        clip.rampStartSpeed == current.rampStartSpeed && clip.rampEndSpeed == current.rampEndSpeed &&
+        clip.textOverlays.filter { it.presetId == "caption_auto" } ==
+        current.textOverlays.filter { it.presetId == "caption_auto" }
+}
+
+/** Engine segments are relative to the trimmed SOURCE; text overlays use clip OUTPUT time.
+ * Both boundaries must pass through the original speed curve (not an independently restarted ramp).
  */
+internal fun captionOverlaysFor(clip: MediaClip, segments: List<WhisperCaptionEngine.CaptionSegment>): List<TextOverlay> {
+    val span = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(0L)
+    if (span == 0L) return emptyList()
+    return segments.mapNotNull { seg ->
+        val sourceStart = seg.startMs.coerceIn(0L, span)
+        val sourceEnd = seg.endMs.coerceIn(0L, span)
+        if (sourceEnd <= sourceStart || seg.text.isBlank()) return@mapNotNull null
+        val start = SpeedCurveMath.sourceToOutputMs(sourceStart, span, clip.speedPoints)
+        val end = SpeedCurveMath.sourceToOutputMs(sourceEnd, span, clip.speedPoints)
+        if (end <= start) return@mapNotNull null
+        TextOverlay.of(
+            text = seg.text, x = 0.5f, y = 0.82f, sizeScale = 0.85f,
+            colorArgb = 0xFFFFFFFFL, bgArgb = 0xB3000000L, isBold = true, presetId = "caption_auto",
+        ).copy(startMs = start, endMs = end)
+    }
+}
+
+/** Called on the editor/Main dispatcher only; stale inference never mutates history or media. */
+internal fun EditorViewModel.applyCaptionResult(
+    snapshot: CaptionSourceSnapshot,
+    segments: List<WhisperCaptionEngine.CaptionSegment>,
+): Int? {
+    val project = _state.value.project ?: return null
+    val current = project.clips.firstOrNull { it.id == snapshot.clip.id } ?: return null
+    if (!snapshot.matches(project.id, current)) return null
+    val overlays = captionOverlaysFor(current, segments)
+    if (overlays.isEmpty()) return 0
+    pushUndo()
+    updateClip(current.id) { c ->
+        c.copy(textOverlays = c.textOverlays.filter { it.presetId != "caption_auto" } + overlays)
+    }
+    return overlays.size
+}
+
 fun EditorViewModel.generateAutoCaptions(clipId: String) {
     val ctx = context ?: run {
-        _captionUi.value = _captionUi.value.copy(
-            phase = CaptionPhase.FAILED, message = "No context"
-        )
+        _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED, message = "No context")
         return
     }
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: run {
-        _captionUi.value = _captionUi.value.copy(
-            phase = CaptionPhase.FAILED, message = "Clip not found"
-        )
+    val project = _state.value.project ?: return
+    val clip = project.clips.firstOrNull { it.id == clipId } ?: run {
+        _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED, message = "Clip not found")
         return
     }
-    if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return // already running
+    if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return
     captionJob?.cancel()
-    // Flip the phase SYNCHRONOUSLY so a second concurrent call (e.g. the
-    // download card's auto-start firing twice on recomposition) sees
-    // TRANSCRIBING and bails instead of starting a duplicate job.
+    val request = UUID.randomUUID().toString()
+    val language = _captionUi.value.language
+    val snapshot = CaptionSourceSnapshot(project.id, clip)
     _captionUi.value = _captionUi.value.copy(
-        phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
-        message = "Checking AI model…"
+        phase = CaptionPhase.TRANSCRIBING, progress01 = 0f, segmentsAdded = 0,
+        message = "Checking offline AI model…", requestId = request,
     )
-
-    captionJob = viewModelScope.launch(Dispatchers.IO) {
+    captionJob = viewModelScope.launch {
         try {
-            val language = _captionUi.value.language
-            // 1. Install/verify bundled model bytes on this IO worker. This
-            //    path is local-only; do not refresh the remote pack catalog.
             val ready = WhisperCaptionEngine.isModelReady(ctx.applicationContext)
+            ensureActive()
+            if (_captionUi.value.requestId != request) return@launch
             if (!ready) {
-                _captionUi.value = _captionUi.value.copy(
+                updateCaptionRequest(request) { it.copy(
                     phase = CaptionPhase.NEED_DOWNLOAD,
-                    message = "The bundled Whisper model is unavailable. No network request was made; you may optionally install legacy model packs."
-                )
+                    message = "Bundled Whisper is unavailable. No network request was made; legacy packs are optional.",
+                ) }
                 return@launch
             }
-            // 2. Transcribe (cancellable; progress per 30 s chunk).
-            _captionUi.value = _captionUi.value.copy(
-                phase = CaptionPhase.TRANSCRIBING, progress01 = 0f,
-                message = "Listening… (on-device AI)"
-            )
+            updateCaptionRequest(request) { it.copy(message = "Listening… (on-device AI)") }
             val segments = WhisperCaptionEngine.transcribe(
-                ctx.applicationContext,
-                android.net.Uri.parse(clip.uri),
-                language,
-                clip.trimStartMs,
-                clip.trimEndMs
+                ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
             ) { p ->
-                _captionUi.value = _captionUi.value.copy(
-                    phase = CaptionPhase.TRANSCRIBING, progress01 = p,
-                    message = "Transcribing ${(p * 100).toInt()}%…"
-                )
+                updateCaptionRequest(request) { it.copy(
+                    progress01 = p.coerceIn(0f, 1f), message = "Transcribing ${(p * 100).toInt()}%…",
+                ) }
             }
-            when {
-                segments == null -> {
-                    _captionUi.value = _captionUi.value.copy(
-                        phase = CaptionPhase.FAILED,
-                        message = "Couldn't load the AI model or read this clip's audio."
-                    )
-                    return@launch
+            ensureActive()
+            if (_captionUi.value.requestId != request) return@launch
+            if (segments == null) {
+                updateCaptionRequest(request) { it.copy(phase = CaptionPhase.FAILED,
+                    message = "Couldn't load the AI model or read this clip's audio.") }
+                return@launch
+            }
+            val added = applyCaptionResult(snapshot, segments)
+            updateCaptionRequest(request) {
+                when (added) {
+                    null -> it.copy(phase = CaptionPhase.FAILED,
+                        message = "Clip, source, timing or captions changed while transcribing. Generate again; nothing was replaced.")
+                    0 -> it.copy(phase = CaptionPhase.FAILED, message = "No speech detected in this clip.")
+                    else -> it.copy(phase = CaptionPhase.DONE, progress01 = 1f,
+                        message = "Added $added captions", segmentsAdded = added)
                 }
-                segments.isEmpty() -> {
-                    _captionUi.value = _captionUi.value.copy(
-                        phase = CaptionPhase.FAILED,
-                        message = "No speech detected in this clip."
-                    )
-                    return@launch
-                }
             }
-            // 3. Segments -> timed text overlays (existing text pipeline).
-            // Segments are already clip-relative (the engine sliced the
-            // PCM to [trimStartMs, trimEndMs]), so NO trim offset here —
-            // TextOverlay.startMs is defined on the clip's timeline.
-            val overlays = segments.map { seg ->
-                TextOverlay.of(
-                    text = seg.text,
-                    x = 0.5f,
-                    y = 0.82f, // lower-third, CapCut-style
-                    sizeScale = 0.85f,
-                    colorArgb = 0xFFFFFFFFL,
-                    bgArgb = 0xB3000000L,
-                    isBold = true,
-                    presetId = "caption_auto"
-                ).copy(
-                    startMs = seg.startMs.coerceAtLeast(0L),
-                    endMs = seg.endMs.coerceAtLeast(0L)
-                )
-            }
-            // Replace previous auto-captions, keep manual overlays.
-            updateClip(clipId) { c ->
-                val manual = c.textOverlays.filter { it.presetId != "caption_auto" }
-                c.copy(textOverlays = manual + overlays)
-            }
-            _captionUi.value = _captionUi.value.copy(
-                phase = CaptionPhase.DONE, progress01 = 1f,
-                message = "Added ${overlays.size} captions",
-                segmentsAdded = overlays.size
-            )
-        } catch (e: CancellationException) {
-            // Cancel button: back to idle, no error noise.
-            _captionUi.value = _captionUi.value.copy(
-                phase = CaptionPhase.IDLE, progress01 = 0f, message = "Cancelled"
-            )
-        } catch (e: Exception) {
-            Log.e("CaptionCtrl", "Auto-captions failed", e)
-            _captionUi.value = _captionUi.value.copy(
-                phase = CaptionPhase.FAILED,
-                message = "Captions failed: ${e.message?.take(80)}"
-            )
+        } catch (cancelled: CancellationException) {
+            updateCaptionRequest(request) { it.copy(phase = CaptionPhase.IDLE,
+                progress01 = 0f, message = "Cancelled", requestId = null) }
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.e("CaptionCtrl", "Auto-captions failed", failure)
+            updateCaptionRequest(request) { it.copy(phase = CaptionPhase.FAILED,
+                message = "Captions failed: ${failure.message?.take(80)}") }
         }
     }
 }
@@ -180,10 +169,11 @@ fun EditorViewModel.resetCaptionUi() {
     _captionUi.value = CaptionUiState()
 }
 
-/** Removes auto-generated captions from a clip (keeps manual text). */
+/** Manual clear is undoable and invalidates in-flight results even when no caption existed yet. */
 fun EditorViewModel.clearAutoCaptions(clipId: String) {
-    updateClip(clipId) { c ->
-        c.copy(textOverlays = c.textOverlays.filter { it.presetId != "caption_auto" })
-    }
     resetCaptionUi()
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (clip.textOverlays.none { it.presetId == "caption_auto" }) return
+    pushUndo()
+    updateClip(clipId) { c -> c.copy(textOverlays = c.textOverlays.filter { it.presetId != "caption_auto" }) }
 }

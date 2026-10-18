@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -66,10 +67,11 @@ class TemplateArtworkSmokeTest {
         val entries = catalogEntries(context)
         assert(entries.isNotEmpty()) { "Template catalog is empty" }
 
-        entries.forEach { entry ->
-            val spec = TemplateArtCatalog.artFor(entry.id)
-            val accent = Color(entry.accentArgb.toULong().toLong())
-            composeRule.setContent {
+        val selected = mutableStateOf<CatalogEntry?>(null)
+        composeRule.setContent {
+            selected.value?.let { entry ->
+                val spec = TemplateArtCatalog.artFor(entry.id)
+                val accent = Color(entry.accentArgb.toULong().toLong())
                 TemplateArtwork(
                     spec = spec,
                     accent = accent,
@@ -77,6 +79,9 @@ class TemplateArtworkSmokeTest {
                     phase = 0f,
                 )
             }
+        }
+        entries.forEach { entry ->
+            selected.value = entry
             composeRule.waitForIdle()
         }
     }
@@ -87,8 +92,12 @@ class TemplateArtworkSmokeTest {
         val entries = catalogEntries(context)
         assert(entries.isNotEmpty()) { "Template catalog is empty" }
 
-        entries.forEach { entry ->
-            composeRule.setContent {
+        // Headers animate indefinitely in production; freeze the test clock so
+        // waitForIdle can validate the first rendered frame deterministically.
+        composeRule.mainClock.autoAdvance = false
+        val selected = mutableStateOf<CatalogEntry?>(null)
+        composeRule.setContent {
+            selected.value?.let { entry ->
                 TemplateArtHeader(
                     template = stubTemplate(entry),
                     modifier = Modifier
@@ -96,6 +105,9 @@ class TemplateArtworkSmokeTest {
                         .height(104.dp),
                 )
             }
+        }
+        entries.forEach { entry ->
+            selected.value = entry
             composeRule.waitForIdle()
         }
     }
@@ -107,20 +119,24 @@ class TemplateArtworkSmokeTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val entries = catalogEntries(context)
 
-        entries.forEach { entry ->
-            val spec = TemplateArtCatalog.artFor(entry.id)
-            val accent = Color(entry.accentArgb.toULong().toLong())
-            listOf(0f, 0.25f, 0.5f, 0.75f, 0.999f).forEach { phase ->
-                composeRule.setContent {
-                    TemplateArtwork(
-                        spec = spec,
-                        accent = accent,
-                        modifier = Modifier.size(220.dp, 104.dp),
-                        phase = phase,
-                    )
-                }
+        val selected = mutableStateOf<Pair<CatalogEntry, Float>?>(null)
+        composeRule.setContent {
+            selected.value?.let { (entry, phase) ->
+                val spec = TemplateArtCatalog.artFor(entry.id)
+                val accent = Color(entry.accentArgb.toULong().toLong())
+                TemplateArtwork(
+                    spec = spec,
+                    accent = accent,
+                    modifier = Modifier.size(220.dp, 104.dp),
+                    phase = phase,
+                )
             }
-            composeRule.waitForIdle()
+        }
+        entries.forEach { entry ->
+            listOf(0f, 0.25f, 0.5f, 0.75f, 0.999f).forEach { phase ->
+                selected.value = entry to phase
+                composeRule.waitForIdle()
+            }
         }
     }
 }

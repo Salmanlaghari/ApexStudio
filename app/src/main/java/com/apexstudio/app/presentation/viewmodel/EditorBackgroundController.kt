@@ -1,32 +1,30 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
+import java.io.File
+import java.util.UUID
 
 /**
  * Background replace controller (PR-G): MediaPipe person
  * segmentation on a selected VIDEO clip.
  *
- * Flow: user picks a treatment in the Background panel -> Apply ->
- * the engine verifies/materializes its bundled ~244 KB segmentation
- * model locally, then pre-renders a processed video (same
- * duration / resolution, audio passed through) off the UI thread
- * with cancellable progress -> the clip's [uri] swaps to the
- * processed file and [backgroundReplace] records the settings +
- * the original [sourceUri]. Preview and export both read the
- * clip's [uri], so they show the identical pixels by construction
- * — there is no second rendering path that could drift.
- *
- * Re-applying always starts from [sourceUri] (never from an
- * already-processed file), and "Original" restores [sourceUri]
- * and deletes the processed file.
+ * The engine does its expensive work on its own worker dispatcher;
+ * all editor/project mutations and UI-state publication happen on Main.
+ * Results are committed only while the request is still current and the
+ * originating project/clip version is unchanged.
  */
 data class BackgroundUiState(
     val phase: BackgroundPhase = BackgroundPhase.IDLE,
@@ -37,6 +35,20 @@ data class BackgroundUiState(
 )
 
 enum class BackgroundPhase { IDLE, NEED_DOWNLOAD, PROCESSING, DONE, FAILED }
+
+/** Immutable identity of the project/clip input which an async result was built from. */
+internal data class BackgroundApplyVersion(
+    val projectId: String,
+    val clipId: String,
+    val uri: String,
+    val backgroundReplace: BackgroundReplaceSettings?
+)
+
+/** Pure commit policy: a removed, replaced, restored, or otherwise changed clip is stale. */
+internal fun backgroundApplyCanCommit(
+    expected: BackgroundApplyVersion,
+    current: BackgroundApplyVersion?
+): Boolean = current == expected
 
 // BackgroundUiState lives on EditorViewModel (instance-scoped).
 
@@ -59,10 +71,11 @@ fun EditorViewModel.setBackgroundReplaceImageUri(uri: String?) {
     _backgroundUi.value = _backgroundUi.value.copy(imageUri = uri)
 }
 
-/** Cancel in-flight processing. The partial output is deleted; the clip is untouched. */
+/** Cancel in-flight processing. Its result is no longer permitted to update editor state. */
 fun EditorViewModel.cancelBackgroundReplace() {
-    backgroundJob?.cancel()
+    val job = backgroundJob
     backgroundJob = null
+    job?.cancel()
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Cancelled"
     )
@@ -71,25 +84,31 @@ fun EditorViewModel.cancelBackgroundReplace() {
 /** Compatibility action for older UI: prepare the bundled model locally without network access. */
 fun EditorViewModel.downloadBackgroundModel() {
     val ctx = context ?: return
+    val preparingMessage = "Preparing the bundled segmentation model offline…"
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.PROCESSING,
-        message = "Preparing the bundled segmentation model offline…"
+        message = preparingMessage
     )
-    viewModelScope.launch(Dispatchers.IO) {
+    // isModelReady switches to IO internally; stay on Main for state publication.
+    viewModelScope.launch {
         val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
-        _backgroundUi.value = if (ready) {
-            _backgroundUi.value.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Offline model ready.")
-        } else {
-            _backgroundUi.value.copy(phase = BackgroundPhase.FAILED, progress01 = 0f,
-                message = "Bundled person-segmentation model is unavailable.")
+        _backgroundUi.update { current ->
+            if (current.message != preparingMessage) current else if (ready) {
+                current.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Offline model ready.")
+            } else {
+                current.copy(
+                    phase = BackgroundPhase.FAILED, progress01 = 0f,
+                    message = "Bundled person-segmentation model is unavailable."
+                )
+            }
         }
     }
 }
 
 /**
- * Apply [settings] to [clipId]'s video. Safe to call repeatedly:
- * an identical re-apply reuses the cached output file instead of
- * re-processing; changed settings process from the original.
+ * Apply [settings] to [clipId]'s video. An identical re-apply reuses the
+ * cache; results are rejected if the originating project or clip changes
+ * while processing.
  */
 fun EditorViewModel.applyBackgroundReplace(
     clipId: String,
@@ -101,7 +120,8 @@ fun EditorViewModel.applyBackgroundReplace(
         )
         return
     }
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: run {
+    val project = _state.value.project
+    val clip = project?.clips?.firstOrNull { it.id == clipId } ?: run {
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED, message = "Clip not found"
         )
@@ -114,138 +134,174 @@ fun EditorViewModel.applyBackgroundReplace(
         )
         return
     }
-    if (_backgroundUi.value.phase == BackgroundPhase.PROCESSING) return // already running
+    if (backgroundJob?.isActive == true) return // Ignore duplicate Apply taps.
+
     backgroundJob?.cancel()
-    // Flip the phase SYNCHRONOUSLY so a second concurrent call
-    // (e.g. a double-tap on Apply) sees PROCESSING and bails
-    // instead of starting a duplicate job.
+    val version = BackgroundApplyVersion(
+        projectId = project.id,
+        clipId = clip.id,
+        uri = clip.uri,
+        backgroundReplace = clip.backgroundReplace
+    )
+    val sourceUri = clip.backgroundReplace?.sourceUri?.takeIf { it.isNotBlank() } ?: clip.uri
+    // Capture pending UI input synchronously. A later panel edit cannot
+    // silently change the settings of this already-started request.
+    val effective = settings.sanitized().copy(
+        sourceUri = sourceUri,
+        imageUri = _backgroundUi.value.imageUri ?: settings.imageUri
+    )
+    val ctxApp = ctx.applicationContext
+
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.PROCESSING, progress01 = 0f,
         message = "Checking AI model…"
     )
 
-    backgroundJob = viewModelScope.launch(Dispatchers.IO) {
+    // LAZY ensures backgroundJob is assigned before this coroutine can run.
+    val job = viewModelScope.launch(Dispatchers.Main.immediate, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+        val requestJob = coroutineContext[Job] ?: return@launch
         try {
-            // 1. Verify/materialize the packaged model locally. No pack-catalog
-            //    refresh or network call is part of this inference workflow.
-            val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
+            val ready = BackgroundReplaceEngine.isModelReady(ctxApp)
+            if (!isCurrentBackgroundJob(requestJob)) return@launch
             if (!ready) {
-                _backgroundUi.value = _backgroundUi.value.copy(
-                    phase = BackgroundPhase.FAILED,
-                    message = "Bundled person-segmentation model is unavailable."
-                )
+                publishBackgroundState(requestJob) {
+                    it.copy(phase = BackgroundPhase.FAILED,
+                        message = "Bundled person-segmentation model is unavailable.")
+                }
                 return@launch
             }
-            // 2. Resolve input: always the ORIGINAL, never a
-            //    previously processed file.
-            val sourceUri = clip.backgroundReplace?.sourceUri?.takeIf { it.isNotBlank() }
-                ?: clip.uri
-            val effective = settings.sanitized().copy(
-                sourceUri = sourceUri,
-                // IMAGE mode reads the panel's picked image; a stale
-                // imageUri from a previous apply must not win over
-                // the freshly picked one.
-                imageUri = _backgroundUi.value.imageUri ?: settings.imageUri
-            )
             if (effective.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
                 effective.imageUri.isNullOrBlank()
             ) {
-                _backgroundUi.value = _backgroundUi.value.copy(
-                    phase = BackgroundPhase.FAILED,
-                    message = "Pick a background image first."
+                publishBackgroundState(requestJob) {
+                    it.copy(phase = BackgroundPhase.FAILED, message = "Pick a background image first.")
+                }
+                return@launch
+            }
+
+            var outputFile = BackgroundReplaceEngine.outputFileFor(ctxApp, clipId, effective)
+            // Never overwrite a path that may be held by undo/history. A
+            // valid deterministic cache entry is reused; a damaged one is
+            // left intact and this run gets its own output path.
+            if (outputFile.exists() && outputFile.length() <= 0L) {
+                outputFile = File(
+                    outputFile.parentFile,
+                    "${outputFile.nameWithoutExtension}_${UUID.randomUUID()}.mp4"
                 )
-                return@launch
             }
-            // 3. Cache hit: identical settings reuse the output file.
-            val outputFile = BackgroundReplaceEngine.outputFileFor(
-                ctx.applicationContext, clipId, effective
-            )
             if (outputFile.exists() && outputFile.length() > 0L) {
-                finishBackgroundApply(clipId, clip, effective, outputFile)
+                finishBackgroundApply(requestJob, version, effective, outputFile)
                 return@launch
             }
-            // 4. Process (cancellable; progress per frame).
-            _backgroundUi.value = _backgroundUi.value.copy(
-                phase = BackgroundPhase.PROCESSING, progress01 = 0f,
-                message = "Segmenting person… (on-device AI)"
-            )
+
+            publishBackgroundState(requestJob) {
+                it.copy(phase = BackgroundPhase.PROCESSING, progress01 = 0f,
+                    message = "Segmenting person… (on-device AI)")
+            }
             val processed = BackgroundReplaceEngine.process(
-                ctx.applicationContext,
+                ctxApp,
                 sourceUri,
                 effective,
                 outputFile
-            ) { p ->
-                _backgroundUi.value = _backgroundUi.value.copy(
-                    phase = BackgroundPhase.PROCESSING, progress01 = p,
-                    message = "Processing ${(p * 100).toInt()}%…"
-                )
+            ) { progress ->
+                // Progress originates on the engine worker. Dispatch it
+                // to Main and re-check request identity when it executes.
+                viewModelScope.launch(Dispatchers.Main.immediate) {
+                    publishBackgroundState(requestJob) {
+                        it.copy(phase = BackgroundPhase.PROCESSING,
+                            progress01 = progress,
+                            message = "Processing ${(progress * 100).toInt()}%…")
+                    }
+                }
             }
-            finishBackgroundApply(clipId, clip, effective, processed)
+            finishBackgroundApply(requestJob, version, effective, processed)
         } catch (e: CancellationException) {
-            // Cancel button: back to idle, no error noise. The
-            // engine already deleted its temp file.
-            _backgroundUi.value = _backgroundUi.value.copy(
-                phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Cancelled"
-            )
+            // Cancellation is expected; the cancelling action owns the UI status.
+            throw e
         } catch (e: Exception) {
             Log.e("BgReplaceCtrl", "Background replace failed", e)
-            _backgroundUi.value = _backgroundUi.value.copy(
-                phase = BackgroundPhase.FAILED,
-                message = "Background replace failed: ${e.message?.take(100)}"
-            )
+            publishBackgroundState(requestJob) {
+                it.copy(phase = BackgroundPhase.FAILED,
+                    message = "Background replace failed: ${e.message?.take(100)}")
+            }
+        } finally {
+            if (backgroundJob === requestJob) backgroundJob = null
         }
+    }
+    backgroundJob = job
+    job.start()
+}
+
+private fun EditorViewModel.isCurrentBackgroundJob(job: Job): Boolean =
+    backgroundJob === job && job.isActive
+
+private fun EditorViewModel.publishBackgroundState(
+    job: Job,
+    transform: (BackgroundUiState) -> BackgroundUiState
+) {
+    if (!isCurrentBackgroundJob(job)) return
+    _backgroundUi.update { current ->
+        if (isCurrentBackgroundJob(job)) transform(current) else current
     }
 }
 
-/**
- * Commit a processed file to the clip: swap [uri], record the
- * settings + original, delete the previous processed file, and
- * persist. The editor's player reloads on the [uri] change, so
- * the preview shows the processed video immediately — the same
- * file the export will export.
- */
-private fun EditorViewModel.finishBackgroundApply(
-    clipId: String,
-    oldClip: com.apexstudio.app.domain.model.MediaClip,
+/** Commit only on Main and only if the originating clip version is still live. */
+private suspend fun EditorViewModel.finishBackgroundApply(
+    job: Job,
+    expected: BackgroundApplyVersion,
     effective: BackgroundReplaceSettings,
-    processed: java.io.File
-) {
-    val previousProcessed = oldClip.uri.takeIf { oldClip.backgroundReplace != null }
-    updateClip(clipId) { c ->
-        c.copy(
-            uri = android.net.Uri.fromFile(processed).toString(),
+    processed: File
+) = withContext(Dispatchers.Main.immediate) {
+    if (!isCurrentBackgroundJob(job)) return@withContext
+    val project = _state.value.project
+    val clip = project?.clips?.firstOrNull { it.id == expected.clipId }
+    val currentVersion = if (project != null && clip != null) {
+        BackgroundApplyVersion(project.id, clip.id, clip.uri, clip.backgroundReplace)
+    } else null
+    if (!backgroundApplyCanCommit(expected, currentVersion)) {
+        backgroundJob = null
+        _backgroundUi.value = _backgroundUi.value.copy(
+            phase = BackgroundPhase.IDLE, progress01 = 0f,
+            message = "Clip or project changed; background result discarded."
+        )
+        return@withContext
+    }
+
+    pushUndo()
+    updateClip(expected.clipId) { current ->
+        current.copy(
+            uri = Uri.fromFile(processed).toString(),
             backgroundReplace = effective
         )
     }
-    if (previousProcessed != null && previousProcessed != android.net.Uri.fromFile(processed).toString()) {
-        val oldFile = java.io.File(android.net.Uri.parse(previousProcessed).path ?: "")
-        BackgroundReplaceEngine.deleteProcessedFile(oldFile)
-    }
+    // Do not delete the previous processed output. Undo/history snapshots
+    // store clip URIs and may still refer to it.
+    backgroundJob = null
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.DONE, progress01 = 1f,
         message = "Background applied — preview and export show the same video."
     )
 }
 
-/**
- * Restore the clip's original background: [uri] back to
- * [sourceUri], settings cleared, processed file deleted.
- */
+/** Restore the clip's original background without deleting history-referenced outputs. */
 fun EditorViewModel.restoreOriginalBackground(clipId: String) {
+    // Invalidate the active request before inspecting/restoring the clip;
+    // a late cache hit or engine completion can no longer re-apply it.
+    val activeJob = backgroundJob
+    backgroundJob = null
+    activeJob?.cancel()
+
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     val settings = clip.backgroundReplace ?: run {
         _backgroundUi.value = _backgroundUi.value.copy(
-            phase = BackgroundPhase.IDLE, message = "Already showing the original background."
+            phase = BackgroundPhase.IDLE, progress01 = 0f,
+            message = "Already showing the original background."
         )
         return
     }
-    val processedUri = clip.uri
-    updateClip(clipId) { c ->
-        c.copy(uri = settings.sourceUri, backgroundReplace = null)
-    }
-    if (processedUri != settings.sourceUri) {
-        val oldFile = java.io.File(android.net.Uri.parse(processedUri).path ?: "")
-        BackgroundReplaceEngine.deleteProcessedFile(oldFile)
+    pushUndo()
+    updateClip(clipId) { current ->
+        current.copy(uri = settings.sourceUri, backgroundReplace = null)
     }
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.IDLE, progress01 = 0f,
@@ -254,7 +310,8 @@ fun EditorViewModel.restoreOriginalBackground(clipId: String) {
 }
 
 fun EditorViewModel.resetBackgroundUi() {
-    backgroundJob?.cancel()
+    val activeJob = backgroundJob
     backgroundJob = null
+    activeJob?.cancel()
     _backgroundUi.value = BackgroundUiState()
 }

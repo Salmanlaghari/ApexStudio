@@ -657,16 +657,10 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                     minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
                     c.durationMs
                 )
-                // An overlay has an absolute timeline start. Trimming its
-                // source head must move that start by the removed playable
-                // time; otherwise the UI's left grip moves during the drag
-                // and snaps back on commit. V1 is laid out cumulatively and
-                // deliberately does not use this adjustment.
-                val overlayStartShift = if (c.type == ClipType.OVERLAY && safeStart > c.trimStartMs) {
-                    ClipTimeMapping.outputDurationBetweenSourceTimes(
-                        c, c.trimStartMs, safeStart
-                    )
-                } else 0L
+                // Overlays use absolute timeline placement, so moving the
+                // source head either way also moves the left edge. V1 is
+                // laid out cumulatively and does not use this adjustment.
+                val overlayStartShift = overlayTimelineStartShift(c, safeStart)
                 c.copy(
                     trimStartMs = safeStart,
                     trimEndMs = safeEnd,

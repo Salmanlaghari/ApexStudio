@@ -87,6 +87,7 @@ object CtcForcedAligner {
         wordTexts: List<String>,
         frameDurationMs: Float,
         startOffsetMs: Long = 0L,
+        checkCancelled: () -> Unit = {},
     ): CtcAlignmentResult {
         require(logProbabilities.isNotEmpty()) { "No CTC frames" }
         require(targetTokenIds.isNotEmpty() && targetTokenIds.size == wordIndexForToken.size) { "Target tokens and word map must be non-empty and equal length" }
@@ -94,13 +95,19 @@ object CtcForcedAligner {
         require(frameDurationMs > 0f && frameDurationMs.isFinite())
         val vocab = logProbabilities.first().size
         require(blankId in 0 until vocab && targetTokenIds.all { it in 0 until vocab }) { "Token ID outside vocabulary" }
-        require(logProbabilities.all { it.size == vocab && it.all(Float::isFinite) }) { "Ragged or non-finite CTC emissions" }
+        val frames = logProbabilities.size
+        require(logProbabilities.all { it.size == vocab }) { "Ragged CTC emissions" }
         require(wordIndexForToken.all { it >= -1 })
-
+        require(isCtcAlignmentWithinBounds(frames, targetTokenIds.size)) {
+            "CTC alignment exceeds the supported memory bound"
+        }
         val states = targetTokenIds.size * 2 + 1
         val labels = IntArray(states) { if (it % 2 == 0) blankId else targetTokenIds[it / 2] }
-        val frames = logProbabilities.size
         require(frames >= targetTokenIds.size) { "Fewer acoustic frames than target tokens" }
+        for (t in 0 until frames) {
+            if (t % 128 == 0) checkCancelled()
+            require(logProbabilities[t].all(Float::isFinite)) { "Non-finite CTC emissions" }
+        }
         val back = Array(frames) { IntArray(states) { -1 } }
         var prev = FloatArray(states) { Float.NEGATIVE_INFINITY }
         prev[0] = logProbabilities[0][blankId]
@@ -109,6 +116,7 @@ object CtcForcedAligner {
             val row = logProbabilities[t]
             val next = FloatArray(states) { Float.NEGATIVE_INFINITY }
             for (s in 0 until states) {
+                if (s % 256 == 0) checkCancelled()
                 var best = prev[s]
                 var from = s
                 if (s > 0 && prev[s - 1] > best) { best = prev[s - 1]; from = s - 1 }
@@ -127,6 +135,7 @@ object CtcForcedAligner {
         val tokenFrames = Array(targetTokenIds.size) { ArrayList<Int>() }
         var pathScore = 0f
         for (t in frames - 1 downTo 0) {
+            if (t % 128 == 0) checkCancelled()
             if (state % 2 == 1) {
                 val token = state / 2
                 tokenFrames[token].add(t)
@@ -237,9 +246,12 @@ class OnnxCtcWordAligner(
                         val shape = output.info.shape
                         if (shape.size != 3 || shape[0] != 1L || shape[1] <= 0L || shape[2] != contract.vocabularySize.toLong())
                             throw IllegalStateException("Invalid CTC output shape ${shape.contentToString()}")
+                        if (shape[1] > MAX_CTC_LOGIT_VALUES / shape[2])
+                            throw IllegalStateException("CTC output exceeds the supported inference memory bound")
+                        val valueCount = shape[1] * shape[2] // Safe after the division-based bound above.
                         val frames = shape[1].toInt()
                         val buffer = output.floatBuffer
-                        if (buffer.remaining() != frames * contract.vocabularySize)
+                        if (buffer.remaining().toLong() != valueCount)
                             throw IllegalStateException("CTC logits tensor has unexpected data size")
                         val emissions = Array(frames) { frame ->
                             if (frame % 128 == 0) coroutineContext.ensureActive()
@@ -253,8 +265,9 @@ class OnnxCtcWordAligner(
                             row
                         }
                         onProgress(0.85f, "aligning transcript tokens")
+                        val alignContext = coroutineContext
                         val result = CtcForcedAligner.align(emissions, contract.blankTokenId, targetTokenIds,
-                            wordIndexForToken, wordTexts, contract.frameDurationMs)
+                            wordIndexForToken, wordTexts, contract.frameDurationMs, checkCancelled = { alignContext.ensureActive() })
                         coroutineContext.ensureActive()
                         onProgress(1f, "complete")
                         result
@@ -263,4 +276,13 @@ class OnnxCtcWordAligner(
             }
         }
     }
+}
+
+/** Keep the Viterbi backpointer matrix bounded (4M cells ~= 16 MiB of Int storage). */
+internal const val MAX_CTC_LOGIT_VALUES: Long = 16_000_000L
+
+internal fun isCtcAlignmentWithinBounds(frameCount: Int, tokenCount: Int): Boolean {
+    if (frameCount <= 0 || tokenCount <= 0) return false
+    val states = tokenCount.toLong() * 2L + 1L
+    return frameCount.toLong() * states <= 4_000_000L
 }

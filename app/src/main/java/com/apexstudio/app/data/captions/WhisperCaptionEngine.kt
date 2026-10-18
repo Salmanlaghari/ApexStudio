@@ -29,6 +29,7 @@ object WhisperCaptionEngine {
 
     private const val TAG = "WhisperCaptionEngine"
 
+
     /** Legacy pack IDs retained so already-installed downloads keep working. */
     const val PACK_ENCODER = "whisper-tiny-encoder"
     const val PACK_DECODER = "whisper-tiny-decoder"
@@ -81,7 +82,9 @@ object WhisperCaptionEngine {
         val dir = File(context.filesDir, "models/whisper/$BUNDLED_REVISION")
         if (File(dir, BUNDLED_MARKER).takeIf { it.isFile }?.readText() != BUNDLED_REVISION) return null
         val files = bundledAssets.map { File(dir, it.name) }
-        if (files.indices.any { !files[it].isFile || files[it].length() != bundledAssets[it].size }) return null
+        if (files.indices.any { index ->
+                !isWhisperAssetVerified(files[index], bundledAssets[index].size, bundledAssets[index].sha256)
+            }) return null
         return Triple(files[0], files[1], files[2])
     }
 
@@ -144,24 +147,25 @@ object WhisperCaptionEngine {
         trimEndMs: Long = Long.MAX_VALUE,
         onProgress: (Float) -> Unit = {}
     ): List<CaptionSegment>? = withContext(Dispatchers.IO) {
+        WhisperInferenceGate.withLock {
         val appContext = context.applicationContext
         installBundledModel(appContext)
         val (encFile, decFile, tokFile) = modelFiles(appContext)
-            ?: return@withContext null // model files missing
+            ?: return@withLock null // model files missing
         val model = WhisperModel.load(encFile, decFile, tokFile)
-            ?: return@withContext null // caller surfaces "model failed to load"
+            ?: return@withLock null // caller surfaces "model failed to load"
 
         try {
             onProgress(0.02f)
             val fullPcm = PcmAudioExtractor.extractMono16k(appContext, uri)
-                ?: return@withContext null // no decodable audio
+                ?: return@withLock null // no decodable audio
             // Slice to the clip's trim range (sample-exact) — captions
             // must cover only the active portion, on the clip's timeline.
             val startSample = sampleIndexAtTime(trimStartMs, WhisperMelSpectrogram.SAMPLE_RATE, fullPcm.size)
             val endSample = if (trimEndMs == Long.MAX_VALUE) fullPcm.size
                 else sampleIndexAtTime(trimEndMs, WhisperMelSpectrogram.SAMPLE_RATE, fullPcm.size).coerceAtLeast(startSample)
             val pcm = fullPcm.copyOfRange(startSample, endSample)
-            if (pcm.isEmpty()) return@withContext null
+            if (pcm.isEmpty()) return@withLock null
             onProgress(0.05f)
 
             val chunkSamples = WhisperMelSpectrogram.SAMPLE_RATE * 30
@@ -179,7 +183,8 @@ object WhisperCaptionEngine {
                 val start = c * chunkSamples
                 val end = minOf(start + chunkSamples, pcm.size)
                 val chunk = pcm.copyOfRange(start, end)
-                val mel = WhisperMelSpectrogram.compute(chunk)
+                val workerContext = coroutineContext
+                val mel = WhisperMelSpectrogram.compute(chunk) { workerContext.ensureActive() }
                 val chunkOffsetMs = c * 30_000L
                 val result = model.transcribeChunk(mel, langTokenId) { generated ->
                     // Cancel promptly mid-chunk (the decoder loop can run
@@ -201,6 +206,7 @@ object WhisperCaptionEngine {
             mergeShortSegments(all)
         } finally {
             model.close()
+        }
         }
     }
 
@@ -298,4 +304,34 @@ internal fun sampleIndexAtTime(timeMs: Long, sampleRate: Int, sampleCount: Int):
 internal fun constrainWhisperTimestamp(timestampMs: Long, previousStartMs: Long, chunkDurationMs: Long): Long {
     require(chunkDurationMs >= 0L)
     return timestampMs.coerceIn(previousStartMs.coerceIn(0L, chunkDurationMs), chunkDurationMs)
+}
+
+/** Serializes heavyweight native Whisper sessions across concurrent caption requests. */
+internal object WhisperInferenceGate {
+    private val mutex = kotlinx.coroutines.sync.Mutex()
+
+    suspend fun <T> withLock(block: suspend () -> T): T {
+        mutex.lock() // lock() is cancellable, including while queued behind another inference.
+        try {
+            return block()
+        } finally {
+            mutex.unlock()
+        }
+    }
+}
+
+/** Verify bytes, not only a marker and file length, before reporting bundled offline readiness. */
+internal fun isWhisperAssetVerified(file: File, expectedSize: Long, expectedSha256: String): Boolean {
+    if (!file.isFile || file.length() != expectedSize || !expectedSha256.matches(Regex("[0-9a-f]{64}"))) return false
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
+        }
+    }
+    val actual = digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+    return actual == expectedSha256
 }

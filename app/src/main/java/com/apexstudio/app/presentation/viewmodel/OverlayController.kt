@@ -1,6 +1,21 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.OverlayClip
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ClipTimeMapping
+import kotlinx.coroutines.flow.update
+
+/** Signed project-time shift that keeps an overlay's right edge anchored as its source head moves. */
+internal fun overlayTimelineStartShift(clip: MediaClip, newStartMs: Long): Long {
+    if (clip.type != ClipType.OVERLAY || newStartMs == clip.trimStartMs) return 0L
+    return if (newStartMs > clip.trimStartMs) {
+        ClipTimeMapping.outputDurationBetweenSourceTimes(clip, clip.trimStartMs, newStartMs)
+    } else {
+        val expanded = clip.copy(trimStartMs = newStartMs)
+        -ClipTimeMapping.outputDurationBetweenSourceTimes(expanded, newStartMs, clip.trimStartMs)
+    }
+}
 
 /**
  * Layout + trim operations for overlay clips — Bug 3.
@@ -79,5 +94,25 @@ fun EditorViewModel.trimOverlayClip(
     // value can't fill the undo stack.
     if (window.startMs == current.trimStartMs && window.endMs == current.trimEndMs) return
     armOverlayUndo()
-    updateClip(clipId) { clip -> window.writeTo(clip) }
+    var updatedDuration: Long? = null
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        val clips = project.clips.map { clip ->
+            if (clip.id != clipId) clip
+            else window.writeTo(clip).copy(
+                timelineOffsetMs = (clip.timelineOffsetMs + overlayTimelineStartShift(clip, window.startMs))
+                    .coerceAtLeast(0L)
+            )
+        }
+        val duration = computeTimelineDurationMs(clips, project.audioTracks)
+        updatedDuration = duration
+        state.copy(
+            project = project.copy(clips = clips, durationMs = duration),
+            durationMs = duration,
+            playerPositionMs = state.playerPositionMs.coerceAtMost(duration),
+            currentTimeMs = state.currentTimeMs.coerceAtMost(duration)
+        )
+    }
+    updatedDuration?.let { duration -> _playerPosition.update { it.coerceAtMost(duration) } }
+    persistProject()
 }

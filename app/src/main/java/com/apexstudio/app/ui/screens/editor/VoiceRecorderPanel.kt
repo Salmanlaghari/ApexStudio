@@ -34,6 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.delay
@@ -47,6 +50,7 @@ fun VoiceRecorderPanel(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var isRecording by remember { mutableStateOf(false) }
     var isPaused by remember { mutableStateOf(false) }
     var recordingTimeMs by remember { mutableLongStateOf(0L) }
@@ -55,6 +59,7 @@ fun VoiceRecorderPanel(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val clock = remember { RecordingClock() }
     val cleanupHolder = remember { RecordingCleanupHolder() }
+    val lifecycleGuard = remember { RecordingLifecycleGuard() }
     var hasRecordPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -66,7 +71,8 @@ fun VoiceRecorderPanel(
 
     val amplitudeHistory = remember { mutableStateListOf<Float>() }
 
-    val startRecording: () -> Unit = {
+    val startRecording: () -> Unit = start@{
+        if (isRecording || recorder != null) return@start
         errorMessage = null
         var createdRecorder: MediaRecorder? = null
         var createdFile: File? = null
@@ -121,11 +127,14 @@ fun VoiceRecorderPanel(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasRecordPermission = granted
-        if (granted) latestStartRecording.value()
+        if (granted && lifecycleGuard.canStart(lifecycleOwner.lifecycle.currentState)) latestStartRecording.value()
+        else if (granted) errorMessage = "Microphone allowed. Return to the editor and tap mic to start."
         else errorMessage = "Microphone permission was not granted."
     }
 
     fun requestOrStartRecording() {
+        if (!lifecycleGuard.canStart(lifecycleOwner.lifecycle.currentState)) return
+        hasRecordPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (hasRecordPermission) startRecording()
         else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
@@ -222,13 +231,50 @@ fun VoiceRecorderPanel(
 
     fun resumeRecording() {
         try {
+            if (!lifecycleGuard.canStart(lifecycleOwner.lifecycle.currentState)) return
             val activeRecorder = recorder ?: return
             activeRecorder.resume()
             clock.resume(SystemClock.elapsedRealtime())
             isPaused = false
+            errorMessage = null
         } catch (e: Exception) {
             Log.e("VoiceRecorderPanel", "Resume failed", e)
             errorMessage = "Could not resume recording."
+        }
+    }
+
+    // Leaving the foreground must never leave an invisible microphone capture running.
+    // Resume is always explicit; returning from another app does not restart the microphone.
+    val pauseForBackground = rememberUpdatedState<() -> Unit> {
+        if (isRecording && !isPaused) {
+            pauseRecording()
+            if (!isPaused) {
+                // A recorder that cannot pause is abandoned rather than allowed to capture.
+                try { recorder?.release() } catch (_: Exception) {}
+                recorder = null
+                cleanupHolder.recorder = null
+                outputFile?.delete()
+                outputFile = null
+                cleanupHolder.file = null
+                clock.reset()
+                recordingTimeMs = 0L
+                isRecording = false
+                errorMessage = "Recording stopped because the app left the foreground. Please try again."
+            } else {
+                recordingTimeMs = clock.elapsedMs(SystemClock.elapsedRealtime())
+                errorMessage = "Recording paused when you left the editor. Tap resume to continue."
+            }
+        }
+    }
+    DisposableEffect(lifecycleOwner) {
+        lifecycleGuard.attach()
+        val observer = LifecycleEventObserver { _, event ->
+            lifecycleGuard.onEvent(event) { pauseForBackground.value() }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleGuard.dispose()
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -446,6 +492,17 @@ internal object VoiceRecordingSavePolicy {
 
     fun shouldKeep(stopSucceeded: Boolean, durationMs: Long, fileBytes: Long): Boolean =
         stopSucceeded && durationMs >= MIN_SAVE_DURATION_MS && fileBytes > 0L
+}
+
+/** Also guards delayed permission callbacks after a panel has been dismissed. */
+internal class RecordingLifecycleGuard {
+    private var attached = false
+    fun attach() { attached = true }
+    fun dispose() { attached = false }
+    fun canStart(state: Lifecycle.State): Boolean = attached && state.isAtLeast(Lifecycle.State.RESUMED)
+    fun onEvent(event: Lifecycle.Event, pause: () -> Unit) {
+        if (attached && event in setOf(Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY)) pause()
+    }
 }
 
 private class RecordingCleanupHolder {

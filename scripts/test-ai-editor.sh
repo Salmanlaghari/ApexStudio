@@ -9,7 +9,13 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AiToolsCatalogTest' \
   --tests '*EditorLocalAnalysisTest' \
   --tests '*WhisperCaptionBoundsTest' \
+  --tests '*WhisperInferenceReliabilityTest' \
+  --tests '*WhisperModelIntegrityTest' \
   --tests '*EditorTrimPositionTest' \
+  --tests '*AudioTrackPlacementTest' \
+  --tests '*LocalAudioImportPolicyTest' \
+  --tests '*MusicExportMixerTest' \
+  --tests '*VoiceRecordingTimingTest' \
   --tests '*OverlayClipTest' \
   --tests '*ClipTimeMappingTest' \
   --tests '*OverlaySplitTrimTest' \

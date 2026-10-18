@@ -110,8 +110,14 @@ jobs:
             --tests 'com.apexstudio.app.ai.*' \
             --tests '*AiToolsCatalogTest' \
             --tests '*EditorTrimPositionTest' \
+            --tests '*AudioTrackPlacementTest' \
+            --tests '*LocalAudioImportPolicyTest' \
+            --tests '*MusicExportMixerTest' \
+            --tests '*VoiceRecordingTimingTest' \
             --tests '*EditorLocalAnalysisTest' \
             --tests '*WhisperCaptionBoundsTest' \
+            --tests '*WhisperInferenceReliabilityTest' \
+            --tests '*WhisperModelIntegrityTest' \
             --tests '*OverlayClipTest' \
             --tests '*ClipTimeMappingTest' \
             --tests '*VideoCropPresetTest' \

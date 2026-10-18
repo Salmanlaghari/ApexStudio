@@ -44,6 +44,68 @@ class OverlaySplitTrimTest {
     }
 
     @Test
+    fun extendingOverlaySourceHeadEarlierMovesItsTimelineOffsetEarlier() {
+        val overlay = MediaClip(
+            id = "extend-head-overlay",
+            name = "extend-head-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 15_000L,
+            trimStartMs = 5_000L,
+            trimEndMs = 12_000L,
+            timelineOffsetMs = 9_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        // The right edge is at 16s. Restoring 3s at the source head must
+        // move the left edge from 9s to 6s rather than changing the end.
+        vm.trimClip(overlay.id, 2_000L, overlay.trimEndMs)
+
+        val extended = vm.state.value.project!!.clips.single()
+        assertEquals(6_000L, extended.timelineOffsetMs)
+        assertEquals(2_000L, extended.trimStartMs)
+        assertEquals(16_000L, extended.timelineOffsetMs + (extended.trimEndMs - extended.trimStartMs))
+    }
+
+    @Test
+    fun overlayPropertiesTrimAlsoMovesTimelineHeadAndRecomputesDuration() {
+        val overlay = MediaClip(
+            id = "properties-trim-overlay",
+            name = "properties-trim-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 15_000L,
+            trimStartMs = 5_000L,
+            trimEndMs = 12_000L,
+            timelineOffsetMs = 9_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.trimOverlayClip(overlay.id, 2_000L, overlay.trimEndMs)
+
+        val trimmed = vm.state.value.project!!.clips.single()
+        assertEquals(6_000L, trimmed.timelineOffsetMs)
+        assertEquals(16_000L, vm.state.value.durationMs)
+        assertEquals(vm.state.value.durationMs, vm.state.value.project!!.durationMs)
+    }
+
+    @Test
     fun trimmingOverlayHeadUsesOutputTimeFromTheOriginalSpeedCurve() {
         val overlay = MediaClip(
             id = "ramped-overlay",

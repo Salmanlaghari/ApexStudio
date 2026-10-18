@@ -612,7 +612,9 @@ private fun rippleOverlays(
     if (deltaMs == 0L) return clips
     return clips.map { c ->
         if (c.trackIndex == 0 || c.timelineOffsetMs < anchorMs) c
-        else c.copy(timelineOffsetMs = c.timelineOffsetMs + deltaMs)
+        else c.copy(
+            timelineOffsetMs = (c.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+        )
     }
 }
 
@@ -635,7 +637,12 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         var rippled = proj.clips
         if (trimTarget != null && isMainTrack(trimTarget)) {
             val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 100L).coerceAtLeast(0L))
-            val safeEnd = endMs.coerceIn(safeStart + 100L, trimTarget.durationMs)
+            // Guard the clamp: minOf keeps coerceIn's min <= max when
+            // the clip is under 100ms (Kilo CRITICAL: IllegalArgumentException).
+            val safeEnd = endMs.coerceIn(
+                minOf(safeStart + 100L, trimTarget.durationMs).coerceAtLeast(safeStart),
+                trimTarget.durationMs
+            )
             val oldDur = trimTarget.effectiveDurationMs()
             val newDur = com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
                 safeEnd - safeStart, trimTarget.speedPoints
@@ -646,7 +653,10 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
                 val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
-                val safeEnd = endMs.coerceIn(safeStart + 100L, c.durationMs)
+                val safeEnd = endMs.coerceIn(
+                    minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
+                    c.durationMs
+                )
                 c.copy(
                     trimStartMs = safeStart,
                     trimEndMs = safeEnd
@@ -899,7 +909,7 @@ fun EditorViewModel.duplicateClip(clipId: String) {
         // length — layers stay glued to their scene (CapCut magnet).
         val rippled = if (isMainTrack(target)) {
             val extra = target.effectiveDurationMs()
-            rippleOverlays(p.clips, v1StartBefore(p.clips, clipId) + extra, extra)
+            rippleOverlays(p.clips, p.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }, extra)
         } else p.clips
         val updated = rippled + newClip
         val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())

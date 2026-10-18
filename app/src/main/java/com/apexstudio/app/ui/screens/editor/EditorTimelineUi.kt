@@ -227,6 +227,10 @@ fun TimelineTrackArea(
             if (clipTrims[clip.id] != null && clipTrims[clip.id] != trim) {
                 filmstripFrames.keys.filter { it.first == clip.id }
                     .forEach { filmstripFrames.remove(it) }
+                // Kilo warning: a re-trim changes what a key points AT, so
+                // the parked backfill cursor would keep the off-screen tail
+                // blank — drop it and let the sweep start over.
+                backfillCursor.remove(clip.id)
             }
             clipTrims[clip.id] = trim
         }

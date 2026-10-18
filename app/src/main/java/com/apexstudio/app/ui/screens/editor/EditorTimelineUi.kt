@@ -207,6 +207,12 @@ fun TimelineTrackArea(
     // The extraction effect invalidates them (below) before it starts
     // collecting, so a re-trim re-fills with the new trim's frames.
     val clipTrims = remember { mutableMapOf<String, Pair<Long, Long>>() }
+    // Persistent full-clip backfill cursor, clipId -> next ms to scan.
+    // Out on PURPOSE: the extraction LaunchedEffect is keyed on the clip
+    // list and restarts whenever the project object is copied (select,
+    // undo, autosave). With the cursor living inside the effect, V1 lost
+    // its sweep every restart and stayed stuck on the first seconds.
+    val backfillCursor = remember { HashMap<String, Long>() }
     // FULL-LENGTH FILMSTRIP EXTRACTION LOOP. Every pass recomputes the
     // visible window, launches the keys the window needs FIRST, then the
     // rest of each clip (leading/trailing remainder) so the whole video
@@ -246,6 +252,34 @@ fun TimelineTrackArea(
             val msToPx = msToDp * density.density
             var launched = 0
             var pending = 0
+
+            // Launch ONE filmstrip key if capacity allows. Shared by the
+            // window pass and the full-clip sweep, so there is exactly one
+            // claim rule (synchronized in-flight set, 24 jobs per pass).
+            fun requestKey(clip: com.apexstudio.app.domain.model.MediaClip, keyMs: Long) {
+                val key = clip.id to keyMs
+                if (filmstripFrames.containsKey(key) || inFlightKeys.contains(key)) return
+                pending++
+                if (launched >= 24 || !inFlightKeys.add(key)) return
+                launched++
+                // Immutable captures only: `keyMs` is a moving counter in the
+                // caller's loop and `clip` would be re-read on the next pass,
+                // so both must be frozen for the job.
+                val targetClip = clip
+                val frameAtMs = keyMs
+                launch(thumbDispatcher) {
+                    try {
+                        val bmp = TimelineThumbnailCache.frameFor(
+                            context, targetClip, frameAtMs,
+                            cellWidthPx, cellHeightPx
+                        )
+                        ensureActive()
+                        bmp?.let { filmstripFrames[key] = it }
+                    } finally {
+                        inFlightKeys.remove(key)
+                    }
+                }
+            }
             for (clip in filmstripClips) {
                 val startMs = contentStarts[clip.id] ?: continue
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
@@ -254,57 +288,35 @@ fun TimelineTrackArea(
                     .toLong().coerceAtLeast(0L)
                 val visEndMs = ((winEndPx - clipStartPx) / msToPx).toLong()
                 val onScreen = !(visEndMs < 0L || visStartMs > clipDur)
-                // Priority ranges for this clip: the visible window
-                // first, then the leading and trailing remainder, so
-                // the whole clip always converges to full coverage.
-                val ranges = ArrayList<Triple<Long, Long, Boolean>>(3)
-                if (onScreen) {
-                    val winFrom = ((visStartMs / frameIntervalMs) * frameIntervalMs)
-                        .coerceIn(0L, clipDur)
-                    val winTo = visEndMs.coerceIn(0L, clipDur)
-                    if (winFrom <= winTo) ranges.add(Triple(winFrom, winTo, true))
-                    if (winFrom > 0L) ranges.add(Triple(0L, winFrom - frameIntervalMs, false))
-                    if (winTo < clipDur) ranges.add(Triple(winTo + 1, clipDur, false))
-                } else {
-                    ranges.add(Triple(0L, clipDur, false))
-                }
-                for ((rangeFrom, rangeTo, isWindow) in ranges) {
-                    var keyMs = (rangeFrom / frameIntervalMs) * frameIntervalMs
-                    while (keyMs <= rangeTo) {
-                        val key = clip.id to keyMs
-                        if (!filmstripFrames.containsKey(key) &&
-                            !inFlightKeys.contains(key)
-                        ) {
-                            if (isWindow) pending++
-                            if (launched < 24 && inFlightKeys.add(key)) {
-                                launched++
-                                // IMMUTABLE captures only: `keyMs` is the loop
-                                // variable and keeps advancing while this job
-                                // sits queued on the IO dispatcher. Capturing it
-                                // directly made every job read the FINAL key: all
-                                // frames landed under one key and the strip only
-                                // ever showed its first seconds. These vals are
-                                // taken at launch time, so the job extracts the
-                                // frame it was actually asked for.
-                                val targetClip = clip
-                                val frameAtMs = keyMs
-                                launch(thumbDispatcher) {
-                                    try {
-                                        val bmp = TimelineThumbnailCache.frameFor(
-                                            context, targetClip, frameAtMs,
-                                            cellWidthPx, cellHeightPx
-                                        )
-                                        ensureActive()
-                                        bmp?.let { filmstripFrames[key] = it }
-                                    } finally {
-                                        inFlightKeys.remove(key)
-                                    }
-                                }
-                            }
-                        }
-                        keyMs += frameIntervalMs
+                // PRIORITY 1 — the visible window: bounded (a couple of
+                // viewports), so the on-screen strip always fills first.
+                val winFrom = ((visStartMs / frameIntervalMs) * frameIntervalMs)
+                    .coerceIn(0L, clipDur)
+                val winTo = visEndMs.coerceIn(0L, clipDur)
+                if (onScreen && winFrom <= winTo) {
+                    var windowKey = winFrom
+                    while (windowKey <= winTo) {
+                        requestKey(clip, windowKey)
+                        windowKey += frameIntervalMs
                     }
                 }
+                // PRIORITY 2 — the whole clip, resumed from the persistent
+                // cursor: 96 keys/pass either way, so one pass CLEARS a
+                // full 3-minute clip (180s / 1.18s-per-key ≈ 152 keys in
+                // two passes) instead of stalling at the first screen.
+                var cursor = backfillCursor[clip.id] ?: 0L
+                if (cursor <= clipDur) cursor = (cursor / frameIntervalMs) * frameIntervalMs
+                var scanned = 0
+                while (cursor <= clipDur && scanned < 96) {
+                    requestKey(clip, cursor)
+                    cursor += frameIntervalMs
+                    scanned += 1
+                }
+                // A cursor past clipDur means "done" — it stays parked so a
+                // restarted effect does not redo the whole clip; trimming the
+                // clip lowers clipDur and the parked value then scans again.
+                backfillCursor[clip.id] =
+                    if (cursor > clipDur) clipDur + frameIntervalMs else cursor
             }
             // Bounded memory: only prune when the strip grows past the
             // cap, and then only the entries FARTHEST from the window —

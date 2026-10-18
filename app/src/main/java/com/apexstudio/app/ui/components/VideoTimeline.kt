@@ -1119,8 +1119,8 @@ fun VideoTimeline(
     frameIntervalMs: Long = 1000L,
     transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
-    onOpenSpeed = onOpenSpeed,
-    onOpenTrim = onOpenTrim,
+    onOpenSpeed: () -> Unit = {},
+    onOpenTrim: () -> Unit = {},
     modifier: Modifier = Modifier,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
@@ -1986,6 +1986,8 @@ private fun TimelineVideoTrack(
     onDeleteClip: (clipId: String) -> Unit = {},
     onOpenSpeed: () -> Unit = {},
     onOpenTrim: () -> Unit = {},
+    // Live playhead: the long-press menu splits at THIS position.
+    playheadMsProvider: () -> Long = { 0L },
     modifier: Modifier = Modifier
 ) {
 

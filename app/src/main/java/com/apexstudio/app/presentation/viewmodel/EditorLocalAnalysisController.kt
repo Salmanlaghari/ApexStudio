@@ -162,7 +162,7 @@ fun EditorViewModel.applyLocalSceneCuts(): Boolean {
     if (!analysis.isReady || analysis.clipId == null || analysis.sourceStartMs == null || analysis.sourceEndMs == null) return false
     if (!ensureLocalAnalysisCurrent()) return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
-    if (clip.uri != analysis.sourceUri || clip.trimStartMs != analysis.sourceStartMs || minOf(clip.trimEndMs, clip.durationMs) != analysis.sourceEndMs) {
+    if (!matchesAnalyzedWindow(clip, analysis)) {
         return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
     }
     if (clip.type != ClipType.VIDEO) return false
@@ -187,7 +187,9 @@ fun EditorViewModel.applyLocalSceneCuts(): Boolean {
     val boundaries = mutableListOf(clip.trimStartMs)
     for (cut in reviewedCuts) {
         val previous = boundaries.last()
-        if (cut - previous >= 100L && clip.trimEndMs - cut >= 100L) boundaries += cut
+        // Establish ordering before subtraction: malformed suggestion values must not overflow.
+        if (cut > previous && cut < clip.trimEndMs &&
+            cut - previous >= 100L && clip.trimEndMs - cut >= 100L) boundaries += cut
     }
     if (boundaries.size == 1) return false
     boundaries += clip.trimEndMs
@@ -271,9 +273,10 @@ private fun EditorViewModel.clearLocalAnalysisAfterApply(message: String) {
 private fun EditorViewModel.matchesAnalyzedWindow(
     clip: com.apexstudio.app.domain.model.MediaClip,
     analysis: LocalAnalysisUiState
-): Boolean = clip.uri == analysis.sourceUri &&
+): Boolean = clip.trimStartMs >= 0L && clip.trimEndMs > clip.trimStartMs &&
+    clip.trimEndMs <= clip.durationMs && clip.uri == analysis.sourceUri &&
     clip.trimStartMs == analysis.sourceStartMs &&
-    minOf(clip.trimEndMs, clip.durationMs) == analysis.sourceEndMs
+    clip.trimEndMs == analysis.sourceEndMs
 
 private fun EditorViewModel.staleLocalAnalysis(message: String): Boolean {
     _localAnalysis.update { it.copy(error = message, message = message) }

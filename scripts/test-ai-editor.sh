@@ -35,6 +35,10 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*OverlaySplitTrimTest' \
   --tests '*PipOverlayCanvasTest' \
   --tests '*OverlayCropGeometryTest' \
+  --tests '*ManualCropEditorTest' \
+  --tests '*ManualCropPanelTest' \
+  --tests '*CropSourceDimensionsTest' \
+  --tests '*EditorManualCropTest' \
   --tests '*CameraKitConfigTest' \
   --tests '*VideoCropPresetTest' \
   --tests '*ModernFxShadersTest' \

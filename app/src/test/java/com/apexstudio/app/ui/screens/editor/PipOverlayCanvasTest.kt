@@ -70,6 +70,38 @@ class PipOverlayCanvasTest {
     }
 
     @Test
+    fun tapOnOverlappingOverlaysSelectsTheVisuallyTopmostClip() {
+        val selectedId = mutableStateOf<String?>(null)
+        val bottom = overlay().copy(id = "bottom", name = "bottom")
+        val top = overlay().copy(id = "top", name = "top")
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(bottom, top),
+                    selectedOverlayClipId = selectedId.value,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = { selectedId.value = it },
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("bottom" to true, "top" to true),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-item-top", useUnmergedTree = true)
+            .performTouchInput { click() }
+
+        composeRule.runOnIdle {
+            assertEquals("top", selectedId.value)
+        }
+    }
+
+    @Test
     fun draggingOverlayItemInvokesMoveAndGestureEndCallbacks() {
         var moveId: String? = null
         var moveDx = 0f

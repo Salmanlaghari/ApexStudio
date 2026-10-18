@@ -40,7 +40,9 @@ fun CropPresetPanel(
     activePresetId: String = "free",
     onPresetSelected: (VideoCropPreset) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    presetsEnabled: Boolean = true,
+    onManualEdit: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -59,6 +61,7 @@ fun CropPresetPanel(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f).padding(start = 8.dp)
             )
+            if (onManualEdit != null) CropAction("Manual", Icons.Default.Crop, onManualEdit)
             CropAction("Reset", Icons.Default.RestartAlt) { onPresetSelected(VideoCropPreset.FREE) }
             CropAction("Close", Icons.Default.Close, onClose)
         }
@@ -79,7 +82,7 @@ fun CropPresetPanel(
                             if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                             RoundedCornerShape(10.dp)
                         )
-                        .clickable { onPresetSelected(preset) }
+                        .clickable(enabled = presetsEnabled || preset == VideoCropPreset.FREE) { onPresetSelected(preset) }
                         .padding(horizontal = 11.dp, vertical = 8.dp)
                 ) {
                     Text(
@@ -89,7 +92,7 @@ fun CropPresetPanel(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        if (preset == VideoCropPreset.FREE) "Custom" else "Frame",
+                        if (preset == VideoCropPreset.FREE) "Full frame" else if (presetsEnabled) "Frame" else "Unavailable",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -98,7 +101,7 @@ fun CropPresetPanel(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "Preset crops are centered and saved per clip. Drag-to-adjust handles remain a host-screen integration.",
+            "Ten centered presets. Manual opens edge and pan controls; Reset restores the full frame. Each applied change can be undone.",
             color = ApexPalette.TextTertiary,
             fontSize = 10.sp
         )

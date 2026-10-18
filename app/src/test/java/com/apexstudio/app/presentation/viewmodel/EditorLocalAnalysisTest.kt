@@ -77,6 +77,31 @@ class EditorLocalAnalysisTest {
         assertTrue(vm.undoStack.isEmpty())
     }
 
+    @Test fun normalizedAnalysisCannotAuthorizeRawTrimBoundsOutsideTheSource() {
+        for ((start, end) in listOf(2_000L to 25_000L, -1_000L to 12_000L)) {
+            val vm = editor()
+            val clip = vm.state.value.project!!.clips.single().copy(trimStartMs = start, trimEndMs = end)
+            vm._state.update { it.copy(project = it.project!!.copy(clips = listOf(clip))) }
+            vm._localAnalysis.update { it.copy(sourceStartMs = start.coerceAtLeast(0L),
+                sourceEndMs = minOf(end, clip.durationMs), sourceSnapshot = FaceTrackSourceSnapshot.from("analysis", clip)) }
+            vm.reviewLocalSceneCut("cut-6000")
+            assertFalse(vm.applyLocalSceneCuts())
+            assertEquals(listOf(clip), vm.state.value.project!!.clips)
+            assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun malformedExtremeSceneTimestampsCannotOverflowIntoSplitBoundaries() {
+        val vm = editor()
+        vm._localAnalysis.update { it.copy(sceneCuts = listOf(Long.MIN_VALUE, -1L, 0L, 20_000L, Long.MAX_VALUE)
+            .mapIndexed { index, time -> SceneCutSuggestion("invalid-$index", time, .9f) }) }
+        vm.localAnalysis.value.sceneCuts.forEach { vm.reviewLocalSceneCut(it.id) }
+        val before = vm.state.value.project
+        assertFalse(vm.applyLocalSceneCuts())
+        assertEquals(before, vm.state.value.project)
+        assertTrue(vm.undoStack.isEmpty())
+    }
+
     @Test fun speedEditedClipIsRejectedRatherThanSilentlyChangingTiming() {
         val vm = editor(speed = 2f)
         vm.reviewLocalSceneCut("cut-6000")

@@ -1,6 +1,8 @@
 package com.apexstudio.app.ai
 
 import android.content.Context
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
@@ -73,7 +75,9 @@ object AiFeatureRegistry {
                 "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/tree/65176e2deb88badc814a94058666cadccc29b61c")
         ))
         put(AiFeatureId.ONNX_BACKGROUND_REMOVAL, listOf(missingOnnx("onnx-background-removal.onnx")))
-        put(AiFeatureId.ONNX_UPSCALING, listOf(missingOnnx("onnx-upscale.onnx")))
+        put(AiFeatureId.ONNX_UPSCALING, listOf(AiModelRequirement("bundled:espcn-x3-luma",
+            "super-resolution-10.onnx", "Apache-2.0; ONNX Model Zoo ESPCN x3 luma-only",
+            "https://huggingface.co/onnxmodelzoo/super-resolution-10/tree/395472c4b6b92f788357237983d83fd913cfe7e3")))
         put(AiFeatureId.ONNX_STYLE_TRANSFER, listOf(missingOnnx("onnx-style-transfer.onnx")))
         put(AiFeatureId.WORD_TIMED_SUBTITLES, listOf(AiModelRequirement("bundled:english-ctc-alignment",
             "wav2vec2-base-960h-int8.onnx", "Apache-2.0; English-only wav2vec2-base-960h",
@@ -96,15 +100,15 @@ object AiFeatureRegistry {
         AiFeatureId.BACKGROUND_BLUR to AiFeatureDescription("Background blur", "Bundled person segmentation supports the existing pre-rendered background workflow; not real-time AI preview."),
         AiFeatureId.POSE_EFFECTS to AiFeatureDescription("Pose effects", "Bundled pose model and frame-level skeleton processing; no validated full-clip effect integration."),
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
-        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Bundled hand landmarks and gesture primitives; camera gesture editing is not wired to timeline actions."),
-        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Bundled multilingual int8 Whisper uses the existing caption workflow. Segment timestamps, not word alignment."),
-        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Experimental English acoustic word-by-word timing is in Text → Captions. Full multilingual phrase-highlighting karaoke and device validation remain incomplete."),
-        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Bundled segmentation model feeds the existing processed-file preview/export workflow."),
+        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Explicitly armed front-camera hand sessions are wired to bounded source-edge trims and timeline zoom. Camera access and commands remain blocked until safety approval; no device acceptance yet."),
+        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Bundled multilingual int8 Whisper is local, but protected transcript inference is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
+        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "English acoustic word alignment is protected processing and is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
+        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "The bundled segmentation backend is local, but full-clip processing is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
         AiFeatureId.MEDIAPIPE_FACE to AiFeatureDescription("Face landmarks", "Official bundled Face Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "A configured licensed segmentation model and validated end-to-end integration are required."),
-        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "A configured licensed super-resolution model and validated full-frame export are required."),
+        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Bundled learned ESPCN x3 luma backend with tiled host inference. Not an approved editor/export tool, exact 1080p converter or 4K pipeline."),
         AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "A configured licensed artistic model and validated preview/export are required."),
         AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "Fail-closed: validated sexual/violent/hateful coverage is not supplied.")
     )
@@ -122,7 +126,9 @@ object AiFeatureRegistry {
                 "Deterministic local signal analysis, not learned AI. Review suggestions before applying edits.")
         }
         if (id == AiFeatureId.WORD_TIMED_SUBTITLES) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "Bundled English CTC supports experimental word-by-word captions in Text → Captions. This protected AI switch remains OFF: multilingual/full-phrase karaoke and device/safety acceptance are incomplete.", requirements)
+            "Bundled English CTC supports word-by-word and full-phrase karaoke experiments. New inference is blocked by global moderation; multilingual word alignment and device acceptance are incomplete.", requirements)
+        if (id == AiFeatureId.ONNX_UPSCALING) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
+            "Pinned ESPCN x3 luma weights are bundled for model evaluation. User-content inference is blocked by global moderation; editor integration, 4K processing and device/image-quality acceptance are incomplete.", requirements)
         if (id == AiFeatureId.CONTENT_MODERATION) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
             "No validated offline sexual/violent/hateful classifier. Protected AI actions remain OFF; pixel heuristics are not moderation.", requirements)
         val bundled = mediaPipeModelFor(id)
@@ -131,8 +137,16 @@ object AiFeatureRegistry {
                 val available = if (bundled != null) BundledMediaPipeModels.modelFile(context, bundled).isFile
                     else WhisperCaptionEngine.isModelReady(context)
                 AiFeatureAvailability(id, if (available) AiAvailability.READY else AiAvailability.MODEL_MISSING,
-                    if (available) "Local model bytes available. Backend readiness is not full-clip/editor/safety approval."
-                    else "Bundled/local model is missing or could not be materialized; no network request was made.",
+                    if (available) {
+                        val protectedAction = when (id) {
+                            AiFeatureId.SUBTITLES -> ProtectedAiAction.WHISPER_CAPTIONS
+                            AiFeatureId.BACKGROUND_REPLACE -> ProtectedAiAction.BACKGROUND_REPLACEMENT
+                            else -> null
+                        }
+                        if (protectedAction != null) {
+                            "Local model bytes are available, but ${GlobalModerationEnforcement.statusMessage(protectedAction)}"
+                        } else "Local model bytes available. Backend readiness is not full-clip/editor/safety approval."
+                    } else "Bundled/local model is missing or could not be materialized; no network request was made. Protected user-content AI also remains blocked until moderation is approved.",
                     requirements, if (available) requirements.map { it.id } else emptyList())
             } catch (cancelled: CancellationException) {
                 throw cancelled

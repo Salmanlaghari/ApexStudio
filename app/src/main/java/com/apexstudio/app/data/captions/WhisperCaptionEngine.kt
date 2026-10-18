@@ -3,6 +3,8 @@ package com.apexstudio.app.data.captions
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.packs.download.PackManager
 import kotlinx.coroutines.Dispatchers
@@ -147,6 +149,8 @@ object WhisperCaptionEngine {
         trimEndMs: Long = Long.MAX_VALUE,
         onProgress: (Float) -> Unit = {}
     ): List<CaptionSegment>? = withContext(Dispatchers.IO) {
+        // Enforce before model materialization, PCM decode, inference, or progress that implies success.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
         WhisperInferenceGate.withLock {
         val appContext = context.applicationContext
         installBundledModel(appContext)

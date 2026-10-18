@@ -108,6 +108,9 @@ data class MediaClip(
     // Per-clip normalized video crop. Absent in older project JSON; the
     // full-frame default preserves their prior preview/export behavior.
     val videoCrop: VideoCropSettings = VideoCropSettings(),
+    // Offline face-reframe crop samples in absolute source-media time.
+    // Null for existing projects; this geometry is persisted for explicit editor integration.
+    val faceCropTrack: FaceCropTrack? = null,
     // PiP overlay transform — only meaningful when type == ClipType.OVERLAY.
     // The live preview (PipOverlayCanvas) and the export (PipOverlayGlEffect)
     // resolve these against the same frame geometry, so what you drag on

@@ -7,6 +7,8 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,7 @@ object LocalWhisperSubtitles {
         language: String = WhisperCaptionEngine.LANG_AUTO,
         onProgress: (Float) -> Unit = {},
     ): SubtitleResult? = withContext(Dispatchers.IO) {
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
         val local = audioFile.canonicalFile
         if (!local.isFile || local.length() == 0L) return@withContext null
         coroutineContext.ensureActive()
@@ -222,6 +225,7 @@ class OnnxCtcWordAligner(
         wordTexts: List<String>,
         onProgress: (Float, String) -> Unit = { _, _ -> },
     ): CtcAlignmentResult = withContext(Dispatchers.Default) {
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WORD_ALIGNMENT)
         val audio = audioFile.canonicalFile
         val model = modelFile.canonicalFile
         if (!audio.isFile || audio.length() == 0L) throw IllegalArgumentException("Local audio file is unavailable")

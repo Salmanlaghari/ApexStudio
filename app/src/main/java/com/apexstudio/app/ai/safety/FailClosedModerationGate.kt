@@ -73,7 +73,10 @@ class FailClosedModerationGate(
             deny("classifier returned incomplete or invalid scores")
         }
         val flagged = SafetyCategory.entries.filterTo(linkedSetOf()) { scores.scores.getValue(it) >= thresholds.getValue(it) }
-        return ModerationDecision(allowed = flagged.isEmpty(), flagged = flagged, scores = scores.scores)
+        if (flagged.isNotEmpty()) {
+            deny("content was flagged for required categories: ${flagged.joinToString()}")
+        }
+        return ModerationDecision(allowed = true, flagged = emptySet(), scores = scores.scores)
     }
 
     private fun deny(reason: String): Nothing = throw AiModelUnavailableException(

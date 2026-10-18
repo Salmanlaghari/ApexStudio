@@ -176,6 +176,11 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.coil.compose)
 
+  // Local gesture camera: CameraX preview + lifecycle-bound frame analysis.
+  implementation("androidx.camera:camera-camera2:1.4.1")
+  implementation("androidx.camera:camera-lifecycle:1.4.1")
+  implementation("androidx.camera:camera-view:1.4.1")
+
   // Media3 & Video/Audio Processing
   implementation("androidx.media3:media3-exoplayer:1.5.0")
   implementation("androidx.media3:media3-ui:1.5.0")

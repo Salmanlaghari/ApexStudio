@@ -97,6 +97,7 @@ fun EditorScreen(
     var showAiPanel by remember { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
+    var showGesturePanel by remember { mutableStateOf(false) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
     // Phase 3: saved projects for History/Drafts panel.
@@ -752,7 +753,11 @@ fun EditorScreen(
     if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
         showAiPanel = false
         showLocalAnalysis = true
+    }, onOpenGestures = {
+        showAiPanel = false
+        showGesturePanel = true
     })
+    if (showGesturePanel) EditorGestureOverlay(vm, onClose = { showGesturePanel = false })
     if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
         onPreviewSourceTime = { analyzedClipId, sourceMs ->
             val clips = vm.state.value.project?.clips.orEmpty()

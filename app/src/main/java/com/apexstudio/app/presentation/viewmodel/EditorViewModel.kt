@@ -60,6 +60,10 @@ class EditorViewModel(
     internal var faceTrackReviewJob: Job? = null
     internal var faceTrackReviewToken: AiCancellationToken? = null
 
+    internal val _gestureEditing = MutableStateFlow(GestureEditingUiState())
+    val gestureEditing: StateFlow<GestureEditingUiState> = _gestureEditing.asStateFlow()
+    internal var editorGestureSession: EditorGestureSession? = null
+
     /**
      * Background-replace UI state (MediaPipe person segmentation,
      * PR-G). Instance-scoped so it can't bleed between editors.
@@ -191,6 +195,7 @@ class EditorViewModel(
         localAnalysisJob?.cancel()
         faceTrackReviewToken?.cancel()
         faceTrackReviewJob?.cancel()
+        endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()
         exportEngine?.release()

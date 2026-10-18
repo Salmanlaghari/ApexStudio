@@ -262,7 +262,12 @@ internal fun EditorViewModel.updateClip(
 ) {
     _state.update { s ->
         val proj = s.project ?: return@update s
-        val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
+        val newClips = proj.clips.map { original ->
+            if (original.id != clipId) original else {
+                val changed = transform(original)
+                if (changed.uri != original.uri) changed.copy(faceCropTrack = null) else changed
+            }
+        }
         s.copy(project = proj.copy(clips = newClips))
     }
     if (persist) persistProject()
@@ -619,6 +624,8 @@ private fun rippleOverlays(
 }
 
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
+    val source = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (source.durationMs <= 0L) return
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
     // to 100ms) for the STATE mirror. The LIVE flow is clamped
@@ -636,11 +643,11 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         val trimTarget = proj.clips.firstOrNull { it.id == clipId }
         var rippled = proj.clips
         if (trimTarget != null && isMainTrack(trimTarget)) {
-            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 100L).coerceAtLeast(0L))
+            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 1L).coerceAtLeast(0L))
             // Guard the clamp: minOf keeps coerceIn's min <= max when
             // the clip is under 100ms (Kilo CRITICAL: IllegalArgumentException).
             val safeEnd = endMs.coerceIn(
-                minOf(safeStart + 100L, trimTarget.durationMs).coerceAtLeast(safeStart),
+                safeStart + minOf(100L, trimTarget.durationMs - safeStart),
                 trimTarget.durationMs
             )
             val oldDur = trimTarget.effectiveDurationMs()
@@ -652,9 +659,11 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         }
         val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
-                val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
+                // Preserve a valid requested source in-point even when less than 100 ms
+                // remains. Pulling the opposite handle backward makes a tail trim jump.
+                val safeStart = startMs.coerceIn(0L, (c.durationMs - 1L).coerceAtLeast(0L))
                 val safeEnd = endMs.coerceIn(
-                    minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
+                    safeStart + minOf(100L, c.durationMs - safeStart),
                     c.durationMs
                 )
                 // Overlays use absolute timeline placement, so moving the
@@ -698,6 +707,7 @@ fun EditorViewModel.closeTrimPanel() = _state.update { it.copy(trimPanelOpen = f
 fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
     val clips = _state.value.project?.clips ?: return
     val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
     val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
     val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
     trimClip(clipId, newStart, clip.trimEndMs)
@@ -707,8 +717,13 @@ fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
 fun EditorViewModel.setTrimEndAtPlayhead(clipId: String) {
     val clips = _state.value.project?.clips ?: return
     val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
     val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
-    val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+    // A valid short clip (or a restored in-point close to the source end) may have
+    // less than 100 ms remaining. Never construct a reversed coerceIn range.
+    val start = clip.trimStartMs.coerceIn(0L, clip.durationMs)
+    val minimumEnd = start + minOf(100L, clip.durationMs - start)
+    val newEnd = playhead.coerceIn(minimumEnd, clip.durationMs)
     trimClip(clipId, clip.trimStartMs, newEnd)
 }
 
@@ -779,7 +794,8 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                             uri = result.outputUri,
                             durationMs = result.durationMs,
                             trimStartMs = 0L,
-                            trimEndMs = result.durationMs
+                            trimEndMs = result.durationMs,
+                            faceCropTrack = null,
                         )
                         _state.update { s ->
                             val p = s.project ?: return@update s

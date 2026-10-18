@@ -16,6 +16,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
@@ -158,6 +160,8 @@ object BackgroundReplaceEngine {
         outputFile: File,
         onProgress: (Float) -> Unit = {}
     ): File = withContext(processingDispatcher) {
+        // Do not load the segmenter, decode media, or create an output while moderation is unavailable.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT)
         val safe = settings.sanitized()
         val appContext = context.applicationContext
         val model = modelFile(appContext)

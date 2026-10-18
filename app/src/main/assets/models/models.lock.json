@@ -89,6 +89,14 @@
       "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/config.json",
       "license": "Apache-2.0",
       "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "super_resolution/super-resolution-10.onnx",
+      "bytes": 240078,
+      "sha256": "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e",
+      "source": "https://huggingface.co/onnxmodelzoo/super-resolution-10/resolve/395472c4b6b92f788357237983d83fd913cfe7e3/super-resolution-10.onnx",
+      "license": "Apache-2.0",
+      "licenseFile": "super_resolution/LICENSE"
     }
   ]
 }

@@ -3,6 +3,8 @@ package com.apexstudio.app.presentation.viewmodel
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
@@ -131,6 +133,14 @@ fun EditorViewModel.applyBackgroundReplace(
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED,
             message = "Background replace works on video clips."
+        )
+        return
+    }
+    if (!GlobalModerationEnforcement.readiness.approved) {
+        _backgroundUi.value = _backgroundUi.value.copy(
+            phase = BackgroundPhase.FAILED,
+            progress01 = 0f,
+            message = GlobalModerationEnforcement.statusMessage(ProtectedAiAction.BACKGROUND_REPLACEMENT),
         )
         return
     }
@@ -271,7 +281,8 @@ private suspend fun EditorViewModel.finishBackgroundApply(
     updateClip(expected.clipId) { current ->
         current.copy(
             uri = Uri.fromFile(processed).toString(),
-            backgroundReplace = effective
+            backgroundReplace = effective,
+            faceCropTrack = null,
         )
     }
     // Do not delete the previous processed output. Undo/history snapshots
@@ -301,7 +312,7 @@ fun EditorViewModel.restoreOriginalBackground(clipId: String) {
     }
     pushUndo()
     updateClip(clipId) { current ->
-        current.copy(uri = settings.sourceUri, backgroundReplace = null)
+        current.copy(uri = settings.sourceUri, backgroundReplace = null, faceCropTrack = null)
     }
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.IDLE, progress01 = 0f,

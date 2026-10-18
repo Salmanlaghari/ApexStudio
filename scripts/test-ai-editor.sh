@@ -9,6 +9,10 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AiToolsCatalogTest' \
   --tests '*EditorLocalAnalysisTest' \
   --tests '*EditorFaceTrackReviewTest' \
+  --tests '*EditorFaceCropApplyTest' \
+  --tests '*EditorGestureControllerTest' \
+  --tests '*FaceCropTrackTest' \
+  --tests '*FaceCropGlEffectTest' \
   --tests '*EditorWordCaptionTest' \
   --tests '*TextSpriteRendererKaraokeTest' \
   --tests '*WhisperCaptionBoundsTest' \

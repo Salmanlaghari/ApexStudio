@@ -27,7 +27,7 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
             "MEDIAPIPE_POSE" -> "Pose & skeleton overlay"
             "MEDIAPIPE_HAND" -> "Hand & gesture control"
             "ONNX_BACKGROUND_REMOVAL" -> "AI background removal"
-            "ONNX_UPSCALING" -> "AI upscale · 1080p / 4K"
+            "ONNX_UPSCALING" -> "AI upscale · ESPCN x3 backend"
             "ONNX_STYLE_TRANSFER" -> "Artistic style transfer"
             "CONTENT_MODERATION" -> "Content safety"
             else -> name.lowercase().split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
@@ -52,7 +52,11 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
 }
 
 @Composable
-fun AiToolsOverlay(onClose: () -> Unit, onOpenLocalAnalysis: (() -> Unit)? = null) {
+fun AiToolsOverlay(
+    onClose: () -> Unit,
+    onOpenLocalAnalysis: (() -> Unit)? = null,
+    onOpenGestures: (() -> Unit)? = null,
+) {
     val context = LocalContext.current.applicationContext
     var cards by remember { mutableStateOf<List<AiToolCard>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -60,7 +64,7 @@ fun AiToolsOverlay(onClose: () -> Unit, onOpenLocalAnalysis: (() -> Unit)? = nul
     LaunchedEffect(context) {
         try {
             cards = withContext(Dispatchers.IO) { aiToolCards(AiFeatureRegistry.all(context)) }
-            message = "Bundled model availability is not safety or editor approval. Protected AI stays OFF without validated moderation and integration. Ordinary non-AI analysis is separate. Existing Captions and Background tools use bundled local models; no download starts here."
+            message = "Protected user-content AI is blocked: no app-reviewed offline classifier validates sexual, violent, and hateful coverage. Captions and Background Apply will not run; ordinary editing and informational offline analysis/review remain available. Model presence is not moderation approval. No download starts here."
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -71,5 +75,6 @@ fun AiToolsOverlay(onClose: () -> Unit, onOpenLocalAnalysis: (() -> Unit)? = nul
     }
     AiToolsPanel(tools = cards, processing = loading, progress = 0f, message = message,
         onToggle = { _, _ -> message = "This feature is not ready; no changes were made." },
-        onCancel = onClose, onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis)
+        onCancel = onClose, onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
+        onOpenGestures = onOpenGestures)
 }

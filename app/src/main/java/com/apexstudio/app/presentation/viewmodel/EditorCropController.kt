@@ -21,12 +21,13 @@ fun EditorViewModel.updateVideoCrop(clipId: String, crop: VideoCropSettings) {
             // Photo preview and the still-video export both consume photoEdit.crop.
             clip.copy(
                 videoCrop = normalized,
+                faceCropTrack = null,
                 photoEdit = clip.photoEdit.copy(
                     crop = PhotoCropRect(normalized.left, normalized.top, normalized.right, normalized.bottom),
                     cropAspectPreset = normalized.presetId
                 )
             )
-        } else clip.copy(videoCrop = normalized)
+        } else clip.copy(videoCrop = normalized, faceCropTrack = null)
     }
 }
 

@@ -123,6 +123,7 @@ fun EditorViewModel.startExport(
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,
             videoCrop = selected?.videoCrop,
+            faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,

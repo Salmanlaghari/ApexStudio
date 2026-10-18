@@ -24,6 +24,7 @@ import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.audio.DenoiseAudioProcessor
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.AspectCropTransformation
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterGlEffect
@@ -96,6 +97,7 @@ class ExportEngine(private val context: Context) {
         // Preferred per-clip crop source. The legacy editor-state cropRect
         // remains a fallback for older callers/projects.
         val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
+        val faceCropConfig: com.apexstudio.app.data.effect.FaceCropRenderConfig? = null,
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
         // Variable speed curve (PR-E): when non-empty, the export
@@ -242,12 +244,20 @@ class ExportEngine(private val context: Context) {
                 val outputFile = File(outputDir, outputFileName)
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                // Crop before speed changes, on the clipped source clock. This avoids numerical
+                // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
+                val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
+                val activeFaceCrop = config.faceCropConfig
+                if (activeFaceCrop != null) {
+                    videoEffects.add(FaceCropGlEffect.forExport(activeFaceCrop.exportConfig()))
+                }
 
                 // 0. Pro Phase 1: aspect-ratio conversion (16:9 / 9:16 / 1:1).
                 // Runs first on raw frames: center-crops to the target aspect
                 // and scales to the target output size. Skipped when the
                 // aspect is the default 16:9 (zero behavior change).
-                if (config.aspectRatio == "9:16" || config.aspectRatio == "1:1") {
+                // A face track already fixes the output aspect; do not center-crop it a second time.
+                if (activeFaceCrop == null && (config.aspectRatio == "9:16" || config.aspectRatio == "1:1")) {
                     val (tw, th) = AspectCropTransformation.targetSizeFor(
                         config.resolution, config.aspectRatio
                     )
@@ -328,13 +338,10 @@ class ExportEngine(private val context: Context) {
 
                 // 1. Crop (clip-persisted setting takes precedence; old
                 // editor-state cropRect callers remain supported).
-                val cropEffect = if (config.videoCrop != null) {
-                    VideoCropGlEffect.fromSettings(config.videoCrop)
-                } else {
-                    config.cropRect?.let { r ->
-                        VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom)
-                    }
-                }
+                val cropEffect = if (activeFaceCrop == null) {
+                    if (config.videoCrop != null) VideoCropGlEffect.fromSettings(config.videoCrop)
+                    else config.cropRect?.let { r -> VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom) }
+                } else null // Dynamic face crop takes precedence over all static crop sources.
                 cropEffect?.let { videoEffects.add(it) }
 
                 // 1.5 Rotation and Flipping
@@ -435,10 +442,9 @@ class ExportEngine(private val context: Context) {
                 // Media3's experimental speed-changing effect, so a
                 // ramped clip's audio stays in sync and on-pitch —
                 // no mute, no chipmunk effect.
-                buildSpeedProvider(config)?.let { provider ->
-                    val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
-                    audioProcessors.add(speedPair.first)
-                    videoEffects.add(speedPair.second)
+                speedPair?.let {
+                    audioProcessors.add(it.first)
+                    videoEffects.add(it.second)
                 }
 
                 // 6. Keyframe Animation

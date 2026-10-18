@@ -15,7 +15,9 @@ class EditorBackgroundHistoryTest {
     private fun editor() = EditorViewModel().also { vm ->
         val clip = MediaClip(id = "clip", name = "Video", uri = "file:///bg_replace/processed.mp4",
             durationMs = 10_000L, trimEndMs = 10_000L,
-            backgroundReplace = BackgroundReplaceSettings(sourceUri = "file:///original.mp4"))
+            backgroundReplace = BackgroundReplaceSettings(sourceUri = "file:///original.mp4"),
+            faceCropTrack = FaceCropTrack(1080, 1920, 9f / 16f,
+                listOf(FaceCropKeyframe(1_000L, 0f, 0f, 1f, 1f, faceFound = true))))
         vm._state.update { it.copy(project = Project(id = "project", name = "Project",
             clips = listOf(clip), durationMs = 10_000L)) }
     }
@@ -24,8 +26,10 @@ class EditorBackgroundHistoryTest {
         vm.restoreOriginalBackground("clip")
         assertEquals("file:///original.mp4", vm.state.value.project!!.clips.single().uri)
         assertNull(vm.state.value.project!!.clips.single().backgroundReplace)
+        assertNull(vm.state.value.project!!.clips.single().faceCropTrack)
         assertEquals("file:///bg_replace/processed.mp4", vm.undoStack.single().single().uri)
         assertNotNull(vm.undoStack.single().single().backgroundReplace)
+        assertNotNull(vm.undoStack.single().single().faceCropTrack)
     }
     @Test fun restoreInvalidatesActiveRequestBeforeChangingClip() {
         val vm = editor(); val job = Job()

@@ -8,6 +8,8 @@ import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.ai.mediapipe.FaceTrackSmoother
 import com.apexstudio.app.ai.mediapipe.TrackedFace
+import com.apexstudio.app.domain.model.FaceCropKeyframe
+import com.apexstudio.app.domain.model.FaceCropTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -28,6 +30,24 @@ data class FaceTrackAnalysisResult(
     val samples: List<FaceTrackSample>,
 ) {
     val sampledFrameCount: Int get() = samples.size
+
+    /** Persist only the actual decoded sample timestamps and their measured crop geometry. */
+    fun toPersistedCropTrack(outputAspectRatio: Float): FaceCropTrack = FaceCropTrack(
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
+        outputAspectRatio = outputAspectRatio,
+        keyframes = samples.map { sample ->
+            val crop = sample.reframe.crop
+            FaceCropKeyframe(
+                sourceTimestampMs = sample.timestampMs,
+                left = crop.left,
+                top = crop.top,
+                right = crop.right,
+                bottom = crop.bottom,
+                faceFound = sample.reframe.faceFound,
+            )
+        },
+    )
 }
 
 /** Pure bounded sampling and bitmap-sizing helpers; exposed for deterministic unit tests. */

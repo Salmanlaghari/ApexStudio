@@ -246,7 +246,7 @@ fun EditorViewModel.applyLocalAutoCrop(): Boolean {
             right = crop.crop.right,
             bottom = crop.crop.bottom,
             presetId = "local-signal"
-        ))
+        ), faceCropTrack = null)
     }
     clearLocalAnalysisAfterApply("Reviewed 9:16 signal-based crop applied. Undo is available in the editor.")
     return true

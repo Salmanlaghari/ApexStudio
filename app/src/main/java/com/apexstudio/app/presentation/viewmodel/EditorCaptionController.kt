@@ -2,6 +2,8 @@ package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import com.apexstudio.app.ai.subtitles.EnglishWordAlignment
 import com.apexstudio.app.ai.subtitles.TimingPrecision
@@ -202,6 +204,17 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     }
     if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return
     captionJob?.cancel()
+    captionJob = null
+    if (!GlobalModerationEnforcement.readiness.approved) {
+        _captionUi.value = _captionUi.value.copy(
+            phase = CaptionPhase.FAILED,
+            progress01 = 0f,
+            segmentsAdded = 0,
+            requestId = null,
+            message = GlobalModerationEnforcement.statusMessage(ProtectedAiAction.WHISPER_CAPTIONS),
+        )
+        return
+    }
     val request = UUID.randomUUID().toString()
     val language = _captionUi.value.language
     val timingMode = _captionUi.value.timingMode

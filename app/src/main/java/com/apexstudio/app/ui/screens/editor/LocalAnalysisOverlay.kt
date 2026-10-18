@@ -11,6 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
 import java.util.Locale
@@ -56,6 +58,13 @@ fun LocalAnalysisOverlay(
             Text("Samples local video frames with the bundled face model. Track IDs are temporary associations, not identities. Review sampled detections and crop candidates; nothing is applied. This is not real-time preview, export, or content moderation. Cancel takes effect between decoder/inference calls.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
+            val selectedFaceCropClip = editor.project?.clips?.firstOrNull { it.id == editor.selectedClipId && it.faceCropTrack != null }
+            if (selectedFaceCropClip != null) {
+                OutlinedButton(onClick = { vm.clearFaceCropTrack(selectedFaceCropClip.id) },
+                    modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text("Clear existing face reframe")
+                }
+            }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(FaceReframeReviewTarget.entries) { target ->
                     FilterChip(selected = faceReview.reframeTarget == target,
@@ -179,7 +188,15 @@ fun LocalAnalysisOverlay(
                             }
                         }
                     }
-                    Text("Review marks only record that you inspected a sample. No crop track is applied or exported.",
+                    val allReviewed = result.samples.isNotEmpty() && result.samples.all {
+                        it.timestampMs in faceReview.reviewedSampleTimestamps
+                    }
+                    Button(onClick = { vm.applyReviewedFaceCropTrack() },
+                        enabled = allReviewed && GlobalModerationEnforcement.readiness.approved,
+                        modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Text("Apply reviewed reframe")
+                    }
+                    Text(GlobalModerationEnforcement.statusMessage(ProtectedAiAction.FACE_AWARE_REFRAME),
                         modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall,
                         color = ApexPalette.TextSecondary)
                 }

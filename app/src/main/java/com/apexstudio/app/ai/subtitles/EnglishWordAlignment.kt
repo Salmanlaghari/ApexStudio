@@ -7,6 +7,8 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import kotlinx.coroutines.Dispatchers
@@ -148,6 +150,7 @@ object EnglishWordAlignment {
         sourceEndMs: Long,
         onProgress: (Float) -> Unit = {},
     ): List<WordCue> = withContext(Dispatchers.Default) {
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WORD_ALIGNMENT)
         if (sourceStartMs < 0L || sourceEndMs <= sourceStartMs) {
             fail(EnglishAlignmentFailure.INVALID_RANGE, "Source trim must have a non-negative start and a later end")
         }

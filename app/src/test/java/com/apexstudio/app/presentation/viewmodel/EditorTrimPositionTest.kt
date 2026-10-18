@@ -36,6 +36,33 @@ class EditorTrimPositionTest {
         assertEquals(7_000L, vm.state.value.project!!.clips.single().trimEndMs)
     }
 
+    @Test fun setEndOnSub100msClipDoesNotConstructReversedBounds() {
+        val vm = editor(listOf(clip("short", 40L)))
+        vm._playerPosition.value = 20L
+        vm.setTrimEndAtPlayhead("short")
+        val result = vm.state.value.project!!.clips.single()
+        assertEquals(0L, result.trimStartMs)
+        assertEquals(40L, result.trimEndMs)
+    }
+
+    @Test fun setEndNearSourceEndKeepsTheMaximumAvailableSpan() {
+        val vm = editor(listOf(clip("tail", 1_000L).copy(trimStartMs = 980L)))
+        vm._playerPosition.value = 5L
+        vm.setTrimEndAtPlayhead("tail")
+        val result = vm.state.value.project!!.clips.single()
+        assertEquals(980L, result.trimStartMs)
+        assertEquals(1_000L, result.trimEndMs)
+    }
+
+    @Test fun playheadTrimRejectsEmptySourceWithoutHistoryMutation() {
+        val source = clip("empty", 0L)
+        val vm = editor(listOf(source))
+        vm.setTrimStartAtPlayhead("empty")
+        vm.setTrimEndAtPlayhead("empty")
+        assertEquals(source, vm.state.value.project!!.clips.single())
+        assertTrue(vm.undoStack.isEmpty())
+    }
+
     @Test fun importedMusicKeepsActualSourceDurationAndCapturedPosition() {
         val vm = editor(listOf(clip("main", 10_000L)))
         vm._playerPosition.value = 1_000L

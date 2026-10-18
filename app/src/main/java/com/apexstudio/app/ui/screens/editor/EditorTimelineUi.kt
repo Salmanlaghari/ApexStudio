@@ -354,6 +354,8 @@ fun TimelineTrackArea(
             onReorderClips = onReorderClips,
             onAddMedia = { type -> onAddMedia(type) },
             onSplitClip = onSplitClip,
+            onOpenSpeed = onOpenSpeed,
+            onOpenTrim = onOpenTrim,
             onDuplicateClip = onDuplicateClip,
             onDeleteClip = onDeleteClip,
             onZoomChange = { newZoom ->

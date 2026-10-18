@@ -196,6 +196,9 @@ fun VideoTimeline(
     onZoomChange: (Float) -> Unit = {},
     transitions: List<ClipTransition> = emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
+    // Long-press menu: clip-level Speed and Trim (P2/P3).
+    onOpenSpeed: () -> Unit = {},
+    onOpenTrim: () -> Unit = {},
     modifier: Modifier = Modifier,
     // Pro-timeline interactions (all optional; default no-op keeps legacy behavior).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
@@ -765,6 +768,12 @@ fun VideoTimeline(
                                     dragAccumulatedOffsetPx = 0f
                                     targetDropIndex = -1
                                 },
+                                onSplitClip = onSplitClip,
+                                onDuplicateClip = onDuplicateClip,
+                                onDeleteClip = onDeleteClip,
+                                onOpenSpeed = onOpenSpeed,
+                                onOpenTrim = onOpenTrim,
+                                playheadMsProvider = playheadMsProvider,
                                 onMoveKeyframe = onMoveKeyframe,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1110,6 +1119,8 @@ fun VideoTimeline(
     frameIntervalMs: Long = 1000L,
     transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
+    onOpenSpeed = onOpenSpeed,
+    onOpenTrim = onOpenTrim,
     modifier: Modifier = Modifier,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
@@ -1196,6 +1207,8 @@ fun VideoTimeline(
         onMoveClipOffset = onMoveClipOffset,
         onDeleteClips = onDeleteClips,
         onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
+        onOpenSpeed = onOpenSpeed,
+        onOpenTrim = onOpenTrim,
         onMoveKeyframe = onMoveKeyframe,
         onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
         onMoveTextKeyframe = onMoveTextKeyframe,
@@ -1964,8 +1977,20 @@ private fun TimelineVideoTrack(
     onReorderByDrag: (clipId: String, deltaX: Float) -> Unit = { _, _ -> },
     onReorderByDragEnd: () -> Unit = {},
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    // Long-press context menu (P2/P3): Split / Duplicate / Speed /
+    // Trim / Delete, offered directly on the clip. The playhead
+    // provider makes "Split at playhead" land wherever the user is
+    // currently scrubbed to — the second-by-second edit path.
+    onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
+    onDuplicateClip: (clipId: String) -> Unit = {},
+    onDeleteClip: (clipId: String) -> Unit = {},
+    onOpenSpeed: () -> Unit = {},
+    onOpenTrim: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+
+    // Which clip's long-press menu is open (null = dismissed).
+    var contextMenuClipId by remember { mutableStateOf<String?>(null) }
     // Timeline-global start offset for each V1 clip (keyframes are timeline-global).
     val clipTimelineStarts = remember(videoClips) {
         val starts = mutableListOf<Long>()
@@ -2057,8 +2082,9 @@ private fun TimelineVideoTrack(
                             shape = RoundedCornerShape(4.dp)
                         )
                         .pointerInput(clip.id, isSelected) {
-                            // Direct finger-drag reorder for the selected clip (no long-press needed).
-                            // Long-press drag (below) remains as the discoverable alternative.
+                            // Direct finger-drag reorder for the SELECTED clip (no long-press
+                            // needed).
+                            // Long-press itself now opens the clip context menu (see below).
                             if (isSelected && !multiSelectMode) {
                                 detectDragGestures(
                                     onDrag = { change, dragAmount ->
@@ -2081,9 +2107,20 @@ private fun TimelineVideoTrack(
                                 onDragCancel = { onDragEnd() }
                             )
                         }
-                        .clickable {
-                            if (multiSelectMode) onToggleMultiSelect(clip.id)
-                            else onSelectClip(clip.id)
+                        .pointerInput(clip.id) {
+                            detectTapGestures(
+                                onTap = {
+                                    if (multiSelectMode) onToggleMultiSelect(clip.id)
+                                    else onSelectClip(clip.id)
+                                },
+                                onLongPress = {
+                                    // Long-press opens the clip context menu
+                                    // (Split / Duplicate / Speed / Trim /
+                                    // Delete) on the video layer itself.
+                                    onSelectClip(clip.id)
+                                    contextMenuClipId = clip.id
+                                }
+                            )
                         }
                 ) {
                     // Filmstrip: dp-interval cells (one frame per
@@ -2259,6 +2296,53 @@ private fun TimelineVideoTrack(
                                 .fillMaxWidth()
                                 .height(12.dp)
                                 .align(Alignment.BottomCenter)
+                        )
+                    }
+
+                    // Long-press context menu (P2/P3): every action the
+                    // clip bar exposes, reachable straight from the clip.
+                    // Split uses the LIVE playhead, so the Second-by-second
+                    // edit flow needs no detour through the toolbar.
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = contextMenuClipId == clip.id,
+                        onDismissRequest = { contextMenuClipId = null }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Split at playhead") },
+                            onClick = {
+                                contextMenuClipId = null
+                                onSplitClip(clip.id, playheadMsProvider())
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Duplicate") },
+                            onClick = {
+                                contextMenuClipId = null
+                                onDuplicateClip(clip.id)
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Speed") },
+                            onClick = {
+                                contextMenuClipId = null
+                                onSelectClip(clip.id)
+                                onOpenSpeed()
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Trim") },
+                            onClick = {
+                                contextMenuClipId = null
+                                onSelectClip(clip.id)
+                                onOpenTrim()
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                contextMenuClipId = null
+                                onDeleteClip(clip.id)
+                            }
                         )
                     }
                 }

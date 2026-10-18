@@ -404,8 +404,13 @@ internal data class EnglishTranscriptTokens(
     val wordIndices: IntArray,
 )
 
+internal const val MAX_ENGLISH_TRANSCRIPT_CHARACTERS = 4_096
+
 internal fun tokenizeEnglishTranscript(text: String): EnglishTranscriptTokens {
     // Kept independent of Context and model installation; mirror the public backend's strict parser.
+    if (text.length > MAX_ENGLISH_TRANSCRIPT_CHARACTERS) {
+        throw IllegalArgumentException("Transcript exceeds the $MAX_ENGLISH_TRANSCRIPT_CHARACTERS-character alignment limit")
+    }
     if (text.isBlank()) throw IllegalArgumentException("Transcript has no English words")
     val punctuation = text.all { ch ->
         ch in 'A'..'Z' || ch in 'a'..'z' || ch == '\'' || ch.isAsciiWhitespace() ||

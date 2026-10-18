@@ -7,6 +7,22 @@ import android.util.Log
 import com.apexstudio.app.domain.model.AudioTrack
 import kotlin.math.abs
 
+/** Converts a project playhead position to the corresponding source-media position. */
+internal object AudioPlaybackPosition {
+    fun sourcePositionMs(track: AudioTrack, timelinePositionMs: Long): Long? {
+        val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
+        val sourceStartMs = track.trimStartMs.coerceAtLeast(0L)
+        val sourceEndMs = minOf(track.trimEndMs, track.sourceEndMs).coerceAtLeast(0L)
+        // Compare ordered, non-negative endpoints before subtraction to avoid malformed-data overflow.
+        if (sourceEndMs <= sourceStartMs || timelinePositionMs < timelineStartMs) return null
+        val sourceLengthMs = sourceEndMs - sourceStartMs
+
+        val elapsedMs = timelinePositionMs - timelineStartMs
+        if (elapsedMs >= sourceLengthMs) return null
+        return sourceStartMs + elapsedMs
+    }
+}
+
 /**
  * Multi-track synchronized audio playback engine.
  * Keeps external background music and local audio uploads synchronized with video player playhead.
@@ -16,10 +32,12 @@ class AudioPlaybackManager(private val context: Context) {
     private val playerMap = mutableMapOf<String, MediaPlayer>()
     private var isPlaying = false
     private var currentPositionMs = 0L
+    private var lastTracks: List<AudioTrack> = emptyList()
 
     fun sync(isPlaying: Boolean, positionMs: Long, tracks: List<AudioTrack>) {
         this.isPlaying = isPlaying
         this.currentPositionMs = positionMs
+        lastTracks = tracks
 
         val activeTrackIds = tracks.map { it.id }.toSet()
 
@@ -84,14 +102,10 @@ class AudioPlaybackManager(private val context: Context) {
                 val vol = track.effectiveVolumeAt(positionMs)
                 p.setVolume(vol, vol)
 
-                val sourceLengthMs = (track.trimEndMs - track.trimStartMs).coerceAtLeast(0L)
-                val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
-                val timelineEndMs = timelineStartMs + sourceLengthMs
-                if (sourceLengthMs > 0L && positionMs >= timelineStartMs && positionMs < timelineEndMs) {
-                    val sourcePositionMs = track.trimStartMs.coerceAtLeast(0L) +
-                        (positionMs - timelineStartMs).coerceIn(0L, sourceLengthMs)
+                val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
+                if (sourcePositionMs != null) {
                     if (abs(p.currentPosition - sourcePositionMs) > 80) {
-                        p.seekTo(sourcePositionMs.toInt())
+                        p.seekTo(sourcePositionMs, MediaPlayer.SEEK_CLOSEST)
                     }
                     if (isPlaying && !p.isPlaying) {
                         p.start()
@@ -107,8 +121,15 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun seekTo(positionMs: Long) {
         this.currentPositionMs = positionMs
-        for ((_, p) in playerMap) {
-            p.seekTo(positionMs.toInt())
+        val tracksById = lastTracks.associateBy { it.id }
+        for ((id, player) in playerMap) {
+            val track = tracksById[id] ?: continue
+            val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
+            if (sourcePositionMs == null) {
+                if (player.isPlaying) player.pause()
+            } else {
+                player.seekTo(sourcePositionMs, MediaPlayer.SEEK_CLOSEST)
+            }
         }
     }
 
@@ -129,5 +150,6 @@ class AudioPlaybackManager(private val context: Context) {
             }
         }
         playerMap.clear()
+        lastTracks = emptyList()
     }
 }

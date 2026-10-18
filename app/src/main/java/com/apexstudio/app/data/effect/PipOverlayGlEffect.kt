@@ -211,59 +211,44 @@ class PipOverlayGlEffect(
          * (the PiP box is small) so the export never OOMs on a huge photo.
          */
         private fun setupImageTexture() {
-            val bytes = appContext.contentResolver
-                .openInputStream(Uri.parse(overlayUri))?.use { it.readBytes() }
-                ?: throw IllegalArgumentException("Cannot open overlay image $overlayUri")
-            val bounds = android.graphics.BitmapFactory.Options()
-                .apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
-            }
-            var sample = 1
-            while ((bounds.outWidth / sample) > 512 || (bounds.outHeight / sample) > 512) {
-                sample *= 2
-            }
-            val opts = android.graphics.BitmapFactory.Options()
-                .apply { inSampleSize = sample }
-            val bitmap = android.graphics.BitmapFactory
-                .decodeByteArray(bytes, 0, bytes.size, opts)
-                ?: throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
+            val bitmap = OverlayImageDecoder.decode(appContext, overlayUri)
             val tex = IntArray(1)
-            GLES20.glGenTextures(1, tex, 0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
-            )
-            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-            bitmap.recycle()
-            // Fail loudly on a bad upload: the caller degrades gracefully
-            // (PiP disabled) instead of compositing an undefined texture.
-            val glError = GLES20.glGetError()
-            if (glError != GLES20.GL_NO_ERROR) {
-                try {
-                    GLES20.glDeleteTextures(1, tex, 0)
-                } catch (_: Exception) {
-                }
-                throw IllegalStateException(
-                    "PiP image texture upload failed for $overlayUri, glError=$glError"
+            try {
+                GLES20.glGenTextures(1, tex, 0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
                 )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
+                )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
+                )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
+                )
+                android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                // Fail loudly on a bad upload: the caller degrades gracefully
+                // (PiP disabled) instead of compositing an undefined texture.
+                val glError = GLES20.glGetError()
+                if (glError != GLES20.GL_NO_ERROR) {
+                    throw IllegalStateException(
+                        "PiP image texture upload failed for $overlayUri, glError=$glError"
+                    )
+                }
+                imageTextureId = tex[0]
+                hasImageOverlay = true
+            } catch (failure: Exception) {
+                if (tex[0] != 0) try { GLES20.glDeleteTextures(1, tex, 0) } catch (_: Exception) {}
+                throw failure
+            } finally {
+                bitmap.recycle()
             }
-            imageTextureId = tex[0]
-            hasImageOverlay = true
             Log.d(TAG, "PiP image texture ready for $overlayUri")
         }
 

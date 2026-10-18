@@ -180,8 +180,9 @@ data class MediaClip(
     fun isOverlayActiveAt(timeMs: Long): Boolean {
         if (type != ClipType.OVERLAY) return false
         val trimmedMs = (trimEndMs - trimStartMs).coerceAtLeast(0L)
-        val endMs = if (trimEndMs == Long.MAX_VALUE) Long.MAX_VALUE
-        else timelineOffsetMs + trimmedMs
+        val endMs = if (trimEndMs == Long.MAX_VALUE ||
+            (trimmedMs > 0L && timelineOffsetMs > Long.MAX_VALUE - trimmedMs)
+        ) Long.MAX_VALUE else timelineOffsetMs + trimmedMs
         return timeMs in timelineOffsetMs until endMs
     }
 

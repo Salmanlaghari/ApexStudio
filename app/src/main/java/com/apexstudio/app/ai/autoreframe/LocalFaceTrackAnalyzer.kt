@@ -9,6 +9,7 @@ import com.apexstudio.app.ai.LocalMediaSourcePolicy
 import com.apexstudio.app.ai.OfflineVideoFrameDecoder
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.ai.mediapipe.FaceTrackSmoother
+import com.apexstudio.app.ai.mediapipe.NormalizedBox
 import com.apexstudio.app.ai.mediapipe.TrackedFace
 import com.apexstudio.app.domain.model.FaceCropKeyframe
 import com.apexstudio.app.domain.model.FaceCropTrack
@@ -54,12 +55,19 @@ data class FaceTrackAnalysisResult(
 /** Keep reframing on the established face identity while visible; otherwise start from the largest visible track. */
 internal object FaceTrackTargetSelector {
     fun select(faces: List<TrackedFace>, currentTargetId: Long?): TrackedFace? {
-        val usable = faces.filter { face ->
+        val usable = faces.mapNotNull { face ->
             val box = face.detection.box
-            val area = (box.right - box.left) * (box.bottom - box.top)
-            box.left.isFinite() && box.top.isFinite() && box.right.isFinite() && box.bottom.isFinite() &&
-                box.left < box.right && box.top < box.bottom &&
-                area.isFinite() && area > 0f
+            if (!box.left.isFinite() || !box.top.isFinite() || !box.right.isFinite() || !box.bottom.isFinite()) {
+                return@mapNotNull null
+            }
+            val clipped = NormalizedBox(
+                box.left.coerceIn(0f, 1f),
+                box.top.coerceIn(0f, 1f),
+                box.right.coerceIn(0f, 1f),
+                box.bottom.coerceIn(0f, 1f),
+            )
+            if (clipped.left >= clipped.right || clipped.top >= clipped.bottom) return@mapNotNull null
+            face.copy(detection = face.detection.copy(box = clipped))
         }
         return usable.firstOrNull { it.id == currentTargetId }
             ?: usable.maxByOrNull { face ->

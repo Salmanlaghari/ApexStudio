@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.media.MediaMetadataRetriever
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -92,7 +93,7 @@ internal object LocalAudioImportPolicy {
  * bytes into filesDir/ImportedAudio. No synthetic duration fallback is used.
  */
 suspend fun importLocalAudio(context: Context, sourceUri: Uri): ImportedLocalAudio =
-    withContext(Dispatchers.IO) {
+    deliverLocalAudioImport(Dispatchers.IO) { ownFile ->
         val coroutineContext = currentCoroutineContext()
         coroutineContext.ensureActive()
         val resolver = context.contentResolver
@@ -166,6 +167,8 @@ suspend fun importLocalAudio(context: Context, sourceUri: Uri): ImportedLocalAud
         val outputName = LocalAudioImportPolicy.safeFileName(displayName, "Imported audio", mimeType)
         val target = File(directory, "${UUID.randomUUID()}_$outputName")
         val temporary = File(directory, "${target.name}.part")
+        ownFile(temporary)
+        ownFile(target)
         try {
             val input = resolver.openInputStream(sourceUri)
                 ?: throw IOException("The selected provider returned no readable file stream.")
@@ -221,6 +224,28 @@ suspend fun importLocalAudio(context: Context, sourceUri: Uri): ImportedLocalAud
             durationMs = durationMs
         )
     }
+
+/**
+ * The caller owns the files only after withContext has delivered its result.
+ * Its prompt cancellation guarantee can discard an otherwise completed IO result
+ * during dispatch back to the editor, after the copy's own try/catch has finished.
+ * Keep cleanup outside that boundary so leaving the editor cannot orphan the copy.
+ */
+internal suspend fun deliverLocalAudioImport(
+    dispatcher: CoroutineDispatcher,
+    copy: suspend (ownFile: (File) -> Unit) -> ImportedLocalAudio
+): ImportedLocalAudio {
+    val ownedFiles = mutableListOf<File>()
+    return try {
+        withContext(dispatcher) { copy { ownedFiles.add(it) } }
+    } catch (error: Throwable) {
+        ownedFiles.forEach { file ->
+            // Cleanup must not replace the original failure/cancellation.
+            try { file.delete() } catch (_: Exception) { }
+        }
+        throw error
+    }
+}
 
 private const val COPY_BUFFER_BYTES = 64 * 1024
 private const val MAX_IMPORT_BYTES = 2L * 1024L * 1024L * 1024L

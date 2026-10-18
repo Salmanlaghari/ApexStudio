@@ -46,6 +46,23 @@ class ModelsTest {
     }
 
     @Test
+    fun `overlay activity end saturates instead of wrapping near Long maximum`() {
+        val overlay = MediaClip(
+            id = "late-overlay",
+            name = "Late overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 10L,
+            trimEndMs = 10L,
+            type = ClipType.OVERLAY,
+            timelineOffsetMs = Long.MAX_VALUE - 5L
+        )
+
+        assertTrue(overlay.isOverlayActiveAt(Long.MAX_VALUE - 5L))
+        assertTrue(overlay.isOverlayActiveAt(Long.MAX_VALUE - 1L))
+        assertFalse(overlay.isOverlayActiveAt(Long.MAX_VALUE))
+    }
+
+    @Test
     fun `ChromaKeySettings has sensible defaults`() {
         val settings = ChromaKeySettings()
 

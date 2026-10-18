@@ -66,6 +66,14 @@ Overlay source-trim handles now convert physical pointer pixels through the time
 
 Face reframe geometry clips detection boxes to the normalized visible source before choosing a target. Wholly offscreen boxes cannot win by their original area; partially visible faces use their visible area and center. Both single-frame and temporal-track tests retain honest no-face fallback on offscreen-only samples. This is a geometry correction, not a new detector, identity guarantee, approved face-reframe Apply or device-rendering result. All existing protected AI gates remain unchanged.
 
+## Audio import delivery and face-review selection follow-up
+
+Phone-music import now retains ownership of its new partial/final files until the completed IO result is actually delivered back to the editor. Coroutine prompt cancellation during that return dispatch deletes the otherwise orphaned completed copy; successful delivery retains it, and unrelated previous imports are untouched. Cleanup preserves the original error type/message. JVM tests exercise this dispatcher boundary and file ownership, not provider, storage-device or picker acceptance.
+
+The informational face review's own target selector now clips associated detections before ranking visible area or retaining an existing ID. An entirely offscreen old target yields to a visible candidate rather than causing the downstream crop step to report no face. This closes the separate review-selection boundary in addition to the previous reframe-geometry fix; it does not change tracking identity guarantees or enable protected Apply.
+
+Overlay activity checks saturate their end time instead of wrapping when an extreme timeline offset plus retained duration exceeds `Long.MAX_VALUE`. This defensive bound does not add speed-curve-aware overlay playback/export: those visibility windows still use the retained source duration, and speed-ramp parity remains unaccepted. No protected AI gate, bundled model or timeline thumbnail behavior changed.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

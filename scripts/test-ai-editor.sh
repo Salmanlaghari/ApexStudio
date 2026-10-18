@@ -30,9 +30,11 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \
   --tests '*LocalAudioImportPolicyTest' \
+  --tests '*LocalAudioImportDeliveryTest' \
   --tests '*AudioMixerPanelTest' \
   --tests '*MusicExportMixerTest' \
   --tests '*VoiceRecordingTimingTest' \
+  --tests 'com.apexstudio.app.domain.model.ModelsTest' \
   --tests '*OverlayClipTest' \
   --tests '*ClipTimeMappingTest' \
   --tests '*OverlaySplitTrimTest' \

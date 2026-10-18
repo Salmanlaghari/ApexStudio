@@ -44,6 +44,22 @@ class AutoReframeTest {
         }
     }
 
+    @Test fun faceTargetSelectorRanksVisibleClippedAreaAndRejectsWhollyOffscreenCandidates() {
+        val visible = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            8L, FaceDetection(NormalizedBox(.1f, .1f, .5f, .9f), emptyList()))
+        val mostlyOffscreen = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            7L, FaceDetection(NormalizedBox(-2f, .05f, .2f, .95f), emptyList()))
+        val whollyOffscreen = com.apexstudio.app.ai.mediapipe.TrackedFace(
+            9L, FaceDetection(NormalizedBox(1.1f, .1f, 2f, .9f), emptyList()))
+
+        assertEquals(visible, FaceTrackTargetSelector.select(listOf(mostlyOffscreen, visible), null))
+        assertEquals(visible, FaceTrackTargetSelector.select(listOf(whollyOffscreen, visible), 9L))
+        assertEquals(
+            NormalizedBox(0f, .05f, .2f, .95f),
+            FaceTrackTargetSelector.select(listOf(mostlyOffscreen), null)!!.detection.box,
+        )
+    }
+
     @Test fun faceBoxMovesCropToEdgeWithoutLeavingSourceBounds() {
         val face = FaceDetection(NormalizedBox(.84f, .30f, .96f, .50f), emptyList())
         val frame = FaceAwareReframeEngine.cropFor(1920, 1080, 1f, listOf(face), margin = .25f)

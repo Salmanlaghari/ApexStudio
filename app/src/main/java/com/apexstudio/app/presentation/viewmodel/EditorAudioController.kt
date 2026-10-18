@@ -303,13 +303,25 @@ fun EditorViewModel.addAudioTrack(
 
 
 fun EditorViewModel.removeAudioTrack(trackId: String) {
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.filter { it.id != trackId })
-    }
+    var remainingTracks: List<AudioTrack>? = null
+    var remainingDuration: Long? = null
     _state.update { s ->
         val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.filter { it.id != trackId }))
+        val tracks = p.audioTracks.filterNot { it.id == trackId }
+        val duration = computeTimelineDurationMs(p.clips, tracks)
+        remainingTracks = tracks
+        remainingDuration = duration
+        s.copy(
+            project = p.copy(audioTracks = tracks, durationMs = duration),
+            durationMs = duration,
+            playerPositionMs = s.playerPositionMs.coerceAtMost(duration),
+            currentTimeMs = s.currentTimeMs.coerceAtMost(duration)
+        )
     }
+    val tracks = remainingTracks ?: return
+    val duration = remainingDuration ?: return
+    _audio.update { it.copy(tracks = tracks) }
+    _playerPosition.update { it.coerceAtMost(duration) }
     persistProject()
 }
 

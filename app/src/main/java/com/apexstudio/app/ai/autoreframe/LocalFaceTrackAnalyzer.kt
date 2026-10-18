@@ -6,6 +6,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.ai.LocalMediaSourcePolicy
+import com.apexstudio.app.ai.OfflineVideoFrameDecoder
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.ai.mediapipe.FaceTrackSmoother
 import com.apexstudio.app.ai.mediapipe.TrackedFace
@@ -144,17 +145,19 @@ class LocalFaceTrackAnalyzer(
                 timestamps.forEachIndexed { index, timestampMs ->
                     cancellation.throwIfCancelled()
                     currentCoroutineContext().ensureActive()
-                    val bitmap = retriever.getFrameAtTime(
+                    val decoded = OfflineVideoFrameDecoder.decode(
+                        retriever,
                         timestampMs * 1_000L,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        maximumInferenceDimension,
                     )
-                    if (bitmap != null) {
+                    if (decoded != null) {
+                        val bitmap = decoded.bitmap
                         val detections = try {
                             cancellation.throwIfCancelled()
                             currentCoroutineContext().ensureActive()
                             if (sourceWidth == 0) {
-                                sourceWidth = bitmap.width
-                                sourceHeight = bitmap.height
+                                sourceWidth = decoded.sourceWidth
+                                sourceHeight = decoded.sourceHeight
                             }
                             val (targetWidth, targetHeight) = FaceTrackSampling.boundedDimensions(
                                 bitmap.width, bitmap.height, maximumInferenceDimension,

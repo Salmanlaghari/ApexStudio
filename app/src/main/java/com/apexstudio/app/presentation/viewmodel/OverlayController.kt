@@ -3,18 +3,30 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.domain.model.OverlayClip
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.ClipType
-import com.apexstudio.app.domain.model.ClipTimeMapping
 import kotlinx.coroutines.flow.update
 
 /** Signed project-time shift that keeps an overlay's right edge anchored as its source head moves. */
-internal fun overlayTimelineStartShift(clip: MediaClip, newStartMs: Long): Long {
+internal fun overlayTimelineStartShift(
+    clip: MediaClip,
+    newStartMs: Long,
+    newEndMs: Long = clip.trimEndMs
+): Long {
     if (clip.type != ClipType.OVERLAY || newStartMs == clip.trimStartMs) return 0L
-    return if (newStartMs > clip.trimStartMs) {
-        ClipTimeMapping.outputDurationBetweenSourceTimes(clip, clip.trimStartMs, newStartMs)
-    } else {
-        val expanded = clip.copy(trimStartMs = newStartMs)
-        -ClipTimeMapping.outputDurationBetweenSourceTimes(expanded, newStartMs, clip.trimStartMs)
-    }
+    // Speed points are interpreted over the CURRENT trimmed span. After a trim,
+    // that span changes and effectiveDurationMs() can differ from the removed
+    // source segment's duration measured on the old curve. Shifting by the old
+    // curve's segment duration therefore moves the right edge (often visibly
+    // on a ramp). Compare the actual output durations at the SAME tail position:
+    // a properties edit may move both handles, and the removed tail must not be
+    // counted again as a head shift. This applies the tail edit before the head.
+    val endMs = newEndMs.coerceIn(newStartMs, clip.durationMs)
+    val oldOutputDuration = if (endMs > clip.trimStartMs)
+        clip.copy(trimEndMs = endMs).effectiveDurationMs() else 0L
+    val newOutputDuration = clip.copy(
+        trimStartMs = newStartMs,
+        trimEndMs = endMs
+    ).effectiveDurationMs()
+    return oldOutputDuration - newOutputDuration
 }
 
 /**
@@ -100,7 +112,7 @@ fun EditorViewModel.trimOverlayClip(
         val clips = project.clips.map { clip ->
             if (clip.id != clipId) clip
             else window.writeTo(clip).copy(
-                timelineOffsetMs = (clip.timelineOffsetMs + overlayTimelineStartShift(clip, window.startMs))
+                timelineOffsetMs = (clip.timelineOffsetMs + overlayTimelineStartShift(clip, window.startMs, window.endMs))
                     .coerceAtLeast(0L)
             )
         }

@@ -45,4 +45,50 @@ class LocalVideoSceneAnalyzerTest {
         assertEquals(100L, suggestions.smartTrims.single().startMs)
         assertEquals(550L, suggestions.smartTrims.single().endMs)
     }
+
+    @Test fun malformedIntervalsAndNonFiniteScoresNeverReachReview() {
+        val analysis = SceneAnalysis(
+            boundaries = listOf(SceneBoundary(200L, Float.NaN), SceneBoundary(300L, Float.POSITIVE_INFINITY),
+                SceneBoundary(400L, -0.1f), SceneBoundary(500L, 1.1f)),
+            highlights = listOf(
+                Highlight(Long.MAX_VALUE, Long.MIN_VALUE, .8f, "reversed overflow"),
+                Highlight(-1L, 600L, .8f, "negative source"),
+                Highlight(600L, 500L, .8f, "reversed"),
+                Highlight(200L, 600L, Float.NaN, "nan"),
+                Highlight(200L, 600L, Float.NEGATIVE_INFINITY, "infinite"),
+                Highlight(200L, 600L, 1.01f, "invalid score"),
+            ),
+        )
+        val suggestions = LocalSceneSuggestionMapper.map(analysis, 100L, 900L)
+        assertTrue(suggestions.cuts.isEmpty())
+        assertTrue(suggestions.smartTrims.isEmpty())
+    }
+
+    @Test fun duplicateWindowsKeepStrongestScoreAndCutsRemainChronological() {
+        val analysis = SceneAnalysis(
+            boundaries = listOf(SceneBoundary(700L, .3f), SceneBoundary(200L, .4f),
+                SceneBoundary(700L, .9f), SceneBoundary(400L, .5f)),
+            highlights = listOf(Highlight(0L, 600L, .2f, "weak"),
+                Highlight(100L, 600L, .9f, "strong")),
+        )
+        val suggestions = LocalSceneSuggestionMapper.map(analysis, 100L, 900L)
+        assertEquals(listOf(200L, 400L, 700L), suggestions.cuts.map { it.timestampMs })
+        assertEquals(.9f, suggestions.cuts.last().changeScore, 0f)
+        assertEquals(1, suggestions.smartTrims.size)
+        assertEquals(.9f, suggestions.smartTrims.single().score, 0f)
+        assertTrue(suggestions.smartTrims.single().rationale.contains("strong"))
+    }
+
+    @Test fun validIntervalsNearLongLimitRemainSafeAndBounded() {
+        val end = Long.MAX_VALUE
+        val start = end - 1_000L
+        val analysis = SceneAnalysis(emptyList(), listOf(
+            Highlight(start - 500L, end, .5f, "valid"),
+            Highlight(0L, start - 1L, .9f, "before window"),
+        ))
+        val suggestions = LocalSceneSuggestionMapper.map(analysis, start, end)
+        assertEquals(1, suggestions.smartTrims.size)
+        assertEquals(start, suggestions.smartTrims.single().startMs)
+        assertEquals(end, suggestions.smartTrims.single().endMs)
+    }
 }

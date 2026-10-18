@@ -192,7 +192,7 @@ class OverlaySplitTrimTest {
     }
 
     @Test
-    fun trimmingOverlayHeadUsesOutputTimeFromTheOriginalSpeedCurve() {
+    fun trimmingOverlayHeadOnTimelineKeepsTheRightEdgeWithAChangedSpeedCurveSpan() {
         val overlay = MediaClip(
             id = "ramped-overlay",
             name = "ramped-overlay",
@@ -217,11 +217,76 @@ class OverlaySplitTrimTest {
             }
         }
 
+        val originalRightEdge = overlay.timelineOffsetMs + overlay.effectiveDurationMs()
         vm.trimClip(overlay.id, 2_500L, overlay.trimEndMs)
 
         val trimmed = vm.state.value.project!!.clips.single()
-        assertEquals("first 2.5s source segment takes 5s at 0.5x", 11_000L, trimmed.timelineOffsetMs)
         assertEquals(2_500L, trimmed.trimStartMs)
+        assertEquals("the right edge must not drift when speed points are renormalized", originalRightEdge,
+            trimmed.timelineOffsetMs + trimmed.effectiveDurationMs())
+    }
+
+    @Test
+    fun trimmingOverlayHeadInPropertiesKeepsTheRightEdgeWithASpeedRamp() {
+        val overlay = MediaClip(
+            id = "ramped-properties-overlay",
+            name = "ramped-properties-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 10_000L,
+            trimEndMs = 10_000L,
+            timelineOffsetMs = 6_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            speedPoints = listOf(
+                com.apexstudio.app.domain.model.SpeedPoint(0f, 0.5f),
+                com.apexstudio.app.domain.model.SpeedPoint(0.5f, 0.5f),
+                com.apexstudio.app.domain.model.SpeedPoint(1f, 2f),
+            ),
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+        val originalRightEdge = overlay.timelineOffsetMs + overlay.effectiveDurationMs()
+
+        vm.trimOverlayClip(overlay.id, 2_500L, overlay.trimEndMs)
+
+        val trimmed = vm.state.value.project!!.clips.single()
+        assertEquals(2_500L, trimmed.trimStartMs)
+        assertEquals("properties trim must preserve the same right-edge invariant", originalRightEdge,
+            trimmed.timelineOffsetMs + trimmed.effectiveDurationMs())
+    }
+
+    @Test
+    fun simultaneousHeadAndTailTrimDoesNotCountRemovedTailAsHeadMovement() {
+        val source = MediaClip("both", "both", "file:///both.mp4", 10_000L,
+            trimEndMs = 10_000L, timelineOffsetMs = 6_000L, type = ClipType.OVERLAY, trackIndex = 2)
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update { it.copy(project = Project("p", "p", 16_000L,
+                clips = listOf(source)), durationMs = 16_000L) }
+        }
+        vm.trimOverlayClip(source.id, 2_000L, 8_000L)
+        val trimmed = vm.state.value.project!!.clips.single()
+        assertEquals(8_000L, trimmed.timelineOffsetMs)
+        assertEquals(14_000L, trimmed.timelineOffsetMs + trimmed.effectiveDurationMs())
+    }
+
+    @Test
+    fun expandingRampedHeadPreservesRightEdgeWhenThereIsTimelineRoom() {
+        val source = MediaClip("expand", "expand", "file:///expand.mp4", 10_000L,
+            trimStartMs = 2_500L, trimEndMs = 10_000L, timelineOffsetMs = 20_000L,
+            type = ClipType.OVERLAY, trackIndex = 2, speedPoints = listOf(
+                com.apexstudio.app.domain.model.SpeedPoint(0f, .5f),
+                com.apexstudio.app.domain.model.SpeedPoint(1f, 2f)))
+        val shift = overlayTimelineStartShift(source, 0L)
+        val expanded = source.copy(trimStartMs = 0L, timelineOffsetMs = source.timelineOffsetMs + shift)
+        assertTrue(shift < 0L)
+        assertEquals(source.timelineOffsetMs + source.effectiveDurationMs(),
+            expanded.timelineOffsetMs + expanded.effectiveDurationMs())
     }
 
     @Test

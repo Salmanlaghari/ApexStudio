@@ -6,6 +6,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.ai.LocalMediaSourcePolicy
+import com.apexstudio.app.ai.OfflineVideoFrameDecoder
 import com.apexstudio.app.ai.autoreframe.AutoCropSuggestion
 import com.apexstudio.app.ai.autoreframe.SignalAutoCrop
 import kotlinx.coroutines.Dispatchers
@@ -43,19 +44,26 @@ object LocalSceneSuggestionMapper {
     fun map(analysis: SceneAnalysis, sourceStartMs: Long, sourceEndMs: Long): LocalSceneSuggestions {
         require(sourceStartMs >= 0L && sourceEndMs > sourceStartMs)
         val cuts = analysis.boundaries
-            .filter { it.timestampMs > sourceStartMs && it.timestampMs < sourceEndMs }
+            .filter { it.timestampMs > sourceStartMs && it.timestampMs < sourceEndMs &&
+                it.changeScore.isFinite() && it.changeScore in 0f..1f }
+            .sortedWith(compareBy<SceneBoundary> { it.timestampMs }.thenByDescending { it.changeScore })
+            .distinctBy { it.timestampMs }
             .map { SceneCutSuggestion("cut-${it.timestampMs}", it.timestampMs, it.changeScore) }
         val trims = analysis.highlights.mapNotNull { highlight ->
+            // Validate before subtraction: malformed persisted/native-adapter values can otherwise
+            // wrap a reversed interval into a positive duration and reach the review UI.
+            if (highlight.startMs < 0L || highlight.endMs <= highlight.startMs ||
+                !highlight.score.isFinite() || highlight.score !in 0f..1f) return@mapNotNull null
             val start = highlight.startMs.coerceAtLeast(sourceStartMs)
             val end = highlight.endMs.coerceAtMost(sourceEndMs)
-            if (end - start < 100L) null else SmartTrimSuggestion(
+            if (end <= start || end - start < 100L) null else SmartTrimSuggestion(
                 id = "trim-$start-$end",
                 startMs = start,
                 endMs = end,
                 score = highlight.score,
                 rationale = "Heuristic highlight window: ${highlight.reason}; review the frames before applying."
             )
-        }.distinctBy { it.startMs to it.endMs }.sortedByDescending { it.score }
+        }.sortedByDescending { it.score }.distinctBy { it.startMs to it.endMs }
         return LocalSceneSuggestions(cuts, trims)
     }
 }
@@ -105,8 +113,9 @@ class LocalVideoSceneAnalyzer(
             sampleTimes.forEachIndexed { index, timestampMs ->
                 cancellation.throwIfCancelled()
                 currentCoroutineContext().ensureActive()
-                val bitmap = retriever.getFrameAtTime(timestampMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
-                if (bitmap != null) {
+                val decoded = OfflineVideoFrameDecoder.decode(retriever, timestampMs * 1_000L, maximumDimension = 640)
+                if (decoded != null) {
+                    val bitmap = decoded.bitmap
                     try {
                         cancellation.throwIfCancelled()
                         currentCoroutineContext().ensureActive()
@@ -114,7 +123,7 @@ class LocalVideoSceneAnalyzer(
                         frames += frame
                         if (firstDecodedFrame == null) {
                             firstDecodedFrame = frame
-                            sourceAspect = bitmap.width.toFloat() / bitmap.height
+                            sourceAspect = decoded.sourceWidth.toFloat() / decoded.sourceHeight
                         }
                     } finally {
                         bitmap.recycle()

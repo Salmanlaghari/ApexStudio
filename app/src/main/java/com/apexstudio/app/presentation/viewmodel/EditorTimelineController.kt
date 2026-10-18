@@ -675,7 +675,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 // Overlays use absolute timeline placement, so moving the
                 // source head either way also moves the left edge. V1 is
                 // laid out cumulatively and does not use this adjustment.
-                val overlayStartShift = overlayTimelineStartShift(c, safeStart)
+                val overlayStartShift = overlayTimelineStartShift(c, safeStart, safeEnd)
                 c.copy(
                     trimStartMs = safeStart,
                     trimEndMs = safeEnd,

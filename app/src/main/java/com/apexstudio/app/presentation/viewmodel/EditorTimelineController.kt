@@ -578,6 +578,46 @@ fun EditorViewModel.redo() = viewModelScope.launch {
 }
 
 
+/**
+ * CapCut magnet / ripple rule for the main track.
+ *
+ * Any edit that CHANGES V1's length (trim, duplicate — and delete below)
+ * must carry every overlay layer that starts at or after the edit
+ * boundary along by the same delta, otherwise the layers drift away from
+ * the picture they were placed against (the layer-sync complaint).
+ * Anchor is the timeline boundary where the change begins; anything
+ * starting earlier is untouched. Track 0 itself never moves here — its
+ * own layout is derived cumulatively.
+ */
+private fun isMainTrack(c: MediaClip): Boolean =
+    c.trackIndex == 0 &&
+        (c.type == ClipType.VIDEO || c.type == ClipType.IMAGE)
+
+/** Timeline ms where [clipId] starts on the main track (cumulative V1). */
+private fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
+    var acc = 0L
+    for (c in clips) {
+        if (c.id == clipId) return acc
+        if (isMainTrack(c)) acc += c.effectiveDurationMs()
+    }
+    return acc
+}
+
+/** Shift every non-main-track item at/after [anchorMs] by [deltaMs]. */
+private fun rippleOverlays(
+    clips: List<MediaClip>,
+    anchorMs: Long,
+    deltaMs: Long
+): List<MediaClip> {
+    if (deltaMs == 0L) return clips
+    return clips.map { c ->
+        if (c.trackIndex == 0 || c.timelineOffsetMs < anchorMs) c
+        else c.copy(
+            timelineOffsetMs = (c.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
+        )
+    }
+}
+
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
@@ -591,10 +631,32 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     var newDurationMs: Long? = null
     _state.update { s ->
         val proj = s.project ?: return@update s
-        val updatedClips = proj.clips.map { c ->
+        // Ripple: a main-track trim changes V1's length, so overlays
+        // at/after the edit boundary travel with it (CapCut magnet).
+        val trimTarget = proj.clips.firstOrNull { it.id == clipId }
+        var rippled = proj.clips
+        if (trimTarget != null && isMainTrack(trimTarget)) {
+            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 100L).coerceAtLeast(0L))
+            // Guard the clamp: minOf keeps coerceIn's min <= max when
+            // the clip is under 100ms (Kilo CRITICAL: IllegalArgumentException).
+            val safeEnd = endMs.coerceIn(
+                minOf(safeStart + 100L, trimTarget.durationMs).coerceAtLeast(safeStart),
+                trimTarget.durationMs
+            )
+            val oldDur = trimTarget.effectiveDurationMs()
+            val newDur = com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
+                safeEnd - safeStart, trimTarget.speedPoints
+            )
+            val anchor = v1StartBefore(proj.clips, clipId) + minOf(oldDur, newDur)
+            rippled = rippleOverlays(proj.clips, anchor, newDur - oldDur)
+        }
+        val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
                 val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
-                val safeEnd = endMs.coerceIn(safeStart + 100L, c.durationMs)
+                val safeEnd = endMs.coerceIn(
+                    minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
+                    c.durationMs
+                )
                 c.copy(
                     trimStartMs = safeStart,
                     trimEndMs = safeEnd
@@ -842,7 +904,14 @@ fun EditorViewModel.duplicateClip(clipId: String) {
                 target.timelineOffsetMs + (target.trimEndMs - target.trimStartMs)
             } else target.timelineOffsetMs
         )
-        val updated = p.clips + newClip
+        // Ripple: duplicating a main-track clip lengthens V1 after the
+        // original's end, so overlays downstream shift right by that
+        // length — layers stay glued to their scene (CapCut magnet).
+        val rippled = if (isMainTrack(target)) {
+            val extra = target.effectiveDurationMs()
+            rippleOverlays(p.clips, p.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }, extra)
+        } else p.clips
+        val updated = rippled + newClip
         val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
         s.copy(
             project = p.copy(clips = updated, durationMs = newDur),
@@ -878,7 +947,13 @@ fun EditorViewModel.deleteClip(clipId: String) {
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
-        val updated = p.clips.filterNot { it.id == clipId }
+        // Ripple: deleting a main-track clip pulls everything after its
+        // start (other V1 clips by cumulative layout, overlays here) left.
+        val gone = p.clips.firstOrNull { it.id == clipId }
+        val rippled = if (gone != null && isMainTrack(gone)) {
+            rippleOverlays(p.clips, v1StartBefore(p.clips, clipId), -gone.effectiveDurationMs())
+        } else p.clips
+        val updated = rippled.filterNot { it.id == clipId }
         val newSelected = if (s.selectedClipId == clipId) updated.firstOrNull()?.id else s.selectedClipId
         val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
         s.copy(

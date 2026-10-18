@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.ui.components.BuildIdentity
+import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.theme.ApexPalette
 
 // === 1. TOP APP BAR ===
@@ -41,6 +43,10 @@ fun TopAppBarSection(
     onExport: () -> Unit = {}
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
+    var showBuildIdentity by remember { mutableStateOf(false) }
+    if (showBuildIdentity) {
+        BuildIdentityDialog(onDismiss = { showBuildIdentity = false })
+    }
 
     Row(
         modifier = Modifier
@@ -64,14 +70,22 @@ fun TopAppBarSection(
                     .clickable(onClick = onBack)
             )
 
-            Text(
-                text = "ApexStudio",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                maxLines = 1,
-                softWrap = false
-            )
+            Column(modifier = Modifier.clickable { showBuildIdentity = true }) {
+                Text(
+                    text = "ApexStudio",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = "Build ${BuildIdentity.shortCommit}",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 8.sp,
+                    maxLines = 1
+                )
+            }
         }
 
         // Right side: compact controls + small Export button
@@ -200,4 +214,3 @@ fun TopAppBarSection(
         }
     }
 }
-

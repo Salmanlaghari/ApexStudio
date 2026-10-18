@@ -26,6 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +39,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.components.AppTopBar
+import com.apexstudio.app.ui.components.BuildIdentity
+import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 
@@ -44,6 +50,10 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenPacks: () -> Unit = {}
 ) {
+    var showBuildIdentity by remember { mutableStateOf(false) }
+    if (showBuildIdentity) {
+        BuildIdentityDialog(onDismiss = { showBuildIdentity = false })
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -124,9 +134,9 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Default.Info,
                     title = "About ApexStudio",
-                    subtitle = "v1.0.0 • Build 1",
+                    subtitle = "Installed build ${BuildIdentity.shortCommit}",
                     tint = ApexPalette.NeonCyan,
-                    onClick = { }
+                    onClick = { showBuildIdentity = true }
                 )
             }
         }

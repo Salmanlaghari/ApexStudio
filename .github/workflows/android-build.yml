@@ -2,7 +2,7 @@ name: Android CI Build
 
 on:
   push:
-    branches: [ main, master, develop, 'session/**', 'perf/**' ]
+    branches: [ main, master, develop, 'session/**', 'perf/**', 'feature/capcut-real' ]
   pull_request:
     branches: [ main, master, develop ]
   workflow_dispatch:
@@ -84,26 +84,48 @@ jobs:
       - name: Run Lint
         run: ./gradlew lintDebug --no-daemon || true
 
+      - name: Phase 0 interaction regression tests
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            --tests '*PhaseZeroToolbarTest' \
+            --tests '*TimelineClipGestureTest' \
+            --tests '*BuildIdentityTest' \
+            --tests '*ContextualToolbarTest'
+          python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
+
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Build release APK (unsigned)
-        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon || true
+      - name: Verify and identify debug APK
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "APK_SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
+          python3 scripts/apk-provenance.py app/build/outputs/apk/debug/app-debug.apk \
+            --commit "$SHA" --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            --output app/build/outputs/apk/debug/build-provenance.json
+          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/apexstudio-debug-$SHA.apk"
+          echo "### Device-test APK — $SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Compare the editor Build badge / Settings > About with build-provenance.json before testing.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'If installation reports a signature conflict, stop and preserve projects; do not uninstall blindly.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: apexstudio-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          name: apexstudio-debug-${{ env.APK_SOURCE_SHA }}-run-${{ github.run_id }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/build-provenance.json
+          if-no-files-found: error
           retention-days: 14
 
-      - name: Upload release APK
-        if: success()
+      - name: Upload interaction test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apexstudio-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: phase0-test-results-${{ github.run_id }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -265,5 +287,4 @@ jobs:
             bundletool-download-size.txt
           if-no-files-found: ignore
           retention-days: 14
-
 

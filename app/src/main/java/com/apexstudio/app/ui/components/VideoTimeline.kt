@@ -19,7 +19,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollable
@@ -77,6 +76,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import com.apexstudio.app.data.audio.TrackWaveformCache
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -197,8 +197,8 @@ fun VideoTimeline(
     transitions: List<ClipTransition> = emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     // Long-press menu: clip-level Speed and Trim (P2/P3).
-    onOpenSpeed: () -> Unit = {},
-    onOpenTrim: () -> Unit = {},
+    onOpenSpeed: () -> Unit,
+    onOpenTrim: () -> Unit,
     modifier: Modifier = Modifier,
     // Pro-timeline interactions (all optional; default no-op keeps legacy behavior).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
@@ -685,42 +685,6 @@ fun VideoTimeline(
                                 onClipBoundsMeasured = { idx, leftPx, widthPx ->
                                     clipLayoutBounds[idx] = Pair(leftPx, widthPx)
                                 },
-                                onDragStart = { clip ->
-                                    draggingClipId = clip.id
-                                    dragAccumulatedOffsetPx = 0f
-                                    val origIdx = videoClips.indexOfFirst { it.id == clip.id }
-                                    targetDropIndex = origIdx
-                                },
-                                onDrag = { deltaX ->
-                                    dragAccumulatedOffsetPx += deltaX
-                                    val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
-                                    if (origIdx != -1) {
-                                        val currentBound = clipLayoutBounds[origIdx]
-                                        if (currentBound != null) {
-                                            val currentCenterX = currentBound.first + (currentBound.second / 2f) + dragAccumulatedOffsetPx
-                                            // Find new target drop slot
-                                            var newIdx = origIdx
-                                            clipLayoutBounds.forEach { (idx, bounds) ->
-                                                val clipCenter = bounds.first + (bounds.second / 2f)
-                                                if (deltaX > 0 && currentCenterX > clipCenter && idx > newIdx) {
-                                                    newIdx = idx
-                                                } else if (deltaX < 0 && currentCenterX < clipCenter && idx < newIdx) {
-                                                    newIdx = idx
-                                                }
-                                            }
-                                            targetDropIndex = newIdx.coerceIn(0, videoClips.size - 1)
-                                        }
-                                    }
-                                },
-                                onDragEnd = {
-                                    val origIdx = videoClips.indexOfFirst { it.id == draggingClipId }
-                                    if (origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
-                                        onReorderClips(origIdx, targetDropIndex)
-                                    }
-                                    draggingClipId = null
-                                    dragAccumulatedOffsetPx = 0f
-                                    targetDropIndex = -1
-                                },
                                 onAddClip = { onAddMedia(ClipType.VIDEO) },
                                 multiSelectMode = multiSelectMode,
                                 multiSelectedIds = multiSelectedIds,
@@ -1119,8 +1083,8 @@ fun VideoTimeline(
     frameIntervalMs: Long = 1000L,
     transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
-    onOpenSpeed: () -> Unit = {},
-    onOpenTrim: () -> Unit = {},
+    onOpenSpeed: () -> Unit,
+    onOpenTrim: () -> Unit,
     modifier: Modifier = Modifier,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
@@ -1966,9 +1930,6 @@ private fun TimelineVideoTrack(
     onSelectClip: (String) -> Unit,
     onSeekToKeyframe: ((Long) -> Unit)? = null,
     onClipBoundsMeasured: (index: Int, leftPx: Float, widthPx: Float) -> Unit,
-    onDragStart: (MediaClip) -> Unit,
-    onDrag: (deltaX: Float) -> Unit,
-    onDragEnd: () -> Unit,
     onAddClip: () -> Unit,
     multiSelectMode: Boolean = false,
     multiSelectedIds: Set<String> = emptySet(),
@@ -1984,8 +1945,8 @@ private fun TimelineVideoTrack(
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
     onDeleteClip: (clipId: String) -> Unit = {},
-    onOpenSpeed: () -> Unit = {},
-    onOpenTrim: () -> Unit = {},
+    onOpenSpeed: () -> Unit,
+    onOpenTrim: () -> Unit,
     // Live playhead: the long-press menu splits at THIS position.
     playheadMsProvider: () -> Long = { 0L },
     modifier: Modifier = Modifier
@@ -2053,6 +2014,7 @@ private fun TimelineVideoTrack(
                     modifier = Modifier
                         .width(clipWidth)
                         .fillMaxHeight()
+                        .testTag("timeline-clip-${clip.id}")
                         .onGloballyPositioned { coords ->
                             val pos = coords.positionInParent()
                             val width = coords.size.width.toFloat()
@@ -2097,17 +2059,6 @@ private fun TimelineVideoTrack(
                                     onDragCancel = { onReorderByDragEnd() }
                                 )
                             }
-                        }
-                        .pointerInput(clip.id) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = { onDragStart(clip) },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    onDrag(dragAmount.x)
-                                },
-                                onDragEnd = { onDragEnd() },
-                                onDragCancel = { onDragEnd() }
-                            )
                         }
                         .pointerInput(clip.id) {
                             detectTapGestures(

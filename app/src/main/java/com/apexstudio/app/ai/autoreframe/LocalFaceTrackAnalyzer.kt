@@ -1,0 +1,179 @@
+package com.apexstudio.app.ai.autoreframe
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
+import com.apexstudio.app.ai.mediapipe.FaceTrackSmoother
+import com.apexstudio.app.ai.mediapipe.TrackedFace
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
+
+/** One actual sampled inference result; an empty [faces] list means no face was detected in that frame. */
+data class FaceTrackSample(
+    val timestampMs: Long,
+    val faces: List<TrackedFace>,
+    val reframe: ReframeFrame,
+)
+
+data class FaceTrackAnalysisResult(
+    val sourceWidth: Int,
+    val sourceHeight: Int,
+    val samples: List<FaceTrackSample>,
+) {
+    val sampledFrameCount: Int get() = samples.size
+}
+
+/** Pure bounded sampling and bitmap-sizing helpers; exposed for deterministic unit tests. */
+object FaceTrackSampling {
+    /** End-exclusive range, approximately [minimumIntervalMs] apart, spread to the end if capped. */
+    fun timestamps(
+        startMs: Long,
+        endMs: Long,
+        minimumIntervalMs: Long,
+        maximumSamples: Int,
+    ): List<Long> {
+        require(startMs >= 0L && endMs > startMs)
+        require(minimumIntervalMs > 0L && maximumSamples in 2..360)
+        val duration = endMs - startMs
+        val desired = (duration - 1L) / minimumIntervalMs + 1L
+        if (desired <= maximumSamples) {
+            return List(desired.toInt()) { index -> startMs + index.toLong() * minimumIntervalMs }
+        }
+        val wanted = maximumSamples
+        val span = duration - 1L
+        val divisor = wanted - 1L
+        return List(wanted) { index ->
+            val i = index.toLong()
+            // Divide before multiplying to avoid overflow on long source timelines.
+            val offset = (span / divisor) * i + ((span % divisor) * i) / divisor
+            startMs + offset
+        }
+    }
+
+    /** Return width/height scaled down without changing aspect ratio; never upscale. */
+    fun boundedDimensions(width: Int, height: Int, maximumDimension: Int): Pair<Int, Int> {
+        require(width > 0 && height > 0 && maximumDimension > 0)
+        val longest = maxOf(width, height)
+        if (longest <= maximumDimension) return width to height
+        val scale = maximumDimension.toDouble() / longest
+        return maxOf(1, (width * scale).toInt()) to maxOf(1, (height * scale).toInt())
+    }
+}
+
+/**
+ * Local full-range face tracking using the bundled, checksum-verified Face Landmarker model. It decodes
+ * a bounded set of real frames, runs IMAGE-mode CPU inference at a bounded resolution, associates boxes
+ * across sampled frames, and returns reviewable crop samples. It never downloads media/models, renders,
+ * exports, or applies edits. Cancellation is checked around each synchronous decode/inference call; a
+ * call already executing inside Android's decoder or MediaPipe cannot be interrupted mid-call.
+ */
+class LocalFaceTrackAnalyzer(
+    private val minimumIntervalMs: Long = 500L,
+    private val maximumSamples: Int = 180,
+    private val maximumInferenceDimension: Int = 640,
+    private val maximumFaces: Int = 3,
+    private val outputAspectRatio: Float = 9f / 16f,
+    private val cropMargin: Float = 0.35f,
+) {
+    init {
+        require(minimumIntervalMs > 0L && maximumSamples in 2..360)
+        require(maximumInferenceDimension in 64..2048 && maximumFaces in 1..10)
+        require(outputAspectRatio.isFinite() && outputAspectRatio > 0f)
+        require(cropMargin.isFinite() && cropMargin in 0f..2f)
+    }
+
+    /** Progress is a fraction in 0..1 and is reported after every scheduled timestamp. */
+    suspend fun analyze(
+        context: Context,
+        uri: String,
+        sourceStartMs: Long,
+        sourceEndMs: Long,
+        cancellation: AiCancellationToken = AiCancellationToken(),
+        onProgress: (Float) -> Unit = {},
+    ): FaceTrackAnalysisResult = withContext(Dispatchers.IO) {
+        require(sourceStartMs >= 0L && sourceEndMs > sourceStartMs) { "Invalid source time range" }
+        require(sourceEndMs - 1L <= Long.MAX_VALUE / 1_000L) { "Source timestamp exceeds decoder range" }
+        val timestamps = FaceTrackSampling.timestamps(sourceStartMs, sourceEndMs, minimumIntervalMs, maximumSamples)
+        cancellation.throwIfCancelled()
+        currentCoroutineContext().ensureActive()
+
+        val parsedUri = Uri.parse(uri)
+        val scheme = parsedUri.scheme
+        require(scheme == null || scheme.lowercase(Locale.ROOT) in setOf("content", "file", "android.resource")) {
+            "Offline face analysis accepts only local content/file/resource URIs; remote media is not fetched."
+        }
+        val localUri = if (scheme == null) Uri.fromFile(File(uri)) else parsedUri
+        val retriever = MediaMetadataRetriever()
+        val samples = ArrayList<FaceTrackSample>(timestamps.size)
+        var sourceWidth = 0
+        var sourceHeight = 0
+        try {
+            retriever.setDataSource(context.applicationContext, localUri)
+            cancellation.throwIfCancelled()
+            currentCoroutineContext().ensureActive()
+            BundledMediaPipeModels.openFace(context.applicationContext, maximumFaces).use { detector ->
+                val tracker = FaceTrackSmoother()
+                var previousCrop: NormalizedCrop? = null
+                timestamps.forEachIndexed { index, timestampMs ->
+                    cancellation.throwIfCancelled()
+                    currentCoroutineContext().ensureActive()
+                    val bitmap = retriever.getFrameAtTime(
+                        timestampMs * 1_000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                    )
+                    if (bitmap != null) {
+                        val detections = try {
+                            cancellation.throwIfCancelled()
+                            currentCoroutineContext().ensureActive()
+                            if (sourceWidth == 0) {
+                                sourceWidth = bitmap.width
+                                sourceHeight = bitmap.height
+                            }
+                            val (targetWidth, targetHeight) = FaceTrackSampling.boundedDimensions(
+                                bitmap.width, bitmap.height, maximumInferenceDimension,
+                            )
+                            val inferenceBitmap = if (targetWidth == bitmap.width && targetHeight == bitmap.height) bitmap
+                                else Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+                            try {
+                                detector.detect(inferenceBitmap)
+                            } finally {
+                                if (inferenceBitmap !== bitmap) inferenceBitmap.recycle()
+                            }
+                        } finally {
+                            bitmap.recycle()
+                        }
+                        cancellation.throwIfCancelled()
+                        currentCoroutineContext().ensureActive()
+                        val tracked = tracker.update(timestampMs, detections)
+                        val cropFrame = FaceAwareReframeEngine.cropFor(
+                            sourceWidth = sourceWidth,
+                            sourceHeight = sourceHeight,
+                            outputAspectRatio = outputAspectRatio,
+                            faces = detections,
+                            margin = cropMargin,
+                            previous = previousCrop,
+                        ).copy(timestampMs = timestampMs)
+                        previousCrop = cropFrame.crop
+                        samples += FaceTrackSample(timestampMs, tracked, cropFrame)
+                    }
+                    cancellation.throwIfCancelled()
+                    currentCoroutineContext().ensureActive()
+                    onProgress((index + 1f) / timestamps.size)
+                }
+            }
+        } finally {
+            retriever.release()
+        }
+        cancellation.throwIfCancelled()
+        currentCoroutineContext().ensureActive()
+        check(sourceWidth > 0 && sourceHeight > 0) { "No video frames could be decoded for offline face analysis" }
+        FaceTrackAnalysisResult(sourceWidth, sourceHeight, samples)
+    }
+}

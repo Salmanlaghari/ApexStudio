@@ -66,10 +66,11 @@ object FaceAwareReframeEngine {
         var prev: NormalizedCrop? = null
         var previousFaceCenter: Pair<Float, Float>? = null
         return samples.map { (time, faces) ->
+            val validFaces = faces.filter(::hasUsableBox)
             // Largest face initializes tracking; nearest-center matching reduces identity jumps when
             // two people cross or one face becomes temporarily smaller in frame.
-            val selected = if (previousFaceCenter == null) faces.maxByOrNull { (it.box.right - it.box.left) * (it.box.bottom - it.box.top) }
-            else faces.minByOrNull { face ->
+            val selected = if (previousFaceCenter == null) validFaces.maxByOrNull { faceArea(it) }
+            else validFaces.minByOrNull { face ->
                 val dx = face.box.centerX - previousFaceCenter!!.first
                 val dy = face.box.centerY - previousFaceCenter!!.second
                 dx * dx + dy * dy
@@ -80,6 +81,17 @@ object FaceAwareReframeEngine {
             frame.copy(timestampMs = time)
         }
     }
+
+    private fun hasUsableBox(face: FaceDetection): Boolean {
+        val box = face.box
+        if (!box.left.isFinite() || !box.top.isFinite() || !box.right.isFinite() || !box.bottom.isFinite()) return false
+        val width = box.right - box.left
+        val height = box.bottom - box.top
+        return width > 0f && height > 0f && (width * height).isFinite()
+    }
+
+    private fun faceArea(face: FaceDetection) =
+        (face.box.right - face.box.left) * (face.box.bottom - face.box.top)
 
     private fun clampCenter(value: Float, lower: Float, upper: Float, size: Float): Float {
         val minCenter = size / 2f

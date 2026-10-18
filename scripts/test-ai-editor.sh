@@ -15,6 +15,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*BackgroundOutputPublicationTest' \
   --tests '*WhisperInferenceReliabilityTest' \
   --tests '*WhisperModelIntegrityTest' \
+  --tests '*WhisperTokenDecodingTest' \
+  --tests '*PcmAudioProcessorTest' \
   --tests '*EditorTrimPositionTest' \
   --tests '*AudioTrackPlacementTest' \
   --tests '*LocalAudioImportPolicyTest' \

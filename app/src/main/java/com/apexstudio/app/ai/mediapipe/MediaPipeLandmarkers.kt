@@ -27,10 +27,10 @@ data class PoseDetection(val landmarks: List<NormalizedPoint>)
 data class HandDetection(val landmarks: List<NormalizedPoint>)
 
 /**
- * MediaPipe Tasks Vision IMAGE-mode CPU wrappers. Models are NOT bundled or downloaded here. Provide
- * the exact .task model file only after user-authorized acquisition and license review. Inference is
- * synchronous; call from a worker thread. The bitmap remains owned by the caller and must not be
- * mutated or recycled until detection returns. Calls and close are serialized per detector.
+ * MediaPipe Tasks Vision IMAGE-mode CPU wrappers. They never download models: callers may supply a
+ * reviewed local .task file, or use [BundledMediaPipeModels] to materialize the app's checksum-verified
+ * bundled model. Inference is synchronous; call from a worker thread. The bitmap remains owned by the
+ * caller and must not be mutated or recycled until detection returns. Calls and close are serialized per detector.
  */
 object MediaPipeLandmarkers {
     private fun options(model: File): BaseOptions {

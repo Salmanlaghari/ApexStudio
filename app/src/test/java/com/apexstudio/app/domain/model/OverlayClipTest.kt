@@ -111,6 +111,8 @@ class OverlayClipTest {
         val view = OverlayClip.from(overlay())
         val tooFar = view.withStart(25_000L)
         assertTrue("start must stay strictly below end", tooFar.startMs < tooFar.endMs)
+        assertEquals(view.endMs - 1L, tooFar.startMs)
+        assertEquals(view.endMs, tooFar.endMs)
         val negative = view.withStart(-9_999L)
         assertEquals(0L, negative.startMs)
         assertTrue(negative.startMs < negative.endMs)
@@ -124,17 +126,33 @@ class OverlayClipTest {
         val tooSoon = view.withEnd(0L)
         assertEquals(view.startMs + 1L, tooSoon.endMs)
         assertTrue(tooSoon.endMs > tooSoon.startMs)
+        assertEquals(view.startMs, tooSoon.startMs)
     }
 
     @Test
     fun `trimmed survives a reversed drag and stays inside the source`() {
         val view = OverlayClip.from(overlay())
         val reversed = view.trimmed(15_000L, 4_000L)
-        assertTrue(reversed.startMs < reversed.endMs)
+        assertEquals("crossed range endpoints must be sorted", 4_000L, reversed.startMs)
+        assertEquals(15_000L, reversed.endMs)
+        assertEquals(11_000L, reversed.durationMs)
         val outside = view.trimmed(-100L, 40_000L)
         assertEquals(0L, outside.startMs)
         assertEquals(30_000L, outside.endMs)
         assertEquals(30_000L, outside.durationMs)
+    }
+
+    @Test
+    fun `moving either trim handle past the other keeps the opposite endpoint fixed`() {
+        val view = OverlayClip.from(overlay())
+
+        val movedStartPastEnd = view.withStart(15_000L)
+        assertEquals(9_999L, movedStartPastEnd.startMs)
+        assertEquals(view.endMs, movedStartPastEnd.endMs)
+
+        val movedEndBeforeStart = view.withEnd(1_000L)
+        assertEquals(view.startMs, movedEndBeforeStart.startMs)
+        assertEquals(2_001L, movedEndBeforeStart.endMs)
     }
 
     @Test

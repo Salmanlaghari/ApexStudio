@@ -92,21 +92,36 @@ object CtcForcedAligner {
         require(logProbabilities.isNotEmpty()) { "No CTC frames" }
         require(targetTokenIds.isNotEmpty() && targetTokenIds.size == wordIndexForToken.size) { "Target tokens and word map must be non-empty and equal length" }
         require(wordTexts.isNotEmpty() && wordIndexForToken.filter { it >= 0 }.all { it < wordTexts.size }) { "Word map references missing transcript text" }
-        require(frameDurationMs > 0f && frameDurationMs.isFinite())
+        require(frameDurationMs >= 1f && frameDurationMs.isFinite()) { "CTC timestamps require millisecond frame resolution" }
+        require(startOffsetMs >= 0L) { "Negative source-time offset" }
+        require(wordTexts.all { it.isNotBlank() }) { "Transcript words must not be blank" }
         val vocab = logProbabilities.first().size
-        require(blankId in 0 until vocab && targetTokenIds.all { it in 0 until vocab }) { "Token ID outside vocabulary" }
+        require(blankId in 0 until vocab && targetTokenIds.all { it in 0 until vocab && it != blankId }) { "Target token must be in vocabulary and cannot be the CTC blank" }
         val frames = logProbabilities.size
         require(logProbabilities.all { it.size == vocab }) { "Ragged CTC emissions" }
         require(wordIndexForToken.all { it >= -1 })
+        val mappedWords = wordIndexForToken.filter { it >= 0 }
+        require(mappedWords.distinct() == wordTexts.indices.toList() &&
+            mappedWords.zipWithNext().all { (a, b) -> a <= b }) {
+            "Word mapping must cover every transcript word in order"
+        }
+        val repeatedTokens = (1 until targetTokenIds.size).count { targetTokenIds[it] == targetTokenIds[it - 1] }
+        require(frames.toLong() >= targetTokenIds.size.toLong() + repeatedTokens) {
+            "Insufficient acoustic frames for repeated CTC tokens"
+        }
+        require(frames.toDouble() * frameDurationMs < Long.MAX_VALUE.toDouble() - startOffsetMs.toDouble()) {
+            "CTC timestamp range overflows source time"
+        }
         require(isCtcAlignmentWithinBounds(frames, targetTokenIds.size)) {
             "CTC alignment exceeds the supported memory bound"
         }
+        checkCancelled()
         val states = targetTokenIds.size * 2 + 1
         val labels = IntArray(states) { if (it % 2 == 0) blankId else targetTokenIds[it / 2] }
         require(frames >= targetTokenIds.size) { "Fewer acoustic frames than target tokens" }
         for (t in 0 until frames) {
             if (t % 128 == 0) checkCancelled()
-            require(logProbabilities[t].all(Float::isFinite)) { "Non-finite CTC emissions" }
+            require(logProbabilities[t].all { it.isFinite() && it <= 0f }) { "Expected finite CTC log probabilities, not raw logits" }
         }
         val back = Array(frames) { IntArray(states) { -1 } }
         var prev = FloatArray(states) { Float.NEGATIVE_INFINITY }
@@ -161,8 +176,8 @@ object CtcForcedAligner {
             val first = times.minOrNull()!!
             val last = times.maxOrNull()!! + 1
             val confidence = tokenConfidence.getValue(word).average().toFloat()
-            WordCue(wordTexts[word], startOffsetMs + (first * frameDurationMs).toLong(),
-                startOffsetMs + (last * frameDurationMs).toLong(),
+            WordCue(wordTexts[word], Math.addExact(startOffsetMs, (first.toDouble() * frameDurationMs).toLong()),
+                Math.addExact(startOffsetMs, (last.toDouble() * frameDurationMs).toLong()),
                 TimingPrecision.CTC_FORCED_WORD_ALIGNMENT, confidence)
         }
         val totalTokens = tokenFrames.sumOf { it.size }.coerceAtLeast(1)
@@ -182,7 +197,7 @@ data class CtcOnnxModelContract(
     init {
         require(inputName.isNotBlank() && outputName.isNotBlank())
         require(blankTokenId >= 0 && vocabularySize > 0 && blankTokenId < vocabularySize)
-        require(frameDurationMs > 0 && frameDurationMs.isFinite() && sampleRateHz == 16_000) {
+        require(frameDurationMs >= 1f && frameDurationMs.isFinite() && sampleRateHz == 16_000) {
             "The local PCM extractor supplies 16 kHz mono audio"
         }
     }
@@ -213,7 +228,10 @@ class OnnxCtcWordAligner(
         if (!model.isFile || model.length() == 0L) throw IllegalStateException("Compatible local CTC ONNX model is not installed")
         coroutineContext.ensureActive()
         onProgress(0.05f, "decoding local audio")
-        val pcm = withContext(Dispatchers.IO) { PcmAudioExtractor.extractMono16k(context.applicationContext, Uri.fromFile(audio)) }
+        val pcm = withContext(Dispatchers.IO) {
+            val decodeContext = coroutineContext
+            PcmAudioExtractor.extractMono16k(context.applicationContext, Uri.fromFile(audio)) { decodeContext.ensureActive() }
+        }
             ?: throw IllegalArgumentException("Audio file has no decodable audio stream")
         require(pcm.isNotEmpty()) { "Audio file is empty" }
         coroutineContext.ensureActive()

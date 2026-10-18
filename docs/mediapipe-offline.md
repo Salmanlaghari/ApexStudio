@@ -33,6 +33,10 @@ val portraitTask = BundledMediaPipeModels.openPortraitEffects(context)
 
 For a video caller, feed each frame's actual detector result into one `FaceTrackSmoother.update(timestampMs, detections)`. IDs are short-lived local associations made by box IoU; they are not identities and are not persistent across process or tracker reset. The smoother does not predict or fabricate detections when no face was found.
 
+`LocalFaceTrackAnalyzer.analyze(context, localUri, sourceStartMs, sourceEndMs)` now provides a full-range, bounded offline analysis backend. It decodes actual frames from local file/content/resource URIs, opens the pinned bundled face model and returns timestamped detections, local track IDs and crop suggestions. Defaults sample every 500 ms up to 180 scheduled samples, spread across the whole requested end-exclusive range when capped; inference images have a maximum dimension of 640 pixels. Custom output aspect ratios include 9:16 and 1:1. Decode/inference failures are not replaced with fabricated faces.
+
+Progress is reported after scheduled timestamps, and coroutine or `AiCancellationToken` cancellation is checked around synchronous Android decode and MediaPipe calls. An already-running native call is not interruptible. Sparse sampling can miss fast motion or brief faces; the decoder may allocate a full-resolution frame before downscaling. This backend does not apply a crop track, encode a video, or enable the protected AI editor switch. Real-time preview/export, policy-approved moderation and device acceptance are still required.
+
 ### Background portrait effects
 
 `MediaPipePortraitEffects.process(frame, PortraitEffect.Blur(strength))`, `.Replace(backgroundBitmap)`, or `.Solid(color)` runs the actual bundled selfie-segmentation model and composites its person confidence mask. The blur/replacement is applied only to the background. `MediaPipePortraitEffects.close()` releases the task. The existing video `BackgroundReplaceEngine` continues to do its established decode/segment/composite/re-encode pipeline and now resolves its model through the same bundled SHA-verified store.

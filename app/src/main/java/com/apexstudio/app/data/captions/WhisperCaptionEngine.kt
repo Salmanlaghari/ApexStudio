@@ -156,8 +156,10 @@ object WhisperCaptionEngine {
             ?: return@withLock null // caller surfaces "model failed to load"
 
         try {
+            coroutineContext.ensureActive()
             onProgress(0.02f)
-            val fullPcm = PcmAudioExtractor.extractMono16k(appContext, uri)
+            val decodeContext = coroutineContext
+            val fullPcm = PcmAudioExtractor.extractMono16k(appContext, uri) { decodeContext.ensureActive() }
                 ?: return@withLock null // no decodable audio
             // Slice to the clip's trim range (sample-exact) — captions
             // must cover only the active portion, on the clip's timeline.
@@ -224,16 +226,16 @@ object WhisperCaptionEngine {
         chunkDurationMs: Long
     ): List<CaptionSegment> {
         val out = ArrayList<CaptionSegment>()
-        val text = StringBuilder()
+        val textTokens = ArrayList<Int>()
         var segStartMs = 0L
         var hasText = false
 
         fun flush(endMs: Long) {
-            val t = text.toString().trim()
+            val t = model.decodeText(textTokens).trim()
             if (t.isNotEmpty() && endMs > segStartMs) {
                 out.add(CaptionSegment(t, chunkOffsetMs + segStartMs, chunkOffsetMs + endMs))
             }
-            text.clear()
+            textTokens.clear()
             hasText = false
         }
 
@@ -249,7 +251,7 @@ object WhisperCaptionEngine {
             } else {
                 // Skip control tokens that carry no text.
                 if (id == model.meta.noSpeech || id == model.meta.sot) continue
-                text.append(model.tokenText(id))
+                textTokens.add(id)
                 hasText = true
             }
         }

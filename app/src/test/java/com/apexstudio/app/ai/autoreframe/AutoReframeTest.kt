@@ -2,6 +2,7 @@ package com.apexstudio.app.ai.autoreframe
 
 import com.apexstudio.app.ai.mediapipe.FaceDetection
 import com.apexstudio.app.ai.mediapipe.NormalizedBox
+import com.apexstudio.app.ai.mediapipe.NormalizedPoint
 import com.apexstudio.app.ai.tflite.LumaFrame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,5 +35,34 @@ class AutoReframeTest {
         assertEquals(1f, suggestion.crop.right - suggestion.crop.left, .0001f)
         assertEquals(1f, suggestion.crop.bottom - suggestion.crop.top, .0001f)
         assertTrue(suggestion.method.contains("not a face"))
+    }
+
+    @Test fun faceTrackSamplingHonorsIntervalAndCapsLongClipsAcrossTheirRange() {
+        assertEquals(
+            listOf(100L, 200L, 300L, 400L),
+            FaceTrackSampling.timestamps(100L, 410L, minimumIntervalMs = 100L, maximumSamples = 10),
+        )
+        assertEquals(
+            listOf(0L, 3_333L, 6_666L, 9_999L),
+            FaceTrackSampling.timestamps(0L, 10_000L, minimumIntervalMs = 100L, maximumSamples = 4),
+        )
+        assertEquals(listOf(7L), FaceTrackSampling.timestamps(7L, 8L, 500L, 180))
+    }
+
+    @Test fun inferenceDimensionsDoNotUpscaleAndStayUnderConfiguredBound() {
+        assertEquals(640 to 360, FaceTrackSampling.boundedDimensions(1920, 1080, 640))
+        assertEquals(320 to 200, FaceTrackSampling.boundedDimensions(320, 200, 640))
+    }
+
+    @Test fun reframeTrackIgnoresMalformedFaceBoxes() {
+        val invalid = FaceDetection(NormalizedBox(Float.NaN, 0f, 1f, 1f), emptyList())
+        val valid = FaceDetection(NormalizedBox(.7f, .2f, .9f, .5f), listOf(NormalizedPoint(.8f, .35f)))
+        val frames = FaceAwareReframeEngine.track(
+            1920, 1080, 1f,
+            listOf(0L to listOf(invalid), 100L to listOf(invalid, valid)),
+        )
+        assertFalse(frames[0].faceFound)
+        assertTrue(frames[1].faceFound)
+        assertTrue(frames[1].crop.left >= 0f && frames[1].crop.right <= 1f)
     }
 }

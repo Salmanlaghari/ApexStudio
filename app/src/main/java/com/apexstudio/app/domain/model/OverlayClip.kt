@@ -96,13 +96,30 @@ data class OverlayClip(
      * Move the start of the window, clamped to [0, endMs) — a drag can
      * slide the head against the tail but can never empty the overlay.
      */
-    fun withStart(millis: Long): OverlayClip = trimmed(millis, endMs)
+    fun withStart(millis: Long): OverlayClip {
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+        // Moving just the head past the fixed tail must stop one millisecond
+        // before it; it must not turn the old tail into a new start point.
+        val fixedEnd = endMs.coerceIn(1L, sourceEnd)
+        return copy(startMs = millis.coerceIn(0L, fixedEnd - 1L), endMs = fixedEnd)
+    }
 
     /**
      * Move the end of the window. Clamped inside the source so the
      * overlay can't out-grow the media it plays from.
      */
-    fun withEnd(millis: Long): OverlayClip = trimmed(startMs, millis)
+    fun withEnd(millis: Long): OverlayClip {
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+        // Moving just the tail before the fixed head likewise preserves the
+        // head and clamps to the smallest non-empty source window.
+        val fixedStart = startMs.coerceIn(0L, sourceEnd - 1L)
+        return copy(
+            startMs = fixedStart,
+            endMs = millis.coerceIn(fixedStart + 1L, sourceEnd)
+        )
+    }
 
     /** A uniform clamp of both ends; tolerant of a reversed drag. */
     fun trimmed(start: Long, end: Long): OverlayClip {
@@ -112,11 +129,11 @@ data class OverlayClip(
         // the media boundary (notably when a trim drag starts at sourceEnd).
         if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
 
-        // Reserve at least 1 ms for the end before clamping the head. This
-        // keeps even an end-handle drag from an empty window at sourceEnd
-        // inside the actual source.
-        val lo = start.coerceIn(0L, sourceEnd - 1L)
-        val hi = end.coerceIn(lo + 1L, sourceEnd)
+        // RangeSlider endpoints can cross while the user drags. Sorting here
+        // preserves the interval they selected instead of collapsing it to
+        // a one-millisecond sliver at the first endpoint.
+        val lo = minOf(start, end).coerceIn(0L, sourceEnd - 1L)
+        val hi = maxOf(start, end).coerceIn(lo + 1L, sourceEnd)
         return copy(
             startMs = lo,
             endMs = hi

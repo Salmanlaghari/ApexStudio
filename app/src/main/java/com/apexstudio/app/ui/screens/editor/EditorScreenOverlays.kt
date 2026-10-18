@@ -1524,10 +1524,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     seekPlayerAndState: (Long) -> Unit,
     onOpenAddMediaMenu: (ClipType) -> Unit
 ) {
-    // Mockup transport row: undo + redo (left), BIG blue-gradient play
-    // (center), keyframe diamond+ (always visible in the new layout —
-    // tapping it with no clip selected is a safe no-op), fullscreen.
-    // No time counter / prev-next here: the time pill lives in the preview.
+    // Compact transport frees vertical room for the layered timeline.
+    // Existing edit and playback handlers remain the source of truth.
     val kfClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val hasKeyframeAtPlayhead =
         kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
@@ -1537,6 +1535,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         canUndo = state.canUndo,
         canRedo = state.canRedo,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+        canEditKeyframe = kfClip != null,
         onTogglePlay = { vm.togglePlay() },
         onUndo = { vm.undo() },
         onRedo = { vm.redo() },
@@ -1610,7 +1609,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onSelectAudioTrack = { vm.selectAudioTrack(it) },
         modifier = Modifier
             .fillMaxWidth()
-            .weight(1f)
+            .weight(1.2f)
     )
 
     // ---- BOTTOM LINE (below the timeline) ----
@@ -1622,6 +1621,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // Adjust chips row is gone (same controls in the Adjust panel).
     BottomTimelineActionRow(
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+        canEditKeyframe = kfClip != null,
         timelineZoom = state.timelineZoom,
         onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
         onPrevKeyframe = { vm.jumpToPrevKeyframe() },

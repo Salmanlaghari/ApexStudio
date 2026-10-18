@@ -76,7 +76,7 @@ fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
 private data class CtxToolItem(
     val label: String,
     val icon: ImageVector? = null,
-    val tint: Color = Color(0xFF9CA3AF),
+    val tint: Color = Color(0xFF8C9AAF),
     val onClick: () -> Unit,
     /** Text glyph rendered in place of [icon] (e.g. the mockup's bold "T" for Text). */
     val glyph: String? = null,
@@ -340,7 +340,7 @@ fun ContextualBottomToolbar(
         ToolbarSelectionKind.NONE -> emptyList()
     }
 
-    // Two stacked bars:
+    // Compact two-level editing dock:
     // - Clip action bar (merged, one entry per action): only while a
     //   clip/overlay/track is selected AND the editor is not playing.
     //   Tapping a clip reveals it with a ~200ms slide/fade; tapping empty
@@ -348,13 +348,15 @@ fun ContextualBottomToolbar(
     //   hides it again. The old "Video clip selected" label row is gone —
     //   the selection name shows as a small chip in the preview instead.
     // - Main tool bar: always visible.
-    // The freed height (old quick-actions row + label row) goes to the
-    // timeline: this toolbar never adds padding/spacers of its own.
+    // Contextual actions sit above the global tool row; both retain their
+    // existing routes and horizontal scrolling behavior.
     val showClipBar = selectionKind != ToolbarSelectionKind.NONE && !isPlaying
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0C0C14))
+            .background(Color(0xFF101722))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         AnimatedVisibility(
             visible = showClipBar,
@@ -365,6 +367,7 @@ fun ContextualBottomToolbar(
         ) {
             ToolbarBarRow(
                 items = clipItems,
+                surfaceColor = Color(0xFF151F2D),
                 leadingContent = {
                     // CapCut-style collapse chevron: deselects, hiding
                     // this bar again.
@@ -378,7 +381,7 @@ fun ContextualBottomToolbar(
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Deselect",
-                            tint = Color(0xFF9CA3AF),
+                            tint = Color(0xFF8C9AAF),
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -386,7 +389,7 @@ fun ContextualBottomToolbar(
                         modifier = Modifier
                             .width(1.dp)
                             .fillMaxHeight(0.6f)
-                            .background(Color(0xFF1F1F2E))
+                            .background(Color(0xFF273447))
                     )
                     // No filename chip here: it crowded the clip
                     // bar's actions. The selected clip/track name now
@@ -395,28 +398,28 @@ fun ContextualBottomToolbar(
                 }
             )
         }
-        ToolbarBarRow(items = mainItems)
+        ToolbarBarRow(items = mainItems, surfaceColor = Color(0xFF101722))
     }
 }
 
 /**
- * One horizontally scrollable toolbar bar (58dp, rounded, dark).
+ * One horizontally scrollable toolbar bar in the compact editing dock.
  * [leadingContent] (collapse chevron + selection chip) stays fixed while
  * the tool items scroll.
  */
 @Composable
 private fun ToolbarBarRow(
     items: List<CtxToolItem>,
+    surfaceColor: Color,
     modifier: Modifier = Modifier,
     leadingContent: @Composable (RowScope.() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(ApexPalette.BgElevated)
-            .height(58.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(surfaceColor)
+            .height(50.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -434,13 +437,13 @@ private fun ToolbarBarRow(
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(6.dp))
                     items.forEach { item ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .width(64.dp)
+                                .width(66.dp)
                                 .fillMaxHeight()
                                 .clickable(onClick = item.onClick)
                         ) {
@@ -449,9 +452,9 @@ private fun ToolbarBarRow(
                                 Text(
                                     text = item.glyph,
                                     color = item.tint,
-                                    fontSize = 20.sp,
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Black,
-                                    modifier = Modifier.size(21.dp),
+                                    modifier = Modifier.size(20.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
                             } else {
@@ -460,11 +463,11 @@ private fun ToolbarBarRow(
                                     contentDescription = item.label,
                                     tint = item.tint,
                                     modifier = Modifier
-                                        .size(21.dp)
+                                        .size(19.dp)
                                         .graphicsLayer { rotationZ = item.iconRotationDeg }
                                 )
                             }
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(1.dp))
                             Text(
                                 text = item.label,
                                 color = item.tint,
@@ -475,7 +478,7 @@ private fun ToolbarBarRow(
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(6.dp))
                 }
                 // Edge fades (no touch handling — gestures pass
                 // through to the scrollable Row below).
@@ -484,7 +487,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(ApexPalette.BgElevated, Color.Transparent)
+                                listOf(surfaceColor, Color.Transparent)
                             )
                         )
                 )
@@ -493,7 +496,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(Color.Transparent, ApexPalette.BgElevated)
+                                listOf(Color.Transparent, surfaceColor)
                             )
                         )
                 )

@@ -7,6 +7,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
 ./gradlew :app:testDebugUnitTest --no-daemon --max-workers="${GRADLE_TEST_WORKERS:-2}" \
   --tests 'com.apexstudio.app.ai.*' \
   --tests '*AiToolsCatalogTest' \
+  --tests '*LocalAnalysisReviewVisibilityTest' \
   --tests '*EditorLocalAnalysisTest' \
   --tests '*EditorFaceTrackReviewTest' \
   --tests '*EditorFaceCropApplyTest' \

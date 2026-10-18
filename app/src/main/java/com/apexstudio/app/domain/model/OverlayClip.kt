@@ -2,6 +2,9 @@ package com.apexstudio.app.domain.model
 
 import kotlin.math.abs
 
+private fun finiteClamp(value: Float, range: ClosedFloatingPointRange<Float>, fallback: Float): Float =
+    (if (value.isFinite()) value else fallback).coerceIn(range)
+
 /**
  * Edit surface for an OVERLAY (PiP) clip — Bug 3.
  *
@@ -78,11 +81,11 @@ data class OverlayClip(
                 sourceDurationMs = source,
                 startMs = start,
                 endMs = if (end < start) start else end,
-                x = clip.pipX.coerceIn(0f, 1f),
-                y = clip.pipY.coerceIn(0f, 1f),
-                scale = clip.pipScale.coerceIn(MIN_SCALE, MAX_SCALE),
-                rotationDeg = clip.pipRotationDeg.coerceIn(-180f, 180f),
-                opacity = clip.pipOpacity.coerceIn(0f, 1f),
+                x = finiteClamp(clip.pipX, 0f..1f, 0.85f),
+                y = finiteClamp(clip.pipY, 0f..1f, 0.85f),
+                scale = finiteClamp(clip.pipScale, MIN_SCALE..MAX_SCALE, 0.25f),
+                rotationDeg = finiteClamp(clip.pipRotationDeg, -180f..180f, 0f),
+                opacity = finiteClamp(clip.pipOpacity, 0f..1f, 1f),
                 layer = clip.trackIndex.coerceIn(1, MAX_LAYER)
             )
         }
@@ -165,11 +168,11 @@ data class OverlayClip(
         return clip.copy(
             trimStartMs = startMs,
             trimEndMs = endMs,
-            pipX = x.coerceIn(0f, 1f),
-            pipY = y.coerceIn(0f, 1f),
-            pipScale = scale.coerceIn(MIN_SCALE, MAX_SCALE),
-            pipRotationDeg = rotationDeg.coerceIn(-180f, 180f),
-            pipOpacity = opacity.coerceIn(0f, 1f),
+            pipX = finiteClamp(x, 0f..1f, finiteClamp(clip.pipX, 0f..1f, 0.85f)),
+            pipY = finiteClamp(y, 0f..1f, finiteClamp(clip.pipY, 0f..1f, 0.85f)),
+            pipScale = finiteClamp(scale, MIN_SCALE..MAX_SCALE, finiteClamp(clip.pipScale, MIN_SCALE..MAX_SCALE, 0.25f)),
+            pipRotationDeg = finiteClamp(rotationDeg, -180f..180f, finiteClamp(clip.pipRotationDeg, -180f..180f, 0f)),
+            pipOpacity = finiteClamp(opacity, 0f..1f, finiteClamp(clip.pipOpacity, 0f..1f, 1f)),
             trackIndex = if (clip.type == ClipType.OVERLAY) layer.coerceIn(1, MAX_LAYER) else clip.trackIndex
         )
     }

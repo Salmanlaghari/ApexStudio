@@ -626,6 +626,12 @@ private fun rippleOverlays(
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     val source = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     if (source.durationMs <= 0L) return
+    val requestedStart = startMs.coerceIn(0L, (source.durationMs - 1L).coerceAtLeast(0L))
+    val requestedEnd = endMs.coerceIn(
+        requestedStart + minOf(100L, source.durationMs - requestedStart),
+        source.durationMs
+    )
+    if (requestedStart == source.trimStartMs && requestedEnd == source.trimEndMs) return
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
     // to 100ms) for the STATE mirror. The LIVE flow is clamped

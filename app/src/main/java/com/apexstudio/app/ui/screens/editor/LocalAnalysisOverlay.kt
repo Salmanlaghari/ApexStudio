@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
+import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexPalette
 import java.util.Locale
@@ -29,6 +30,8 @@ fun LocalAnalysisOverlay(
     val faceReview by vm.faceTrackReview.collectAsStateWithLifecycle()
     val editor by vm.state.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf("Scenes") }
+    val analysisSourceCurrent = isLocalReviewSourceCurrent(analysis.sourceSnapshot, editor.project)
+    val faceReviewSourceCurrent = isLocalReviewSourceCurrent(faceReview.sourceSnapshot, editor.project)
     val analyzedClip = editor.project?.clips?.firstOrNull { it.id == analysis.clipId }
     val close = { vm.cancelLocalAnalysis(); vm.cancelLocalFaceTrackReview(); onClose() }
     val previewAnalysisSource: (Long) -> Unit = { timestamp ->
@@ -93,7 +96,10 @@ fun LocalAnalysisOverlay(
             Text(analysis.error ?: analysis.message, modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (analysis.error != null) MaterialTheme.colorScheme.error else ApexPalette.TextSecondary)
-            if (analysis.isReady) {
+            if (analysis.isReady && !analysisSourceCurrent) {
+                AnalysisNote("These suggestions are stale because the analyzed clip or its edit settings changed or were removed. Analyze the current source again before reviewing or applying anything.")
+            }
+            if (analysis.isReady && analysisSourceCurrent) {
                 Text("${analysis.sampledFrameCount} decoded samples · source-time suggestions · sampling can miss short cuts",
                     modifier = Modifier.padding(horizontal = 16.dp), color = ApexPalette.TextSecondary,
                     style = MaterialTheme.typography.labelSmall)
@@ -156,7 +162,10 @@ fun LocalAnalysisOverlay(
             Text(faceReview.error ?: faceReview.message, modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (faceReview.error != null) MaterialTheme.colorScheme.error else ApexPalette.TextSecondary)
-            if (faceReview.isReady) {
+            if (faceReview.isReady && !faceReviewSourceCurrent) {
+                AnalysisNote("These face-track samples are stale because the analyzed clip or its edit settings changed or were removed. Analyze the current source again before reviewing or applying anything.")
+            }
+            if (faceReview.isReady && faceReviewSourceCurrent) {
                 val result = faceReview.result
                 if (result != null) {
                     Text("${result.sampledFrameCount} decoded samples · sparse sampling can miss brief faces or motion. Review the actual sampled frames below.",
@@ -224,3 +233,7 @@ private fun AnalysisCard(title: String, description: String, content: @Composabl
 internal fun analysisTime(ms: Long): String = String.format(Locale.ROOT, "%.2f s", ms / 1000.0)
 
 private fun samplePercent(value: Float): String = String.format(Locale.ROOT, "%.0f%%", value * 100f)
+
+/** Results are only reviewable while every source property captured at analysis time still matches. */
+internal fun isLocalReviewSourceCurrent(snapshot: FaceTrackSourceSnapshot?, project: Project?): Boolean =
+    snapshot != null && project != null && isFaceTrackSnapshotCurrent(snapshot, project, project.id)

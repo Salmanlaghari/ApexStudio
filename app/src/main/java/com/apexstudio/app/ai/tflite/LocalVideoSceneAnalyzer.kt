@@ -5,13 +5,14 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.ai.LocalMediaSourcePolicy
 import com.apexstudio.app.ai.autoreframe.AutoCropSuggestion
 import com.apexstudio.app.ai.autoreframe.SignalAutoCrop
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.concurrent.CancellationException
-import kotlin.math.max
 
 /** A user-reviewable candidate trim expressed in the source video's millisecond timeline. */
 data class SmartTrimSuggestion(
@@ -88,34 +89,27 @@ class LocalVideoSceneAnalyzer(
         require(sourceStartMs >= 0L && sourceEndMs > sourceStartMs) { "Invalid source trim range" }
         require(sourceEndMs - 1L <= Long.MAX_VALUE / 1_000L) { "Source timestamps exceed the platform decoder range" }
         cancellation.throwIfCancelled()
-        val duration = sourceEndMs - sourceStartMs
-        val minimumStep = duration / maximumSamples + if (duration % maximumSamples == 0L) 0L else 1L
-        val boundedStep = max(sampleIntervalMs, minimumStep)
-        val timestamps = generateSequence(sourceStartMs) { previous ->
-            if (previous > sourceEndMs - boundedStep) null else previous + boundedStep
-        }.toMutableList()
-        if (timestamps.lastOrNull() != sourceEndMs - 1L && sourceEndMs - 1L > (timestamps.lastOrNull() ?: -1L)) {
-            timestamps += sourceEndMs - 1L
-        }
-        // The duration-derived step caps the count; this final guard also protects unusual arithmetic inputs.
-        val sampleTimes = timestamps.distinct().take(maximumSamples)
+        currentCoroutineContext().ensureActive()
+        val sampleTimes = LocalSceneSampling.timestamps(sourceStartMs, sourceEndMs, sampleIntervalMs, maximumSamples)
         val retriever = MediaMetadataRetriever()
         val frames = ArrayList<LumaFrame>(sampleTimes.size)
         var firstDecodedFrame: LumaFrame? = null
         var sourceAspect = 1f
         try {
             val parsedUri = Uri.parse(uri)
-            val scheme = parsedUri.scheme
-            require(scheme == null || scheme.lowercase(java.util.Locale.ROOT) in setOf("content", "file", "android.resource")) {
-                "Offline analysis accepts only local content/file URIs; remote media is not fetched."
+            require(LocalMediaSourcePolicy.accepts(parsedUri.scheme, parsedUri.authority)) {
+                "Offline analysis accepts local file paths and content/resource providers, not network URLs or remote file authorities."
             }
             val localUri = if (parsedUri.scheme == null) Uri.fromFile(File(uri)) else parsedUri
             retriever.setDataSource(context, localUri)
             sampleTimes.forEachIndexed { index, timestampMs ->
                 cancellation.throwIfCancelled()
+                currentCoroutineContext().ensureActive()
                 val bitmap = retriever.getFrameAtTime(timestampMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
                 if (bitmap != null) {
                     try {
+                        cancellation.throwIfCancelled()
+                        currentCoroutineContext().ensureActive()
                         val frame = bitmap.toLumaFrame(timestampMs, lumaWidth, lumaHeight)
                         frames += frame
                         if (firstDecodedFrame == null) {
@@ -126,12 +120,15 @@ class LocalVideoSceneAnalyzer(
                         bitmap.recycle()
                     }
                 }
+                cancellation.throwIfCancelled()
+                currentCoroutineContext().ensureActive()
                 onProgress((index + 1f) / sampleTimes.size.coerceAtLeast(1))
             }
         } finally {
             retriever.release()
         }
         cancellation.throwIfCancelled()
+        currentCoroutineContext().ensureActive()
         check(frames.isNotEmpty()) { "No video frames could be decoded for offline analysis" }
         val analysis = LocalVideoAnalysis.analyze(
             frames = frames,
@@ -142,6 +139,8 @@ class LocalVideoSceneAnalyzer(
         val crop = firstDecodedFrame?.let {
             SignalAutoCrop.suggest(it, outputAspectRatio = 9f / 16f, sourceAspectRatio = sourceAspect)
         }
+        cancellation.throwIfCancelled()
+        currentCoroutineContext().ensureActive()
         LocalSceneAnalysisResult(suggestions.cuts, suggestions.smartTrims, crop, frames.size)
     }
 

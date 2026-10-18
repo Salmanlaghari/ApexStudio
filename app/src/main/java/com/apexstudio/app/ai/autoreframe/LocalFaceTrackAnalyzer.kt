@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.ai.LocalMediaSourcePolicy
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.ai.mediapipe.FaceTrackSmoother
 import com.apexstudio.app.ai.mediapipe.TrackedFace
@@ -15,7 +16,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.Locale
 
 /** One actual sampled inference result; an empty [faces] list means no face was detected in that frame. */
 data class FaceTrackSample(
@@ -126,8 +126,8 @@ class LocalFaceTrackAnalyzer(
 
         val parsedUri = Uri.parse(uri)
         val scheme = parsedUri.scheme
-        require(scheme == null || scheme.lowercase(Locale.ROOT) in setOf("content", "file", "android.resource")) {
-            "Offline face analysis accepts only local content/file/resource URIs; remote media is not fetched."
+        require(LocalMediaSourcePolicy.accepts(scheme, parsedUri.authority)) {
+            "Offline face analysis accepts local file paths and content/resource providers, not network URLs or remote file authorities."
         }
         val localUri = if (scheme == null) Uri.fromFile(File(uri)) else parsedUri
         val retriever = MediaMetadataRetriever()

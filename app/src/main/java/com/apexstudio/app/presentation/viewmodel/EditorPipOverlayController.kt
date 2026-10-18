@@ -7,6 +7,8 @@ import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.OverlayBlend
 import kotlinx.coroutines.flow.update
 
+private fun Float.finiteOr(fallback: Float): Float = if (isFinite()) this else fallback
+
 /**
  * PiP / image overlay canvas editing (Prince round-4 feedback item 2a:
  * "Overlay picture lag gaya lekin EDIT nahi ho raha").
@@ -71,9 +73,11 @@ fun EditorViewModel.moveOverlayClip(
 ) {
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
+        val x = clip.pipX.finiteOr(0.85f)
+        val y = clip.pipY.finiteOr(0.85f)
         clip.copy(
-            pipX = (clip.pipX + dx).coerceIn(0f, 1f),
-            pipY = (clip.pipY + dy).coerceIn(0f, 1f)
+            pipX = (x + dx.finiteOr(0f)).coerceIn(0f, 1f),
+            pipY = (y + dy.finiteOr(0f)).coerceIn(0f, 1f)
         )
     }
 }
@@ -85,7 +89,10 @@ fun EditorViewModel.scaleOverlayClip(
 ) {
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
-        clip.copy(pipScale = scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX))
+        clip.copy(
+            pipScale = scale.finiteOr(clip.pipScale.finiteOr(0.25f))
+                .coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX)
+        )
     }
 }
 
@@ -96,7 +103,10 @@ fun EditorViewModel.rotateOverlayClip(
 ) {
     if (!persist) armOverlayUndo()
     updateClip(clipId, persist) { clip ->
-        clip.copy(pipRotationDeg = (clip.pipRotationDeg + deltaDeg) % 360f)
+        // Reduce each operand before adding: two finite Floats can overflow to infinity.
+        val current = clip.pipRotationDeg.finiteOr(0f) % 360f
+        val delta = deltaDeg.finiteOr(0f) % 360f
+        clip.copy(pipRotationDeg = (current + delta) % 360f)
     }
 }
 
@@ -122,7 +132,7 @@ fun EditorViewModel.setOverlayClipOpacity(clipId: String, opacity: Float) {
     }
     armOverlayUndo()
     updateClip(clipId) { clip ->
-        clip.copy(pipOpacity = opacity.coerceIn(0f, 1f))
+        clip.copy(pipOpacity = opacity.finiteOr(clip.pipOpacity.finiteOr(1f)).coerceIn(0f, 1f))
     }
 }
 
@@ -206,23 +216,30 @@ fun EditorViewModel.upsertOverlayKeyframe(
     updateClip(clipId, persist = persist) { clip ->
         val kfs = clip.keyframes.keyframes
         val nearest = kfs.minByOrNull { kotlin.math.abs(it.timeMs - timeMs) }
+        val previous = nearest?.takeIf { kotlin.math.abs(it.timeMs - timeMs) <= 1000L }
+        val safeX = x.finiteOr(previous?.translateX?.finiteOr(clip.pipX.finiteOr(0.85f)) ?: clip.pipX.finiteOr(0.85f)).coerceIn(0f, 1f)
+        val safeY = y.finiteOr(previous?.translateY?.finiteOr(clip.pipY.finiteOr(0.85f)) ?: clip.pipY.finiteOr(0.85f)).coerceIn(0f, 1f)
+        val safeScale = scale.finiteOr(previous?.scale?.finiteOr(clip.pipScale.finiteOr(0.25f)) ?: clip.pipScale.finiteOr(0.25f))
+            .coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX)
+        val safeRotation = rotationDeg.finiteOr(previous?.rotationDeg?.finiteOr(clip.pipRotationDeg.finiteOr(0f)) ?: clip.pipRotationDeg.finiteOr(0f))
+        val safeOpacity = opacity.finiteOr(previous?.opacity?.finiteOr(clip.pipOpacity.finiteOr(1f)) ?: clip.pipOpacity.finiteOr(1f)).coerceIn(0f, 1f)
         val newKf = if (nearest != null && kotlin.math.abs(nearest.timeMs - timeMs) <= 1000L) {
             nearest.copy(
-                translateX = x.coerceIn(0f, 1f),
-                translateY = y.coerceIn(0f, 1f),
-                scale = scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX),
-                rotationDeg = rotationDeg,
-                opacity = opacity.coerceIn(0f, 1f)
+                translateX = safeX,
+                translateY = safeY,
+                scale = safeScale,
+                rotationDeg = safeRotation,
+                opacity = safeOpacity
             )
         } else {
             Keyframe(
                 id = java.util.UUID.randomUUID().toString(),
                 timeMs = timeMs,
-                translateX = x.coerceIn(0f, 1f),
-                translateY = y.coerceIn(0f, 1f),
-                scale = scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX),
-                rotationDeg = rotationDeg,
-                opacity = opacity.coerceIn(0f, 1f)
+                translateX = safeX,
+                translateY = safeY,
+                scale = safeScale,
+                rotationDeg = safeRotation,
+                opacity = safeOpacity
             )
         }
         val updated = if (nearest != null && kotlin.math.abs(nearest.timeMs - timeMs) <= 1000L) {

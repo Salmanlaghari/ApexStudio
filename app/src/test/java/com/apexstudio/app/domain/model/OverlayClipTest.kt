@@ -72,6 +72,28 @@ class OverlayClipTest {
     }
 
     @Test
+    fun `non-finite transform values are repaired before editing and writing`() {
+        val malformed = overlay().copy(
+            pipX = Float.NaN,
+            pipY = Float.POSITIVE_INFINITY,
+            pipScale = Float.NaN,
+            pipRotationDeg = Float.NEGATIVE_INFINITY,
+            pipOpacity = Float.NaN
+        )
+
+        val repaired = OverlayClip.from(malformed)
+        assertEquals(0.85f, repaired.x, 0.0001f)
+        assertEquals(0.85f, repaired.y, 0.0001f)
+        assertEquals(0.25f, repaired.scale, 0.0001f)
+        assertEquals(0f, repaired.rotationDeg, 0.0001f)
+        assertEquals(1f, repaired.opacity, 0.0001f)
+
+        val written = repaired.copy(x = Float.NaN, scale = Float.POSITIVE_INFINITY).writeTo(overlay())
+        assertEquals(0.4f, written.pipX, 0.0001f)
+        assertEquals(0.35f, written.pipScale, 0.0001f)
+    }
+
+    @Test
     fun `writeTo touches only the fields OverlayClip owns`() {
         val clip = overlay()
         val edited = OverlayClip.from(clip).copy(x = 0.9f, startMs = 5_000L)

@@ -5,6 +5,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,6 +15,91 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class OverlaySplitTrimTest {
+    @Test
+    fun identicalTrimDoesNotCreateAnUndoStep() {
+        val overlay = MediaClip(
+            id = "unchanged-overlay",
+            name = "unchanged-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 15_000L,
+            trimStartMs = 2_000L,
+            trimEndMs = 12_000L,
+            timelineOffsetMs = 6_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.trimClip(overlay.id, overlay.trimStartMs, overlay.trimEndMs)
+
+        assertFalse("a no-op drag must not create a misleading undo action", vm.state.value.canUndo)
+        assertEquals(overlay, vm.state.value.project!!.clips.single())
+    }
+
+    @Test
+    fun overlayGesturesRejectNonFiniteTransformUpdates() {
+        val overlay = MediaClip(
+            id = "finite-overlay",
+            name = "finite-overlay",
+            uri = "file:///overlay.mp4",
+            durationMs = 15_000L,
+            trimEndMs = 15_000L,
+            type = ClipType.OVERLAY,
+            trackIndex = 2
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 20_000L, clips = listOf(overlay)),
+                    durationMs = 20_000L
+                )
+            }
+        }
+
+        vm.moveOverlayClip(overlay.id, Float.NaN, Float.POSITIVE_INFINITY)
+        vm.scaleOverlayClip(overlay.id, Float.NaN)
+        vm.rotateOverlayClip(overlay.id, Float.NaN)
+        vm.setOverlayClipOpacity(overlay.id, Float.NaN)
+
+        val edited = vm.state.value.project!!.clips.single()
+        assertEquals(0.85f, edited.pipX, 0.0001f)
+        assertEquals(0.85f, edited.pipY, 0.0001f)
+        assertEquals(0.25f, edited.pipScale, 0.0001f)
+        assertEquals(0f, edited.pipRotationDeg, 0.0001f)
+        assertEquals(1f, edited.pipOpacity, 0.0001f)
+
+        vm._state.update { state ->
+            state.copy(project = state.project!!.copy(clips = listOf(edited.copy(pipRotationDeg = Float.MAX_VALUE))))
+        }
+        vm.rotateOverlayClip(overlay.id, Float.MAX_VALUE)
+        val rotation = vm.state.value.project!!.clips.single().pipRotationDeg
+        assertTrue("finite gesture values must not overflow into a NaN transform", rotation.isFinite())
+        assertTrue(rotation in -360f..360f)
+
+        vm.upsertOverlayKeyframe(overlay.id, 0L, Float.NaN, Float.POSITIVE_INFINITY,
+            Float.NaN, Float.NaN, Float.NaN)
+        val keyframe = vm.state.value.project!!.clips.single().keyframes.keyframes.single()
+        assertEquals(edited.pipX, keyframe.translateX, 0.0001f)
+        assertEquals(edited.pipY, keyframe.translateY, 0.0001f)
+        assertEquals(edited.pipScale, keyframe.scale, 0.0001f)
+        assertTrue(keyframe.rotationDeg.isFinite())
+        assertEquals(edited.pipOpacity, keyframe.opacity, 0.0001f)
+
+        vm.upsertOverlayKeyframe(overlay.id, 0L, .3f, .4f, .5f, 25f, .6f)
+        val validKeyframe = vm.state.value.project!!.clips.single().keyframes.keyframes.single()
+        vm.upsertOverlayKeyframe(overlay.id, 0L, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        assertEquals(validKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.single())
+        vm.setOverlayClipOpacity(overlay.id, Float.NaN)
+        assertEquals(.6f, vm.state.value.project!!.clips.single().keyframes.keyframes.single().opacity, .0001f)
+    }
+
     @Test
     fun trimmingOverlaySourceHeadAdvancesItsTimelineOffset() {
         val overlay = MediaClip(

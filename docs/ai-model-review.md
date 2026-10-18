@@ -8,6 +8,16 @@ Manual captions, existing text editing, undo/clear/restore, ordinary editing/exp
 
 The narrow [OwenElliott image-safety classifier candidate](https://huggingface.co/OwenElliott/image-safety-classifier-xs) has MIT-declared metadata and NSFL/NSFW/SFW outputs, but no hateful-content output. Its weights are not bundled and it cannot authorize protected actions. Publisher evaluations do not establish app-specific false-negative rates, calibration or contextual hate coverage. Future approval needs exact-byte provenance, preprocessing/label-policy semantics, representative independent evaluation and per-category threshold/recall evidence. Context and definitions matter in [hate-speech detection](https://pmc.ncbi.nlm.nih.gov/articles/PMC6701757/); a skin-color or pixel heuristic is not a substitute.
 
+## Offline review reliability follow-up
+
+Scene analysis now schedules only timestamps inside the retained source interval: the trim out-point is exclusive, even when it lies exactly on the sampling grid. A sample cap is spread across the entire retained interval, including its final millisecond, rather than dropping the tail. The bounded planner handles one-millisecond clips and long-safe arithmetic without first allocating a duration-sized list. These are requested decoder positions; `OPTION_CLOSEST` still chooses a nearby actual video frame, not a frame-accurate trim acceptance guarantee. Coroutine cancellation is checked around synchronous decode and before progress/results; it cannot interrupt a native decode already in flight.
+
+Face and scene analysis share an explicit source policy rejecting direct network schemes, protocol-relative remote hosts and remote `file://` authorities before decoding. User-selected `content://` providers and app resource providers remain supported; a provider may itself access remote storage, so this is not a promise of device-wide network isolation.
+
+The review sheet hides stale signal suggestions and face samples, including review/apply controls, when their captured project/source/edit snapshot no longer matches. It explains that re-analysis is required; controller-side stale-action rejection remains the final boundary. These improvements do not enable moderation-protected actions or finish missing model packs.
+
+Manual overlay transforms now repair non-finite position, scale, rotation and opacity values in the edit surface, controller and keyframe insert/replace paths. Invalid updates retain a finite existing value or the normal default; rotation operands are reduced before addition to avoid overflow. An unchanged normalized trim returns without adding a misleading undo entry. These are regression-tested editing guards, not evidence of physical-device gesture/rendering acceptance.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

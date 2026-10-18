@@ -139,6 +139,17 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
+/** Timeline scale is expressed in dp/ms, while pointer drag deltas are physical px. */
+internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Float): Float =
+    sourceDeltaMs.toFloat() * msToDp * density
+
+internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float): Long {
+    val pxPerMs = msToDp * density
+    return if (pxPerMs.isFinite() && pxPerMs > 0f && deltaPx.isFinite()) {
+        (deltaPx / pxPerMs).toLong()
+    } else 0L
+}
+
 /**
  * Modern Multi-Layer Video Timeline Component for ApexStudio.
  *
@@ -1646,7 +1657,7 @@ private fun TimelineVideoLayerRow(
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(5.dp)
                             )
-                            .pointerInput(clip.id, isLocked) {
+                            .pointerInput(clip, isLocked, msToDp, density.density) {
                                 if (!isLocked) {
                                     // Let ordinary horizontal swipes pan the
                                     // timeline; moving an overlay is an explicit
@@ -1743,18 +1754,18 @@ private fun TimelineVideoLayerRow(
                                     .width(12.dp)
                                     .fillMaxHeight()
                                     .background(Color.White.copy(alpha = 0.12f))
-                                    .pointerInput(clip.id) {
+                                    .pointerInput(clip, msToDp, density.density) {
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val minPx = -(clip.trimStartMs * msToDp)
+                                                val minPx = -sourceTrimDeltaToPx(clip.trimStartMs, msToDp, density.density)
                                                 val maxPx = ((clip.trimEndMs - clip.trimStartMs - 100L)
-                                                    .coerceAtLeast(0L)) * msToDp
+                                                    .coerceAtLeast(0L)).let { sourceTrimDeltaToPx(it, msToDp, density.density) }
                                                 trimStartDxPx = (trimStartDxPx + dragAmount.x)
                                                     .coerceIn(minPx, maxPx)
                                             },
                                             onDragEnd = {
-                                                val newStart = (clip.trimStartMs + (trimStartDxPx / msToDp).toLong())
+                                                val newStart = (clip.trimStartMs + sourceTrimDeltaToMs(trimStartDxPx, msToDp, density.density))
                                                     .coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
                                                 trimStartDxPx = 0f
                                                 if (newStart != clip.trimStartMs) {
@@ -1772,18 +1783,18 @@ private fun TimelineVideoLayerRow(
                                     .width(12.dp)
                                     .fillMaxHeight()
                                     .background(Color.White.copy(alpha = 0.12f))
-                                    .pointerInput(clip.id) {
+                                    .pointerInput(clip, msToDp, density.density) {
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val minPx = -((clip.trimEndMs - clip.trimStartMs - 100L)
-                                                    .coerceAtLeast(0L)) * msToDp
-                                                val maxPx = (clip.durationMs - clip.trimEndMs) * msToDp
+                                                val minPx = -sourceTrimDeltaToPx((clip.trimEndMs - clip.trimStartMs - 100L)
+                                                    .coerceAtLeast(0L), msToDp, density.density)
+                                                val maxPx = sourceTrimDeltaToPx(clip.durationMs - clip.trimEndMs, msToDp, density.density)
                                                 trimEndDxPx = (trimEndDxPx + dragAmount.x)
                                                     .coerceIn(minPx, maxPx)
                                             },
                                             onDragEnd = {
-                                                val newEnd = (clip.trimEndMs + (trimEndDxPx / msToDp).toLong())
+                                                val newEnd = (clip.trimEndMs + sourceTrimDeltaToMs(trimEndDxPx, msToDp, density.density))
                                                     .coerceIn(clip.trimStartMs + 100L, clip.durationMs)
                                                 trimEndDxPx = 0f
                                                 if (newEnd != clip.trimEndMs) {

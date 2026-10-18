@@ -1,6 +1,7 @@
 package com.apexstudio.app.ai.autoreframe
 
 import com.apexstudio.app.ai.mediapipe.FaceDetection
+import com.apexstudio.app.ai.mediapipe.NormalizedBox
 import kotlin.math.max
 
 /** Normalized source crop rectangle, top-left origin, right/bottom exclusive. */
@@ -32,8 +33,8 @@ object FaceAwareReframeEngine {
         val (cropW, cropH) = if (aspect >= outputAspectRatio) outputAspectRatio / aspect to 1f
             else 1f to aspect / outputAspectRatio
         val chosen = faces.asSequence()
-            .filter { it.box.left.isFinite() && it.box.top.isFinite() && it.box.right.isFinite() && it.box.bottom.isFinite() && it.box.right > it.box.left && it.box.bottom > it.box.top }
-            .maxByOrNull { (it.box.right - it.box.left) * (it.box.bottom - it.box.top) }
+            .mapNotNull { face -> visibleBox(face)?.let { face.copy(box = it) } }
+            .maxByOrNull { faceArea(it) }
         val found = chosen != null
         val targetX = chosen?.box?.centerX?.coerceIn(0f, 1f) ?: 0.5f
         val targetY = chosen?.box?.centerY?.coerceIn(0f, 1f) ?: 0.5f
@@ -66,7 +67,7 @@ object FaceAwareReframeEngine {
         var prev: NormalizedCrop? = null
         var previousFaceCenter: Pair<Float, Float>? = null
         return samples.map { (time, faces) ->
-            val validFaces = faces.filter(::hasUsableBox)
+            val validFaces = faces.mapNotNull { face -> visibleBox(face)?.let { face.copy(box = it) } }
             // Largest face initializes tracking; nearest-center matching reduces identity jumps when
             // two people cross or one face becomes temporarily smaller in frame.
             val selected = if (previousFaceCenter == null) validFaces.maxByOrNull { faceArea(it) }
@@ -82,12 +83,16 @@ object FaceAwareReframeEngine {
         }
     }
 
-    private fun hasUsableBox(face: FaceDetection): Boolean {
+    /** Clip detections to source bounds; boxes with no visible area are unusable. */
+    private fun visibleBox(face: FaceDetection): NormalizedBox? {
         val box = face.box
-        if (!box.left.isFinite() || !box.top.isFinite() || !box.right.isFinite() || !box.bottom.isFinite()) return false
-        val width = box.right - box.left
-        val height = box.bottom - box.top
-        return width > 0f && height > 0f && (width * height).isFinite()
+        if (!box.left.isFinite() || !box.top.isFinite() || !box.right.isFinite() || !box.bottom.isFinite()) return null
+        val left = box.left.coerceIn(0f, 1f)
+        val top = box.top.coerceIn(0f, 1f)
+        val right = box.right.coerceIn(0f, 1f)
+        val bottom = box.bottom.coerceIn(0f, 1f)
+        if (right <= left || bottom <= top) return null
+        return NormalizedBox(left, top, right, bottom)
     }
 
     private fun faceArea(face: FaceDetection) =

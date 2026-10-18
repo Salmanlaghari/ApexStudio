@@ -60,6 +60,12 @@ Audio head-trim placement now uses the effective clamped source in-point, not th
 
 Offline signal analysis receives the actual exclusive source end and caps its final highlight instead of extrapolating an irregular sampling tail past the selected trim. This remains a deterministic highlight suggestion, not learned smart-trim inference or frame-accurate decoder acceptance. Protected AI gates, bundled model bytes and timeline thumbnails are unchanged.
 
+## Overlay display density and offscreen face follow-up
+
+Overlay source-trim handles now convert physical pointer pixels through the timeline's dp-per-millisecond scale and display density for both bounds and committed deltas. Move/trim pointer callbacks refresh when the immutable overlay, timeline zoom or density changes instead of retaining an earlier clip snapshot. Regression tests exercise positive/negative conversion, several densities/zoom scales and invalid input. This fixes density-dependent source deltas; it does not establish speed-ramp-aware live handle geometry or physical touch acceptance.
+
+Face reframe geometry clips detection boxes to the normalized visible source before choosing a target. Wholly offscreen boxes cannot win by their original area; partially visible faces use their visible area and center. Both single-frame and temporal-track tests retain honest no-face fallback on offscreen-only samples. This is a geometry correction, not a new detector, identity guarantee, approved face-reframe Apply or device-rendering result. All existing protected AI gates remain unchanged.
+
 ## Bundled assets and learned ESPCN upscaling
 
 The lock file inventories **12 pinned entries totaling 216,670,511 bytes before APK compression**, including official MediaPipe face/pose/hand/segmentation assets, multilingual Whisper tiny int8, English wav2vec2 CTC alignment and a learned ESPCN super-resolution model. Token/config files count as inventory entries. Licenses and hashes accompany the assets; private materialized copies add storage. No cloud inference, paid API, automatic model download or network fallback is introduced.

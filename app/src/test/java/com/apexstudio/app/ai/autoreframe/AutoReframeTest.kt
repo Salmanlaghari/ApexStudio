@@ -54,6 +54,33 @@ class AutoReframeTest {
         assertTrue(frame.crop.right >= face.box.right)
     }
 
+    @Test fun reframeClipsPartiallyVisibleFacesAndIgnoresFacesOutsideSource() {
+        val offscreen = FaceDetection(NormalizedBox(1.1f, .1f, 2f, .9f), emptyList())
+        val partial = FaceDetection(NormalizedBox(-.1f, .2f, .2f, .6f), emptyList())
+
+        val frame = FaceAwareReframeEngine.cropFor(1920, 1080, 1f, listOf(offscreen, partial))
+
+        assertTrue(frame.faceFound)
+        assertEquals(0f, frame.crop.left, .0001f)
+        assertTrue(frame.crop.right < .6f)
+        val invisibleOnly = FaceAwareReframeEngine.cropFor(1920, 1080, 1f, listOf(offscreen))
+        assertFalse(invisibleOnly.faceFound)
+        assertEquals(.5f, invisibleOnly.crop.centerX, .0001f)
+    }
+
+    @Test fun trackUsesVisibleAreaAndReportsOffscreenOnlySamplesAsNoFace() {
+        val offscreen = FaceDetection(NormalizedBox(1.1f, .1f, 2f, .9f), emptyList())
+        val partial = FaceDetection(NormalizedBox(-.1f, .2f, .2f, .6f), emptyList())
+        val frames = FaceAwareReframeEngine.track(1920, 1080, 1f,
+            listOf(0L to listOf(offscreen, partial), 100L to listOf(offscreen)), smoothing = 1f)
+
+        assertTrue(frames[0].faceFound)
+        assertEquals(0f, frames[0].crop.left, .0001f)
+        assertFalse(frames[1].faceFound)
+        assertEquals(.5f, frames[1].crop.centerX, .0001f)
+        assertEquals(listOf(0L, 100L), frames.map { it.timestampMs })
+    }
+
     @Test fun noFaceUsesHonestCenteredFallbackAndTrackPreservesTimes() {
         val frame = FaceAwareReframeEngine.cropFor(1920, 1080, 1f, emptyList())
         assertFalse(frame.faceFound)

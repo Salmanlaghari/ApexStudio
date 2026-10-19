@@ -48,7 +48,7 @@ class EditorLocalAnalysisTest {
         assertEquals(listOf(2_000L, 6_000L), clips.map { it.trimStartMs })
         assertEquals(listOf(6_000L, 12_000L), clips.map { it.trimEndMs })
         assertTrue(clips.all { it.durationMs == 20_000L && it.uri == "file:///video.mp4" })
-        assertEquals(original, vm.undoStack.single())
+        assertEquals(original, vm.undoStack.single().project.clips)
         assertEquals(LocalAnalysisStatus.IDLE, vm.localAnalysis.value.status)
         assertFalse(vm.applyLocalSceneCuts())
     }

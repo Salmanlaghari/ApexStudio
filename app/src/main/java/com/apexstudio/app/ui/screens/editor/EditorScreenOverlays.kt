@@ -268,6 +268,8 @@ fun AdjustmentsPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeAdjustmentsPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -890,6 +892,8 @@ fun MaskPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent)
             .clickable { vm.closeMaskPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -932,6 +936,8 @@ fun TextMaskPanelOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent)
             .clickable { vm.closeTextMaskPanel() },
         contentAlignment = Alignment.BottomCenter
@@ -1322,6 +1328,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         VideoPreviewArea(
             selectionFileLabel = selectionFileLabel,
             exoPlayer = exoPlayer,
+            videoWidth = state.videoWidth,
+            videoHeight = state.videoHeight,
             videoCrop = (state.project?.clips?.firstOrNull { it.id == state.selectedClipId && it.trackIndex == 0 }
                 ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),

@@ -2,6 +2,7 @@ package com.apexstudio.editor.thumbnail
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.PhotoEditSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -28,6 +29,16 @@ class TimelineThumbnailBackfillTest {
         assertNotEquals(key, TimelineThumbnailSourceKey.from(original.copy(uri = "file:///new.mp4")))
         assertNotEquals(key, TimelineThumbnailSourceKey.from(original.copy(trimStartMs = 1_000L)))
         assertNotEquals(key, TimelineThumbnailSourceKey.from(original.copy(speedMultiplier = 2f)))
+    }
+
+    @Test
+    fun `photo edit changes invalidate image-backed overlay backfill`() {
+        val original = source().copy(uri = "file:///overlay-photo.png")
+        val key = TimelineThumbnailSourceKey.from(original)
+        assertNotEquals(
+            key,
+            TimelineThumbnailSourceKey.from(original.copy(photoEdit = PhotoEditSettings(rotationSteps = 1))),
+        )
     }
 
     @Test
@@ -86,6 +97,29 @@ class TimelineThumbnailBackfillTest {
                 intervalMs = 296L,
                 maxKeys = 1
             ).first()
+        )
+    }
+
+    @Test
+    fun `background backfill yields while visible-window thumbnails are pending`() {
+        assertTrue(
+            TimelineThumbnailBackfill.batch(
+                cursorMs = 0L,
+                durationMs = 31_000L,
+                intervalMs = 296L,
+                maxKeys = 1,
+                visibleWorkPending = true
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(0L),
+            TimelineThumbnailBackfill.batch(
+                cursorMs = 0L,
+                durationMs = 31_000L,
+                intervalMs = 296L,
+                maxKeys = 1,
+                visibleWorkPending = false
+            ).toList()
         )
     }
 

@@ -9,6 +9,13 @@ import com.apexstudio.app.domain.model.SpeedCurve
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.VideoCropSettings
 
+/** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
+internal fun monotonicProjectExportProgress(previous: Float, reported: Float): Float {
+    val safePrevious = previous.takeIf { it.isFinite() }?.coerceIn(0f, 0.99f) ?: 0f
+    val safeReported = reported.takeIf { it.isFinite() }?.coerceIn(0f, 0.99f) ?: safePrevious
+    return maxOf(safePrevious, safeReported)
+}
+
 /**
  * Pure, fail-closed gate for the deliberately small sequential V1 export path.
  * Every item is accounted for; this never filters or silently normalizes clips.
@@ -66,6 +73,7 @@ internal fun projectCompositionUnsupportedReason(
     if (config.aspectRatio !in setOf("16:9", "9:16", "1:1")) {
         return "Project export does not support aspect ratio '${config.aspectRatio}'."
     }
+    if (config.preserveInputAspectRatio) return "Project export needs one fixed output aspect ratio."
     if (config.fps !in setOf(24, 25, 30, 50, 60)) return "Project export supports 24, 25, 30, 50, or 60 fps."
     if (config.quality.lowercase() !in setOf("low", "medium", "high")) {
         return "Project export does not support quality '${config.quality}'."
@@ -76,17 +84,21 @@ internal fun projectCompositionUnsupportedReason(
         return "Project export has an invalid global audio pitch."
     }
 
-    // These fields are applied to the selected-clip export, not to the
-    // sequential project composition. Any non-default visual state must be
-    // surfaced instead of disappearing in a whole-project render.
-    if (config.filterPreset != null || config.filterIntensity != 1f) return "Project export does not support a global filter."
-    if (!config.adjustments.isDefault) return "Project export does not support global color adjustments."
+    // Global LUT, grading, and FX are applied to every item in the project
+    // composition. Keep invalid parameters fail-closed instead of silently
+    // clamping values differently from the selected-clip export.
+    if (!config.filterIntensity.isFinite() || config.filterIntensity !in 0f..1f) {
+        return "Project export has an invalid global filter intensity."
+    }
+    if (!config.fxIntensity.isFinite() || config.fxIntensity !in 0f..1f ||
+        !config.fxSpeed.isFinite() || config.fxSpeed !in 0.1f..4f) {
+        return "Project export has invalid global FX settings."
+    }
     if (config.videoCrop != null || config.faceCropConfig != null || config.cropRect != null) {
         return "Project export does not support a global crop or face reframe."
     }
     if (config.clipSpeed != 1f || config.speedPoints.isNotEmpty()) return "Project export speed must be set on each video clip."
     if (!config.keyframes.isEmpty()) return "Project export does not support global keyframes."
-    if (config.fxPreset != null || config.fxIntensity != 1f || config.fxSpeed != 1f) return "Project export does not support FX edits."
     if (config.arFilterId != null || config.arFilterIntensity != 0f || config.arFilterCustomText.isNotEmpty()) {
         return "Project export does not support AR filters."
     }

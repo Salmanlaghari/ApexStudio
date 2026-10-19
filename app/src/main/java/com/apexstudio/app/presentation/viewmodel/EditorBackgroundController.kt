@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
+import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -51,6 +52,10 @@ internal fun backgroundApplyCanCommit(
     expected: BackgroundApplyVersion,
     current: BackgroundApplyVersion?
 ): Boolean = current == expected
+
+/** Replacement imagery must be an IMAGE clip already present in this project's media list. */
+internal fun isExistingProjectImageSource(projectClips: List<MediaClip>, uri: String?): Boolean =
+    !uri.isNullOrBlank() && projectClips.any { it.type == ClipType.IMAGE && it.uri == uri }
 
 // BackgroundUiState lives on EditorViewModel (instance-scoped).
 
@@ -136,6 +141,17 @@ fun EditorViewModel.applyBackgroundReplace(
         )
         return
     }
+    val pendingImageUri = _backgroundUi.value.imageUri ?: settings.imageUri
+    if (settings.mode == BackgroundReplaceMode.IMAGE &&
+        !isExistingProjectImageSource(project.clips, pendingImageUri)
+    ) {
+        _backgroundUi.value = _backgroundUi.value.copy(
+            phase = BackgroundPhase.FAILED,
+            progress01 = 0f,
+            message = "Choose a replacement image already in this project.",
+        )
+        return
+    }
     if (!GlobalModerationEnforcement.readiness.approved) {
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED,
@@ -158,7 +174,7 @@ fun EditorViewModel.applyBackgroundReplace(
     // silently change the settings of this already-started request.
     val effective = settings.sanitized().copy(
         sourceUri = sourceUri,
-        imageUri = _backgroundUi.value.imageUri ?: settings.imageUri
+        imageUri = pendingImageUri
     )
     val ctxApp = ctx.applicationContext
 

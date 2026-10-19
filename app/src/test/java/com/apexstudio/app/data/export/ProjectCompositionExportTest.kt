@@ -85,6 +85,31 @@ class ProjectCompositionExportTest {
     }
 
     @Test
+    fun `global LUT grading and FX are accepted when their parameters are valid`() {
+        val config = ExportEngine.ExportConfig(
+            filterPreset = com.apexstudio.app.data.filter.FilterPreset(
+                "cinema", "Cinema", "Cinematic", "luts/cinema.cube"
+            ),
+            filterIntensity = 0.7f,
+            adjustments = com.apexstudio.app.domain.model.VideoAdjustments(brightness = 0.1f),
+            fxPreset = com.apexstudio.app.data.fx.FxPreset.GLITCH,
+            fxIntensity = 0.6f,
+            fxSpeed = 1.3f
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(clip()), config))
+        assertTrue(projectCompositionUnsupportedReason(listOf(clip()), config.copy(fxSpeed = 5f))!!
+            .contains("global FX settings"))
+    }
+
+    @Test
+    fun `project progress remains finite and monotonic`() {
+        assertEquals(0.01f, monotonicProjectExportProgress(0f, 0.01f), 0f)
+        assertEquals(0.4f, monotonicProjectExportProgress(0.4f, 0.2f), 0f)
+        assertEquals(0.99f, monotonicProjectExportProgress(0.9f, 1f), 0f)
+        assertEquals(0.4f, monotonicProjectExportProgress(0.4f, Float.NaN), 0f)
+    }
+
+    @Test
     fun `trim ranges must be valid and fit the known source duration`() {
         val invalid = clip().copy(trimEndMs = 5_001L)
         assertEquals(

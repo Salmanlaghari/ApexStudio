@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,10 @@ import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @Composable
@@ -51,9 +56,12 @@ fun HomeScreen(
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        val saved = projectRepo.loadAllNow()
-        projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
-
+        // DataStore read/JSON decoding must not block the first mobile frame.
+        // flowOn only moves upstream work; collect remains on the UI dispatcher,
+        // so keep the synchronous legacy fallback off that callback as well.
+        projectRepo.loadAll().flowOn(Dispatchers.IO).collect { saved ->
+            projects = resolveHomeProjects(saved, loadFallback = repo::loadProjects)
+        }
     }
 
     val mediaPicker = remember { MediaPickerHelper(context) }
@@ -79,7 +87,6 @@ fun HomeScreen(
                 val newProject = repo.createProject(name = projectName, clips = clips)
 
                 projectRepo.saveProject(newProject)
-                projects = projectRepo.loadAllNow()
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
                 onProjectOpen(newProject.id)
             }
@@ -131,10 +138,25 @@ fun HomeScreen(
             SectionLabel("Your Projects (${projects.size})")
         }
 
-        items(projects) { p ->
+        items(projects, key = { it.id }) { p ->
             ProjectRow(p, onOpen = { onProjectOpen(p.id) })
         }
     }
+}
+
+/**
+ * Prefer persisted projects, falling back to bundled/demo projects for first run.
+ * [loadFallback] is synchronous and may do work, so always execute it off the
+ * caller (HomeScreen's collector) dispatcher.
+ */
+internal suspend fun resolveHomeProjects(
+    savedProjects: List<Project>,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    loadFallback: () -> List<Project>,
+): List<Project> = if (savedProjects.isNotEmpty()) {
+    savedProjects
+} else {
+    withContext(ioDispatcher) { loadFallback() }
 }
 
 @Composable
@@ -142,26 +164,47 @@ internal fun DashboardEditorEntries(
     onImageEditing: () -> Unit,
     onVideoEditor: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        DashboardEditorEntry(
-            title = "Image Editing Session",
-            subtitle = "Choose a photo to edit",
-            icon = Icons.Default.Image,
-            testTag = "dashboard-image-editing-session",
-            modifier = Modifier.weight(1f),
-            onClick = onImageEditing
-        )
-        DashboardEditorEntry(
-            title = "Video Editor",
-            subtitle = "Choose a video to edit",
-            icon = Icons.Default.Movie,
-            testTag = "dashboard-video-editor",
-            modifier = Modifier.weight(1f),
-            onClick = onVideoEditor
-        )
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 380.dp * fontScale) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onVideoEditor
+                )
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.weight(1f),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.weight(1f),
+                    onClick = onVideoEditor
+                )
+            }
+        }
     }
 }
 
@@ -195,7 +238,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .heightIn(min = 100.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.linearGradient(

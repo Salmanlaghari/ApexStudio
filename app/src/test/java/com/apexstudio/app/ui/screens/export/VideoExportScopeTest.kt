@@ -68,4 +68,11 @@ class VideoExportScopeTest {
         compose.setContent { VideoExportScopeWarning(scope) }
         compose.onNodeWithText("Whole-project video export", substring = true).assertDoesNotExist()
     }
+
+    @Test fun exportStatusCallsOutPreparationWhenMedia3HasNoProgressYet() {
+        assertEquals("Preparing export…", exportProgressLabel(isExporting = true, progress = 0f))
+        assertEquals("Preparing export…", exportProgressLabel(isExporting = true, progress = Float.NaN))
+        assertEquals("Exporting…", exportProgressLabel(isExporting = true, progress = 0.01f))
+        assertNull(exportProgressLabel(isExporting = false, progress = 0f))
+    }
 }

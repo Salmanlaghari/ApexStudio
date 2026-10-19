@@ -6,8 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -139,6 +141,11 @@ fun AdjustPanel(
                 ),
                 RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             )
+            // Keep the sheet inside the usable window on short devices; the
+            // overlay host applies status/navigation-bar insets, and this
+            // scroll container keeps the preset row reachable above them.
+            .heightIn(max = 480.dp)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         // TOP HEADER: Title + Active status + Reset All + Close

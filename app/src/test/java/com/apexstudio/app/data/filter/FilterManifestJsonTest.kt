@@ -2,7 +2,9 @@ package com.apexstudio.app.data.filter
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.apexstudio.app.presentation.state.EditorState
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -86,5 +88,21 @@ class FilterManifestJsonTest {
         }
 
         assertTrue("Duplicate filter ids in manifest: $duplicates", duplicates.isEmpty())
+    }
+
+    @Test
+    fun `editor default and legacy cinematic categories exist and contain filters`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val manifest = LutFilterEngine(context).manifest
+
+        assertEquals(EditorState.DEFAULT_FILTER_CATEGORY_ID, EditorState().filterCategory)
+        listOf(EditorState.DEFAULT_FILTER_CATEGORY_ID, "cinematic").forEach { categoryId ->
+            val category = manifest.categoryById(categoryId)
+            assertTrue("Missing manifest category: $categoryId", category != null)
+            assertTrue(
+                "Manifest category has no filters: $categoryId",
+                !category!!.filters.isEmpty()
+            )
+        }
     }
 }

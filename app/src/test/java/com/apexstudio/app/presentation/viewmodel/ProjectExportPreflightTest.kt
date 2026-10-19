@@ -17,12 +17,20 @@ class ProjectExportPreflightTest {
         assertNotNull(projectVisualScopeUnsupportedReason(EditorState()))
     }
 
-    @Test fun `global filter fx ar and gpu grading cannot be silently dropped`() {
-        for (edited in listOf(state.copy(activeFilterId = "lut"), state.copy(activeFxId = "glitch"),
-            state.copy(activeArFilterId = "ar"), state.copy(adjustments = VideoAdjustments(brightness = 0.2f)),
-            state.copy(activeGpuFilterConfig = state.activeGpuFilterConfig.copy(brightness = 0.1f)))) {
-            assertNotNull(projectVisualScopeUnsupportedReason(edited))
-        }
+    @Test fun `global LUT FX and standard grading are supported`() {
+        for (edited in listOf(
+            state.copy(activeFilterId = "lut"),
+            state.copy(activeFxId = "glitch"),
+            state.copy(adjustments = VideoAdjustments(brightness = 0.2f))
+        )) assertNull(projectVisualScopeUnsupportedReason(edited))
+    }
+
+    @Test fun `unsupported AR GPU grading and crop remain fail closed`() {
+        for (edited in listOf(
+            state.copy(activeArFilterId = "ar"),
+            state.copy(activeGpuFilterConfig = state.activeGpuFilterConfig.copy(brightness = 0.1f)),
+            state.copy(cropRect = state.cropRect.copy(left = 0.1f))
+        )) assertNotNull(projectVisualScopeUnsupportedReason(edited))
     }
 
     @Test fun `project transitions and stickers cannot be silently dropped`() {

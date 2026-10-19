@@ -150,14 +150,12 @@ object PhotoEditRenderer {
             var bitmap = openStream(context, uri)?.use {
                 BitmapFactory.decodeStream(it, null, decodeOpts)
             } ?: return@withContext null
-            // 3. EXIF orientation.
+            // 3. EXIF orientation. EXIF has eight meaningful orientations;
+            // handling rotation alone leaves mirrored camera images backwards.
             val orientation = readExifOrientation(context, uri)
-            if (orientation != 0) {
-                val m = Matrix().apply { postRotate(orientation.toFloat()) }
-                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
-                if (rotated != bitmap) bitmap.recycle()
-                bitmap = rotated
-            }
+            val oriented = applyExifOrientation(bitmap, orientation)
+            if (oriented !== bitmap) bitmap.recycle()
+            bitmap = oriented
             // 4. Final downscale if still over maxDim (sample is power-of-2).
             val lw = max(bitmap.width, bitmap.height)
             if (lw > maxDim) {
@@ -172,10 +170,11 @@ object PhotoEditRenderer {
             // copy fails (OOM), recycle the decoded bitmap to relieve memory
             // pressure and return null instead of a potentially immutable
             // bitmap that would crash downstream Canvas ops.
-            bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: run {
-                try { bitmap.recycle() } catch (_: Exception) {}
-                null
-            }
+            val software = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            // The decoder's private allocation is not the returned software
+            // bitmap. Release it on success too, not just on a failed copy.
+            if (software !== bitmap) bitmap.recycle()
+            software
         } catch (e: Exception) {
             Log.w(TAG, "loadBitmap failed for $uriString", e)
             null
@@ -199,15 +198,32 @@ object PhotoEditRenderer {
     private fun readExifOrientation(context: Context, uri: Uri): Int {
         return try {
             val exif = openStream(context, uri)?.use { ExifInterface(it) } ?: return 0
-            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
-            }
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         } catch (e: Exception) {
-            0
+            ExifInterface.ORIENTATION_NORMAL
         }
+    }
+
+    /** Applies all eight EXIF image orientations without mutating [src]. */
+    internal fun applyExifOrientation(src: Bitmap, orientation: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        val (outW, outH, values) = when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> Triple(w, h, floatArrayOf(-1f, 0f, w.toFloat(), 0f, 1f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_180 -> Triple(w, h, floatArrayOf(-1f, 0f, w.toFloat(), 0f, -1f, h.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> Triple(w, h, floatArrayOf(1f, 0f, 0f, 0f, -1f, h.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_TRANSPOSE -> Triple(h, w, floatArrayOf(0f, 1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_90 -> Triple(h, w, floatArrayOf(0f, -1f, h.toFloat(), 1f, 0f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_TRANSVERSE -> Triple(h, w, floatArrayOf(0f, -1f, h.toFloat(), -1f, 0f, w.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_270 -> Triple(h, w, floatArrayOf(0f, 1f, 0f, -1f, 0f, w.toFloat(), 0f, 0f, 1f))
+            else -> return src
+        }
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val transform = Matrix().apply {
+            setValues(values)
+        }
+        Canvas(out).drawBitmap(src, transform, Paint(Paint.FILTER_BITMAP_FLAG))
+        return out
     }
 
     // ------------------------------------------------------------------
@@ -237,7 +253,11 @@ object PhotoEditRenderer {
                         ?: LutBitmapCache.getOrLoad(context, preset)
                 }
             }
-            applyEdits(src, settings, lutTexture)
+            val rendered = applyEdits(src, settings, lutTexture)
+            // renderEdited owns its decode; applyEdits intentionally doesn't.
+            // This is safe here, unlike recycling a displayed preview frame.
+            if (rendered !== src) src.recycle()
+            rendered
         } catch (e: Exception) {
             Log.w(TAG, "renderEdited failed", e)
             src
@@ -290,6 +310,19 @@ object PhotoEditRenderer {
         // 5. LUT filter — the real .cube data, same as export.
         if (lutTexture != null && settings.filterId != null && settings.filterIntensity > 0f) {
             advance(LutBitmapCache.applyToBitmap(cur, lutTexture, settings.filterIntensity))
+        }
+        // 6. Canvas is composed AFTER grading: filters affect the image only,
+        // never the user's solid background. Output stays within the decode budget.
+        val canvasAspect = settings.canvas.aspectRatio
+        if (canvasAspect != null) {
+            val geometry = PhotoCanvasGeometry.calculate(cur.width, cur.height, canvasAspect, settings.canvas.fill)
+            val out = Bitmap.createBitmap(geometry.width, geometry.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(out)
+            canvas.drawColor((settings.canvas.backgroundArgb or 0xFF000000L).toInt())
+            canvas.drawBitmap(cur, null, android.graphics.RectF(
+                geometry.left, geometry.top, geometry.right, geometry.bottom
+            ), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+            advance(out)
         }
         return cur
     }

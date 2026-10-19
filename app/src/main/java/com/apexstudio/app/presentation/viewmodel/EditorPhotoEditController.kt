@@ -90,3 +90,12 @@ fun EditorViewModel.resetPhotoEdits(clipId: String) =
 /** Phase 4: toggles the Ken Burns pan/zoom motion on a photo clip. */
 fun EditorViewModel.setPhotoKenBurns(clipId: String, enabled: Boolean) =
     updatePhotoEdit(clipId) { it.copy(kenBurns = enabled) }
+
+/** Invalid preset ids are ignored rather than corrupting a saved project. */
+fun EditorViewModel.setPhotoCanvas(clipId: String, canvas: com.apexstudio.app.domain.model.PhotoCanvasSettings) {
+    if (canvas.aspectPreset !in com.apexstudio.app.domain.model.PhotoCanvasSettings.PRESETS) return
+    if (_state.value.project?.clips?.none {
+            it.id == clipId && it.type == com.apexstudio.app.domain.model.ClipType.IMAGE
+        } != false) return
+    updatePhotoEdit(clipId) { it.copy(canvas = canvas.copy(backgroundArgb = canvas.backgroundArgb or 0xFF000000L)) }
+}

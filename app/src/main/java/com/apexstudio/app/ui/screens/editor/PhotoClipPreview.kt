@@ -67,7 +67,8 @@ fun PhotoClipPreview(
     cropActive: Boolean,
     onCropChange: (PhotoCropRect) -> Unit,
     modifier: Modifier = Modifier,
-    isCoverMode: Boolean = false
+    isCoverMode: Boolean = false,
+    onImageAspectRatioChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -117,7 +118,10 @@ fun PhotoClipPreview(
 
     // In crop mode the crop is withheld so the handles operate on the
     // full (rotated) photo.
-    val effectiveSettings = if (cropActive) settings.copy(crop = null) else settings
+    val effectiveSettings = if (cropActive) settings.copy(
+        crop = null,
+        canvas = com.apexstudio.app.domain.model.PhotoCanvasSettings()
+    ) else settings
     val activeLut = lutTexture.takeIf { lutFilterId == settings.filterId && settings.filterId != null }
     LaunchedEffect(rawBitmap, effectiveSettings, activeLut) {
         val src = rawBitmap
@@ -161,6 +165,11 @@ fun PhotoClipPreview(
     // uses Fit so the entire image and all crop handles remain reachable.
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val bmp = edited
+    androidx.compose.runtime.SideEffect {
+        if (bmp != null && bmp.width > 0 && bmp.height > 0) {
+            onImageAspectRatioChange(bmp.width.toFloat() / bmp.height)
+        }
+    }
     val photoRect = remember(bmp, canvasSize, isCoverMode, cropActive) {
         bmp?.let {
             photoDisplayRect(

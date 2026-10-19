@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +61,7 @@ fun MaskPanel(
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(Color(0xFF141420))
             .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .heightIn(max = 380.dp)
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
@@ -106,46 +108,33 @@ fun MaskPanel(
         // Shape picker
         Text("SHAPE", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        // Ten chips no longer fit one row once the labels are longer than
-        // a glyph ("Blur Faces"), so shapes are laid out three per row:
-        // every mode keeps a readable label and stays tappable without a
-        // horizontal scroll. Behaviour is unchanged - tapping a shape with
-        // no mask creates one, with a mask switches it; the mask param
-        // (never a synthesized default) stays the source of truth.
-        MaskShape.entries.chunked(3).forEach { rowShapes ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                rowShapes.forEach { shape ->
-                    val selected = mask?.shape == shape
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                                else Color(0xFF1C1C2E)
-                            )
-                            .border(
-                                1.5.dp,
-                                if (selected) ApexPalette.NeonCyan else Color.Transparent,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = shape.label,
-                            color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
+        // Compact horizontal shape strip: labels remain readable and the panel
+        // no longer grows into several rows on a phone. The strip scrolls when
+        // the available width is narrow; every shape remains selectable.
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MaskShape.entries.forEach { shape ->
+                val selected = mask?.shape == shape
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF1C1C2E))
+                        .border(1.5.dp, if (selected) ApexPalette.NeonCyan else Color.Transparent, RoundedCornerShape(12.dp))
+                        .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = shape.label,
+                        color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
+                    )
                 }
             }
-            Spacer(Modifier.height(6.dp))
         }
 
         // Sliders + invert only exist when there IS a mask. When the mask
@@ -224,42 +213,30 @@ fun MaskPanel(
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.height(8.dp))
-        MaskPreset.ALL.chunked(3).forEach { rowPresets ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                rowPresets.forEach { preset ->
-                    val active = activeMask.presetId == preset.id
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (active) ApexPalette.NeonPink.copy(alpha = 0.18f)
-                                else Color(0xFF1C1C2E)
-                            )
-                            .border(
-                                1.dp,
-                                if (active) ApexPalette.NeonPink else Color.Transparent,
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clickable {
-                                onUpdate(preset.apply().copy(presetId = preset.id))
-                            }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = preset.label,
-                            color = if (active) ApexPalette.NeonPink else Color.White.copy(alpha = 0.75f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MaskPreset.ALL.forEach { preset ->
+                val active = activeMask.presetId == preset.id
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (active) ApexPalette.NeonPink.copy(alpha = 0.18f) else Color(0xFF1C1C2E))
+                        .border(1.dp, if (active) ApexPalette.NeonPink else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable { onUpdate(preset.apply().copy(presetId = preset.id)) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = preset.label,
+                        color = if (active) ApexPalette.NeonPink else Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
                 }
             }
-            Spacer(Modifier.height(6.dp))
         }
         Spacer(Modifier.height(14.dp))
 

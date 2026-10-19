@@ -32,6 +32,7 @@ import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
 import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
+import com.apexstudio.editor.thumbnail.TimelineThumbnailRequestPass
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -235,18 +236,19 @@ fun TimelineTrackArea(
             val winStartPx = (scrollPx - viewport).coerceAtLeast(0)
             val winEndPx = scrollPx + viewport + viewport
             val msToPx = msToDp * density.density
-            var launched = 0
-            var pending = 0
+            val requests = TimelineThumbnailRequestPass(inFlightKeys)
 
-            // Launch ONE filmstrip key if capacity allows. Shared by the
-            // window pass and the full-clip sweep, so there is exactly one
-            // claim rule (synchronized in-flight set, 24 jobs per pass).
-            fun requestKey(clip: com.apexstudio.app.domain.model.MediaClip, keyMs: Long) {
+            // Keep decoder pressure bounded and reserve capacity for frames
+            // the user can currently see. The former 24-job pass also launched
+            // full-clip backfill on open, competing with preview startup and
+            // delaying useful thumbnails on projects with many layers.
+            fun requestKey(
+                clip: com.apexstudio.app.domain.model.MediaClip,
+                keyMs: Long,
+                visible: Boolean = false,
+            ) {
                 val key = clip.id to keyMs
-                if (filmstripFrames.containsKey(key) || inFlightKeys.contains(key)) return
-                pending++
-                if (launched >= 24 || !inFlightKeys.add(key)) return
-                launched++
+                if (!requests.claim(key, cached = filmstripFrames.containsKey(key), visible = visible)) return
                 // Immutable captures only: `keyMs` is a moving counter in the
                 // caller's loop and `clip` would be re-read on the next pass,
                 // so both must be frozen for the job.
@@ -281,22 +283,20 @@ fun TimelineTrackArea(
                 if (onScreen && winFrom <= winTo) {
                     var windowKey = winFrom
                     while (windowKey <= winTo) {
-                        requestKey(clip, windowKey)
+                        requestKey(clip, windowKey, visible = true)
                         windowKey += frameIntervalMs
                     }
                 }
-                // PRIORITY 2 — the whole clip, resumed from the persistent
-                // cursor. Never plan more keys than the shared 24-job pass
-                // budget: the old loop scanned 96 keys while requestKey
-                // silently rejected everything after launch 24, then parked
-                // the cursor past those unrequested timestamps. At close zoom
-                // this permanently left the strip blank after ~8 seconds.
+                // PRIORITY 2 — one background frame only when no visible
+                // frame is missing and no decode is already occupying the
+                // bounded worker budget. Cursor advances only for planned work.
                 val cursor = backfillCursor[clip.id] ?: 0L
                 val backfillKeys = TimelineThumbnailBackfill.batch(
                     cursorMs = cursor,
                     durationMs = clipDur,
                     intervalMs = frameIntervalMs,
-                    maxKeys = 24 - launched
+                    maxKeys = if (!requests.visibleWorkDispatched && requests.launched == 0 && inFlightKeys.size < 4) 1 else 0,
+                    visibleWorkPending = requests.visibleWorkDispatched,
                 )
                 backfillKeys.forEach { requestKey(clip, it) }
                 // A cursor past clipDur means "done"; an empty batch due to a
@@ -326,10 +326,9 @@ fun TimelineTrackArea(
                     .take(overflow)
                     .forEach { (k, _) -> filmstripFrames.remove(k) }
             }
-            // Pace: busy while work remains, slow to a crawl when the
-            // window is already drawn — the back-fill then still ticks
-            // once every ~400ms until the whole clip is covered.
-            delay(if (pending > 0) 40L else 400L)
+            // Revisit visible demand quickly; deliberate background pacing
+            // prevents full-project backfill from monopolizing decoder/I/O.
+            delay(requests.pollDelayMs)
         }
     }
     // Drop frames for clips that no longer exist.

@@ -88,6 +88,21 @@ class ExportApplicationThreadTest {
     }
 
     @Test
+    fun `cancel reaches preparation before a transformer exists`() {
+        val engine = engine()
+        val preparation = kotlinx.coroutines.Job()
+        val field = ExportEngine::class.java.getDeclaredField("exportPreparationJob")
+            .apply { isAccessible = true }
+        field.set(engine, preparation)
+        assertNull(activeTransformer(engine))
+        CompletableFuture.runAsync { engine.cancelExport() }.get(5, TimeUnit.SECONDS)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(preparation.isCancelled)
+        assertNull(field.get(engine))
+        assertFalse(engine.exportState.value.isExporting)
+    }
+
+    @Test
     fun `failed startup preserves error and removes inactive transformer`() {
         val engine = engine()
         val expected = IllegalArgumentException("source setup failed")

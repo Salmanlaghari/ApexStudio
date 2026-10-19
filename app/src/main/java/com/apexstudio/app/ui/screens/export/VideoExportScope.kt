@@ -31,6 +31,13 @@ internal fun videoExportScope(state: EditorState): VideoExportScope {
     )
 }
 
+/** Media3 can report no percentage while preparing inputs/decoders; don't label that as a stalled render. */
+internal fun exportProgressLabel(isExporting: Boolean, progress: Float): String? = when {
+    !isExporting -> null
+    !progress.isFinite() || progress <= 0f -> "Preparing export…"
+    else -> "Exporting…"
+}
+
 @Composable
 internal fun VideoExportScopeWarning(scope: VideoExportScope) {
     AudioExportWarning(scope.notice)

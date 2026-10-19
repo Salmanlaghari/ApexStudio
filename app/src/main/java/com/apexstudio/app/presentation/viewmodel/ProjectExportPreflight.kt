@@ -1,7 +1,6 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.ClipType
-import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.presentation.state.EditorState
 
 /**
@@ -11,12 +10,11 @@ import com.apexstudio.app.presentation.state.EditorState
 internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     val project = state.project ?: return "No project is open."
     if (0 in state.hiddenVideoLayers) return "The main video track is hidden. Show it before whole-project export."
-    if (state.activeFilterId != null || state.activeFxId != null || state.activeArFilterId != null) {
-        return "Whole-project export does not yet render global filters, FX or AR. Use selected-clip export to keep those edits."
+    if (state.activeArFilterId != null) {
+        return "Whole-project export does not yet render AR filters. Use selected-clip export to keep that edit."
     }
-    if (state.adjustments != VideoAdjustments() || !state.cropRect.isFullFrame() ||
-        !state.activeGpuFilterConfig.isDefault) {
-        return "Whole-project export does not yet render global grading or crop. Use selected-clip export to keep those edits."
+    if (!state.cropRect.isFullFrame() || !state.activeGpuFilterConfig.isDefault) {
+        return "Whole-project export does not yet render GPU filters or crop. Use selected-clip export to keep those edits."
     }
     if (project.stickers.isNotEmpty()) {
         return "Whole-project export does not yet render project stickers. Use selected-clip export to keep those edits."

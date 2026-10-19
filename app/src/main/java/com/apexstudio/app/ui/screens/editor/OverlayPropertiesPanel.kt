@@ -122,7 +122,11 @@ fun OverlayPropertiesPanel(
             .background(Color(0xFF141420))
             .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
+            // The primary layout/trim controls plus horizontal cards often
+            // exceed the half-height cap on phones. Keep the sheet bounded
+            // without clipping the lower rows or making advanced cards vanish.
             .heightIn(max = maxSheetHeight)
+            .verticalScroll(rememberScrollState())
     ) {
         // Header
         Row(

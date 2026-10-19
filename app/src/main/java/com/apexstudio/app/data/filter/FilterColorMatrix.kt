@@ -20,6 +20,7 @@ object FilterColorMatrix {
     )
 
     fun getRawMatrix(filterId: String?): FloatArray {
+        CreatorFilterPack.matrix(filterId)?.let { return it }
         return when (filterId) {
             // --- Monochromatic & B/W ---
             "graphite" -> floatArrayOf(

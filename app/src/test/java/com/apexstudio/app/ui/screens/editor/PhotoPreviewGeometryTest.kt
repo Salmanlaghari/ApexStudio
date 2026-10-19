@@ -82,7 +82,7 @@ class PhotoPreviewGeometryTest {
     fun recompositionUpdatesTheInflatedNativePlayerViewsActualResizeMode() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val player = ExoPlayer.Builder(context).build()
-        val coverMode = mutableStateOf(true)
+        val coverMode = mutableStateOf(DEFAULT_PREVIEW_COVER_MODE)
         var composeRoot: View? = null
         var playerView: PlayerView? = null
         try {
@@ -102,15 +102,15 @@ class PhotoPreviewGeometryTest {
             }
             assertNotNull("VideoPreviewArea should inflate view_player.xml", playerView)
             val capturedPlayerView = checkNotNull(playerView)
-            assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, capturedPlayerView.resizeMode)
-
-            compose.runOnUiThread { coverMode.value = false }
-            compose.waitForIdle()
             assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, capturedPlayerView.resizeMode)
 
             compose.runOnUiThread { coverMode.value = true }
             compose.waitForIdle()
             assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, capturedPlayerView.resizeMode)
+
+            compose.runOnUiThread { coverMode.value = false }
+            compose.waitForIdle()
+            assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, capturedPlayerView.resizeMode)
         } finally {
             compose.runOnUiThread { player.release() }
         }
@@ -125,6 +125,61 @@ class PhotoPreviewGeometryTest {
             }
         }
         return null
+    }
+
+
+    @Test
+    fun videoBoundsUseTheReportedOutputSizeAndPixelAspect() {
+        assertEquals(16f / 9f, displayedVideoAspect(1920, 1080, 1f)!!, 0.0001f)
+        assertEquals(4f / 3f, displayedVideoAspect(720, 576, 16f / 15f)!!, 0.0001f)
+        // A square output remains square; don't multiply its original crop again.
+        assertEquals(1f, displayedVideoAspect(1080, 1080, 1f)!!, 0.0001f)
+        assertNull(displayedVideoAspect(0, 1080, 1f))
+        assertNull(displayedVideoAspect(1920, 0, 1f))
+        assertNull(displayedVideoAspect(1920, 1080, Float.NaN))
+    }
+
+    @Test
+    fun effectOutputAspectWinsOverDecoderAspectForPreviewOverlayBounds() {
+        // The face-crop GL effect emits a fixed portrait frame even when the
+        // underlying decoder still reports the landscape source dimensions.
+        assertEquals(
+            9f / 16f,
+            previewContentAspect(1920, 1080, 1f, effectOutputAspect = 9f / 16f)!!,
+            0.0001f
+        )
+        // Invalid/missing effect output metadata safely falls back to decoder size.
+        assertEquals(16f / 9f, previewContentAspect(1920, 1080, 1f, 0f)!!, 0.0001f)
+        assertNull(previewContentAspect(0, 0, 1f, Float.NaN))
+    }
+
+    @Test
+    fun manualCropOutputAspectUsesCroppedPixelsNotOriginalFrameDimensions() {
+        val crop = com.apexstudio.app.domain.model.VideoCropSettings(
+            left = 0.25f, top = 0f, right = 0.75f, bottom = 1f
+        )
+        // Cropping a 16:9 source to its central half yields an 8:9 output.
+        assertEquals(8f / 9f, videoCropOutputAspect(1920, 1080, 1f, crop)!!, 0.0001f)
+        assertNull(videoCropOutputAspect(1920, 1080, 1f, null))
+        assertNull(videoCropOutputAspect(0, 1080, 1f, crop))
+    }
+
+    @Test
+    fun previewGradeBoundsMatchFitMediaAndCoverViewport() {
+        val fit = previewContentBounds(300f, 300f, mediaAspectRatio = 2f, isCoverMode = false)
+        assertNotNull(fit)
+        assertEquals(0f, fit!!.left, 0.001f)
+        assertEquals(75f, fit.top, 0.001f)
+        assertEquals(300f, fit.right, 0.001f)
+        assertEquals(225f, fit.bottom, 0.001f)
+
+        val cover = previewContentBounds(300f, 300f, mediaAspectRatio = 2f, isCoverMode = true)
+        assertNotNull(cover)
+        assertEquals(0f, cover!!.left, 0.001f)
+        assertEquals(0f, cover.top, 0.001f)
+        assertEquals(300f, cover.right, 0.001f)
+        assertEquals(300f, cover.bottom, 0.001f)
+        assertNull(previewContentBounds(0f, 300f, mediaAspectRatio = 2f, isCoverMode = false))
     }
 
     @Test

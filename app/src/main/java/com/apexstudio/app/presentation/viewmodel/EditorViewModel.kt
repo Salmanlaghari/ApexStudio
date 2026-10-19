@@ -28,6 +28,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** In-memory undo unit: preserve every project lane plus editor-only layer flags. */
+internal data class EditorUndoSnapshot(
+    val project: Project,
+    val hiddenVideoLayers: Set<Int>,
+    val lockedVideoLayers: Set<Int>,
+    val extraVideoLayers: Set<Int>,
+) : List<MediaClip> by project.clips
+
 
 class EditorViewModel(
     internal val repo: MediaRepository = MediaRepository,
@@ -122,6 +130,9 @@ class EditorViewModel(
     internal val _export = MutableStateFlow(ExportState())
     val export: StateFlow<ExportState> = _export.asStateFlow()
 
+    @Volatile internal var photoExportRun: Any? = null
+    internal var photoExportJob: Job? = null
+
     internal val _color = MutableStateFlow(ColorToolState())
     val color: StateFlow<ColorToolState> = _color.asStateFlow()
 
@@ -151,8 +162,8 @@ class EditorViewModel(
     internal val _thumbnails = MutableStateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>>(emptyMap())
     val thumbnails: StateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>> = _thumbnails.asStateFlow()
 
-    internal val undoStack = ArrayDeque<List<MediaClip>>()
-    internal val redoStack = ArrayDeque<List<MediaClip>>()
+    internal val undoStack = ArrayDeque<EditorUndoSnapshot>()
+    internal val redoStack = ArrayDeque<EditorUndoSnapshot>()
 
     // Overlay editing: one undo entry per gesture / slider drag.
     // Armed by the first live update of an interaction, disarmed when

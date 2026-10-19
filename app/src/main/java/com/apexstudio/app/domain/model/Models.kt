@@ -296,7 +296,9 @@ data class PhotoEditSettings(
      * Apache-2.0). When true the photo gently zooms/pans in preview and
      * the export bakes the motion into the still-video.
      */
-    val kenBurns: Boolean = false
+    val kenBurns: Boolean = false,
+    /** Applied after photo filters so the background is never colour graded. */
+    val canvas: PhotoCanvasSettings = PhotoCanvasSettings()
 ) {
     val normalizedRotationSteps: Int
         get() = ((rotationSteps % 4) + 4) % 4
@@ -307,7 +309,9 @@ data class PhotoEditSettings(
                 filterId == null &&
                 normalizedRotationSteps == 0 &&
                 !flipHorizontal &&
-                !flipVertical
+                !flipVertical &&
+                !kenBurns &&
+                canvas.isOriginal
 
     companion object {
         /** Aspect presets offered by the Crop tool (id → width/height). Null ratio = free. */

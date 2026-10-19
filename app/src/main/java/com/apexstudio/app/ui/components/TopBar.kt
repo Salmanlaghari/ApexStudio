@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -36,13 +37,15 @@ fun AppTopBar(
     onSettings: (() -> Unit)? = null,
     extraRight: @Composable (() -> Unit)? = null
 ) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val compact = maxWidth < 380.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = if (compact) 4.dp else 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (onHome != null) {
+        if (onHome != null && !compact) {
             NeonIconButton(
                 icon = Icons.Default.Home,
                 onClick = onHome,
@@ -59,6 +62,7 @@ fun AppTopBar(
         } else {
             Spacer(Modifier.width(8.dp))
         }
+        if (!compact) {
         Spacer(Modifier.width(10.dp))
         Box(
             modifier = Modifier
@@ -70,18 +74,23 @@ fun AppTopBar(
             Text("A", color = ApexPalette.BgDeep, fontWeight = FontWeight.Black, fontSize = 20.sp)
         }
         Spacer(Modifier.width(10.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
                 color = ApexPalette.TextPrimary,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (subtitle != null) {
                 Text(
                     subtitle,
                     color = ApexPalette.TextSecondary,
-                    style = MaterialTheme.typography.labelSmall
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -139,5 +148,6 @@ fun AppTopBar(
                 )
             }
         }
+    }
     }
 }

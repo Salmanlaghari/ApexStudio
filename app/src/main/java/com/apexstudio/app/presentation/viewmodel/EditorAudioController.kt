@@ -165,6 +165,11 @@ fun EditorViewModel.registerMainPlayerForAudioEffects(p: androidx.media3.exoplay
     applyAudioPitchToMainPlayer(_audio.value.pitchSemitones)
 }
 
+/** Detach a disposed preview player without clearing a newer registration. */
+fun EditorViewModel.unregisterMainPlayerForAudioEffects(p: androidx.media3.exoplayer.ExoPlayer) {
+    if (mainPlayerRef === p) registerMainPlayerForAudioEffects(null)
+}
+
 internal fun EditorViewModel.applyAudioPitchToMainPlayer(semitones: Float) {
     val p = mainPlayerRef ?: return
     val pitch = Math.pow(2.0, (semitones / 12.0).toDouble()).toFloat()
@@ -305,6 +310,7 @@ fun EditorViewModel.addAudioTrack(
     startTimeMs: Long = livePlayheadMs()
 ) {
     if (_state.value.project == null) return
+    pushUndo()
     val finalDuration = if (sourceDurationMs > 0L) sourceDurationMs else 30000L
     val track = AudioTrack(
         id = java.util.UUID.randomUUID().toString(),
@@ -333,6 +339,8 @@ fun EditorViewModel.addAudioTrack(
 
 
 fun EditorViewModel.removeAudioTrack(trackId: String) {
+    if (_state.value.project?.audioTracks?.none { it.id == trackId } != false) return
+    pushUndo()
     var remainingTracks: List<AudioTrack>? = null
     var remainingDuration: Long? = null
     _state.update { s ->
@@ -487,6 +495,8 @@ private fun EditorViewModel.updateAudioTrackBoth(
 }
 
 fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
+    if (_state.value.project?.audioTracks?.none { it.id == trackId } != false) return
+    pushUndo()
     logAudioTrackMismatch(trackId, "toggleAudioTrackMute")
     _audio.update { s ->
         s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
@@ -503,6 +513,8 @@ fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
 
 
 fun EditorViewModel.toggleAudioTrackSolo(trackId: String) {
+    if (_state.value.project?.audioTracks?.none { it.id == trackId } != false) return
+    pushUndo()
     // Dual-write + persist (same split-brain bug as volume: the old
     // _audio-only write never reached preview/export/persistence).
     logAudioTrackMismatch(trackId, "toggleAudioTrackSolo")

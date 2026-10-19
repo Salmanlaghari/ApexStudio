@@ -2,6 +2,7 @@ package com.apexstudio.editor.thumbnail
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.SpeedPoint
 
 /** Only source-changing edits invalidate a filmstrip, not selection or PiP gestures. */
@@ -13,12 +14,14 @@ internal data class TimelineThumbnailSourceKey(
     val trimStartMs: Long,
     val trimEndMs: Long,
     val speed: Float,
-    val speedPoints: List<SpeedPoint>
+    val speedPoints: List<SpeedPoint>,
+    val photoEdit: PhotoEditSettings?,
 ) {
     companion object {
         fun from(clip: MediaClip) = TimelineThumbnailSourceKey(
             clip.id, clip.uri, clip.type, clip.durationMs, clip.trimStartMs,
-            clip.trimEndMs, clip.speedMultiplier, clip.speedPoints
+            clip.trimEndMs, clip.speedMultiplier, clip.speedPoints,
+            clip.photoEdit.takeIf { clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY },
         )
     }
 }
@@ -35,12 +38,13 @@ object TimelineThumbnailBackfill {
         cursorMs: Long,
         durationMs: Long,
         intervalMs: Long,
-        maxKeys: Int
+        maxKeys: Int,
+        visibleWorkPending: Boolean = false,
     ): LongArray {
         val duration = durationMs.coerceAtLeast(0L)
         val interval = intervalMs.coerceAtLeast(1L)
         val limit = maxKeys.coerceAtLeast(0)
-        if (cursorMs < 0L || cursorMs > duration || limit == 0) return longArrayOf()
+        if (cursorMs < 0L || cursorMs > duration || limit == 0 || visibleWorkPending) return longArrayOf()
 
         val first = (cursorMs / interval) * interval
         val count = minOf(limit.toLong(), ((duration - first) / interval) + 1L).toInt()

@@ -50,7 +50,7 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "cinematic",
+    val filterCategory: String = DEFAULT_FILTER_CATEGORY_ID,
     // GPUImage Real-Time Video Filtering Interface state
     val gpuFilterPanelOpen: Boolean = false,
     val activeGpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
@@ -239,6 +239,9 @@ data class EditorState(
     val audioFadeSheetOpen: Boolean = false
 ) {
     companion object {
+        /** Manifest category id selected when a new editor state is created. */
+        const val DEFAULT_FILTER_CATEGORY_ID = "creator_essentials"
+
         // Equality on data classes with FloatArray doesn't compare the
         // array contents; EditorViewModel never updates audioWaveform
         // after init, so this is safe to leave to the default.
@@ -307,7 +310,8 @@ enum class PhotoEditTab(val label: String) {
     ADJUST("Adjust"),
     FILTERS("Filters"),
     ROTATE("Rotate"),
-    MOTION("Motion")
+    MOTION("Motion"),
+    CANVAS("Canvas")
 }
 
 data class ExportState(

@@ -104,6 +104,19 @@ class TransitionGlEffect(
             }
         }
 
+        override fun release() {
+            try {
+                super.release()
+            } finally {
+                // BaseGlShaderProgram owns its texture pool, not this linked shader program.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                }
+            }
+        }
+
         companion object {
             private val VERTEX_SHADER = """
                 attribute vec4 aFramePosition;

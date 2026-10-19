@@ -1,6 +1,9 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.presentation.state.EditorTool
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -74,6 +77,61 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun `audio track add undo and redo restore the full project and mixer state`() {
+        val vm = viewModel()
+        val clip = MediaClip("clip", "Clip", "file:///clip.mp4", 10_000L, trimEndMs = 10_000L)
+        vm._state.value = vm.state.value.copy(
+            project = Project("project", "Project", 10_000L, clips = listOf(clip)),
+            durationMs = 10_000L
+        )
+
+        vm.addAudioTrack("Music", "file:///music.mp3", sourceDurationMs = 5_000L)
+        val addedTrack = vm.state.value.project!!.audioTracks.single()
+        assertEquals(listOf(addedTrack), vm.audio.value.tracks)
+
+        vm.undo()
+        assertTrue(vm.state.value.project!!.audioTracks.isEmpty())
+        assertTrue(vm.audio.value.tracks.isEmpty())
+        vm.redo()
+        assertEquals(listOf(addedTrack), vm.state.value.project!!.audioTracks)
+        assertEquals(listOf(addedTrack), vm.audio.value.tracks)
+    }
+
+    @Test
+    fun `layer visibility undo and redo restore editor-only layer state`() {
+        val vm = viewModel()
+        val clip = MediaClip("clip", "Clip", "file:///clip.mp4", 10_000L, trimEndMs = 10_000L)
+        vm._state.value = vm.state.value.copy(
+            project = Project("project", "Project", 10_000L, clips = listOf(clip)),
+            durationMs = 10_000L
+        )
+
+        vm.toggleVideoLayerVisibility(2)
+        assertEquals(setOf(2), vm.state.value.hiddenVideoLayers)
+        vm.undo()
+        assertTrue(vm.state.value.hiddenVideoLayers.isEmpty())
+        vm.redo()
+        assertEquals(setOf(2), vm.state.value.hiddenVideoLayers)
+    }
+
+    @Test
+    fun `text overlay add undo and redo restore the selected clip content`() {
+        val vm = viewModel()
+        val clip = MediaClip("clip", "Clip", "file:///clip.mp4", 10_000L, trimEndMs = 10_000L)
+        vm._state.value = vm.state.value.copy(
+            project = Project("project", "Project", 10_000L, clips = listOf(clip)),
+            durationMs = 10_000L
+        )
+
+        vm.addTextOverlay("clip", text = "Title")
+        assertEquals("Title", vm.state.value.project!!.clips.single().textOverlays.single().text)
+        vm.undo()
+        assertTrue(vm.state.value.project!!.clips.single().textOverlays.isEmpty())
+        vm.redo()
+        assertEquals("Title", vm.state.value.project!!.clips.single().textOverlays.single().text)
+    }
+
+    @Test
     fun `updateColorBrightness writes through to color state`() {
         val vm = viewModel()
         vm.updateColorBrightness(0.5f)
@@ -94,6 +152,15 @@ class EditorViewModelTest {
         assertEquals("Cinematic", vm.state.value.filterCategory)
         vm.setActiveFilter("hollywood")
         assertEquals("hollywood", vm.state.value.activeFilterId)
+    }
+
+    @Test
+    fun `filter category defaults to creator category and accepts legacy cinematic id`() {
+        val vm = viewModel()
+        assertEquals(EditorState.DEFAULT_FILTER_CATEGORY_ID, vm.state.value.filterCategory)
+
+        vm.setFilterCategory("cinematic")
+        assertEquals("cinematic", vm.state.value.filterCategory)
     }
 
     @Test

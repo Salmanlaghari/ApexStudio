@@ -23,6 +23,10 @@ import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
+/** Export replaces the editor, rather than keeping hidden preview codecs alive beneath it. */
+internal fun apexContentTab(currentTab: String, showExportSettings: Boolean): String =
+    if (showExportSettings) "export" else currentTab
+
 @Composable
 fun ApexRoot() {
     var currentTab by remember { mutableStateOf("home") }
@@ -49,7 +53,7 @@ fun ApexRoot() {
                     is Overlay.Packs -> PacksScreen(
                         onBack = { overlay = Overlay.Settings }
                     )
-                    else -> when (currentTab) {
+                    else -> when (apexContentTab(currentTab, showExportSettings)) {
                         "home" -> HomeScreen(
                             onProjectOpen = { id ->
                                 projectId = id
@@ -79,21 +83,18 @@ fun ApexRoot() {
                         )
                         "export" -> ExportScreen(
                             projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
+                            onBack = {
+                                if (showExportSettings) showExportSettings = false
+                                else currentTab = "edit"
+                            },
+                            onExport = { showExportSettings = false }
                         )
                     }
                 }
             }
         }
 
-        if (showExportSettings) {
-            ExportScreen(
-                projectId = projectId ?: "p1",
-                onBack = { showExportSettings = false },
-                onExport = { showExportSettings = false }
-            )
-        } else {
+        if (!showExportSettings) {
             if (overlay == null && currentTab != "export" && currentTab != "edit") {
                 BottomNavBar(
                     current = currentTab,

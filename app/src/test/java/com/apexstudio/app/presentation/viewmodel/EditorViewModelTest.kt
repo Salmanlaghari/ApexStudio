@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.presentation.state.EditorTool
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -151,6 +152,15 @@ class EditorViewModelTest {
         assertEquals("Cinematic", vm.state.value.filterCategory)
         vm.setActiveFilter("hollywood")
         assertEquals("hollywood", vm.state.value.activeFilterId)
+    }
+
+    @Test
+    fun `filter category defaults to creator category and accepts legacy cinematic id`() {
+        val vm = viewModel()
+        assertEquals(EditorState.DEFAULT_FILTER_CATEGORY_ID, vm.state.value.filterCategory)
+
+        vm.setFilterCategory("cinematic")
+        assertEquals("cinematic", vm.state.value.filterCategory)
     }
 
     @Test

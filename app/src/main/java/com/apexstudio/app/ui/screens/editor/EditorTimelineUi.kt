@@ -32,6 +32,7 @@ import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
 import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
+import com.apexstudio.editor.thumbnail.TimelineThumbnailRequestPass
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -235,9 +236,7 @@ fun TimelineTrackArea(
             val winStartPx = (scrollPx - viewport).coerceAtLeast(0)
             val winEndPx = scrollPx + viewport + viewport
             val msToPx = msToDp * density.density
-            var launched = 0
-            var pending = 0
-            var visibleWorkPending = false
+            val requests = TimelineThumbnailRequestPass(inFlightKeys)
 
             // Keep decoder pressure bounded and reserve capacity for frames
             // the user can currently see. The former 24-job pass also launched
@@ -249,12 +248,7 @@ fun TimelineTrackArea(
                 visible: Boolean = false,
             ) {
                 val key = clip.id to keyMs
-                if (filmstripFrames.containsKey(key)) return
-                if (visible) visibleWorkPending = true
-                if (inFlightKeys.contains(key)) return
-                pending++
-                if (launched >= 4 || inFlightKeys.size >= 4 || !inFlightKeys.add(key)) return
-                launched++
+                if (!requests.claim(key, cached = filmstripFrames.containsKey(key), visible = visible)) return
                 // Immutable captures only: `keyMs` is a moving counter in the
                 // caller's loop and `clip` would be re-read on the next pass,
                 // so both must be frozen for the job.
@@ -301,8 +295,8 @@ fun TimelineTrackArea(
                     cursorMs = cursor,
                     durationMs = clipDur,
                     intervalMs = frameIntervalMs,
-                    maxKeys = if (!visibleWorkPending && launched == 0 && inFlightKeys.size < 4) 1 else 0,
-                    visibleWorkPending = visibleWorkPending,
+                    maxKeys = if (!requests.visibleWorkDispatched && requests.launched == 0 && inFlightKeys.size < 4) 1 else 0,
+                    visibleWorkPending = requests.visibleWorkDispatched,
                 )
                 backfillKeys.forEach { requestKey(clip, it) }
                 // A cursor past clipDur means "done"; an empty batch due to a
@@ -334,7 +328,7 @@ fun TimelineTrackArea(
             }
             // Revisit visible demand quickly; deliberate background pacing
             // prevents full-project backfill from monopolizing decoder/I/O.
-            delay(if (visibleWorkPending) 40L else 400L)
+            delay(requests.pollDelayMs)
         }
     }
     // Drop frames for clips that no longer exist.

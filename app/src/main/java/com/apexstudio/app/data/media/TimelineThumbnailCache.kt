@@ -119,20 +119,50 @@ object TimelineThumbnailCache {
         w: Int,
         h: Int
     ): Bitmap? {
-        val type = clip.type
-        // IMAGE clips use the same edit pipeline as the preview/export. The
-        // key includes photoEdit so changing an edit cannot return old pixels.
-        if (type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
-            try {
-                val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.renderEdited(
-                    context, clip.uri, clip.photoEdit, maxDim = maxOf(w, h)
-                )
-                if (photo != null) return scaled(photo, w, h)
-            } catch (e: Exception) {
-                Log.w(TAG, "photo frame decode failed for ${clip.uri}", e)
-            }
-            // Some devices can still decode image URIs via the retriever.
+        // IMAGE and image-backed OVERLAY clips share the same edit pipeline
+        // as the preview/export. If the URI is actually video, a failed photo
+        // decode falls through to MediaMetadataRetriever below.
+        return imageFirstFallback(
+            clip.type,
+            imageDecode = {
+                try {
+                    com.apexstudio.app.data.photoedit.PhotoEditRenderer.renderEdited(
+                        context, clip.uri, clip.photoEdit, maxDim = maxOf(w, h)
+                    )?.let { scaled(it, w, h) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "photo frame decode failed for ${clip.uri}", e)
+                    null
+                }
+            },
+            videoDecode = { extractVideoFrame(context, clip, sourceTimeMs, w, h) },
+        )
+    }
+
+    /**
+     * Try the photo renderer for stills and overlays before the video retriever.
+     * Kept as a small seam so both overlay-image selection and video fallback
+     * behavior can be tested without platform codec dependencies.
+     */
+    internal suspend fun <T> imageFirstFallback(
+        type: com.apexstudio.app.domain.model.ClipType,
+        imageDecode: suspend () -> T?,
+        videoDecode: suspend () -> T?,
+    ): T? {
+        if (type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+            type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        ) {
+            imageDecode()?.let { return it }
         }
+        return videoDecode()
+    }
+
+    private suspend fun extractVideoFrame(
+        context: Context,
+        clip: com.apexstudio.app.domain.model.MediaClip,
+        sourceTimeMs: Long,
+        w: Int,
+        h: Int,
+    ): Bitmap? {
         val retriever = MediaMetadataRetriever()
         try {
             val effectiveUri = if (clip.uri.startsWith("asset://") || clip.uri.isBlank()) {

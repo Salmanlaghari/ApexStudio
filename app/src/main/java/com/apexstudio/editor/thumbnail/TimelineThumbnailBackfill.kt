@@ -2,6 +2,7 @@ package com.apexstudio.editor.thumbnail
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.SpeedPoint
 
 /** Only source-changing edits invalidate a filmstrip, not selection or PiP gestures. */
@@ -13,12 +14,14 @@ internal data class TimelineThumbnailSourceKey(
     val trimStartMs: Long,
     val trimEndMs: Long,
     val speed: Float,
-    val speedPoints: List<SpeedPoint>
+    val speedPoints: List<SpeedPoint>,
+    val photoEdit: PhotoEditSettings?,
 ) {
     companion object {
         fun from(clip: MediaClip) = TimelineThumbnailSourceKey(
             clip.id, clip.uri, clip.type, clip.durationMs, clip.trimStartMs,
-            clip.trimEndMs, clip.speedMultiplier, clip.speedPoints
+            clip.trimEndMs, clip.speedMultiplier, clip.speedPoints,
+            clip.photoEdit.takeIf { clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY },
         )
     }
 }

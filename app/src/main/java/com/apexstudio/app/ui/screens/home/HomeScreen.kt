@@ -38,8 +38,10 @@ import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @Composable
@@ -55,9 +57,10 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
-        // Observe updates instead of synchronously reloading after every import.
+        // flowOn only moves upstream work; collect remains on the UI dispatcher,
+        // so keep the synchronous legacy fallback off that callback as well.
         projectRepo.loadAll().flowOn(Dispatchers.IO).collect { saved ->
-            projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
+            projects = resolveHomeProjects(saved, loadFallback = repo::loadProjects)
         }
     }
 
@@ -139,6 +142,21 @@ fun HomeScreen(
             ProjectRow(p, onOpen = { onProjectOpen(p.id) })
         }
     }
+}
+
+/**
+ * Prefer persisted projects, falling back to bundled/demo projects for first run.
+ * [loadFallback] is synchronous and may do work, so always execute it off the
+ * caller (HomeScreen's collector) dispatcher.
+ */
+internal suspend fun resolveHomeProjects(
+    savedProjects: List<Project>,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    loadFallback: () -> List<Project>,
+): List<Project> = if (savedProjects.isNotEmpty()) {
+    savedProjects
+} else {
+    withContext(ioDispatcher) { loadFallback() }
 }
 
 @Composable

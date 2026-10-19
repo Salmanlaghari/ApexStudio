@@ -28,6 +28,16 @@ class TimelineThumbnailCacheKeyTest {
     }
 
     @Test
+    fun `photo edit changes invalidate image-backed overlay thumbnail`() {
+        val overlay = image().copy(type = ClipType.OVERLAY)
+        val originalKey = TimelineThumbnailCacheKey.from(overlay, 0L, 160, 90)
+        val editedKey = TimelineThumbnailCacheKey.from(
+            overlay.copy(photoEdit = PhotoEditSettings(rotationSteps = 1)), 0L, 160, 90,
+        )
+        assertNotEquals(originalKey, editedKey)
+    }
+
+    @Test
     fun `trim source time dimensions and media kind participate in frame identity`() {
         val original = image()
         val key = TimelineThumbnailCacheKey.from(original, 500L, 160, 90)

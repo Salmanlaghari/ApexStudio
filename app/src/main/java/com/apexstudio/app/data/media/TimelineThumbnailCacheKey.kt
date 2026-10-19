@@ -5,8 +5,9 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.PhotoEditSettings
 
 /**
- * Stable identity for a decoded timeline frame. Image edits change the pixels even when the
- * source URI and timestamp do not, so IMAGE keys include the persisted photo-edit settings.
+ * Stable identity for a decoded timeline frame. Photo edits change still-image pixels even
+ * when the source URI and timestamp do not, so IMAGE and image-backed OVERLAY keys include
+ * the persisted photo-edit settings.
  */
 internal data class TimelineThumbnailCacheKey(
     val uri: String,
@@ -30,7 +31,11 @@ internal data class TimelineThumbnailCacheKey(
                 sourceTimeMs = absolute,
                 width = width.coerceAtLeast(1),
                 height = height.coerceAtLeast(1),
-                photoEdit = clip.photoEdit.takeIf { clip.type == ClipType.IMAGE },
+                // OVERLAY also represents still photos; their edits change
+                // the decoded pixels just like edits on ordinary IMAGE clips.
+                photoEdit = clip.photoEdit.takeIf {
+                    clip.type == ClipType.IMAGE || clip.type == ClipType.OVERLAY
+                },
             )
         }
     }

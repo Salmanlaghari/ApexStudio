@@ -702,6 +702,25 @@ fun EditorScreen(
             onExport = onExport
         )
 
+        if (state.project?.hasLegacyAbsolutePlacementTimingRisk() == true) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = Color(0xFF382A12),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    "Legacy timing project: non-1x main clips now determine output duration. " +
+                        "Overlay and music placements remain at their saved timeline positions and may no longer align with the main video. " +
+                        "Review the timeline before export; nothing has been retimed.",
+                    color = Color(0xFFFFD98A),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+        }
+
         EditorPreviewSection(
             state = state,
             vm = vm,

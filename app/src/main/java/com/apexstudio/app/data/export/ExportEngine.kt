@@ -368,6 +368,8 @@ class ExportEngine(private val context: Context) {
                 val outputFile = File(outputDir, outputFileName)
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                val pipOverlayEffects = mutableListOf<androidx.media3.common.Effect>()
+                val foregroundEffects = mutableListOf<androidx.media3.common.Effect>()
                 // Crop before speed changes, on the clipped source clock. This avoids numerical
                 // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
                 val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
@@ -397,7 +399,7 @@ class ExportEngine(private val context: Context) {
                 // Each overlay gets its own GlEffect instance (chained like text overlays).
                 config.pipOverlays.forEach { pip ->
                     try {
-                        videoEffects.add(
+                        pipOverlayEffects.add(
                             com.apexstudio.app.data.effect.PipOverlayGlEffect(
                                 context = context,
                                 overlayUri = pip.uri,
@@ -575,13 +577,13 @@ class ExportEngine(private val context: Context) {
                     listOfNotNull(buildArGreetingOverlay(config))
                 if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty()) {
                     val aspect = queryAspectRatio(inputUri)
-                    videoEffects.addAll(buildCaptionExportEffects(captionOverlays, aspect))
+                    foregroundEffects.addAll(buildCaptionExportEffects(captionOverlays, aspect))
                     config.stickers.forEach { sticker ->
                         if (sticker.isPngSticker()) {
                             // Bundled PNG sticker: rasterised with crop / cutout /
                             // rotation / opacity and composited as a GL sprite so
                             // the export matches the editor preview exactly.
-                            videoEffects.add(
+                            foregroundEffects.add(
                                 com.apexstudio.app.data.effect.StickerGlEffect(
                                     context, sticker, aspect
                                 )
@@ -602,13 +604,20 @@ class ExportEngine(private val context: Context) {
                                 startMs = sticker.startMs,
                                 endMs = sticker.endMs
                             )
-                            videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
+                            foregroundEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                         }
                     }
                 }
 
+                // Main-source geometry, grading and animation must not also transform PiP.
+                // Composite PiP after the main chain and captions/stickers above the PiP layer.
+                val composedVideoEffects = composeVideoEffectLayers(
+                    mainVideoEffects = videoEffects,
+                    pipOverlayEffects = pipOverlayEffects,
+                    foregroundEffects = foregroundEffects
+                )
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setEffects(Effects(audioProcessors, videoEffects))
+                    .setEffects(Effects(audioProcessors, composedVideoEffects))
                     .build()
 
                 // 8. Configure Hardware Encoder Factory based on target resolution

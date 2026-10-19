@@ -97,6 +97,27 @@
       "source": "https://huggingface.co/onnxmodelzoo/super-resolution-10/resolve/395472c4b6b92f788357237983d83fd913cfe7e3/super-resolution-10.onnx",
       "license": "Apache-2.0",
       "licenseFile": "super_resolution/LICENSE"
+    },
+    {
+      "path": "style_transfer/candy-9.onnx",
+      "bytes": 6728029,
+      "sha256": "9d11a3529d1e547da6ae07201d93484dbab2ec0a3614535752c8f40f0fe2968a",
+      "source": "https://huggingface.co/onnxmodelzoo/candy-9/resolve/f24fcf558bd4564360f41cf3b5321975a33f962f/candy-9.onnx",
+      "revision": "f24fcf558bd4564360f41cf3b5321975a33f962f",
+      "license": "BSD-3-Clause model SPDX / Apache-2.0 Hub metadata; see both bundled license texts and NOTICE.md",
+      "licenseFile": "style_transfer/LICENSE-BSD-3-Clause.txt",
+      "additionalLicenseFiles": [
+        "style_transfer/LICENSE-APACHE-2.0.txt"
+      ]
+    },
+    {
+      "path": "background_removal/modnet_photographic.onnx",
+      "bytes": 25969398,
+      "sha256": "5069a5e306b9f5e9f4f2b0360264c9f8ea13b257c7c39943c7cf6a2ec3a102ae",
+      "source": "https://github.com/yakhyo/modnet/releases/download/weights/modnet_photographic.onnx",
+      "sourceRevision": "35198d10c55804c519b2a7a182a3050228018735",
+      "license": "Apache-2.0",
+      "licenseFile": "background_removal/LICENSE-Apache-2.0.txt"
     }
   ]
 }

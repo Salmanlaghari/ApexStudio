@@ -17,9 +17,12 @@ class ModelIntegrityTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.asset = self.root / "test.onnx"
         self.asset.write_bytes(b"test fixture, not a real inference model")
+        self.license_file = self.root / "LICENSE"
+        self.license_file.write_text("fixture license notice")
         self.entry = {"path": "test.onnx", "bytes": self.asset.stat().st_size,
                       "sha256": hashlib.sha256(self.asset.read_bytes()).hexdigest(),
-                      "source": "https://example.com/pinned-test-fixture", "license": "MIT"}
+                      "source": "https://example.com/pinned-test-fixture", "license": "MIT",
+                      "licenseFile": "LICENSE"}
         self.lock = self.root / "models.lock.json"
 
     def write_lock(self, entries=None):
@@ -62,6 +65,22 @@ class ModelIntegrityTest(unittest.TestCase):
         self.entry["license"] = ""
         self.write_lock()
         with self.assertRaisesRegex(MODULE.ModelIntegrityError, "provenance"):
+            MODULE.verify_models(self.root, self.lock)
+
+    def test_missing_license_text_is_rejected(self):
+        self.entry["licenseFile"] = "absent/LICENSE"
+        self.write_lock()
+        with self.assertRaisesRegex(MODULE.ModelIntegrityError, "license file"):
+            MODULE.verify_models(self.root, self.lock)
+
+    def test_revision_must_be_immutable_and_match_source(self):
+        self.entry["revision"] = "a" * 40
+        self.entry["source"] = f"https://example.com/{self.entry['revision']}/model.onnx"
+        self.write_lock()
+        self.assertEqual(["test.onnx"], MODULE.verify_models(self.root, self.lock))
+        self.entry["revision"] = "latest"
+        self.write_lock()
+        with self.assertRaisesRegex(MODULE.ModelIntegrityError, "revision"):
             MODULE.verify_models(self.root, self.lock)
 
     def test_empty_inventory_is_rejected(self):

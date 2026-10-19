@@ -36,8 +36,23 @@ def verify_models(root: Path, lock_path: Path) -> list[str]:
         size = item.get("bytes")
         if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             raise ModelIntegrityError(f"Invalid asset size: {relative}")
-        if not item.get("license") or not str(item.get("source", "")).startswith("https://"):
+        source = str(item.get("source", ""))
+        if not item.get("license") or not source.startswith("https://"):
             raise ModelIntegrityError(f"Missing model provenance: {relative}")
+        revision = item.get("revision")
+        if revision is not None:
+            if (not isinstance(revision, str) or len(revision) not in {40, 64}
+                    or any(c not in "0123456789abcdef" for c in revision.lower())
+                    or revision.lower() not in source.lower()):
+                raise ModelIntegrityError(f"Invalid/unpinned source revision: {relative}")
+        license_files = [item.get("licenseFile"), *item.get("additionalLicenseFiles", [])]
+        if not license_files or any(not name for name in license_files):
+            raise ModelIntegrityError(f"Missing license file provenance: {relative}")
+        for license_name in license_files:
+            license_path = (root / license_name).resolve()
+            if (Path(license_name).is_absolute() or not license_path.is_relative_to(root)
+                    or license_path == root or not license_path.is_file()):
+                raise ModelIntegrityError(f"Missing/unsafe license file: {license_name!r}")
         if not path.is_file() or path.stat().st_size != size:
             raise ModelIntegrityError(f"Missing/wrong-size model: {relative}; expected {size} bytes")
         checksum = hashlib.sha256()

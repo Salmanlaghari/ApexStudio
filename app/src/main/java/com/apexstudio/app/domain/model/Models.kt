@@ -810,8 +810,33 @@ data class Project(
      * Phase 3: user-visible draft label, e.g. "Draft" vs "Project".
      * Pure metadata for the History/Drafts UI.
      */
-    val isDraft: Boolean = false
-)
+    val isDraft: Boolean = false,
+    /**
+     * Version of the main-track timing semantics used when this project was
+     * created. Missing in older project JSON, so legacy projects decode as 0.
+     * Keep legacy versions unchanged on save: their absolute overlay/music
+     * placements are intentionally not rewritten during migration.
+     */
+    val timingModelVersion: Int = 0
+) {
+    /** Conservative warning predicate for legacy projects affected by speed-based duration. */
+    fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {
+        if (timingModelVersion >= CURRENT_TIMING_MODEL_VERSION) return false
+        val hasNonNormalMainVideo = clips.any { clip ->
+            clip.trackIndex == 0 && clip.type == ClipType.VIDEO &&
+                (kotlin.math.abs(clip.speedMultiplier - 1f) > 0.0001f ||
+                    clip.speedPoints.size >= 2)
+        }
+        val hasIndependentPlacements = clips.any { it.type == ClipType.OVERLAY } ||
+            audioTracks.isNotEmpty()
+        return hasNonNormalMainVideo && hasIndependentPlacements
+    }
+
+    companion object {
+        /** Current main-video output duration behavior: trim span / constant speed. */
+        const val CURRENT_TIMING_MODEL_VERSION: Int = 1
+    }
+}
 
 /**
  * One volume keyframe on an [AudioTrack]: an absolute volume value

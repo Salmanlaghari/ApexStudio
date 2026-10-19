@@ -4,6 +4,8 @@ import android.content.Context
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
+import com.apexstudio.app.ai.onnx.CandyStyleTransferPack
+import com.apexstudio.app.ai.onnx.ModelAvailability
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import kotlinx.coroutines.CancellationException
@@ -42,6 +44,7 @@ data class AiFeatureDescription(val title: String, val summary: String)
 object AiFeatureRegistry {
     private const val WHISPER_LICENSE = "OpenAI Whisper weights: MIT; sherpa-onnx exporter: Apache-2.0"
     private const val MEDIAPIPE_LICENSE = "Apache-2.0; bundled official MediaPipe distribution, see model notices"
+    private const val STYLE_TRANSFER_LICENSE = "BSD-3-Clause model SPDX / Apache-2.0 Hub metadata; see bundled notices"
 
     internal fun mediaPipeModelFor(id: AiFeatureId): BundledMediaPipeModels.Model? = when (id) {
         AiFeatureId.MEDIAPIPE_FACE, AiFeatureId.FACE_BLUR, AiFeatureId.FACE_TRACKING,
@@ -75,20 +78,20 @@ object AiFeatureRegistry {
             AiModelRequirement(WhisperCaptionEngine.PACK_TOKENS, "tiny-tokens.txt", WHISPER_LICENSE,
                 "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/tree/65176e2deb88badc814a94058666cadccc29b61c")
         ))
-        put(AiFeatureId.ONNX_BACKGROUND_REMOVAL, listOf(missingOnnx("onnx-background-removal.onnx")))
+        put(AiFeatureId.ONNX_BACKGROUND_REMOVAL, listOf(AiModelRequirement(
+            "bundled:modnet-photographic", "modnet_photographic.onnx", "Apache-2.0; MODNet photographic portrait matting",
+            "https://github.com/yakhyo/modnet/releases/download/weights/modnet_photographic.onnx")))
         put(AiFeatureId.ONNX_UPSCALING, listOf(AiModelRequirement("bundled:espcn-x3-luma",
             "super-resolution-10.onnx", "Apache-2.0; ONNX Model Zoo ESPCN x3 luma-only",
             "https://huggingface.co/onnxmodelzoo/super-resolution-10/tree/395472c4b6b92f788357237983d83fd913cfe7e3")))
-        put(AiFeatureId.ONNX_STYLE_TRANSFER, listOf(missingOnnx("onnx-style-transfer.onnx")))
+        put(AiFeatureId.ONNX_STYLE_TRANSFER, listOf(AiModelRequirement(
+            "bundled:${CandyStyleTransferPack.MODEL_ID}", "candy-9.onnx", STYLE_TRANSFER_LICENSE,
+            CandyStyleTransferPack.ARTIFACT_SOURCE_URL)))
         put(AiFeatureId.WORD_TIMED_SUBTITLES, listOf(AiModelRequirement("bundled:english-ctc-alignment",
             "wav2vec2-base-960h-int8.onnx", "Apache-2.0; English-only wav2vec2-base-960h",
             "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/tree/729c1a6730fb549c20a1c73a3d3f96f11020225e")))
         put(AiFeatureId.CONTENT_MODERATION, listOf(AiModelRequirement("validated-moderation-classifier-not-configured", "", "Not supplied", "")))
     }
-
-    private fun missingOnnx(file: String) = AiModelRequirement(
-        "not-configured:$file", file, "Model license/contract must be reviewed before distribution", ""
-    )
 
     val descriptions: Map<AiFeatureId, AiFeatureDescription> = mapOf(
         AiFeatureId.SMART_TRIM to AiFeatureDescription("Smart trim", "Review heuristic highlight windows from sampled image activity, sharpness and exposure; not learned AI."),
@@ -108,9 +111,9 @@ object AiFeatureRegistry {
         AiFeatureId.MEDIAPIPE_FACE to AiFeatureDescription("Face landmarks", "Official bundled Face Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
-        AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "A configured licensed segmentation model and validated end-to-end integration are required."),
+        AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "Pinned MODNet photographic portrait-matting backend is bundled. Global moderation blocks user-content inference; realtime preview/export and device-quality acceptance remain incomplete."),
         AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Bundled learned ESPCN x3 luma backend with tiled host inference. Not an approved editor/export tool, exact 1080p converter or 4K pipeline."),
-        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "A configured licensed artistic model and validated preview/export are required."),
+        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is bundled for evaluation. Aspect ratio is distorted; global moderation blocks user-content inference. Preview/export, style-image provenance review and device-quality acceptance are incomplete."),
         AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "Fail-closed: validated sexual/violent/hateful coverage is not supplied.")
     )
 
@@ -130,6 +133,32 @@ object AiFeatureRegistry {
             "Bundled English CTC supports word-by-word and full-phrase karaoke experiments. New inference is blocked by global moderation; multilingual word alignment and device acceptance are incomplete.", requirements)
         if (id == AiFeatureId.ONNX_UPSCALING) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
             "Pinned ESPCN x3 luma weights are bundled for model evaluation. User-content inference is blocked by global moderation; editor integration, 4K processing and device/image-quality acceptance are incomplete.", requirements)
+        if (id == AiFeatureId.ONNX_BACKGROUND_REMOVAL) return try {
+            val adapter = com.apexstudio.app.ai.onnx.ModNetBackgroundRemovalAdapter.fromBundledAssets(context)
+            when (val backend = adapter.availability()) {
+                is ModelAvailability.Ready -> AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
+                    "Pinned MODNet bytes and dynamic portrait-matting signature verified. Global moderation blocks user-content inference; preview/export and device-quality acceptance remain incomplete.",
+                    requirements, requirements.map { it.id })
+                is ModelAvailability.Unavailable -> AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                    "Bundled MODNet verification failed: ${backend.reason}. No network fallback.", requirements)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                "Bundled MODNet could not be verified or installed. No network fallback; user-content inference remains blocked.", requirements)
+        }
+        if (id == AiFeatureId.ONNX_STYLE_TRANSFER) return try {
+            CandyStyleTransferPack.materialize(context)
+            AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
+                "Pinned Candy-9 bytes verified. License declarations/style-reference provenance require review; the model is not in the app-approved artifact catalog. Global moderation blocks user-content inference; preview/export are not enabled.",
+                requirements, requirements.map { it.id })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                "Bundled style-transfer model could not be verified or installed. No network fallback; user-content inference remains blocked.", requirements)
+        }
         if (id == AiFeatureId.CONTENT_MODERATION) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
             "No validated offline sexual/violent/hateful classifier. Protected AI actions remain OFF; pixel heuristics are not moderation.", requirements)
         val bundled = mediaPipeModelFor(id)

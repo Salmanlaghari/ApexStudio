@@ -1,6 +1,24 @@
 # Offline AI: what is available and what is still blocked
 
-Latest integrated host validation: **826 JVM tests in 139 suites, zero failures, errors or skips**; Android instrumentation-test Kotlin compilation and debug APK assembly passed. The 11 Python integrity/provenance tests and all 12 bundled-model integrity checks also passed. The new native MP4 overlay-tone test is compiled, **not device-executed**. These results establish code/host regressions, not hardware AAC audibility, model accuracy, GPU appearance or moderation readiness.
+Latest integrated host validation: **847 JVM tests in 144 suites, zero failures, errors or skips**; Android instrumentation-test Kotlin compilation and debug APK assembly passed. All 13 Python integrity/provenance tests and all 14 bundled-model integrity checks passed. Real ONNX Runtime CPU inference also passed for both new model packs on generated synthetic RGB fixtures. Android instrumentation remains compiled, **not device-executed**. These results establish code/host regressions, not hardware AAC audibility, model quality, GPU appearance or moderation readiness.
+
+## Two missing ONNX packs now have real local backends
+
+The [MODNet photographic pack](../app/src/main/assets/models/background_removal/NOTICE.txt) includes the exact hash-pinned 25,969,398-byte Apache-2.0 model and an adaptive, bounded RGB-to-portrait-matte backend. Its input/output signature, finite outputs and actual host inference are checked; source images and tensor dimensions have explicit limits. It is portrait matting, not general-object segmentation. Its release URL is mutable: the committed size and SHA-256 pin the distributed bytes. Protected inference is denied before model inspection, image access or progress callbacks.
+
+The [Candy-9 style pack](../app/src/main/assets/models/style_transfer/NOTICE.md) includes a 6,728,029-byte exact-revision model, fixed 224×224 NCHW RGB byte-range contract and existing guarded style adapter factory. The square resize can distort aspect ratio. Upstream model prose declares BSD-3-Clause while Hub metadata declares Apache-2.0; both notices are included, but the conflict and training-style-image provenance still require review. **The app-reviewed image-model catalog remains empty**: integrity/host inference does not grant model, legal-release or moderation approval. The AI inventory distinguishes bundled bytes from permission; neither new pack enables realtime preview, timeline application or export.
+
+## PiP exports keep main-clip effects off independent overlays
+
+Regular video export now orders main-source crop, rotation, mask, grading, speed and animation before independently compositing PiP, then draws foreground captions/stickers above PiP. Main-clip visual effects therefore no longer alter the PiP image again. Host ordering regressions pass; actual GL output, timestamp mapping and hardware appearance still need the owner's phone checks. The existing selected/base-clip export scope remains: this does not implement whole-project multi-clip video composition.
+
+## Legacy timing changes are explicitly flagged, not silently migrated
+
+Saved projects now persist a timing-model marker. Legacy JSON defaults to version 0; newly created/saved projects use version 1, while autosaves of existing projects preserve their original marker. Legacy non-1× main-video projects with independently placed audio/overlays show a persistent editor warning to review alignment before export. Absolute placements are not changed and the warning is not silently dismissed by saving. There is no automatic migration or user-confirmed acceptance workflow yet.
+
+Face tracking additionally rejects negative timestamps and malformed geometry before mutating association state; a zero IoU threshold no longer joins spatially unrelated faces. Boundary-crossing native detections remain supported. Face pixelation rejects non-finite/underspecified meshes and avoids block-coordinate overflow for extreme requested block sizes. These are low-level guards, not full-video privacy certification; protected AI policy is unchanged.
+
+The full brief remains incomplete: validated sexual/violent/hateful offline moderation, realtime AI preview/export, multilingual measured-word karaoke, learned TFLite trim/scene/crop models, full whole-project video composition and physical-device acceptance remain open. These are implementation/release gaps, not an instruction for the owner to perform coding. This PR stays draft, with no merge or extra PR.
 
 ## Timed caption export no longer allocates a full-frame effect per word
 

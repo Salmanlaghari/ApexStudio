@@ -40,6 +40,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*VideoExportAudioProcessorsTest' \
   --tests '*ExportApplicationThreadTest' \
   --tests '*AudioExportSourceProbeTest' \
+  --tests '*ExportVideoEffectLayersTest' \
+  --tests '*ProjectTimingModelVersionTest' \
   --tests '*EditorAudioExportSourcesTest' \
   --tests '*EditorOverlayAudioExportSourcesTest' \
   --tests '*OverlayAudio*Test' \

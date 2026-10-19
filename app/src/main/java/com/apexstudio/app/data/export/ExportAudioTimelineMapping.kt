@@ -37,6 +37,15 @@ internal object ExportAudioTimelineMapping {
         return SourceTrim(startMs, millisToFrames(trimEndMs - startMs, sampleRate))
     }
 
+    /** Positive trimmed source span in microseconds, saturated on overflow. */
+    fun sourceSpanUs(trimStartMs: Long, trimEndMs: Long): Long? {
+        val startMs = trimStartMs.coerceAtLeast(0L)
+        val endMs = trimEndMs.coerceAtLeast(0L)
+        if (endMs <= startMs) return null
+        val spanMs = endMs - startMs
+        return if (spanMs > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else spanMs * 1_000L
+    }
+
     /** Half-open end of a placed PCM span, including saturated retained durations. */
     fun endFrame(startFrame: Long, frameCount: Long): Long {
         val start = startFrame.coerceAtLeast(0L)

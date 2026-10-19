@@ -46,6 +46,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*OverlayFrameSelectionPolicyTest' \
   --tests '*TextPanelModerationTest' \
   --tests '*OverlaySplitTrimTest' \
+  --tests '*OverlayPropertiesSafetyTest' \
   --tests '*PipOverlayCanvasTest' \
   --tests '*OverlayCropGeometryTest' \
   --tests '*OverlayImageDecoderTest' \

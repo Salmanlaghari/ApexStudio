@@ -4,6 +4,7 @@ import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.OverlayBlend
 import kotlinx.coroutines.flow.update
 
@@ -155,9 +156,20 @@ fun EditorViewModel.removeOverlayClip(clipId: String) {
 
 // ---- Properties panel setters (all undoable, one entry per drag) ----
 
-fun EditorViewModel.setOverlayBlend(clipId: String, blend: OverlayBlend) {
+private inline fun EditorViewModel.updateOverlayProperties(
+    clipId: String,
+    transform: (MediaClip) -> MediaClip
+) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+        ?.takeIf { it.type == ClipType.OVERLAY } ?: return
+    val updated = transform(clip)
+    if (updated == clip) return
     armOverlayUndo()
-    updateClip(clipId) { it.copy(overlayBlend = blend) }
+    updateClip(clipId) { updated }
+}
+
+fun EditorViewModel.setOverlayBlend(clipId: String, blend: OverlayBlend) {
+    updateOverlayProperties(clipId) { it.copy(overlayBlend = blend) }
 }
 
 fun EditorViewModel.setOverlayBorder(
@@ -165,18 +177,19 @@ fun EditorViewModel.setOverlayBorder(
     widthFraction: Float,
     colorArgb: Int
 ) {
-    armOverlayUndo()
-    updateClip(clipId) {
+    updateOverlayProperties(clipId) {
         it.copy(
-            overlayBorderWidth = widthFraction.coerceIn(0f, 0.05f),
+            overlayBorderWidth = widthFraction.finiteOr(it.overlayBorderWidth.finiteOr(0f))
+                .coerceIn(0f, 0.05f),
             overlayBorderColor = colorArgb
         )
     }
 }
 
 fun EditorViewModel.setOverlayShadow(clipId: String, strength: Float) {
-    armOverlayUndo()
-    updateClip(clipId) { it.copy(overlayShadow = strength.coerceIn(0f, 1f)) }
+    updateOverlayProperties(clipId) {
+        it.copy(overlayShadow = strength.finiteOr(it.overlayShadow.finiteOr(0f)).coerceIn(0f, 1f))
+    }
 }
 
 fun EditorViewModel.setOverlayFlip(
@@ -184,13 +197,13 @@ fun EditorViewModel.setOverlayFlip(
     flipH: Boolean,
     flipV: Boolean
 ) {
-    armOverlayUndo()
-    updateClip(clipId) { it.copy(overlayFlipH = flipH, overlayFlipV = flipV) }
+    updateOverlayProperties(clipId) { it.copy(overlayFlipH = flipH, overlayFlipV = flipV) }
 }
 
 fun EditorViewModel.setOverlayVolume(clipId: String, volume: Float) {
-    armOverlayUndo()
-    updateClip(clipId) { it.copy(overlayVolume = volume.coerceIn(0f, 2f)) }
+    updateOverlayProperties(clipId) {
+        it.copy(overlayVolume = volume.finiteOr(it.overlayVolume.finiteOr(0f)).coerceIn(0f, 2f))
+    }
 }
 
 // ---- Overlay keyframes ----
@@ -284,6 +297,9 @@ fun EditorViewModel.captureOverlayKeyframe(clipId: String, timeMs: Long) {
 
 /** Delete one overlay keyframe. */
 fun EditorViewModel.removeOverlayKeyframe(clipId: String, keyframeId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+        ?.takeIf { it.type == ClipType.OVERLAY } ?: return
+    if (clip.keyframes.keyframes.none { it.id == keyframeId }) return
     pushUndo()
     updateClip(clipId) { clip ->
         clip.copy(

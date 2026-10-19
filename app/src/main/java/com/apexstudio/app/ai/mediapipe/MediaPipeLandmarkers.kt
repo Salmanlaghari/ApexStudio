@@ -9,6 +9,7 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import java.io.Closeable
 import java.io.File
+import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.Dispatchers
@@ -33,16 +34,41 @@ data class HandDetection(val landmarks: List<NormalizedPoint>)
  * caller and must not be mutated or recycled until detection returns. Calls and close are serialized per detector.
  */
 object MediaPipeLandmarkers {
+    internal const val MAX_TASK_MODEL_BYTES = 32 * 1024 * 1024
+
     private fun options(model: File): BaseOptions {
         if (!model.isFile || model.length() == 0L) {
             throw IllegalStateException("Required MediaPipe task model is unavailable locally: ${model.name}")
         }
-        val bytes = model.readBytes()
-        val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
-            put(bytes)
-            rewind()
-        }
+        val buffer = modelBuffer(model)
         return BaseOptions.builder().setModelAssetBuffer(buffer).build()
+    }
+
+    /** Read a bounded local model directly into native storage; never stage an unbounded heap copy. */
+    internal fun modelBuffer(model: File): ByteBuffer {
+        if (!model.isFile) throw IllegalStateException("Required MediaPipe task model is unavailable locally: ${model.name}")
+        val expectedBytes = model.length()
+        if (expectedBytes <= 0L || expectedBytes > MAX_TASK_MODEL_BYTES) {
+            throw IllegalStateException("MediaPipe task model size is outside the supported 1..$MAX_TASK_MODEL_BYTES byte range: ${model.name}")
+        }
+        val buffer = ByteBuffer.allocateDirect(expectedBytes.toInt()).order(ByteOrder.nativeOrder())
+        FileInputStream(model).use { input ->
+            val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(chunk)
+                if (count < 0) break
+                if (count == 0) continue
+                if (count > buffer.remaining()) {
+                    throw IllegalStateException("MediaPipe task model changed while it was being read: ${model.name}")
+                }
+                buffer.put(chunk, 0, count)
+            }
+        }
+        if (buffer.position() != expectedBytes.toInt()) {
+            throw IllegalStateException("MediaPipe task model changed while it was being read: ${model.name}")
+        }
+        buffer.flip()
+        return buffer
     }
 
     fun openFace(context: Context, model: File, maxFaces: Int = 3): FaceDetector {

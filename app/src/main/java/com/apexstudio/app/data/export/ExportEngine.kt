@@ -640,11 +640,12 @@ class ExportEngine(private val context: Context) {
         val hasCurve = points.size >= 2
         val constant = config.clipSpeed
         if (!hasCurve && (constant <= 0f || constant == 1f)) return null
-        val spanUs = if (config.trimEndMs > config.trimStartMs) {
-            (config.trimEndMs - config.trimStartMs) * 1000L
-        } else {
-            -1L
-        }
+        // Persisted trim values can be extreme (or negative in legacy data).
+        // Normalize the source clock and saturate instead of wrapping the
+        // speed-curve span into a negative/short interval.
+        val spanUs = ExportAudioTimelineMapping.sourceSpanUs(
+            config.trimStartMs, config.trimEndMs
+        ) ?: -1L
         if (hasCurve && spanUs <= 0L) {
             // Curve without a usable trim span (e.g. the photo path
             // passes 0..0): fall back to the constant rate rather

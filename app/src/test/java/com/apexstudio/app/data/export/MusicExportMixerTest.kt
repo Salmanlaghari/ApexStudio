@@ -113,6 +113,15 @@ class MusicExportMixerTest {
     }
 
     @Test
+    fun `source speed span normalizes trim and saturates microsecond overflow`() {
+        assertEquals(4_000_000L, ExportAudioTimelineMapping.sourceSpanUs(1_250L, 5_250L))
+        assertEquals(500_000L, ExportAudioTimelineMapping.sourceSpanUs(-500L, 500L))
+        assertEquals(Long.MAX_VALUE, ExportAudioTimelineMapping.sourceSpanUs(0L, Long.MAX_VALUE))
+        assertNull(ExportAudioTimelineMapping.sourceSpanUs(2_000L, 1_000L))
+        assertNull(ExportAudioTimelineMapping.sourceSpanUs(-500L, 0L))
+    }
+
+    @Test
     fun `speed change boundaries advance and stop at the clipped span end`() {
         assertEquals(10_000L, ExportAudioTimelineMapping.nextSpeedChangeTimeUs(0L, 25_000L))
         assertEquals(20_000L, ExportAudioTimelineMapping.nextSpeedChangeTimeUs(10_000L, 25_000L))

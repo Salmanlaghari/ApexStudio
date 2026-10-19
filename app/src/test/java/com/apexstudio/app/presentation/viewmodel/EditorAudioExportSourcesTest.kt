@@ -53,7 +53,7 @@ class EditorAudioExportSourcesTest {
     fun `music remains one times even after differently sped clips`() {
         val music = AudioTrack(
             id = "music", name = "music", uri = "file:///music.m4a", volume = 0.6f,
-            trimStartMs = 20L, trimEndMs = 2_000L
+            trimStartMs = 20L, trimEndMs = 2_000L, startTimeMs = 1_300L
         )
         val sources = buildAudioExportSources(
             clips = listOf(clip("first", 4f, 1f), clip("second", 0.25f, 1f)),
@@ -66,6 +66,43 @@ class EditorAudioExportSourcesTest {
         assertEquals(0.6f, musicSource.sourceGain)
         assertEquals(music.trimStartMs, musicSource.trimStartMs)
         assertEquals(music.trimEndMs, musicSource.trimEndMs)
+        assertEquals(1_300L, musicSource.timelinePositionMs)
+    }
+
+    @Test
+    fun `main clip sources map to sequential editor timeline positions`() {
+        val sources = buildAudioExportSources(
+            clips = listOf(clip("first", 2f, 1f), clip("second", 0.5f, 1f)),
+            audioTracks = emptyList()
+        )
+
+        assertEquals(listOf(0L, 4_800L), sources.map { it.timelinePositionMs })
+    }
+
+    @Test
+    fun `still images preserve silence before subsequent main video`() {
+        val sources = buildAudioExportSources(
+            listOf(clip("still", 1f, 1f, type = ClipType.IMAGE), clip("video", 1f, 1f)),
+            emptyList()
+        )
+        assertEquals(1, sources.size)
+        assertEquals(4_800L, sources.single().timelinePositionMs)
+    }
+
+    @Test
+    fun `absolute video layers do not advance the main timeline cursor`() {
+        val layer = clip("layer", 1f, 1f).copy(trackIndex = 2, timelineOffsetMs = 1_200L)
+        val sources = buildAudioExportSources(
+            listOf(clip("first", 1f, 1f), layer, clip("last", 1f, 1f)),
+            emptyList()
+        )
+        assertEquals(listOf(0L, 1_200L, 4_800L), sources.map { it.timelinePositionMs })
+    }
+
+    @Test
+    fun `negative persisted track placement clamps to timeline zero`() {
+        val track = AudioTrack("music", "music", "file:///music.m4a", startTimeMs = -200L)
+        assertEquals(0L, buildAudioExportSources(emptyList(), listOf(track)).single().timelinePositionMs)
     }
 
     @Test

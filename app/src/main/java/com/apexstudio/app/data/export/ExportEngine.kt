@@ -245,13 +245,14 @@ class ExportEngine(private val context: Context) {
     )
 
     /**
-     * One audio source for [startAudioExport]: a media URI plus its trim range
-     * (in ms, relative to the source media).
+     * One audio source for [startAudioExport], including its source trim and
+     * placement on the standalone export timeline (both in ms).
      */
     data class AudioExportSource(
         val uri: String,
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = 0L,
+        val timelinePositionMs: Long = 0L,
         // Variable speed curve for THIS source (PR-E). Empty = use the
         // source constant override, or config.clipSpeed for legacy callers.
         val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
@@ -701,16 +702,10 @@ class ExportEngine(private val context: Context) {
     }
 
     /**
-     * Exports the project's audio as a standalone AAC (.m4a) file: every
-     * timeline clip's audio plus all unmuted extra audio tracks (music /
-     * voiceover), concatenated in timeline order. Reuses the audio pipeline
-     * (pitch, volume, channel mixing) from the video export; video is removed
-     * via [EditedMediaItem.Builder.setRemoveVideo].
-     *
-     * Note: sources are concatenated into a single sequence, not
-     * simultaneously mixed — an extra music track plays after the clips'
-     * audio rather than underneath it. Per-source trim ranges are honored via
-     * each item's clipping configuration.
+     * Exports the project's audio as a standalone AAC (.m4a) timeline mix.
+     * Each source gets an independent sequence, with a leading timeline gap
+     * for its placement; Media3 mixes the overlapping audio streams while
+     * retaining each item's trim, speed, gain, pitch and denoise processors.
      */
     fun startAudioExport(
         sources: List<AudioExportSource>,
@@ -728,7 +723,7 @@ class ExportEngine(private val context: Context) {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val editedItems = sources.map { src ->
+                val placedItems = sources.map { src ->
                     val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
                     if (src.trimStartMs > 0L || (src.trimEndMs > 0L && src.trimEndMs > src.trimStartMs)) {
                         val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
@@ -746,7 +741,7 @@ class ExportEngine(private val context: Context) {
                     // time-stretched by its own curve; sources without a
                     // curve fall back to the config's constant clipSpeed.
                     // Per-source Clean Voice likewise rides on the copy.
-                    EditedMediaItem.Builder(mediaItemBuilder.build())
+                    val editedItem = EditedMediaItem.Builder(mediaItemBuilder.build())
                         .setRemoveVideo(true)
                         .setEffects(
                             Effects(
@@ -757,10 +752,9 @@ class ExportEngine(private val context: Context) {
                             )
                         )
                         .build()
+                    PlacedAudioItem(editedItem, src.timelinePositionMs)
                 }
-                val composition = Composition.Builder(
-                    EditedMediaItemSequence(editedItems)
-                ).build()
+                val composition = StandaloneAudioComposition.build(placedItems)
 
                 val transformer = Transformer.Builder(context)
                     .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)

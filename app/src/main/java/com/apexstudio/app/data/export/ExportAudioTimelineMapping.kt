@@ -31,6 +31,9 @@ internal object ExportAudioTimelineMapping {
         return if (ms > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else ms * 1_000L
     }
 
+    /** Timeline start of a source sequence, normalized and saturated for Media3 gaps. */
+    fun timelinePositionUs(positionMs: Long): Long = millisToMicros(positionMs)
+
     /**
      * Source trim start and retained frame count, normalized to non-negative
      * source time. An invalid/empty interval maps to zero retained frames.

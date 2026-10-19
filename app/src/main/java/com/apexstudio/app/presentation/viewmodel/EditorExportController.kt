@@ -186,20 +186,25 @@ fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(er
 
 
 /**
- * Builds standalone-audio sequence items in project order: video clip audio,
- * followed by unmuted project audio tracks. This preserves the current
- * concatenation behavior; it is not timeline mixing or overlay/fade rendering.
+ * Maps canonical project audio to the standalone export timeline. Main video
+ * clip audio follows editor clip order; extra tracks retain their timeline
+ * placement. Media3 mixes the resulting parallel source sequences.
  */
 internal fun buildAudioExportSources(
     clips: List<MediaClip>,
     audioTracks: List<AudioTrack>
 ): List<ExportEngine.AudioExportSource> = buildList {
-    clips.filter { it.type == ClipType.VIDEO }.forEach { clip ->
-        add(
+    var clipTimelinePositionMs = 0L
+    clips.forEach { clip ->
+        val mainVisual = clip.trackIndex == 0 &&
+            (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
+        if (clip.type == ClipType.VIDEO) add(
             ExportEngine.AudioExportSource(
                 uri = clip.uri,
                 trimStartMs = clip.trimStartMs,
                 trimEndMs = clip.trimEndMs,
+                timelinePositionMs = if (clip.trackIndex == 0) clipTimelinePositionMs
+                    else clip.timelineOffsetMs.coerceAtLeast(0L),
                 speedPoints = clip.speedPoints,
                 constantSpeedOverride = clip.speedMultiplier,
                 sourceGain = clip.volume,
@@ -207,6 +212,16 @@ internal fun buildAudioExportSources(
                 denoiseStrength = clip.denoiseStrength
             )
         )
+        if (mainVisual) {
+            // Still images consume V1 time even though they have no audio.
+            // Absolute overlay placement must never advance the V1 cursor.
+            val durationMs = clip.effectiveDurationMs().coerceAtLeast(0L)
+            clipTimelinePositionMs = if (clipTimelinePositionMs > Long.MAX_VALUE - durationMs) {
+                Long.MAX_VALUE
+            } else {
+                clipTimelinePositionMs + durationMs
+            }
+        }
     }
     audioTracks.filter { !it.isMuted }.forEach { track ->
         add(
@@ -214,6 +229,7 @@ internal fun buildAudioExportSources(
                 uri = track.uri,
                 trimStartMs = track.trimStartMs,
                 trimEndMs = track.trimEndMs,
+                timelinePositionMs = track.startTimeMs.coerceAtLeast(0L),
                 // Music and voiceover remain at their native playback rate.
                 constantSpeedOverride = 1f,
                 sourceGain = track.volume
@@ -223,9 +239,9 @@ internal fun buildAudioExportSources(
 }
 
 /**
- * Exports a standalone AAC sequence, not a timeline mix. Video clip audio is
- * followed by added tracks, each with its own trim, constant speed and gain.
- * Track offsets, fades/keyframes and overlay-source audio are not rendered here.
+ * Exports a standalone AAC timeline mix. Video clip audio is placed in editor
+ * clip order, and unmuted canonical project audio tracks use their timeline
+ * offsets; each source keeps its own trim, speed and gain settings.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"

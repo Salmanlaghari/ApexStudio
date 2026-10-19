@@ -51,39 +51,69 @@ fun EditorViewModel.toggleRippleEdit() {
  * if within [snapThresholdMs].
  */
 fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 150L): Long {
-    if (!_state.value.magneticSnapping) {
-        return if (_state.value.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
+    val state = _state.value
+    if (!state.magneticSnapping) {
+        return if (state.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
     }
     val candidates = mutableListOf<Long>()
-    val project = _state.value.project
+    val project = state.project
     if (project != null) {
         var accMs = 0L
         candidates.add(0L)
         for (clip in project.clips) {
-            val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(100L)
-            accMs += clipDur
-            candidates.add(accMs)
-            // Add keyframes
-            for (kf in clip.keyframes.keyframes) {
-                candidates.add(accMs - clipDur + kf.timeMs)
+            val end = if (clip.trimEndMs == Long.MAX_VALUE) clip.durationMs else clip.trimEndMs
+            if (clip.trimStartMs >= 0L && end >= clip.trimStartMs) {
+                val duration = SpeedCurveMath.effectiveDurationMs(
+                    end - clip.trimStartMs, SpeedCurveMath.sanitize(clip.speedPoints)
+                )
+                when {
+                    clip.type == ClipType.OVERLAY -> {
+                        // Overlays are placed independently; they never advance V1.
+                        val start = clip.timelineOffsetMs.coerceAtLeast(0L)
+                        candidates.add(start)
+                        candidates.add(saturatedSnapEnd(start, duration))
+                    }
+                    clip.trackIndex == 0 && (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE) -> {
+                        accMs = saturatedSnapEnd(accMs, duration)
+                        candidates.add(accMs)
+                    }
+                }
             }
+            // Persisted clip keyframes and timeline diamonds use absolute project time.
+            candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
         }
     }
-    if (_state.value.snapToBeat) {
-        candidates.addAll(_state.value.beatMarkersMs)
+    if (state.snapToBeat) {
+        candidates.addAll(state.beatMarkersMs)
     }
-    if (candidates.isEmpty()) return timeMs
-    val closest = candidates.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
-    return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
+    return nearestTimelineSnap(timeMs, snapThresholdMs, candidates)
 }
 
+private fun saturatedSnapEnd(startMs: Long, durationMs: Long): Long =
+    if (durationMs > Long.MAX_VALUE - startMs) Long.MAX_VALUE else startMs + durationMs
+
+/** Non-negative timeline differences cannot overflow; abs(a - b) for arbitrary Longs can. */
+private fun nearestTimelineSnap(timeMs: Long, thresholdMs: Long, candidates: List<Long>): Long {
+    if (timeMs < 0L || thresholdMs < 0L) return timeMs
+    var closest = timeMs
+    var closestDistance = Long.MAX_VALUE
+    var found = false
+    for (candidate in candidates) {
+        if (candidate < 0L) continue
+        val distance = if (candidate >= timeMs) candidate - timeMs else timeMs - candidate
+        if (distance <= thresholdMs && (!found || distance < closestDistance ||
+                (distance == closestDistance && candidate < closest))) {
+            closest = candidate
+            closestDistance = distance
+            found = true
+        }
+    }
+    return closest
+}
 
 fun EditorViewModel.findNearestBeat(timeMs: Long, snapThresholdMs: Long = 180L): Long {
     if (!_state.value.snapToBeat) return timeMs
-    val beats = _state.value.beatMarkersMs
-    if (beats.isEmpty()) return timeMs
-    val closest = beats.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
-    return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
+    return nearestTimelineSnap(timeMs, snapThresholdMs, _state.value.beatMarkersMs)
 }
 
 fun EditorViewModel.toggleAiVoice() = _audio.update { it.copy(aiVoiceEnhance = !it.aiVoiceEnhance) }
@@ -267,7 +297,14 @@ fun EditorViewModel.setRecordingState(recording: Boolean) {
 }
 
 
-fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC, sourceDurationMs: Long = 0L) {
+fun EditorViewModel.addAudioTrack(
+    name: String,
+    uri: String,
+    kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC,
+    sourceDurationMs: Long = 0L,
+    startTimeMs: Long = livePlayheadMs()
+) {
+    if (_state.value.project == null) return
     val finalDuration = if (sourceDurationMs > 0L) sourceDurationMs else 30000L
     val track = AudioTrack(
         id = java.util.UUID.randomUUID().toString(),
@@ -275,31 +312,46 @@ fun EditorViewModel.addAudioTrack(name: String, uri: String, kind: AudioTrack.Ki
         uri = uri,
         volume = if (kind == AudioTrack.Kind.SFX) 1f else 0.85f,
         kind = kind,
+        startTimeMs = startTimeMs.coerceAtLeast(0L),
+        sourceDurationMs = finalDuration,
         trimStartMs = 0L,
         trimEndMs = finalDuration
     )
-    _audio.update { it.copy(tracks = it.tracks + track) }
     _state.update { s ->
         val p = s.project ?: return@update s
         val updatedTracks = p.audioTracks + track
         val newDuration = computeTimelineDurationMs(p.clips, updatedTracks)
         s.copy(
-            project = p.copy(audioTracks = updatedTracks),
+            project = p.copy(audioTracks = updatedTracks, durationMs = newDuration),
             durationMs = newDuration
         )
     }
+    _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
+    selectAudioTrack(track.id)
     persistProject()
 }
 
 
 fun EditorViewModel.removeAudioTrack(trackId: String) {
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.filter { it.id != trackId })
-    }
+    var remainingTracks: List<AudioTrack>? = null
+    var remainingDuration: Long? = null
     _state.update { s ->
         val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.filter { it.id != trackId }))
+        val tracks = p.audioTracks.filterNot { it.id == trackId }
+        val duration = computeTimelineDurationMs(p.clips, tracks)
+        remainingTracks = tracks
+        remainingDuration = duration
+        s.copy(
+            project = p.copy(audioTracks = tracks, durationMs = duration),
+            durationMs = duration,
+            playerPositionMs = s.playerPositionMs.coerceAtMost(duration),
+            currentTimeMs = s.currentTimeMs.coerceAtMost(duration)
+        )
     }
+    val tracks = remainingTracks ?: return
+    val duration = remainingDuration ?: return
+    _audio.update { it.copy(tracks = tracks) }
+    _playerPosition.update { it.coerceAtMost(duration) }
     persistProject()
 }
 
@@ -527,53 +579,28 @@ fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
 
 
 fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
-    pushUndo()
-    // One shared id for the second half: the project list and the
-    // mixer list must carry the SAME track ids, or a later mixer edit
-    // to the split half would miss the project copy.
-    val part2Id = "audio_${System.currentTimeMillis()}"
+    val original = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId } ?: return
+    val elapsed = atMs - original.startTimeMs
+    val span = original.trimEndMs - original.trimStartMs
+    if (elapsed < 100L || elapsed > span - 100L) return
+    val part2Id = java.util.UUID.randomUUID().toString()
     _state.update { s ->
         val p = s.project ?: return@update s
         val track = p.audioTracks.firstOrNull { it.id == trackId } ?: return@update s
-        val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
+        val splitPoint = track.trimStartMs + elapsed
         val part1 = track.copy(trimEndMs = splitPoint)
         val part2 = track.copy(
             id = part2Id,
-            trimStartMs = splitPoint
+            trimStartMs = splitPoint,
+            startTimeMs = atMs
         )
-        val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
-        for (t in p.audioTracks) {
-            if (t.id == trackId) {
-                updated.add(part1)
-                updated.add(part2)
-            } else {
-                updated.add(t)
-            }
+        val updated = p.audioTracks.flatMap {
+            if (it.id == trackId) listOf(part1, part2) else listOf(it)
         }
         s.copy(project = p.copy(audioTracks = updated))
     }
-    // Keep the mixer list in sync with the project list: the old code
-    // split only the project list, leaving _audio.tracks with the
-    // pre-split single track (mixer + project disagreed after a split).
-    _audio.update { s ->
-        val track = s.tracks.firstOrNull { it.id == trackId } ?: return@update s
-        val splitPoint = atMs.coerceIn(track.trimStartMs + 100L, track.trimEndMs - 100L)
-        val part1 = track.copy(trimEndMs = splitPoint)
-        val part2 = track.copy(
-            id = part2Id,
-            trimStartMs = splitPoint
-        )
-        val updated = mutableListOf<com.apexstudio.app.domain.model.AudioTrack>()
-        for (t in s.tracks) {
-            if (t.id == trackId) {
-                updated.add(part1)
-                updated.add(part2)
-            } else {
-                updated.add(t)
-            }
-        }
-        s.copy(tracks = updated)
-    }
+    _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
+    selectAudioTrack(part2Id)
     persistProject()
 }
 

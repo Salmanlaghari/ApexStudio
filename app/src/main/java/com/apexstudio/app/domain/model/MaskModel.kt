@@ -88,8 +88,10 @@ object MaskModel {
             val yNorm = 13f * cos(t) - 5f * cos(2f * t) - 2f * cos(3f * t) - cos(4f * t)
             points += MaskPoint((xNorm / 16f).coerceIn(-1f, 1f), (-yNorm / 17f).coerceIn(-1f, 1f))
         }
-        val first = points.first()
-        if (points.last() != first) points += first
+        // The final sample is mathematically the first point, but Float
+        // trig leaves a tiny rounding difference. Replace it exactly
+        // instead of appending a 33rd point past the shader uniform.
+        points[points.lastIndex] = points.first()
         return points
     }
 

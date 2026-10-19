@@ -279,7 +279,7 @@ private fun AudioTrackRow(
         track.isMuted -> ApexPalette.TextTertiary
         else -> ApexPalette.NeonPurple
     }
-    val kindLabel = if (track.volume >= 0.99f) "SFX" else "Music"
+    val kindLabel = audioTrackKindLabel(track.kind)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -384,6 +384,13 @@ private fun AudioTrackRow(
             }
         }
     }
+}
+
+/** Track identity is persisted in [AudioTrack.kind], not inferred from its current fader value. */
+internal fun audioTrackKindLabel(kind: AudioTrack.Kind): String = when (kind) {
+    AudioTrack.Kind.ORIGINAL_VIDEO -> "Original video"
+    AudioTrack.Kind.MUSIC -> "Music"
+    AudioTrack.Kind.SFX -> "Voiceover / SFX"
 }
 
 private fun formatVolumeKfTime(ms: Long): String {

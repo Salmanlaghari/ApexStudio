@@ -106,6 +106,8 @@ fun TimelineTrackArea(
     onClearFx: () -> Unit,
     onOpenClipTransition: (fromClipId: String, toClipId: String) -> Unit,
     onSelectAudioTrack: (String) -> Unit,
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
     modifier: Modifier = Modifier
 ) {
@@ -377,6 +379,8 @@ fun TimelineTrackArea(
             onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
             onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
             onSelectAudioTrack = onSelectAudioTrack,
+            onMoveAudioTrack = onMoveAudioTrack,
+            onTrimAudioTrack = onTrimAudioTrack,
             onSelectTextOverlay = onSelectTextOverlay,
             onSelectSticker = onSelectSticker,
             onOpenFilter = onOpenFilter,

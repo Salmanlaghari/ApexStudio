@@ -17,6 +17,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import com.apexstudio.app.domain.model.croppedOverlayAspect
 
 /**
  * Composites a video Picture-in-Picture overlay in the export.
@@ -54,6 +55,7 @@ class PipOverlayGlEffect(
     private val offsetMs: Long = 0L,
     private val trimStartMs: Long = 0L,
     private val trimEndMs: Long = Long.MAX_VALUE,
+    private val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
     private val widthFraction: Float = 0.25f,
     private val centerX: Float = 0.85f,
     private val centerY: Float = 0.85f,
@@ -69,7 +71,8 @@ class PipOverlayGlEffect(
     private val shadow: Float = 0f,
     private val flipH: Boolean = false,
     private val flipV: Boolean = false,
-    private val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
+    private val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList(),
+    private val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings()
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -79,13 +82,14 @@ class PipOverlayGlEffect(
             offsetMs = offsetMs,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
+            speedPoints = speedPoints,
             widthFraction = widthFraction,
             centerX = centerX,
             centerY = centerY,
             rotationDeg = rotationDeg,
             opacity = opacity,
             mask = mask,
-            aspect = aspect,
+            aspect = croppedOverlayAspect(aspect, videoCrop),
             blendMode = blendMode,
             borderWidth = borderWidth,
             borderColor = borderColor,
@@ -93,6 +97,7 @@ class PipOverlayGlEffect(
             flipH = flipH,
             flipV = flipV,
             keyframes = keyframes,
+            videoCrop = videoCrop.sanitized(),
             useHdr = useHdr
         )
     }
@@ -104,6 +109,7 @@ class PipOverlayGlEffect(
         private val offsetMs: Long,
         private val trimStartMs: Long,
         private val trimEndMs: Long,
+        private val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint>,
         private val widthFraction: Float,
         private val centerX: Float,
         private val centerY: Float,
@@ -118,6 +124,7 @@ class PipOverlayGlEffect(
         private val flipH: Boolean,
         private val flipV: Boolean,
         private val keyframes: List<com.apexstudio.app.domain.model.Keyframe>,
+        private val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY),
         SurfaceTexture.OnFrameAvailableListener {
@@ -132,7 +139,12 @@ class PipOverlayGlEffect(
         private var decoderReady: Boolean = false
         private var frameAvailable: Boolean = false
         private var lastOverlayTimeUs: Long = -1L
+        private var lastRequestedTargetTimeUs: Long? = null
+        private var pendingOutputIndex: Int = -1
+        private var pendingOutputTimeUs: Long = -1L
         private var inputEos: Boolean = false
+        private val sanitizedSpeedPoints =
+            com.apexstudio.app.domain.model.SpeedCurveMath.sanitize(speedPoints)
 
         // PiP geometry in normalized device coordinates is computed
         // per frame in drawFrame() (computeGeometry) so keyframes can
@@ -207,59 +219,44 @@ class PipOverlayGlEffect(
          * (the PiP box is small) so the export never OOMs on a huge photo.
          */
         private fun setupImageTexture() {
-            val bytes = appContext.contentResolver
-                .openInputStream(Uri.parse(overlayUri))?.use { it.readBytes() }
-                ?: throw IllegalArgumentException("Cannot open overlay image $overlayUri")
-            val bounds = android.graphics.BitmapFactory.Options()
-                .apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
-            }
-            var sample = 1
-            while ((bounds.outWidth / sample) > 512 || (bounds.outHeight / sample) > 512) {
-                sample *= 2
-            }
-            val opts = android.graphics.BitmapFactory.Options()
-                .apply { inSampleSize = sample }
-            val bitmap = android.graphics.BitmapFactory
-                .decodeByteArray(bytes, 0, bytes.size, opts)
-                ?: throw IllegalArgumentException("Cannot decode overlay image $overlayUri")
+            val bitmap = OverlayImageDecoder.decode(appContext, overlayUri)
             val tex = IntArray(1)
-            GLES20.glGenTextures(1, tex, 0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
-            )
-            GLES20.glTexParameteri(
-                GLES20.GL_TEXTURE_2D,
-                GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
-            )
-            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-            bitmap.recycle()
-            // Fail loudly on a bad upload: the caller degrades gracefully
-            // (PiP disabled) instead of compositing an undefined texture.
-            val glError = GLES20.glGetError()
-            if (glError != GLES20.GL_NO_ERROR) {
-                try {
-                    GLES20.glDeleteTextures(1, tex, 0)
-                } catch (_: Exception) {
-                }
-                throw IllegalStateException(
-                    "PiP image texture upload failed for $overlayUri, glError=$glError"
+            try {
+                GLES20.glGenTextures(1, tex, 0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR
                 )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR
+                )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE
+                )
+                GLES20.glTexParameteri(
+                    GLES20.GL_TEXTURE_2D,
+                    GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE
+                )
+                android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                // Fail loudly on a bad upload: the caller degrades gracefully
+                // (PiP disabled) instead of compositing an undefined texture.
+                val glError = GLES20.glGetError()
+                if (glError != GLES20.GL_NO_ERROR) {
+                    throw IllegalStateException(
+                        "PiP image texture upload failed for $overlayUri, glError=$glError"
+                    )
+                }
+                imageTextureId = tex[0]
+                hasImageOverlay = true
+            } catch (failure: Exception) {
+                if (tex[0] != 0) try { GLES20.glDeleteTextures(1, tex, 0) } catch (_: Exception) {}
+                throw failure
+            } finally {
+                bitmap.recycle()
             }
-            imageTextureId = tex[0]
-            hasImageOverlay = true
             Log.d(TAG, "PiP image texture ready for $overlayUri")
         }
 
@@ -331,7 +328,10 @@ class PipOverlayGlEffect(
             dec.configure(format, surf, null, 0)
             // Seek to trim start.
             if (trimStartMs > 0) {
-                ext.seekTo(trimStartMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                ext.seekTo(
+                    OverlayFrameSelectionPolicy.millisecondsToMicroseconds(trimStartMs),
+                    MediaExtractor.SEEK_TO_CLOSEST_SYNC
+                )
             }
             dec.start()
             decoder = dec
@@ -422,15 +422,28 @@ class PipOverlayGlEffect(
                 // the source media, so it is visible for exactly the trimmed
                 // duration starting at offsetMs. overlayTimeMs is 0-based, so it
                 // must NOT be compared against trimStartMs directly.
-                val trimmedDurationMs = when {
-                    trimEndMs == Long.MAX_VALUE -> Long.MAX_VALUE
-                    trimEndMs > trimStartMs -> trimEndMs - trimStartMs
+                val sourceSpanMs = when {
+                    trimEndMs > trimStartMs && trimEndMs != Long.MAX_VALUE -> trimEndMs - trimStartMs
+                    trimEndMs == Long.MAX_VALUE && overlayDurationUs != Long.MAX_VALUE ->
+                        (overlayDurationUs / 1000L - trimStartMs).coerceAtLeast(0L)
                     else -> 0L
+                }
+                val hasSpeedRamp = sanitizedSpeedPoints.size >= 2
+                val trimmedDurationMs = when {
+                    hasSpeedRamp -> com.apexstudio.app.domain.model.SpeedCurveMath
+                        .effectiveDurationMs(sourceSpanMs, sanitizedSpeedPoints)
+                    trimEndMs == Long.MAX_VALUE -> Long.MAX_VALUE
+                    else -> sourceSpanMs
                 }
                 // Source-media timestamp of the frame to show. The decoder was
                 // seeked to trimStartMs in setupDecoder(), so decoded frames carry
                 // source-media timestamps — the trim offset must be added back.
-                val sourceTimeUs = (overlayTimeMs + trimStartMs) * 1000L
+                val sourceOffsetMs = if (hasSpeedRamp) {
+                    com.apexstudio.app.domain.model.SpeedCurveMath.outputToSourceMs(
+                        overlayTimeMs, sourceSpanMs, sanitizedSpeedPoints
+                    )
+                } else overlayTimeMs
+                val sourceTimeUs = OverlayFrameSelectionPolicy.sourceTimeUs(sourceOffsetMs, trimStartMs)
                 val inWindow = overlayTimeMs >= 0 && overlayTimeMs < trimmedDurationMs
                 val visible = decoderReady && inWindow && sourceTimeUs < overlayDurationUs
 
@@ -488,6 +501,11 @@ class PipOverlayGlEffect(
                     glProgram.setFloatsUniform("uPipFlipH", floatArrayOf(if (flipH) 1f else 0f))
                     glProgram.setFloatsUniform("uPipFlipV", floatArrayOf(if (flipV) 1f else 0f))
                     glProgram.setFloatsUniform("uBoxAspect", floatArrayOf(aspect.coerceIn(0.1f, 10f)))
+                    // Source rectangle only; the PiP's center/scale/rotation remain its own geometry.
+                    glProgram.setFloatsUniform("uPipCrop", floatArrayOf(
+                        videoCrop.left, 1f - videoCrop.bottom,
+                        videoCrop.right, 1f - videoCrop.top
+                    ))
                 } else {
                     glProgram.setFloatsUniform("uPipEnabled", floatArrayOf(0f))
                 }
@@ -518,19 +536,59 @@ class PipOverlayGlEffect(
             if (!decoderReady) return 0
 
             try {
-                // If seeking backwards (or first frame), seek the extractor.
-                if (targetTimeUs < lastOverlayTimeUs) {
+                // Seek only when the requested source time moves backwards. A
+                // decoded frame may legitimately be slightly ahead of a slow
+                // timeline target and must not cause repeated flushes.
+                if (OverlayFrameSelectionPolicy.mustSeek(targetTimeUs, lastRequestedTargetTimeUs)) {
+                    if (pendingOutputIndex >= 0) {
+                        dec.releaseOutputBuffer(pendingOutputIndex, false)
+                        pendingOutputIndex = -1
+                        pendingOutputTimeUs = -1L
+                    }
                     ext.seekTo(targetTimeUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                     dec.flush()
                     inputEos = false
                     lastOverlayTimeUs = -1L
+                    lastRequestedTargetTimeUs = null
+                    synchronized(this) { frameAvailable = false }
+                }
+                lastRequestedTargetTimeUs = targetTimeUs
+
+                // A previously rendered frame in the tolerance window can be
+                // reused until the target passes it; its PTS is not a seek cursor.
+                if (OverlayFrameSelectionPolicy.canReuseFrame(
+                        targetTimeUs, lastOverlayTimeUs.takeIf { it >= 0L }, lastOverlayTimeUs >= 0L
+                    )
+                ) {
+                    updateSurfaceTextureIfAvailable()
+                    return pipTextureId
                 }
 
-                val timeoutUs = 10_000L
+                // Keep each output-frame request bounded. Short dequeue waits
+                // avoid stalling the export thread while still allowing the
+                // asynchronous decoder a few opportunities to produce output.
+                val timeoutUs = 1_000L
                 var attempts = 0
-                // Feed input and drain output until we reach the target timestamp.
+                // Feed input and drain through every eligible frame. Stop at
+                // (and retain) the first frame beyond the target tolerance so a
+                // later slow-motion request can consume that exact frame.
                 while (attempts < 30) {
                     attempts++
+                    if (pendingOutputIndex >= 0) {
+                        if (OverlayFrameSelectionPolicy.actionForOutput(
+                                pendingOutputTimeUs, targetTimeUs
+                            ) == OverlayFrameSelectionPolicy.OutputAction.HOLD_AND_STOP
+                        ) {
+                            break
+                        }
+                        dec.releaseOutputBuffer(pendingOutputIndex, true)
+                        lastOverlayTimeUs = pendingOutputTimeUs
+                        pendingOutputIndex = -1
+                        pendingOutputTimeUs = -1L
+                        updateSurfaceTextureIfAvailable()
+                        continue
+                    }
+
                     // Feed input.
                     if (!inputEos) {
                         val inIndex = dec.dequeueInputBuffer(timeoutUs)
@@ -554,25 +612,17 @@ class PipOverlayGlEffect(
                     val info = MediaCodec.BufferInfo()
                     val outIndex = dec.dequeueOutputBuffer(info, timeoutUs)
                     if (outIndex >= 0) {
-                        val render = info.presentationTimeUs <= targetTimeUs + 33_000L
-                        dec.releaseOutputBuffer(outIndex, render)
-                        if (render) {
+                        if (OverlayFrameSelectionPolicy.actionForOutput(
+                                info.presentationTimeUs, targetTimeUs
+                        ) == OverlayFrameSelectionPolicy.OutputAction.RENDER_AND_CONTINUE
+                        ) {
+                            dec.releaseOutputBuffer(outIndex, true)
                             lastOverlayTimeUs = info.presentationTimeUs
-                            // Check if a new frame is available.
-                            synchronized(this) {
-                                if (frameAvailable) {
-                                    frameAvailable = false
-                                    surfaceTexture?.updateTexImage()
-                                    return pipTextureId
-                                }
-                            }
-                            // Frame rendered but not yet available; return texture anyway
-                            // (it holds the previous frame).
-                            return pipTextureId
-                        }
-                        if (info.presentationTimeUs > targetTimeUs) {
-                            // We've passed the target; use the current texture.
-                            return pipTextureId
+                            updateSurfaceTextureIfAvailable()
+                        } else {
+                            pendingOutputIndex = outIndex
+                            pendingOutputTimeUs = info.presentationTimeUs
+                            break
                         }
                     } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                         break
@@ -581,10 +631,20 @@ class PipOverlayGlEffect(
                         break
                     }
                 }
+                updateSurfaceTextureIfAvailable()
                 return if (lastOverlayTimeUs >= 0) pipTextureId else 0
             } catch (e: Exception) {
                 Log.w(TAG, "PiP texture update failed", e)
                 return 0
+            }
+        }
+
+        private fun updateSurfaceTextureIfAvailable() {
+            synchronized(this) {
+                if (frameAvailable) {
+                    frameAvailable = false
+                    surfaceTexture?.updateTexImage()
+                }
             }
         }
 
@@ -608,6 +668,11 @@ class PipOverlayGlEffect(
 
         private fun releaseDecoder() {
             decoderReady = false
+            if (pendingOutputIndex >= 0) {
+                try { decoder?.releaseOutputBuffer(pendingOutputIndex, false) } catch (_: Exception) {}
+                pendingOutputIndex = -1
+                pendingOutputTimeUs = -1L
+            }
             try { decoder?.stop() } catch (_: Exception) {}
             try { decoder?.release() } catch (_: Exception) {}
             decoder = null
@@ -660,6 +725,7 @@ class PipOverlayGlEffect(
             uniform float uPipFlipH;       // 0 or 1
             uniform float uPipFlipV;       // 0 or 1
             uniform float uBoxAspect;      // overlay box width / height
+            uniform vec4 uPipCrop;         // source UV rectangle (left,bottom,right,top)
             uniform vec2 uMaskCenter;   // overlay-frame normalised, top-left origin
             uniform vec2 uMaskSize;     // full width/height, 0..1
             uniform float uMaskFeather; // 0..1
@@ -760,6 +826,7 @@ class PipOverlayGlEffect(
                         // so the texture itself flips, not the box.
                         if (uPipFlipH > 0.5) pipUv.x = 1.0 - pipUv.x;
                         if (uPipFlipV > 0.5) pipUv.y = 1.0 - pipUv.y;
+                        pipUv = mix(uPipCrop.xy, uPipCrop.zw, pipUv);
                         vec4 pip = uPipIsImage > 0.5
                             ? texture2D(uPipImageSampler, pipUv)
                             : texture2D(uPipSampler, pipUv);

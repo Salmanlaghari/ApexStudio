@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "notice": "Integrity and provenance only. This inventory is not moderation approval or device accuracy certification.",
+  "models": [
+    {
+      "path": "mediapipe/mediapipe-face-landmarker.task",
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+      "source": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/mediapipe-pose-landmarker.task",
+      "bytes": 5777746,
+      "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+      "source": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/mediapipe-hand-landmarker.task",
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+      "source": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "mediapipe/selfie_segmenter.tflite",
+      "bytes": 249537,
+      "sha256": "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+      "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+      "license": "Apache-2.0",
+      "licenseFile": "mediapipe/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-encoder.int8.onnx",
+      "bytes": 12937772,
+      "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-encoder.int8.onnx",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-decoder.int8.onnx",
+      "bytes": 89855401,
+      "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-decoder.int8.onnx",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "whisper/tiny-tokens.txt",
+      "bytes": 816730,
+      "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-tokens.txt",
+      "license": "MIT",
+      "licenseFile": "whisper/LICENSE"
+    },
+    {
+      "path": "alignment/wav2vec2-base-960h-int8.onnx",
+      "bytes": 95212816,
+      "sha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/onnx/model_quantized.onnx",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/vocab.json",
+      "bytes": 358,
+      "sha256": "4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/vocab.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/preprocessor_config.json",
+      "bytes": 215,
+      "sha256": "8cdfd65ff4115423185a1512bdae100e2e0cd744f5b322417429944aaafd0827",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/preprocessor_config.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "alignment/config.json",
+      "bytes": 2157,
+      "sha256": "15c7cf6378153bdcb33fce27780ab9aae37fd154fbb674cacc3347992055d323",
+      "source": "https://huggingface.co/onnx-community/wav2vec2-base-960h-ONNX/resolve/729c1a6730fb549c20a1c73a3d3f96f11020225e/config.json",
+      "license": "Apache-2.0",
+      "licenseFile": "alignment/LICENSE"
+    },
+    {
+      "path": "super_resolution/super-resolution-10.onnx",
+      "bytes": 240078,
+      "sha256": "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e",
+      "source": "https://huggingface.co/onnxmodelzoo/super-resolution-10/resolve/395472c4b6b92f788357237983d83fd913cfe7e3/super-resolution-10.onnx",
+      "license": "Apache-2.0",
+      "licenseFile": "super_resolution/LICENSE"
+    }
+  ]
+}

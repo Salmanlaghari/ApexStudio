@@ -77,6 +77,7 @@ fun EditorViewModel.startExport(
                 offsetMs = ov.timelineOffsetMs,
                 trimStartMs = ov.trimStartMs,
                 trimEndMs = ov.trimEndMs,
+                speedPoints = ov.speedPoints,
                 // The overlay's canvas transform — preview and export
                 // resolve the same numbers against the frame geometry.
                 widthFraction = ov.pipScale,
@@ -96,7 +97,8 @@ fun EditorViewModel.startExport(
                 shadow = ov.overlayShadow,
                 flipH = ov.overlayFlipH,
                 flipV = ov.overlayFlipV,
-                keyframes = ov.keyframes.keyframes
+                keyframes = ov.keyframes.keyframes,
+                videoCrop = ov.videoCrop
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -121,6 +123,8 @@ fun EditorViewModel.startExport(
             filterPreset = filterPreset,
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,
+            videoCrop = selected?.videoCrop,
+            faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,
@@ -156,6 +160,9 @@ fun EditorViewModel.startExport(
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
             bassBoostStrength = audioSt.bassBoostStrength,
+            overlayAudioSources = buildOverlayAudioExportSources(
+                s.project?.clips.orEmpty(), s.hiddenVideoLayers
+            ),
             pipOverlays = pipOverlays,
             transitionType = transitionType,
             transitionGlId = transitionGlId,
@@ -165,7 +172,9 @@ fun EditorViewModel.startExport(
             // imports) over the exported audio — see MusicExportMixer.
             // project.audioTracks is the same list the live preview plays,
             // so the export matches what the user hears.
-            musicMixTracks = (s.project?.audioTracks ?: emptyList()).filter { !it.isMuted }
+            musicMixTracks = (s.project?.audioTracks ?: emptyList()).let { tracks ->
+                tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+            }
         )
     )
 }
@@ -181,11 +190,93 @@ fun EditorViewModel.setExportOutputUri(uri: String?) = _export.update { it.copy(
 fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(error = error) }
 
 
+/** PiP audio is mixed once, independently of the selected V1 clip and added music. */
+internal fun buildOverlayAudioExportSources(
+    clips: List<MediaClip>,
+    hiddenVideoLayers: Set<Int> = emptySet()
+): List<ExportEngine.AudioExportSource> = buildAudioExportSources(
+    clips.filter { it.type == ClipType.OVERLAY }, emptyList(), hiddenVideoLayers
+)
+
 /**
- * Exports the project's audio as a standalone AAC (.m4a) file: every
- * timeline clip's audio plus all unmuted extra audio tracks (music /
- * voiceover), concatenated in timeline order. Reuses the audio pipeline
- * (pitch, volume, speed) from the video export.
+ * Maps canonical project audio to the standalone export timeline. Main video
+ * clip audio follows editor clip order; video-backed overlay clips and extra
+ * tracks retain their absolute timeline placement. Media3 mixes the resulting
+ * parallel source sequences.
+ */
+internal fun buildAudioExportSources(
+    clips: List<MediaClip>,
+    audioTracks: List<AudioTrack>,
+    hiddenVideoLayers: Set<Int> = emptySet()
+): List<ExportEngine.AudioExportSource> = buildList {
+    var clipTimelinePositionMs = 0L
+    clips.forEach { clip ->
+        val mainVisual = clip.trackIndex == 0 &&
+            (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
+        val audibleOverlay = clip.type == ClipType.OVERLAY &&
+            clip.trackIndex !in hiddenVideoLayers && clip.overlayVolume.isFinite() &&
+            clip.overlayVolume > 0f
+        if (clip.type == ClipType.VIDEO || audibleOverlay) add(
+            ExportEngine.AudioExportSource(
+                uri = clip.uri,
+                trimStartMs = clip.trimStartMs,
+                trimEndMs = clip.trimEndMs,
+                // Overlay audio is independent of V1 and follows the same
+                // project-time offset as its visual layer.
+                timelinePositionMs = if (clip.type == ClipType.OVERLAY || clip.trackIndex != 0) {
+                    clip.timelineOffsetMs.coerceAtLeast(0L)
+                } else {
+                    clipTimelinePositionMs
+                },
+                speedPoints = clip.speedPoints,
+                // Visual overlays currently use curves or native 1x playback,
+                // not the V1-only legacy constant speed multiplier.
+                constantSpeedOverride = if (audibleOverlay) 1f else clip.speedMultiplier,
+                sourceGain = if (audibleOverlay) clip.overlayVolume else clip.volume,
+                denoiseEnabled = clip.denoiseEnabled,
+                denoiseStrength = clip.denoiseStrength
+            )
+        )
+        if (mainVisual) {
+            // Still images consume V1 time even though they have no audio.
+            // Absolute overlay placement must never advance the V1 cursor.
+            val durationMs = clip.effectiveDurationMs().coerceAtLeast(0L)
+            clipTimelinePositionMs = if (clipTimelinePositionMs > Long.MAX_VALUE - durationMs) {
+                Long.MAX_VALUE
+            } else {
+                clipTimelinePositionMs + durationMs
+            }
+        }
+    }
+    audioTracks.filter {
+        com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, audioTracks)
+    }.forEach { track ->
+        add(
+            ExportEngine.AudioExportSource(
+                uri = track.uri,
+                trimStartMs = track.trimStartMs,
+                trimEndMs = track.trimEndMs,
+                timelinePositionMs = track.startTimeMs.coerceAtLeast(0L),
+                // Music and voiceover remain at their native playback rate.
+                constantSpeedOverride = 1f,
+                // Track gain/keyframes are absolute and applied by the final
+                // sample-accurate processor; sourceGain remains unity to avoid
+                // multiplying the scalar volume twice or distorting keyframes.
+                sourceGain = 1f,
+                trackVolume = track.volume,
+                trackFadeInMs = track.fadeInMs,
+                trackFadeOutMs = track.fadeOutMs,
+                trackVolumeKeyframes = track.volumeKeyframes
+            )
+        )
+    }
+}
+
+/**
+ * Exports a standalone AAC timeline mix. Main video clip audio is placed in
+ * editor clip order, overlay video audio and unmuted canonical project audio
+ * tracks use their timeline offsets; each source keeps its own trim/speed and
+ * standalone tracks retain their fade and absolute volume automation settings.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"
@@ -195,46 +286,25 @@ fun EditorViewModel.startAudioExport(
     _export.update { it.copy(isExporting = true, progress = 0f) }
 
     val audioSt = _audio.value
-    val clips = s.project?.clips?.filter { it.type == ClipType.VIDEO } ?: emptyList()
-    // Every audio source in the project: all video clips in timeline order,
-    // then any unmuted extra audio tracks (music / voiceover).
-    val sources = buildList {
-        clips.forEach { clip ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = clip.uri,
-                    trimStartMs = clip.trimStartMs,
-                    trimEndMs = clip.trimEndMs,
-                    // Per-clip variable speed curve (PR-E).
-                    speedPoints = clip.speedPoints,
-                    // Per-clip Clean Voice: the same denoise setting the
-                    // preview and the video export use for this clip.
-                    denoiseEnabled = clip.denoiseEnabled,
-                    denoiseStrength = clip.denoiseStrength
-                )
-            )
-        }
-        audioSt.tracks.filter { !it.isMuted }.forEach { track ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = track.uri,
-                    trimStartMs = track.trimStartMs,
-                    trimEndMs = track.trimEndMs
-                )
-            )
-        }
-    }
+    // project.audioTracks is canonical; audio-studio's cached track list can lag.
+    val project = s.project
+    val sources = buildAudioExportSources(
+        project?.clips.orEmpty(),
+        project?.audioTracks.orEmpty(),
+        s.hiddenVideoLayers
+    )
     if (sources.isEmpty()) {
         _export.update { it.copy(isExporting = false, progress = 0f) }
         return
     }
-    val speed = clips.firstOrNull()?.speedMultiplier ?: s.playbackSpeed
     engine.startAudioExport(
         sources,
         ExportEngine.ExportConfig(
             pitchSemitones = audioSt.pitchSemitones,
             volume = if (audioSt.isMuted) 0f else audioSt.volume,
-            clipSpeed = speed
+            // Retain the old global fallback for any source created by a
+            // legacy caller without a constantSpeedOverride.
+            clipSpeed = s.playbackSpeed
         ),
         outputFileName
     )
@@ -302,6 +372,7 @@ fun EditorViewModel.startPhotoExport(
                         offsetMs = ov.timelineOffsetMs,
                         trimStartMs = ov.trimStartMs,
                         trimEndMs = ov.trimEndMs,
+                        speedPoints = ov.speedPoints,
                         // The overlay's canvas transform — preview and
                         // export resolve the same numbers against the
                         // frame geometry.
@@ -322,7 +393,8 @@ fun EditorViewModel.startPhotoExport(
                         shadow = ov.overlayShadow,
                         flipH = ov.overlayFlipH,
                         flipV = ov.overlayFlipV,
-                        keyframes = ov.keyframes.keyframes
+                        keyframes = ov.keyframes.keyframes,
+                        videoCrop = ov.videoCrop
                     )
                 }
             // Phase 4: gl-transitions shaders ride as transitionGlId.
@@ -363,6 +435,12 @@ fun EditorViewModel.startPhotoExport(
                     pitchSemitones = 0f,
                     volume = 1f,
                     pipOverlays = pipOverlays,
+                    overlayAudioSources = buildOverlayAudioExportSources(
+                        s.project?.clips.orEmpty(), s.hiddenVideoLayers
+                    ),
+                    musicMixTracks = s.project?.audioTracks.orEmpty().let { tracks ->
+                        tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+                    },
                     transitionType = transitionType,
                     transitionGlId = transitionGlIdPhoto,
                     transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L

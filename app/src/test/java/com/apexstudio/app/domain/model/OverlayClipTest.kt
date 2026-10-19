@@ -72,6 +72,28 @@ class OverlayClipTest {
     }
 
     @Test
+    fun `non-finite transform values are repaired before editing and writing`() {
+        val malformed = overlay().copy(
+            pipX = Float.NaN,
+            pipY = Float.POSITIVE_INFINITY,
+            pipScale = Float.NaN,
+            pipRotationDeg = Float.NEGATIVE_INFINITY,
+            pipOpacity = Float.NaN
+        )
+
+        val repaired = OverlayClip.from(malformed)
+        assertEquals(0.85f, repaired.x, 0.0001f)
+        assertEquals(0.85f, repaired.y, 0.0001f)
+        assertEquals(0.25f, repaired.scale, 0.0001f)
+        assertEquals(0f, repaired.rotationDeg, 0.0001f)
+        assertEquals(1f, repaired.opacity, 0.0001f)
+
+        val written = repaired.copy(x = Float.NaN, scale = Float.POSITIVE_INFINITY).writeTo(overlay())
+        assertEquals(0.4f, written.pipX, 0.0001f)
+        assertEquals(0.35f, written.pipScale, 0.0001f)
+    }
+
+    @Test
     fun `writeTo touches only the fields OverlayClip owns`() {
         val clip = overlay()
         val edited = OverlayClip.from(clip).copy(x = 0.9f, startMs = 5_000L)
@@ -111,6 +133,8 @@ class OverlayClipTest {
         val view = OverlayClip.from(overlay())
         val tooFar = view.withStart(25_000L)
         assertTrue("start must stay strictly below end", tooFar.startMs < tooFar.endMs)
+        assertEquals(view.endMs - 1L, tooFar.startMs)
+        assertEquals(view.endMs, tooFar.endMs)
         val negative = view.withStart(-9_999L)
         assertEquals(0L, negative.startMs)
         assertTrue(negative.startMs < negative.endMs)
@@ -124,17 +148,48 @@ class OverlayClipTest {
         val tooSoon = view.withEnd(0L)
         assertEquals(view.startMs + 1L, tooSoon.endMs)
         assertTrue(tooSoon.endMs > tooSoon.startMs)
+        assertEquals(view.startMs, tooSoon.startMs)
     }
 
     @Test
     fun `trimmed survives a reversed drag and stays inside the source`() {
         val view = OverlayClip.from(overlay())
         val reversed = view.trimmed(15_000L, 4_000L)
-        assertTrue(reversed.startMs < reversed.endMs)
+        assertEquals("crossed range endpoints must be sorted", 4_000L, reversed.startMs)
+        assertEquals(15_000L, reversed.endMs)
+        assertEquals(11_000L, reversed.durationMs)
         val outside = view.trimmed(-100L, 40_000L)
         assertEquals(0L, outside.startMs)
         assertEquals(30_000L, outside.endMs)
         assertEquals(30_000L, outside.durationMs)
+    }
+
+    @Test
+    fun `moving either trim handle past the other keeps the opposite endpoint fixed`() {
+        val view = OverlayClip.from(overlay())
+
+        val movedStartPastEnd = view.withStart(15_000L)
+        assertEquals(9_999L, movedStartPastEnd.startMs)
+        assertEquals(view.endMs, movedStartPastEnd.endMs)
+
+        val movedEndBeforeStart = view.withEnd(1_000L)
+        assertEquals(view.startMs, movedEndBeforeStart.startMs)
+        assertEquals(2_001L, movedEndBeforeStart.endMs)
+    }
+
+    @Test
+    fun `trim handles at source end never create an out of source frame`() {
+        val view = OverlayClip.from(overlay())
+        val atEnd = view.trimmed(30_000L, 30_000L)
+        assertEquals(29_999L, atEnd.startMs)
+        assertEquals(30_000L, atEnd.endMs)
+        assertEquals(1L, atEnd.durationMs)
+
+        val emptySource = view.copy(sourceDurationMs = 0L).trimmed(0L, 0L)
+        assertEquals(0L, emptySource.startMs)
+        assertEquals(0L, emptySource.endMs)
+        assertEquals(0L, emptySource.durationMs)
+        assertEquals(emptySource, emptySource.withEnd(10_000L))
     }
 
     @Test
@@ -158,7 +213,8 @@ class OverlayClipTest {
     fun `preferredLayer prefers a free lane`() {
         assertEquals(1, OverlayClip.preferredLayer(emptyList()))
         assertEquals(2, OverlayClip.preferredLayer(listOf(1)))
-        assertEquals(4, OverlayClip.preferredLayer(listOf(1, 2, 5)))
+        // Lane 3 is the first free lane; expecting 4 skipped an available lane.
+        assertEquals(3, OverlayClip.preferredLayer(listOf(1, 2, 5)))
         // All taken: fall back to the first legal lane rather than 0.
         val all = (1..9).toList()
         assertEquals(1, OverlayClip.preferredLayer(all))

@@ -82,11 +82,30 @@ fun TrimPanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            val audioToTrim = state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
+            if (audioToTrim != null) {
+                AudioTrimPanel(audioToTrim, vm, onClose = { vm.closeTrimPanel() })
+                return@Box
+            }
             val clipToTrim = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
-                ?: state.project?.clips?.firstOrNull()
+            val sourcePlayhead = clipToTrim?.let {
+                com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(
+                    state.project?.clips.orEmpty(), it, state.playerPositionMs
+                )
+            } ?: 0L
+            val seekSource: (Long) -> Unit = { sourceMs ->
+                val clips = vm.state.value.project?.clips.orEmpty()
+                val target = clips.firstOrNull { it.id == clipToTrim?.id }
+                if (target != null) {
+                    vm.seekTo(com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(clips, target, sourceMs))
+                    // Only the V1 player may be directly sought here. Overlay
+                    // playback follows project time through its own binding.
+                    if (target.trackIndex == 0 && target.type == ClipType.VIDEO) exoPlayer?.seekTo(sourceMs)
+                }
+            }
             TrimPanel(
                 clip = clipToTrim,
-                currentPlayheadMs = state.playerPositionMs,
+                currentPlayheadMs = sourcePlayhead,
                 isTransformerTrimming = state.isTransformerTrimming,
                 transformerTrimProgress = state.transformerTrimProgress,
                 transformerTrimMessage = state.transformerTrimMessage,
@@ -94,25 +113,25 @@ fun TrimPanelOverlay(
                 onTrimChange = { start, end ->
                     clipToTrim?.let {
                         vm.trimClip(it.id, start, end)
-                        exoPlayer?.seekTo(start)
+                        seekSource(start)
                     }
                 },
                 onSetStartAtPlayhead = {
                     clipToTrim?.let {
                         vm.setTrimStartAtPlayhead(it.id)
-                        exoPlayer?.seekTo(state.playerPositionMs)
+                        seekSource(sourcePlayhead)
                     }
                 },
                 onSetEndAtPlayhead = {
                     clipToTrim?.let {
                         vm.setTrimEndAtPlayhead(it.id)
-                        exoPlayer?.seekTo(state.playerPositionMs)
+                        seekSource(sourcePlayhead)
                     }
                 },
                 onResetTrim = { clipToTrim?.let { vm.resetTrim(it.id) } },
                 onPreviewTrimmed = {
                     clipToTrim?.let {
-                        exoPlayer?.seekTo(it.trimStartMs)
+                        seekSource(it.trimStartMs)
                         if (!state.isPlaying) vm.togglePlay()
                     }
                 },
@@ -507,12 +526,12 @@ fun TextPanelOverlay(
                 captionUiState = captionUiState,
                 onAutoCaptions = {
                     textClip?.let {
-                        vm.resetCaptionUi()
                         vm.generateAutoCaptions(it.id)
                     }
                 },
                 onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
                 onCaptionLanguageChange = { vm.setCaptionLanguage(it) },
+                onCaptionTimingChange = { vm.setCaptionTimingMode(it) },
                 onCancelCaptions = { vm.cancelAutoCaptions() },
                 hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
             )
@@ -526,7 +545,7 @@ fun AudioMixerPanelOverlay(
     state: EditorState,
     audioState: AudioStudioState,
     vm: EditorViewModel,
-    audioPickerLauncher: ActivityResultLauncher<String>,
+    onImportLocalAudio: () -> Unit,
     onOpenRoyaltyFreeSheet: () -> Unit,
     audioSessionId: Int = 0
 ) {
@@ -544,9 +563,7 @@ fun AudioMixerPanelOverlay(
                 muteOriginalVideo = audioState.isMuted,
                 onMuteOriginal = { vm.setMuteOriginalVideo(it) },
                 onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
-                onImportLocalAudio = {
-                    audioPickerLauncher.launch("audio/*")
-                },
+                onImportLocalAudio = onImportLocalAudio,
                 onOpenRoyaltyFreeMusic = onOpenRoyaltyFreeSheet,
                 onRemoveTrack = { vm.removeAudioTrack(it) },
                 // Volume fader: routes to the volume-keyframe upsert
@@ -584,7 +601,7 @@ fun RoyaltyMusicSheetOverlay(
     onCloseRoyaltyFreeSheet: () -> Unit,
     state: EditorState,
     vm: EditorViewModel,
-    audioPickerLauncher: ActivityResultLauncher<String>
+    onImportLocalAudio: () -> Unit
 ) {
     if (showRoyaltyFreeSheet) {
         // Bottom-aligned overlay: the sheet was composed bare (top-aligned
@@ -634,7 +651,7 @@ fun RoyaltyMusicSheetOverlay(
                     // picked file lands on the audio track via audioPickerLauncher.
                     onImportAudio = {
                         vm.closeRoyaltyMusicDialog()
-                        audioPickerLauncher.launch("audio/*")
+                        onImportLocalAudio()
                     }
                 )
             }
@@ -1096,6 +1113,7 @@ fun AddMediaMenuSheetOverlay(
     show: Boolean,
     vm: EditorViewModel,
     mediaPicker: MediaPickerHelper,
+    onImportLocalAudio: () -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!show) return
@@ -1116,8 +1134,8 @@ fun AddMediaMenuSheetOverlay(
         },
         onPickAudio = {
             vm.setPendingAddAsOverlay(false)
-            vm.setPendingAddAsAudio(true)
-            mediaPicker.pickAudioMedia.launch("audio/*")
+            vm.setPendingAddAsAudio(false)
+            onImportLocalAudio()
         },
         onDismiss = onDismiss
     )
@@ -1192,7 +1210,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // clip changes (including entering/leaving its window).
         LaunchedEffect(
             overlayPlayer, activeOverlayVideoClip?.id, activeOverlayVideoClip?.uri,
-            activeOverlayVideoClip?.trimStartMs, activeOverlayVideoClip?.trimEndMs
+            activeOverlayVideoClip?.trimStartMs, activeOverlayVideoClip?.trimEndMs,
+            activeOverlayVideoClip?.speedPoints, activeOverlayVideoClip?.timelineOffsetMs
         ) {
             val player = overlayPlayer ?: return@LaunchedEffect
             val clip = activeOverlayVideoClip
@@ -1220,8 +1239,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             player.volume = clip.overlayVolume.coerceIn(0f, 2f)
             player.prepare()
             player.pause()
-            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
-            player.seekTo(rel)
+            val relOutput = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(
+                clip.overlaySpeedAtOutputMs(relOutput)
+            )
+            player.seekTo(clip.overlaySourceOffsetMs(relOutput))
             if (state.isPlaying) player.play()
         }
         // Volume follows the properties-panel slider without rebinding.
@@ -1238,14 +1260,22 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // Drift correction: after a scrub (or clock drift) the overlay
         // player is re-seeked to the overlay-relative playhead position.
         // Cheap long comparisons; only seeks past a deadband.
-        LaunchedEffect(state.playerPositionMs) {
+        LaunchedEffect(
+            overlayPlayer, state.playerPositionMs, activeOverlayVideoClip?.id,
+            activeOverlayVideoClip?.speedPoints, state.isPlaying
+        ) {
             val player = overlayPlayer ?: return@LaunchedEffect
             val clip = activeOverlayVideoClip ?: return@LaunchedEffect
             if (player.playbackState != androidx.media3.common.Player.STATE_READY) return@LaunchedEffect
-            val rel = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            val relOutput = (state.playerPositionMs - clip.timelineOffsetMs).coerceAtLeast(0L)
+            val relSource = clip.overlaySourceOffsetMs(relOutput)
+            val desiredSpeed = clip.overlaySpeedAtOutputMs(relOutput)
+            if (kotlin.math.abs(player.playbackParameters.speed - desiredSpeed) > 0.02f) {
+                player.playbackParameters = androidx.media3.common.PlaybackParameters(desiredSpeed)
+            }
             val deadband = if (state.isPlaying) 450L else 120L
-            if (kotlin.math.abs(player.currentPosition - rel) > deadband) {
-                player.seekTo(rel)
+            if (kotlin.math.abs(player.currentPosition - relSource) > deadband) {
+                player.seekTo(relSource)
             }
         }
 
@@ -1284,6 +1314,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         VideoPreviewArea(
             selectionFileLabel = selectionFileLabel,
             exoPlayer = exoPlayer,
+            videoCrop = (state.project?.clips?.firstOrNull { it.id == state.selectedClipId && it.trackIndex == 0 }
+                ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
+            faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,
@@ -1383,42 +1416,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             label = "controlsAlpha"
         )
 
-        // Auto-hiding Floating Left Quick Tool Rail (AR Face, Effects, Filters, 3D Chroma, Adjust, Text)
-        if (controlsAlpha > 0.01f) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 6.dp)
-                    .graphicsLayer { alpha = controlsAlpha }
-            ) {
-                LeftToolRail(
-                    onArFilters = { vm.openArFilterPanel() },
-                    onEffects = { vm.openFxPanel() },
-                    onFilters = { vm.openFilterPanel() },
-                    onAdjust = { vm.openAdjustmentsPanel() },
-                    onChromaKey = { vm.openChromaKeyPanel() },
-                    onText = { vm.openTextPanel() },
-                    onSticker = { vm.openStickerPanel() }
-                )
-            }
-        }
-
-        // Auto-hiding Floating Right Quick Tool Rail (Add Media, Audio Mixer, Voice Record, Camera)
-        if (controlsAlpha > 0.01f) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 6.dp)
-                    .graphicsLayer { alpha = controlsAlpha }
-            ) {
-                RightToolRail(
-                    onAdd = { onOpenAddMediaMenu() },
-                    onAudio = { vm.openAudioMixer() },
-                    onRecord = { vm.openVoiceRecorder() },
-                    onCamera = { vm.openCameraCapture() }
-                )
-            }
-        }
+        // All editing actions live in the horizontally scrolling bottom dock.
+        // Floating vertical rails intercepted PiP drag/resize touches and covered
+        // the source picture on narrow phones. Keep the preview gesture-only.
 
         // Screen Controls Auto-hide Indicator Badge
         if (controlsAlpha > 0.01f) {
@@ -1449,6 +1449,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             coverTextStyle = state.coverTextStyle,
             selectedTextOverlayId = state.selectedTextOverlayId,
             currentTimeMs = state.currentTimeMs,
+            captionTimeMs = selectedClip?.let { clip ->
+                com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), clip, state.currentTimeMs)
+            } ?: state.currentTimeMs,
             isPlaying = state.isPlaying,
             onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
             onMoveTextOverlay = { id, dx, dy ->
@@ -1607,6 +1611,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             vm.openTransitionPicker(fromId, toId)
         },
         onSelectAudioTrack = { vm.selectAudioTrack(it) },
+        onMoveAudioTrack = { id, start -> vm.moveAudioTrack(id, start) },
+        onTrimAudioTrack = { id, sourceStart, sourceEnd, timelineStart ->
+            vm.trimAudioTrackPlacement(id, sourceStart, sourceEnd, timelineStart)
+        },
         modifier = Modifier
             .fillMaxWidth()
             .weight(1.2f)

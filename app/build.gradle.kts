@@ -176,6 +176,11 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.coil.compose)
 
+  // Local gesture camera: CameraX preview + lifecycle-bound frame analysis.
+  implementation("androidx.camera:camera-camera2:1.4.1")
+  implementation("androidx.camera:camera-lifecycle:1.4.1")
+  implementation("androidx.camera:camera-view:1.4.1")
+
   // Media3 & Video/Audio Processing
   implementation("androidx.media3:media3-exoplayer:1.5.0")
   implementation("androidx.media3:media3-ui:1.5.0")
@@ -222,6 +227,9 @@ dependencies {
   // downloads on first use via PackManager, NOT bundled in the APK.
   implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
+  // On-device inference only; reviewed model files are required separately.
+  implementation("org.tensorflow:tensorflow-lite:2.17.0")
+
   // PR-G: MediaPipe Tasks Vision for per-clip background replace
   // (person segmentation) — https://github.com/google-ai-edge/mediapipe
   // (Apache-2.0). Official Maven artifact (Google Maven). Only the
@@ -242,9 +250,11 @@ dependencies {
   androidTestImplementation(libs.androidx.benchmark.macro.junit4)
   androidTestImplementation(libs.androidx.uiautomator)
   androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.core)
   // Explicit: BaselineProfileGenerator imports InstrumentationRegistry
-  // from here (do not rely on the transitive copy).
-  androidTestImplementation(libs.androidx.test.platform)
+  // from the monitor artifact (do not rely on the transitive copy).
+  androidTestImplementation(libs.androidx.test.monitor)
+  androidTestImplementation(libs.androidx.test.runner)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

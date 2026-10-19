@@ -29,6 +29,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropRenderConfig
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -121,9 +125,27 @@ fun VideoPreviewArea(
     photoClip: MediaClip? = null,
     photoCropActive: Boolean = false,
     onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
+    // Main-track video crop; IMAGE clips use photoClip.photoEdit.crop instead.
+    videoCrop: VideoCropSettings? = null,
+    faceCropConfig: FaceCropRenderConfig? = null,
     modifier: Modifier = Modifier
 ) {
-    val currentResizeMode = if (isCoverMode) {
+    // Current preview grading remains Compose-based; this crop-only effect is
+    // attached to the real V1 decoder so its source pixels match Transformer.
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, photoClip?.id) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        if (photoClip == null) {
+            // A persisted dynamic track supersedes static/manual crop geometry.
+            val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
+            player.setVideoEffects(listOfNotNull(dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop)))
+        } else {
+            player.setVideoEffects(emptyList())
+        }
+    }
+    // Dynamic face output already has its exact target aspect; never zoom-crop it a second time.
+    val currentResizeMode = if (faceCropConfig != null) {
+        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else if (isCoverMode) {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     } else {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT

@@ -125,6 +125,7 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
+import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -137,6 +138,17 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+
+/** Timeline scale is expressed in dp/ms, while pointer drag deltas are physical px. */
+internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Float): Float =
+    sourceDeltaMs.toFloat() * msToDp * density
+
+internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float): Long {
+    val pxPerMs = msToDp * density
+    return if (pxPerMs.isFinite() && pxPerMs > 0f && deltaPx.isFinite()) {
+        (deltaPx / pxPerMs).toLong()
+    } else 0L
+}
 
 /**
  * Modern Multi-Layer Video Timeline Component for ApexStudio.
@@ -180,6 +192,9 @@ fun VideoTimeline(
     selectedClipId: String? = null,
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
+    // Source trim bounds and project placement are independent audio values.
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     isPlaying: Boolean = false,
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
@@ -1013,6 +1028,8 @@ fun VideoTimeline(
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
                                     onSelectAudioTrack = onSelectAudioTrack,
+                                    onMoveAudioTrack = onMoveAudioTrack,
+                                    onTrimAudioTrack = onTrimAudioTrack,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a1Height)
@@ -1030,6 +1047,8 @@ fun VideoTimeline(
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
                                     onSelectAudioTrack = onSelectAudioTrack,
+                                    onMoveAudioTrack = onMoveAudioTrack,
+                                    onTrimAudioTrack = onTrimAudioTrack,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a2Height)
@@ -1166,6 +1185,8 @@ fun VideoTimeline(
     onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSelectAudioTrack: (String) -> Unit = {},
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     // Multi-layer controls (wired by the editor screen).
     hiddenVideoLayers: Set<Int> = state.hiddenVideoLayers,
     lockedVideoLayers: Set<Int> = state.lockedVideoLayers,
@@ -1250,6 +1271,8 @@ fun VideoTimeline(
         onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
         selectedAudioTrackId = state.selectedAudioTrackId,
         onSelectAudioTrack = onSelectAudioTrack,
+        onMoveAudioTrack = onMoveAudioTrack,
+        onTrimAudioTrack = onTrimAudioTrack,
         hiddenVideoLayers = hiddenVideoLayers,
         lockedVideoLayers = lockedVideoLayers,
         playerPositionFlow = playerPositionFlow,
@@ -1634,7 +1657,7 @@ private fun TimelineVideoLayerRow(
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(5.dp)
                             )
-                            .pointerInput(clip.id, isLocked) {
+                            .pointerInput(clip, isLocked, msToDp, density.density) {
                                 if (!isLocked) {
                                     // Let ordinary horizontal swipes pan the
                                     // timeline; moving an overlay is an explicit
@@ -1731,19 +1754,27 @@ private fun TimelineVideoLayerRow(
                                     .width(12.dp)
                                     .fillMaxHeight()
                                     .background(Color.White.copy(alpha = 0.12f))
-                                    .pointerInput(clip.id) {
+                                    .testTag("timeline-overlay-trim-start-${clip.id}")
+                                    .pointerInput(clip, msToDp, density.density) {
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val minPx = -(clip.trimStartMs * msToDp)
-                                                val maxPx = ((clip.trimEndMs - clip.trimStartMs - 100L)
-                                                    .coerceAtLeast(0L)) * msToDp
-                                                trimStartDxPx = (trimStartDxPx + dragAmount.x)
-                                                    .coerceIn(minPx, maxPx)
+                                                val requestedDxPx = trimStartDxPx + dragAmount.x
+                                                val newStart = timelineTrimStartForOutputDeltaMs(
+                                                    clip,
+                                                    sourceTrimDeltaToMs(requestedDxPx, msToDp, density.density)
+                                                )
+                                                // Keep the live chip edge under the pointer using the
+                                                // actual output-duration change after curve renormalization.
+                                                val outputShiftMs = clip.effectiveDurationMs() -
+                                                    clip.copy(trimStartMs = newStart).effectiveDurationMs()
+                                                trimStartDxPx = sourceTrimDeltaToPx(outputShiftMs, msToDp, density.density)
                                             },
                                             onDragEnd = {
-                                                val newStart = (clip.trimStartMs + (trimStartDxPx / msToDp).toLong())
-                                                    .coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
+                                                val newStart = timelineTrimStartForOutputDeltaMs(
+                                                    clip,
+                                                    sourceTrimDeltaToMs(trimStartDxPx, msToDp, density.density)
+                                                )
                                                 trimStartDxPx = 0f
                                                 if (newStart != clip.trimStartMs) {
                                                     onTrimClip(clip.id, newStart, clip.trimEndMs)
@@ -1760,19 +1791,25 @@ private fun TimelineVideoLayerRow(
                                     .width(12.dp)
                                     .fillMaxHeight()
                                     .background(Color.White.copy(alpha = 0.12f))
-                                    .pointerInput(clip.id) {
+                                    .testTag("timeline-overlay-trim-end-${clip.id}")
+                                    .pointerInput(clip, msToDp, density.density) {
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val minPx = -((clip.trimEndMs - clip.trimStartMs - 100L)
-                                                    .coerceAtLeast(0L)) * msToDp
-                                                val maxPx = (clip.durationMs - clip.trimEndMs) * msToDp
-                                                trimEndDxPx = (trimEndDxPx + dragAmount.x)
-                                                    .coerceIn(minPx, maxPx)
+                                                val requestedDxPx = trimEndDxPx + dragAmount.x
+                                                val newEnd = timelineTrimEndForOutputDeltaMs(
+                                                    clip,
+                                                    sourceTrimDeltaToMs(requestedDxPx, msToDp, density.density)
+                                                )
+                                                val outputShiftMs = clip.copy(trimEndMs = newEnd).effectiveDurationMs() -
+                                                    clip.effectiveDurationMs()
+                                                trimEndDxPx = sourceTrimDeltaToPx(outputShiftMs, msToDp, density.density)
                                             },
                                             onDragEnd = {
-                                                val newEnd = (clip.trimEndMs + (trimEndDxPx / msToDp).toLong())
-                                                    .coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+                                                val newEnd = timelineTrimEndForOutputDeltaMs(
+                                                    clip,
+                                                    sourceTrimDeltaToMs(trimEndDxPx, msToDp, density.density)
+                                                )
                                                 trimEndDxPx = 0f
                                                 if (newEnd != clip.trimEndMs) {
                                                     onTrimClip(clip.id, clip.trimStartMs, newEnd)
@@ -2049,6 +2086,7 @@ private fun TimelineVideoTrack(
 ) {
 
     // Which clip's long-press menu is open (null = dismissed).
+    val density = LocalDensity.current.density
     var contextMenuClipId by remember { mutableStateOf<String?>(null) }
     // Timeline-global start offset for each V1 clip (keyframes are timeline-global).
     val clipTimelineStarts = remember(videoClips) {
@@ -2079,16 +2117,15 @@ private fun TimelineVideoTrack(
                 val isBeingDragged = clip.id == draggingClipId
                 val isMultiSelected = clip.id in multiSelectedIds
                 // Live trim preview (updated during grip drag, committed on release).
-                var trimPreviewStart by remember(clip.id) { mutableStateOf<Long?>(null) }
-                var trimPreviewEnd by remember(clip.id) { mutableStateOf<Long?>(null) }
+                var trimPreviewStart by remember(clip) { mutableStateOf<Long?>(null) }
+                var trimPreviewEnd by remember(clip) { mutableStateOf<Long?>(null) }
                 val effTrimStart = trimPreviewStart ?: clip.trimStartMs
                 val effTrimEnd = trimPreviewEnd ?: clip.trimEndMs
                 // Speed-ramped clips occupy their OUTPUT length; during a
                 // live trim drag the preview trims define the span.
                 val clipDur = if (trimPreviewStart != null || trimPreviewEnd != null) {
-                    com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                        effTrimEnd - effTrimStart, clip.speedPoints
-                    ).coerceAtLeast(500L)
+                    clip.copy(trimStartMs = effTrimStart, trimEndMs = effTrimEnd)
+                        .effectiveDurationMs().coerceAtLeast(500L)
                 } else {
                     clip.effectiveDurationMs().coerceAtLeast(500L)
                 }
@@ -2218,13 +2255,14 @@ private fun TimelineVideoTrack(
 
                     // Trim Grips on active clip — draggable to trim start/end.
                     if (isSelected && !multiSelectMode) {
-                        var trimDragAccumX by remember(clip.id) { mutableFloatStateOf(0f) }
+                        var trimDragAccumX by remember(clip, msToDp, density) { mutableFloatStateOf(0f) }
                         // Left grip: trim start
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .width(16.dp).fillMaxHeight()
-                                .pointerInput(clip.id) {
+                                .testTag("timeline-trim-start-${clip.id}")
+                                .pointerInput(clip, msToDp, density) {
                                     detectDragGestures(
                                         onDragStart = {
                                             trimDragAccumX = 0f
@@ -2233,10 +2271,11 @@ private fun TimelineVideoTrack(
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                             trimDragAccumX += dragAmount.x
-                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val deltaMs = sourceTrimDeltaToMs(trimDragAccumX, msToDp, density)
                                             val end = trimPreviewEnd ?: clip.trimEndMs
-                                            trimPreviewStart = (clip.trimStartMs + deltaMs)
-                                                .coerceIn(0L, (end - 100L).coerceAtLeast(0L))
+                                            trimPreviewStart = timelineTrimStartForOutputDeltaMs(
+                                                clip.copy(trimEndMs = end), deltaMs
+                                            )
                                         },
                                         onDragEnd = {
                                             val s = trimPreviewStart ?: clip.trimStartMs
@@ -2266,7 +2305,8 @@ private fun TimelineVideoTrack(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .width(16.dp).fillMaxHeight()
-                                .pointerInput(clip.id) {
+                                .testTag("timeline-trim-end-${clip.id}")
+                                .pointerInput(clip, msToDp, density) {
                                     detectDragGestures(
                                         onDragStart = {
                                             trimDragAccumX = 0f
@@ -2275,10 +2315,11 @@ private fun TimelineVideoTrack(
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                             trimDragAccumX += dragAmount.x
-                                            val deltaMs = (trimDragAccumX / msToDp).toLong()
+                                            val deltaMs = sourceTrimDeltaToMs(trimDragAccumX, msToDp, density)
                                             val start = trimPreviewStart ?: clip.trimStartMs
-                                            trimPreviewEnd = (clip.trimEndMs + deltaMs)
-                                                .coerceIn(start + 100L, Long.MAX_VALUE)
+                                            trimPreviewEnd = timelineTrimEndForOutputDeltaMs(
+                                                clip.copy(trimStartMs = start), deltaMs
+                                            )
                                         },
                                         onDragEnd = {
                                             val s = trimPreviewStart ?: clip.trimStartMs
@@ -2785,6 +2826,8 @@ private fun TimelineAudioTrack(
     playheadMsProvider: () -> Long = { 0L },
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
+    onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
+    onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val samples = remember(audioWaveform, audioTracks.map { it.id }) {
@@ -2818,6 +2861,9 @@ private fun TimelineAudioTrack(
                 beatMarkersMs = beatMarkersMs,
                 isMuted = isMuted || track.isMuted,
                 onSelect = { onSelectAudioTrack(track.id) },
+                msToDp = msToDp,
+                onMove = onMoveAudioTrack,
+                onTrim = onTrimAudioTrack,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -2835,74 +2881,119 @@ private fun AudioTrackLaneRow(
     isSelected: Boolean,
     samples: FloatArray,
     durationMs: Long,
-    // Playhead provider, read in the waveform's draw phase only.
     playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
     isMuted: Boolean,
     onSelect: () -> Unit,
+    msToDp: Float,
+    onMove: (trackId: String, startTimeMs: Long) -> Unit,
+    onTrim: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Accent follows the mixer's track-type language (AudioMixerPanel):
-    // SFX/voice tracks read amber, music tracks green.
     val accent = if (track.kind != AudioTrack.Kind.MUSIC) Color(0xFFFBBF24) else Color(0xFF34D399)
-    Row(
-        modifier = modifier
-            .height(40.dp)
-            .padding(horizontal = 6.dp, vertical = 3.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
-            .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) Color.White else accent.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(6.dp)
-            )
-            .clickable(onClick = onSelect)
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    val density = LocalDensity.current
+    var transientDxPx by remember(track.id) { mutableFloatStateOf(0f) }
+    var gestureMode by remember(track.id) { mutableStateOf(AudioBlockGesture.NONE) }
+    val sourceEnd = track.sourceEndMs.coerceAtLeast(1L)
+    val initialTrimStart = track.trimStartMs.coerceIn(0L, sourceEnd - 1L)
+    val initialTrimEnd = track.trimEndMs.coerceIn(initialTrimStart + 1L, sourceEnd)
+    val initialStart = track.startTimeMs.coerceAtLeast(0L)
+    val deltaMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
+    val requestedHead = (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    val headPreview = if (gestureMode == AudioBlockGesture.LEFT) AudioTrackPlacement.trimmed(
+        track, requestedHead, initialTrimEnd, AudioTrackPlacement.timelineStartAfterHeadTrim(track, requestedHead)
+    ) else null
+    val previewStart = when (gestureMode) {
+        AudioBlockGesture.MOVE -> (initialStart + deltaMs).coerceAtLeast(0L)
+        AudioBlockGesture.LEFT -> headPreview!!.startTimeMs
+        else -> initialStart
+    }
+    val previewTrimStart = if (gestureMode == AudioBlockGesture.LEFT) {
+        headPreview!!.trimStartMs
+    } else initialTrimStart
+    val previewTrimEnd = if (gestureMode == AudioBlockGesture.RIGHT) {
+        (initialTrimEnd + deltaMs).coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
+    } else initialTrimEnd
+    val displayedSpanMs = (previewTrimEnd - previewTrimStart).coerceAtLeast(250L)
+    val displayedWidth = maxOf((displayedSpanMs * msToDp).dp, 42.dp)
+
+    Box(modifier = modifier.height(40.dp)) {
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .offset(x = (previewStart * msToDp).dp)
+                .width(displayedWidth)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp))
-                .background(accent)
-        )
-        Icon(
-            Icons.Default.MusicNote,
-            contentDescription = null,
-            tint = accent,
-            modifier = Modifier.size(13.dp)
-        )
-        Text(
-            text = track.name.ifBlank { "Audio" },
-            color = Color.White,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            modifier = Modifier.widthIn(max = 110.dp)
-        )
-        if (track.isMuted) {
-            Icon(
-                Icons.Default.VolumeOff,
-                contentDescription = "Muted",
-                tint = Color(0xFF64748B),
-                modifier = Modifier.size(12.dp)
-            )
-        }
-        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                .padding(vertical = 3.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
+                .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) Color.White else accent.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                .clickable(onClick = onSelect)
+                .pointerInput(track, msToDp) {
+                    detectDragGestures(
+                        onDragStart = { down ->
+                            onSelect()
+                            val edgePx = 14.dp.toPx()
+                            gestureMode = when {
+                                down.x <= edgePx -> AudioBlockGesture.LEFT
+                                down.x >= size.width - edgePx -> AudioBlockGesture.RIGHT
+                                else -> AudioBlockGesture.MOVE
+                            }
+                            transientDxPx = 0f
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            transientDxPx += amount.x
+                        },
+                        onDragEnd = {
+                            val changeMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
+                            when (gestureMode) {
+                                AudioBlockGesture.MOVE -> onMove(track.id, (initialStart + changeMs).coerceAtLeast(0L))
+                                AudioBlockGesture.LEFT -> {
+                                    val sourceStart = (initialTrimStart + changeMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+                                    val timelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(track, sourceStart)
+                                    onTrim(track.id, sourceStart, initialTrimEnd, timelineStart)
+                                }
+                                AudioBlockGesture.RIGHT -> {
+                                    val sourceEndMs = (initialTrimEnd + changeMs).coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))
+                                    onTrim(track.id, initialTrimStart, sourceEndMs, initialStart)
+                                }
+                                AudioBlockGesture.NONE -> Unit
+                            }
+                            transientDxPx = 0f
+                            gestureMode = AudioBlockGesture.NONE
+                        },
+                        onDragCancel = {
+                            transientDxPx = 0f
+                            gestureMode = AudioBlockGesture.NONE
+                        }
+                    )
+                }
+        ) {
             AudioWaveformBars(
                 samples = samples,
-                durationMs = durationMs,
-                playheadMsProvider = playheadMsProvider,
+                durationMs = displayedSpanMs,
+                playheadMsProvider = { (playheadMsProvider() - previewStart).coerceAtLeast(0L) },
                 beatMarkersMs = beatMarkersMs,
                 isMuted = isMuted,
                 barColor = accent,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)
             )
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.MusicNote, contentDescription = null, tint = accent, modifier = Modifier.size(12.dp))
+                Text(track.name.ifBlank { "Audio" }, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
+                if (track.isMuted) Icon(Icons.Default.VolumeOff, contentDescription = "Muted", tint = Color(0xFF64748B), modifier = Modifier.size(12.dp))
+            }
+            Box(Modifier.align(Alignment.CenterStart).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
+            Box(Modifier.align(Alignment.CenterEnd).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
         }
     }
 }
+
+private enum class AudioBlockGesture { NONE, MOVE, LEFT, RIGHT }
 
 /**
  * Shared waveform bar renderer used by the A1 lane rows: full-width bars

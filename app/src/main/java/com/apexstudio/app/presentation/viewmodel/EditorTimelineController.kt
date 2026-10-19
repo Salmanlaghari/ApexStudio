@@ -262,7 +262,12 @@ internal fun EditorViewModel.updateClip(
 ) {
     _state.update { s ->
         val proj = s.project ?: return@update s
-        val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
+        val newClips = proj.clips.map { original ->
+            if (original.id != clipId) original else {
+                val changed = transform(original)
+                if (changed.uri != original.uri) changed.copy(faceCropTrack = null) else changed
+            }
+        }
         s.copy(project = proj.copy(clips = newClips))
     }
     if (persist) persistProject()
@@ -619,6 +624,14 @@ private fun rippleOverlays(
 }
 
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
+    val source = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (source.durationMs <= 0L) return
+    val requestedStart = startMs.coerceIn(0L, (source.durationMs - 1L).coerceAtLeast(0L))
+    val requestedEnd = endMs.coerceIn(
+        requestedStart + minOf(100L, source.durationMs - requestedStart),
+        source.durationMs
+    )
+    if (requestedStart == source.trimStartMs && requestedEnd == source.trimEndMs) return
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
     // to 100ms) for the STATE mirror. The LIVE flow is clamped
@@ -636,30 +649,37 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         val trimTarget = proj.clips.firstOrNull { it.id == clipId }
         var rippled = proj.clips
         if (trimTarget != null && isMainTrack(trimTarget)) {
-            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 100L).coerceAtLeast(0L))
+            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 1L).coerceAtLeast(0L))
             // Guard the clamp: minOf keeps coerceIn's min <= max when
             // the clip is under 100ms (Kilo CRITICAL: IllegalArgumentException).
             val safeEnd = endMs.coerceIn(
-                minOf(safeStart + 100L, trimTarget.durationMs).coerceAtLeast(safeStart),
+                safeStart + minOf(100L, trimTarget.durationMs - safeStart),
                 trimTarget.durationMs
             )
             val oldDur = trimTarget.effectiveDurationMs()
-            val newDur = com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                safeEnd - safeStart, trimTarget.speedPoints
-            )
+            val newDur = trimTarget.copy(trimStartMs = safeStart, trimEndMs = safeEnd).effectiveDurationMs()
             val anchor = v1StartBefore(proj.clips, clipId) + minOf(oldDur, newDur)
             rippled = rippleOverlays(proj.clips, anchor, newDur - oldDur)
         }
         val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
-                val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
+                // Preserve a valid requested source in-point even when less than 100 ms
+                // remains. Pulling the opposite handle backward makes a tail trim jump.
+                val safeStart = startMs.coerceIn(0L, (c.durationMs - 1L).coerceAtLeast(0L))
                 val safeEnd = endMs.coerceIn(
-                    minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
+                    safeStart + minOf(100L, c.durationMs - safeStart),
                     c.durationMs
                 )
+                // Overlays use absolute timeline placement, so moving the
+                // source head either way also moves the left edge. V1 is
+                // laid out cumulatively and does not use this adjustment.
+                val overlayStartShift = overlayTimelineStartShift(c, safeStart, safeEnd)
                 c.copy(
                     trimStartMs = safeStart,
-                    trimEndMs = safeEnd
+                    trimEndMs = safeEnd,
+                    timelineOffsetMs = if (c.type == ClipType.OVERLAY) {
+                        (c.timelineOffsetMs + overlayStartShift).coerceAtLeast(0L)
+                    } else c.timelineOffsetMs
                 )
             } else c
         }
@@ -689,17 +709,25 @@ fun EditorViewModel.closeTrimPanel() = _state.update { it.copy(trimPanelOpen = f
 
 
 fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
     val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
     trimClip(clipId, newStart, clip.trimEndMs)
 }
 
 
 fun EditorViewModel.setTrimEndAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
+    // A valid short clip (or a restored in-point close to the source end) may have
+    // less than 100 ms remaining. Never construct a reversed coerceIn range.
+    val start = clip.trimStartMs.coerceIn(0L, clip.durationMs)
+    val minimumEnd = start + minOf(100L, clip.durationMs - start)
+    val newEnd = playhead.coerceIn(minimumEnd, clip.durationMs)
     trimClip(clipId, clip.trimStartMs, newEnd)
 }
 
@@ -770,7 +798,8 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                             uri = result.outputUri,
                             durationMs = result.durationMs,
                             trimStartMs = 0L,
-                            trimEndMs = result.durationMs
+                            trimEndMs = result.durationMs,
+                            faceCropTrack = null,
                         )
                         _state.update { s ->
                             val p = s.project ?: return@update s
@@ -849,8 +878,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
         // offset + (sourceSplit - trimStart) — the old code kept the
         // original offset, so both halves overlapped exactly.
         val isOverlay = c.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        val isMainVideo = c.trackIndex == 0 && c.type == ClipType.VIDEO
         val sourceSplit = if (isOverlay) {
             c.trimStartMs + (atMs - c.timelineOffsetMs)
+        } else if (isMainVideo) {
+            ClipTimeMapping.sourceAtProjectTime(p.clips, c, atMs)
         } else atMs
         val safeSplit = sourceSplit.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
 
@@ -859,10 +891,9 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             id = "clip_${System.currentTimeMillis()}_split",
             trimStartMs = safeSplit,
             trimEndMs = originalEnd,
-            // Overlay trim bounds remain in source-time coordinates;
-            // shortening durationMs would make OverlayClip.from() clamp
-            // later trim edits into this right-half duration.
-            durationMs = if (isOverlay) c.durationMs else originalEnd - safeSplit,
+            // Overlay and V1 trim bounds remain in source-time coordinates;
+            // retain the original source-duration ceiling for later trim edits.
+            durationMs = if (isOverlay || isMainVideo) c.durationMs else originalEnd - safeSplit,
             // Second half starts where the first half ends.
             timelineOffsetMs = if (isOverlay) {
                 c.timelineOffsetMs + (safeSplit - c.trimStartMs)
@@ -874,7 +905,7 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
                 updatedClips.add(
                     clip.copy(
                         trimEndMs = safeSplit,
-                        durationMs = if (isOverlay) clip.durationMs else safeSplit - clip.trimStartMs
+                        durationMs = if (isOverlay || isMainVideo) clip.durationMs else safeSplit - clip.trimStartMs
                     )
                 )
                 updatedClips.add(newClip)
@@ -1352,6 +1383,10 @@ fun computeTimelineDurationMs(
         .filter { it.trackIndex != 0 }
         .maxOfOrNull { it.timelineOffsetMs + it.effectiveDurationMs() }
         ?: 0L
-    val audioMaxEndMs = audioTracks.maxOfOrNull { it.trimEndMs } ?: 0L
+    // Audio trim bounds are source coordinates. Its project end is the
+    // persisted placement plus the playable source span.
+    val audioMaxEndMs = audioTracks.maxOfOrNull {
+        it.startTimeMs.coerceAtLeast(0L) + (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L)
+    } ?: 0L
     return maxOf(v1SequentialMs, overlayMaxEndMs, audioMaxEndMs).coerceAtLeast(1000L)
 }

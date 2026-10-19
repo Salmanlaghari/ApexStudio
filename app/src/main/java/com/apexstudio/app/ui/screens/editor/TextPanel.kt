@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import kotlin.math.roundToInt
 import com.apexstudio.app.data.text.TextFontRegistry
 import androidx.compose.ui.Alignment
@@ -131,6 +133,7 @@ fun TextPanel(
     onAutoCaptions: () -> Unit = {},
     onClearCaptions: () -> Unit = {},
     onCaptionLanguageChange: (String) -> Unit = {},
+    onCaptionTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit = {},
     onCancelCaptions: () -> Unit = {},
     hasAutoCaptions: Boolean = false,
     // One-tap templates: "Text Reveal" adds editable text + walking
@@ -1185,6 +1188,7 @@ fun TextPanel(
                     onAutoCaptions = onAutoCaptions,
                     onClearCaptions = onClearCaptions,
                     onLanguageChange = onCaptionLanguageChange,
+                    onTimingChange = onCaptionTimingChange,
                     onCancelCaptions = onCancelCaptions,
                     hasAutoCaptions = hasAutoCaptions
                 )
@@ -1262,8 +1266,8 @@ private fun pillOptions(): List<Pair<String, Long?>> = listOf(
 )
 
 /**
- * AI auto-captions tab: on-device Whisper (tiny, multilingual) via
- * PackManager. Every state is surfaced — no dead buttons.
+ * Offline multilingual phrase captions and opt-in English acoustic word timing.
+ * Bundled weights need no first-run download; model errors never fabricate timings.
  */
 @Composable
 private fun AutoCaptionsTab(
@@ -1271,9 +1275,11 @@ private fun AutoCaptionsTab(
     onAutoCaptions: () -> Unit,
     onClearCaptions: () -> Unit,
     onLanguageChange: (String) -> Unit,
+    onTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit,
     onCancelCaptions: () -> Unit,
     hasAutoCaptions: Boolean
 ) {
+    val generationAvailable = GlobalModerationEnforcement.readiness.approved
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1295,11 +1301,27 @@ private fun AutoCaptionsTab(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Whisper AI listens to this clip's audio on-device and creates timed " +
-                        "lower-third captions. First use downloads the speech model " +
-                        "(~103MB in 3 parts, once). Urdu, Hindi and English work best.",
+                    "Whisper caption generation uses bundled on-device models. Urdu/Hindi use phrase " +
+                        "timing; English can use experimental acoustic word timing.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
+                )
+            }
+        }
+
+        if (!generationAvailable) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF2E1A1A))
+                    .border(1.dp, Color(0xFFF87171), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    GlobalModerationEnforcement.statusMessage(ProtectedAiAction.WHISPER_CAPTIONS),
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 12.sp
                 )
             }
         }
@@ -1352,6 +1374,34 @@ private fun AutoCaptionsTab(
 
         val phase = captionUiState.phase
         val busy = phase == CaptionPhase.TRANSCRIBING
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries.size) { index ->
+                val mode = com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries[index]
+                val englishMode = mode != com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.PHRASE
+                val label = when (mode) {
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.PHRASE -> "Phrase timing"
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_WORDS -> "Word by word · English"
+                    com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.ENGLISH_KARAOKE -> "Full-phrase karaoke · English"
+                }
+                val enabled = !busy && (!englishMode || captionUiState.language == "en")
+                OutlinedButton(
+                    onClick = { onTimingChange(mode) }, enabled = enabled,
+                    border = androidx.compose.foundation.BorderStroke(1.dp,
+                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.BorderGlass),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor =
+                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
+                ) {
+                    Text(label, fontSize = 11.sp)
+                }
+            }
+        }
+        Text(
+            if (captionUiState.language != "en") "Select English to enable measured word timing and karaoke."
+            else "Word mode shows one word at a time; Full-phrase karaoke keeps the original Whisper phrase and highlights the measured word. " +
+                "No artificial equal-split timing; unsupported text or low-confidence alignment fails without replacing captions.",
+            color = ApexPalette.TextSecondary, fontSize = 10.sp
+        )
 
         if (phase == CaptionPhase.NEED_DOWNLOAD) {
             // Model pack prompt — routed through PackManager (PR-C pattern).
@@ -1406,6 +1456,7 @@ private fun AutoCaptionsTab(
         } else if (phase != CaptionPhase.NEED_DOWNLOAD) {
             Button(
                 onClick = onAutoCaptions,
+                enabled = generationAvailable,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ApexPalette.NeonCyan,
@@ -1429,7 +1480,7 @@ private fun AutoCaptionsTab(
                     .padding(12.dp)
             ) {
                 Text(
-                    "✓ ${captionUiState.segmentsAdded} captions added — they appear as timed text overlays.",
+                    captionUiState.message + " — editable timed text overlays.",
                     color = Color(0xFF6EE7B7),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium

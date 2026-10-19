@@ -94,6 +94,10 @@ fun EditorScreen(
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
     var isCoverMode by remember { mutableStateOf(true) }
+    var showAiPanel by remember { mutableStateOf(false) }
+    var showLocalAnalysis by remember { mutableStateOf(false) }
+    var showCropPanel by remember { mutableStateOf(false) }
+    var showGesturePanel by remember { mutableStateOf(false) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
     // Phase 3: saved projects for History/Drafts panel.
@@ -130,12 +134,38 @@ fun EditorScreen(
         }
     }
 
+    var localAudioImporting by remember { mutableStateOf(false) }
+    var audioImportStartMs by remember { mutableLongStateOf(0L) }
     val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            val name = it.lastPathSegment?.substringAfterLast('/') ?: "Imported Audio"
-            vm.addAudioTrack(name = name, uri = it.toString(), kind = AudioTrack.Kind.MUSIC)
+        if (uri != null && !localAudioImporting) {
+            val insertionTime = audioImportStartMs
+            scope.launch {
+                localAudioImporting = true
+                try {
+                    val imported = com.apexstudio.app.data.audio.importLocalAudio(context, uri)
+                    vm.addAudioTrack(name = imported.displayName, uri = imported.uri,
+                        kind = AudioTrack.Kind.MUSIC, sourceDurationMs = imported.durationMs,
+                        startTimeMs = insertionTime)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    android.widget.Toast.makeText(context, error.message ?: "Audio import failed", android.widget.Toast.LENGTH_LONG).show()
+                } finally {
+                    localAudioImporting = false
+                }
+            }
+        }
+    }
+    val importPhoneMusic: () -> Unit = {
+        if (!localAudioImporting) {
+            vm.setPlaying(false)
+            vm.setPendingAddAsAudio(false)
+            vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddToLayer(null)
+            audioImportStartMs = vm.playerPositionFlow.value
+            audioPickerLauncher.launch("audio/*")
         }
     }
 
@@ -333,6 +363,9 @@ fun EditorScreen(
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                // The player reads source time, while the editor starts at
+                // this clip's retained source head (not media-file time zero).
+                player.seekTo(clip.trimStartMs.coerceAtLeast(0L))
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -340,10 +373,12 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.playbackSpeed) {
+    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.speedMultiplier) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            val speed = state.playbackSpeed.coerceIn(0.1f, 10.0f)
+            val speed = com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
+                mainPreviewClip?.speedMultiplier ?: state.playbackSpeed
+            )
             player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set playback speed", e)
@@ -508,6 +543,7 @@ fun EditorScreen(
         // Restart when the selected clip's curve changes so the loop
         // always reads the current points (not a stale snapshot).
         mainPreviewClip?.speedPoints,
+        mainPreviewClip?.speedMultiplier,
         mainPreviewClip?.id
     ) {
         val totalDur = state.durationMs.coerceAtLeast(1000L)
@@ -524,8 +560,9 @@ fun EditorScreen(
                 lastTime = now
 
                 val player = exoPlayer
-                val curveClip = mainPreviewClip
+                val timedClip = mainPreviewClip
                     ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+                val curveClip = timedClip
                     ?.takeIf { it.hasSpeedCurve() }
                 val newPos = if (player != null) {
                     val rawPos = player.currentPosition
@@ -554,11 +591,8 @@ fun EditorScreen(
                             }
                         }
                         val clips = state.project?.clips ?: emptyList()
-                        val clipStart =
-                            com.apexstudio.app.domain.model.SpeedCurveMath
-                                .timelineStartMsForClip(clips, curveClip)
-                        clipStart + com.apexstudio.app.domain.model.SpeedCurveMath
-                            .sourceToOutputMs(srcInClip, span, curveClip.speedPoints)
+                        com.apexstudio.app.domain.model.ClipTimeMapping
+                            .projectAtSourceTime(clips, curveClip, rawPos)
                     } else {
                         // Curve cleared mid-playback: hand the rate back
                         // to the constant-speed LaunchedEffect.
@@ -566,13 +600,19 @@ fun EditorScreen(
                             try {
                                 player.playbackParameters =
                                     androidx.media3.common.PlaybackParameters(
-                                        state.playbackSpeed.coerceIn(0.1f, 10.0f)
+                                        com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
+                                            timedClip?.speedMultiplier ?: state.playbackSpeed
+                                        )
                                     )
                             } catch (_: Exception) {
                             }
                             lastCurveSpeedApplied = null
                         }
-                        rawPos
+                        if (timedClip != null) {
+                            com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                                state.project?.clips ?: emptyList(), timedClip, rawPos
+                            )
+                        } else rawPos
                     }
                 } else {
                     // Player-less playback (photo clips): extrapolate from
@@ -583,7 +623,7 @@ fun EditorScreen(
                 if (newPos >= totalDur) {
                     // Seamless loop back to 0 for continuous professional timeline playback
                     vm.setPlayerPosition(0L, forceStateSync = true)
-                    exoPlayer?.seekTo(0L)
+                    exoPlayer?.seekTo(mainPreviewClip?.trimStartMs?.coerceAtLeast(0L) ?: 0L)
                     val tracks = state.project?.audioTracks ?: emptyList()
                     audioPlaybackManager.sync(true, 0L, tracks)
                     lastAudioSyncAt = now
@@ -609,6 +649,7 @@ fun EditorScreen(
     val seekPlayerAndState: (Long) -> Unit = remember(
         exoPlayer, state.durationMs, audioPlaybackManager,
         mainPreviewClip?.id, mainPreviewClip?.speedPoints,
+        mainPreviewClip?.speedMultiplier,
         state.project?.clips
     ) {
         { targetMs ->
@@ -619,16 +660,14 @@ fun EditorScreen(
             // span; outside the span keep the legacy direct seek.
             val curveClip = mainPreviewClip
                 ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
-                ?.takeIf { it.hasSpeedCurve() }
             val playerTarget = if (curveClip != null) {
                 val clips = state.project?.clips ?: emptyList()
                 val clipStart = com.apexstudio.app.domain.model.SpeedCurveMath
                     .timelineStartMsForClip(clips, curveClip)
-                val span = (curveClip.trimEndMs - curveClip.trimStartMs).coerceAtLeast(1L)
                 val outDur = curveClip.effectiveDurationMs()
                 if (clamped in clipStart..(clipStart + outDur)) {
-                    curveClip.trimStartMs + com.apexstudio.app.domain.model.SpeedCurveMath
-                        .outputToSourceMs(clamped - clipStart, span, curveClip.speedPoints)
+                    com.apexstudio.app.domain.model.ClipTimeMapping
+                        .sourceAtProjectTime(clips, curveClip, clamped)
                 } else {
                     clamped
                 }
@@ -695,7 +734,7 @@ fun EditorScreen(
                     // picker and lands in project.audioTracks (A1 lane).
                     vm.setPendingAddAsOverlay(false)
                     vm.setPendingAddAsAudio(true)
-                    mediaPicker.pickAudioMedia.launch("audio/*")
+                    importPhoneMusic()
                 } else {
                     vm.setPendingAddAsOverlay(false)
                     vm.setPendingAddAsAudio(false)
@@ -709,8 +748,41 @@ fun EditorScreen(
         EditorBottomToolbarSection(
             state = state,
             vm = vm,
-            mediaPicker = mediaPicker
+            mediaPicker = mediaPicker,
+            onAi = { showAiPanel = true },
+            onCrop = { showCropPanel = true },
+            onDeviceAudio = importPhoneMusic
         )
+        if (localAudioImporting) {
+            androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+        }
+    }
+
+    if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
+        showAiPanel = false
+        showLocalAnalysis = true
+    }, onOpenGestures = {
+        showAiPanel = false
+        showGesturePanel = true
+    })
+    if (showGesturePanel) EditorGestureOverlay(vm, onClose = { showGesturePanel = false })
+    if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
+        onPreviewSourceTime = { analyzedClipId, sourceMs ->
+            val clips = vm.state.value.project?.clips.orEmpty()
+            val analyzedClip = clips.firstOrNull { it.id == analyzedClipId }
+            if (analyzedClip != null) {
+                val projectMs = com.apexstudio.app.domain.model.ClipTimeMapping
+                    .projectAtSourceTime(clips, analyzedClip, sourceMs)
+                seekPlayerAndState(projectMs)
+            }
+        })
+    if (showCropPanel) {
+        Box(Modifier.fillMaxSize().clickable { showCropPanel = false }, contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+                CropToolsOverlay(state, vm, onClose = { showCropPanel = false })
+            }
+        }
     }
 
     // Modal overlays — each extracted to its own composable (see
@@ -739,7 +811,7 @@ fun EditorScreen(
         state = state,
         audioState = audioState,
         vm = vm,
-        audioPickerLauncher = audioPickerLauncher,
+        onImportLocalAudio = importPhoneMusic,
         onOpenRoyaltyFreeSheet = { showRoyaltyFreeSheet = true },
         // Phase 4: live visualizer needs the player audio session.
         audioSessionId = exoPlayer?.audioSessionId ?: 0
@@ -755,7 +827,7 @@ fun EditorScreen(
         onCloseRoyaltyFreeSheet = { showRoyaltyFreeSheet = false },
         state = state,
         vm = vm,
-        audioPickerLauncher = audioPickerLauncher
+        onImportLocalAudio = importPhoneMusic
     )
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
@@ -774,6 +846,7 @@ fun EditorScreen(
         show = showAddMediaMenu,
         vm = vm,
         mediaPicker = mediaPicker,
+        onImportLocalAudio = importPhoneMusic,
         onDismiss = { showAddMediaMenu = false }
     )
 

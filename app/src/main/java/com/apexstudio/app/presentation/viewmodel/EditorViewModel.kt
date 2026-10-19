@@ -15,6 +15,7 @@ import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
+import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
@@ -47,6 +48,22 @@ class EditorViewModel(
      */
     internal var captionJob: Job? = null
 
+    /** Offline heuristic scene/trim/crop analysis; never a learned-model result. */
+    internal val _localAnalysis = MutableStateFlow(LocalAnalysisUiState())
+    val localAnalysis: StateFlow<LocalAnalysisUiState> = _localAnalysis.asStateFlow()
+    internal var localAnalysisJob: Job? = null
+    internal var localAnalysisToken: AiCancellationToken? = null
+
+    /** Sparse offline face-track suggestions are review-only and separate from protected AI actions. */
+    internal val _faceTrackReview = MutableStateFlow(FaceTrackReviewUiState())
+    val faceTrackReview: StateFlow<FaceTrackReviewUiState> = _faceTrackReview.asStateFlow()
+    internal var faceTrackReviewJob: Job? = null
+    internal var faceTrackReviewToken: AiCancellationToken? = null
+
+    internal val _gestureEditing = MutableStateFlow(GestureEditingUiState())
+    val gestureEditing: StateFlow<GestureEditingUiState> = _gestureEditing.asStateFlow()
+    internal var editorGestureSession: EditorGestureSession? = null
+
     /**
      * Background-replace UI state (MediaPipe person segmentation,
      * PR-G). Instance-scoped so it can't bleed between editors.
@@ -59,6 +76,9 @@ class EditorViewModel(
      * the user taps Cancel or leaves the editor.
      */
     internal var backgroundJob: Job? = null
+
+    /** Captured on opening the recorder, independent of recording-time playback. */
+    internal var voiceOverStartMs: Long = 0L
 
     /**
      * Live playback position, updated on EVERY position tick (~30/s) by
@@ -154,7 +174,8 @@ class EditorViewModel(
                             isExporting = st.isExporting,
                             progress = st.progress,
                             outputUri = st.outputUri,
-                            error = st.error
+                            error = st.error,
+                            warning = st.warning
                         )
                     }
                 }
@@ -171,6 +192,11 @@ class EditorViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        localAnalysisToken?.cancel()
+        localAnalysisJob?.cancel()
+        faceTrackReviewToken?.cancel()
+        faceTrackReviewJob?.cancel()
+        endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()
         exportEngine?.release()

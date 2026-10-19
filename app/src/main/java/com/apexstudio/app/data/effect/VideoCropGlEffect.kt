@@ -49,6 +49,9 @@ class VideoCropGlEffect private constructor(
          */
         @JvmStatic
         fun fromRect(left: Float, top: Float, right: Float, bottom: Float): VideoCropGlEffect? {
+            // Export also calls this factory without persisted-settings sanitization.
+            // NaN survives coerceIn and size comparisons, poisoning shader uniforms/output.
+            if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) return null
             val l = left.coerceIn(0f, 1f)
             val t = top.coerceIn(0f, 1f)
             val r = right.coerceIn(0f, 1f)
@@ -64,6 +67,14 @@ class VideoCropGlEffect private constructor(
                 u1 = r,
                 v1 = 1f - t
             )
+        }
+
+        /** Create an export/preview effect from a persisted clip crop. */
+        @JvmStatic
+        fun fromSettings(settings: com.apexstudio.app.domain.model.VideoCropSettings?): VideoCropGlEffect? {
+            if (settings == null || settings.isFullFrame) return null
+            val crop = settings.sanitized()
+            return fromRect(crop.left, crop.top, crop.right, crop.bottom)
         }
 
         private val VERTEX_SHADER = """
@@ -95,10 +106,10 @@ class VideoCropGlEffect private constructor(
 
     @UnstableApi
     private class CropShaderProgram(
-        u0: Float,
-        v0: Float,
-        u1: Float,
-        v1: Float,
+        private val u0: Float,
+        private val v0: Float,
+        private val u1: Float,
+        private val v1: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -134,7 +145,11 @@ class VideoCropGlEffect private constructor(
         }
 
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
-            return Size(inputWidth, inputHeight)
+            // Preserve the crop window's real pixel aspect. Returning the original
+            // dimensions would stretch e.g. a 9:16 crop back into a 16:9 frame.
+            val outputWidth = (inputWidth * (u1 - u0)).toInt().coerceAtLeast(1)
+            val outputHeight = (inputHeight * (v1 - v0)).toInt().coerceAtLeast(1)
+            return Size(outputWidth, outputHeight)
         }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
@@ -149,7 +164,16 @@ class VideoCropGlEffect private constructor(
         }
 
         override fun release() {
-            super.release()
+            try {
+                super.release()
+            } finally {
+                // The base class owns the texture pool, not this linked shader program.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                }
+            }
         }
     }
 }

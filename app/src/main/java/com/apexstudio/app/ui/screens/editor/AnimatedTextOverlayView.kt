@@ -29,14 +29,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.text.TextAnimEngine
 import com.apexstudio.app.data.text.TextFontRegistry
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -62,6 +65,8 @@ fun AnimatedTextOverlayView(
     onDuplicate: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Keep manual text editable, but never stack every generated phrase/word at the playhead.
+    if (!TextOverlayKaraoke.isVisibleForEditor(overlay, currentTimeMs)) return
     var posX by remember(overlay.id) { mutableFloatStateOf(overlay.x) }
     var posY by remember(overlay.id) { mutableFloatStateOf(overlay.y) }
     var currentScale by remember(overlay.id, overlay.sizeScale) { mutableFloatStateOf(overlay.sizeScale) }
@@ -97,6 +102,17 @@ fun AnimatedTextOverlayView(
     val cameraDistAnim = 16f * density.density
     val displayText = anim.charsToShow?.let { overlay.text.take(it.coerceIn(0, overlay.text.length)) }
         ?: overlay.text
+    val karaokeText = remember(displayText, overlay.highlightStartUtf16, overlay.highlightEndUtf16,
+        overlay.highlightSourceFingerprint, overlay.highlightColorArgb, overlay.text) {
+        buildAnnotatedString {
+            append(displayText)
+            val range = TextOverlayKaraoke.validRange(overlay)
+            if (range != null && range.endUtf16Exclusive <= displayText.length) {
+                addStyle(SpanStyle(color = Color(overlay.highlightColorArgb.toInt())),
+                    range.startUtf16, range.endUtf16Exclusive)
+            }
+        }
+    }
 
     // LEFT pins the block's left edge at the anchor, RIGHT the right
     // edge; CENTER keeps the classic centred behaviour. The content
@@ -215,7 +231,7 @@ fun AnimatedTextOverlayView(
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(
-                text = displayText.ifEmpty { " " },
+                text = karaokeText.ifEmpty { androidx.compose.ui.text.AnnotatedString(" ") },
                 color = if (gradientBrush == null) textColor else Color.Unspecified,
                 fontSize = fontSizeSp.sp,
                 fontWeight = if (!isBundledFont && overlay.isBold) FontWeight.Bold else FontWeight.Normal,

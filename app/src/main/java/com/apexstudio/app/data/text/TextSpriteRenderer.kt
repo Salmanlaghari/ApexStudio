@@ -13,6 +13,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import com.apexstudio.app.domain.model.VideoMask
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPoint
@@ -381,6 +382,25 @@ object TextSpriteRenderer {
             }
 
             canvas.drawText(text, centerX, textTop, paint)
+            val karaokeRange = TextOverlayKaraoke.validRange(overlay)
+                ?.takeIf { it.endUtf16Exclusive <= text.length }
+            if (karaokeRange != null) {
+                val fullTextLeft = when (paint.textAlign) {
+                    Paint.Align.LEFT -> centerX
+                    Paint.Align.RIGHT -> centerX - paint.measureText(text)
+                    else -> centerX - paint.measureText(text) / 2f
+                }
+                val prefixWidth = paint.getRunAdvance(
+                    text, 0, text.length, 0, text.length, false, karaokeRange.startUtf16
+                )
+                val highlightPaint = Paint(paint).apply {
+                    shader = null
+                    color = withAlpha(overlay.highlightColorArgb, state.alpha)
+                    textAlign = Paint.Align.LEFT
+                }
+                canvas.drawTextRun(text, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive,
+                    0, text.length, fullTextLeft + prefixWidth, textTop, false, highlightPaint)
+            }
 
             if (isHighlighted) {
                 val border = Paint().apply {

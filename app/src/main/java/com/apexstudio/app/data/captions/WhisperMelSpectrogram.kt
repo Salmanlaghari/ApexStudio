@@ -101,13 +101,15 @@ object WhisperMelSpectrogram {
      * @param samples 16 kHz mono float PCM, any length.
      * @return FloatArray of size 80*3000, row-major [mel][frame].
      */
-    fun compute(samples: FloatArray): FloatArray {
+    fun compute(samples: FloatArray, checkCancelled: () -> Unit = {}): FloatArray {
         val nFrames = (samples.size + HOP - 1) / HOP
         val useFrames = minOf(nFrames, N_FRAMES)
         // Magnitude spectrogram -> mel energies, computed per frame.
         val melEnergies = FloatArray(N_MELS * useFrames)
         val frame = FloatArray(N_FFT)
         for (f in 0 until useFrames) {
+            // Spectrogram calculation is CPU-bound and otherwise cannot observe coroutine cancellation.
+            if (f % 32 == 0) checkCancelled()
             val start = f * HOP
             for (n in 0 until N_FFT) {
                 val s = if (start + n < samples.size) samples[start + n] else 0f

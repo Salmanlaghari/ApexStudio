@@ -6,6 +6,35 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
 
+/** Normalized top-left-origin crop window persisted with a video clip. */
+@Serializable
+data class VideoCropSettings(
+    val left: Float = 0f,
+    val top: Float = 0f,
+    val right: Float = 1f,
+    val bottom: Float = 1f,
+    /** One of the ids in VideoCropPreset; "free" is the default. */
+    val presetId: String = "free"
+) {
+    val width: Float get() = (right - left).coerceAtLeast(0.01f)
+    val height: Float get() = (bottom - top).coerceAtLeast(0.01f)
+    val isFullFrame: Boolean
+        get() = left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
+
+    fun sanitized(): VideoCropSettings {
+        // NaN survives coerceIn and would poison GL transforms, overlay bounds and hit testing.
+        // Restore malformed geometry as an untouched frame, not an invisible layer.
+        if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) {
+            return VideoCropSettings()
+        }
+        val l = left.coerceIn(0f, 0.99f)
+        val t = top.coerceIn(0f, 0.99f)
+        val r = right.coerceIn(l + 0.01f, 1f)
+        val b = bottom.coerceIn(t + 0.01f, 1f)
+        return copy(left = l, top = t, right = r, bottom = b)
+    }
+}
+
 @Serializable
 data class MediaClip(
     val id: String,
@@ -76,6 +105,12 @@ data class MediaClip(
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    // Per-clip normalized video crop. Absent in older project JSON; the
+    // full-frame default preserves their prior preview/export behavior.
+    val videoCrop: VideoCropSettings = VideoCropSettings(),
+    // Offline face-reframe crop samples in absolute source-media time.
+    // Null for existing projects; this geometry is persisted for explicit editor integration.
+    val faceCropTrack: FaceCropTrack? = null,
     // PiP overlay transform — only meaningful when type == ClipType.OVERLAY.
     // The live preview (PipOverlayCanvas) and the export (PipOverlayGlEffect)
     // resolve these against the same frame geometry, so what you drag on
@@ -144,9 +179,11 @@ data class MediaClip(
      */
     fun isOverlayActiveAt(timeMs: Long): Boolean {
         if (type != ClipType.OVERLAY) return false
-        val trimmedMs = (trimEndMs - trimStartMs).coerceAtLeast(0L)
-        val endMs = if (trimEndMs == Long.MAX_VALUE) Long.MAX_VALUE
-        else timelineOffsetMs + trimmedMs
+        val trimmedMs = if (hasSpeedCurve()) overlayTimelineDurationMs() else
+            (trimEndMs - trimStartMs).coerceAtLeast(0L)
+        val endMs = if ((trimEndMs == Long.MAX_VALUE && !hasSpeedCurve()) ||
+            (trimmedMs > 0L && timelineOffsetMs > Long.MAX_VALUE - trimmedMs)
+        ) Long.MAX_VALUE else timelineOffsetMs + trimmedMs
         return timeMs in timelineOffsetMs until endMs
     }
 
@@ -154,16 +191,36 @@ data class MediaClip(
     fun hasSpeedCurve(): Boolean = speedPoints.size >= 2
 
     /**
-     * The clip's length on the timeline (output time). Without a speed
-     * curve this is just the trimmed span. With a curve it is the
-     * integral of 1/speed over the trimmed span — a 0.5x clip plays
-     * twice as long, a 2x clip half as long. Deliberately does NOT
-     * account for the constant [speedMultiplier]: the timeline never
-     * has (pre-PR-E behaviour), and changing that would alter every
-     * existing project with a non-1x constant speed.
+     * Clip length in output/project time. Main-track video duration follows
+     * the same constant or variable speed mapping used by the preview/export;
+     * other media keeps its existing trim-based duration semantics.
      */
-    fun effectiveDurationMs(): Long =
+    fun effectiveDurationMs(): Long = if (trackIndex == 0 && type == ClipType.VIDEO) {
+        ClipTimeMapping.mainClipDurationMs(this)
+    } else {
         SpeedCurveMath.effectiveDurationMs(trimEndMs - trimStartMs, speedPoints)
+    }
+
+    /** Timeline duration of an overlay's trimmed source under its variable-speed curve. */
+    fun overlayTimelineDurationMs(): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.timelineDurationMs(span, speedPoints)
+    }
+
+    /** Source-relative offset corresponding to elapsed output time on this overlay. */
+    fun overlaySourceOffsetMs(outputMs: Long): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.sourceOffsetMs(outputMs, span, speedPoints)
+    }
+
+    /** Instantaneous source playback rate at elapsed output time on this overlay. */
+    fun overlaySpeedAtOutputMs(outputMs: Long): Float {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.speedAtOutputMs(outputMs, span, speedPoints)
+    }
 }
 
 /**
@@ -350,7 +407,13 @@ data class TextOverlay(
     val mask: VideoMask? = null,
     // Keyframes animating the mask centre over time (travelling wipe).
     // Empty = the mask stays at its static [mask] centre.
-    val maskKeyframes: List<TextMaskKeyframe> = emptyList()
+    val maskKeyframes: List<TextMaskKeyframe> = emptyList(),
+    // Optional static karaoke span. The source fingerprint prevents stale offsets
+    // from highlighting unrelated text after a manual caption edit.
+    val highlightStartUtf16: Int? = null,
+    val highlightEndUtf16: Int? = null,
+    val highlightSourceFingerprint: String? = null,
+    val highlightColorArgb: Long = 0xFFFFFF00L
 ) {
     fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
 
@@ -782,6 +845,10 @@ data class AudioTrack(
     // Per-track trim + fade (all in ms, relative to the source media).
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
+    /** Timeline placement in project time; independent of source trim. */
+    val startTimeMs: Long = 0L,
+    /** Original source length; 0 means legacy data only knows trimEndMs. */
+    val sourceDurationMs: Long = 0L,
     val fadeInMs: Long = 0L,
     val fadeOutMs: Long = 0L,
     /**
@@ -800,9 +867,9 @@ data class AudioTrack(
     @Serializable
     enum class Kind { ORIGINAL_VIDEO, MUSIC, SFX }
 
-    /** Approximate source duration if known, else 0. */
-    val sourceDurationMs: Long
-        get() = trimEndMs
+    /** Full source boundary, falling back to the pre-field trim end. */
+    val sourceEndMs: Long
+        get() = sourceDurationMs.takeIf { it > 0L } ?: trimEndMs
 
     /** Per-track volume multiplier in 0..1, with mute applied. */
     fun effectiveVolume(): Float = if (isMuted) 0f else volume.coerceIn(0f, 1f)

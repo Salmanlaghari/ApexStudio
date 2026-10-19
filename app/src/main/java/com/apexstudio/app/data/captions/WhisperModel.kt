@@ -4,8 +4,11 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.util.Log
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import java.io.Closeable
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
@@ -14,8 +17,8 @@ import java.nio.LongBuffer
  * `com.microsoft.onnxruntime:onnxruntime-android` Maven artifact.
  *
  * Model files come from k2-fsa's sherpa-onnx export
- * (`csukuangfj/sherpa-onnx-whisper-tiny` on HuggingFace), downloaded
- * on demand through PackManager — never bundled in the APK.
+ * (`csukuangfj/sherpa-onnx-whisper-tiny` on HuggingFace). Pinned weights
+ * are bundled for offline first use; legacy PackManager installs remain a fallback.
  *
  * The inference contract mirrors k2-fsa's reference `test.py`
  * (scripts/whisper/test.py) exactly:
@@ -34,7 +37,7 @@ class WhisperModel private constructor(
     private val encoder: OrtSession,
     private val decoder: OrtSession,
     val meta: Meta,
-    private val tokenTable: Map<Int, String>
+    private val tokenTable: Map<Int, ByteArray>
 ) : Closeable {
 
     data class Meta(
@@ -75,8 +78,9 @@ class WhisperModel private constructor(
         const val TIMESTAMP_BEGIN = 50364
         const val TIMESTAMP_UNIT_MS = 20L
 
-        /** Returns null (with a log) on any failure — never throws. */
-        fun load(encoderFile: File, decoderFile: File, tokensFile: File): WhisperModel? {
+        /** Denies unapproved processing before file/native access; model-loading failures return null. */
+        internal fun load(encoderFile: File, decoderFile: File, tokensFile: File): WhisperModel? {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
             if (!encoderFile.exists() || !decoderFile.exists() || !tokensFile.exists()) {
                 Log.w(TAG, "whisper model files missing")
                 return null
@@ -84,32 +88,30 @@ class WhisperModel private constructor(
             return try {
                 val env = OrtEnvironment.getEnvironment()
                 val threads = minOf(4, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
-                val opts = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(threads)
-                    setInterOpNumThreads(1)
+                OrtSession.SessionOptions().use { opts ->
+                    opts.setIntraOpNumThreads(threads)
+                    opts.setInterOpNumThreads(1)
+                    val encoder = env.createSession(encoderFile.absolutePath, opts)
+                    var decoder: OrtSession? = null
+                    try {
+                        val loadedDecoder = env.createSession(decoderFile.absolutePath, opts)
+                        decoder = loadedDecoder
+                        val encOk = encoder.inputNames.size == 1 && encoder.outputNames.size == 2
+                        val decOk = loadedDecoder.inputNames.size == 6 && loadedDecoder.outputNames.size == 3 &&
+                            "tokens" in loadedDecoder.inputNames && "offset" in loadedDecoder.inputNames
+                        check(encOk && decOk) { "Unexpected Whisper encoder/decoder input-output contract" }
+                        val meta = readMeta(encoder)
+                        val tokens = readTokens(tokensFile)
+                        check(tokens.isNotEmpty()) { "Whisper token table is empty" }
+                        Log.i(TAG, "loaded whisper tiny (multilingual=${meta.isMultilingual}, " +
+                            "layers=${meta.nTextLayer}, langs=${meta.langCodes.size})")
+                        WhisperModel(env, encoder, loadedDecoder, meta, tokens)
+                    } catch (error: Throwable) {
+                        try { decoder?.close() } catch (_: Exception) {}
+                        try { encoder.close() } catch (_: Exception) {}
+                        throw error
+                    }
                 }
-                val encoder = env.createSession(encoderFile.absolutePath, opts)
-                val decoder = env.createSession(decoderFile.absolutePath, opts)
-                // Fail fast on an unexpected export: the decode loop maps
-                // I/O positionally (mirroring k2-fsa test.py), so a model
-                // with different arity/names would produce silent garbage.
-                // The two names asserted here are the stable anchors.
-                val encOk = encoder.inputNames.size == 1 && encoder.outputNames.size == 2
-                val decOk = decoder.inputNames.size == 6 && decoder.outputNames.size == 3 &&
-                    "tokens" in decoder.inputNames && "offset" in decoder.inputNames
-                if (!encOk || !decOk) {
-                    Log.e(TAG, "unexpected whisper I/O: encoder " +
-                        "${encoder.inputNames.size}in/${encoder.outputNames.size}out, decoder " +
-                        "${decoder.inputNames.size}in/${decoder.outputNames.size}out")
-                    try { encoder.close() } catch (_: Exception) {}
-                    try { decoder.close() } catch (_: Exception) {}
-                    return null
-                }
-                val meta = readMeta(encoder)
-                val tokens = readTokens(tokensFile)
-                Log.i(TAG, "loaded whisper tiny (multilingual=${meta.isMultilingual}, " +
-                    "layers=${meta.nTextLayer}, langs=${meta.langCodes.size})")
-                WhisperModel(env, encoder, decoder, meta, tokens)
             } catch (e: Exception) {
                 Log.e(TAG, "failed to load whisper model", e)
                 null
@@ -145,8 +147,8 @@ class WhisperModel private constructor(
         }
 
         /** tokens.txt lines are `<base64-token> <id>` (see test.py load_tokens). */
-        private fun readTokens(file: File): Map<Int, String> {
-            val map = HashMap<Int, String>(50257)
+        private fun readTokens(file: File): Map<Int, ByteArray> {
+            val map = HashMap<Int, ByteArray>(50257)
             file.forEachLine { line ->
                 val parts = line.trim().split(" ")
                 if (parts.size == 2) {
@@ -154,7 +156,7 @@ class WhisperModel private constructor(
                     if (id != null) {
                         try {
                             val bytes = android.util.Base64.decode(parts[0], android.util.Base64.DEFAULT)
-                            map[id] = String(bytes, Charsets.UTF_8)
+                            map[id] = bytes
                         } catch (_: Exception) { /* skip bad line */ }
                     }
                 }
@@ -163,8 +165,8 @@ class WhisperModel private constructor(
         }
     }
 
-    /** Decode a base64 GPT-2 BPE token id to its text ("" if unknown). */
-    fun tokenText(id: Int): String = tokenTable[id] ?: ""
+    /** BPE tokens can divide a UTF-8 code point. Decode only after joining a whole phrase. */
+    fun decodeText(tokenIds: List<Int>): String = decodeWhisperTokenBytes(tokenIds, tokenTable)
 
     /**
      * Transcribe one ≤30 s mel chunk ([80 × 3000] row-major).
@@ -175,11 +177,13 @@ class WhisperModel private constructor(
      * @param onStep invoked every few generated tokens with the count so
      *   far (for progress UI).
      */
-    fun transcribeChunk(
+    internal fun transcribeChunk(
         mel: FloatArray,
         langTokenId: Int?,
         onStep: (generated: Int) -> Unit = {}
     ): ChunkResult {
+        // Keep the boundary closed even for future in-module callers of the raw model.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
         val encIn = encoder.inputNames.toList()
         val melTensor = OnnxTensor.createTensor(
             env, FloatBuffer.wrap(mel),
@@ -188,39 +192,35 @@ class WhisperModel private constructor(
         // Encoder outputs the cross-attention K/V directly.
         // NOTE: the Result OWNS its output tensors (closing it closes
         // them), so it stays open until crossK/crossV are closed.
-        val encResult = encoder.run(mapOf(encIn[0] to melTensor))
-        melTensor.close() // input consumed by run()
-        val crossK = encResult[0] as OnnxTensor
-        val crossV = encResult[1] as OnnxTensor
-        try {
+        val encResult = melTensor.use { encoder.run(mapOf(encIn[0] to it)) }
+        encResult.use {
+            val crossK = encResult[0] as OnnxTensor
+            val crossV = encResult[1] as OnnxTensor
             val lang = langTokenId ?: detectLanguage(crossK, crossV)
             val ids = greedyDecode(crossK, crossV, lang, onStep)
             return ChunkResult(lang, ids)
-        } finally {
-            crossK.close()
-            crossV.close()
-            encResult.close() // after its values; double-close is guarded
         }
     }
 
     /** Language id: argmax over language tokens only (cf. test.py detect_language). */
     private fun detectLanguage(crossK: OnnxTensor, crossV: OnnxTensor): Int {
-        val kIn = zeroCache()
-        val vIn = zeroCache()
-        val step = runDecoderStep(
-            longArrayOf(meta.sot.toLong()), kIn, vIn, crossK, crossV, 0L
-        )
-        kIn.close() // inputs consumed by run()
-        vIn.close()
-        val row = step.logits
-        var best = meta.langTokens.firstOrNull() ?: meta.sot
-        var bestV = Float.NEGATIVE_INFINITY
-        for (id in meta.langTokens) {
-            if (id < row.size && row[id] > bestV) { bestV = row[id]; best = id }
+        val step = zeroCache().use { kIn ->
+            zeroCache().use { vIn ->
+                runDecoderStep(longArrayOf(meta.sot.toLong()), kIn, vIn, crossK, crossV, 0L)
+            }
         }
-        step.close()
-        Log.i(TAG, "detected language: ${meta.idToLang[best] ?: "?"} (token $best)")
-        return best
+        try {
+            val row = step.logits
+            var best = meta.langTokens.firstOrNull() ?: meta.sot
+            var bestV = Float.NEGATIVE_INFINITY
+            for (id in meta.langTokens) {
+                if (id in row.indices && row[id] > bestV) { bestV = row[id]; best = id }
+            }
+            Log.i(TAG, "detected language: ${meta.idToLang[best] ?: "?"} (token $best)")
+            return best
+        } finally {
+            step.close()
+        }
     }
 
     private data class StepResult(
@@ -228,13 +228,11 @@ class WhisperModel private constructor(
         /** Fresh output caches — ownership passes to the caller. */
         val kCache: OnnxTensor,
         val vCache: OnnxTensor,
-        /** Backing run result — owns kCache/vCache; closed AFTER them. */
+        /** Backing run result is the sole owner of kCache/vCache. */
         private val result: OrtSession.Result
     ) {
-        /** Close caches, then the backing result (caches first). */
+        /** Release the result and all its owned output tensors exactly once. */
         fun close() {
-            try { kCache.close() } catch (_: Exception) {}
-            try { vCache.close() } catch (_: Exception) {}
             try { result.close() } catch (_: Exception) {}
         }
     }
@@ -265,31 +263,34 @@ class WhisperModel private constructor(
         val tokens = OnnxTensor.createTensor(
             env, LongBuffer.wrap(tokenIds), longArrayOf(1, tokenIds.size.toLong())
         )
-        val off = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(offset)), longArrayOf(1))
-        val inputs = mapOf(
-            decIn[0] to tokens,
-            decIn[1] to kCache,
-            decIn[2] to vCache,
-            decIn[3] to crossK,
-            decIn[4] to crossV,
-            decIn[5] to off
-        )
-        val res = decoder.run(inputs)
-        val logitsT = res[0] as OnnxTensor
-        val outK = res[1] as OnnxTensor
-        val outV = res[2] as OnnxTensor
-        val shape = logitsT.info.shape // [1, T, vocab]
-        val t = shape[1].toInt()
-        val vocab = shape[2].toInt()
-        val buf = logitsT.floatBuffer
-        val row = FloatArray(vocab)
-        val base = (t - 1) * vocab
-        for (i in 0 until vocab) row[i] = buf.get(base + i)
-        tokens.close() // inputs consumed by run()
-        off.close()
-        // NOTE: res is NOT closed here — it owns outK/outV. The caller's
-        // StepResult.close() closes caches first, then res.
-        return StepResult(row, outK, outV, res)
+        val res = tokens.use {
+            OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(offset)), longArrayOf(1)).use { off ->
+                decoder.run(mapOf(
+                    decIn[0] to tokens, decIn[1] to kCache, decIn[2] to vCache,
+                    decIn[3] to crossK, decIn[4] to crossV, decIn[5] to off
+                ))
+            }
+        }
+        try {
+            val logitsT = res[0] as OnnxTensor
+            val outK = res[1] as OnnxTensor
+            val outV = res[2] as OnnxTensor
+            val shape = logitsT.info.shape
+            check(shape.size == 3 && shape[0] == 1L && shape[1] > 0L && shape[2] in 1L..Int.MAX_VALUE.toLong()) {
+                "Invalid Whisper logits shape ${shape.contentToString()}"
+            }
+            val vocab = shape[2].toInt()
+            val buf = logitsT.floatBuffer
+            val base = (shape[1] - 1L) * vocab
+            check(base <= Int.MAX_VALUE.toLong() - vocab && base + vocab <= buf.remaining().toLong()) {
+                "Whisper logits size does not match shape"
+            }
+            val row = FloatArray(vocab) { i -> buf.get(base.toInt() + i) }
+            return StepResult(row, outK, outV, res)
+        } catch (error: Throwable) {
+            res.close()
+            throw error
+        }
     }
 
     private fun suppress(logits: FloatArray, isInitial: Boolean) {
@@ -327,23 +328,23 @@ class WhisperModel private constructor(
         // inputs. A step's inputs are consumed by run() and closed right
         // after the next step returns; the previous step's Result is
         // closed along with its caches (caches first).
-        val zeroK = zeroCache()
-        val zeroV = zeroCache()
-        var step = runDecoderStep(
-            sotSeq.map { it.toLong() }.toLongArray(),
-            zeroK, zeroV, crossK, crossV, 0L
-        )
-        zeroK.close(); zeroV.close()
+        val decodeBudget = whisperDecodeBudget(meta.nTextCtx, sotSeq.size)
+        var step = zeroCache().use { zeroK ->
+            zeroCache().use { zeroV ->
+                runDecoderStep(sotSeq.map { it.toLong() }.toLongArray(), zeroK, zeroV, crossK, crossV, 0L)
+            }
+        }
         try {
             var offset = sotSeq.size.toLong()
             suppress(step.logits, isInitial = true)
             var next = argmax(step.logits)
 
             var count = 0
-            while (next != meta.eot && results.size < meta.nTextCtx) {
+            while (next != meta.eot && results.size < decodeBudget) {
                 results.add(next)
                 count++
-                if (count % 8 == 0) onStep(count)
+                onStep(count)
+                if (results.size == decodeBudget) break
                 val prev = step
                 step = runDecoderStep(
                     longArrayOf(next.toLong()), prev.kCache, prev.vCache,
@@ -375,4 +376,17 @@ class WhisperModel private constructor(
         try { encoder.close() } catch (_: Exception) {}
         try { decoder.close() } catch (_: Exception) {}
     }
+}
+
+/** Byte-level BPE must be joined before UTF-8 decoding, especially for Urdu/Hindi and emoji. */
+internal fun decodeWhisperTokenBytes(tokenIds: List<Int>, table: Map<Int, ByteArray>): String {
+    val bytes = ByteArrayOutputStream()
+    tokenIds.forEach { id -> table[id]?.let { bytes.write(it, 0, it.size) } }
+    return bytes.toByteArray().toString(Charsets.UTF_8)
+}
+
+/** Prompt tokens consume the same decoder context as generated tokens. */
+internal fun whisperDecodeBudget(contextSize: Int, promptSize: Int): Int {
+    require(promptSize > 0 && contextSize > promptSize) { "Whisper prompt must fit in its decoder context" }
+    return contextSize - promptSize
 }

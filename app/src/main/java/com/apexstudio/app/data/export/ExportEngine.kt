@@ -21,9 +21,11 @@ import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
+import com.apexstudio.app.data.audio.AudioTrackEnvelopeAudioProcessor
 import com.apexstudio.app.data.audio.DenoiseAudioProcessor
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.AspectCropTransformation
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterGlEffect
@@ -43,6 +45,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import java.util.concurrent.atomic.AtomicBoolean
 import java.io.File
 
 /**
@@ -62,11 +71,109 @@ import java.io.File
  *    - Runs fully on [Dispatchers.IO] using Kotlin Coroutines and emits real-time progress via [StateFlow].
  *    - Clean cancellation and lifecycle teardown to prevent black screens, frozen frames, or native leaks.
  */
+internal data class OverlayAudioDurationSelection(
+    val sources: List<ExportEngine.AudioExportSource>,
+    val omittedCount: Int
+)
+
+/** Unknown/non-positive duration means no safe preflight cap is available. */
+internal fun selectOverlayAudioWithinDuration(
+    sources: List<ExportEngine.AudioExportSource>,
+    videoDurationMs: Long?
+): OverlayAudioDurationSelection {
+    val eligible = if (videoDurationMs == null || videoDurationMs <= 0L) sources
+    else sources.filter { it.timelinePositionMs < videoDurationMs }
+    return OverlayAudioDurationSelection(eligible, sources.size - eligible.size)
+}
+
+/** Testable cancellable continuation boundary for a callback-driven Media3 render. */
+internal suspend fun awaitCancellableAudioRender(
+    start: (onCompleted: () -> Unit, onFailure: (Exception) -> Unit) -> (() -> Unit)
+) = suspendCancellableCoroutine<Unit> { continuation ->
+    val completed = AtomicBoolean(false)
+    val cancelRequested = AtomicBoolean(false)
+    val cancelRender = java.util.concurrent.atomic.AtomicReference<(() -> Unit)?>(null)
+    val cancelInvoked = AtomicBoolean(false)
+    fun cancelOnce() {
+        val action = cancelRender.get() ?: return
+        if (cancelInvoked.compareAndSet(false, true)) action()
+    }
+    continuation.invokeOnCancellation {
+        if (completed.compareAndSet(false, true)) {
+            cancelRequested.set(true)
+            cancelOnce()
+        }
+    }
+    if (!continuation.isActive) return@suspendCancellableCoroutine
+    try {
+        val cancel = start(
+            {
+                if (completed.compareAndSet(false, true)) continuation.resume(Unit)
+            },
+            { failure ->
+                if (completed.compareAndSet(false, true)) {
+                    continuation.resumeWith(Result.failure(failure))
+                }
+            }
+        )
+        cancelRender.set(cancel)
+        if (cancelRequested.get()) cancelOnce()
+    } catch (failure: Exception) {
+        if (completed.compareAndSet(false, true)) continuation.resumeWith(Result.failure(failure))
+    }
+}
+
 @UnstableApi
 class ExportEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "ExportEngine"
+
+        /**
+         * The curve fractions are defined across each source's retained trim,
+         * and Media3 reports processor timestamps relative to the clipped item.
+         * Keep those bounds together when constructing that item's processors.
+         */
+        internal fun audioConfigForSource(
+            config: ExportConfig,
+            source: AudioExportSource
+        ): ExportConfig {
+            val fallbackSpeed = config.clipSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
+            val sourceSpeed = source.constantSpeedOverride
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?: fallbackSpeed
+            val baseVolume = config.volume.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            val sourceGain = source.sourceGain.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            return config.copy(
+                trimStartMs = source.trimStartMs,
+                trimEndMs = source.trimEndMs,
+                clipSpeed = sourceSpeed,
+                volume = (baseVolume * sourceGain).coerceIn(0f, 2f),
+                speedPoints = source.speedPoints,
+                denoiseEnabled = source.denoiseEnabled,
+                denoiseStrength = source.denoiseStrength
+            )
+        }
+
+        /** Fresh gain processor supporting the mono and stereo source formats. */
+        internal fun volumeProcessorFor(
+            volume: Float
+        ): androidx.media3.common.audio.ChannelMixingAudioProcessor? {
+            val gain = volume.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            if (gain == 1f) return null
+            return androidx.media3.common.audio.ChannelMixingAudioProcessor().apply {
+                putChannelMixingMatrix(
+                    androidx.media3.common.audio.ChannelMixingMatrix(
+                        1, 1, floatArrayOf(gain)
+                    )
+                )
+                putChannelMixingMatrix(
+                    androidx.media3.common.audio.ChannelMixingMatrix(
+                        2, 2, floatArrayOf(gain, 0f, 0f, gain)
+                    )
+                )
+            }
+        }
     }
 
     private val _exportState = MutableStateFlow(ExportProgressState())
@@ -74,13 +181,16 @@ class ExportEngine(private val context: Context) {
 
     private var transformer: Transformer? = null
     private var progressJob: Job? = null
+    private var postMixJob: Job? = null
+    private var overlayAudioTransformer: Transformer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     data class ExportProgressState(
         val isExporting: Boolean = false,
         val progress: Float = 0f,
         val outputUri: String? = null,
-        val error: String? = null
+        val error: String? = null,
+        val warning: String? = null
     )
 
     data class ExportConfig(
@@ -93,6 +203,10 @@ class ExportEngine(private val context: Context) {
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+        // Preferred per-clip crop source. The legacy editor-state cropRect
+        // remains a fallback for older callers/projects.
+        val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
+        val faceCropConfig: com.apexstudio.app.data.effect.FaceCropRenderConfig? = null,
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
         // Variable speed curve (PR-E): when non-empty, the export
@@ -146,7 +260,9 @@ class ExportEngine(private val context: Context) {
         // Timeline music: unmuted extra audio tracks are decoded and mixed over
         // the exported audio after the Transformer pass (see MusicExportMixer),
         // so added music is actually audible in the exported video. Empty = no-op.
-        val musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+        val musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
+        // Timeline audio overlays are prepared by Media3, then mixed into the completed video.
+        val overlayAudioSources: List<AudioExportSource> = emptyList()
     )
 
     /**
@@ -165,6 +281,7 @@ class ExportEngine(private val context: Context) {
         val offsetMs: Long = 0L,
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = Long.MAX_VALUE,
+        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
         val widthFraction: Float = 0.25f,
         val centerX: Float = 0.85f,
         val centerY: Float = 0.85f,
@@ -186,25 +303,39 @@ class ExportEngine(private val context: Context) {
         val shadow: Float = 0f,
         val flipH: Boolean = false,
         val flipV: Boolean = false,
-        val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList()
+        val keyframes: List<com.apexstudio.app.domain.model.Keyframe> = emptyList(),
+        // Per-overlay source crop; affects only the PiP texture, not its canvas geometry.
+        val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings()
     )
 
     /**
-     * One audio source for [startAudioExport]: a media URI plus its trim range
-     * (in ms, relative to the source media).
+     * One audio source for [startAudioExport], including its source trim and
+     * placement on the standalone export timeline (both in ms).
      */
     data class AudioExportSource(
         val uri: String,
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = 0L,
-        // Variable speed curve for THIS source (PR-E). Empty = fall
-        // back to the config's constant clipSpeed (legacy behaviour).
+        val timelinePositionMs: Long = 0L,
+        // Variable speed curve for THIS source (PR-E). Empty = use the
+        // source constant override, or config.clipSpeed for legacy callers.
         val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
+        // Constant speed for this source; null preserves legacy callers'
+        // config.clipSpeed fallback. A valid per-source curve takes precedence.
+        val constantSpeedOverride: Float? = null,
+        // Per-source gain, composed with the export's global volume.
+        val sourceGain: Float = 1f,
         // Clean Voice for THIS source (per-clip). Extra audio tracks
         // (music / voiceover) leave this off — the toggle is per
         // video clip, and music must never be noise-gated.
         val denoiseEnabled: Boolean = false,
-        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM
+        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
+        // Standalone tracks apply absolute scalar/keyframed volume and fades
+        // after pitch/speed processing; do not also put their scalar in sourceGain.
+        val trackVolume: Float? = null,
+        val trackFadeInMs: Long = 0L,
+        val trackFadeOutMs: Long = 0L,
+        val trackVolumeKeyframes: List<com.apexstudio.app.domain.model.VolumeKeyframe> = emptyList()
     )
 
     /**
@@ -237,12 +368,20 @@ class ExportEngine(private val context: Context) {
                 val outputFile = File(outputDir, outputFileName)
 
                 val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                // Crop before speed changes, on the clipped source clock. This avoids numerical
+                // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
+                val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
+                val activeFaceCrop = config.faceCropConfig
+                if (activeFaceCrop != null) {
+                    videoEffects.add(FaceCropGlEffect.forExport(activeFaceCrop.exportConfig()))
+                }
 
                 // 0. Pro Phase 1: aspect-ratio conversion (16:9 / 9:16 / 1:1).
                 // Runs first on raw frames: center-crops to the target aspect
                 // and scales to the target output size. Skipped when the
                 // aspect is the default 16:9 (zero behavior change).
-                if (config.aspectRatio == "9:16" || config.aspectRatio == "1:1") {
+                // A face track already fixes the output aspect; do not center-crop it a second time.
+                if (activeFaceCrop == null && (config.aspectRatio == "9:16" || config.aspectRatio == "1:1")) {
                     val (tw, th) = AspectCropTransformation.targetSizeFor(
                         config.resolution, config.aspectRatio
                     )
@@ -265,6 +404,7 @@ class ExportEngine(private val context: Context) {
                                 offsetMs = pip.offsetMs,
                                 trimStartMs = pip.trimStartMs,
                                 trimEndMs = pip.trimEndMs,
+                                speedPoints = pip.speedPoints,
                                 widthFraction = pip.widthFraction,
                                 centerX = pip.centerX,
                                 centerY = pip.centerY,
@@ -278,7 +418,8 @@ class ExportEngine(private val context: Context) {
                                 shadow = pip.shadow,
                                 flipH = pip.flipH,
                                 flipV = pip.flipV,
-                                keyframes = pip.keyframes
+                                keyframes = pip.keyframes,
+                                videoCrop = pip.videoCrop
                             )
                         )
                     } catch (e: Exception) {
@@ -286,45 +427,17 @@ class ExportEngine(private val context: Context) {
                     }
                 }
 
-                // Audio Studio Effects pipeline (Pitch, Volume, Channel Mixing)
-                val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+                // Mono phone recordings and stereo sources must both obey gain/mute.
+                // Use the same bounded gain policy as standalone AAC export.
+                val audioProcessors = buildVideoExportAudioProcessors(config, speedPair?.first)
 
-                // Audio Pitch Adjustment via SonicAudioProcessor
-                if (config.pitchSemitones != 0f) {
-                    val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
-                    val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
-                        setPitch(pitchFactor)
-                    }
-                    audioProcessors.add(sonic)
-                }
-
-                // Volume / Gain adjustment via ChannelMixingMatrix
-                if (config.volume != 1f) {
-                    val clampedVol = config.volume.coerceIn(0f, 2f)
-                    val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
-                        /* inputChannelCount = */ 2,
-                        /* outputChannelCount = */ 2,
-                        /* coefficients = */ floatArrayOf(
-                            clampedVol, 0f,
-                            0f, clampedVol
-                        )
-                    )
-                    val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
-                    channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
-                    audioProcessors.add(channelMixingProcessor)
-                }
-
-                // Clean Voice (per-clip voice noise cleanup): the same
-                // DenoiseAudioProcessor the preview uses, first in the
-                // chain so it sees the original audio before pitch /
-                // volume / speed effects.
-                denoiseProcessorOrNull(config)?.let { audioProcessors.add(0, it) }
-
-                // 1. Crop
-                config.cropRect?.let { r ->
-                    VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom)
-                        ?.let { videoEffects.add(it) }
-                }
+                // 1. Crop (clip-persisted setting takes precedence; old
+                // editor-state cropRect callers remain supported).
+                val cropEffect = if (activeFaceCrop == null) {
+                    if (config.videoCrop != null) VideoCropGlEffect.fromSettings(config.videoCrop)
+                    else config.cropRect?.let { r -> VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom) }
+                } else null // Dynamic face crop takes precedence over all static crop sources.
+                cropEffect?.let { videoEffects.add(it) }
 
                 // 1.5 Rotation and Flipping
                 if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
@@ -424,10 +537,9 @@ class ExportEngine(private val context: Context) {
                 // Media3's experimental speed-changing effect, so a
                 // ramped clip's audio stays in sync and on-pitch —
                 // no mute, no chipmunk effect.
-                buildSpeedProvider(config)?.let { provider ->
-                    val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
-                    audioProcessors.add(speedPair.first)
-                    videoEffects.add(speedPair.second)
+                speedPair?.let {
+                    // Its paired audio processor is already in the production chain.
+                    videoEffects.add(it.second)
                 }
 
                 // 6. Keyframe Animation
@@ -463,9 +575,7 @@ class ExportEngine(private val context: Context) {
                     listOfNotNull(buildArGreetingOverlay(config))
                 if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty()) {
                     val aspect = queryAspectRatio(inputUri)
-                    captionOverlays.forEach { overlay ->
-                        videoEffects.add(TextOverlayGlEffect(context, overlay, aspect))
-                    }
+                    videoEffects.addAll(buildCaptionExportEffects(captionOverlays, aspect))
                     config.stickers.forEach { sticker ->
                         if (sticker.isPngSticker()) {
                             // Bundled PNG sticker: rasterised with crop / cutout /
@@ -503,14 +613,16 @@ class ExportEngine(private val context: Context) {
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
                 //    (+ Pro Phase 1 custom bitrate override when set)
-                val transformer = buildHardwareTransformer(
-                    config.resolution, outputFile, config.musicMixTracks,
-                    bitrateMbpsOverride = config.bitrateMbps
+                startTransformerOnApplicationThread(
+                    factory = {
+                        buildHardwareTransformer(
+                            config.resolution, outputFile, config.musicMixTracks,
+                            overlayAudioSources = config.overlayAudioSources,
+                            bitrateMbpsOverride = config.bitrateMbps
+                        )
+                    },
+                    start = { it.start(editedMediaItem, outputFile.absolutePath) }
                 )
-                this@ExportEngine.transformer = transformer
-
-                startProgressTracking(transformer)
-                transformer.start(editedMediaItem, outputFile.absolutePath)
             } catch (e: Exception) {
                 Log.e(TAG, "startExport failed", e)
                 mainHandler.post {
@@ -524,13 +636,32 @@ class ExportEngine(private val context: Context) {
         }
     }
 
+    /** The actual video-export chain; the caller supplies the paired A/V speed processor. */
+    internal fun buildVideoExportAudioProcessors(
+        config: ExportConfig,
+        speedProcessor: androidx.media3.common.audio.AudioProcessor? = null
+    ): MutableList<androidx.media3.common.audio.AudioProcessor> {
+        val processors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
+        denoiseProcessorOrNull(config)?.let(processors::add)
+        if (config.pitchSemitones != 0f) {
+            val pitchFactor = Math.pow(2.0, (config.pitchSemitones / 12.0).toDouble()).toFloat()
+            processors.add(androidx.media3.common.audio.SonicAudioProcessor().apply {
+                setPitch(pitchFactor)
+            })
+        }
+        volumeProcessorFor(config.volume)?.let(processors::add)
+        speedProcessor?.let(processors::add)
+        return processors
+    }
+
     /**
      * Builds a fresh list of audio processors (pitch, volume, speed) from the
      * export config. Processors are stateful, so callers must build a new
      * list per media item instead of sharing instances.
      */
-    private fun buildExportAudioProcessors(
-        config: ExportConfig
+    internal fun buildExportAudioProcessors(
+        config: ExportConfig,
+        source: AudioExportSource? = null
     ): MutableList<androidx.media3.common.audio.AudioProcessor> {
         val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
@@ -547,20 +678,11 @@ class ExportEngine(private val context: Context) {
             audioProcessors.add(sonic)
         }
 
-        // Volume / Gain adjustment via ChannelMixingMatrix
-        if (config.volume != 1f) {
-            val clampedVol = config.volume.coerceIn(0f, 2f)
-            val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
-                /* inputChannelCount = */ 2,
-                /* outputChannelCount = */ 2,
-                /* coefficients = */ floatArrayOf(
-                    clampedVol, 0f,
-                    0f, clampedVol
-                )
-            )
-            val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
-            channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
-            audioProcessors.add(channelMixingProcessor)
+        // Standalone tracks compose global gain into their final envelope
+        // processor so boosted PCM is not clipped before track attenuation.
+        // Other sources retain the shared mono/stereo gain processor.
+        if (source?.trackVolume == null) {
+            volumeProcessorFor(config.volume)?.let { audioProcessors.add(it) }
         }
 
         // Speed change affects audio too (constant or curve — same
@@ -569,6 +691,24 @@ class ExportEngine(private val context: Context) {
         buildSpeedProvider(config)?.let { provider ->
             val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
             audioProcessors.add(speedPair.first)
+        }
+        // This is intentionally last: timeline keyframes use the placed track's
+        // absolute timeline clock and fades follow post-speed samples.
+        if (source?.trackVolume != null) {
+            val retainedStartMs = source.trimStartMs.coerceAtLeast(0L)
+            val retainedEndMs = source.trimEndMs.coerceAtLeast(0L)
+            val durationMs = if (retainedEndMs > retainedStartMs) retainedEndMs - retainedStartMs else 0L
+            audioProcessors.add(
+                AudioTrackEnvelopeAudioProcessor(
+                    scalarVolume = source.trackVolume,
+                    volumeKeyframes = source.trackVolumeKeyframes,
+                    timelinePositionMs = source.timelinePositionMs,
+                    fadeInMs = source.trackFadeInMs,
+                    fadeOutMs = source.trackFadeOutMs,
+                    retainedDurationMs = durationMs,
+                    globalGain = config.volume
+                )
+            )
         }
         return audioProcessors
     }
@@ -603,13 +743,14 @@ class ExportEngine(private val context: Context) {
     ): androidx.media3.common.audio.SpeedProvider? {
         val points = com.apexstudio.app.domain.model.SpeedCurveMath.sanitize(config.speedPoints)
         val hasCurve = points.size >= 2
-        val constant = config.clipSpeed
+        val constant = com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(config.clipSpeed)
         if (!hasCurve && (constant <= 0f || constant == 1f)) return null
-        val spanUs = if (config.trimEndMs > config.trimStartMs) {
-            (config.trimEndMs - config.trimStartMs) * 1000L
-        } else {
-            -1L
-        }
+        // Persisted trim values can be extreme (or negative in legacy data).
+        // Normalize the source clock and saturate instead of wrapping the
+        // speed-curve span into a negative/short interval.
+        val spanUs = ExportAudioTimelineMapping.sourceSpanUs(
+            config.trimStartMs, config.trimEndMs
+        ) ?: -1L
         if (hasCurve && spanUs <= 0L) {
             // Curve without a usable trim span (e.g. the photo path
             // passes 0..0): fall back to the constant rate rather
@@ -632,24 +773,57 @@ class ExportEngine(private val context: Context) {
 
             override fun getNextSpeedChangeTimeUs(timeUs: Long): Long {
                 if (!hasCurve) return androidx.media3.common.C.TIME_UNSET
-                // Next 10 ms boundary (source time).
-                val next = ((timeUs / 10_000L) + 1L) * 10_000L
-                return next.coerceAtMost(spanUs)
+                // Next 10 ms boundary (source time); stop querying once the
+                // clipped item reaches the end of its curve span.
+                return ExportAudioTimelineMapping.nextSpeedChangeTimeUs(timeUs, spanUs)
+                    ?: androidx.media3.common.C.TIME_UNSET
             }
         }
     }
 
+    /** One timed text batch rather than one full-frame GL effect per karaoke word. */
+    internal fun buildCaptionExportEffects(
+        overlays: List<TextOverlay>,
+        aspectRatio: Float
+    ): List<TextOverlayGlEffect> {
+        val visibleText = overlays.filter { it.text.isNotBlank() }
+        return if (visibleText.isEmpty()) emptyList()
+        else listOf(TextOverlayGlEffect(context, visibleText, aspectRatio))
+    }
+
+    /** Build fresh, independently processed Media3 items for either standalone or overlay audio. */
+    internal fun buildPlacedAudioItems(
+        config: ExportConfig,
+        sources: List<AudioExportSource>,
+        overlay: Boolean = false
+    ): List<PlacedAudioItem> = sources.map { src ->
+        val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
+        val retainedStartMs = src.trimStartMs.coerceAtLeast(0L)
+        val retainedEndMs = src.trimEndMs.coerceAtLeast(0L)
+        if (retainedStartMs > 0L || retainedEndMs > retainedStartMs) {
+            val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
+            if (retainedStartMs > 0L) clippingBuilder.setStartPositionMs(retainedStartMs)
+            if (retainedEndMs > retainedStartMs) clippingBuilder.setEndPositionMs(retainedEndMs)
+            mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
+        }
+        // Overlay source gain is authoritative. Do not inherit the main V1 clip's
+        // gain/mute, pitch or speed; each source's own speed curve and denoise remain.
+        val itemBase = if (overlay) config.copy(
+            clipSpeed = 1f, speedPoints = emptyList(), volume = 1f, pitchSemitones = 0f
+        ) else config
+        val itemConfig = audioConfigForSource(itemBase, src)
+        val editedItem = EditedMediaItem.Builder(mediaItemBuilder.build())
+            .setRemoveVideo(true)
+            .setEffects(Effects(buildExportAudioProcessors(itemConfig, src), emptyList()))
+            .build()
+        PlacedAudioItem(editedItem, src.timelinePositionMs)
+    }
+
     /**
-     * Exports the project's audio as a standalone AAC (.m4a) file: every
-     * timeline clip's audio plus all unmuted extra audio tracks (music /
-     * voiceover), concatenated in timeline order. Reuses the audio pipeline
-     * (pitch, volume, channel mixing) from the video export; video is removed
-     * via [EditedMediaItem.Builder.setRemoveVideo].
-     *
-     * Note: sources are concatenated into a single sequence, not
-     * simultaneously mixed — an extra music track plays after the clips'
-     * audio rather than underneath it. Per-source trim ranges are honored via
-     * each item's clipping configuration.
+     * Exports the project's audio as a standalone AAC (.m4a) timeline mix.
+     * Each source gets an independent sequence, with a leading timeline gap
+     * for its placement; Media3 mixes the overlapping audio streams while
+     * retaining each item's trim, speed, gain, pitch and denoise processors.
      */
     fun startAudioExport(
         sources: List<AudioExportSource>,
@@ -662,50 +836,22 @@ class ExportEngine(private val context: Context) {
                 if (sources.isEmpty()) {
                     throw IllegalArgumentException("No audio sources to export")
                 }
+                // OVERLAY does not retain the original video/image kind.
+                // Probe containers so stills/silent videos cannot abort a mix.
+                val selectedSources = selectAudioExportSources(sources) { uri ->
+                    AudioExportSourceProbe.hasAudio(context, uri)
+                }
+                require(selectedSources.sources.isNotEmpty()) { "No readable audio sources to export" }
 
                 val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val editedItems = sources.map { src ->
-                    val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
-                    if (src.trimStartMs > 0L || (src.trimEndMs > 0L && src.trimEndMs > src.trimStartMs)) {
-                        val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
-                        if (src.trimStartMs > 0L) {
-                            clippingBuilder.setStartPositionMs(src.trimStartMs)
-                        }
-                        if (src.trimEndMs > src.trimStartMs) {
-                            clippingBuilder.setEndPositionMs(src.trimEndMs)
-                        }
-                        mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
-                    }
-                    // Fresh audio processors per item — processors are stateful
-                    // and must not be shared across sequence items.
-                    // Per-source curve (PR-E): a ramped clip's audio is
-                    // time-stretched by its own curve; sources without a
-                    // curve fall back to the config's constant clipSpeed.
-                    // Per-source Clean Voice likewise rides on the copy.
-                    EditedMediaItem.Builder(mediaItemBuilder.build())
-                        .setRemoveVideo(true)
-                        .setEffects(
-                            Effects(
-                                buildExportAudioProcessors(
-                                    config.copy(
-                                        speedPoints = src.speedPoints,
-                                        denoiseEnabled = src.denoiseEnabled,
-                                        denoiseStrength = src.denoiseStrength
-                                    )
-                                ),
-                                emptyList()
-                            )
-                        )
-                        .build()
-                }
-                val composition = Composition.Builder(
-                    EditedMediaItemSequence(editedItems)
-                ).build()
+                val placedItems = buildPlacedAudioItems(config, selectedSources.sources)
+                val composition = StandaloneAudioComposition.build(placedItems)
 
-                val transformer = Transformer.Builder(context)
+                startTransformerOnApplicationThread(factory = { Transformer.Builder(context)
+                    .setLooper(Looper.getMainLooper())
                     .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -714,7 +860,8 @@ class ExportEngine(private val context: Context) {
                                 _exportState.value = ExportProgressState(
                                     isExporting = false,
                                     progress = 1f,
-                                    outputUri = Uri.fromFile(outputFile).toString()
+                                    outputUri = Uri.fromFile(outputFile).toString(),
+                                    warning = selectedSources.warning
                                 )
                             }
                         }
@@ -735,10 +882,7 @@ class ExportEngine(private val context: Context) {
                         }
                     })
                     .build()
-                this@ExportEngine.transformer = transformer
-
-                startProgressTracking(transformer)
-                transformer.start(composition, outputFile.absolutePath)
+                }, start = { it.start(composition, outputFile.absolutePath) })
             } catch (e: Exception) {
                 Log.e(TAG, "startAudioExport failed", e)
                 mainHandler.post {
@@ -770,11 +914,10 @@ class ExportEngine(private val context: Context) {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
 
-                val transformer = buildHardwareTransformer(template.resolution, outputFile)
-                this@ExportEngine.transformer = transformer
-
-                startProgressTracking(transformer)
-                transformer.start(composition, outputFile.absolutePath)
+                startTransformerOnApplicationThread(
+                    factory = { buildHardwareTransformer(template.resolution, outputFile) },
+                    start = { it.start(composition, outputFile.absolutePath) }
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "startTemplateExport failed", e)
                 mainHandler.post {
@@ -788,10 +931,72 @@ class ExportEngine(private val context: Context) {
         }
     }
 
+    /** Render one shared standalone composition so overlay items retain timeline gaps/overlaps. */
+    private suspend fun renderOverlayAudio(composition: Composition, outputFile: File) {
+        outputFile.parentFile?.mkdirs()
+        // Transformer expects to own its destination path; the temp-file reservation
+        // prevents collisions between exports, but must be removed before start.
+        if (outputFile.exists() && !outputFile.delete()) throw IllegalStateException("Cannot prepare overlay audio output")
+        withContext(Dispatchers.Main.immediate) {
+            awaitCancellableAudioRender { onCompleted, onFailure ->
+                var active: Transformer? = null
+                try {
+                    active = Transformer.Builder(context)
+                        .setLooper(Looper.getMainLooper())
+                        .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                if (overlayAudioTransformer === active) overlayAudioTransformer = null
+                                onCompleted()
+                            }
+                            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                                if (overlayAudioTransformer === active) overlayAudioTransformer = null
+                                onFailure(exportException)
+                            }
+                        }).build()
+                    overlayAudioTransformer = active
+                    active.start(composition, outputFile.absolutePath)
+                    val renderer = requireNotNull(active)
+                    val cancel: () -> Unit = {
+                        // Media3 cancellation is main-looper confined; clean its partial target there too.
+                        mainHandler.post {
+                            try { renderer.cancel() } catch (_: Exception) {}
+                            if (overlayAudioTransformer === renderer) overlayAudioTransformer = null
+                            if (outputFile.exists()) outputFile.delete()
+                        }
+                    }
+                    cancel
+                } catch (failure: Exception) {
+                    if (overlayAudioTransformer === active) overlayAudioTransformer = null
+                    try { active?.cancel() } catch (_: Exception) {}
+                    throw failure
+                }
+            }
+        }
+    }
+
+    private fun mediaDurationMs(file: File): Long {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun publishPostMixState(owner: Job, state: ExportProgressState) {
+        mainHandler.post {
+            if (!owner.isCancelled && postMixJob === owner) _exportState.value = state
+        }
+    }
+
     private fun buildHardwareTransformer(
         resolution: String,
         outputFile: File,
         musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
+        overlayAudioSources: List<AudioExportSource> = emptyList(),
         bitrateMbpsOverride: Int = 0
     ): Transformer {
         // Pro Phase 1: explicit bitrate from the Export screen wins;
@@ -820,7 +1025,7 @@ class ExportEngine(private val context: Context) {
         val transformerListener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                 progressJob?.cancel()
-                if (musicMixTracks.isEmpty()) {
+                if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
                     mainHandler.post {
                         _exportState.value = ExportProgressState(
                             isExporting = false,
@@ -830,53 +1035,97 @@ class ExportEngine(private val context: Context) {
                     }
                     return
                 }
-                // Music mix pass: decode the exported audio + timeline music
-                // tracks, mix, and remux. Runs on IO; the export still reports
-                // success (without the mix) if this step ever fails.
                 mainHandler.post {
-                    _exportState.value = ExportProgressState(
-                        isExporting = true,
-                        progress = 0.97f
-                    )
+                    _exportState.value = ExportProgressState(isExporting = true, progress = 0.97f)
                 }
-                CoroutineScope(Dispatchers.IO).launch {
-                    val mixedFile = File(
-                        outputFile.parentFile,
-                        outputFile.nameWithoutExtension + "_music.mp4"
-                    )
+                postMixJob?.cancel()
+                postMixJob = CoroutineScope(Dispatchers.IO).launch {
+                    val mixContext = currentCoroutineContext()
+                    val owner = mixContext.job
+                    val mixedFile = File(outputFile.parentFile, outputFile.nameWithoutExtension + "_music.mp4")
+                    var preparedOverlay: File? = null
+                    var overlayWarning: String? = null
                     try {
-                        val result = MusicExportMixer.mixMusicIntoVideo(
-                            context, outputFile, musicMixTracks, mixedFile
-                        )
-                        Log.i(
-                            TAG,
-                            "Music mix done: ${result.mixedTracks} mixed, " +
-                                "${result.skippedTracks} skipped"
-                        )
-                        // The pre-mix file is now redundant: remove it so each
-                        // export leaves exactly one video on disk.
-                        if (!outputFile.delete()) {
-                            Log.w(TAG, "Could not delete intermediate export file")
+                        var overlayTrack: com.apexstudio.app.domain.model.AudioTrack? = null
+                        if (overlayAudioSources.isNotEmpty()) {
+                            try {
+                                val probed = selectAudioExportSources(overlayAudioSources) { uri ->
+                                    AudioExportSourceProbe.hasAudio(context, uri)
+                                }
+                                // Avoid asking Transformer to materialize arbitrarily long leading
+                                // gaps for sources that cannot intersect the rendered video.
+                                val durationCapMs = exportResult.durationMs.takeIf { it > 0L }
+                                val durationSelection = selectOverlayAudioWithinDuration(
+                                    probed.sources, durationCapMs
+                                )
+                                val inRangeSources = durationSelection.sources
+                                val outOfRange = durationSelection.omittedCount
+                                val rangeWarning = if (outOfRange > 0) {
+                                    "$outOfRange overlay audio source(s) starting after the rendered video were omitted."
+                                } else null
+                                overlayWarning = listOfNotNull(probed.warning, rangeWarning).joinToString(" ").ifBlank { null }
+                                if (inRangeSources.isEmpty()) {
+                                    if (overlayWarning == null) overlayWarning = "Overlay audio could not be prepared; original video audio was retained."
+                                } else {
+                                    val items = buildPlacedAudioItems(ExportConfig(), inRangeSources, overlay = true)
+                                    val composition = StandaloneAudioComposition.build(items)
+                                    val outputDir = outputFile.parentFile ?: throw IllegalStateException("Missing export directory")
+                                    val overlayTemp = File.createTempFile("apex_overlay_", ".m4a", outputDir)
+                                    preparedOverlay = overlayTemp
+                                    renderOverlayAudio(composition, overlayTemp)
+                                    val durationMs = mediaDurationMs(overlayTemp)
+                                    if (durationMs <= 0L) throw IllegalStateException("Prepared overlay audio has no readable duration")
+                                    overlayTrack = com.apexstudio.app.domain.model.AudioTrack(
+                                        id = "export_overlay_audio",
+                                        name = "Overlay audio",
+                                        uri = Uri.fromFile(overlayTemp).toString(),
+                                        volume = 1f,
+                                        trimEndMs = durationMs
+                                    )
+                                    // Keep source-probe and duration-cap warnings alongside the mix result.
+                                }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                Log.w(TAG, "Overlay audio preparation failed; retaining rendered video audio", failure)
+                                overlayWarning = "Overlay audio could not be prepared; original video audio was retained."
+                            }
                         }
-                        mainHandler.post {
-                            _exportState.value = ExportProgressState(
-                                isExporting = false,
-                                progress = 1f,
-                                outputUri = Uri.fromFile(mixedFile).toString()
-                            )
+                        val tracks = musicMixTracks + listOfNotNull(overlayTrack)
+                        if (tracks.isEmpty()) {
+                            publishPostMixState(owner, ExportProgressState(
+                                    isExporting = false, progress = 1f,
+                                    outputUri = Uri.fromFile(outputFile).toString(), warning = overlayWarning
+                                ))
+                            return@launch
                         }
+                        mixContext.ensureActive()
+                        val result = MusicExportMixer.mixMusicIntoVideo(context, outputFile, tracks, mixedFile) {
+                            mixContext.ensureActive()
+                        }
+                        mixContext.ensureActive()
+                        Log.i(TAG, "Audio mix done: ${result.mixedTracks} mixed, ${result.skippedTracks} skipped")
+                        if (!outputFile.delete()) Log.w(TAG, "Could not delete intermediate export file")
+                        val mixWarning = AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
+                        publishPostMixState(owner, ExportProgressState(
+                                isExporting = false, progress = 1f,
+                                outputUri = Uri.fromFile(mixedFile).toString(),
+                                warning = listOfNotNull(overlayWarning, mixWarning).distinct().joinToString(" ").ifBlank { null }
+                            ))
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (mixedFile.exists()) mixedFile.delete()
+                        throw cancelled
                     } catch (e: Exception) {
-                        Log.w(TAG, "Music mix failed; keeping video without music mix", e)
-                        // Don't leave a partial/corrupt _music.mp4 behind.
-                        if (mixedFile.exists() && !mixedFile.delete()) {
-                            Log.w(TAG, "Could not delete partial mixed file")
-                        }
-                        mainHandler.post {
-                            _exportState.value = ExportProgressState(
-                                isExporting = false,
-                                progress = 1f,
-                                outputUri = Uri.fromFile(outputFile).toString()
-                            )
+                        Log.w(TAG, "Audio mix failed; keeping video without postmix audio", e)
+                        if (mixedFile.exists() && !mixedFile.delete()) Log.w(TAG, "Could not delete partial mixed file")
+                        val warning = listOfNotNull(overlayWarning, AudioMixExportNotice.MIX_FAILED).distinct().joinToString(" ")
+                        publishPostMixState(owner, ExportProgressState(
+                                isExporting = false, progress = 1f,
+                                outputUri = Uri.fromFile(outputFile).toString(), warning = warning
+                            ))
+                    } finally {
+                        preparedOverlay?.let { temp ->
+                            if (temp.exists() && !temp.delete()) Log.w(TAG, "Could not delete prepared overlay audio")
                         }
                     }
                 }
@@ -899,24 +1148,38 @@ class ExportEngine(private val context: Context) {
         }
 
         return Transformer.Builder(context)
+            .setLooper(Looper.getMainLooper())
             .setEncoderFactory(encoderFactory)
             .addListener(transformerListener)
             .build()
     }
 
+    /** Media3 start/getProgress/cancel all require its configured application looper. */
+    internal suspend fun startTransformerOnApplicationThread(
+        factory: () -> Transformer,
+        start: (Transformer) -> Unit
+    ) = withContext(Dispatchers.Main.immediate) {
+        val active = factory()
+        transformer = active
+        try {
+            start(active)
+            startProgressTracking(active)
+        } catch (failure: Exception) {
+            active.cancel()
+            if (transformer === active) transformer = null
+            throw failure
+        }
+    }
+
     private fun startProgressTracking(activeTransformer: Transformer) {
         progressJob?.cancel()
         val progressHolder = ProgressHolder()
-        progressJob = CoroutineScope(Dispatchers.IO).launch {
-            while (_exportState.value.isExporting && this@ExportEngine.transformer != null) {
+        progressJob = CoroutineScope(Dispatchers.Main.immediate).launch {
+            while (_exportState.value.isExporting && this@ExportEngine.transformer === activeTransformer) {
                 val pState = activeTransformer.getProgress(progressHolder)
                 if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
                     val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
-                    mainHandler.post {
-                        if (_exportState.value.isExporting) {
-                            _exportState.value = _exportState.value.copy(progress = p)
-                        }
-                    }
+                    _exportState.value = _exportState.value.copy(progress = p)
                 }
                 delay(100)
             }
@@ -967,8 +1230,16 @@ class ExportEngine(private val context: Context) {
     }
 
     fun cancelExport() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { cancelExport() }
+            return
+        }
         progressJob?.cancel()
         progressJob = null
+        postMixJob?.cancel()
+        postMixJob = null
+        try { overlayAudioTransformer?.cancel() } catch (_: Exception) {}
+        overlayAudioTransformer = null
         transformer?.cancel()
         transformer = null
         _exportState.value = ExportProgressState()

@@ -1,6 +1,33 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.OverlayClip
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.ClipType
+import kotlinx.coroutines.flow.update
+
+/** Signed project-time shift that keeps an overlay's right edge anchored as its source head moves. */
+internal fun overlayTimelineStartShift(
+    clip: MediaClip,
+    newStartMs: Long,
+    newEndMs: Long = clip.trimEndMs
+): Long {
+    if (clip.type != ClipType.OVERLAY || newStartMs == clip.trimStartMs) return 0L
+    // Speed points are interpreted over the CURRENT trimmed span. After a trim,
+    // that span changes and effectiveDurationMs() can differ from the removed
+    // source segment's duration measured on the old curve. Shifting by the old
+    // curve's segment duration therefore moves the right edge (often visibly
+    // on a ramp). Compare the actual output durations at the SAME tail position:
+    // a properties edit may move both handles, and the removed tail must not be
+    // counted again as a head shift. This applies the tail edit before the head.
+    val endMs = newEndMs.coerceIn(newStartMs, clip.durationMs)
+    val oldOutputDuration = if (endMs > clip.trimStartMs)
+        clip.copy(trimEndMs = endMs).effectiveDurationMs() else 0L
+    val newOutputDuration = clip.copy(
+        trimStartMs = newStartMs,
+        trimEndMs = endMs
+    ).effectiveDurationMs()
+    return oldOutputDuration - newOutputDuration
+}
 
 /**
  * Layout + trim operations for overlay clips — Bug 3.
@@ -44,12 +71,15 @@ fun EditorViewModel.setOverlayLayout(
     rotationDeg: Float
 ) {
     val current = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (current.type != ClipType.OVERLAY) return
     val target = OverlayClip.from(current).copy(
         x = x.coerceIn(0f, 1f),
         y = y.coerceIn(0f, 1f),
         scale = scale.coerceIn(OverlayClip.MIN_SCALE, OverlayClip.MAX_SCALE),
         rotationDeg = rotationDeg.coerceIn(-180f, 180f)
     )
+    val updated = target.writeTo(current)
+    if (updated == current) return
     armOverlayUndo()
     updateClip(clipId) { clip -> target.writeTo(clip) }
 }
@@ -70,6 +100,7 @@ fun EditorViewModel.trimOverlayClip(
     requestedEndMs: Long
 ) {
     val current = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (current.type != ClipType.OVERLAY) return
     val window = OverlayClip.from(current).trimmed(
         requestedStartMs,
         requestedEndMs
@@ -79,5 +110,25 @@ fun EditorViewModel.trimOverlayClip(
     // value can't fill the undo stack.
     if (window.startMs == current.trimStartMs && window.endMs == current.trimEndMs) return
     armOverlayUndo()
-    updateClip(clipId) { clip -> window.writeTo(clip) }
+    var updatedDuration: Long? = null
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        val clips = project.clips.map { clip ->
+            if (clip.id != clipId) clip
+            else window.writeTo(clip).copy(
+                timelineOffsetMs = (clip.timelineOffsetMs + overlayTimelineStartShift(clip, window.startMs, window.endMs))
+                    .coerceAtLeast(0L)
+            )
+        }
+        val duration = computeTimelineDurationMs(clips, project.audioTracks)
+        updatedDuration = duration
+        state.copy(
+            project = project.copy(clips = clips, durationMs = duration),
+            durationMs = duration,
+            playerPositionMs = state.playerPositionMs.coerceAtMost(duration),
+            currentTimeMs = state.currentTimeMs.coerceAtMost(duration)
+        )
+    }
+    updatedDuration?.let { duration -> _playerPosition.update { it.coerceAtMost(duration) } }
+    persistProject()
 }

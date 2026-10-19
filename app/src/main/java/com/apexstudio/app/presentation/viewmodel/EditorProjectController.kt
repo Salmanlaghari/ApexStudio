@@ -62,9 +62,11 @@ internal fun EditorViewModel.loadProject() {
         val validClips = p.clips.map { clip ->
             if (ctx != null) {
                 val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
-                clip.copy(uri = resolvedUri)
+                // Resolution can substitute a sample for a lost source. Never transfer measured
+                // face coordinates to different media; a changed alias safely requires re-analysis.
+                clip.copy(uri = resolvedUri, faceCropTrack = clip.faceCropTrack.takeIf { resolvedUri == clip.uri })
             } else if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
-                if (sampleUri != null) clip.copy(uri = sampleUri) else clip
+                if (sampleUri != null) clip.copy(uri = sampleUri, faceCropTrack = null) else clip
             } else clip
         }
         val effectiveClips = if (validClips.isEmpty() && sampleUri != null) {
@@ -94,7 +96,9 @@ internal fun EditorViewModel.loadProject() {
                 durationMs = updatedP.durationMs,
                 canUndo = false, canRedo = false,
                 selectedClipId = it.selectedClipId ?: firstClipId,
-                isPlaying = firstClipId != null
+                // Loading a project establishes its initial playhead; it
+                // must not start playback before the user presses Play.
+                isPlaying = false
             )
         }
 

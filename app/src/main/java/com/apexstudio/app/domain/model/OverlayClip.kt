@@ -2,6 +2,9 @@ package com.apexstudio.app.domain.model
 
 import kotlin.math.abs
 
+private fun finiteClamp(value: Float, range: ClosedFloatingPointRange<Float>, fallback: Float): Float =
+    (if (value.isFinite()) value else fallback).coerceIn(range)
+
 /**
  * Edit surface for an OVERLAY (PiP) clip — Bug 3.
  *
@@ -78,11 +81,11 @@ data class OverlayClip(
                 sourceDurationMs = source,
                 startMs = start,
                 endMs = if (end < start) start else end,
-                x = clip.pipX.coerceIn(0f, 1f),
-                y = clip.pipY.coerceIn(0f, 1f),
-                scale = clip.pipScale.coerceIn(MIN_SCALE, MAX_SCALE),
-                rotationDeg = clip.pipRotationDeg.coerceIn(-180f, 180f),
-                opacity = clip.pipOpacity.coerceIn(0f, 1f),
+                x = finiteClamp(clip.pipX, 0f..1f, 0.85f),
+                y = finiteClamp(clip.pipY, 0f..1f, 0.85f),
+                scale = finiteClamp(clip.pipScale, MIN_SCALE..MAX_SCALE, 0.25f),
+                rotationDeg = finiteClamp(clip.pipRotationDeg, -180f..180f, 0f),
+                opacity = finiteClamp(clip.pipOpacity, 0f..1f, 1f),
                 layer = clip.trackIndex.coerceIn(1, MAX_LAYER)
             )
         }
@@ -97,8 +100,12 @@ data class OverlayClip(
      * slide the head against the tail but can never empty the overlay.
      */
     fun withStart(millis: Long): OverlayClip {
-        val maxStart = (endMs - 1L).coerceAtLeast(0L)
-        return copy(startMs = millis.coerceIn(0L, maxStart))
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+        // Moving just the head past the fixed tail must stop one millisecond
+        // before it; it must not turn the old tail into a new start point.
+        val fixedEnd = endMs.coerceIn(1L, sourceEnd)
+        return copy(startMs = millis.coerceIn(0L, fixedEnd - 1L), endMs = fixedEnd)
     }
 
     /**
@@ -106,18 +113,33 @@ data class OverlayClip(
      * overlay can't out-grow the media it plays from.
      */
     fun withEnd(millis: Long): OverlayClip {
-        val lo = startMs + 1L
-        val hi = sourceDurationMs.coerceAtLeast(lo)
-        return copy(endMs = millis.coerceIn(lo, hi))
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+        // Moving just the tail before the fixed head likewise preserves the
+        // head and clamps to the smallest non-empty source window.
+        val fixedStart = startMs.coerceIn(0L, sourceEnd - 1L)
+        return copy(
+            startMs = fixedStart,
+            endMs = millis.coerceIn(fixedStart + 1L, sourceEnd)
+        )
     }
 
     /** A uniform clamp of both ends; tolerant of a reversed drag. */
     fun trimmed(start: Long, end: Long): OverlayClip {
-        val lo = start.coerceIn(0L, sourceDurationMs.coerceAtLeast(0L))
-        val hi = end.coerceAtLeast(lo + 1)
+        val sourceEnd = sourceDurationMs.coerceAtLeast(0L)
+        // A missing/zero-duration source has no legal one-millisecond
+        // window. Keep it empty instead of manufacturing a frame beyond
+        // the media boundary (notably when a trim drag starts at sourceEnd).
+        if (sourceEnd == 0L) return copy(startMs = 0L, endMs = 0L)
+
+        // RangeSlider endpoints can cross while the user drags. Sorting here
+        // preserves the interval they selected instead of collapsing it to
+        // a one-millisecond sliver at the first endpoint.
+        val lo = minOf(start, end).coerceIn(0L, sourceEnd - 1L)
+        val hi = maxOf(start, end).coerceIn(lo + 1L, sourceEnd)
         return copy(
             startMs = lo,
-            endMs = hi.coerceAtMost(sourceDurationMs.coerceAtLeast(hi))
+            endMs = hi
         )
     }
 
@@ -142,15 +164,15 @@ data class OverlayClip(
      * property survives untouched.
      */
     fun writeTo(clip: MediaClip): MediaClip {
-        require(clip.id == id) { "OverlayClip(${clip.id}) cannot write to ${clip.id}" }
+        require(clip.id == id) { "OverlayClip($id) cannot write to ${clip.id}" }
         return clip.copy(
             trimStartMs = startMs,
             trimEndMs = endMs,
-            pipX = x.coerceIn(0f, 1f),
-            pipY = y.coerceIn(0f, 1f),
-            pipScale = scale.coerceIn(MIN_SCALE, MAX_SCALE),
-            pipRotationDeg = rotationDeg.coerceIn(-180f, 180f),
-            pipOpacity = opacity.coerceIn(0f, 1f),
+            pipX = finiteClamp(x, 0f..1f, finiteClamp(clip.pipX, 0f..1f, 0.85f)),
+            pipY = finiteClamp(y, 0f..1f, finiteClamp(clip.pipY, 0f..1f, 0.85f)),
+            pipScale = finiteClamp(scale, MIN_SCALE..MAX_SCALE, finiteClamp(clip.pipScale, MIN_SCALE..MAX_SCALE, 0.25f)),
+            pipRotationDeg = finiteClamp(rotationDeg, -180f..180f, finiteClamp(clip.pipRotationDeg, -180f..180f, 0f)),
+            pipOpacity = finiteClamp(opacity, 0f..1f, finiteClamp(clip.pipOpacity, 0f..1f, 1f)),
             trackIndex = if (clip.type == ClipType.OVERLAY) layer.coerceIn(1, MAX_LAYER) else clip.trackIndex
         )
     }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -68,7 +69,9 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
+import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.atan2
@@ -176,6 +179,12 @@ fun PipOverlayCanvas(
 
         val activeClips = overlayClips.filter { it.isOverlayActiveAt(currentTimeMs) }
         val selectedId = selectedOverlayClipId
+        val playerClip = activeClips.firstOrNull { it.id == overlayPlayerClipId }
+        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop) {
+            overlayPlayer?.setVideoEffects(
+                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop))
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -183,7 +192,7 @@ fun PipOverlayCanvas(
                 // Tap = hit-test overlays topmost-first. A hit selects
                 // (tap again deselects); a miss deselects but consumes
                 // nothing so the preview's onTapVideo still fires.
-                .pointerInput(activeClips, selectedId) {
+                .pointerInput(activeClips, selectedId, canvasWpx, canvasHpx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val hit = activeClips.asReversed().firstOrNull { clip ->
@@ -219,6 +228,7 @@ fun PipOverlayCanvas(
                         onMoveOverlayClip = onMoveOverlayClip,
                         onScaleOverlayClip = onScaleOverlayClip,
                         onRotateOverlayClip = onRotateOverlayClip,
+                        onSelectOverlayClip = onSelectOverlayClip,
                         onOverlayGestureEnd = onOverlayGestureEnd,
                         onRemoveOverlayClip = onRemoveOverlayClip,
                         onUpsertOverlayKeyframe = onUpsertOverlayKeyframe
@@ -257,9 +267,9 @@ private fun pipHitTest(
 
 private fun pipBoxSizePx(clip: MediaClip, canvasWpx: Float, scale: Float): Pair<Float, Float> {
     val w = canvasWpx * scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX)
-    // Intrinsic media aspect — never the legacy forced 16:9 (a portrait
-    // photo keeps its portrait box). Matches the export GL effect.
-    val aspect = clip.overlayAspect.takeIf { it > 0f } ?: PIP_BOX_ASPECT
+    // Preserve the selected crop's aspect, not the original uncropped source. Otherwise a square
+    // crop of a landscape overlay is stretched back into a landscape box. Export uses this too.
+    val aspect = croppedOverlayAspect(clip.overlayAspect, clip.videoCrop)
     return w to (w / aspect)
 }
 
@@ -283,6 +293,7 @@ private fun PipOverlayItem(
     onMoveOverlayClip: (id: String, dx: Float, dy: Float, persist: Boolean) -> Unit,
     onScaleOverlayClip: (id: String, scale: Float, persist: Boolean) -> Unit,
     onRotateOverlayClip: (id: String, deltaDeg: Float, persist: Boolean) -> Unit,
+    onSelectOverlayClip: (String?) -> Unit,
     onOverlayGestureEnd: (id: String) -> Unit,
     onRemoveOverlayClip: (String) -> Unit,
     onUpsertOverlayKeyframe: ((id: String, timeMs: Long, x: Float, y: Float, scale: Float, rotationDeg: Float, opacity: Float, persist: Boolean) -> Unit)?
@@ -373,7 +384,9 @@ private fun PipOverlayItem(
                 alpha = eff.opacity.coerceIn(0f, 1f)
             }
             .testTag("pip-overlay-item-${clip.id}")
-            .pointerInput(clip.id) {
+            // Preview orientation/window resizing changes normalized drag coordinates.
+            // Restart only for viewport changes, not each live clip transform update.
+            .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                 // detectTransformGestures never returns after a pointer-up;
                 // wrapping it in finally only saved on disposal. Track each
                 // gesture explicitly so a completed drag/pinch saves once and
@@ -407,6 +420,13 @@ private fun PipOverlayItem(
                                 }
                                 if (pastTouchSlop) {
                                     gestureActive = true
+                                    // A drag consumes the pointer-up, so the
+                                    // canvas-level tap selector never sees it.
+                                    // Select at the point the gesture becomes an
+                                    // edit; previously an unselected overlay
+                                    // could move while the old selection stayed
+                                    // active (wrong properties/transform box).
+                                    if (!isSelected) onSelectOverlayClip(latest.id)
                                     if (pan != Offset.Zero) {
                                         moveBy(pan.x / canvasWpx, pan.y / canvasHpx, false)
                                     }
@@ -626,7 +646,13 @@ private fun PipOverlayItem(
                                 // (computeGeometry: pipH = pipW /
                                 // aspect). FillBounds == export mapping.
                                 contentScale = ContentScale.FillBounds,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().graphicsLayer {
+                                    val crop = clip.videoCrop.sanitized()
+                                    scaleX = 1f / crop.width
+                                    scaleY = 1f / crop.height
+                                    translationX = (0.5f - (crop.left + crop.right) * 0.5f) * size.width * scaleX
+                                    translationY = (0.5f - (crop.top + crop.bottom) * 0.5f) * size.height * scaleY
+                                },
                                 onError = {
                                     android.util.Log.w(
                                         "PipOverlayCanvas",
@@ -699,7 +725,7 @@ private fun PipOverlayItem(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var prevAngle: Float? = null
                         val handleHalfPx = with(density) { 14.dp.toPx() }
                         // Box centre in handle-local coords, computed
@@ -756,9 +782,10 @@ private fun PipOverlayItem(
                     .align(Alignment.BottomEnd)
                     .offset(x = (-6).dp, y = (-6).dp)
                     .size(32.dp)
+                    .testTag("pip-overlay-resize-${clip.id}")
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var startScale = 1f
                         var acc = 0f
                         var baseSide = 1f

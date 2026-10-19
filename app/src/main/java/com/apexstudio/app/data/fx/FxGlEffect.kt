@@ -53,7 +53,7 @@ class FxGlEffect(
 
         init {
             glProgram = try {
-                GlProgram(VERTEX_SHADER, fragmentFor(preset))
+                GlProgram(VERTEX_SHADER, shaderSourceFor(preset))
             } catch (e: Exception) {
                 throw VideoFrameProcessingException("Failed to compile FX shader for ${preset.id}", e)
             }
@@ -124,7 +124,9 @@ class FxGlEffect(
             }
         """.trimIndent()
 
-        private fun fragmentFor(preset: FxPreset): String = when (preset) {
+        internal fun shaderSourceFor(preset: FxPreset): String {
+            ModernFxShaders.shaderFor(preset)?.let { return it }
+            return when (preset) {
             FxPreset.VIGNETTE -> vignetteShader()
             FxPreset.FILM_GRAIN -> grainShader()
             FxPreset.VHS -> vhsShader()
@@ -219,6 +221,8 @@ class FxGlEffect(
             FxPreset.PULSE_BEAT -> pulseBeatShader()
             FxPreset.GRADIENT_SWEEP -> gradientSweepShader()
             FxPreset.LIGHT_LEAK_SWEEP -> lightLeakSweepShader()
+            else -> error("No shader registered for ${preset.id}")
+            }
         }
 
         /** Shared precision / varyings / uniforms for the FX shaders. */

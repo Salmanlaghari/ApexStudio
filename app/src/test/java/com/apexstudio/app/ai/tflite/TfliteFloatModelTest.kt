@@ -30,6 +30,13 @@ class TfliteFloatModelTest {
         }
     }
 
+    @Test fun modelInputsAndOutputsMustContainOnlyFiniteFloatValues() {
+        TfliteFloatModel.requireFinite(floatArrayOf(-1f, 0f, 1f), "Input")
+        assertRejected { TfliteFloatModel.requireFinite(floatArrayOf(0f, Float.NaN), "Input") }
+        assertRejected { TfliteFloatModel.requireFinite(floatArrayOf(Float.POSITIVE_INFINITY), "Output") }
+        assertRejected { TfliteFloatModel.requireFinite(floatArrayOf(Float.NEGATIVE_INFINITY), "Output") }
+    }
+
     private fun assertRejected(block: () -> Unit) {
         try {
             block()

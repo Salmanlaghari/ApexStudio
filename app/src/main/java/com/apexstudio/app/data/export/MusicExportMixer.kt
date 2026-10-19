@@ -604,7 +604,7 @@ object MusicExportMixer {
                     ex.release()
                     throw IllegalArgumentException("No audio track in $uri")
                 }
-                return openSelected(ex, audioIdx, sourceStartMs.coerceAtLeast(0L) * 1000L)
+                return openSelected(ex, audioIdx, ExportAudioTimelineMapping.millisToMicros(sourceStartMs))
             }
 
             private fun openSelected(ex: MediaExtractor, idx: Int, sourceStartUs: Long): TrackDecoder {

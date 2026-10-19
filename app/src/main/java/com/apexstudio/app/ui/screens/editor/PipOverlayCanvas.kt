@@ -192,7 +192,7 @@ fun PipOverlayCanvas(
                 // Tap = hit-test overlays topmost-first. A hit selects
                 // (tap again deselects); a miss deselects but consumes
                 // nothing so the preview's onTapVideo still fires.
-                .pointerInput(activeClips, selectedId) {
+                .pointerInput(activeClips, selectedId, canvasWpx, canvasHpx) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val hit = activeClips.asReversed().firstOrNull { clip ->
@@ -384,7 +384,9 @@ private fun PipOverlayItem(
                 alpha = eff.opacity.coerceIn(0f, 1f)
             }
             .testTag("pip-overlay-item-${clip.id}")
-            .pointerInput(clip.id) {
+            // Preview orientation/window resizing changes normalized drag coordinates.
+            // Restart only for viewport changes, not each live clip transform update.
+            .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                 // detectTransformGestures never returns after a pointer-up;
                 // wrapping it in finally only saved on disposal. Track each
                 // gesture explicitly so a completed drag/pinch saves once and
@@ -723,7 +725,7 @@ private fun PipOverlayItem(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var prevAngle: Float? = null
                         val handleHalfPx = with(density) { 14.dp.toPx() }
                         // Box centre in handle-local coords, computed
@@ -783,7 +785,7 @@ private fun PipOverlayItem(
                     .testTag("pip-overlay-resize-${clip.id}")
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var startScale = 1f
                         var acc = 0f
                         var baseSide = 1f

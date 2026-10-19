@@ -192,4 +192,70 @@ class PipOverlayCanvasTest {
             assertEquals("release must persist one completed gesture", 1, gestureEndCount)
         }
     }
+    @Test
+    fun draggingAfterPreviewResizeUsesCurrentCanvasDimensions() {
+        val width = mutableStateOf(280.dp)
+        val height = mutableStateOf(300.dp)
+        var dx = 0f
+        var dy = 0f
+        composeRule.setContent {
+            Box(Modifier.size(width.value, height.value)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay().copy(overlayAspect = 1f)), selectedOverlayClipId = "pip-image",
+                    currentTimeMs = 1_000L, overlayPlayer = null, overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, x, y, _ -> dx += x; dy += y },
+                    onScaleOverlayClip = { _, _, _ -> }, onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {}, onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to true)
+                )
+            }
+        }
+        val item = composeRule.onNodeWithTag("pip-overlay-item-pip-image", useUnmergedTree = true)
+        item.performTouchInput { swipe(center, center + Offset(30f, 20f), 300) }
+        var oldDx = 0f
+        var oldDy = 0f
+        composeRule.runOnIdle {
+            oldDx = dx; oldDy = dy; dx = 0f; dy = 0f
+            width.value = 200.dp; height.value = 240.dp
+        }
+        composeRule.waitForIdle()
+        item.performTouchInput { swipe(center, center + Offset(30f, 20f), 300) }
+        composeRule.runOnIdle {
+            assertTrue(oldDx > 0f && oldDy > 0f)
+            assertEquals(oldDx * 280f / 200f, dx, 0.002f)
+            assertEquals(oldDy * 300f / 240f, dy, 0.002f)
+        }
+    }
+
+    @Test
+    fun resizingAfterPreviewResizeUsesCurrentCanvasWidth() {
+        val width = mutableStateOf(280.dp)
+        var scale = 0.5f
+        composeRule.setContent {
+            Box(Modifier.size(width.value, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay().copy(overlayAspect = 1f)), selectedOverlayClipId = "pip-image",
+                    currentTimeMs = 1_000L, overlayPlayer = null, overlayPlayerClipId = null,
+                    onSelectOverlayClip = {}, onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, value, _ -> scale = value },
+                    onRotateOverlayClip = { _, _, _ -> }, onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {}, overlayIsVideo = mapOf("pip-image" to true)
+                )
+            }
+        }
+        val handle = composeRule.onNodeWithTag("pip-overlay-resize-pip-image", useUnmergedTree = true)
+        handle.performTouchInput { swipe(center, center + Offset(25f, 25f), 300) }
+        var oldChange = 0f
+        composeRule.runOnIdle {
+            oldChange = scale - 0.5f; scale = 0.5f; width.value = 200.dp
+        }
+        composeRule.waitForIdle()
+        handle.performTouchInput { swipe(center, center + Offset(25f, 25f), 300) }
+        composeRule.runOnIdle {
+            assertTrue(oldChange > 0f)
+            assertEquals(oldChange * 280f / 200f, scale - 0.5f, 0.002f)
+        }
+    }
+
 }

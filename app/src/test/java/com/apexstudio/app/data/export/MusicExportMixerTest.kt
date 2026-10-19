@@ -89,6 +89,20 @@ class MusicExportMixerTest {
     }
 
     @Test
+    fun `source trim seek milliseconds convert to microseconds without wrapping`() {
+        assertEquals(1_250_000L, ExportAudioTimelineMapping.millisToMicros(1_250L))
+        assertEquals(0L, ExportAudioTimelineMapping.millisToMicros(-1L))
+        assertEquals(
+            Long.MAX_VALUE,
+            ExportAudioTimelineMapping.millisToMicros(Long.MAX_VALUE)
+        )
+        assertEquals(
+            Long.MAX_VALUE,
+            ExportAudioTimelineMapping.millisToMicros(Long.MAX_VALUE / 1_000L + 1L)
+        )
+    }
+
+    @Test
     fun `placed span end saturates instead of making long sources inactive`() {
         assertEquals(300L, ExportAudioTimelineMapping.endFrame(100L, 200L))
         assertEquals(Long.MAX_VALUE, ExportAudioTimelineMapping.endFrame(44_100L, Long.MAX_VALUE))

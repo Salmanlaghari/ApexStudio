@@ -34,6 +34,7 @@ class TfliteFloatModel private constructor(
         require(input.size == expectedInput) {
             "Expected $expectedInput input values for ${checkedInputShape.contentToString()}, got ${input.size}."
         }
+        requireFinite(input, "Input")
         inBuffer.clear()
         input.forEach(inBuffer::putFloat)
         inBuffer.rewind()
@@ -41,7 +42,7 @@ class TfliteFloatModel private constructor(
         outBuffer.clear()
         interpreter.run(inBuffer, outBuffer)
         outBuffer.rewind()
-        return FloatArray(nOut) { outBuffer.float }
+        return FloatArray(nOut) { outBuffer.float }.also { requireFinite(it, "Output") }
     }
 
     @Synchronized
@@ -103,6 +104,11 @@ class TfliteFloatModel private constructor(
                 "Input and output tensors exceed the safe $MAX_TOTAL_BUFFER_ELEMENTS-element combined buffer limit"
             }
             return total
+        }
+
+        /** Float32 is supported, but NaN/Infinity are not valid model inputs or usable results. */
+        internal fun requireFinite(values: FloatArray, label: String) {
+            require(values.all { it.isFinite() }) { "$label tensor contains non-finite values" }
         }
 
         internal fun elementCount(shape: IntArray): Int {

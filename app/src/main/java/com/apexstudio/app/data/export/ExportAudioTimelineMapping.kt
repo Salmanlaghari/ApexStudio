@@ -25,6 +25,12 @@ internal object ExportAudioTimelineMapping {
         }
     }
 
+    /** Converts a non-negative millisecond source position to microseconds without wrapping. */
+    fun millisToMicros(millis: Long): Long {
+        val ms = millis.coerceAtLeast(0L)
+        return if (ms > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else ms * 1_000L
+    }
+
     /**
      * Source trim start and retained frame count, normalized to non-negative
      * source time. An invalid/empty interval maps to zero retained frames.

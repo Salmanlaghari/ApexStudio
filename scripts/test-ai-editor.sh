@@ -26,6 +26,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*WhisperModelIntegrityTest' \
   --tests '*WhisperTokenDecodingTest' \
   --tests '*PcmAudioProcessorTest' \
+  --tests '*AudioTrackEnvelopeAudioProcessorTest' \
   --tests '*EditorTrimPositionTest' \
   --tests '*EditorTimelineSnappingTest' \
   --tests '*TimelineTrimScaleTest' \
@@ -42,6 +43,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*MusicExportMixerTest' \
   --tests '*AudioMixExportNoticeTest' \
   --tests '*ExportCodecGuardTest' \
+  --tests '*ExportCodecPumpTest' \
   --tests '*AudioExportWarningTest' \
   --tests '*ExportPcmBufferTest' \
   --tests '*VoiceRecordingTimingTest' \

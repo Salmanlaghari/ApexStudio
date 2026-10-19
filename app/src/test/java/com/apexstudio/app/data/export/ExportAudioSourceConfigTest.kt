@@ -1,6 +1,8 @@
 package com.apexstudio.app.data.export
 
 import com.apexstudio.app.domain.model.SpeedPoint
+import com.apexstudio.app.domain.model.VolumeKeyframe
+import com.apexstudio.app.data.audio.AudioTrackEnvelopeAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
@@ -8,6 +10,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -70,6 +73,53 @@ class ExportAudioSourceConfigTest {
 
         assertEquals(2f, itemConfig.clipSpeed)
         assertEquals(0.2f, itemConfig.volume, 0.0001f)
+    }
+
+    @Test
+    fun `standalone track scalar is applied after and independently of global volume`() {
+        val source = ExportEngine.AudioExportSource(
+            uri = "file:///music.m4a",
+            sourceGain = 1f,
+            trackVolume = 0.35f,
+            trackFadeInMs = 100L
+        )
+        val itemConfig = ExportEngine.audioConfigForSource(
+            ExportEngine.ExportConfig(volume = 0.4f),
+            source
+        )
+
+        assertEquals(0.4f, itemConfig.volume, 0.0001f)
+        assertEquals(0.35f, source.trackVolume!!, 0.0001f)
+    }
+
+    @Test
+    fun `production standalone chain applies boosted global gain after track volume without early clipping`() {
+        val source = ExportEngine.AudioExportSource(
+            uri = "file:///music.m4a",
+            trackVolume = 0.5f
+        )
+        val processors = standaloneProcessors(globalVolume = 2f, source = source)
+
+        assertEquals(1, processors.size)
+        assertTrue(processors.single() is AudioTrackEnvelopeAudioProcessor)
+        assertEquals(listOf(20_000), processPcm16(processors, shortArrayOf(20_000)))
+    }
+
+    @Test
+    fun `production standalone chain applies keyframes and global mute`() {
+        val keyframedSource = ExportEngine.AudioExportSource(
+            uri = "file:///music.m4a",
+            trackVolume = 0.5f,
+            trackVolumeKeyframes = listOf(
+                VolumeKeyframe("start", 0L, 0.25f),
+                VolumeKeyframe("end", 2L, 0.75f)
+            )
+        )
+        val keyframed = standaloneProcessors(globalVolume = 2f, source = keyframedSource)
+        assertEquals(listOf(5_000, 10_000, 15_000), processPcm16(keyframed, shortArrayOf(10_000, 10_000, 10_000)))
+
+        val muted = standaloneProcessors(globalVolume = 0f, source = keyframedSource)
+        assertEquals(listOf(0, 0, 0), processPcm16(muted, shortArrayOf(10_000, 10_000, 10_000)))
     }
 
     @Test
@@ -151,5 +201,29 @@ class ExportAudioSourceConfigTest {
         val actual = ShortArray(output.remaining() / 2) { output.short }
         assertEquals(expected.toList(), actual.toList())
         processor.reset()
+    }
+
+    private fun standaloneProcessors(
+        globalVolume: Float,
+        source: ExportEngine.AudioExportSource
+    ): MutableList<AudioProcessor> {
+        val engine = ExportEngine(org.robolectric.RuntimeEnvironment.getApplication())
+        val config = ExportEngine.audioConfigForSource(
+            ExportEngine.ExportConfig(volume = globalVolume), source
+        )
+        return engine.buildExportAudioProcessors(config, source)
+    }
+
+    private fun processPcm16(processors: List<AudioProcessor>, samples: ShortArray): List<Int> {
+        var output = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+            .apply { samples.forEach(::putShort); flip() }
+        processors.forEach { processor ->
+            processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+            processor.flush()
+            processor.queueInput(output)
+            output = processor.output
+        }
+        val pcm = output.order(ByteOrder.LITTLE_ENDIAN)
+        return buildList { while (pcm.remaining() >= 2) add(pcm.short.toInt()) }
     }
 }

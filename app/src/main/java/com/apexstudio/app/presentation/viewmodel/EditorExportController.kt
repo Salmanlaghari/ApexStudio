@@ -232,7 +232,14 @@ internal fun buildAudioExportSources(
                 timelinePositionMs = track.startTimeMs.coerceAtLeast(0L),
                 // Music and voiceover remain at their native playback rate.
                 constantSpeedOverride = 1f,
-                sourceGain = track.volume
+                // Track gain/keyframes are absolute and applied by the final
+                // sample-accurate processor; sourceGain remains unity to avoid
+                // multiplying the scalar volume twice or distorting keyframes.
+                sourceGain = 1f,
+                trackVolume = track.volume,
+                trackFadeInMs = track.fadeInMs,
+                trackFadeOutMs = track.fadeOutMs,
+                trackVolumeKeyframes = track.volumeKeyframes
             )
         )
     }
@@ -241,7 +248,8 @@ internal fun buildAudioExportSources(
 /**
  * Exports a standalone AAC timeline mix. Video clip audio is placed in editor
  * clip order, and unmuted canonical project audio tracks use their timeline
- * offsets; each source keeps its own trim, speed and gain settings.
+ * offsets; each source keeps its own trim/speed and standalone tracks retain
+ * their fade and absolute volume automation settings.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"

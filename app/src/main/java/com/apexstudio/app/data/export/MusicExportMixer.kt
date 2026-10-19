@@ -328,103 +328,92 @@ object MusicExportMixer {
         encFormat.setInteger(MediaFormat.KEY_BIT_RATE, AAC_BITRATE)
         encFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 32 * 1024)
 
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
+        val encoder = setupWithCleanup(
+            resource = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC),
+            setup = {
+                it.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                it.start()
+            },
+            cleanup = { it.release() }
+        )
         try {
             val frames = mutableListOf<EncodedFrame>()
             var outFormat: MediaFormat? = null
             val info = MediaCodec.BufferInfo()
-            // Derive every PTS from the cumulative frame count: per-chunk
-            // integer division would otherwise accumulate ~1µs of drift per
-            // chunk against the copied video track's original timestamps.
+            // Derive every PTS from cumulative frames, avoiding per-chunk drift.
             var totalFramesIn = 0L
             fun framePtsUs() = (totalFramesIn * 1_000_000L) / SAMPLE_RATE
 
             RandomAccessFile(wavFile, "r").use { raf ->
-                raf.seek(44) // skip WAV header
+                raf.seek(44)
                 var inputDone = false
                 val chunk = ByteArray(16 * 1024)
-                while (true) {
+                pumpCodecUntilOutputEos {
+                    var progressed = false
                     if (!inputDone) {
                         val inIdx = encoder.dequeueInputBuffer(5000)
                         if (inIdx >= 0) {
-                            val ib = encoder.getInputBuffer(inIdx)
-                            if (ib == null || ib.remaining() < CHANNELS * 2) {
-                                // No usable input buffer right now; try again next lap.
-                                if (ib != null) {
-                                    encoder.queueInputBuffer(inIdx, 0, 0, framePtsUs(), 0)
-                                }
-                            } else {
-                                // Whole PCM frames only — a torn frame would
-                                // corrupt the encoder's pts bookkeeping.
-                                val want = min(chunk.size, ib.remaining()) / (CHANNELS * 2) * (CHANNELS * 2)
-                                val n = raf.read(chunk, 0, want)
-                                if (n <= 0) {
-                                    encoder.queueInputBuffer(
-                                        inIdx, 0, 0, framePtsUs(),
-                                        MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                                    )
-                                    inputDone = true
-                                } else {
-                                    ib.put(chunk, 0, n)
-                                    val framesIn = n / (CHANNELS * 2)
-                                    encoder.queueInputBuffer(inIdx, 0, n, framePtsUs(), 0)
-                                    totalFramesIn += framesIn
-                                }
+                            val ib = requireNotNull(encoder.getInputBuffer(inIdx)) {
+                                "AAC encoder returned no input buffer"
                             }
+                            ib.clear()
+                            check(ib.remaining() >= CHANNELS * 2) {
+                                "AAC encoder input buffer cannot hold a PCM frame"
+                            }
+                            val want = min(chunk.size, ib.remaining()) / (CHANNELS * 2) * (CHANNELS * 2)
+                            val n = raf.read(chunk, 0, want)
+                            if (n <= 0) {
+                                encoder.queueInputBuffer(
+                                    inIdx, 0, 0, framePtsUs(),
+                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                )
+                                inputDone = true
+                            } else {
+                                check(n % (CHANNELS * 2) == 0) { "Truncated PCM frame" }
+                                ib.put(chunk, 0, n)
+                                encoder.queueInputBuffer(inIdx, 0, n, framePtsUs(), 0)
+                                totalFramesIn += n / (CHANNELS * 2)
+                            }
+                            progressed = true
                         }
                     }
                     val outIdx = encoder.dequeueOutputBuffer(info, 8000)
+                    var outputEnded = false
                     when {
                         outIdx >= 0 -> {
-                            val ob = encoder.getOutputBuffer(outIdx)!!
-                            if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
-                                info.size > 0
-                            ) {
-                                val copy = ByteArray(info.size)
-                                ob.get(copy)
-                                frames.add(
-                                    EncodedFrame(copy, info.presentationTimeUs, info.flags)
-                                )
-                            }
-                            encoder.releaseOutputBuffer(outIdx, false)
-                            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break
-                        }
-                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
-                            outFormat = encoder.outputFormat
-                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER ->
-                            if (inputDone) {
-                                // Give the encoder a moment, then give up gracefully.
-                                Thread.sleep(10)
-                            }
-                    }
-                    if (inputDone && outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                        // Drain once more; encoders flush quickly after EOS.
-                        var drained = 0
-                        while (drained < 50) {
-                            val idx = encoder.dequeueOutputBuffer(info, 2000)
-                            if (idx >= 0) {
-                                val ob = encoder.getOutputBuffer(idx)!!
+                            try {
                                 if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
                                     info.size > 0
                                 ) {
-                                    val copy = ByteArray(info.size)
-                                    ob.get(copy)
                                     frames.add(
-                                        EncodedFrame(copy, info.presentationTimeUs, info.flags)
+                                        EncodedFrame(
+                                            copyEncodedOutput(
+                                                encoder.getOutputBuffer(outIdx), info.offset, info.size
+                                            ),
+                                            info.presentationTimeUs,
+                                            info.flags
+                                        )
                                     )
                                 }
-                                encoder.releaseOutputBuffer(idx, false)
-                                if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break
-                            } else break
-                            drained++
+                                outputEnded = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                                // Empty non-EOS output is not forward progress.
+                                progressed = progressed || info.size > 0 || outputEnded
+                            } finally {
+                                encoder.releaseOutputBuffer(outIdx, false)
+                            }
                         }
-                        break
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            outFormat = encoder.outputFormat
+                            progressed = true
+                        }
                     }
+                    CodecPumpStep(progressed, outputEnded)
                 }
             }
-            val fmt = outFormat ?: encFormat
+            // The encoder's actual format contains codec-specific AAC data.
+            // A requested input format is not a valid substitute for it.
+            val fmt = checkNotNull(outFormat) { "AAC encoder produced no output format" }
+            check(frames.isNotEmpty()) { "AAC encoder produced no audio samples" }
             return EncodedAudio(fmt, frames)
         } finally {
             runCatching { encoder.stop() }

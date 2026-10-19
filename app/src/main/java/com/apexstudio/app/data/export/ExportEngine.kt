@@ -21,6 +21,7 @@ import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
+import com.apexstudio.app.data.audio.AudioTrackEnvelopeAudioProcessor
 import com.apexstudio.app.data.audio.DenoiseAudioProcessor
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
@@ -265,7 +266,13 @@ class ExportEngine(private val context: Context) {
         // (music / voiceover) leave this off — the toggle is per
         // video clip, and music must never be noise-gated.
         val denoiseEnabled: Boolean = false,
-        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM
+        val denoiseStrength: DenoiseStrength = DenoiseStrength.MEDIUM,
+        // Standalone tracks apply absolute scalar/keyframed volume and fades
+        // after pitch/speed processing; do not also put their scalar in sourceGain.
+        val trackVolume: Float? = null,
+        val trackFadeInMs: Long = 0L,
+        val trackFadeOutMs: Long = 0L,
+        val trackVolumeKeyframes: List<com.apexstudio.app.domain.model.VolumeKeyframe> = emptyList()
     )
 
     /**
@@ -601,8 +608,9 @@ class ExportEngine(private val context: Context) {
      * export config. Processors are stateful, so callers must build a new
      * list per media item instead of sharing instances.
      */
-    private fun buildExportAudioProcessors(
-        config: ExportConfig
+    internal fun buildExportAudioProcessors(
+        config: ExportConfig,
+        source: AudioExportSource? = null
     ): MutableList<androidx.media3.common.audio.AudioProcessor> {
         val audioProcessors = mutableListOf<androidx.media3.common.audio.AudioProcessor>()
 
@@ -619,9 +627,12 @@ class ExportEngine(private val context: Context) {
             audioProcessors.add(sonic)
         }
 
-        // Gain is applied for both common source layouts. Mono voiceovers
-        // otherwise bypassed the old stereo-only matrix entirely.
-        volumeProcessorFor(config.volume)?.let { audioProcessors.add(it) }
+        // Standalone tracks compose global gain into their final envelope
+        // processor so boosted PCM is not clipped before track attenuation.
+        // Other sources retain the shared mono/stereo gain processor.
+        if (source?.trackVolume == null) {
+            volumeProcessorFor(config.volume)?.let { audioProcessors.add(it) }
+        }
 
         // Speed change affects audio too (constant or curve — same
         // provider builder as the video path, so the two can never
@@ -629,6 +640,24 @@ class ExportEngine(private val context: Context) {
         buildSpeedProvider(config)?.let { provider ->
             val speedPair = Effects.createExperimentalSpeedChangingEffect(provider)
             audioProcessors.add(speedPair.first)
+        }
+        // This is intentionally last: timeline keyframes use the placed track's
+        // absolute timeline clock and fades follow post-speed samples.
+        if (source?.trackVolume != null) {
+            val retainedStartMs = source.trimStartMs.coerceAtLeast(0L)
+            val retainedEndMs = source.trimEndMs.coerceAtLeast(0L)
+            val durationMs = if (retainedEndMs > retainedStartMs) retainedEndMs - retainedStartMs else 0L
+            audioProcessors.add(
+                AudioTrackEnvelopeAudioProcessor(
+                    scalarVolume = source.trackVolume,
+                    volumeKeyframes = source.trackVolumeKeyframes,
+                    timelinePositionMs = source.timelinePositionMs,
+                    fadeInMs = source.trackFadeInMs,
+                    fadeOutMs = source.trackFadeOutMs,
+                    retainedDurationMs = durationMs,
+                    globalGain = config.volume
+                )
+            )
         }
         return audioProcessors
     }
@@ -725,13 +754,15 @@ class ExportEngine(private val context: Context) {
 
                 val placedItems = sources.map { src ->
                     val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(src.uri))
-                    if (src.trimStartMs > 0L || (src.trimEndMs > 0L && src.trimEndMs > src.trimStartMs)) {
+                    val retainedStartMs = src.trimStartMs.coerceAtLeast(0L)
+                    val retainedEndMs = src.trimEndMs.coerceAtLeast(0L)
+                    if (retainedStartMs > 0L || retainedEndMs > retainedStartMs) {
                         val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
-                        if (src.trimStartMs > 0L) {
-                            clippingBuilder.setStartPositionMs(src.trimStartMs)
+                        if (retainedStartMs > 0L) {
+                            clippingBuilder.setStartPositionMs(retainedStartMs)
                         }
-                        if (src.trimEndMs > src.trimStartMs) {
-                            clippingBuilder.setEndPositionMs(src.trimEndMs)
+                        if (retainedEndMs > retainedStartMs) {
+                            clippingBuilder.setEndPositionMs(retainedEndMs)
                         }
                         mediaItemBuilder.setClippingConfiguration(clippingBuilder.build())
                     }
@@ -746,7 +777,8 @@ class ExportEngine(private val context: Context) {
                         .setEffects(
                             Effects(
                                 buildExportAudioProcessors(
-                                    audioConfigForSource(config, src)
+                                    audioConfigForSource(config, src),
+                                    src
                                 ),
                                 emptyList()
                             )

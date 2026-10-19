@@ -5,6 +5,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedPoint
+import com.apexstudio.app.domain.model.VolumeKeyframe
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,10 +64,36 @@ class EditorAudioExportSourcesTest {
         val musicSource = sources.last()
         assertEquals(music.uri, musicSource.uri)
         assertEquals(1f, musicSource.constantSpeedOverride)
-        assertEquals(0.6f, musicSource.sourceGain)
+        assertEquals(1f, musicSource.sourceGain)
+        assertEquals(0.6f, musicSource.trackVolume!!)
         assertEquals(music.trimStartMs, musicSource.trimStartMs)
         assertEquals(music.trimEndMs, musicSource.trimEndMs)
         assertEquals(1_300L, musicSource.timelinePositionMs)
+    }
+
+    @Test
+    fun `music and voiceover fade and absolute keyframe configuration survive mapping`() {
+        val keyframes = listOf(
+            VolumeKeyframe("start", 900L, 0.2f),
+            VolumeKeyframe("later", 1_900L, 0.8f)
+        )
+        val voice = AudioTrack(
+            id = "voice", name = "voice", uri = "file:///voice.m4a", volume = 0.7f,
+            trimStartMs = -250L, trimEndMs = 2_500L, startTimeMs = -50L,
+            fadeInMs = 120L, fadeOutMs = 300L, volumeKeyframes = keyframes,
+            kind = AudioTrack.Kind.SFX
+        )
+
+        val source = buildAudioExportSources(emptyList(), listOf(voice)).single()
+
+        assertEquals(-250L, source.trimStartMs)
+        assertEquals(2_500L, source.trimEndMs)
+        assertEquals(0L, source.timelinePositionMs) // negative placement starts at the export boundary
+        assertEquals(1f, source.sourceGain)
+        assertEquals(0.7f, source.trackVolume!!)
+        assertEquals(120L, source.trackFadeInMs)
+        assertEquals(300L, source.trackFadeOutMs)
+        assertEquals(keyframes, source.trackVolumeKeyframes)
     }
 
     @Test

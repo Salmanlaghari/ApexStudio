@@ -8,8 +8,8 @@ import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import com.apexstudio.app.ai.subtitles.EnglishWordAlignment
 import com.apexstudio.app.ai.subtitles.TimingPrecision
 import com.apexstudio.app.ai.subtitles.WordCue
+import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import kotlinx.coroutines.CancellationException
@@ -85,8 +85,8 @@ internal fun captionOverlaysFor(clip: MediaClip, segments: List<WhisperCaptionEn
         val sourceStart = seg.startMs.coerceIn(0L, span)
         val sourceEnd = seg.endMs.coerceIn(0L, span)
         if (sourceEnd <= sourceStart || seg.text.isBlank()) return@mapNotNull null
-        val start = SpeedCurveMath.sourceToOutputMs(sourceStart, span, clip.speedPoints)
-        val end = SpeedCurveMath.sourceToOutputMs(sourceEnd, span, clip.speedPoints)
+        val start = ClipTimeMapping.outputOffsetAtSourceTime(clip, clip.trimStartMs + sourceStart)
+        val end = ClipTimeMapping.outputOffsetAtSourceTime(clip, clip.trimStartMs + sourceEnd)
         if (end <= start) return@mapNotNull null
         TextOverlay.of(
             text = seg.text, x = 0.5f, y = 0.82f, sizeScale = 0.85f,
@@ -126,8 +126,8 @@ internal fun karaokeCaptionOverlaysFor(
         val fingerprint = TextOverlayKaraoke.fingerprint(phrase.text)
         fun emit(sourceStart: Long, sourceEnd: Long, token: MatchResult? = null) {
             if (sourceEnd <= sourceStart) return
-            val start = SpeedCurveMath.sourceToOutputMs(sourceStart, span, clip.speedPoints)
-            val exclusiveEnd = SpeedCurveMath.sourceToOutputMs(sourceEnd, span, clip.speedPoints)
+            val start = ClipTimeMapping.outputOffsetAtSourceTime(clip, clip.trimStartMs + sourceStart)
+            val exclusiveEnd = ClipTimeMapping.outputOffsetAtSourceTime(clip, clip.trimStartMs + sourceEnd)
             if (exclusiveEnd <= start) {
                 require(token == null) { "Measured word collapsed after speed mapping" }
                 return // A sub-millisecond silence has no output frame; never invent word timing.

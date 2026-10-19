@@ -29,14 +29,19 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AudioTrackEnvelopeAudioProcessorTest' \
   --tests '*EditorTrimPositionTest' \
   --tests '*EditorTimelineSnappingTest' \
+  --tests '*TimelineRipplePreservationTest' \
   --tests '*TimelineTrimScaleTest' \
   --tests '*MainTimelineTrimGestureTest' \
   --tests '*TimelineClipGestureTest' \
   --tests '*ExportAudioSourceConfigTest' \
+  --tests '*VideoExportAudioProcessorsTest' \
+  --tests '*ExportApplicationThreadTest' \
+  --tests '*AudioExportSourceProbeTest' \
   --tests '*EditorAudioExportSourcesTest' \
   --tests '*StandaloneAudioCompositionTest' \
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \
+  --tests '*AudioPlaybackMixTest' \
   --tests '*LocalAudioImportPolicyTest' \
   --tests '*LocalAudioImportDeliveryTest' \
   --tests '*AudioMixerPanelTest' \
@@ -51,6 +56,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*OverlayClipTest' \
   --tests '*OverlayEditorRefreshTest' \
   --tests '*ClipTimeMappingTest' \
+  --tests '*SpeedCurveMathTest' \
   --tests '*OverlayFrameSelectionPolicyTest' \
   --tests '*TextPanelModerationTest' \
   --tests '*OverlaySplitTrimTest' \

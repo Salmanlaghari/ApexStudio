@@ -1,6 +1,9 @@
 package com.apexstudio.app.ui.components
 
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.SpeedCurveMath
+import kotlin.math.roundToLong
 
 /**
  * Map a horizontal timeline/output-time drag to a source head boundary.
@@ -22,6 +25,9 @@ internal fun timelineTrimStartForOutputDeltaMs(
     val maxStart = (end - minSpan).coerceAtLeast(0L)
     val currentStart = clip.trimStartMs.coerceIn(0L, maxStart)
     if (outputDeltaMs == 0L) return currentStart
+    constantMainSourceDelta(clip, outputDeltaMs)?.let { sourceDelta ->
+        return addSaturated(currentStart, sourceDelta).coerceIn(0L, maxStart)
+    }
     val targetDuration = subtractSaturated(
         clip.copy(trimStartMs = currentStart, trimEndMs = end).effectiveDurationMs(),
         outputDeltaMs
@@ -55,6 +61,9 @@ internal fun timelineTrimEndForOutputDeltaMs(
     val maxEnd = duration.coerceAtLeast(minEnd)
     val currentEnd = clip.trimEndMs.coerceIn(minEnd, maxEnd)
     if (outputDeltaMs == 0L) return currentEnd
+    constantMainSourceDelta(clip, outputDeltaMs)?.let { sourceDelta ->
+        return addSaturated(currentEnd, sourceDelta).coerceIn(minEnd, maxEnd)
+    }
     val targetDuration = addSaturated(
         clip.copy(trimStartMs = start, trimEndMs = currentEnd).effectiveDurationMs(),
         outputDeltaMs
@@ -73,6 +82,14 @@ internal fun timelineTrimEndForOutputDeltaMs(
         if (outputDuration(mid) < target) low = mid + 1L else high = mid
     }
     return closestBoundary(low, if (low > minEnd) low - 1L else low, target, ::outputDuration)
+}
+
+/** Avoid choosing an arbitrary edge of a rounded output-duration plateau at constant speed. */
+private fun constantMainSourceDelta(clip: MediaClip, outputDeltaMs: Long): Long? {
+    if (clip.type != ClipType.VIDEO || clip.trackIndex != 0 ||
+        SpeedCurveMath.sanitize(clip.speedPoints).size >= 2) return null
+    return (outputDeltaMs.toDouble() * SpeedCurveMath.sanitizeConstantSpeed(clip.speedMultiplier))
+        .roundToLong()
 }
 
 private inline fun closestBoundary(

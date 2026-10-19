@@ -106,6 +106,23 @@ class EditorWordCaptionTest {
         assertTrue(overlays.none { it.isActiveAt(1_000L) })
     }
 
+    @Test fun constantMainSpeedMapsKaraokeWordBoundariesAtTwoXAndHalfX() {
+        val phrase = WhisperCaptionEngine.CaptionSegment("Hello", 1_000L, 3_000L)
+        val words = listOf(word("Hello", 1_500L, 2_500L))
+        val fastClip = MediaClip(id = "fast", name = "fast", uri = "file:///fast.mp4", durationMs = 10_000L,
+            trimStartMs = 2_000L, trimEndMs = 8_000L, speedMultiplier = 2f)
+        val slowClip = fastClip.copy(id = "slow", speedMultiplier = 0.5f)
+
+        val fast = karaokeCaptionOverlaysFor(fastClip, listOf(phrase), words)
+            .single { TextOverlayKaraoke.validRange(it) != null }
+        val slow = karaokeCaptionOverlaysFor(slowClip, listOf(phrase), words)
+            .single { TextOverlayKaraoke.validRange(it) != null }
+        assertEquals(750L, fast.startMs)
+        assertEquals(1_249L, fast.endMs)
+        assertEquals(3_000L, slow.startMs)
+        assertEquals(4_999L, slow.endMs)
+    }
+
     @Test fun ambiguousOrMissingPhraseWordGroupsAreRejected() {
         val clip = MediaClip(id = "v", name = "v", uri = "file:///v.mp4", durationMs = 3_000L,
             trimStartMs = 0L, trimEndMs = 3_000L)

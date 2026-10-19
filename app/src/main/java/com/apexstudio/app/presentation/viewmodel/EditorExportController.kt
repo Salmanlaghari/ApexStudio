@@ -169,7 +169,9 @@ fun EditorViewModel.startExport(
             // imports) over the exported audio — see MusicExportMixer.
             // project.audioTracks is the same list the live preview plays,
             // so the export matches what the user hears.
-            musicMixTracks = (s.project?.audioTracks ?: emptyList()).filter { !it.isMuted }
+            musicMixTracks = (s.project?.audioTracks ?: emptyList()).let { tracks ->
+                tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+            }
         )
     )
 }
@@ -187,27 +189,39 @@ fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(er
 
 /**
  * Maps canonical project audio to the standalone export timeline. Main video
- * clip audio follows editor clip order; extra tracks retain their timeline
- * placement. Media3 mixes the resulting parallel source sequences.
+ * clip audio follows editor clip order; video-backed overlay clips and extra
+ * tracks retain their absolute timeline placement. Media3 mixes the resulting
+ * parallel source sequences.
  */
 internal fun buildAudioExportSources(
     clips: List<MediaClip>,
-    audioTracks: List<AudioTrack>
+    audioTracks: List<AudioTrack>,
+    hiddenVideoLayers: Set<Int> = emptySet()
 ): List<ExportEngine.AudioExportSource> = buildList {
     var clipTimelinePositionMs = 0L
     clips.forEach { clip ->
         val mainVisual = clip.trackIndex == 0 &&
             (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
-        if (clip.type == ClipType.VIDEO) add(
+        val audibleOverlay = clip.type == ClipType.OVERLAY &&
+            clip.trackIndex !in hiddenVideoLayers && clip.overlayVolume.isFinite() &&
+            clip.overlayVolume > 0f
+        if (clip.type == ClipType.VIDEO || audibleOverlay) add(
             ExportEngine.AudioExportSource(
                 uri = clip.uri,
                 trimStartMs = clip.trimStartMs,
                 trimEndMs = clip.trimEndMs,
-                timelinePositionMs = if (clip.trackIndex == 0) clipTimelinePositionMs
-                    else clip.timelineOffsetMs.coerceAtLeast(0L),
+                // Overlay audio is independent of V1 and follows the same
+                // project-time offset as its visual layer.
+                timelinePositionMs = if (clip.type == ClipType.OVERLAY || clip.trackIndex != 0) {
+                    clip.timelineOffsetMs.coerceAtLeast(0L)
+                } else {
+                    clipTimelinePositionMs
+                },
                 speedPoints = clip.speedPoints,
-                constantSpeedOverride = clip.speedMultiplier,
-                sourceGain = clip.volume,
+                // Visual overlays currently use curves or native 1x playback,
+                // not the V1-only legacy constant speed multiplier.
+                constantSpeedOverride = if (audibleOverlay) 1f else clip.speedMultiplier,
+                sourceGain = if (audibleOverlay) clip.overlayVolume else clip.volume,
                 denoiseEnabled = clip.denoiseEnabled,
                 denoiseStrength = clip.denoiseStrength
             )
@@ -223,7 +237,9 @@ internal fun buildAudioExportSources(
             }
         }
     }
-    audioTracks.filter { !it.isMuted }.forEach { track ->
+    audioTracks.filter {
+        com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, audioTracks)
+    }.forEach { track ->
         add(
             ExportEngine.AudioExportSource(
                 uri = track.uri,
@@ -246,10 +262,10 @@ internal fun buildAudioExportSources(
 }
 
 /**
- * Exports a standalone AAC timeline mix. Video clip audio is placed in editor
- * clip order, and unmuted canonical project audio tracks use their timeline
- * offsets; each source keeps its own trim/speed and standalone tracks retain
- * their fade and absolute volume automation settings.
+ * Exports a standalone AAC timeline mix. Main video clip audio is placed in
+ * editor clip order, overlay video audio and unmuted canonical project audio
+ * tracks use their timeline offsets; each source keeps its own trim/speed and
+ * standalone tracks retain their fade and absolute volume automation settings.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"
@@ -263,7 +279,8 @@ fun EditorViewModel.startAudioExport(
     val project = s.project
     val sources = buildAudioExportSources(
         project?.clips.orEmpty(),
-        project?.audioTracks.orEmpty()
+        project?.audioTracks.orEmpty(),
+        s.hiddenVideoLayers
     )
     if (sources.isEmpty()) {
         _export.update { it.copy(isExporting = false, progress = 0f) }

@@ -30,6 +30,15 @@ class EditorCaptionReliabilityTest {
         assertEquals(500L, cues.single().startMs)
         assertEquals(1_500L, cues.single().endMs)
     }
+    @Test fun constantMainSpeedMapsPhraseCaptionsAtTwoXAndHalfX() {
+        val fast = captionOverlaysFor(clip().copy(speedMultiplier = 2f), segments).single()
+        val slow = captionOverlaysFor(clip().copy(speedMultiplier = 0.5f), segments).single()
+
+        assertEquals(500L, fast.startMs)
+        assertEquals(1_500L, fast.endMs)
+        assertEquals(2_000L, slow.startMs)
+        assertEquals(6_000L, slow.endMs)
+    }
     @Test fun rampUsesOriginalTrimmedSpanForBothBoundaries() {
         val c = clip().copy(speedPoints = listOf(SpeedPoint(0f, .5f), SpeedPoint(1f, 3f)))
         val cue = captionOverlaysFor(c, segments).single()

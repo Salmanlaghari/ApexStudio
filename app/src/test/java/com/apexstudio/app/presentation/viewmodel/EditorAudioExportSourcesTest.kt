@@ -103,7 +103,8 @@ class EditorAudioExportSourcesTest {
             audioTracks = emptyList()
         )
 
-        assertEquals(listOf(0L, 4_800L), sources.map { it.timelinePositionMs })
+        // The first source's 2x speed halves its 4.8s trimmed span on V1.
+        assertEquals(listOf(0L, 2_400L), sources.map { it.timelinePositionMs })
     }
 
     @Test
@@ -127,6 +128,47 @@ class EditorAudioExportSourcesTest {
     }
 
     @Test
+    fun `overlay clip audio retains trim absolute placement gain and speed curve`() {
+        val curve = listOf(SpeedPoint(0f, 0.5f), SpeedPoint(1f, 1.5f))
+        val overlay = clip("overlay", 1.25f, 0.35f, curve = curve, type = ClipType.OVERLAY)
+            .copy(timelineOffsetMs = 2_400L, overlayVolume = 0.7f)
+
+        val source = buildAudioExportSources(listOf(overlay), emptyList()).single()
+
+        assertEquals(overlay.uri, source.uri)
+        assertEquals(overlay.trimStartMs, source.trimStartMs)
+        assertEquals(overlay.trimEndMs, source.trimEndMs)
+        assertEquals(2_400L, source.timelinePositionMs)
+        assertEquals(0.7f, source.sourceGain)
+        assertEquals(curve, source.speedPoints)
+        assertEquals(1f, source.constantSpeedOverride)
+    }
+
+    @Test
+    fun `overlay clip audio uses absolute project time without moving V1 cursor`() {
+        val overlay = clip("overlay", 1f, 1f, type = ClipType.OVERLAY)
+            .copy(timelineOffsetMs = 900L, overlayVolume = 1f)
+        val sources = buildAudioExportSources(
+            listOf(clip("first", 1f, 1f), overlay, clip("last", 1f, 1f)),
+            emptyList()
+        )
+
+        assertEquals(listOf(0L, 900L, 4_800L), sources.map { it.timelinePositionMs })
+    }
+
+    @Test
+    fun `muted legacy image and hidden overlays do not enter standalone audio`() {
+        val base = clip("overlay", 2f, 1f, type = ClipType.OVERLAY)
+        val visible = base.copy(id = "visible", uri = "file:///visible", overlayVolume = 0.5f, trackIndex = 1)
+        val hidden = visible.copy(id = "hidden", uri = "file:///hidden", trackIndex = 2)
+        val invalid = visible.copy(id = "invalid", overlayVolume = Float.NaN)
+        val sources = buildAudioExportSources(listOf(base, visible, hidden, invalid), emptyList(), setOf(2))
+        assertEquals(listOf(visible.uri), sources.map { it.uri })
+        assertEquals(0.5f, sources.single().sourceGain)
+        assertEquals(1f, sources.single().constantSpeedOverride)
+    }
+
+    @Test
     fun `negative persisted track placement clamps to timeline zero`() {
         val track = AudioTrack("music", "music", "file:///music.m4a", startTimeMs = -200L)
         assertEquals(0L, buildAudioExportSources(emptyList(), listOf(track)).single().timelinePositionMs)
@@ -144,6 +186,15 @@ class EditorAudioExportSourcesTest {
         assertEquals(listOf("file:///video", "file:///audible.m4a"), sources.map { it.uri })
         assertFalse(sources.any { it.uri == muted.uri })
         assertTrue(sources.all { it.uri != "file:///still" })
+    }
+
+    @Test
+    fun `added track solo routing matches preview including a muted solo`() {
+        val ordinary = AudioTrack("music", "music", "file:///music.m4a")
+        val solo = AudioTrack("voice", "voice", "file:///voice.m4a", isSolo = true)
+        assertEquals(listOf(solo.uri), buildAudioExportSources(emptyList(), listOf(ordinary, solo)).map { it.uri })
+        assertTrue(buildAudioExportSources(emptyList(), listOf(ordinary, solo.copy(isMuted = true))).isEmpty())
+        assertEquals(listOf(ordinary.uri), buildAudioExportSources(emptyList(), listOf(ordinary)).map { it.uri })
     }
 
     @Test

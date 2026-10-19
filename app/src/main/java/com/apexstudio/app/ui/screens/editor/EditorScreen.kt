@@ -363,6 +363,9 @@ fun EditorScreen(
                 vm.setPlayerReady(false)
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                // The player reads source time, while the editor starts at
+                // this clip's retained source head (not media-file time zero).
+                player.seekTo(clip.trimStartMs.coerceAtLeast(0L))
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -370,10 +373,12 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.playbackSpeed) {
+    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.speedMultiplier) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            val speed = state.playbackSpeed.coerceIn(0.1f, 10.0f)
+            val speed = com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
+                mainPreviewClip?.speedMultiplier ?: state.playbackSpeed
+            )
             player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set playback speed", e)
@@ -538,6 +543,7 @@ fun EditorScreen(
         // Restart when the selected clip's curve changes so the loop
         // always reads the current points (not a stale snapshot).
         mainPreviewClip?.speedPoints,
+        mainPreviewClip?.speedMultiplier,
         mainPreviewClip?.id
     ) {
         val totalDur = state.durationMs.coerceAtLeast(1000L)
@@ -554,8 +560,9 @@ fun EditorScreen(
                 lastTime = now
 
                 val player = exoPlayer
-                val curveClip = mainPreviewClip
+                val timedClip = mainPreviewClip
                     ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+                val curveClip = timedClip
                     ?.takeIf { it.hasSpeedCurve() }
                 val newPos = if (player != null) {
                     val rawPos = player.currentPosition
@@ -584,11 +591,8 @@ fun EditorScreen(
                             }
                         }
                         val clips = state.project?.clips ?: emptyList()
-                        val clipStart =
-                            com.apexstudio.app.domain.model.SpeedCurveMath
-                                .timelineStartMsForClip(clips, curveClip)
-                        clipStart + com.apexstudio.app.domain.model.SpeedCurveMath
-                            .sourceToOutputMs(srcInClip, span, curveClip.speedPoints)
+                        com.apexstudio.app.domain.model.ClipTimeMapping
+                            .projectAtSourceTime(clips, curveClip, rawPos)
                     } else {
                         // Curve cleared mid-playback: hand the rate back
                         // to the constant-speed LaunchedEffect.
@@ -596,13 +600,19 @@ fun EditorScreen(
                             try {
                                 player.playbackParameters =
                                     androidx.media3.common.PlaybackParameters(
-                                        state.playbackSpeed.coerceIn(0.1f, 10.0f)
+                                        com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
+                                            timedClip?.speedMultiplier ?: state.playbackSpeed
+                                        )
                                     )
                             } catch (_: Exception) {
                             }
                             lastCurveSpeedApplied = null
                         }
-                        rawPos
+                        if (timedClip != null) {
+                            com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                                state.project?.clips ?: emptyList(), timedClip, rawPos
+                            )
+                        } else rawPos
                     }
                 } else {
                     // Player-less playback (photo clips): extrapolate from
@@ -613,7 +623,7 @@ fun EditorScreen(
                 if (newPos >= totalDur) {
                     // Seamless loop back to 0 for continuous professional timeline playback
                     vm.setPlayerPosition(0L, forceStateSync = true)
-                    exoPlayer?.seekTo(0L)
+                    exoPlayer?.seekTo(mainPreviewClip?.trimStartMs?.coerceAtLeast(0L) ?: 0L)
                     val tracks = state.project?.audioTracks ?: emptyList()
                     audioPlaybackManager.sync(true, 0L, tracks)
                     lastAudioSyncAt = now
@@ -639,6 +649,7 @@ fun EditorScreen(
     val seekPlayerAndState: (Long) -> Unit = remember(
         exoPlayer, state.durationMs, audioPlaybackManager,
         mainPreviewClip?.id, mainPreviewClip?.speedPoints,
+        mainPreviewClip?.speedMultiplier,
         state.project?.clips
     ) {
         { targetMs ->
@@ -649,16 +660,14 @@ fun EditorScreen(
             // span; outside the span keep the legacy direct seek.
             val curveClip = mainPreviewClip
                 ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
-                ?.takeIf { it.hasSpeedCurve() }
             val playerTarget = if (curveClip != null) {
                 val clips = state.project?.clips ?: emptyList()
                 val clipStart = com.apexstudio.app.domain.model.SpeedCurveMath
                     .timelineStartMsForClip(clips, curveClip)
-                val span = (curveClip.trimEndMs - curveClip.trimStartMs).coerceAtLeast(1L)
                 val outDur = curveClip.effectiveDurationMs()
                 if (clamped in clipStart..(clipStart + outDur)) {
-                    curveClip.trimStartMs + com.apexstudio.app.domain.model.SpeedCurveMath
-                        .outputToSourceMs(clamped - clipStart, span, curveClip.speedPoints)
+                    com.apexstudio.app.domain.model.ClipTimeMapping
+                        .sourceAtProjectTime(clips, curveClip, clamped)
                 } else {
                     clamped
                 }

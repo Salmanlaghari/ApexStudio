@@ -2124,9 +2124,8 @@ private fun TimelineVideoTrack(
                 // Speed-ramped clips occupy their OUTPUT length; during a
                 // live trim drag the preview trims define the span.
                 val clipDur = if (trimPreviewStart != null || trimPreviewEnd != null) {
-                    com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                        effTrimEnd - effTrimStart, clip.speedPoints
-                    ).coerceAtLeast(500L)
+                    clip.copy(trimStartMs = effTrimStart, trimEndMs = effTrimEnd)
+                        .effectiveDurationMs().coerceAtLeast(500L)
                 } else {
                     clip.effectiveDurationMs().coerceAtLeast(500L)
                 }

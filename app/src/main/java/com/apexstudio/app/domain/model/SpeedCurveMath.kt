@@ -32,6 +32,10 @@ object SpeedCurveMath {
     const val MIN_SPEED = 0.1f
     const val MAX_SPEED = 10f
 
+    /** Constant playback-rate policy shared by preview, export, and timeline timing. */
+    fun sanitizeConstantSpeed(speed: Float): Float =
+        if (speed.isFinite() && speed > 0f) speed.coerceIn(MIN_SPEED, MAX_SPEED) else 1f
+
     /** Speed range of the curve editor graph (0.1x..10x, log scale — matches the CapCut velocity editor). */
     const val EDITOR_MIN_SPEED = 0.1f
     const val EDITOR_MAX_SPEED = 10f

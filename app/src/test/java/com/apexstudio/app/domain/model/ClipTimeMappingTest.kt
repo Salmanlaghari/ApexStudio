@@ -42,6 +42,50 @@ class ClipTimeMappingTest {
         assertTrue(kotlin.math.abs(ClipTimeMapping.projectAtSourceTime(listOf(source), source, sourceAtFourSeconds) - 4_000L) <= 4L)
     }
 
+    @Test fun constantMainClipSpeedMapsTimelineDurationAndPreviewSeekInOutputTime() {
+        val fast = clip("fast", 12_000L).copy(
+            trimStartMs = 2_000L,
+            trimEndMs = 10_000L,
+            speedMultiplier = 2f
+        )
+        assertEquals(4_000L, fast.effectiveDurationMs())
+        assertEquals(6_000L, ClipTimeMapping.sourceAtProjectTime(listOf(fast), fast, 2_000L))
+        assertEquals(2_000L, ClipTimeMapping.projectAtSourceTime(listOf(fast), fast, 6_000L))
+        assertEquals(10_000L, ClipTimeMapping.sourceAtProjectTime(listOf(fast), fast, 99_000L))
+        assertEquals(4_000L, ClipTimeMapping.projectAtSourceTime(listOf(fast), fast, 12_000L))
+    }
+
+    @Test fun slowMainClipDurationMovesFollowingClipAndUsesMatchingSourceMapping() {
+        val slow = clip("slow", 12_000L).copy(
+            trimStartMs = 2_000L,
+            trimEndMs = 10_000L,
+            speedMultiplier = 0.5f
+        )
+        val next = clip("next")
+        assertEquals(16_000L, slow.effectiveDurationMs())
+        assertEquals(16_000L, SpeedCurveMath.timelineStartMsForClip(listOf(slow, next), next))
+        assertEquals(4_000L, ClipTimeMapping.sourceAtProjectTime(listOf(slow, next), slow, 4_000L))
+        assertEquals(4_000L, ClipTimeMapping.projectAtSourceTime(listOf(slow, next), slow, 4_000L))
+    }
+
+    @Test fun constantMainSpeedMapsSourceIntervalsToOutputDuration() {
+        val fast = clip("fast").copy(trimStartMs = 2_000L, speedMultiplier = 2f)
+        val slow = clip("slow").copy(trimStartMs = 2_000L, speedMultiplier = 0.5f)
+
+        assertEquals(2_000L, ClipTimeMapping.outputDurationBetweenSourceTimes(fast, 4_000L, 8_000L))
+        assertEquals(8_000L, ClipTimeMapping.outputDurationBetweenSourceTimes(slow, 4_000L, 8_000L))
+        assertEquals(1_000L, ClipTimeMapping.outputOffsetAtSourceTime(fast, 4_000L))
+        assertEquals(4_000L, ClipTimeMapping.outputOffsetAtSourceTime(slow, 4_000L))
+    }
+
+    @Test fun constantSpeedSanitizerMatchesSupportedEditorRange() {
+        assertEquals(2f, SpeedCurveMath.sanitizeConstantSpeed(2f), 0f)
+        assertEquals(10f, SpeedCurveMath.sanitizeConstantSpeed(20f), 0f)
+        assertEquals(0.1f, SpeedCurveMath.sanitizeConstantSpeed(0.01f), 0f)
+        assertEquals(1f, SpeedCurveMath.sanitizeConstantSpeed(Float.NaN), 0f)
+        assertEquals(1f, SpeedCurveMath.sanitizeConstantSpeed(Float.POSITIVE_INFINITY), 0f)
+    }
+
     @Test fun outsideClipTimeClampsToSourceTrimBounds() {
         val overlay = clip("bounded").copy(type = ClipType.OVERLAY, trackIndex = 1,
             timelineOffsetMs = 20_000L, trimStartMs = 2_000L, trimEndMs = 8_000L)

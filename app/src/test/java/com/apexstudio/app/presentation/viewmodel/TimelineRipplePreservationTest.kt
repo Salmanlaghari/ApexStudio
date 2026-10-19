@@ -44,6 +44,19 @@ class TimelineRipplePreservationTest {
     }
 
     @Test
+    fun `constant-speed V1 trim ripples by output duration at 2x and half speed`() {
+        val fast = vm(video("fast").copy(speedMultiplier = 2f), overlay("fast-after", 6_000L))
+        fast.trimClip("fast", 0L, 6_000L)
+        assertEquals(3_000L, fast.state.value.project!!.clips.first { it.id == "fast" }.effectiveDurationMs())
+        assertEquals(4_000L, fast.offset("fast-after"))
+
+        val slow = vm(video("slow").copy(speedMultiplier = 0.5f), overlay("slow-after", 22_000L))
+        slow.trimClip("slow", 0L, 6_000L)
+        assertEquals(12_000L, slow.state.value.project!!.clips.first { it.id == "slow" }.effectiveDurationMs())
+        assertEquals(14_000L, slow.offset("slow-after"))
+    }
+
+    @Test
     fun `V1 delete ripples from cumulative clip start and clamps offsets to zero`() {
         val vm = vm(video("first"), video("second"), overlay("before", 5_000L),
             overlay("at", 10_000L), overlay("after", 25_000L))
@@ -69,6 +82,27 @@ class TimelineRipplePreservationTest {
         val vm = vm(video("v1"), overlay("overlay", 12_000L))
         vm.splitClip("v1", 5_000L)
         assertEquals(12_000L, vm.offset("overlay"))
+    }
+
+    @Test
+    fun `constant-speed V1 split converts project time to source at 2x and half speed`() {
+        val fast = vm(video("fast").copy(speedMultiplier = 2f))
+        fast.splitClip("fast", 2_500L)
+        val fastHalves = fast.state.value.project!!.clips
+        assertEquals(5_000L, fastHalves.first { it.id == "fast" }.trimEndMs)
+        assertEquals(5_000L, fastHalves.last().trimStartMs)
+        assertEquals(2_500L, fastHalves[0].effectiveDurationMs())
+        assertEquals(2_500L, fastHalves[1].effectiveDurationMs())
+        assertEquals(10_000L, fastHalves[1].durationMs)
+
+        val slow = vm(video("slow").copy(speedMultiplier = 0.5f))
+        slow.splitClip("slow", 5_000L)
+        val slowHalves = slow.state.value.project!!.clips
+        assertEquals(2_500L, slowHalves.first { it.id == "slow" }.trimEndMs)
+        assertEquals(2_500L, slowHalves.last().trimStartMs)
+        assertEquals(5_000L, slowHalves[0].effectiveDurationMs())
+        assertEquals(15_000L, slowHalves[1].effectiveDurationMs())
+        assertEquals(10_000L, slowHalves[1].durationMs)
     }
 
     @Test

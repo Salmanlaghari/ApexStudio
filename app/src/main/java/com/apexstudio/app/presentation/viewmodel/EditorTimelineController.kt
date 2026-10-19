@@ -657,9 +657,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 trimTarget.durationMs
             )
             val oldDur = trimTarget.effectiveDurationMs()
-            val newDur = com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                safeEnd - safeStart, trimTarget.speedPoints
-            )
+            val newDur = trimTarget.copy(trimStartMs = safeStart, trimEndMs = safeEnd).effectiveDurationMs()
             val anchor = v1StartBefore(proj.clips, clipId) + minOf(oldDur, newDur)
             rippled = rippleOverlays(proj.clips, anchor, newDur - oldDur)
         }
@@ -880,8 +878,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
         // offset + (sourceSplit - trimStart) — the old code kept the
         // original offset, so both halves overlapped exactly.
         val isOverlay = c.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        val isMainVideo = c.trackIndex == 0 && c.type == ClipType.VIDEO
         val sourceSplit = if (isOverlay) {
             c.trimStartMs + (atMs - c.timelineOffsetMs)
+        } else if (isMainVideo) {
+            ClipTimeMapping.sourceAtProjectTime(p.clips, c, atMs)
         } else atMs
         val safeSplit = sourceSplit.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
 
@@ -890,10 +891,9 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             id = "clip_${System.currentTimeMillis()}_split",
             trimStartMs = safeSplit,
             trimEndMs = originalEnd,
-            // Overlay trim bounds remain in source-time coordinates;
-            // shortening durationMs would make OverlayClip.from() clamp
-            // later trim edits into this right-half duration.
-            durationMs = if (isOverlay) c.durationMs else originalEnd - safeSplit,
+            // Overlay and V1 trim bounds remain in source-time coordinates;
+            // retain the original source-duration ceiling for later trim edits.
+            durationMs = if (isOverlay || isMainVideo) c.durationMs else originalEnd - safeSplit,
             // Second half starts where the first half ends.
             timelineOffsetMs = if (isOverlay) {
                 c.timelineOffsetMs + (safeSplit - c.trimStartMs)
@@ -905,7 +905,7 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
                 updatedClips.add(
                     clip.copy(
                         trimEndMs = safeSplit,
-                        durationMs = if (isOverlay) clip.durationMs else safeSplit - clip.trimStartMs
+                        durationMs = if (isOverlay || isMainVideo) clip.durationMs else safeSplit - clip.trimStartMs
                     )
                 )
                 updatedClips.add(newClip)

@@ -191,16 +191,15 @@ data class MediaClip(
     fun hasSpeedCurve(): Boolean = speedPoints.size >= 2
 
     /**
-     * The clip's length on the timeline (output time). Without a speed
-     * curve this is just the trimmed span. With a curve it is the
-     * integral of 1/speed over the trimmed span — a 0.5x clip plays
-     * twice as long, a 2x clip half as long. Deliberately does NOT
-     * account for the constant [speedMultiplier]: the timeline never
-     * has (pre-PR-E behaviour), and changing that would alter every
-     * existing project with a non-1x constant speed.
+     * Clip length in output/project time. Main-track video duration follows
+     * the same constant or variable speed mapping used by the preview/export;
+     * other media keeps its existing trim-based duration semantics.
      */
-    fun effectiveDurationMs(): Long =
+    fun effectiveDurationMs(): Long = if (trackIndex == 0 && type == ClipType.VIDEO) {
+        ClipTimeMapping.mainClipDurationMs(this)
+    } else {
         SpeedCurveMath.effectiveDurationMs(trimEndMs - trimStartMs, speedPoints)
+    }
 
     /** Timeline duration of an overlay's trimmed source under its variable-speed curve. */
     fun overlayTimelineDurationMs(): Long {

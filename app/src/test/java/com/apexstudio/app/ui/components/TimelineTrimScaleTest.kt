@@ -77,6 +77,25 @@ class TimelineTrimScaleTest {
         assertEquals(2_500L, timelineTrimEndForOutputDeltaMs(clip, -500L))
     }
 
+    @Test fun constantMainSpeedTrimDragMapsOutputDeltaAtTwoXAndHalfX() {
+        val fast = rampedClip().copy(speedPoints = emptyList(), speedMultiplier = 2f)
+        val slow = rampedClip().copy(speedPoints = emptyList(), speedMultiplier = 0.5f)
+
+        val fastStart = timelineTrimStartForOutputDeltaMs(fast, 500L)
+        val fastEnd = timelineTrimEndForOutputDeltaMs(fast, -500L)
+        assertEquals(2_000L, fastStart)
+        assertEquals(2_000L, fastEnd)
+        assertEquals(500L, fast.effectiveDurationMs() - fast.copy(trimStartMs = fastStart).effectiveDurationMs())
+        assertEquals(500L, fast.effectiveDurationMs() - fast.copy(trimEndMs = fastEnd).effectiveDurationMs())
+
+        val slowStart = timelineTrimStartForOutputDeltaMs(slow, 500L)
+        val slowEnd = timelineTrimEndForOutputDeltaMs(slow, -500L)
+        assertEquals(1_250L, slowStart)
+        assertEquals(2_750L, slowEnd)
+        assertEquals(500L, slow.effectiveDurationMs() - slow.copy(trimStartMs = slowStart).effectiveDurationMs())
+        assertEquals(500L, slow.effectiveDurationMs() - slow.copy(trimEndMs = slowEnd).effectiveDurationMs())
+    }
+
     @Test
     fun `ramped trim inversion clamps at source and minimum-span boundaries`() {
         val clip = rampedClip()

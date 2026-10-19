@@ -23,6 +23,38 @@ internal object AudioPlaybackPosition {
     }
 }
 
+/** Pure gain calculation for the MediaPlayer preview path. */
+internal object AudioPlaybackMix {
+    fun isEnabled(track: AudioTrack, tracks: List<AudioTrack>): Boolean =
+        !track.isMuted && (tracks.none { it.isSolo } || track.isSolo)
+
+    fun volumeAt(track: AudioTrack, timelinePositionMs: Long, tracks: List<AudioTrack>): Float {
+        if (!isEnabled(track, tracks)) return 0f
+        if (AudioPlaybackPosition.sourcePositionMs(track, timelinePositionMs) == null) return 0f
+
+        val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
+        val sourceStartMs = track.trimStartMs.coerceAtLeast(0L)
+        val sourceEndMs = minOf(track.trimEndMs, track.sourceEndMs).coerceAtLeast(0L)
+        val playDurationMs = sourceEndMs - sourceStartMs
+        val elapsedMs = timelinePositionMs - timelineStartMs
+        val remainingMs = playDurationMs - elapsedMs
+
+        var envelope = 1f
+        if (track.fadeInMs > 0L && elapsedMs < track.fadeInMs) {
+            envelope = minOf(envelope, elapsedMs.toDouble().div(track.fadeInMs).toFloat())
+        }
+        if (track.fadeOutMs > 0L && remainingMs < track.fadeOutMs) {
+            envelope = minOf(envelope, remainingMs.coerceAtLeast(0L).toDouble().div(track.fadeOutMs).toFloat())
+        }
+
+        // Keyframes are absolute project-timeline values; edge fades are local
+        // to the placed, trimmed playback window and multiply that volume.
+        val keyedVolume = track.volumeAt(timelinePositionMs)
+        val cleanVolume = if (keyedVolume.isFinite()) keyedVolume.coerceIn(0f, 1f) else 0f
+        return (cleanVolume * envelope).coerceIn(0f, 1f)
+    }
+}
+
 /**
  * Multi-track synchronized audio playback engine.
  * Keeps external background music and local audio uploads synchronized with video player playhead.
@@ -49,13 +81,15 @@ class AudioPlaybackManager(private val context: Context) {
         }
 
         for (track in tracks) {
-            if (track.isMuted) {
-                playerMap[track.id]?.setVolume(0f, 0f)
-                continue
-            }
-
+            val volume = AudioPlaybackMix.volumeAt(track, positionMs, tracks)
+            val enabled = AudioPlaybackMix.isEnabled(track, tracks)
+            val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
             var player = playerMap[track.id]
             if (player == null) {
+                // Do not prepare tracks suppressed by mute/solo. Other tracks
+                // stay ready across zero-gain/off-range spans so sync can start
+                // them at the correct source sample on their first active tick.
+                if (!enabled) continue
                 try {
                     val resolvedUri: Uri = when {
                         track.uri.startsWith("content://") || track.uri.startsWith("file://") -> {
@@ -94,16 +128,11 @@ class AudioPlaybackManager(private val context: Context) {
             }
 
             player?.let { p ->
-                // Volume keyframes: interpolated absolute volume at
-                // the timeline playhead (falls back to the scalar
-                // volume when the track has no volume keyframes).
-                // Sync runs at ~250ms cadence, so preview volume
-                // steps at that granularity; export is sample-accurate.
-                val vol = track.effectiveVolumeAt(positionMs)
-                p.setVolume(vol, vol)
+                // Sync runs at ~250ms cadence, so preview envelope changes
+                // follow that cadence; export remains sample-accurate.
+                p.setVolume(volume, volume)
 
-                val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
-                if (sourcePositionMs != null) {
+                if (sourcePositionMs != null && enabled) {
                     if (abs(p.currentPosition - sourcePositionMs) > 80) {
                         p.seekTo(sourcePositionMs, MediaPlayer.SEEK_CLOSEST)
                     }
@@ -124,8 +153,11 @@ class AudioPlaybackManager(private val context: Context) {
         val tracksById = lastTracks.associateBy { it.id }
         for ((id, player) in playerMap) {
             val track = tracksById[id] ?: continue
+            val volume = AudioPlaybackMix.volumeAt(track, positionMs, lastTracks)
+            val enabled = AudioPlaybackMix.isEnabled(track, lastTracks)
+            player.setVolume(volume, volume)
             val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
-            if (sourcePositionMs == null) {
+            if (sourcePositionMs == null || !enabled) {
                 if (player.isPlaying) player.pause()
             } else {
                 player.seekTo(sourcePositionMs, MediaPlayer.SEEK_CLOSEST)

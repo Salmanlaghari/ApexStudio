@@ -192,7 +192,9 @@ class ExportEngine(private val context: Context) {
     private var projectExportJob: Job? = null
 
     private data class ProjectExportRun(
-        val cancelled: AtomicBoolean = AtomicBoolean(false)
+        val cancelled: AtomicBoolean = AtomicBoolean(false),
+        val lastProgress: java.util.concurrent.atomic.AtomicReference<Float> =
+            java.util.concurrent.atomic.AtomicReference(0f)
     )
 
     data class ExportProgressState(
@@ -377,6 +379,7 @@ class ExportEngine(private val context: Context) {
                 var partialFile: File? = null
                 var mixedFile: File? = null
                 try {
+                    publishProjectProgress(run, 0.01f)
                     val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                     if (!outputDir.exists() && !outputDir.mkdirs()) {
                         throw IllegalStateException("Cannot create project export directory")
@@ -413,6 +416,37 @@ class ExportEngine(private val context: Context) {
                         }
                         val videoEffects = buildList<androidx.media3.common.Effect> {
                             add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
+                            if (config.filterPreset != null && config.filterIntensity > 0f) {
+                                add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                            }
+                            if (!config.adjustments.isDefault) {
+                                val matrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
+                                    filterId = null,
+                                    intensity = 0f,
+                                    adjustments = config.adjustments
+                                )
+                                add(com.apexstudio.app.data.filter.ColorMatrixGlEffect(matrix))
+                                val v2 = config.adjustments
+                                if (v2.hasNonMatrixAdjustments) {
+                                    add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                                        adjustments = v2.copy(
+                                            hdr = 0f,
+                                            brilliance = 0f,
+                                            brightness = 0f,
+                                            contrast = 1f,
+                                            saturation = 1f,
+                                            exposure = 0f,
+                                            temperature = 0f,
+                                            tint = 0f
+                                        )
+                                    ))
+                                }
+                            }
+                            if (config.fxPreset != null && config.fxIntensity > 0f) {
+                                add(com.apexstudio.app.data.fx.FxGlEffect(
+                                    config.fxPreset, config.fxIntensity, config.fxSpeed
+                                ))
+                            }
                             speedPair?.second?.let(::add)
                         }
                         val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
@@ -437,6 +471,7 @@ class ExportEngine(private val context: Context) {
 
                     var finishedFile = partial
                     if (config.musicMixTracks.isNotEmpty()) {
+                        publishProjectProgress(run, 0.92f)
                         val mixed = File.createTempFile("apex_project_music_", ".mp4", outputDir)
                         mixedFile = mixed
                         if (!mixed.delete()) throw IllegalStateException("Cannot prepare project music mix output")
@@ -494,6 +529,21 @@ class ExportEngine(private val context: Context) {
 
     private fun isCurrentProjectRun(run: ProjectExportRun): Boolean = synchronized(projectRunLock) {
         projectRun === run && !run.cancelled.get()
+    }
+
+    /** Preserve monotonic visible progress even when Media3 has no early estimate. */
+    private fun publishProjectProgress(run: ProjectExportRun, reported: Float) {
+        var next: Float
+        while (true) {
+            val previous = run.lastProgress.get()
+            next = monotonicProjectExportProgress(previous, reported)
+            if (run.lastProgress.compareAndSet(previous, next)) break
+        }
+        synchronized(projectRunLock) {
+            if (projectRun === run && !run.cancelled.get()) {
+                _exportState.value = _exportState.value.copy(isExporting = true, progress = next)
+            }
+        }
     }
 
     /** Compose callback API is main-looper confined, like the selected-clip route. */
@@ -556,7 +606,9 @@ class ExportEngine(private val context: Context) {
                     .build()
                 transformer = active
                 active!!.start(composition, outputFile.absolutePath)
-                startProgressTracking(active!!)
+                startProgressTracking(active!!) { progress ->
+                    publishProjectProgress(run, 0.01f + progress * 0.89f)
+                }
             } catch (failure: Exception) {
                 active?.let {
                     try { it.cancel() } catch (_: Exception) {}
@@ -1469,7 +1521,8 @@ class ExportEngine(private val context: Context) {
 
     private fun startProgressTracking(
         activeTransformer: Transformer,
-        diagnostics: ExportDiagnosticTrace? = null
+        diagnostics: ExportDiagnosticTrace? = null,
+        onProgress: ((Float) -> Unit)? = null
     ) {
         progressJob?.cancel()
         val progressHolder = ProgressHolder()
@@ -1479,7 +1532,8 @@ class ExportEngine(private val context: Context) {
                 if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
                     diagnostics?.progress(progressHolder.progress)
                     val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
-                    _exportState.value = _exportState.value.copy(progress = p)
+                    if (onProgress != null) onProgress(p)
+                    else _exportState.value = _exportState.value.copy(progress = p)
                 }
                 delay(100)
             }

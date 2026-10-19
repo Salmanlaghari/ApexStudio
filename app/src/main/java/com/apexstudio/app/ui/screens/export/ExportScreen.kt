@@ -75,7 +75,18 @@ fun ExportScreen(
     val selectedBitrateMbps = export.settings.bitrateMbps
     // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
     val videoScope = videoExportScope(editorState)
-    val projectBlockReason = wholeProjectExportUnsupportedReason(editorState, audioState, export.settings)
+    androidx.activity.compose.BackHandler {
+        if (export.isExporting) vm.cancelCurrentExport() else onBack()
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val projectFilterPreset = remember(context, editorState.activeFilterId) {
+        val filterId = editorState.activeFilterId
+        if (filterId == null) null else runCatching {
+            com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
+                .firstOrNull { it.id == filterId }
+        }.getOrNull()
+    }
+    val projectBlockReason = wholeProjectExportUnsupportedReason(editorState, audioState, export.settings, projectFilterPreset)
     val projectTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(projectMainExportClips(editorState))
     val projectDurationMs = (if (wholeProject) projectTimeline.durationMs else videoScope.durationMs).coerceAtLeast(1L)
     val effectiveBitrateMbps = if (selectedBitrateMbps > 0) selectedBitrateMbps else when {
@@ -103,8 +114,8 @@ fun ExportScreen(
         AppTopBar(
             title = "Export",
             subtitle = "ApexStudio • Export Settings",
-            onBack = onBack,
-            onExport = onExport
+            onBack = { if (export.isExporting) vm.cancelCurrentExport() else onBack() },
+            onExport = if (export.isExporting) null else onExport
         )
         Column(
             modifier = Modifier
@@ -119,10 +130,10 @@ fun ExportScreen(
                 FilterChip(selected = !wholeProject, enabled = !export.isExporting,
                     onClick = { wholeProject = false }, label = { Text("Selected clip") })
                 FilterChip(selected = wholeProject, enabled = !export.isExporting,
-                    onClick = { wholeProject = true }, label = { Text("Whole project (basic)") })
+                    onClick = { wholeProject = true }, label = { Text("Whole project") })
             }
             if (wholeProject) {
-                AudioExportWarning(projectBlockReason ?: "Basic whole-project export: main videos in timeline order, with hard cuts. Advanced visual composition is not supported by this route.")
+                AudioExportWarning(projectBlockReason ?: "Whole-project export: main videos in timeline order with global LUT filters, color adjustments and FX. Cuts are hard cuts; photos, visible PiP layers, AR and advanced composition are not supported by this route.")
             } else {
                 VideoExportScopeWarning(videoScope)
             }
@@ -559,12 +570,13 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable(enabled = !export.isExporting && if (wholeProject) projectBlockReason == null else videoScope.baseClip != null) {
+                .clickable(enabled = export.isExporting || if (wholeProject) projectBlockReason == null else videoScope.baseClip != null) {
                     // Single export path: the ViewModel's engine bakes
                     // crop + LUT filter + FX + speed + keyframes + text
                     // overlays into the MP4 and mirrors progress into
                     // vm.export for the button / gauge below.
-                    if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
+                    if (export.isExporting) vm.cancelCurrentExport()
+                    else if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
                         resolution = selectedResolution,
                         fps = selectedFps.toInt(),
                         quality = "high"
@@ -574,7 +586,7 @@ fun ExportScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (export.isExporting) Icons.Default.Refresh
+                    if (export.isExporting) Icons.Default.Close
                     else Icons.Default.IosShare,
                     null,
                     tint = ApexPalette.BgDeep,
@@ -583,8 +595,8 @@ fun ExportScreen(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     if (export.isExporting)
-                        if (export.progress <= 0f) "Preparing export…"
-                        else "Exporting… ${(export.progress * 100).toInt()}%"
+                        if (export.progress <= 0f) "Cancel • Preparing export…"
+                        else "Cancel • Exporting… ${(export.progress * 100).toInt()}%"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
                     else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
                     color = ApexPalette.BgDeep,

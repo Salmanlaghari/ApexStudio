@@ -165,6 +165,11 @@ fun EditorViewModel.registerMainPlayerForAudioEffects(p: androidx.media3.exoplay
     applyAudioPitchToMainPlayer(_audio.value.pitchSemitones)
 }
 
+/** Detach a disposed preview player without clearing a newer registration. */
+fun EditorViewModel.unregisterMainPlayerForAudioEffects(p: androidx.media3.exoplayer.ExoPlayer) {
+    if (mainPlayerRef === p) registerMainPlayerForAudioEffects(null)
+}
+
 internal fun EditorViewModel.applyAudioPitchToMainPlayer(semitones: Float) {
     val p = mainPlayerRef ?: return
     val pitch = Math.pow(2.0, (semitones / 12.0).toDouble()).toFloat()

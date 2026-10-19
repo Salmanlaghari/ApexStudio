@@ -1,6 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
@@ -36,9 +38,29 @@ class EditorProjectExportControllerTest {
         assertEquals(listOf(voice), buildProjectExportConfig(edited, AudioStudioState(), settings).musicMixTracks)
     }
 
+    @Test fun `global filter FX and grading are carried into project config`() {
+        val lut = FilterPreset("cinema", "Cinema", "Cinematic", "luts/cinema.cube")
+        val edited = state.copy(
+            activeFilterId = lut.id,
+            filterIntensity = 0.65f,
+            activeFxId = FxPreset.GLITCH.id,
+            fxIntensity = 0.4f,
+            fxSpeed = 1.5f,
+            adjustments = VideoAdjustments(brightness = 0.12f, saturation = 1.1f)
+        )
+        val config = buildProjectExportConfig(edited, AudioStudioState(), settings, lut)
+        assertEquals(lut, config.filterPreset)
+        assertEquals(0.65f, config.filterIntensity, 0f)
+        assertEquals(FxPreset.GLITCH, config.fxPreset)
+        assertEquals(0.4f, config.fxIntensity, 0f)
+        assertEquals(1.5f, config.fxSpeed, 0f)
+        assertEquals(edited.adjustments, config.adjustments)
+        assertNull(wholeProjectExportUnsupportedReason(edited, AudioStudioState(), settings, lut))
+    }
+
     @Test fun `unsupported edits block project mode rather than dropping from output`() {
-        assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFxId = "glitch"), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFilterId = "cinema"), AudioStudioState(), settings))
+        assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFxId = "not-a-real-fx"), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeArFilterId = "festival"), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(project = state.project!!.copy(
             clips = listOf(first.copy(type = ClipType.IMAGE), second))), AudioStudioState(), settings))

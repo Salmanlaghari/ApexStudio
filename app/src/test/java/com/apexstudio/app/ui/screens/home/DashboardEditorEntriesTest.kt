@@ -35,6 +35,23 @@ class DashboardEditorEntriesTest {
     }
 
     @Test
+    fun largeFontsStackEntriesEvenOnWiderPhones() {
+        compose.setContent {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, 1.8f)
+            ) {
+                Box(Modifier.width(420.dp)) {
+                    DashboardEditorEntries(onImageEditing = {}, onVideoEditor = {})
+                }
+            }
+        }
+        val image = compose.onNodeWithTag("dashboard-image-editing-session").fetchSemanticsNode().boundsInRoot
+        val video = compose.onNodeWithTag("dashboard-video-editor").fetchSemanticsNode().boundsInRoot
+        assertTrue(video.top >= image.bottom)
+    }
+
+    @Test
     fun imageAndVideoEntriesAreVisibleAndInvokeTheirEditorActions() {
         var imageActionCount = 0
         var videoActionCount = 0

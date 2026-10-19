@@ -307,7 +307,8 @@ enum class PhotoEditTab(val label: String) {
     ADJUST("Adjust"),
     FILTERS("Filters"),
     ROTATE("Rotate"),
-    MOTION("Motion")
+    MOTION("Motion"),
+    CANVAS("Canvas")
 }
 
 data class ExportState(

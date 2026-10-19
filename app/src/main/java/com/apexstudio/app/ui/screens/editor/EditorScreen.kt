@@ -101,7 +101,7 @@ fun EditorScreen(
     var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
-    var isCoverMode by remember { mutableStateOf(true) }
+    var isCoverMode by remember { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
     var showAiPanel by remember { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
@@ -272,7 +272,11 @@ fun EditorScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            exoPlayer?.release()
+            val player = exoPlayer
+            // Clear only this player's registration before release. An older
+            // disposal must not unregister a newer player attached to the VM.
+            if (player != null) vm.unregisterMainPlayerForAudioEffects(player)
+            player?.release()
             exoPlayer = null
             overlayPlayer?.release()
             overlayPlayer = null
@@ -335,6 +339,7 @@ fun EditorScreen(
         val player = exoPlayer ?: return@LaunchedEffect
         val clip = mainPreviewClip
         if (clip == null) {
+            vm.setVideoSize(0, 0)
             try {
                 player.stop()
                 player.clearMediaItems()
@@ -346,6 +351,7 @@ fun EditorScreen(
         // not ExoPlayer — feeding a JPEG to the player would just error.
         val isPhotoClip = clip.type == ClipType.IMAGE
         if (isPhotoClip) {
+            vm.setVideoSize(0, 0)
             try {
                 player.stop()
                 player.clearMediaItems()
@@ -369,6 +375,9 @@ fun EditorScreen(
         if (currentUri != playableUri) {
             try {
                 vm.setPlayerReady(false)
+                // Dimensions belong to the previously decoded item until the
+                // new player's onVideoSizeChanged callback arrives.
+                vm.setVideoSize(0, 0)
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 // The player reads source time, while the editor starts at
@@ -979,6 +988,7 @@ private fun PhotoEditSheet(
                 onFlipH = { vm.togglePhotoFlipHorizontal(photoEditClip.id) },
                 onFlipV = { vm.togglePhotoFlipVertical(photoEditClip.id) },
                 onKenBurns = { vm.setPhotoKenBurns(photoEditClip.id, it) },
+                onCanvasChange = { canvas -> vm.setPhotoCanvas(photoEditClip.id, canvas) },
                 onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
                 onClose = { vm.closePhotoEditPanel() }
             )

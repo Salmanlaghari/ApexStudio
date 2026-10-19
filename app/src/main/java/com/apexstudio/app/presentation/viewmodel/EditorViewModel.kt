@@ -122,6 +122,9 @@ class EditorViewModel(
     internal val _export = MutableStateFlow(ExportState())
     val export: StateFlow<ExportState> = _export.asStateFlow()
 
+    @Volatile internal var photoExportRun: Any? = null
+    internal var photoExportJob: Job? = null
+
     internal val _color = MutableStateFlow(ColorToolState())
     val color: StateFlow<ColorToolState> = _color.asStateFlow()
 

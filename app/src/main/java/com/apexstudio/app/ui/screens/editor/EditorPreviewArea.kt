@@ -40,6 +40,8 @@ import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
+internal const val DEFAULT_PREVIEW_COVER_MODE = false
+
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
@@ -66,7 +68,7 @@ fun VideoPreviewArea(
     // Keyframe upsert for canvas gestures while the selected overlay
     // has keyframes (gesture edits the keyframe, not pip base values).
     onUpsertOverlayKeyframe: ((id: String, timeMs: Long, x: Float, y: Float, scale: Float, rotationDeg: Float, opacity: Float, persist: Boolean) -> Unit)? = null,
-    isCoverMode: Boolean = true,
+    isCoverMode: Boolean = DEFAULT_PREVIEW_COVER_MODE,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
     filterIntensity: Float = 1.0f,
@@ -147,12 +149,16 @@ fun VideoPreviewArea(
         }
     }
     var photoAspectRatio by remember(photoClip?.id) { mutableStateOf<Float?>(null) }
-    val mediaAspectRatio = if (photoClip != null) {
-        photoAspectRatio
-    } else {
-        // These dimensions come from Player.onVideoSizeChanged, the same output
-        // dimensions PlayerView uses. Do not apply the source crop a second time.
-        displayedVideoAspect(videoWidth, videoHeight, exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f)
+    val mediaAspectRatio = when {
+        photoClip != null -> photoAspectRatio
+        else -> previewContentAspect(
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
+            effectOutputAspect = faceCropConfig?.track?.outputAspectRatio
+                ?: videoCropOutputAspect(videoWidth, videoHeight,
+                    exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f, videoCrop)
+        )
     }
     // Photo crop handles and dynamic face output force FIT regardless of COVER.
     val contentCoverMode = if (photoClip != null) isCoverMode && !photoCropActive
@@ -486,6 +492,33 @@ fun VideoPreviewArea(
 internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float): Float? =
     (width.toFloat() * pixelAspect / height.toFloat())
         .takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
+
+/**
+ * Aspect ratio of pixels actually presented by the preview. A dynamic face crop
+ * changes Media3's effect output size while Player.videoSize can still describe
+ * the decoded source; use the effect's fixed output aspect for overlay clipping.
+ */
+internal fun previewContentAspect(
+    videoWidth: Int,
+    videoHeight: Int,
+    pixelAspect: Float,
+    effectOutputAspect: Float? = null
+): Float? = effectOutputAspect?.takeIf { it.isFinite() && it > 0f }
+    ?: displayedVideoAspect(videoWidth, videoHeight, pixelAspect)
+
+/** Aspect of the frame emitted by the manual crop shader, not its uncropped input. */
+internal fun videoCropOutputAspect(
+    videoWidth: Int,
+    videoHeight: Int,
+    pixelAspect: Float,
+    crop: VideoCropSettings?
+): Float? {
+    val sourceAspect = displayedVideoAspect(videoWidth, videoHeight, pixelAspect) ?: return null
+    if (crop == null || crop.isFullFrame) return null
+    val safeCrop = crop.sanitized()
+    return (sourceAspect * safeCrop.width / safeCrop.height)
+        .takeIf { it.isFinite() && it > 0f }
+}
 
 internal data class PreviewContentBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 

@@ -172,10 +172,11 @@ object PhotoEditRenderer {
             // copy fails (OOM), recycle the decoded bitmap to relieve memory
             // pressure and return null instead of a potentially immutable
             // bitmap that would crash downstream Canvas ops.
-            bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: run {
-                try { bitmap.recycle() } catch (_: Exception) {}
-                null
-            }
+            val software = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            // The decoder's private allocation is not the returned software
+            // bitmap. Release it on success too, not just on a failed copy.
+            if (software !== bitmap) bitmap.recycle()
+            software
         } catch (e: Exception) {
             Log.w(TAG, "loadBitmap failed for $uriString", e)
             null
@@ -237,7 +238,11 @@ object PhotoEditRenderer {
                         ?: LutBitmapCache.getOrLoad(context, preset)
                 }
             }
-            applyEdits(src, settings, lutTexture)
+            val rendered = applyEdits(src, settings, lutTexture)
+            // renderEdited owns its decode; applyEdits intentionally doesn't.
+            // This is safe here, unlike recycling a displayed preview frame.
+            if (rendered !== src) src.recycle()
+            rendered
         } catch (e: Exception) {
             Log.w(TAG, "renderEdited failed", e)
             src
@@ -290,6 +295,19 @@ object PhotoEditRenderer {
         // 5. LUT filter — the real .cube data, same as export.
         if (lutTexture != null && settings.filterId != null && settings.filterIntensity > 0f) {
             advance(LutBitmapCache.applyToBitmap(cur, lutTexture, settings.filterIntensity))
+        }
+        // 6. Canvas is composed AFTER grading: filters affect the image only,
+        // never the user's solid background. Output stays within the decode budget.
+        val canvasAspect = settings.canvas.aspectRatio
+        if (canvasAspect != null) {
+            val geometry = PhotoCanvasGeometry.calculate(cur.width, cur.height, canvasAspect, settings.canvas.fill)
+            val out = Bitmap.createBitmap(geometry.width, geometry.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(out)
+            canvas.drawColor((settings.canvas.backgroundArgb or 0xFF000000L).toInt())
+            canvas.drawBitmap(cur, null, android.graphics.RectF(
+                geometry.left, geometry.top, geometry.right, geometry.bottom
+            ), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+            advance(out)
         }
         return cur
     }

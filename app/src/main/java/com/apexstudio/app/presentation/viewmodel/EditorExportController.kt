@@ -8,6 +8,7 @@ import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -348,9 +349,11 @@ fun EditorViewModel.startPhotoExport(
     // Freeze project layers and settings before the asynchronous photo encoding.
     val snapshot = _state.value
     val config = buildPhotoExportConfig(snapshot, clip, resolution, fps, quality, aspectRatio, bitrateMbps)
+    val run = Any()
+    photoExportRun = run
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
-    viewModelScope.launch(Dispatchers.IO) {
+    photoExportJob = viewModelScope.launch(Dispatchers.IO) {
         var tempVideo: File? = null
         try {
             val trimmedMs = photoExportSourceDurationMs(clip)
@@ -366,7 +369,11 @@ fun EditorViewModel.startPhotoExport(
             }
 
             val previousEngineState = engine.exportState.value
-            engine.startExport(android.net.Uri.fromFile(tempVideo).toString(), config)
+            kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+                coroutineContext.ensureActive()
+                if (photoExportRun !== run) throw kotlinx.coroutines.CancellationException("Photo export cancelled")
+                engine.startExport(android.net.Uri.fromFile(tempVideo).toString(), config)
+            }
             // Wait for the export to terminate with a proper timeout (30 min cap
             // so a stuck export can't leak the file or the coroutine).
             // Ignore the preceding export's completion: startExport dispatches
@@ -386,16 +393,20 @@ fun EditorViewModel.startPhotoExport(
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
-                engine.cancelExport()
+                if (photoExportRun === run) engine.cancelExport()
             }
             throw cancelled
         } catch (e: Exception) {
             Log.e("EditorViewModel", "Photo export failed", e)
-            _export.update { it.copy(isExporting = false, error = e.message) }
+            if (photoExportRun === run) _export.update { it.copy(isExporting = false, error = e.message) }
         } finally {
             try {
                 tempVideo?.delete()
             } catch (_: Exception) {
+            }
+            if (photoExportRun === run) {
+                photoExportRun = null
+                photoExportJob = null
             }
         }
     }

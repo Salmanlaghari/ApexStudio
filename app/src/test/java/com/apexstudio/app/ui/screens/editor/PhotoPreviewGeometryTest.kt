@@ -82,7 +82,7 @@ class PhotoPreviewGeometryTest {
     fun recompositionUpdatesTheInflatedNativePlayerViewsActualResizeMode() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val player = ExoPlayer.Builder(context).build()
-        val coverMode = mutableStateOf(true)
+        val coverMode = mutableStateOf(DEFAULT_PREVIEW_COVER_MODE)
         var composeRoot: View? = null
         var playerView: PlayerView? = null
         try {
@@ -102,15 +102,15 @@ class PhotoPreviewGeometryTest {
             }
             assertNotNull("VideoPreviewArea should inflate view_player.xml", playerView)
             val capturedPlayerView = checkNotNull(playerView)
-            assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, capturedPlayerView.resizeMode)
-
-            compose.runOnUiThread { coverMode.value = false }
-            compose.waitForIdle()
             assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, capturedPlayerView.resizeMode)
 
             compose.runOnUiThread { coverMode.value = true }
             compose.waitForIdle()
             assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, capturedPlayerView.resizeMode)
+
+            compose.runOnUiThread { coverMode.value = false }
+            compose.waitForIdle()
+            assertEquals(AspectRatioFrameLayout.RESIZE_MODE_FIT, capturedPlayerView.resizeMode)
         } finally {
             compose.runOnUiThread { player.release() }
         }
@@ -137,6 +137,31 @@ class PhotoPreviewGeometryTest {
         assertNull(displayedVideoAspect(0, 1080, 1f))
         assertNull(displayedVideoAspect(1920, 0, 1f))
         assertNull(displayedVideoAspect(1920, 1080, Float.NaN))
+    }
+
+    @Test
+    fun effectOutputAspectWinsOverDecoderAspectForPreviewOverlayBounds() {
+        // The face-crop GL effect emits a fixed portrait frame even when the
+        // underlying decoder still reports the landscape source dimensions.
+        assertEquals(
+            9f / 16f,
+            previewContentAspect(1920, 1080, 1f, effectOutputAspect = 9f / 16f)!!,
+            0.0001f
+        )
+        // Invalid/missing effect output metadata safely falls back to decoder size.
+        assertEquals(16f / 9f, previewContentAspect(1920, 1080, 1f, 0f)!!, 0.0001f)
+        assertNull(previewContentAspect(0, 0, 1f, Float.NaN))
+    }
+
+    @Test
+    fun manualCropOutputAspectUsesCroppedPixelsNotOriginalFrameDimensions() {
+        val crop = com.apexstudio.app.domain.model.VideoCropSettings(
+            left = 0.25f, top = 0f, right = 0.75f, bottom = 1f
+        )
+        // Cropping a 16:9 source to its central half yields an 8:9 output.
+        assertEquals(8f / 9f, videoCropOutputAspect(1920, 1080, 1f, crop)!!, 0.0001f)
+        assertNull(videoCropOutputAspect(1920, 1080, 1f, null))
+        assertNull(videoCropOutputAspect(0, 1080, 1f, crop))
     }
 
     @Test

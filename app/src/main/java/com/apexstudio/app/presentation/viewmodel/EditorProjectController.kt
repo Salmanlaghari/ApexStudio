@@ -46,8 +46,7 @@ internal fun EditorViewModel.loadProject() {
         // MediaRepository stub. The two stay in sync because every
         // mutation auto-saves back to DataStore.
         val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
-        val p = projectId?.let { id -> projects.firstOrNull { it.id == id } }
-            ?: projects.firstOrNull()
+        val p = resolveEditorProject(projects, projectId)
         if (p == null) {
             _state.update { it.copy(project = null, durationMs = 0L) }
             return@launch

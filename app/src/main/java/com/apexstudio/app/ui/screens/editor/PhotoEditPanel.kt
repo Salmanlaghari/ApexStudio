@@ -81,7 +81,8 @@ fun PhotoEditPanel(
     onKenBurns: (Boolean) -> Unit = {},
     onResetAll: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCanvasChange: (com.apexstudio.app.domain.model.PhotoCanvasSettings) -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -131,6 +132,7 @@ fun PhotoEditPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -138,7 +140,6 @@ fun PhotoEditPanel(
                 val selected = t == tab
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF1E1E2E))
                         .border(
@@ -147,7 +148,7 @@ fun PhotoEditPanel(
                             RoundedCornerShape(10.dp)
                         )
                         .clickable { onTabChange(t) }
-                        .padding(vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -186,6 +187,7 @@ fun PhotoEditPanel(
                 kenBurns = settings.kenBurns,
                 onKenBurns = onKenBurns
             )
+            PhotoEditTab.CANVAS -> PhotoCanvasPanel(settings.canvas, onCanvasChange)
         }
         Spacer(Modifier.height(8.dp))
     }

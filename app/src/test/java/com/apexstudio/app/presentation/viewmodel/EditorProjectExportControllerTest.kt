@@ -38,6 +38,8 @@ class EditorProjectExportControllerTest {
 
     @Test fun `unsupported edits block project mode rather than dropping from output`() {
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFxId = "glitch"), AudioStudioState(), settings))
+        assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFilterId = "cinema"), AudioStudioState(), settings))
+        assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeArFilterId = "festival"), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(project = state.project!!.copy(
             clips = listOf(first.copy(type = ClipType.IMAGE), second))), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state, AudioStudioState(reverbEnabled = true), settings))

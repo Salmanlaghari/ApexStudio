@@ -63,6 +63,7 @@ data class FilterManifest(
                     // is decided deliberately below.
                     val lowerId = id.lowercase()
                     val category = when {
+                        lowerId.startsWith("creator_") -> "Creator Essentials"
                         "vintage" in lowerId -> "Vintage"
                         // Cold tones: check before "bw"/"film" so cool LUTs aren't swallowed
                         "cool" in lowerId || "cold" in lowerId ||

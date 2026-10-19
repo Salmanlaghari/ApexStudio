@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -101,6 +102,16 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                         }
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                ActionPill(
+                    icon = Icons.Default.Share,
+                    label = "Share crash evidence",
+                    color = ApexPalette.NeonCyan,
+                    enabled = log.exists,
+                    onClick = {
+                        com.apexstudio.app.data.crashlog.CrashReportShare.share(context)
+                    }
+                )
                 Spacer(Modifier.height(10.dp))
                 Box(
                     modifier = Modifier
@@ -109,6 +120,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                         .clip(RoundedCornerShape(14.dp))
                         .background(ApexPalette.BgBase)
                         .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                        .verticalScroll(rememberScrollState())
                         .padding(12.dp)
                 ) {
                     if (log.exists && log.content.isNotBlank()) {
@@ -120,7 +132,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                         )
                     } else {
                         Text(
-                            "No crash log available.\n\nNote: Native/NDK crashes are not captured by this handler.",
+                            "No crash log available.\n\nOS exit evidence is collected after relaunch on Android 11+. Native tombstones are included when retained by Android 12+.",
                             color = ApexPalette.Danger,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -150,8 +162,8 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 HelpItem("1.", "Reproduce the crash in the app (e.g. import music).")
                 HelpItem("2.", "Open Settings → View Crash Log.")
-                HelpItem("3.", "Screenshot or copy the red diagnostic text.")
-                HelpItem("4.", "Share the screenshot for an evidence-based fix.")
+                HelpItem("3.", "Tap Share crash evidence to share the log and any retained native tombstone.")
+                HelpItem("4.", "A last-operation breadcrumb alone does not identify the crash cause.")
             }
         }
 

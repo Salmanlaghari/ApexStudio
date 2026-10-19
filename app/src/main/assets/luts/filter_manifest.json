@@ -1,6 +1,18 @@
 {
   "categories": [
     {
+      "id": "creator_essentials",
+      "name": "Creator Essentials",
+      "filters": [
+        "creator_clean",
+        "creator_peach",
+        "creator_travel",
+        "creator_matte",
+        "creator_night",
+        "creator_mono"
+      ]
+    },
+    {
       "id": "cinematic",
       "name": "Cinematic",
       "filters": [
@@ -147,6 +159,42 @@
     }
   ],
   "filters": [
+    {
+      "id": "creator_clean",
+      "name": "Clean Studio",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_clean.cube"
+    },
+    {
+      "id": "creator_peach",
+      "name": "Peach Portrait",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_peach.cube"
+    },
+    {
+      "id": "creator_travel",
+      "name": "Travel Pop",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_travel.cube"
+    },
+    {
+      "id": "creator_matte",
+      "name": "Matte Story",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_matte.cube"
+    },
+    {
+      "id": "creator_night",
+      "name": "Night Editorial",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_night.cube"
+    },
+    {
+      "id": "creator_mono",
+      "name": "Soft Silver",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_mono.cube"
+    },
     {
       "id": "teal_orange",
       "name": "Teal & Orange",

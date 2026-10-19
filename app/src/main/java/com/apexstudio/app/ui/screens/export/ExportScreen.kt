@@ -366,9 +366,9 @@ fun ExportScreen(
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                if (export.isExporting) "Exporting…"
-                                else if (export.progress > 0f) "Export Complete"
-                                else "Estimated File Size",
+                                exportProgressLabel(export.isExporting, export.progress)
+                                    ?: if (export.progress > 0f) "Export Complete"
+                                    else "Estimated File Size",
                                 color = ApexPalette.TextTertiary,
                                 fontSize = 9.sp
                             )
@@ -583,7 +583,8 @@ fun ExportScreen(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     if (export.isExporting)
-                        "Exporting… ${(export.progress * 100).toInt()}%"
+                        if (export.progress <= 0f) "Preparing export…"
+                        else "Exporting… ${(export.progress * 100).toInt()}%"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
                     else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
                     color = ApexPalette.BgDeep,

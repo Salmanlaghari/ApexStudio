@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -125,6 +127,8 @@ fun VideoPreviewArea(
     photoClip: MediaClip? = null,
     photoCropActive: Boolean = false,
     onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
+    videoWidth: Int = 0,
+    videoHeight: Int = 0,
     // Main-track video crop; IMAGE clips use photoClip.photoEdit.crop instead.
     videoCrop: VideoCropSettings? = null,
     faceCropConfig: FaceCropRenderConfig? = null,
@@ -142,6 +146,19 @@ fun VideoPreviewArea(
             player.setVideoEffects(emptyList())
         }
     }
+    var photoAspectRatio by remember(photoClip?.id) { mutableStateOf<Float?>(null) }
+    val mediaAspectRatio = if (photoClip != null) {
+        photoAspectRatio
+    } else {
+        // These dimensions come from Player.onVideoSizeChanged, the same output
+        // dimensions PlayerView uses. Do not apply the source crop a second time.
+        displayedVideoAspect(videoWidth, videoHeight, exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f)
+    }
+    // Photo crop handles and dynamic face output force FIT regardless of COVER.
+    val contentCoverMode = if (photoClip != null) isCoverMode && !photoCropActive
+        else faceCropConfig == null && isCoverMode
+    val mediaContentModifier = Modifier.fillMaxSize().clipToPreviewContent(mediaAspectRatio, contentCoverMode)
+
     // Dynamic face output already has its exact target aspect; never zoom-crop it a second time.
     val currentResizeMode = if (faceCropConfig != null) {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -194,7 +211,8 @@ fun VideoPreviewArea(
                     cropActive = photoCropActive,
                     onCropChange = { onPhotoCropRectChange?.invoke(it) },
                     modifier = Modifier.fillMaxSize(),
-                    isCoverMode = isCoverMode
+                    isCoverMode = isCoverMode,
+                    onImageAspectRatioChange = { photoAspectRatio = it }
                 )
             } else if (exoPlayer != null) {
                 AndroidView(
@@ -232,7 +250,7 @@ fun VideoPreviewArea(
                 saturationMultiplier = keyframedSaturationFactor,
                 compareMode = lutCompareMode,
                 splitPosition = lutCompareSplitPosition,
-                modifier = Modifier.fillMaxSize()
+                modifier = mediaContentModifier
             )
 
             // Live Real-Time GPUImage Filter & Stylistic Effects Overlay
@@ -240,14 +258,14 @@ fun VideoPreviewArea(
                 config = gpuFilterConfig,
                 compareMode = gpuFilterCompareMode,
                 splitPosition = gpuFilterSplitPosition,
-                modifier = Modifier.fillMaxSize()
+                modifier = mediaContentModifier
             )
 
             // Real-time 3D Chroma Key Live Overlay
             if (chromaKeySettings.enabled) {
                 ChromaKeyPreviewOverlay(
                     settings = chromaKeySettings,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = mediaContentModifier
                 )
             }
 
@@ -257,7 +275,7 @@ fun VideoPreviewArea(
                     fxId = activeFxId,
                     intensity = fxIntensity,
                     isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = mediaContentModifier,
                     speed = fxSpeed
                 )
             }
@@ -269,7 +287,7 @@ fun VideoPreviewArea(
                     intensity = arFilterIntensity,
                     customText = arFilterCustomText,
                     isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = mediaContentModifier
                 )
             }
 
@@ -463,3 +481,42 @@ fun VideoPreviewArea(
     }
 }
 
+
+
+internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float): Float? =
+    (width.toFloat() * pixelAspect / height.toFloat())
+        .takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
+
+internal data class PreviewContentBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/** Centered media frame for FIT; COVER fills the viewport because the player zoom-crops it. */
+internal fun previewContentBounds(
+    viewportWidth: Float,
+    viewportHeight: Float,
+    mediaAspectRatio: Float?,
+    isCoverMode: Boolean
+): PreviewContentBounds? {
+    if (viewportWidth <= 0f || viewportHeight <= 0f) return null
+    val aspect = mediaAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: return null
+    if (isCoverMode) return PreviewContentBounds(0f, 0f, viewportWidth, viewportHeight)
+    val viewportAspect = viewportWidth / viewportHeight
+    return if (viewportAspect > aspect) {
+        val width = viewportHeight * aspect
+        val left = (viewportWidth - width) / 2f
+        PreviewContentBounds(left, 0f, left + width, viewportHeight)
+    } else {
+        val height = viewportWidth / aspect
+        val top = (viewportHeight - height) / 2f
+        PreviewContentBounds(0f, top, viewportWidth, top + height)
+    }
+}
+
+private fun Modifier.clipToPreviewContent(mediaAspectRatio: Float?, isCoverMode: Boolean): Modifier =
+    drawWithContent {
+        val bounds = previewContentBounds(size.width, size.height, mediaAspectRatio, isCoverMode)
+        if (bounds == null) {
+            drawContent()
+        } else {
+            clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) { this@drawWithContent.drawContent() }
+        }
+    }

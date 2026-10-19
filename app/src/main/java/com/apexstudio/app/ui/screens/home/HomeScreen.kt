@@ -142,26 +142,46 @@ internal fun DashboardEditorEntries(
     onImageEditing: () -> Unit,
     onVideoEditor: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        DashboardEditorEntry(
-            title = "Image Editing Session",
-            subtitle = "Choose a photo to edit",
-            icon = Icons.Default.Image,
-            testTag = "dashboard-image-editing-session",
-            modifier = Modifier.weight(1f),
-            onClick = onImageEditing
-        )
-        DashboardEditorEntry(
-            title = "Video Editor",
-            subtitle = "Choose a video to edit",
-            icon = Icons.Default.Movie,
-            testTag = "dashboard-video-editor",
-            modifier = Modifier.weight(1f),
-            onClick = onVideoEditor
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 380.dp) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onVideoEditor
+                )
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.weight(1f),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.weight(1f),
+                    onClick = onVideoEditor
+                )
+            }
+        }
     }
 }
 

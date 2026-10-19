@@ -182,6 +182,8 @@ class ExportEngine(private val context: Context) {
 
     private var transformer: Transformer? = null
     private var progressJob: Job? = null
+    /** Work before Transformer.start(), so Cancel also stops slow preflight/setup. */
+    private var exportPreparationJob: Job? = null
     private var postMixJob: Job? = null
     private var overlayAudioTransformer: Transformer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -601,9 +603,12 @@ class ExportEngine(private val context: Context) {
         outputFileName: String = "apex_studio_export.mp4"
     ) {
         if (!reserveNonProjectExport()) return
-        CoroutineScope(Dispatchers.IO).launch {
+        exportPreparationJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
+                val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
+                diagnostics.stage("video_preparation_started")
+                currentCoroutineContext().ensureActive()
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
                 if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
@@ -642,46 +647,38 @@ class ExportEngine(private val context: Context) {
                     val (tw, th) = AspectCropTransformation.targetSizeFor(
                         config.resolution, config.aspectRatio
                     )
-                    try {
-                        videoEffects.add(AspectCropTransformation(tw, th))
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Aspect-ratio transform failed", e)
-                    }
+                    videoEffects.add(AspectCropTransformation(tw, th))
                 }
 
                 // Picture-in-Picture overlays: composite each overlay clip as a true
                 // PiP in the export, matching the preview's bottom-end corner placement.
                 // Each overlay gets its own GlEffect instance (chained like text overlays).
                 config.pipOverlays.forEach { pip ->
-                    try {
-                        pipOverlayEffects.add(
-                            com.apexstudio.app.data.effect.PipOverlayGlEffect(
-                                context = context,
-                                overlayUri = pip.uri,
-                                offsetMs = pip.offsetMs,
-                                trimStartMs = pip.trimStartMs,
-                                trimEndMs = pip.trimEndMs,
-                                speedPoints = pip.speedPoints,
-                                widthFraction = pip.widthFraction,
-                                centerX = pip.centerX,
-                                centerY = pip.centerY,
-                                rotationDeg = pip.rotationDeg,
-                                opacity = pip.opacity,
-                                mask = pip.mask,
-                                aspect = pip.aspect,
-                                blendMode = pip.blendMode,
-                                borderWidth = pip.borderWidth,
-                                borderColor = pip.borderColor,
-                                shadow = pip.shadow,
-                                flipH = pip.flipH,
-                                flipV = pip.flipV,
-                                keyframes = pip.keyframes,
-                                videoCrop = pip.videoCrop
-                            )
+                    pipOverlayEffects.add(
+                        com.apexstudio.app.data.effect.PipOverlayGlEffect(
+                            context = context,
+                            overlayUri = pip.uri,
+                            offsetMs = pip.offsetMs,
+                            trimStartMs = pip.trimStartMs,
+                            trimEndMs = pip.trimEndMs,
+                            speedPoints = pip.speedPoints,
+                            widthFraction = pip.widthFraction,
+                            centerX = pip.centerX,
+                            centerY = pip.centerY,
+                            rotationDeg = pip.rotationDeg,
+                            opacity = pip.opacity,
+                            mask = pip.mask,
+                            aspect = pip.aspect,
+                            blendMode = pip.blendMode,
+                            borderWidth = pip.borderWidth,
+                            borderColor = pip.borderColor,
+                            shadow = pip.shadow,
+                            flipH = pip.flipH,
+                            flipV = pip.flipV,
+                            keyframes = pip.keyframes,
+                            videoCrop = pip.videoCrop
                         )
-                    } catch (e: Exception) {
-                        Log.w(TAG, "PiP overlay effect creation failed for ${pip.uri}", e)
-                    }
+                    )
                 }
 
                 // Mono phone recordings and stereo sources must both obey gain/mute.
@@ -871,13 +868,14 @@ class ExportEngine(private val context: Context) {
                     pipOverlayEffects = pipOverlayEffects,
                     foregroundEffects = foregroundEffects
                 )
+                currentCoroutineContext().ensureActive()
+                diagnostics.stage("video_preparation_completed")
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
                     .setEffects(Effects(audioProcessors, composedVideoEffects))
                     .build()
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
                 //    (+ Pro Phase 1 custom bitrate override when set)
-                val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 startTransformerOnApplicationThread(
                     factory = {
                         buildHardwareTransformer(
@@ -890,6 +888,8 @@ class ExportEngine(private val context: Context) {
                     start = { it.start(editedMediaItem, outputFile.absolutePath) },
                     diagnostics = diagnostics
                 )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "startExport failed", e)
                 mainHandler.post {
@@ -1098,7 +1098,7 @@ class ExportEngine(private val context: Context) {
         outputFileName: String = "apex_studio_audio.m4a"
     ) {
         if (!reserveNonProjectExport()) return
-        CoroutineScope(Dispatchers.IO).launch {
+        exportPreparationJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
                 if (sources.isEmpty()) {
@@ -1117,6 +1117,7 @@ class ExportEngine(private val context: Context) {
 
                 val placedItems = buildPlacedAudioItems(config, selectedSources.sources)
                 val composition = StandaloneAudioComposition.build(placedItems)
+                currentCoroutineContext().ensureActive()
 
                 startTransformerOnApplicationThread(factory = { Transformer.Builder(context)
                     .setLooper(Looper.getMainLooper())
@@ -1151,6 +1152,8 @@ class ExportEngine(private val context: Context) {
                     })
                     .build()
                 }, start = { it.start(composition, outputFile.absolutePath) })
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "startAudioExport failed", e)
                 mainHandler.post {
@@ -1172,7 +1175,7 @@ class ExportEngine(private val context: Context) {
         outputFileName: String = "apex_template_export.mp4"
     ) {
         if (!reserveNonProjectExport()) return
-        CoroutineScope(Dispatchers.IO).launch {
+        exportPreparationJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
 
@@ -1182,11 +1185,14 @@ class ExportEngine(private val context: Context) {
                 val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, outputFileName)
+                currentCoroutineContext().ensureActive()
 
                 startTransformerOnApplicationThread(
                     factory = { buildHardwareTransformer(template.resolution, outputFile) },
                     start = { it.start(composition, outputFile.absolutePath) }
                 )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "startTemplateExport failed", e)
                 mainHandler.post {
@@ -1530,6 +1536,8 @@ class ExportEngine(private val context: Context) {
         }
         progressJob?.cancel()
         progressJob = null
+        exportPreparationJob?.cancel()
+        exportPreparationJob = null
         postMixJob?.cancel()
         postMixJob = null
         synchronized(projectRunLock) {

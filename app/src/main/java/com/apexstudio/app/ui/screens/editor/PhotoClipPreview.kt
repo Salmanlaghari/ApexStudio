@@ -67,7 +67,8 @@ fun PhotoClipPreview(
     cropActive: Boolean,
     onCropChange: (PhotoCropRect) -> Unit,
     modifier: Modifier = Modifier,
-    isCoverMode: Boolean = false
+    isCoverMode: Boolean = false,
+    onImageAspectRatioChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -161,6 +162,11 @@ fun PhotoClipPreview(
     // uses Fit so the entire image and all crop handles remain reachable.
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val bmp = edited
+    androidx.compose.runtime.SideEffect {
+        if (bmp != null && bmp.width > 0 && bmp.height > 0) {
+            onImageAspectRatioChange(bmp.width.toFloat() / bmp.height)
+        }
+    }
     val photoRect = remember(bmp, canvasSize, isCoverMode, cropActive) {
         bmp?.let {
             photoDisplayRect(

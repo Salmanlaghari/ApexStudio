@@ -127,6 +127,36 @@ class PhotoPreviewGeometryTest {
         return null
     }
 
+
+    @Test
+    fun videoBoundsUseTheReportedOutputSizeAndPixelAspect() {
+        assertEquals(16f / 9f, displayedVideoAspect(1920, 1080, 1f)!!, 0.0001f)
+        assertEquals(4f / 3f, displayedVideoAspect(720, 576, 16f / 15f)!!, 0.0001f)
+        // A square output remains square; don't multiply its original crop again.
+        assertEquals(1f, displayedVideoAspect(1080, 1080, 1f)!!, 0.0001f)
+        assertNull(displayedVideoAspect(0, 1080, 1f))
+        assertNull(displayedVideoAspect(1920, 0, 1f))
+        assertNull(displayedVideoAspect(1920, 1080, Float.NaN))
+    }
+
+    @Test
+    fun previewGradeBoundsMatchFitMediaAndCoverViewport() {
+        val fit = previewContentBounds(300f, 300f, mediaAspectRatio = 2f, isCoverMode = false)
+        assertNotNull(fit)
+        assertEquals(0f, fit!!.left, 0.001f)
+        assertEquals(75f, fit.top, 0.001f)
+        assertEquals(300f, fit.right, 0.001f)
+        assertEquals(225f, fit.bottom, 0.001f)
+
+        val cover = previewContentBounds(300f, 300f, mediaAspectRatio = 2f, isCoverMode = true)
+        assertNotNull(cover)
+        assertEquals(0f, cover!!.left, 0.001f)
+        assertEquals(0f, cover.top, 0.001f)
+        assertEquals(300f, cover.right, 0.001f)
+        assertEquals(300f, cover.bottom, 0.001f)
+        assertNull(previewContentBounds(0f, 300f, mediaAspectRatio = 2f, isCoverMode = false))
+    }
+
     @Test
     fun geometryRejectsEmptyImageOrViewport() {
         assertNull(photoDisplayRect(IntSize.Zero, IntSize(300, 300), true, false))

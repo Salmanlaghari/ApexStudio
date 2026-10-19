@@ -261,6 +261,11 @@ fun VideoTimeline(
     val coroutineScope = rememberCoroutineScope()
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
+    // Build the per-layer and text-owner indexes once per project update.
+    // Previously each overlay row filtered every clip, and each text item
+    // searched every clip's text list during composition (O(layers × clips)
+    // plus O(text × clips × text-per-clip) on project open).
+    val layerContentIndex = remember(clips) { TimelineLayerContentIndex.from(clips) }
     // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
     // (tiny composable). Everything else uses a 10Hz-sampled snapshot so
     // playback ticks don't recompose tracks/clips/thumbnails every frame.
@@ -465,10 +470,8 @@ fun VideoTimeline(
     // V1 lane: main video clips + photo (IMAGE) clips on layer 0 share the
     // filmstrip lane (photo clips previously rendered nowhere -> empty V1
     // track). Overlay layers (1..9) render in their own rows below.
-    val videoClips = remember(clips) {
-        clips.filter {
-            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
-        }
+    val videoClips = remember(layerContentIndex) {
+        layerContentIndex.videoByLayer[0].orEmpty().filter { it.type != ClipType.OVERLAY }
     }
     // Multi-layer video tracks: distinct trackIndex values across all
     // video clips (0..9). A layer appears ONLY when it holds clips —
@@ -476,10 +479,8 @@ fun VideoTimeline(
     // placeholder rows; a track is created automatically when the user
     // adds an overlay from the bottom bar). Layer 0 is always present
     // (main V1).
-    val videoLayers = remember(clips) {
-        clips.filter {
-            it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY
-        }.map { it.trackIndex.coerceIn(0, 9) }.toSortedSet().toList().take(10)
+    val videoLayers = remember(layerContentIndex) {
+        layerContentIndex.videoByLayer.keys.sorted().take(10)
     }
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
     val overlayLayerHeight = 60.dp
@@ -651,7 +652,8 @@ fun VideoTimeline(
                         .padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         videoLayers.filter { it in 1..9 }.forEach { layer ->
                             TimelineLaneLabel("V${layer + 1}", overlayLayerHeight, Color(0xFF9C9DFF),
-                                active = clips.any { it.trackIndex == layer && it.id == selectedClipId },
+                                active = layerContentIndex.videoByLayer[layer].orEmpty()
+                                    .any { it.id == selectedClipId },
                                 description = "V${layer + 1} overlay")
                         }
                         if (textOverlays.isNotEmpty()) TimelineLaneLabel("TXT", textLaneHeight.dp, Color(0xFFF2BF72), selectedTextOverlayId != null, "Text")
@@ -921,12 +923,7 @@ fun VideoTimeline(
                             // timelineOffsetMs. Hide/lock live in the
                             // contextual bar of the selected clip.
                             videoLayers.filter { it in 1..9 }.forEach { layer ->
-                                val layerClips = remember(clips, layer) {
-                                    clips.filter {
-                                        it.trackIndex == layer &&
-                                            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
-                                    }
-                                }
+                                val layerClips = layerContentIndex.videoByLayer[layer].orEmpty()
                                 TimelineVideoLayerRow(
                                     layerIndex = layer,
                                     clips = layerClips,
@@ -964,7 +961,7 @@ fun VideoTimeline(
                             if (textOverlays.isNotEmpty()) {
                                 TimelineTextLane(
                                     textOverlays = textOverlays,
-                                    allClips = clips,
+                                    textOwnerByOverlayId = layerContentIndex.textOwnerByOverlayId,
                                     msToDp = msToDp,
                                     selectedTextOverlayId = selectedTextOverlayId,
                                     onSelectTextOverlay = onSelectTextOverlay,
@@ -1863,7 +1860,7 @@ private fun TimelineVideoLayerRow(
 @Composable
 private fun TimelineTextLane(
     textOverlays: List<TextOverlay>,
-    allClips: List<MediaClip>,
+    textOwnerByOverlayId: Map<String, String>,
     msToDp: Float,
     selectedTextOverlayId: String? = null,
     onSelectTextOverlay: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
@@ -1883,7 +1880,7 @@ private fun TimelineTextLane(
             .padding(horizontal = 4.dp, vertical = 3.dp)
     ) {
         textOverlays.forEach { textOverlay ->
-            val ownerClipId = allClips.firstOrNull { c -> c.textOverlays.any { it.id == textOverlay.id } }?.id
+            val ownerClipId = textOwnerByOverlayId[textOverlay.id]
             val ovStartMs = textOverlay.startMs.coerceAtLeast(0L)
             val ovEndMs = if (textOverlay.endMs == Long.MAX_VALUE) ovStartMs + 3000L else textOverlay.endMs
             val ovDur = (ovEndMs - ovStartMs).coerceAtLeast(500L)

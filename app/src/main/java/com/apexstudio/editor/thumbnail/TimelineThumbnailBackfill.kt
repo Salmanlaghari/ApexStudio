@@ -35,12 +35,13 @@ object TimelineThumbnailBackfill {
         cursorMs: Long,
         durationMs: Long,
         intervalMs: Long,
-        maxKeys: Int
+        maxKeys: Int,
+        visibleWorkPending: Boolean = false,
     ): LongArray {
         val duration = durationMs.coerceAtLeast(0L)
         val interval = intervalMs.coerceAtLeast(1L)
         val limit = maxKeys.coerceAtLeast(0)
-        if (cursorMs < 0L || cursorMs > duration || limit == 0) return longArrayOf()
+        if (cursorMs < 0L || cursorMs > duration || limit == 0 || visibleWorkPending) return longArrayOf()
 
         val first = (cursorMs / interval) * interval
         val count = minOf(limit.toLong(), ((duration - first) / interval) + 1L).toInt()

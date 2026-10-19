@@ -90,6 +90,29 @@ class TimelineThumbnailBackfillTest {
     }
 
     @Test
+    fun `background backfill yields while visible-window thumbnails are pending`() {
+        assertTrue(
+            TimelineThumbnailBackfill.batch(
+                cursorMs = 0L,
+                durationMs = 31_000L,
+                intervalMs = 296L,
+                maxKeys = 1,
+                visibleWorkPending = true
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(0L),
+            TimelineThumbnailBackfill.batch(
+                cursorMs = 0L,
+                durationMs = 31_000L,
+                intervalMs = 296L,
+                maxKeys = 1,
+                visibleWorkPending = false
+            ).toList()
+        )
+    }
+
+    @Test
     fun `batch is bounded at the final partial interval`() {
         assertEquals(
             listOf(2_000L, 2_500L, 3_000L),

@@ -6,6 +6,8 @@ import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -108,6 +110,13 @@ class LocalModelException(message: String, cause: Throwable? = null) : Exception
 object OnnxImageModels {
     private val env: OrtEnvironment by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { OrtEnvironment.getEnvironment() }
 
+    /** All image-to-image tasks process user pixels and must pass the global fail-closed policy. */
+    internal fun protectedActionFor(task: ImageTask): ProtectedAiAction = when (task) {
+        ImageTask.BACKGROUND_REMOVAL -> ProtectedAiAction.ONNX_BACKGROUND_REMOVAL
+        ImageTask.SUPER_RESOLUTION -> ProtectedAiAction.ONNX_UPSCALING
+        ImageTask.STYLE_TRANSFER -> ProtectedAiAction.ONNX_STYLE_TRANSFER
+    }
+
     /** Introspect the local file only; absent/unreadable/mismatched files are reported as unavailable. */
     suspend fun inspect(modelFile: File, contract: ImageModelContract, artifact: ImageModelArtifact? = null): ModelAvailability = withContext(Dispatchers.IO) {
         if (artifact == null) return@withContext ModelAvailability.Unavailable("No reviewed model manifest is configured; filename and tensor shape are not proof of model identity")
@@ -148,6 +157,8 @@ object OnnxImageModels {
         artifact: ImageModelArtifact? = null,
         onProgress: (ModelProgress) -> Unit = {},
     ): Bitmap = withContext(Dispatchers.Default) {
+        val task = contract.task ?: throw LocalModelException("Image model task is not declared; refusing inference")
+        GlobalModerationEnforcement.requireApproved(protectedActionFor(task))
         coroutineContext.ensureActive()
         onProgress(ModelProgress(0.05f, "validating local model"))
         val availability = inspect(modelFile, contract, artifact)

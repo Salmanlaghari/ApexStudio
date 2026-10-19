@@ -555,11 +555,9 @@ object MusicExportMixer {
         private var outputDone = false
         private var inSampleRate = SAMPLE_RATE
         private var inChannels = CHANNELS
-        private var inPcm16 = true
+        private var pcmEncoding = 2
 
-        private var pending = FloatArray(8192 * CHANNELS)
-        private var pendingFrames = 0
-        private var pendingPos = 0
+        private val pending = ExportPcmQueue(CHANNELS)
 
         // Linear-resample state (carried across decoder output buffers).
         private var rsPos = 0.0
@@ -633,17 +631,13 @@ object MusicExportMixer {
         fun readFrames(out: FloatArray, frames: Int): Int {
             var written = 0
             while (written < frames) {
-                if (pendingPos >= pendingFrames && !fillPending()) break
-                val avail = pendingFrames - pendingPos
-                val n = min(avail, frames - written)
-                System.arraycopy(pending, pendingPos * CHANNELS, out, written * CHANNELS, n * CHANNELS)
-                pendingPos += n
-                written += n
+                if (pending.isEmpty && !fillPending()) break
+                written += pending.read(out, written, frames - written)
             }
             return written
         }
 
-        fun isEos(): Boolean = outputDone && pendingPos >= pendingFrames
+        fun isEos(): Boolean = outputDone && pending.isEmpty
 
         fun release() {
             runCatching { decoder.stop() }
@@ -661,13 +655,14 @@ object MusicExportMixer {
                     .takeIf { it > 0 } ?: CHANNELS
             }
             // "pcm-encoding" string key avoids the API-28+ constant; 2 = 16-bit.
-            inPcm16 = format.getInteger("pcm-encoding", 2) != 3
+            pcmEncoding = format.getInteger("pcm-encoding", 2)
+            ExportPcmSamples.bytesPerSample(pcmEncoding)
         }
 
         /** Decodes the next output buffer into [pending]. False when drained. */
         private fun fillPending(): Boolean {
-            val before = pendingFrames
-            while (pendingFrames == before) {
+            pending.prepareAppend(0)
+            while (pending.isEmpty && !outputDone) {
                 if (!inputDone) {
                     val inIdx = decoder.dequeueInputBuffer(2000)
                     if (inIdx >= 0) {
@@ -692,26 +687,31 @@ object MusicExportMixer {
                 val outIdx = decoder.dequeueOutputBuffer(info, 8000)
                 when {
                     outIdx >= 0 -> {
-                        val ob = decoder.getOutputBuffer(outIdx)
-                        if (ob != null && info.size > 0) {
-                            updateFormat(decoder.outputFormat)
-                            convertAndAppend(ob, info.size, info.presentationTimeUs)
+                        try {
+                            val ob = decoder.getOutputBuffer(outIdx)
+                            if (ob != null && info.size > 0) {
+                                updateFormat(decoder.outputFormat)
+                                convertAndAppend(
+                                    ExportPcmSamples.window(ob, info.offset, info.size),
+                                    info.size, info.presentationTimeUs
+                                )
+                            }
+                        } finally {
+                            decoder.releaseOutputBuffer(outIdx, false)
                         }
-                        decoder.releaseOutputBuffer(outIdx, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                             outputDone = true
-                            return pendingFrames > before
+                            return !pending.isEmpty
                         }
                     }
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
                         updateFormat(decoder.outputFormat)
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (inputDone) return pendingFrames > before
+                        if (inputDone) return !pending.isEmpty
                     }
                 }
-                if (outputDone) return pendingFrames > before
             }
-            return true
+            return !pending.isEmpty
         }
 
         private fun nativeSample(le: ByteBuffer, size: Int, frame: Int, ch: Int): Float {
@@ -720,13 +720,10 @@ object MusicExportMixer {
                 ch < inChannels -> ch
                 else -> 0
             }
-            return if (inPcm16) {
-                val idx = (frame * inChannels + srcCh) * 2
-                if (idx + 1 >= size) 0f else le.getShort(idx) / 32768f
-            } else {
-                val idx = (frame * inChannels + srcCh) * 4
-                if (idx + 3 >= size) 0f else le.getFloat(idx).coerceIn(-1f, 1f)
-            }
+            val sample = frame * inChannels + srcCh
+            val bytes = ExportPcmSamples.bytesPerSample(pcmEncoding)
+            return if (sample.toLong() * bytes + bytes > size) 0f
+                else ExportPcmSamples.sample(le, sample, pcmEncoding)
         }
 
         /**
@@ -737,13 +734,13 @@ object MusicExportMixer {
          */
         private fun convertAndAppend(ob: ByteBuffer, size: Int, presentationTimeUs: Long) {
             val le = ob.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            val bytesPerSample = if (inPcm16) 2 else 4
+            val bytesPerSample = ExportPcmSamples.bytesPerSample(pcmEncoding)
             val frames = size / bytesPerSample / inChannels.coerceAtLeast(1)
             if (frames <= 0) return
             val step = inSampleRate.toDouble() / SAMPLE_RATE
             // Upper bound on output frames for this buffer.
             val maxOut = ((frames + 1) / step).toInt() + 2
-            ensurePendingCapacity(pendingFrames + maxOut)
+            pending.prepareAppend(maxOut)
 
             fun s(idx: Int, ch: Int): Float =
                 if (idx < 0) rsCarry[ch] else nativeSample(le, size, idx, ch)
@@ -758,7 +755,7 @@ object MusicExportMixer {
                     for (c in 0 until CHANNELS) {
                         val s0 = s(i, c)
                         val s1 = s(i + 1, c)
-                        pending[(pendingFrames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
+                        pending.samples[(pending.frames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
                     }
                     f++
                 }
@@ -767,14 +764,7 @@ object MusicExportMixer {
             // Carry the last input frame and rebase the position for the next buffer.
             for (c in 0 until CHANNELS) rsCarry[c] = nativeSample(le, size, frames - 1, c)
             rsPos -= frames
-            pendingFrames += f
-        }
-
-        private fun ensurePendingCapacity(needed: Int) {
-            if (pending.size >= needed * CHANNELS) return
-            var newSize = pending.size * 2
-            while (newSize < needed * CHANNELS) newSize *= 2
-            pending = pending.copyOf(newSize)
+            pending.appended(f)
         }
     }
 }

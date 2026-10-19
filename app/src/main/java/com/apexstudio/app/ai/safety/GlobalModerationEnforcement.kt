@@ -10,6 +10,8 @@ enum class ProtectedAiAction(val displayName: String) {
     GESTURE_EDITING("gesture-driven editor control"),
     FACE_AWARE_REFRAME("face-aware reframing"),
     ONNX_UPSCALING("learned image upscaling"),
+    ONNX_BACKGROUND_REMOVAL("ONNX background removal"),
+    ONNX_STYLE_TRANSFER("ONNX style transfer"),
 }
 
 data class ModerationReadiness(

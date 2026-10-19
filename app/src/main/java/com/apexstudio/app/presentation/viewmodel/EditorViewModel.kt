@@ -174,7 +174,8 @@ class EditorViewModel(
                             isExporting = st.isExporting,
                             progress = st.progress,
                             outputUri = st.outputUri,
-                            error = st.error
+                            error = st.error,
+                            warning = st.warning
                         )
                     }
                 }

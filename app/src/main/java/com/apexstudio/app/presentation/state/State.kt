@@ -316,7 +316,8 @@ data class ExportState(
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,
-    val isExportEngineReady: Boolean = false
+    val isExportEngineReady: Boolean = false,
+    val warning: String? = null
 )
 
 data class ColorToolState(

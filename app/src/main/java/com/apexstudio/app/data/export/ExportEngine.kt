@@ -97,7 +97,8 @@ class ExportEngine(private val context: Context) {
         val isExporting: Boolean = false,
         val progress: Float = 0f,
         val outputUri: String? = null,
-        val error: String? = null
+        val error: String? = null,
+        val warning: String? = null
     )
 
     data class ExportConfig(
@@ -895,7 +896,8 @@ class ExportEngine(private val context: Context) {
                             _exportState.value = ExportProgressState(
                                 isExporting = false,
                                 progress = 1f,
-                                outputUri = Uri.fromFile(mixedFile).toString()
+                                outputUri = Uri.fromFile(mixedFile).toString(),
+                                warning = AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
                             )
                         }
                     } catch (e: Exception) {
@@ -908,7 +910,8 @@ class ExportEngine(private val context: Context) {
                             _exportState.value = ExportProgressState(
                                 isExporting = false,
                                 progress = 1f,
-                                outputUri = Uri.fromFile(outputFile).toString()
+                                outputUri = Uri.fromFile(outputFile).toString(),
+                                warning = AudioMixExportNotice.MIX_FAILED
                             )
                         }
                     }

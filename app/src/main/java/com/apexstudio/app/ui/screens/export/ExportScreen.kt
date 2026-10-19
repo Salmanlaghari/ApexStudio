@@ -103,6 +103,7 @@ fun ExportScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            AudioExportWarning(export.warning)
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fxList) { fx ->
@@ -478,7 +479,8 @@ fun ExportScreen(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Media3 Transformer Export Complete!",
+                                if (export.warning == null) "Media3 Transformer Export Complete!"
+                                else "Video saved with audio warning",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold

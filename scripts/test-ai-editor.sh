@@ -16,6 +16,9 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*FaceCropGlEffectTest' \
   --tests '*EditorWordCaptionTest' \
   --tests '*TextSpriteRendererKaraokeTest' \
+  --tests '*CaptionExportBatchTest' \
+  --tests '*TextOverlayFramePlannerTest' \
+  --tests '*TextOverlayBatchRasterTest' \
   --tests '*WhisperCaptionBoundsTest' \
   --tests '*EditorCaptionReliabilityTest' \
   --tests '*EditorBackgroundControllerTest' \
@@ -38,6 +41,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*ExportApplicationThreadTest' \
   --tests '*AudioExportSourceProbeTest' \
   --tests '*EditorAudioExportSourcesTest' \
+  --tests '*EditorOverlayAudioExportSourcesTest' \
+  --tests '*OverlayAudio*Test' \
   --tests '*StandaloneAudioCompositionTest' \
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \

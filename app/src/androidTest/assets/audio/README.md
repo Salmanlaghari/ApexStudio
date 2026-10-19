@@ -22,3 +22,14 @@ LibriSpeech was prepared by Vassil Panayotov with assistance from Daniel Povey, 
 The exact source is the first row of [`hf-internal-testing/librispeech_asr_dummy`, pinned revision `5be91486e11a2d616f4ec5db8d3fd248585ac07a`](https://huggingface.co/datasets/hf-internal-testing/librispeech_asr_dummy/resolve/5be91486e11a2d616f4ec5db8d3fd248585ac07a/clean/validation-00000-of-00001.parquet). Transcript: “MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL”. Duration: 5.855 seconds.
 
 `scripts/verify-english-aligner.py` runs the actual bundled acoustic model on this fixture on a host CPU, without network access. Its greedy output has errors; the script prints them rather than asserting perfect transcription. With `--record`, it records actual log probabilities plus SHA-256/provenance into `app/src/test/resources/ai/english-alignment-logprobs.*` for deterministic JVM forced-alignment regressions. These recorded emissions test the Kotlin alignment algorithm, not Android-native inference. Android execution remains a separate instrumentation test; compilation is not device acceptance.
+
+## Silent base for regular-video overlay-audio acceptance
+
+`overlay_silent_base.mp4` is a locally generated one-second blue 160×90 H.264 video at 10 fps, with no audio or third-party content. SHA-256: `df94aab84072f76c3f5149e140d8786e5ee466e47eb0c64ed31d900ec2faabdf`.
+
+```sh
+ffmpeg -f lavfi -i color=c=blue:s=160x90:r=10 -t 1 -an \
+  -c:v libx264 -pix_fmt yuv420p -movflags +faststart overlay_silent_base.mp4
+```
+
+`OverlayAudioExportInstrumentedTest` exports it through the regular MP4 path with the AAC tone placed at 300 ms and the base muted. It decodes the saved MP4 and checks leading silence, audible placed tone and a bounded duration. Run this test on Android; compilation or JVM composition tests do not establish that the native mix succeeds.

@@ -79,8 +79,10 @@ object MusicExportMixer {
         context: Context,
         inputVideo: File,
         tracks: List<AudioTrack>,
-        outputVideo: File
+        outputVideo: File,
+        checkCancelled: () -> Unit = {}
     ): MixResult {
+        checkCancelled()
         require(inputVideo.exists()) { "Input video missing: ${inputVideo.absolutePath}" }
         outputVideo.parentFile?.mkdirs()
 
@@ -135,6 +137,7 @@ object MusicExportMixer {
         var skipped = 0
         try {
             for (t in tracks) {
+                checkCancelled()
                 val sourceTrim = ExportAudioTimelineMapping.sourceTrim(
                     t.trimStartMs, t.trimEndMs, SAMPLE_RATE
                 )
@@ -172,13 +175,13 @@ object MusicExportMixer {
             // ---- 3. Mix to a temporary WAV ----------------------------------
             val wavFile = File.createTempFile("apex_mix_", ".wav", outputVideo.parentFile)
             try {
-                renderMixWav(original, placed, durationCapFrames, wavFile)
+                renderMixWav(original, placed, durationCapFrames, wavFile, checkCancelled)
                 // ---- 4. WAV -> AAC ------------------------------------------
-                val encoded = transcodeWavToAac(wavFile)
+                val encoded = transcodeWavToAac(wavFile, checkCancelled)
                 // ---- 5. Mux video copy + mixed AAC --------------------------
                 muxVideoWithAudio(
                     inputVideo, videoTrackIdx, vFormat,
-                    encoded.frames, encoded.format, outputVideo
+                    encoded.frames, encoded.format, outputVideo, checkCancelled
                 )
             } finally {
                 wavFile.delete()
@@ -198,7 +201,8 @@ object MusicExportMixer {
         original: TrackDecoder?,
         placed: List<PlacedTrack>,
         durationCapFrames: Long,
-        wavFile: File
+        wavFile: File,
+        checkCancelled: () -> Unit
     ) {
         val mix = FloatArray(WINDOW_FRAMES * CHANNELS)
         val tmp = FloatArray(WINDOW_FRAMES * CHANNELS)
@@ -217,6 +221,7 @@ object MusicExportMixer {
             var totalFrames = 0L
 
             while (globalFrame < durationCapFrames) {
+                checkCancelled()
                 val frames = min(WINDOW_FRAMES.toLong(), durationCapFrames - globalFrame).toInt()
                 mix.fill(0f)
 
@@ -317,7 +322,7 @@ object MusicExportMixer {
     // Pass 2: WAV -> AAC
     // ------------------------------------------------------------------
 
-    private fun transcodeWavToAac(wavFile: File): EncodedAudio {
+    private fun transcodeWavToAac(wavFile: File, checkCancelled: () -> Unit): EncodedAudio {
         val encFormat = MediaFormat.createAudioFormat(
             MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNELS
         )
@@ -349,6 +354,7 @@ object MusicExportMixer {
                 var inputDone = false
                 val chunk = ByteArray(16 * 1024)
                 pumpCodecUntilOutputEos {
+                    checkCancelled()
                     var progressed = false
                     if (!inputDone) {
                         val inIdx = encoder.dequeueInputBuffer(5000)
@@ -431,7 +437,8 @@ object MusicExportMixer {
         videoFormat: MediaFormat,
         audioFrames: List<EncodedFrame>,
         audioFormat: MediaFormat,
-        outputVideo: File
+        outputVideo: File,
+        checkCancelled: () -> Unit
     ) {
         val vEx = MediaExtractor()
         vEx.setDataSource(inputVideo.absolutePath)
@@ -478,6 +485,7 @@ object MusicExportMixer {
 
             var videoAvail = readVideo()
             while (videoAvail || audioIdx < audioFrames.size) {
+                checkCancelled()
                 val a = audioFrames.getOrNull(audioIdx)
                 if (videoAvail && (a == null || vInfo.presentationTimeUs <= a.ptsUs)) {
                     writeVideo()

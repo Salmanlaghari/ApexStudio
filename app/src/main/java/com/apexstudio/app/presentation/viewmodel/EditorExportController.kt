@@ -160,6 +160,9 @@ fun EditorViewModel.startExport(
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
             bassBoostStrength = audioSt.bassBoostStrength,
+            overlayAudioSources = buildOverlayAudioExportSources(
+                s.project?.clips.orEmpty(), s.hiddenVideoLayers
+            ),
             pipOverlays = pipOverlays,
             transitionType = transitionType,
             transitionGlId = transitionGlId,
@@ -186,6 +189,14 @@ fun EditorViewModel.setExportOutputUri(uri: String?) = _export.update { it.copy(
 
 fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(error = error) }
 
+
+/** PiP audio is mixed once, independently of the selected V1 clip and added music. */
+internal fun buildOverlayAudioExportSources(
+    clips: List<MediaClip>,
+    hiddenVideoLayers: Set<Int> = emptySet()
+): List<ExportEngine.AudioExportSource> = buildAudioExportSources(
+    clips.filter { it.type == ClipType.OVERLAY }, emptyList(), hiddenVideoLayers
+)
 
 /**
  * Maps canonical project audio to the standalone export timeline. Main video
@@ -382,7 +393,8 @@ fun EditorViewModel.startPhotoExport(
                         shadow = ov.overlayShadow,
                         flipH = ov.overlayFlipH,
                         flipV = ov.overlayFlipV,
-                        keyframes = ov.keyframes.keyframes
+                        keyframes = ov.keyframes.keyframes,
+                        videoCrop = ov.videoCrop
                     )
                 }
             // Phase 4: gl-transitions shaders ride as transitionGlId.
@@ -423,6 +435,12 @@ fun EditorViewModel.startPhotoExport(
                     pitchSemitones = 0f,
                     volume = 1f,
                     pipOverlays = pipOverlays,
+                    overlayAudioSources = buildOverlayAudioExportSources(
+                        s.project?.clips.orEmpty(), s.hiddenVideoLayers
+                    ),
+                    musicMixTracks = s.project?.audioTracks.orEmpty().let { tracks ->
+                        tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+                    },
                     transitionType = transitionType,
                     transitionGlId = transitionGlIdPhoto,
                     transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L

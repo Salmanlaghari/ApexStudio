@@ -104,6 +104,7 @@ fun EditorScreen(
     var isCoverMode by remember { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
     var showAiPanel by remember { mutableStateOf(false) }
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
+    var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
@@ -812,6 +813,9 @@ fun EditorScreen(
     }, onOpenVideoPresets = {
         showAiPanel = false
         showVideoPresets = true
+    }, onOpenVideoUpscale = {
+        showAiPanel = false
+        showVideoUpscale = true
     }, reportTarget = aiReportTarget, reportState = aiContentReportState,
         onSubmitReport = { reason ->
             val current = vm.state.value
@@ -819,7 +823,9 @@ fun EditorScreen(
                 projectId, current.project, current.selectedClipId, current.selectedTextOverlayId
             ), reason)
         }, onClearReportFeedback = vm::clearAiContentReportFeedback)
-    if (showVideoPresets) ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false })
+    if (showVideoPresets) ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false },
+        onLearnedUpscale = { _, _ -> showVideoPresets = false; showVideoUpscale = true })
+    if (showVideoUpscale) VideoUpscaleOverlay(vm, onClose = { showVideoUpscale = false })
     if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
         onPreviewSourceTime = { analyzedClipId, sourceMs ->
             val clips = vm.state.value.project?.clips.orEmpty()

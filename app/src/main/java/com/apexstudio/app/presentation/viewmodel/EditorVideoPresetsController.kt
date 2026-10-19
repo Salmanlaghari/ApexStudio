@@ -27,6 +27,43 @@ fun EditorViewModel.applyProjectVideoTextTemplate(
     true
 }
 
+/** Adds the same fixed literal title with one of the built-in entrance motions. */
+fun EditorViewModel.applyProjectVideoTextMotion(
+    projectId: String,
+    expectedClip: MediaClip,
+    motionId: String,
+): Boolean = synchronized(this) {
+    val motion = ProjectVideoPresets.textMotion(motionId) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val title = ProjectVideoPresets.textTemplate("title-bold") ?: return@synchronized false
+    val overlay = title.createTextOverlay(motion)
+
+    pushUndo()
+    updateClip(target.id) { clip -> clip.copy(textOverlays = clip.textOverlays + overlay) }
+    _state.update { it.copy(selectedTextOverlayId = overlay.id, selectedStickerId = null) }
+    true
+}
+
+/** Applies one fixed look plus its fixed title atomically with a single undo entry. */
+fun EditorViewModel.applyProjectVideoTemplate(
+    projectId: String,
+    expectedClip: MediaClip,
+    templateId: String,
+): Boolean = synchronized(this) {
+    val recipe = ProjectVideoPresets.videoTemplate(templateId) ?: return@synchronized false
+    val effect = ProjectVideoPresets.effect(recipe.effectId) ?: return@synchronized false
+    val title = ProjectVideoPresets.textTemplate(recipe.textTemplateId) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val overlay = title.createTextOverlay()
+
+    pushUndo()
+    updateClip(target.id) { clip ->
+        clip.copy(projectVideoEffectId = effect.id, textOverlays = clip.textOverlays + overlay)
+    }
+    _state.update { it.copy(selectedTextOverlayId = overlay.id, selectedStickerId = null) }
+    true
+}
+
 /** Applies a fixed, local GPU adjustment preset to the exact captured video clip. */
 fun EditorViewModel.applyProjectVideoEffect(
     projectId: String,

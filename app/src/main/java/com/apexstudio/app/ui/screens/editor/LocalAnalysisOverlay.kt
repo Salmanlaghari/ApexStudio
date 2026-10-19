@@ -58,7 +58,7 @@ fun LocalAnalysisOverlay(
             }
             Text("Offline face tracking review", modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-            Text("Face-model review is locked pending validated offline sexual/violent/hateful frame and OCR-text moderation. Review-only ML inference is not a safety exemption. Deterministic scene analysis above remains available.",
+            Text("Face-model review is not enabled in this release's selected video-tool scope. Deterministic scene analysis above remains available; Google Play policy is not presented as requiring a blanket all-frame classifier.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
             val selectedFaceCropClip = editor.project?.clips?.firstOrNull { it.id == editor.selectedClipId && it.faceCropTrack != null }
@@ -79,7 +79,7 @@ fun LocalAnalysisOverlay(
             OutlinedButton(onClick = { vm.startLocalFaceTrackReview() },
                 enabled = GlobalModerationEnforcement.readiness.approved && !faceReview.isRunning && !analysis.isRunning,
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                Text(if (!GlobalModerationEnforcement.readiness.approved) "Face review locked · safety required"
+                Text(if (!GlobalModerationEnforcement.readiness.approved) "Face review unavailable · outside enabled tool scope"
                     else if (faceReview.isReady) "Analyze face tracks again" else "Analyze face tracks offline")
             }
             if (analysis.isRunning) {

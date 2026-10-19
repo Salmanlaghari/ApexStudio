@@ -47,7 +47,7 @@ class TextPanelModerationTest {
 
         compose.onNodeWithText("Captions").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText(
-            "Blocked action: ${ProtectedAiAction.WHISPER_CAPTIONS.displayName}.",
+            GlobalModerationEnforcement.statusMessage(ProtectedAiAction.WHISPER_CAPTIONS),
             substring = true,
         ).assertExists()
         compose.onNodeWithText("Generate Auto Captions").assertIsNotEnabled()

@@ -30,7 +30,7 @@ class AiToolsPanelTest {
             onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithTag("open_project_video_presets").activateVisibleControl()
         compose.runOnIdle { assertEquals(1, opens) }
-        compose.onNodeWithText("Protected AI paused · safety approval required").assertExists()
+        compose.onNodeWithText("Local video tools · Google Play policy scope").assertExists()
         compose.onNodeWithContentDescription("Camera gesture controls").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -39,7 +39,7 @@ class AiToolsPanelTest {
     @Test fun compactIconsHideFullDetailsUntilTappedAndNeverExposeProtectedSwitch() {
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
             reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
-        compose.onNodeWithText("Protected AI paused · safety approval required").assertExists()
+        compose.onNodeWithText("Local video tools · Google Play policy scope").assertExists()
         compose.onNodeWithText(tool.detail).assertDoesNotExist()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertDoesNotExist()
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -62,7 +62,7 @@ class AiToolsPanelTest {
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
             reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
-        compose.onNodeWithText("Protected AI is unavailable").assertExists()
+        compose.onNodeWithText("Video-only processing availability").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
     }
 
@@ -86,6 +86,17 @@ class AiToolsPanelTest {
         compose.onNodeWithText("Hateful content").activateVisibleControl()
         compose.onNodeWithText("Save on device").activateVisibleControl()
         compose.runOnIdle { assertEquals(AiContentReportReason.HATEFUL, submitted) }
+    }
+
+    @Test fun upscaleHasAnActualActionWithoutPromptOrImageInput() {
+        var opens = 0
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {},
+            onOpenVideoUpscale = { opens++ }, reportTarget = null, reportState = AiContentReportUiState(),
+            onSubmitReport = {}, onClearReportFeedback = {}) } }
+        compose.onNodeWithTag("open_project_video_upscale").activateVisibleControl()
+        compose.runOnIdle { assertEquals(1, opens) }
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
     }
 
     private fun SemanticsNodeInteraction.activateVisibleControl() {

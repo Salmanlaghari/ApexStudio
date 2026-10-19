@@ -38,10 +38,15 @@ class EditorVideoPresetsTest {
     fun `catalogs are fixed and title factories create fresh literal overlays`() {
         assertEquals(3, ProjectVideoPresets.textTemplates.size)
         assertEquals(3, ProjectVideoPresets.effects.size)
+        assertEquals(3, ProjectVideoPresets.textMotions.size)
+        assertEquals(2, ProjectVideoPresets.videoTemplates.size)
+        assertEquals(1, ProjectVideoPresets.videoEnhancements.size)
         assertEquals(ProjectVideoPresets.textTemplates.size,
             ProjectVideoPresets.textTemplates.map { it.id }.toSet().size)
         assertEquals(ProjectVideoPresets.effects.size,
             ProjectVideoPresets.effects.map { it.id }.toSet().size)
+        assertEquals(ProjectVideoPresets.videoEnhancements.size,
+            ProjectVideoPresets.videoEnhancements.map { it.id }.toSet().size)
 
         val template = ProjectVideoPresets.textTemplates.first()
         val first = template.createTextOverlay()
@@ -55,7 +60,7 @@ class EditorVideoPresetsTest {
 
     @Test
     fun `effect matrices are fixed finite safe and resolved for shared rendering`() {
-        ProjectVideoPresets.effects.forEach { effect ->
+        (ProjectVideoPresets.effects + ProjectVideoPresets.videoEnhancements).forEach { effect ->
             val matrix = effect.colorMatrix().array
             assertEquals(20, matrix.size)
             assertTrue("${effect.id} has non-finite coefficient", matrix.all { it.isFinite() })
@@ -72,8 +77,52 @@ class EditorVideoPresetsTest {
         assertEquals(0.114f, mono[2], 0f)
         assertEquals(mono[0], mono[5], 0f)
         assertEquals(mono[0], mono[10], 0f)
+        val enhance = ProjectVideoPresets.effect("video-enhance-color-lift")!!.colorMatrix().array
+        assertEquals(
+            listOf(
+                1.121848f, -0.07436f, -0.007488f, 0f, -1.12f,
+                -0.022152f, 1.06964f, -0.007488f, 0f, -1.12f,
+                -0.022152f, -0.07436f, 1.136512f, 0f, -1.12f,
+                0f, 0f, 0f, 1f, 0f,
+            ), enhance.toList()
+        )
+        assertNotNull(ProjectVideoPresets.colorEffect("video-enhance-color-lift"))
         assertEquals(null, ProjectVideoPresets.colorEffect(null))
         assertEquals(null, ProjectVideoPresets.colorEffect("unknown-effect"))
+    }
+
+    @Test
+    fun `fixed video template applies title and effect with one undo snapshot`() {
+        val vm = editor()
+        val before = vm.state.value.project!!
+        val captured = before.clips.first()
+        val recipe = ProjectVideoPresets.videoTemplates.first()
+        val effect = ProjectVideoPresets.effect(recipe.effectId)!!
+        val title = ProjectVideoPresets.textTemplate(recipe.textTemplateId)!!.createTextOverlay()
+
+        assertTrue(vm.applyProjectVideoTemplate(before.id, captured, recipe.id))
+        val changed = vm.state.value.project!!
+        val edited = changed.clips.first()
+        assertEquals(effect.id, edited.projectVideoEffectId)
+        assertEquals(listOf(title.text), edited.textOverlays.map { it.text })
+        assertEquals(title.presetId, edited.textOverlays.single().presetId)
+        assertEquals(before, vm.undoStack.single().project)
+        assertNotNull(ProjectVideoPresets.colorEffect(edited.projectVideoEffectId))
+    }
+
+    @Test
+    fun `fixed text motion adds a literal title with selected shared animation`() {
+        val vm = editor()
+        val before = vm.state.value.project!!
+        val clip = before.clips.first()
+        val motion = ProjectVideoPresets.textMotions.first { it.id == "slide-up" }
+
+        assertTrue(vm.applyProjectVideoTextMotion(before.id, clip, motion.id))
+        val overlay = vm.state.value.project!!.clips.first().textOverlays.single()
+        assertEquals("YOUR STORY", overlay.text)
+        assertEquals(motion.animationType, overlay.animationType)
+        assertEquals(motion.durationMs, overlay.animationDurationMs)
+        assertEquals(before, vm.undoStack.single().project)
     }
 
     @Test
@@ -124,6 +173,8 @@ class EditorVideoPresetsTest {
             val current = vm.state.value.project
             val history = vm.undoStack.size
             assertFalse(staleCase, vm.applyProjectVideoEffect(original.id, captured, "warm-film"))
+            assertFalse(staleCase, vm.applyProjectVideoTextMotion(original.id, captured, "fade-in"))
+            assertFalse(staleCase, vm.applyProjectVideoTemplate(original.id, captured, "warm-story"))
             assertEquals(current, vm.state.value.project)
             assertEquals(history, vm.undoStack.size)
         }
@@ -146,6 +197,8 @@ class EditorVideoPresetsTest {
             val before = vm.state.value.project
             assertFalse("invalid target $index", vm.applyProjectVideoTextTemplate("project", clip, "title-bold"))
             assertFalse("invalid target $index", vm.applyProjectVideoEffect("project", clip, "warm-film"))
+            assertFalse("invalid target $index", vm.applyProjectVideoTextMotion("project", clip, "fade-in"))
+            assertFalse("invalid target $index", vm.applyProjectVideoTemplate("project", clip, "warm-story"))
             assertEquals(before, vm.state.value.project)
             assertTrue(vm.undoStack.isEmpty())
         }

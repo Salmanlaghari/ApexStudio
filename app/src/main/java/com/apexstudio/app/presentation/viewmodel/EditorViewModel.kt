@@ -100,6 +100,11 @@ class EditorViewModel(
      */
     internal var backgroundJob: Job? = null
 
+    /** Offline ESPCN render request; scoped to this editor and cancelled with its lifecycle. */
+    internal val _videoUpscaleUi = MutableStateFlow(VideoUpscaleUiState())
+    val videoUpscaleUi: StateFlow<VideoUpscaleUiState> = _videoUpscaleUi.asStateFlow()
+    internal var videoUpscaleJob: Job? = null
+
     /** Captured on opening the recorder, independent of recording-time playback. */
     internal var voiceOverStartMs: Long = 0L
 
@@ -222,6 +227,7 @@ class EditorViewModel(
         localAnalysisJob?.cancel()
         faceTrackReviewToken?.cancel()
         faceTrackReviewJob?.cancel()
+        videoUpscaleJob?.cancel()
         endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()

@@ -20,8 +20,15 @@ class ProjectVideoPresetsPanelTest {
     @Test fun fixedChoicesHaveNoTextEntryAndInvokeOnlySelectedPreset() {
         var textId: String? = null
         var effectId: String? = null
+        var templateId: String? = null
+        var motionId: String? = null
+        var upscaleCalls = 0
         compose.setContent { MaterialTheme {
-            ProjectVideoPresetsPanel(true, "Existing clip", null, { textId = it }, { effectId = it }, {})
+            ProjectVideoPresetsPanel(
+                true, "Existing clip", null, { textId = it }, { effectId = it }, {},
+                onVideoTemplate = { templateId = it }, onTextMotion = { motionId = it },
+                onLearnedUpscale = { upscaleCalls++ },
+            )
         } }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
@@ -31,6 +38,19 @@ class ProjectVideoPresetsPanelTest {
         val effect = ProjectVideoPresets.effects.first()
         compose.onNodeWithTag("video_effect_${effect.id}").activateVisibleControl()
         compose.runOnIdle { assertEquals(effect.id, effectId) }
+        val template = ProjectVideoPresets.videoTemplates.first()
+        compose.onNodeWithTag("video_template_${template.id}").activateVisibleControl()
+        compose.runOnIdle { assertEquals(template.id, templateId) }
+        val motion = ProjectVideoPresets.textMotions.first()
+        compose.onNodeWithTag("video_text_motion_${motion.id}").activateVisibleControl()
+        compose.runOnIdle { assertEquals(motion.id, motionId) }
+        val enhancement = ProjectVideoPresets.videoEnhancements.first()
+        compose.onNodeWithTag("video_enhancement_${enhancement.id}").activateVisibleControl()
+        compose.runOnIdle { assertEquals(enhancement.id, effectId) }
+        compose.onNodeWithTag("video_learned_upscale").activateVisibleControl()
+        compose.runOnIdle { assertEquals(1, upscaleCalls) }
+        compose.onNodeWithText("Video Enhance · Deterministic Color").assertExists()
+        compose.onNodeWithText("Learned Video Upscale · Separate").assertExists()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
     }
 
@@ -43,6 +63,15 @@ class ProjectVideoPresetsPanelTest {
         }
         ProjectVideoPresets.effects.forEach {
             compose.onNodeWithTag("video_effect_${it.id}").assertIsNotEnabled()
+        }
+        ProjectVideoPresets.videoTemplates.forEach {
+            compose.onNodeWithTag("video_template_${it.id}").assertIsNotEnabled()
+        }
+        ProjectVideoPresets.textMotions.forEach {
+            compose.onNodeWithTag("video_text_motion_${it.id}").assertIsNotEnabled()
+        }
+        ProjectVideoPresets.videoEnhancements.forEach {
+            compose.onNodeWithTag("video_enhancement_${it.id}").assertIsNotEnabled()
         }
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
     }

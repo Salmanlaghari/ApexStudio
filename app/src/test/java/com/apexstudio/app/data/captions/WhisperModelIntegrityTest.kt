@@ -28,7 +28,7 @@ class WhisperModelIntegrityTest {
             throw AssertionError("Raw model loading must fail before native processing")
         } catch (failure: AiModelUnavailableException) {
             assertTrue(failure.message.orEmpty().contains("Whisper caption generation"))
-            assertTrue(failure.message.orEmpty().contains("No protected AI processing was run"))
+            assertTrue(failure.message.orEmpty().contains("not enabled in the selected video-only tool scope"))
         }
     }
 

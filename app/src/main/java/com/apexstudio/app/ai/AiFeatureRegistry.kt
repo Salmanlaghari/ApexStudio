@@ -99,22 +99,22 @@ object AiFeatureRegistry {
         AiFeatureId.STYLE_ANALYSIS to AiFeatureDescription("Style analysis", "Rule-based sampled color/contrast/saturation summary; not artistic style transfer."),
         AiFeatureId.AUTO_CROP to AiFeatureDescription("Auto crop", "Luma-gradient crop suggestion; not subject or face detection."),
         AiFeatureId.FACE_AWARE_REFRAME to AiFeatureDescription("Face-aware reframe", "Bundled face model and crop-track geometry. Full-clip application is not release-ready."),
-        AiFeatureId.FACE_BLUR to AiFeatureDescription("Face blur", "Bundled face landmarks and frame-level privacy renderer; full-clip safety/export validation remains required."),
+        AiFeatureId.FACE_BLUR to AiFeatureDescription("Face blur", "Bundled face landmarks and frame-level privacy renderer; full-clip editor/export integration remains incomplete."),
         AiFeatureId.FACE_TRACKING to AiFeatureDescription("Face tracking", "Bundled face landmarks; temporal identity/crop geometry is not a validated tracking editor."),
         AiFeatureId.BACKGROUND_BLUR to AiFeatureDescription("Background blur", "Bundled person segmentation supports the existing pre-rendered background workflow; not real-time AI preview."),
         AiFeatureId.POSE_EFFECTS to AiFeatureDescription("Pose effects", "Bundled pose model and frame-level skeleton processing; no validated full-clip effect integration."),
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
-        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Explicitly armed front-camera hand sessions are wired to bounded source-edge trims and timeline zoom. Camera access and commands remain blocked until safety approval; no device acceptance yet."),
-        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Bundled multilingual int8 Whisper is local, but protected transcript inference is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
-        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "English acoustic word alignment is protected processing and is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
-        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "The bundled segmentation backend is local, but full-clip processing is blocked until app-reviewed sexual/violent/hateful moderation is configured."),
+        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Explicitly armed front-camera hand sessions are wired to bounded source-edge trims and timeline zoom. Live camera/gesture input is outside the existing-project-video scope."),
+        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Local Whisper backend; subtitles are outside the currently enabled video-tool integration."),
+        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Local English acoustic alignment backend; not enabled in this video-tool release."),
+        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Local segmentation backend; background replacement is not enabled in the selected video-tool scope."),
         AiFeatureId.MEDIAPIPE_FACE to AiFeatureDescription("Face landmarks", "Official bundled Face Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
-        AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "Pinned MODNet photographic portrait-matting backend is bundled. Global moderation blocks user-content inference; realtime preview/export and device-quality acceptance remain incomplete."),
-        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Bundled learned ESPCN x3 luma backend with tiled host inference. Not an approved editor/export tool, exact 1080p converter or 4K pipeline."),
-        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is debug/evaluation-only and excluded from release builds pending license/provenance review. Aspect ratio is distorted; global moderation blocks user-content inference. Preview/export and device-quality acceptance are incomplete."),
-        AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "Fail-closed: validated sexual/violent/hateful coverage is not supplied.")
+        AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "Pinned MODNet photographic portrait-matting backend is bundled. The generic standalone image workflow is unavailable; realtime preview/export and device-quality acceptance remain incomplete."),
+        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Learned ESPCN x3 luma video upscaling with bounded offline pre-rendering. Preview and export use the same rendered clip. Not 4K or a generative model."),
+        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is debug/evaluation-only and excluded from release builds pending license/provenance review. Aspect ratio is distorted; standalone image processing is outside the enabled video-only scope. Preview/export and device-quality acceptance are incomplete."),
+        AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "No validated classifier is supplied. Local non-generative editing is not blocked solely for this reason.")
     )
 
     suspend fun all(context: Context): List<AiFeatureAvailability> = AiFeatureId.entries.map { get(context, it) }
@@ -130,14 +130,23 @@ object AiFeatureRegistry {
                 "Deterministic local signal analysis, not learned AI. Review suggestions before applying edits.")
         }
         if (id == AiFeatureId.WORD_TIMED_SUBTITLES) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "Bundled English CTC supports word-by-word and full-phrase karaoke experiments. New inference is blocked by global moderation; multilingual word alignment and device acceptance are incomplete.", requirements)
-        if (id == AiFeatureId.ONNX_UPSCALING) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "Pinned ESPCN x3 luma weights are bundled for model evaluation. User-content inference is blocked by global moderation; editor integration, 4K processing and device/image-quality acceptance are incomplete.", requirements)
+            "Bundled English CTC supports word-by-word and full-phrase karaoke experiments. Not enabled in the selected video-tool release; multilingual word alignment and device acceptance are incomplete.", requirements)
+        if (id == AiFeatureId.ONNX_UPSCALING) return try {
+            com.apexstudio.app.ai.onnx.EspcnSuperResolutionAdapter.fromBundledAssets(context)
+            AiFeatureAvailability(id, AiAvailability.READY,
+                "Pinned Apache-2.0 ESPCN x3 luma model is available locally. Use AI Video Upscale for supported existing project videos only; device codec and resource limits are checked before processing.",
+                requirements, requirements.map { it.id })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                "Pinned ESPCN model is missing or failed integrity verification. No processing or network fallback.", requirements)
+        }
         if (id == AiFeatureId.ONNX_BACKGROUND_REMOVAL) return try {
             val adapter = com.apexstudio.app.ai.onnx.ModNetBackgroundRemovalAdapter.fromBundledAssets(context)
             when (val backend = adapter.availability()) {
                 is ModelAvailability.Ready -> AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-                    "Pinned MODNet bytes and dynamic portrait-matting signature verified. Global moderation blocks user-content inference; preview/export and device-quality acceptance remain incomplete.",
+                    "Pinned MODNet bytes and dynamic portrait-matting signature verified. The generic standalone image workflow is unavailable; preview/export and device-quality acceptance remain incomplete.",
                     requirements, requirements.map { it.id })
                 is ModelAvailability.Unavailable -> AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
                     "Bundled MODNet verification failed: ${backend.reason}. No network fallback.", requirements)
@@ -146,21 +155,21 @@ object AiFeatureRegistry {
             throw cancelled
         } catch (_: Exception) {
             AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
-                "Bundled MODNet could not be verified or installed. No network fallback; user-content inference remains blocked.", requirements)
+                "Bundled MODNet could not be verified or installed. No network fallback; standalone image processing is unavailable.", requirements)
         }
         if (id == AiFeatureId.ONNX_STYLE_TRANSFER) return try {
             CandyStyleTransferPack.materialize(context)
             AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-                "Pinned Candy-9 bytes verified. License declarations/style-reference provenance require review; the model is not in the app-approved artifact catalog. Global moderation blocks user-content inference; preview/export are not enabled.",
+                "Pinned Candy-9 bytes verified. License declarations/style-reference provenance require review; the model is not in the app-approved artifact catalog. The generic standalone image workflow is unavailable; preview/export are not enabled.",
                 requirements, requirements.map { it.id })
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
-                "Bundled style-transfer model could not be verified or installed. No network fallback; user-content inference remains blocked.", requirements)
+                "Bundled style-transfer model could not be verified or installed. No network fallback; standalone image processing is unavailable.", requirements)
         }
         if (id == AiFeatureId.CONTENT_MODERATION) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "No validated offline sexual/violent/hateful classifier. Protected AI actions remain OFF; pixel heuristics are not moderation.", requirements)
+            "No validated offline classifier. Google Play policy does not explicitly require an all-frame classifier for these non-generative local video tools.", requirements)
         val bundled = mediaPipeModelFor(id)
         if (bundled != null || id == AiFeatureId.SUBTITLES) {
             return try {
@@ -178,8 +187,8 @@ object AiFeatureRegistry {
                         }
                         if (protectedAction != null) {
                             "Local model bytes are available, but ${GlobalModerationEnforcement.statusMessage(protectedAction)}"
-                        } else "Local model bytes available. Backend readiness is not full-clip/editor/safety approval."
-                    } else "Bundled/local model is missing or could not be materialized; no network request was made. Protected user-content AI also remains blocked until moderation is approved.",
+                        } else "Local model bytes available. Backend readiness does not itself enable a video editor tool."
+                    } else "Bundled/local model is missing or could not be materialized; no network request was made. No model-backed action can run without its required local artifact.",
                     requirements, if (available) requirements.map { it.id } else emptyList())
             } catch (cancelled: CancellationException) {
                 throw cancelled

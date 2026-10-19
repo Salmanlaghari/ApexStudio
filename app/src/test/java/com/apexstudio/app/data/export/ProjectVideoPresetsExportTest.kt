@@ -9,7 +9,7 @@ class ProjectVideoPresetsExportTest {
     private val clip = MediaClip("video", "Video", "file:///video.mp4", 10_000L, trimEndMs = 10_000L)
 
     @Test fun everyBuiltInEffectIsAcceptedPerClipByProjectExport() {
-        ProjectVideoPresets.effects.forEach { preset ->
+        (ProjectVideoPresets.effects + ProjectVideoPresets.videoEnhancements).forEach { preset ->
             val clips = listOf(clip.copy(projectVideoEffectId = preset.id), clip.copy(id = "other"))
             assertNull(projectCompositionUnsupportedReason(clips, ExportEngine.ExportConfig()))
         }

@@ -14,8 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val AI_PROTECTED_BLOCKER =
-    "Blocked pending validated all-category moderation for sexual, violent, and hateful content across every protected workflow. This validation is not available yet."
-internal const val AI_PROTECTED_STATUS_LABEL = "Unavailable · safety validation pending"
+    "Only wired existing-project video tools are enabled. No prompts, still-image AI, live camera AI, or image/video generation. Model inventory is not a processing control."
+internal const val AI_PROTECTED_STATUS_LABEL = "Backend information · not an editor action"
 internal const val LOCAL_REVIEW_ACTION_LABEL = "Open offline scene + face review"
 
 /** Keep model readiness and end-to-end editor readiness separate. */
@@ -47,14 +47,17 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
             name == "CONTENT_MODERATION" -> "Safety"
             else -> "Smart editing"
         }
-        // Inventory is informational only. Model readiness never changes the
-        // protected-tool status or creates a control that could enable it.
+        // Inventory is informational. Actual processing has a separate video-only entry.
         val inventoryStatus = if (feature.isReady) "Local backend detected" else "Local backend unavailable"
         val scopeNotice = if (feature.id == AiFeatureId.GESTURE_CONTROL || feature.id == AiFeatureId.MEDIAPIPE_HAND)
             "Live camera/gesture editing is outside the existing-project-video scope. " else ""
         AiToolCard(name, title, "$scopeNotice$inventoryStatus: ${feature.message}", group,
             statusLabel = AI_PROTECTED_STATUS_LABEL,
-            unavailableReason = AI_PROTECTED_BLOCKER)
+            unavailableReason = when (feature.id) {
+                AiFeatureId.ONNX_UPSCALING -> "Open AI Video Upscale above to process a supported selected video. No standalone still-image inference."
+                AiFeatureId.ONNX_STYLE_TRANSFER -> "ML artistic filters remain unavailable: license/provenance review and full-video integration are incomplete. Fixed non-AI filters are available in Video tools."
+                else -> AI_PROTECTED_BLOCKER
+            })
     }
 }
 
@@ -63,6 +66,7 @@ fun AiToolsOverlay(
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
     onOpenVideoPresets: (() -> Unit)? = null,
+    onOpenVideoUpscale: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
@@ -82,12 +86,13 @@ fun AiToolsOverlay(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            message = "Could not read the local model inventory. Protected AI remains unavailable; your project is unchanged."
+            message = "Could not read the local model inventory. Your project is unchanged; processing will check its own model integrity."
         }
     }
     AiToolsPanel(tools = cards, message = message,
         onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
         onOpenVideoPresets = onOpenVideoPresets,
+        onOpenVideoUpscale = onOpenVideoUpscale,
         onOpenDownloads = { showDownloads = true },
         reportTarget = reportTarget, reportState = reportState,
         onSubmitReport = onSubmitReport, onClearReportFeedback = onClearReportFeedback)

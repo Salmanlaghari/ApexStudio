@@ -51,6 +51,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*PreviewLayerTouchRoutingTest' \
   --tests '*ProjectVideoPresets*Test' \
   --tests '*EditorVideoPresets*Test' \
+  --tests '*VideoUpscale*Test' \
+  --tests '*EditorVideoUpscale*Test' \
   --tests '*AiToolsPanelTest' \
   --tests '*ModelDownloadsDialogTest' \
   --tests '*EditorPreviewControlsRegressionTest' \

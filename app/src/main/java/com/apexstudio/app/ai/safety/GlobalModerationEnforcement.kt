@@ -12,6 +12,7 @@ enum class ProtectedAiAction(val displayName: String) {
     ONNX_UPSCALING("learned image upscaling"),
     ONNX_BACKGROUND_REMOVAL("ONNX background removal"),
     ONNX_STYLE_TRANSFER("ONNX style transfer"),
+    PORTRAIT_BACKGROUND_EFFECTS("MediaPipe portrait background effects"),
 }
 
 data class ModerationReadiness(

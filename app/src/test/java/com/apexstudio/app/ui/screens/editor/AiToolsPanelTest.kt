@@ -6,6 +6,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.apexstudio.app.data.aireport.AiContentReportReason
+import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -21,7 +24,8 @@ class AiToolsPanelTest {
         "Smart editing", AI_PROTECTED_STATUS_LABEL, AI_PROTECTED_BLOCKER)
 
     @Test fun compactIconsHideFullDetailsUntilTappedAndNeverExposeProtectedSwitch() {
-        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}) } }
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
+            reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithText("Protected AI paused · safety approval required").assertExists()
         compose.onNodeWithText(tool.detail).assertDoesNotExist()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertDoesNotExist()
@@ -35,13 +39,15 @@ class AiToolsPanelTest {
 
     @Test fun localReviewIconInvokesActualSeparateWorkflow() {
         var reviewOpens = 0
-        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {}, onOpenLocalAnalysis = { reviewOpens++ }) } }
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {}, onOpenLocalAnalysis = { reviewOpens++ },
+            reportTarget = null, reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithContentDescription(LOCAL_REVIEW_ACTION_LABEL).activateVisibleControl()
         compose.runOnIdle { assertEquals(1, reviewOpens) }
     }
 
     @Test fun safetyDetailsRemainAccessibleFromInfoIcon() {
-        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}) } }
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
+            reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
         compose.onNodeWithText("Protected AI is unavailable").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
@@ -49,10 +55,24 @@ class AiToolsPanelTest {
 
     @Test fun downloadIconOpensExplicitModelChooserWithoutEnablingAI() {
         var requests = 0
-        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {}, onOpenDownloads = { requests++ }) } }
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {}, onOpenDownloads = { requests++ },
+            reportTarget = null, reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithContentDescription("Download optional AI models").activateVisibleControl()
         compose.runOnIdle { assertEquals(1, requests) }
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
+    }
+
+    @Test fun reportReasonSelectionInvokesRequiredSubmitCallback() {
+        var submitted: AiContentReportReason? = null
+        val target = AiContentReportTarget("project", "clip", "VIDEO")
+        compose.setContent { MaterialTheme {
+            AiToolsPanel(listOf(tool), "", onClose = {}, reportTarget = target,
+                reportState = AiContentReportUiState(), onSubmitReport = { submitted = it }, onClearReportFeedback = {})
+        } }
+        compose.onNodeWithText("Flag AI content").activateVisibleControl()
+        compose.onNodeWithText("Hateful content").activateVisibleControl()
+        compose.onNodeWithText("Save on device").activateVisibleControl()
+        compose.runOnIdle { assertEquals(AiContentReportReason.HATEFUL, submitted) }
     }
 
     private fun SemanticsNodeInteraction.activateVisibleControl() {

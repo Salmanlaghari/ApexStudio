@@ -234,7 +234,10 @@ dependencies {
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
   // Full build includes libx264, libmp3lame, and concat protocol support.
-  implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7") // FFmpegKit retired Jan 2025, binaries removed from Maven Central Apr 2025 — using maintained fork (same API)
+  // Maintained fork; this is a major-version/group change from the former
+  // com.arthenica:ffmpeg-kit-full 6.0-2 coordinate. Do not infer source/API
+  // compatibility from the artifact replacement; validate FFmpeg call sites.
+  implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
   implementation("com.arthenica:smart-exception-java:0.2.1")
 
   // GStreamer (Hybrid Engine PR #2 — pipeline-based real-time effects & streaming)

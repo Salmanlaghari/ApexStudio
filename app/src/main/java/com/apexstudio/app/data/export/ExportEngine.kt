@@ -877,15 +877,18 @@ class ExportEngine(private val context: Context) {
 
                 // 8. Configure Hardware Encoder Factory based on target resolution
                 //    (+ Pro Phase 1 custom bitrate override when set)
+                val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 startTransformerOnApplicationThread(
                     factory = {
                         buildHardwareTransformer(
                             config.resolution, outputFile, config.musicMixTracks,
                             overlayAudioSources = config.overlayAudioSources,
-                            bitrateMbpsOverride = config.bitrateMbps
+                            bitrateMbpsOverride = config.bitrateMbps,
+                            diagnostics = diagnostics
                         )
                     },
-                    start = { it.start(editedMediaItem, outputFile.absolutePath) }
+                    start = { it.start(editedMediaItem, outputFile.absolutePath) },
+                    diagnostics = diagnostics
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "startExport failed", e)
@@ -1263,7 +1266,8 @@ class ExportEngine(private val context: Context) {
         outputFile: File,
         musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
         overlayAudioSources: List<AudioExportSource> = emptyList(),
-        bitrateMbpsOverride: Int = 0
+        bitrateMbpsOverride: Int = 0,
+        diagnostics: ExportDiagnosticTrace? = null
     ): Transformer {
         // Pro Phase 1: explicit bitrate from the Export screen wins;
         // otherwise fall back to the resolution-based default.
@@ -1291,7 +1295,12 @@ class ExportEngine(private val context: Context) {
         val transformerListener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                 progressJob?.cancel()
+                diagnostics?.stage(
+                    "video_transformer_completed",
+                    "durationMs=${exportResult.durationMs} outputBytes=${outputFile.length()}"
+                )
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
+                    diagnostics?.stage("export_completed")
                     mainHandler.post {
                         _exportState.value = ExportProgressState(
                             isExporting = false,
@@ -1301,6 +1310,10 @@ class ExportEngine(private val context: Context) {
                     }
                     return
                 }
+                diagnostics?.stage(
+                    "post_mix_started",
+                    "musicTracks=${musicMixTracks.size} overlaySources=${overlayAudioSources.size}"
+                )
                 mainHandler.post {
                     _exportState.value = ExportProgressState(isExporting = true, progress = 0.97f)
                 }
@@ -1315,6 +1328,7 @@ class ExportEngine(private val context: Context) {
                         var overlayTrack: com.apexstudio.app.domain.model.AudioTrack? = null
                         if (overlayAudioSources.isNotEmpty()) {
                             try {
+                                diagnostics?.stage("overlay_audio_prepare_started", "sources=${overlayAudioSources.size}")
                                 val probed = selectAudioExportSources(overlayAudioSources) { uri ->
                                     AudioExportSourceProbe.hasAudio(context, uri)
                                 }
@@ -1341,6 +1355,7 @@ class ExportEngine(private val context: Context) {
                                     renderOverlayAudio(composition, overlayTemp)
                                     val durationMs = mediaDurationMs(overlayTemp)
                                     if (durationMs <= 0L) throw IllegalStateException("Prepared overlay audio has no readable duration")
+                                    diagnostics?.stage("overlay_audio_prepare_completed", "durationMs=$durationMs")
                                     overlayTrack = com.apexstudio.app.domain.model.AudioTrack(
                                         id = "export_overlay_audio",
                                         name = "Overlay audio",
@@ -1366,10 +1381,15 @@ class ExportEngine(private val context: Context) {
                             return@launch
                         }
                         mixContext.ensureActive()
+                        diagnostics?.stage("music_audio_mix_started", "tracks=${tracks.size}")
                         val result = MusicExportMixer.mixMusicIntoVideo(context, outputFile, tracks, mixedFile) {
                             mixContext.ensureActive()
                         }
                         mixContext.ensureActive()
+                        diagnostics?.stage(
+                            "music_audio_mix_completed",
+                            "mixedTracks=${result.mixedTracks} skippedTracks=${result.skippedTracks} outputBytes=${mixedFile.length()}"
+                        )
                         Log.i(TAG, "Audio mix done: ${result.mixedTracks} mixed, ${result.skippedTracks} skipped")
                         if (!outputFile.delete()) Log.w(TAG, "Could not delete intermediate export file")
                         val mixWarning = AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
@@ -1382,6 +1402,7 @@ class ExportEngine(private val context: Context) {
                         if (mixedFile.exists()) mixedFile.delete()
                         throw cancelled
                     } catch (e: Exception) {
+                        diagnostics?.stage("post_mix_failed", "failure=${e.javaClass.simpleName}")
                         Log.w(TAG, "Audio mix failed; keeping video without postmix audio", e)
                         if (mixedFile.exists() && !mixedFile.delete()) Log.w(TAG, "Could not delete partial mixed file")
                         val warning = listOfNotNull(overlayWarning, AudioMixExportNotice.MIX_FAILED).distinct().joinToString(" ")
@@ -1403,6 +1424,7 @@ class ExportEngine(private val context: Context) {
                 exportException: ExportException
             ) {
                 progressJob?.cancel()
+                diagnostics?.stage("video_transformer_failed", "errorCode=${exportException.errorCodeName}")
                 mainHandler.post {
                     _exportState.value = ExportProgressState(
                         isExporting = false,
@@ -1423,13 +1445,15 @@ class ExportEngine(private val context: Context) {
     /** Media3 start/getProgress/cancel all require its configured application looper. */
     internal suspend fun startTransformerOnApplicationThread(
         factory: () -> Transformer,
+        diagnostics: ExportDiagnosticTrace? = null,
         start: (Transformer) -> Unit
     ) = withContext(Dispatchers.Main.immediate) {
         val active = factory()
         transformer = active
         try {
             start(active)
-            startProgressTracking(active)
+            diagnostics?.stage("video_transformer_started")
+            startProgressTracking(active, diagnostics)
         } catch (failure: Exception) {
             active.cancel()
             if (transformer === active) transformer = null
@@ -1437,13 +1461,17 @@ class ExportEngine(private val context: Context) {
         }
     }
 
-    private fun startProgressTracking(activeTransformer: Transformer) {
+    private fun startProgressTracking(
+        activeTransformer: Transformer,
+        diagnostics: ExportDiagnosticTrace? = null
+    ) {
         progressJob?.cancel()
         val progressHolder = ProgressHolder()
         progressJob = CoroutineScope(Dispatchers.Main.immediate).launch {
             while (_exportState.value.isExporting && this@ExportEngine.transformer === activeTransformer) {
                 val pState = activeTransformer.getProgress(progressHolder)
                 if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    diagnostics?.progress(progressHolder.progress)
                     val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
                     _exportState.value = _exportState.value.copy(progress = p)
                 }

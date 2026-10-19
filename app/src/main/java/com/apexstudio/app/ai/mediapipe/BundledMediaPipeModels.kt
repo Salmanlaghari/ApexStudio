@@ -1,6 +1,8 @@
 package com.apexstudio.app.ai.mediapipe
 
 import android.content.Context
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.ai.models.ModelAssetAccess
 import java.io.File
 import java.io.FileInputStream
@@ -93,8 +95,11 @@ object BundledMediaPipeModels {
     fun openHands(context: Context, maxHands: Int = 2): MediaPipeLandmarkers.HandDetector =
         MediaPipeLandmarkers.openHands(context, modelFile(context, Model.HAND), maxHands)
 
-    fun openPortraitEffects(context: Context): MediaPipePortraitEffects =
-        MediaPipePortraitEffects.open(context, modelFile(context, Model.SELFIE_SEGMENTER))
+    fun openPortraitEffects(context: Context): MediaPipePortraitEffects {
+        // Check before modelFile can copy packaged bytes into app-private storage.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.PORTRAIT_BACKGROUND_EFFECTS)
+        return MediaPipePortraitEffects.open(context, modelFile(context, Model.SELFIE_SEGMENTER))
+    }
 
     private fun sha256(file: File, checkCancelled: () -> Unit): String {
         checkCancelled()

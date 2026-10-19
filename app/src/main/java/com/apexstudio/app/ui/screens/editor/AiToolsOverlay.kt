@@ -2,6 +2,9 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.data.aireport.AiContentReportReason
+import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
 import com.apexstudio.app.ai.AiAvailability
 import com.apexstudio.app.ai.AiFeatureAvailability
 import com.apexstudio.app.ai.AiFeatureId
@@ -58,6 +61,10 @@ fun AiToolsOverlay(
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
     onOpenGestures: (() -> Unit)? = null,
+    reportTarget: AiContentReportTarget?,
+    reportState: AiContentReportUiState,
+    onSubmitReport: (AiContentReportReason) -> Unit,
+    onClearReportFeedback: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     var cards by remember { mutableStateOf(aiToolCards(AiFeatureId.entries.map { id ->
@@ -78,7 +85,9 @@ fun AiToolsOverlay(
     }
     AiToolsPanel(tools = cards, message = message,
         onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
-        onOpenGestures = onOpenGestures, onOpenDownloads = { showDownloads = true })
+        onOpenGestures = onOpenGestures, onOpenDownloads = { showDownloads = true },
+        reportTarget = reportTarget, reportState = reportState,
+        onSubmitReport = onSubmitReport, onClearReportFeedback = onClearReportFeedback)
     if (showDownloads) ModelDownloadsDialog(onDismiss = {
         showDownloads = false
         inventoryRevision++

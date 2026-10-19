@@ -22,10 +22,12 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*EditorBackgroundHistoryTest' \
   --tests '*BackgroundOutputPublicationTest' \
   --tests '*WhisperInferenceReliabilityTest' \
+  --tests '*WhisperBundledModelCancellationTest' \
   --tests '*WhisperModelIntegrityTest' \
   --tests '*WhisperTokenDecodingTest' \
   --tests '*PcmAudioProcessorTest' \
   --tests '*EditorTrimPositionTest' \
+  --tests '*EditorTimelineSnappingTest' \
   --tests '*TimelineTrimScaleTest' \
   --tests '*MainTimelineTrimGestureTest' \
   --tests '*TimelineClipGestureTest' \

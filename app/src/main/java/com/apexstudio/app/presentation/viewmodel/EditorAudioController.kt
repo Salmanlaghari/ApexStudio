@@ -51,39 +51,69 @@ fun EditorViewModel.toggleRippleEdit() {
  * if within [snapThresholdMs].
  */
 fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 150L): Long {
-    if (!_state.value.magneticSnapping) {
-        return if (_state.value.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
+    val state = _state.value
+    if (!state.magneticSnapping) {
+        return if (state.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
     }
     val candidates = mutableListOf<Long>()
-    val project = _state.value.project
+    val project = state.project
     if (project != null) {
         var accMs = 0L
         candidates.add(0L)
         for (clip in project.clips) {
-            val clipDur = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(100L)
-            accMs += clipDur
-            candidates.add(accMs)
-            // Add keyframes
-            for (kf in clip.keyframes.keyframes) {
-                candidates.add(accMs - clipDur + kf.timeMs)
+            val end = if (clip.trimEndMs == Long.MAX_VALUE) clip.durationMs else clip.trimEndMs
+            if (clip.trimStartMs >= 0L && end >= clip.trimStartMs) {
+                val duration = SpeedCurveMath.effectiveDurationMs(
+                    end - clip.trimStartMs, SpeedCurveMath.sanitize(clip.speedPoints)
+                )
+                when {
+                    clip.type == ClipType.OVERLAY -> {
+                        // Overlays are placed independently; they never advance V1.
+                        val start = clip.timelineOffsetMs.coerceAtLeast(0L)
+                        candidates.add(start)
+                        candidates.add(saturatedSnapEnd(start, duration))
+                    }
+                    clip.trackIndex == 0 && (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE) -> {
+                        accMs = saturatedSnapEnd(accMs, duration)
+                        candidates.add(accMs)
+                    }
+                }
             }
+            // Persisted clip keyframes and timeline diamonds use absolute project time.
+            candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
         }
     }
-    if (_state.value.snapToBeat) {
-        candidates.addAll(_state.value.beatMarkersMs)
+    if (state.snapToBeat) {
+        candidates.addAll(state.beatMarkersMs)
     }
-    if (candidates.isEmpty()) return timeMs
-    val closest = candidates.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
-    return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
+    return nearestTimelineSnap(timeMs, snapThresholdMs, candidates)
 }
 
+private fun saturatedSnapEnd(startMs: Long, durationMs: Long): Long =
+    if (durationMs > Long.MAX_VALUE - startMs) Long.MAX_VALUE else startMs + durationMs
+
+/** Non-negative timeline differences cannot overflow; abs(a - b) for arbitrary Longs can. */
+private fun nearestTimelineSnap(timeMs: Long, thresholdMs: Long, candidates: List<Long>): Long {
+    if (timeMs < 0L || thresholdMs < 0L) return timeMs
+    var closest = timeMs
+    var closestDistance = Long.MAX_VALUE
+    var found = false
+    for (candidate in candidates) {
+        if (candidate < 0L) continue
+        val distance = if (candidate >= timeMs) candidate - timeMs else timeMs - candidate
+        if (distance <= thresholdMs && (!found || distance < closestDistance ||
+                (distance == closestDistance && candidate < closest))) {
+            closest = candidate
+            closestDistance = distance
+            found = true
+        }
+    }
+    return closest
+}
 
 fun EditorViewModel.findNearestBeat(timeMs: Long, snapThresholdMs: Long = 180L): Long {
     if (!_state.value.snapToBeat) return timeMs
-    val beats = _state.value.beatMarkersMs
-    if (beats.isEmpty()) return timeMs
-    val closest = beats.minByOrNull { kotlin.math.abs(it - timeMs) } ?: return timeMs
-    return if (kotlin.math.abs(closest - timeMs) <= snapThresholdMs) closest else timeMs
+    return nearestTimelineSnap(timeMs, snapThresholdMs, _state.value.beatMarkersMs)
 }
 
 fun EditorViewModel.toggleAiVoice() = _audio.update { it.copy(aiVoiceEnhance = !it.aiVoiceEnhance) }

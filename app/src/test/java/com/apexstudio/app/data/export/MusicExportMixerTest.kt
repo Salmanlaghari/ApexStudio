@@ -57,6 +57,20 @@ class MusicExportMixerTest {
     }
 
     @Test
+    fun `extreme persisted fade durations saturate instead of overflowing`() {
+        val playFrames = 10_000L * 44_100L / 1_000L
+        assertEquals(
+            0f,
+            MusicExportMixer.fadeEnvelope(0L, playFrames, Long.MAX_VALUE, 0L)
+        )
+        assertEquals(
+            0f,
+            MusicExportMixer.fadeEnvelope(0L, playFrames, 0L, Long.MAX_VALUE),
+            0.001f
+        )
+    }
+
+    @Test
     fun `degenerate windows are silent`() {
         assertEquals(0f, env(0, 0, 1_000, 1_000))
         assertEquals(0f, env(0, -5, 0, 0))

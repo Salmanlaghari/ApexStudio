@@ -61,15 +61,16 @@ object WhisperCaptionEngine {
     private const val EXPECTED_TOKENS_PER_CHUNK = 150
 
     /** Files from the bundled private install, or from a legacy PackManager install. */
-    fun modelFiles(context: Context): Triple<File, File, File>? {
-        bundledModelFiles(context)?.let { return it }
+    fun modelFiles(context: Context, checkCancelled: () -> Unit = {}): Triple<File, File, File>? {
+        bundledModelFiles(context, checkCancelled)?.let { return it }
         return packModelFiles(context)
     }
 
     /** True offline once the bundled model is present in app-private storage. */
     suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
-        installBundledModel(context.applicationContext)
-        bundledModelFiles(context) != null ||
+        val installContext = coroutineContext
+        installBundledModel(context.applicationContext) { installContext.ensureActive() }
+        bundledModelFiles(context) { installContext.ensureActive() } != null ||
             (PACK_IDS.all { PackManager.isDownloaded(context, it) } && packModelFiles(context) != null)
     }
 
@@ -80,34 +81,42 @@ object WhisperCaptionEngine {
         return if (enc.isFile && dec.isFile && tok.isFile) Triple(enc, dec, tok) else null
     }
 
-    private fun bundledModelFiles(context: Context): Triple<File, File, File>? {
+    private fun bundledModelFiles(context: Context, checkCancelled: () -> Unit = {}): Triple<File, File, File>? {
+        checkCancelled()
         val dir = File(context.filesDir, "models/whisper/$BUNDLED_REVISION")
         if (File(dir, BUNDLED_MARKER).takeIf { it.isFile }?.readText() != BUNDLED_REVISION) return null
         val files = bundledAssets.map { File(dir, it.name) }
         if (files.indices.any { index ->
-                !isWhisperAssetVerified(files[index], bundledAssets[index].size, bundledAssets[index].sha256)
+                !isWhisperAssetVerified(
+                    files[index], bundledAssets[index].size, bundledAssets[index].sha256, checkCancelled,
+                )
             }) return null
         return Triple(files[0], files[1], files[2])
     }
 
     /** Copy bundled assets into versioned storage; directory rename publishes only a complete verified set. */
     @Synchronized
-    private fun installBundledModel(context: Context) {
-        if (bundledModelFiles(context) != null) return
+    internal fun installBundledModel(context: Context, checkCancelled: () -> Unit = {}) {
+        checkCancelled()
+        if (bundledModelFiles(context, checkCancelled) != null) return
         val root = File(context.filesDir, "models/whisper")
         val target = File(root, BUNDLED_REVISION)
-        root.mkdirs()
         val staging = File(root, ".staging-${Thread.currentThread().id}-${System.nanoTime()}")
         try {
+            checkCancelled()
+            check(root.isDirectory || root.mkdirs()) { "Cannot create Whisper model directory" }
             if (!staging.mkdirs()) throw IllegalStateException("Cannot create Whisper model staging directory")
             for (asset in bundledAssets) {
+                checkCancelled()
                 val stagedFile = File(staging, asset.name)
                 val digest = MessageDigest.getInstance("SHA-256")
                 context.assets.open("$BUNDLED_ASSET_DIR/${asset.name}").use { input ->
                     FileOutputStream(stagedFile).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
+                            checkCancelled()
                             val count = input.read(buffer)
+                            checkCancelled()
                             if (count < 0) break
                             digest.update(buffer, 0, count)
                             output.write(buffer, 0, count)
@@ -120,11 +129,21 @@ object WhisperCaptionEngine {
                     "Bundled Whisper asset failed integrity verification: ${asset.name}"
                 }
             }
+            checkCancelled()
             File(staging, BUNDLED_MARKER).writeText(BUNDLED_REVISION)
-            if (target.exists()) target.deleteRecursively()
+            checkCancelled()
+            if (target.exists()) check(target.deleteRecursively()) { "Cannot replace invalid Whisper model" }
+            checkCancelled()
             check(staging.renameTo(target)) { "Could not atomically install bundled Whisper model" }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            try {
+                staging.deleteRecursively()
+            } catch (_: Exception) {
+                // Preserve cancellation as the primary outcome.
+            }
+            throw cancelled
         } catch (error: Exception) {
-            staging.deleteRecursively()
+            try { staging.deleteRecursively() } catch (_: Exception) { }
             Log.e(TAG, "Could not install bundled Whisper model", error)
         }
     }
@@ -153,8 +172,9 @@ object WhisperCaptionEngine {
         GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
         WhisperInferenceGate.withLock {
         val appContext = context.applicationContext
-        installBundledModel(appContext)
-        val (encFile, decFile, tokFile) = modelFiles(appContext)
+        val installContext = coroutineContext
+        installBundledModel(appContext) { installContext.ensureActive() }
+        val (encFile, decFile, tokFile) = modelFiles(appContext) { installContext.ensureActive() }
             ?: return@withLock null // model files missing
         val model = WhisperModel.load(encFile, decFile, tokFile)
             ?: return@withLock null // caller surfaces "model failed to load"
@@ -327,13 +347,21 @@ internal object WhisperInferenceGate {
 }
 
 /** Verify bytes, not only a marker and file length, before reporting bundled offline readiness. */
-internal fun isWhisperAssetVerified(file: File, expectedSize: Long, expectedSha256: String): Boolean {
+internal fun isWhisperAssetVerified(
+    file: File,
+    expectedSize: Long,
+    expectedSha256: String,
+    checkCancelled: () -> Unit = {},
+): Boolean {
+    checkCancelled()
     if (!file.isFile || file.length() != expectedSize || !expectedSha256.matches(Regex("[0-9a-f]{64}"))) return false
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().buffered().use { input ->
         val buffer = ByteArray(64 * 1024)
         while (true) {
+            checkCancelled()
             val count = input.read(buffer)
+            checkCancelled()
             if (count < 0) break
             digest.update(buffer, 0, count)
         }

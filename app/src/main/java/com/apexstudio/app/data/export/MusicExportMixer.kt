@@ -523,8 +523,11 @@ object MusicExportMixer {
         fadeOutMs: Long
     ): Float {
         if (playFrames <= 0L) return 0f
-        val fadeInFrames = (fadeInMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
-        val fadeOutFrames = (fadeOutMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
+        // Durations come from persisted project data; multiplying arbitrary
+        // Long milliseconds by the sample rate can wrap and silently disable
+        // a fade. Use the same saturating conversion as timeline placement.
+        val fadeInFrames = ExportAudioTimelineMapping.millisToFrames(fadeInMs, SAMPLE_RATE)
+        val fadeOutFrames = ExportAudioTimelineMapping.millisToFrames(fadeOutMs, SAMPLE_RATE)
         var e = 1f
         if (fadeInFrames > 0 && posFrames < fadeInFrames) {
             e = min(e, posFrames.toFloat() / fadeInFrames)

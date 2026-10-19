@@ -6,6 +6,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.apexstudio.app.domain.model.AudioTrack
 
 /**
  * Unit tests for the pure helpers in [MusicExportMixer].
@@ -75,6 +76,23 @@ class MusicExportMixerTest {
     fun `degenerate windows are silent`() {
         assertEquals(0f, env(0, 0, 1_000, 1_000))
         assertEquals(0f, env(0, -5, 0, 0))
+    }
+
+    @Test
+    fun `mixer applies canonical mute and solo policy without counting exclusions as failures`() {
+        fun track(id: String, muted: Boolean = false, solo: Boolean = false) = AudioTrack(
+            id = id, name = id, uri = "file:///$id.m4a", isMuted = muted, isSolo = solo
+        )
+        val audible = track("audible")
+        val muted = track("muted", muted = true)
+        val solo = track("solo", solo = true)
+        val nonSolo = track("non-solo")
+
+        assertEquals(listOf(audible), selectEnabledMusicTracks(listOf(audible, muted)))
+        assertEquals(listOf(solo), selectEnabledMusicTracks(listOf(nonSolo, solo)))
+
+        // A muted solo silences non-solo tracks too; no track should then be mixed.
+        assertEquals(emptyList<AudioTrack>(), selectEnabledMusicTracks(listOf(nonSolo, solo.copy(isMuted = true))))
     }
 
     @Test

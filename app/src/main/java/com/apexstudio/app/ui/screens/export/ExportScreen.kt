@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -68,7 +70,8 @@ fun ExportScreen(
     val selectedAspect = export.settings.aspectRatio
     val selectedBitrateMbps = export.settings.bitrateMbps
     // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
-    val projectDurationMs = editorState.durationMs.coerceAtLeast(1L)
+    val videoScope = videoExportScope(editorState)
+    val projectDurationMs = videoScope.durationMs.coerceAtLeast(1L)
     val effectiveBitrateMbps = if (selectedBitrateMbps > 0) selectedBitrateMbps else when {
         selectedResolution.contains("4k", ignoreCase = true) ||
                 selectedResolution.contains("2160") -> 50
@@ -100,10 +103,12 @@ fun ExportScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             AudioExportWarning(export.warning)
+            VideoExportScopeWarning(videoScope)
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fxList) { fx ->
@@ -394,8 +399,7 @@ fun ExportScreen(
                 }
             }
 
-            val selectedClip = editorState.project?.clips?.firstOrNull { it.id == editorState.selectedClipId }
-                ?: editorState.project?.clips?.firstOrNull()
+            val selectedClip = videoScope.baseClip
             val trimStart = selectedClip?.trimStartMs ?: 0L
             val trimEnd = selectedClip?.trimEndMs ?: selectedClip?.durationMs ?: 0L
             val clipDuration = selectedClip?.durationMs ?: 0L
@@ -453,7 +457,7 @@ fun ExportScreen(
                         Text(
                             if (isTrimmed)
                                 "Range: ${com.apexstudio.app.util.TimeFormat.formatMs(trimStart)} ➔ ${com.apexstudio.app.util.TimeFormat.formatMs(trimEnd)} (Length: ${com.apexstudio.app.util.TimeFormat.formatMs(trimmedDuration)})"
-                            else "Full video export (${com.apexstudio.app.util.TimeFormat.formatMs(clipDuration)})",
+                            else "Full selected clip (${com.apexstudio.app.util.TimeFormat.formatMs(clipDuration)})",
                             color = ApexPalette.TextSecondary,
                             fontSize = 10.sp
                         )
@@ -538,7 +542,7 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable {
+                .clickable(enabled = videoScope.baseClip != null && !export.isExporting) {
                     // Single export path: the ViewModel's engine bakes
                     // crop + LUT filter + FX + speed + keyframes + text
                     // overlays into the MP4 and mirrors progress into

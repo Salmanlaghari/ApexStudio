@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
+import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.domain.model.AudioTrack
 import java.io.File
 import java.io.RandomAccessFile
@@ -15,6 +16,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.floor
 import kotlin.math.min
+
+internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack> =
+    tracks.filter { AudioPlaybackMix.isEnabled(it, tracks) }
 
 /**
  * Mixes timeline music tracks into an exported video file.
@@ -85,6 +89,11 @@ object MusicExportMixer {
         checkCancelled()
         require(inputVideo.exists()) { "Input video missing: ${inputVideo.absolutePath}" }
         outputVideo.parentFile?.mkdirs()
+        val enabledTracks = selectEnabledMusicTracks(tracks)
+        if (enabledTracks.isEmpty()) {
+            inputVideo.copyTo(outputVideo, overwrite = true)
+            return MixResult(outputVideo, 0, 0)
+        }
 
         // ---- 1. Probe input -------------------------------------------------
         val probe = MediaExtractor()
@@ -136,7 +145,7 @@ object MusicExportMixer {
         val placed = mutableListOf<PlacedTrack>()
         var skipped = 0
         try {
-            for (t in tracks) {
+            for (t in enabledTracks) {
                 checkCancelled()
                 val sourceTrim = ExportAudioTimelineMapping.sourceTrim(
                     t.trimStartMs, t.trimEndMs, SAMPLE_RATE

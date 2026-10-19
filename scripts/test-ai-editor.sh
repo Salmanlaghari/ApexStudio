@@ -55,6 +55,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*MusicExportMixerTest' \
   --tests '*AudioMixExportNoticeTest' \
   --tests '*ExportCodecGuardTest' \
+  --tests '*VideoExportScopeTest' \
   --tests '*ExportCodecPumpTest' \
   --tests '*AudioExportWarningTest' \
   --tests '*ExportPcmBufferTest' \

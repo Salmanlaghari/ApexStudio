@@ -1,6 +1,16 @@
 # Offline AI: what is available and what is still blocked
 
-Latest integrated host validation: **847 JVM tests in 144 suites, zero failures, errors or skips**; Android instrumentation-test Kotlin compilation and debug APK assembly passed. All 13 Python integrity/provenance tests and all 14 bundled-model integrity checks passed. Real ONNX Runtime CPU inference also passed for both new model packs on generated synthetic RGB fixtures. Android instrumentation remains compiled, **not device-executed**. These results establish code/host regressions, not hardware AAC audibility, model quality, GPU appearance or moderation readiness.
+Latest integrated host validation: **854 JVM tests in 145 suites, zero failures, errors or skips**; Android instrumentation-test Kotlin compilation and debug APK assembly passed. All 13 Python integrity/provenance tests and all 14 bundled-model integrity checks passed. Real ONNX Runtime CPU inference also passed for both new model packs on generated synthetic RGB fixtures. Android instrumentation remains compiled, **not device-executed**. These results establish code/host regressions, not hardware AAC audibility, model quality, GPU appearance or moderation readiness.
+
+## Follow-up #166: export accuracy and honest scope
+
+PR #165 was merged externally with content through `b06005e`. [Draft follow-up #166](https://github.com/Salmanlaghari/ApexStudio/pull/166) retains the unmerged `ac3d342` work and continues on `feature/ai-features` against `main`; no merge was performed by this follow-up.
+
+The video export settings now use the same main-video/photo selection as the controller, so selecting an overlay or audio item cannot display its trim points as the exported base clip. The size estimate uses that base clip's speed-adjusted retained duration instead of the whole project duration. Multi-main-clip projects show a pre-export warning that only the selected/fallback base clip is saved, not the entire project. Settings scroll on small screens; the screen's video export button is inactive while exporting or when no main source exists. Six new host regressions cover selection, duration and warning visibility. This is disclosure/correctness, **not whole-project video composition**, and does not rebase absolute overlays/music onto a later selected main clip.
+
+The music mixer itself now enforces the canonical mute/solo policy before probing or decoding tracks, including muted-solo behavior. With no enabled tracks it copies the input unchanged; intentionally disabled tracks do not count as skipped-source failures. A new host regression covers selection policy. Existing controller pre-filtering is retained. Real codecs and audibility still need phone acceptance.
+
+Protected AI actions remain disabled. A targeted policy review found no new gate bypass: Candy-9 remains absent from the reviewed artifact catalog and its conflicting license/provenance is still unresolved. The full requested AI brief remains incomplete, including validated all-category moderation, full realtime AI preview/export, multilingual measured-word karaoke, missing learned TFLite packs and whole-project composition. Earlier sections below preserve prior implementation history; their historical PR-state and availability claims are superseded by this section and later feature-specific notes.
 
 ## Two missing ONNX packs now have real local backends
 

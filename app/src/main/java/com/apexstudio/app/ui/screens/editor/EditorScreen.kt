@@ -29,6 +29,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
+import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
@@ -77,6 +78,7 @@ fun EditorScreen(
     )
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -792,13 +794,22 @@ fun EditorScreen(
         }
     }
 
+    val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
+        resolveAiContentReportTarget(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId)
+    }
     if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
         showAiPanel = false
         showLocalAnalysis = true
     }, onOpenGestures = {
         showAiPanel = false
         showGesturePanel = true
-    })
+    }, reportTarget = aiReportTarget, reportState = aiContentReportState,
+        onSubmitReport = { reason ->
+            val current = vm.state.value
+            vm.submitAiContentReport(resolveAiContentReportTarget(
+                projectId, current.project, current.selectedClipId, current.selectedTextOverlayId
+            ), reason)
+        }, onClearReportFeedback = vm::clearAiContentReportFeedback)
     if (showGesturePanel) EditorGestureOverlay(vm, onClose = { showGesturePanel = false })
     if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
         onPreviewSourceTime = { analyzedClipId, sourceMs ->

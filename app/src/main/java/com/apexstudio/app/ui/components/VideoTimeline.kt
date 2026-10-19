@@ -615,9 +615,19 @@ fun VideoTimeline(
                     tint = if (multiSelectMode) Color(0xFF39D9D0) else Color(0xFF8C9AAF),
                     modifier = Modifier.size(20.dp))
             }
-            IconButton(onClick = { onAddMedia(ClipType.VIDEO) },
-                modifier = Modifier.size(44.dp).testTag("timeline-add-media")) {
-                Icon(Icons.Default.Add, "Add video to timeline", tint = Color(0xFF39D9D0), modifier = Modifier.size(22.dp))
+            Row(
+                modifier = Modifier
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF39D9D0).copy(alpha = 0.12f))
+                    .clickable { onAddMedia(ClipType.VIDEO) }
+                    .padding(horizontal = 9.dp)
+                    .testTag("timeline-add-media"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Add, "Add Clip", tint = Color(0xFF39D9D0), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Clip", color = Color(0xFF39D9D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -628,11 +638,11 @@ fun VideoTimeline(
                 else Modifier.fillMaxHeight()
             )) {
                 TimelineLaneLabel("SEC", rulerHeight + 10.dp, Color(0xFF8C9AAF))
-                TimelineLaneLabel("V1", v1Height, Color(0xFF39D9D0),
-                    active = videoClips.any { it.id == selectedClipId }, description = "V1 main video")
-                if (showWaveformStrip) {
-                    TimelineLaneLabel("♫", (10 + waveformStripHeight).dp, Color(0xFF57C5A0), description = "Source audio")
-                }
+                // Keep the identity rail aligned with the main-video and waveform rows,
+                // but leave those rows unlabeled per the simplified timeline header request.
+                Spacer(Modifier.fillMaxWidth().height(v1Height).semantics { contentDescription = "Main video track" })
+                if (showWaveformStrip) Spacer(Modifier.fillMaxWidth().height((10 + waveformStripHeight).dp)
+                    .semantics { contentDescription = "Source audio waveform" })
                 Box(Modifier.fillMaxWidth().then(
                     if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f)
                 ).clipToBounds()) {
@@ -647,7 +657,9 @@ fun VideoTimeline(
                         if (textOverlays.isNotEmpty()) TimelineLaneLabel("TXT", textLaneHeight.dp, Color(0xFFF2BF72), selectedTextOverlayId != null, "Text")
                         if (stickers.isNotEmpty()) TimelineLaneLabel("STK", stickerLaneHeight.dp, Color(0xFFF19CC3), selectedStickerId != null, "Stickers")
                         if (hasFx) TimelineLaneLabel("FX", fxLaneHeight.dp, Color(0xFF9C9DFF), description = "Effects and filters")
-                        if (musicTracks.isNotEmpty()) TimelineLaneLabel("A1", a1Height, Color(0xFF57C5A0), musicTracks.any { it.id == selectedAudioTrackId }, "Music")
+                        // Retain audio-row geometry without displaying the A1 identity label.
+                        if (musicTracks.isNotEmpty()) Spacer(Modifier.fillMaxWidth().height(a1Height)
+                            .semantics { contentDescription = "Music" })
                         if (voiceTracks.isNotEmpty()) TimelineLaneLabel("A2", a2Height, Color(0xFF74B4EC), voiceTracks.any { it.id == selectedAudioTrackId }, "Voice and sound effects")
                     }
                 }

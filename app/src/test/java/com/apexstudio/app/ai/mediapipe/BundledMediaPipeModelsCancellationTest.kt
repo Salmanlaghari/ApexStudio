@@ -3,6 +3,7 @@ package com.apexstudio.app.ai.mediapipe
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.AssetManager
+import com.apexstudio.app.ai.AiModelUnavailableException
 import com.apexstudio.app.ai.models.SourceModelAssets
 import java.io.File
 import java.nio.file.Files
@@ -59,6 +60,29 @@ class BundledMediaPipeModelsCancellationTest {
         val expected = CancellationException("face entry")
         assertSame(expected, cancellation { BundledMediaPipeModels.openFace(context) { throw expected } })
         assertFalse(File(root, "mediapipe").exists())
+    }
+
+    @Test fun moderationDeniesBundledPortraitOpenBeforeModelMaterialization() = withContext { context, root ->
+        val failure = try {
+            BundledMediaPipeModels.openPortraitEffects(context)
+            throw AssertionError("Portrait segmentation must remain blocked")
+        } catch (expected: AiModelUnavailableException) {
+            expected
+        }
+        assertTrue(failure.message.orEmpty().contains("MediaPipe portrait background effects"))
+        assertFalse("Blocked open must not materialize the bundled model", File(root, "mediapipe").exists())
+    }
+
+    @Test fun moderationDeniesDirectPortraitOpenBeforeInspectingModelFile() = withContext { context, root ->
+        val model = File(root, "not-present.tflite")
+        val failure = try {
+            MediaPipePortraitEffects.open(context, model)
+            throw AssertionError("Direct portrait segmentation open must remain blocked")
+        } catch (expected: AiModelUnavailableException) {
+            expected
+        }
+        assertTrue(failure.message.orEmpty().contains("MediaPipe portrait background effects"))
+        assertFalse(model.exists())
     }
 
     private fun cancellation(block: () -> Unit): CancellationException {

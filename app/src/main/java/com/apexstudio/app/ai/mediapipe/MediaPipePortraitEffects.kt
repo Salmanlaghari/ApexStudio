@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.google.mediapipe.framework.image.BitmapExtractor
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.ByteBufferExtractor
@@ -182,6 +184,8 @@ class MediaPipePortraitEffects internal constructor(private val segmenter: Portr
 
     companion object {
         fun open(context: Context, modelFile: File): MediaPipePortraitEffects {
+            // Deny before reading model bytes, allocating native model storage, or creating MediaPipe.
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.PORTRAIT_BACKGROUND_EFFECTS)
             require(modelFile.isFile && modelFile.length() > 0) { "Missing bundled selfie segmentation model" }
             val bytes = modelFile.readBytes()
             val buffer = java.nio.ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())

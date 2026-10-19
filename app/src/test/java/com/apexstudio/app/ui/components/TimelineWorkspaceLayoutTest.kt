@@ -178,7 +178,7 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun identityRailStaysFixedAndV1LabelTracksItsClipDuringHorizontalScroll() {
+    fun accessibleMainRailStaysFixedAndAlignedWithItsClipDuringHorizontalScroll() {
         val scrollState = ScrollState(0)
         composeRule.setContent {
             workspace(
@@ -190,7 +190,7 @@ class TimelineWorkspaceLayoutTest {
             )
         }
         composeRule.waitForIdle()
-        val rail = composeRule.onNodeWithContentDescription("V1 main video")
+        val rail = composeRule.onNodeWithContentDescription("Main video track")
         val mainClip = composeRule.onNodeWithTag("timeline-clip-main", useUnmergedTree = true)
         val railBefore = rail.fetchSemanticsNode().boundsInRoot
         val clipBefore = mainClip.fetchSemanticsNode().boundsInRoot
@@ -203,7 +203,7 @@ class TimelineWorkspaceLayoutTest {
         assertEquals(railBefore.center.x, railAfter.center.x, 0.5f)
         assertEquals(clipBefore.center.x - 30f, clipAfter.center.x, 3f)
         assertTrue(
-            "V1 label and clip should share the same lane: rail=$railAfter clip=$clipAfter",
+            "Accessible main-track rail and clip should share the same lane: rail=$railAfter clip=$clipAfter",
             kotlin.math.abs(railAfter.center.y - clipAfter.center.y) < 18f,
         )
     }
@@ -220,7 +220,8 @@ class TimelineWorkspaceLayoutTest {
             )
         }
 
-        composeRule.onNodeWithContentDescription("V1 main video").assertExists()
+        composeRule.onNodeWithContentDescription("Main video track").assertExists()
+        composeRule.onNodeWithText("V1").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
         composeRule.onNodeWithContentDescription("Text").assertExists()
         composeRule.onNodeWithContentDescription("V3 overlay").assertDoesNotExist()

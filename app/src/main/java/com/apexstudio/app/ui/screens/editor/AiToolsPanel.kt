@@ -1,11 +1,14 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.apexstudio.app.data.aireport.AiContentReportReason
+import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /** Inventory is not permission to run a protected action. */
@@ -48,14 +54,19 @@ fun AiToolsPanel(
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
     onOpenGestures: (() -> Unit)? = null,
-    onOpenDownloads: (() -> Unit)? = null
+    onOpenDownloads: (() -> Unit)? = null,
+    reportTarget: AiContentReportTarget?,
+    reportState: AiContentReportUiState,
+    onSubmitReport: (AiContentReportReason) -> Unit,
+    onClearReportFeedback: () -> Unit
 ) {
     var group by remember { mutableStateOf<String?>(null) }
     var selectedTool by remember { mutableStateOf<AiToolCard?>(null) }
     var showSafetyInfo by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState, containerColor = ApexPalette.BgSurface) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("AI tools", style = MaterialTheme.typography.titleLarge, color = ApexPalette.TextPrimary, modifier = Modifier.weight(1f))
                 if (onOpenDownloads != null) IconButton(onClick = onOpenDownloads) {
@@ -99,8 +110,27 @@ fun AiToolsPanel(
                     }
                 }
             }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Report AI content", style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
+                Text("Reports are saved on this device only. They are not sent to the developer and do not constitute a developer submission.",
+                    style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
+                Button(onClick = { onClearReportFeedback(); showReportDialog = true }, enabled = reportTarget != null && !reportState.isSaving) {
+                    Text("Flag AI content")
+                }
+                if (reportTarget == null) Text("Select a clip in the current project to create a report reference.",
+                    style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
+                reportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = if (reportState.saved) MaterialTheme.colorScheme.primary else ApexPalette.TextSecondary) }
+            }
         }
     }
+    if (showReportDialog) AiContentReportDialog(
+        target = reportTarget,
+        state = reportState,
+        onDismiss = { showReportDialog = false },
+        onSubmit = onSubmitReport
+    )
     selectedTool?.let { tool ->
         AlertDialog(onDismissRequest = { selectedTool = null },
             icon = { Icon(aiToolIcon(tool.id), null) },
@@ -124,4 +154,37 @@ fun AiToolsPanel(
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(onClick = { showSafetyInfo = false }) { Text("Close") } })
+}
+
+@Composable
+private fun AiContentReportDialog(
+    target: AiContentReportTarget?,
+    state: AiContentReportUiState,
+    onDismiss: () -> Unit,
+    onSubmit: (AiContentReportReason) -> Unit
+) {
+    var selectedReason by remember { mutableStateOf<AiContentReportReason?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!state.isSaving) onDismiss() },
+        title = { Text("Flag AI content") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Choose the reason. A reference to the selected project clip${if (target?.textOverlayId != null) " and selected text overlay" else ""} and your reason will be stored on this device. No media or text is copied or uploaded.")
+                AiContentReportReason.entries.forEach { reason ->
+                    Row(Modifier.fillMaxWidth().clickable(enabled = !state.isSaving) { selectedReason = reason },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = selectedReason == reason, onClick = { selectedReason = reason }, enabled = !state.isSaving)
+                        Text(reason.label, modifier = Modifier.weight(1f))
+                    }
+                }
+                state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { selectedReason?.let(onSubmit) }, enabled = selectedReason != null && target != null && !state.isSaving && !state.saved) {
+                Text(when { state.isSaving -> "Saving…"; state.saved -> "Saved"; else -> "Save on device" })
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.isSaving) { Text("Cancel") } }
+    )
 }

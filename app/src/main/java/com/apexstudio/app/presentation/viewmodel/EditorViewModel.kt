@@ -16,6 +16,9 @@ import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.data.aireport.AiContentReportReason
+import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.aireport.FileAiContentReportStore
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
@@ -34,6 +37,18 @@ class EditorViewModel(
 
     internal val _state = MutableStateFlow(EditorState())
     val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    private val aiContentReportController = AiContentReportController(
+        store = context?.let { FileAiContentReportStore(java.io.File(it.filesDir, "ai-content-reports")) },
+        scope = viewModelScope
+    )
+    val aiContentReportState: StateFlow<AiContentReportUiState> = aiContentReportController.state
+
+    fun submitAiContentReport(target: AiContentReportTarget?, reason: AiContentReportReason) {
+        aiContentReportController.submit(target, reason)
+    }
+
+    fun clearAiContentReportFeedback() = aiContentReportController.clearFeedback()
 
     /**
      * Auto-caption UI state (Whisper). Instance-scoped so it can't

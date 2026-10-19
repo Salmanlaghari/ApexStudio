@@ -219,6 +219,8 @@ class ExportEngine(private val context: Context) {
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+        /** Fixed non-AI effect; resolved by the same catalog/shader as the video decoder preview. */
+        val projectVideoEffectId: String? = null,
         // Preferred per-clip crop source. The legacy editor-state cropRect
         // remains a fallback for older callers/projects.
         val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
@@ -421,6 +423,8 @@ class ExportEngine(private val context: Context) {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
                         val videoEffects = buildList<androidx.media3.common.Effect> {
+                            com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
+                                ?.let { add(it) }
                             add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
                             if (config.filterPreset != null && config.filterIntensity > 0f) {
                                 add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
@@ -656,6 +660,10 @@ class ExportEngine(private val context: Context) {
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 diagnostics.stage("video_preparation_started")
                 currentCoroutineContext().ensureActive()
+                require(config.projectVideoEffectId == null ||
+                    com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
+                    "Unknown project-video effect; export stopped rather than dropping the edit."
+                }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
                 if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
@@ -727,6 +735,9 @@ class ExportEngine(private val context: Context) {
                     else config.cropRect?.let { r -> VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom) }
                 } else null // Dynamic face crop takes precedence over all static crop sources.
                 cropEffect?.let { videoEffects.add(it) }
+
+                com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(config.projectVideoEffectId)
+                    ?.let { videoEffects.add(it) }
 
                 // 1.5 Rotation and Flipping
                 if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {

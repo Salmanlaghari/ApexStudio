@@ -53,8 +53,8 @@ fun AiToolsPanel(
     message: String,
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
-    onOpenGestures: (() -> Unit)? = null,
     onOpenDownloads: (() -> Unit)? = null,
+    onOpenVideoPresets: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
@@ -79,14 +79,17 @@ fun AiToolsPanel(
             }
             Text("Protected AI paused · safety approval required", modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
-            if (onOpenLocalAnalysis != null || onOpenGestures != null) {
+            Text("Existing project videos only · no prompts · no generation", modifier = Modifier.padding(horizontal = 16.dp),
+                color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            if (onOpenVideoPresets != null) OutlinedButton(onClick = onOpenVideoPresets,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_presets")) {
+                Text("Text templates + video effects · not AI")
+            }
+            if (onOpenLocalAnalysis != null) {
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Local tools", color = ApexPalette.TextSecondary, style = MaterialTheme.typography.labelMedium)
-                    if (onOpenLocalAnalysis != null) OutlinedIconButton(onClick = onOpenLocalAnalysis) {
+                    OutlinedIconButton(onClick = onOpenLocalAnalysis) {
                         Icon(Icons.Default.MovieFilter, LOCAL_REVIEW_ACTION_LABEL)
-                    }
-                    if (onOpenGestures != null) OutlinedIconButton(onClick = onOpenGestures) {
-                        Icon(Icons.Default.PanTool, "Camera gesture controls")
                     }
                 }
             }

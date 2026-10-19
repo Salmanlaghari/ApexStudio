@@ -58,7 +58,7 @@ fun LocalAnalysisOverlay(
             }
             Text("Offline face tracking review", modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-            Text("Samples local video frames with the bundled face model. Track IDs are temporary associations, not identities. Review sampled detections and crop candidates; nothing is applied. This is not real-time preview, export, or content moderation. Cancel takes effect between decoder/inference calls.",
+            Text("Face-model review is locked pending validated offline sexual/violent/hateful frame and OCR-text moderation. Review-only ML inference is not a safety exemption. Deterministic scene analysis above remains available.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
             val selectedFaceCropClip = editor.project?.clips?.firstOrNull { it.id == editor.selectedClipId && it.faceCropTrack != null }
@@ -77,9 +77,10 @@ fun LocalAnalysisOverlay(
                 }
             }
             OutlinedButton(onClick = { vm.startLocalFaceTrackReview() },
-                enabled = !faceReview.isRunning && !analysis.isRunning,
+                enabled = GlobalModerationEnforcement.readiness.approved && !faceReview.isRunning && !analysis.isRunning,
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                Text(if (faceReview.isReady) "Analyze face tracks again" else "Analyze face tracks offline")
+                Text(if (!GlobalModerationEnforcement.readiness.approved) "Face review locked · safety required"
+                    else if (faceReview.isReady) "Analyze face tracks again" else "Analyze face tracks offline")
             }
             if (analysis.isRunning) {
                 LinearProgressIndicator(progress = { analysis.progress.coerceIn(0f, 1f) },

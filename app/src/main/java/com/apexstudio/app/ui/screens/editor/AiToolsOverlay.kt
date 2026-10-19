@@ -50,7 +50,9 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
         // Inventory is informational only. Model readiness never changes the
         // protected-tool status or creates a control that could enable it.
         val inventoryStatus = if (feature.isReady) "Local backend detected" else "Local backend unavailable"
-        AiToolCard(name, title, "$inventoryStatus: ${feature.message}", group,
+        val scopeNotice = if (feature.id == AiFeatureId.GESTURE_CONTROL || feature.id == AiFeatureId.MEDIAPIPE_HAND)
+            "Live camera/gesture editing is outside the existing-project-video scope. " else ""
+        AiToolCard(name, title, "$scopeNotice$inventoryStatus: ${feature.message}", group,
             statusLabel = AI_PROTECTED_STATUS_LABEL,
             unavailableReason = AI_PROTECTED_BLOCKER)
     }
@@ -60,7 +62,7 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
 fun AiToolsOverlay(
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
-    onOpenGestures: (() -> Unit)? = null,
+    onOpenVideoPresets: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
@@ -85,7 +87,8 @@ fun AiToolsOverlay(
     }
     AiToolsPanel(tools = cards, message = message,
         onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
-        onOpenGestures = onOpenGestures, onOpenDownloads = { showDownloads = true },
+        onOpenVideoPresets = onOpenVideoPresets,
+        onOpenDownloads = { showDownloads = true },
         reportTarget = reportTarget, reportState = reportState,
         onSubmitReport = onSubmitReport, onClearReportFeedback = onClearReportFeedback)
     if (showDownloads) ModelDownloadsDialog(onDismiss = {

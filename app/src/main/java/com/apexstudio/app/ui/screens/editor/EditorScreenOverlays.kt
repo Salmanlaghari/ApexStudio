@@ -1333,6 +1333,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             videoCrop = (state.project?.clips?.firstOrNull { it.id == state.selectedClipId && it.trackIndex == 0 }
                 ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
+            projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,

@@ -105,6 +105,9 @@ data class MediaClip(
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    // Optional fixed, deterministic project-video effect. The preset id is resolved by
+    // ProjectVideoPresets in both preview and export; null preserves legacy rendering.
+    val projectVideoEffectId: String? = null,
     // Per-clip normalized video crop. Absent in older project JSON; the
     // full-frame default preserves their prior preview/export behavior.
     val videoCrop: VideoCropSettings = VideoCropSettings(),

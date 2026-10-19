@@ -9,6 +9,7 @@ enum class ProtectedAiAction(val displayName: String) {
     BACKGROUND_REPLACEMENT("full-clip background replacement"),
     GESTURE_EDITING("gesture-driven editor control"),
     FACE_AWARE_REFRAME("face-aware reframing"),
+    FACE_TRACK_REVIEW("model-based face-track review"),
     ONNX_UPSCALING("learned image upscaling"),
     ONNX_BACKGROUND_REMOVAL("ONNX background removal"),
     ONNX_STYLE_TRANSFER("ONNX style transfer"),
@@ -26,15 +27,17 @@ data class ModerationReadiness(
  *
  * The reviewed moderation artifact catalog is intentionally empty and no validated all-category
  * classifier is configured. This API therefore denies every protected action before model loading,
- * audio/image decoding, inference, cache reuse, or output publication. Local editing and explicitly
- * review-only/offline analysis are not routed through this policy.
+ * audio/image decoding, inference, cache reuse, or output publication. Deterministic local editing
+ * and histogram/gradient analysis are separate; model-based face review is not an exemption.
  */
 object GlobalModerationEnforcement {
     private val required = SafetyCategory.entries.toSet()
 
     private const val BASE_STATUS =
         "Protected AI is blocked: no app-reviewed offline classifier with validated sexual, violent, " +
-            "and hateful coverage is configured. No protected AI processing was run. Keep editing manually " +
+            "and hateful coverage, including OCR-visible frame text when relevant, is configured. " +
+            "Model assets, calibrated thresholds and held-out validation evidence are missing. " +
+            "No protected AI processing was run. Keep editing manually " +
             "or use offline analysis/review; retry after a reviewed app update."
 
     val readiness: ModerationReadiness = ModerationReadiness(

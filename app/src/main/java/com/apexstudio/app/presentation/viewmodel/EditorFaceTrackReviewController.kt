@@ -39,6 +39,20 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
     faceTrackReviewToken = null
     faceTrackReviewJob = null
 
+    try {
+        com.apexstudio.app.ai.safety.GlobalModerationEnforcement.requireApproved(
+            com.apexstudio.app.ai.safety.ProtectedAiAction.FACE_TRACK_REVIEW
+        )
+    } catch (blocked: com.apexstudio.app.ai.AiModelUnavailableException) {
+        _faceTrackReview.value = FaceTrackReviewUiState(
+            status = FaceTrackReviewStatus.ERROR,
+            message = "Face-model review is locked; no frames were decoded or inferred.",
+            error = blocked.message,
+            reframeTarget = reframeTarget,
+        )
+        return
+    }
+
     val targetId = clipId ?: _state.value.selectedClipId
         ?: _state.value.project?.clips?.firstOrNull { it.type == ClipType.VIDEO }?.id
     val project = _state.value.project

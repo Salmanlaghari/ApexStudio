@@ -23,6 +23,19 @@ class AiToolsPanelTest {
     private val tool = AiToolCard("SMART_TRIM", "Smart trim suggestions", "Local backend detected: Signal analysis",
         "Smart editing", AI_PROTECTED_STATUS_LABEL, AI_PROTECTED_BLOCKER)
 
+    @Test fun nonAiVideoToolsHaveSeparateEntryWithoutUnlockingProtectedAIOrCamera() {
+        var opens = 0
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {},
+            onOpenVideoPresets = { opens++ }, reportTarget = null, reportState = AiContentReportUiState(),
+            onSubmitReport = {}, onClearReportFeedback = {}) } }
+        compose.onNodeWithTag("open_project_video_presets").activateVisibleControl()
+        compose.runOnIdle { assertEquals(1, opens) }
+        compose.onNodeWithText("Protected AI paused · safety approval required").assertExists()
+        compose.onNodeWithContentDescription("Camera gesture controls").assertDoesNotExist()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
+    }
+
     @Test fun compactIconsHideFullDetailsUntilTappedAndNeverExposeProtectedSwitch() {
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
             reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }

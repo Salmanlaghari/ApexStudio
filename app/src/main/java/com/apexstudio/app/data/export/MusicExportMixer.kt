@@ -617,10 +617,16 @@ object MusicExportMixer {
                         ex.seekTo(sourceStartUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                     }
                     val dec = MediaCodec.createDecoderByType(mime)
-                    dec.configure(format, null, null, 0)
-                    dec.start()
+                    setupWithCleanup(
+                        resource = dec,
+                        setup = {
+                            it.configure(format, null, null, 0)
+                            it.start()
+                        },
+                        cleanup = { it.release() }
+                    )
                     return TrackDecoder(ex, dec, sourceStartUs)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     ex.release()
                     throw e
                 }
@@ -662,6 +668,7 @@ object MusicExportMixer {
         /** Decodes the next output buffer into [pending]. False when drained. */
         private fun fillPending(): Boolean {
             pending.prepareAppend(0)
+            val watchdog = ExportCodecWatchdog()
             while (pending.isEmpty && !outputDone) {
                 if (!inputDone) {
                     val inIdx = decoder.dequeueInputBuffer(2000)
@@ -669,6 +676,7 @@ object MusicExportMixer {
                         val ib = decoder.getInputBuffer(inIdx)
                         if (ib == null) {
                             decoder.queueInputBuffer(inIdx, 0, 0, 0L, 0)
+                            watchdog.progressed()
                         } else {
                             val n = extractor.readSampleData(ib, 0)
                             if (n < 0) {
@@ -677,16 +685,23 @@ object MusicExportMixer {
                                     MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                 )
                                 inputDone = true
+                                watchdog.progressed()
                             } else {
                                 decoder.queueInputBuffer(inIdx, 0, n, extractor.sampleTime, 0)
                                 extractor.advance()
+                                watchdog.progressed()
                             }
                         }
                     }
                 }
-                val outIdx = decoder.dequeueOutputBuffer(info, 8000)
+                watchdog.throwIfTimedOut()
+                val outIdx = decoder.dequeueOutputBuffer(
+                    info,
+                    min(8000L, watchdog.remainingMs() * 1000L).coerceAtLeast(1L)
+                )
                 when {
                     outIdx >= 0 -> {
+                        watchdog.progressed()
                         try {
                             val ob = decoder.getOutputBuffer(outIdx)
                             if (ob != null && info.size > 0) {
@@ -704,10 +719,15 @@ object MusicExportMixer {
                             return !pending.isEmpty
                         }
                     }
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         updateFormat(decoder.outputFormat)
+                        watchdog.progressed()
+                    }
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (inputDone) return !pending.isEmpty
+                        // EOS on input is not EOS on output. The codec may still
+                        // have delayed samples to emit, so wait for an actual
+                        // output EOS, failing only after sustained inactivity.
+                        watchdog.throwIfTimedOut()
                     }
                 }
             }

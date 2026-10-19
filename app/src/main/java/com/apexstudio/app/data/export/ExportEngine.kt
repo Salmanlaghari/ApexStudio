@@ -77,13 +77,43 @@ class ExportEngine(private val context: Context) {
         internal fun audioConfigForSource(
             config: ExportConfig,
             source: AudioExportSource
-        ): ExportConfig = config.copy(
-            trimStartMs = source.trimStartMs,
-            trimEndMs = source.trimEndMs,
-            speedPoints = source.speedPoints,
-            denoiseEnabled = source.denoiseEnabled,
-            denoiseStrength = source.denoiseStrength
-        )
+        ): ExportConfig {
+            val fallbackSpeed = config.clipSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
+            val sourceSpeed = source.constantSpeedOverride
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?: fallbackSpeed
+            val baseVolume = config.volume.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            val sourceGain = source.sourceGain.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            return config.copy(
+                trimStartMs = source.trimStartMs,
+                trimEndMs = source.trimEndMs,
+                clipSpeed = sourceSpeed,
+                volume = (baseVolume * sourceGain).coerceIn(0f, 2f),
+                speedPoints = source.speedPoints,
+                denoiseEnabled = source.denoiseEnabled,
+                denoiseStrength = source.denoiseStrength
+            )
+        }
+
+        /** Fresh gain processor supporting the mono and stereo source formats. */
+        internal fun volumeProcessorFor(
+            volume: Float
+        ): androidx.media3.common.audio.ChannelMixingAudioProcessor? {
+            val gain = volume.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f
+            if (gain == 1f) return null
+            return androidx.media3.common.audio.ChannelMixingAudioProcessor().apply {
+                putChannelMixingMatrix(
+                    androidx.media3.common.audio.ChannelMixingMatrix(
+                        1, 1, floatArrayOf(gain)
+                    )
+                )
+                putChannelMixingMatrix(
+                    androidx.media3.common.audio.ChannelMixingMatrix(
+                        2, 2, floatArrayOf(gain, 0f, 0f, gain)
+                    )
+                )
+            }
+        }
     }
 
     private val _exportState = MutableStateFlow(ExportProgressState())
@@ -222,9 +252,14 @@ class ExportEngine(private val context: Context) {
         val uri: String,
         val trimStartMs: Long = 0L,
         val trimEndMs: Long = 0L,
-        // Variable speed curve for THIS source (PR-E). Empty = fall
-        // back to the config's constant clipSpeed (legacy behaviour).
+        // Variable speed curve for THIS source (PR-E). Empty = use the
+        // source constant override, or config.clipSpeed for legacy callers.
         val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
+        // Constant speed for this source; null preserves legacy callers'
+        // config.clipSpeed fallback. A valid per-source curve takes precedence.
+        val constantSpeedOverride: Float? = null,
+        // Per-source gain, composed with the export's global volume.
+        val sourceGain: Float = 1f,
         // Clean Voice for THIS source (per-clip). Extra audio tracks
         // (music / voiceover) leave this off — the toggle is per
         // video clip, and music must never be noise-gated.
@@ -583,21 +618,9 @@ class ExportEngine(private val context: Context) {
             audioProcessors.add(sonic)
         }
 
-        // Volume / Gain adjustment via ChannelMixingMatrix
-        if (config.volume != 1f) {
-            val clampedVol = config.volume.coerceIn(0f, 2f)
-            val stereoMatrix = androidx.media3.common.audio.ChannelMixingMatrix(
-                /* inputChannelCount = */ 2,
-                /* outputChannelCount = */ 2,
-                /* coefficients = */ floatArrayOf(
-                    clampedVol, 0f,
-                    0f, clampedVol
-                )
-            )
-            val channelMixingProcessor = androidx.media3.common.audio.ChannelMixingAudioProcessor()
-            channelMixingProcessor.putChannelMixingMatrix(stereoMatrix)
-            audioProcessors.add(channelMixingProcessor)
-        }
+        // Gain is applied for both common source layouts. Mono voiceovers
+        // otherwise bypassed the old stereo-only matrix entirely.
+        volumeProcessorFor(config.volume)?.let { audioProcessors.add(it) }
 
         // Speed change affects audio too (constant or curve — same
         // provider builder as the video path, so the two can never

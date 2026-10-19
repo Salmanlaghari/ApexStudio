@@ -32,6 +32,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*MainTimelineTrimGestureTest' \
   --tests '*TimelineClipGestureTest' \
   --tests '*ExportAudioSourceConfigTest' \
+  --tests '*EditorAudioExportSourcesTest' \
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \
   --tests '*LocalAudioImportPolicyTest' \
@@ -39,6 +40,7 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AudioMixerPanelTest' \
   --tests '*MusicExportMixerTest' \
   --tests '*AudioMixExportNoticeTest' \
+  --tests '*ExportCodecGuardTest' \
   --tests '*AudioExportWarningTest' \
   --tests '*ExportPcmBufferTest' \
   --tests '*VoiceRecordingTimingTest' \

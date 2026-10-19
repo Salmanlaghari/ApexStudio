@@ -186,10 +186,46 @@ fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(er
 
 
 /**
- * Exports the project's audio as a standalone AAC (.m4a) file: every
- * timeline clip's audio plus all unmuted extra audio tracks (music /
- * voiceover), concatenated in timeline order. Reuses the audio pipeline
- * (pitch, volume, speed) from the video export.
+ * Builds standalone-audio sequence items in project order: video clip audio,
+ * followed by unmuted project audio tracks. This preserves the current
+ * concatenation behavior; it is not timeline mixing or overlay/fade rendering.
+ */
+internal fun buildAudioExportSources(
+    clips: List<MediaClip>,
+    audioTracks: List<AudioTrack>
+): List<ExportEngine.AudioExportSource> = buildList {
+    clips.filter { it.type == ClipType.VIDEO }.forEach { clip ->
+        add(
+            ExportEngine.AudioExportSource(
+                uri = clip.uri,
+                trimStartMs = clip.trimStartMs,
+                trimEndMs = clip.trimEndMs,
+                speedPoints = clip.speedPoints,
+                constantSpeedOverride = clip.speedMultiplier,
+                sourceGain = clip.volume,
+                denoiseEnabled = clip.denoiseEnabled,
+                denoiseStrength = clip.denoiseStrength
+            )
+        )
+    }
+    audioTracks.filter { !it.isMuted }.forEach { track ->
+        add(
+            ExportEngine.AudioExportSource(
+                uri = track.uri,
+                trimStartMs = track.trimStartMs,
+                trimEndMs = track.trimEndMs,
+                // Music and voiceover remain at their native playback rate.
+                constantSpeedOverride = 1f,
+                sourceGain = track.volume
+            )
+        )
+    }
+}
+
+/**
+ * Exports a standalone AAC sequence, not a timeline mix. Video clip audio is
+ * followed by added tracks, each with its own trim, constant speed and gain.
+ * Track offsets, fades/keyframes and overlay-source audio are not rendered here.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"
@@ -199,46 +235,24 @@ fun EditorViewModel.startAudioExport(
     _export.update { it.copy(isExporting = true, progress = 0f) }
 
     val audioSt = _audio.value
-    val clips = s.project?.clips?.filter { it.type == ClipType.VIDEO } ?: emptyList()
-    // Every audio source in the project: all video clips in timeline order,
-    // then any unmuted extra audio tracks (music / voiceover).
-    val sources = buildList {
-        clips.forEach { clip ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = clip.uri,
-                    trimStartMs = clip.trimStartMs,
-                    trimEndMs = clip.trimEndMs,
-                    // Per-clip variable speed curve (PR-E).
-                    speedPoints = clip.speedPoints,
-                    // Per-clip Clean Voice: the same denoise setting the
-                    // preview and the video export use for this clip.
-                    denoiseEnabled = clip.denoiseEnabled,
-                    denoiseStrength = clip.denoiseStrength
-                )
-            )
-        }
-        audioSt.tracks.filter { !it.isMuted }.forEach { track ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = track.uri,
-                    trimStartMs = track.trimStartMs,
-                    trimEndMs = track.trimEndMs
-                )
-            )
-        }
-    }
+    // project.audioTracks is canonical; audio-studio's cached track list can lag.
+    val project = s.project
+    val sources = buildAudioExportSources(
+        project?.clips.orEmpty(),
+        project?.audioTracks.orEmpty()
+    )
     if (sources.isEmpty()) {
         _export.update { it.copy(isExporting = false, progress = 0f) }
         return
     }
-    val speed = clips.firstOrNull()?.speedMultiplier ?: s.playbackSpeed
     engine.startAudioExport(
         sources,
         ExportEngine.ExportConfig(
             pitchSemitones = audioSt.pitchSemitones,
             volume = if (audioSt.isMuted) 0f else audioSt.volume,
-            clipSpeed = speed
+            // Retain the old global fallback for any source created by a
+            // legacy caller without a constantSpeedOverride.
+            clipSpeed = s.playbackSpeed
         ),
         outputFileName
     )

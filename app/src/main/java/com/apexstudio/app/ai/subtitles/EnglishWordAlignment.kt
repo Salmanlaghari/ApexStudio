@@ -1,6 +1,7 @@
 package com.apexstudio.app.ai.subtitles
 
 import android.content.Context
+import com.apexstudio.app.ai.models.ModelAssetAccess
 import android.net.Uri
 import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
@@ -56,6 +57,10 @@ object BundledEnglishAlignmentModel {
     fun modelFile(context: Context, checkCancelled: () -> Unit = {}): File {
         checkCancelled()
         val appContext = context.applicationContext
+        ModelAssetAccess.installedFile(appContext, ASSET_PATH)?.let { installed ->
+            check(isVerified(installed, checkCancelled)) { "Downloaded English alignment model failed verification" }
+            return installed
+        }
         val root = File(appContext.filesDir, "models/alignment")
         val targetDir = File(root, REVISION)
         val target = File(targetDir, FILE_NAME)
@@ -69,7 +74,7 @@ object BundledEnglishAlignmentModel {
             val staged = File(staging, FILE_NAME)
             val digest = MessageDigest.getInstance("SHA-256")
             checkCancelled()
-            appContext.assets.open(ASSET_PATH).use { input ->
+            ModelAssetAccess.open(appContext, ASSET_PATH).use { input ->
                 FileOutputStream(staged).use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {

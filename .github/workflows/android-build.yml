@@ -91,13 +91,13 @@ jobs:
 
       - name: Full JVM regression suite
         run: |
-          ./gradlew :app:testDebugUnitTest --no-daemon
+          ./gradlew :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
 
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+      - name: Build lean arm64 debug APK and feature bundle
+        run: ./gradlew :app:assembleDebug :app:bundleDebug -PapexPhoneBuild=true --stacktrace --no-daemon
 
       - name: Verify and identify debug APK
         run: |
@@ -108,6 +108,7 @@ jobs:
             --output app/build/outputs/apk/debug/build-provenance.json
           mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/apexstudio-debug-$SHA.apk"
           echo "### Device-test APK — $SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'arm64 phone APK: optional AI weights are downloaded explicitly; Camera Kit needs Play feature delivery. Debug AAB is for bundle inspection, not Play upload.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Compare the editor Build badge / Settings > About with build-provenance.json before testing.' >> "$GITHUB_STEP_SUMMARY"
           echo 'If installation reports a signature conflict, stop and preserve projects; do not uninstall blindly.' >> "$GITHUB_STEP_SUMMARY"
 
@@ -118,6 +119,7 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/debug/build-provenance.json
+            app/build/outputs/bundle/debug/*.aab
           if-no-files-found: error
           retention-days: 14
 
@@ -129,6 +131,8 @@ jobs:
           path: |
             app/build/reports/tests/testDebugUnitTest/
             app/build/test-results/testDebugUnitTest/
+            feature/camerakit/build/reports/tests/testDebugUnitTest/
+            feature/camerakit/build/test-results/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 14
 

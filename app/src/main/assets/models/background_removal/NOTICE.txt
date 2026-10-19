@@ -1,0 +1,25 @@
+MODNet photographic portrait matting model
+
+This directory contains the MODNet photographic ONNX model, derived from the MODNet model
+released by the MODNet authors and converted to ONNX by yakhyo. MODNet performs learned
+portrait alpha matting; it is not a general semantic background segmenter.
+
+Model source: https://github.com/yakhyo/modnet
+Model release: https://github.com/yakhyo/modnet/releases/download/weights/modnet_photographic.onnx
+Upstream source revision: yakhyo/modnet commit 35198d10c55804c519b2a7a182a3050228018735
+Original model: https://github.com/ZHKKKe/MODNet
+Model license: Apache License 2.0 (the upstream MODNet repository explicitly licenses code,
+models, and demos under Apache-2.0, excluding its doc/gif files). The upstream project credits
+Zhanghan Ke, Jiayu Sun, Kaican Li, Qiong Yan, and Rynson W.H. Lau for MODNet; the ONNX
+port/release is maintained by yakhyo. Full license text is in LICENSE-Apache-2.0.txt.
+
+Pinned release asset: modnet_photographic.onnx
+Size: 25,969,398 bytes (under the 50 MB pack limit)
+SHA-256: 5069a5e306b9f5e9f4f2b0360264c9f8ea13b257c7c39943c7cf6a2ec3a102ae
+Release metadata identifies the asset digest as sha256:5069a5e306b9f5e9f4f2b0360264c9f8ea13b257c7c39943c7cf6a2ec3a102ae.
+The release tag/URL can change independently of the source revision. The committed size and
+SHA-256, not the URL or source commit alone, pin the exact distributed model bytes.
+
+Redistribution of this model is governed by the Apache License 2.0 text accompanying this
+notice. The model remains an experimental portrait-matting capability; this notice does not
+represent a safety approval or quality certification.

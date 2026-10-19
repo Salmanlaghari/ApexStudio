@@ -1,6 +1,7 @@
 package com.apexstudio.app.ai.mediapipe
 
 import android.content.Context
+import com.apexstudio.app.ai.models.ModelAssetAccess
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -30,6 +31,10 @@ object BundledMediaPipeModels {
     fun modelFile(context: Context, model: Model, checkCancelled: () -> Unit = {}): File {
         checkCancelled()
         val app = context.applicationContext
+        ModelAssetAccess.installedFile(app, "$ASSET_DIRECTORY/${model.assetName}")?.let { installed ->
+            check(sha256(installed, checkCancelled) == model.sha256) { "Downloaded MediaPipe model failed SHA-256 verification" }
+            return installed
+        }
         val directory = File(app.noBackupFilesDir, "mediapipe/models").apply {
             if (!exists() && !mkdirs()) throw IllegalStateException("Cannot create MediaPipe model directory")
         }
@@ -42,7 +47,7 @@ object BundledMediaPipeModels {
         val temporary = File(directory, "${model.assetName}.tmp")
         try {
             checkCancelled()
-            app.assets.open("$ASSET_DIRECTORY/${model.assetName}").use { input ->
+            ModelAssetAccess.open(app, "$ASSET_DIRECTORY/${model.assetName}").use { input ->
                 FileOutputStream(temporary).use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {

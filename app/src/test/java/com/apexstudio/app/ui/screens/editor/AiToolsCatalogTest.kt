@@ -7,13 +7,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AiToolsCatalogTest {
-    @Test fun everyRequestedFeatureHasAnOffCardUntilValidatedEditorIntegrationExists() {
+    @Test fun everyProtectedFeatureShowsSafetyBlockAndHasNoToggleState() {
         val inventory = AiFeatureId.entries.map { AiFeatureAvailability(it, AiAvailability.READY, "Local backend available") }
         val cards = aiToolCards(inventory)
         assertEquals(AiFeatureId.entries.size, cards.size)
         assertEquals(cards.size, cards.map { it.id }.distinct().size)
-        assertTrue(cards.all { !it.ready && !it.enabled })
-        assertTrue(cards.all { !it.unavailableReason.isNullOrBlank() })
+        assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
+        assertTrue(cards.all { it.unavailableReason == AI_PROTECTED_BLOCKER })
+        assertTrue(AI_PROTECTED_BLOCKER.contains("sexual, violent, and hateful"))
     }
 
     @Test fun availableAlgorithmCannotBypassMissingModeration() {
@@ -22,15 +23,26 @@ class AiToolsCatalogTest {
             AiFeatureAvailability(AiFeatureId.CONTENT_MODERATION, AiAvailability.ENGINE_UNAVAILABLE, "No safety classifier")
         ))
         val smartTrim = cards.first { it.id == "SMART_TRIM" }
-        assertFalse(smartTrim.ready)
-        assertTrue(smartTrim.unavailableReason!!.contains("classifier"))
+        assertEquals(AI_PROTECTED_STATUS_LABEL, smartTrim.statusLabel)
+        assertTrue(smartTrim.unavailableReason.contains("validated all-category moderation"))
+        assertTrue(smartTrim.detail.startsWith("Local backend detected"))
     }
 
     @Test fun modelErrorsAreNotHiddenBehindGenericSafetyMessage() {
         val cards = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.SUBTITLES, AiAvailability.MODEL_MISSING, "Whisper files are missing"
         )))
-        assertEquals("Whisper files are missing", cards.single().unavailableReason)
-        assertFalse(cards.single().enabled)
+        assertEquals(AI_PROTECTED_STATUS_LABEL, cards.single().statusLabel)
+        assertTrue(cards.single().detail.contains("Whisper files are missing"))
+        assertTrue(cards.single().unavailableReason.contains("sexual, violent, and hateful"))
+    }
+
+    @Test fun localReviewEntryIsClearlySeparateFromProtectedFeatureCards() {
+        assertEquals("Open offline scene + face review", LOCAL_REVIEW_ACTION_LABEL)
+        val protectedCard = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.SCENE_ANALYSIS, AiAvailability.READY, "Local backend available"
+        ))).single()
+        assertEquals(AI_PROTECTED_STATUS_LABEL, protectedCard.statusLabel)
+        assertFalse(protectedCard.title.contains("Available local review"))
     }
 }

@@ -1,18 +1,26 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -149,6 +157,124 @@ class PipOverlayCanvasTest {
             assertEquals(false, movePersist)
             assertEquals("pip-image", gestureEndId)
             assertEquals("gesture end must fire exactly once when the drag ends", 1, gestureEndCount)
+        }
+    }
+
+    @Test
+    fun draggingVideoOverlayWorksWithNestedNativePlayerView() {
+        var moveDx = 0f
+        var moveDy = 0f
+        var gestureEndCount = 0
+        composeRule.setContent {
+            val context = LocalContext.current
+            val player = remember(context) { ExoPlayer.Builder(context).build() }
+            DisposableEffect(player) {
+                onDispose { player.release() }
+            }
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = "pip-image",
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = player,
+                    overlayPlayerClipId = "pip-image",
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, dx, dy, _ ->
+                        moveDx += dx
+                        moveDy += dy
+                    },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = { gestureEndCount++ },
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to true),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-item-pip-image", useUnmergedTree = true)
+            .performTouchInput {
+                swipe(start = center, end = center + Offset(35f, 18f), durationMillis = 300)
+            }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertTrue("video overlay drag must reach transform callback", moveDx > 0.01f)
+            assertTrue("video overlay drag must reach transform callback", moveDy > 0.01f)
+            assertEquals("native-view drag must finish one undoable gesture", 1, gestureEndCount)
+        }
+    }
+
+    @Test
+    fun tapOutsideEveryOverlayPassesThroughToPreviewGesture() {
+        var previewTapCount = 0
+        composeRule.setContent {
+            Box(
+                Modifier
+                    .size(400.dp, 300.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { previewTapCount++ }
+                    }
+                    .testTag("preview-container")
+            ) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("preview-container").performTouchInput {
+            click(position = Offset(20f, 20f))
+        }
+        composeRule.runOnIdle { assertEquals(1, previewTapCount) }
+    }
+
+    @Test
+    fun draggingRotateHandleChangesRotationAndEndsOneGesture() {
+        val rotations = mutableListOf<Float>()
+        var gestureEndCount = 0
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = "pip-image",
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, delta, persist ->
+                        assertEquals(false, persist)
+                        rotations += delta
+                    },
+                    onOverlayGestureEnd = { gestureEndCount++ },
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Rotate overlay", useUnmergedTree = true)
+            .performTouchInput {
+                swipe(start = center, end = center + Offset(14f, 10f), durationMillis = 300)
+            }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertTrue("rotate handle must emit a non-zero angle", rotations.any { kotlin.math.abs(it) > 0.1f })
+            assertEquals("release must finish one rotate gesture", 1, gestureEndCount)
         }
     }
 

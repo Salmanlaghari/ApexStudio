@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import android.content.Context
+import com.apexstudio.app.ai.models.ModelAssetAccess
 import android.graphics.Bitmap
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
@@ -66,12 +67,16 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
         /** Extract only the bundled, pinned model; there is no network fetch or fallback. */
         @Synchronized
         fun fromBundledAssets(context: Context, cacheDir: File = context.cacheDir): EspcnSuperResolutionAdapter {
+            ModelAssetAccess.installedFile(context, "models/super_resolution/super-resolution-10.onnx")?.let { installed ->
+                require(OnnxImageModels.sha256(installed) == MODEL_SHA256) { "Downloaded ESPCN model SHA-256 mismatch" }
+                return EspcnSuperResolutionAdapter(installed)
+            }
             val target = File(cacheDir, "models/$MODEL_ID.onnx")
             if (!target.isFile || OnnxImageModels.sha256(target) != MODEL_SHA256) {
                 target.parentFile?.mkdirs()
                 val temp = File.createTempFile("espcn-", ".tmp", target.parentFile)
                 try {
-                    context.assets.open("models/super_resolution/super-resolution-10.onnx").use { input ->
+                    ModelAssetAccess.open(context, "models/super_resolution/super-resolution-10.onnx").use { input ->
                         temp.outputStream().buffered().use { output -> input.copyTo(output) }
                     }
                     require(OnnxImageModels.sha256(temp) == MODEL_SHA256) { "Bundled ESPCN model SHA-256 mismatch" }

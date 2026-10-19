@@ -58,7 +58,14 @@ class ProjectRepository(private val context: Context) {
         context.projectDataStore.edit { prefs ->
             val current = decode(prefs[key]).toMutableList()
             val idx = current.indexOfFirst { it.id == project.id }
-            if (idx >= 0) current[idx] = project else current.add(project)
+            if (idx >= 0) {
+                // Preserve the existing marker. In particular, an auto-save of
+                // a legacy project must not silently label its old timeline as
+                // migrated while leaving absolute overlay/music offsets alone.
+                current[idx] = project.copy(timingModelVersion = current[idx].timingModelVersion)
+            } else {
+                current.add(project.copy(timingModelVersion = Project.CURRENT_TIMING_MODEL_VERSION))
+            }
             prefs[key] = json.encodeToString(serializer, current)
         }
     }

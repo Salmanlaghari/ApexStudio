@@ -13,6 +13,11 @@ object FacePrivacy {
     fun pixelateFaces(source: Bitmap, detections: List<FaceDetection>, blockSize: Int = 14): Bitmap {
         require(!source.isRecycled) { "Source bitmap has been recycled" }
         require(blockSize >= 2) { "blockSize must be at least 2" }
+        // Reject the entire request before producing a partly obscured result. Invalid mesh
+        // coordinates must not silently turn a detected face into an empty privacy polygon.
+        require(detections.all { face ->
+            face.landmarks.size >= 3 && face.landmarks.all { it.x.isFinite() && it.y.isFinite() }
+        }) { "Face privacy requires finite face meshes with at least three points" }
         val width = source.width
         val height = source.height
         val original = IntArray(width * height)
@@ -34,11 +39,11 @@ object FacePrivacy {
             val startY = bounds.top / blockSize * blockSize
             for (by in startY until bounds.bottom step blockSize) {
                 for (bx in startX until bounds.right step blockSize) {
-                    val sampleX = min(width - 1, bx + blockSize / 2)
-                    val sampleY = min(height - 1, by + blockSize / 2)
+                    val sampleX = min(width - 1L, bx.toLong() + blockSize / 2L).toInt()
+                    val sampleY = min(height - 1L, by.toLong() + blockSize / 2L).toInt()
                     val sampledColor = original[sampleY * width + sampleX]
-                    val xEnd = min(width, bx + blockSize)
-                    val yEnd = min(height, by + blockSize)
+                    val xEnd = min(width.toLong(), bx.toLong() + blockSize).toInt()
+                    val yEnd = min(height.toLong(), by.toLong() + blockSize).toInt()
                     for (y in max(bounds.top, by) until yEnd) {
                         for (x in max(bounds.left, bx) until xEnd) {
                             if (contains(polygon, x + 0.5f, y + 0.5f)) output[y * width + x] = sampledColor
@@ -111,13 +116,23 @@ class FaceTrackSmoother(
 
     @Synchronized
     fun update(timestampMs: Long, detections: List<FaceDetection>): List<TrackedFace> {
+        require(timestampMs >= 0L) { "Face track timestamps must be non-negative" }
         require(timestampMs >= previousTimestampMs) { "Face track timestamps must be non-decreasing" }
+        require(detections.all { face ->
+            val box = face.box
+            box.left.isFinite() && box.top.isFinite() && box.right.isFinite() && box.bottom.isFinite() &&
+                box.left < box.right && box.top < box.bottom &&
+                (box.right - box.left).isFinite() && (box.bottom - box.top).isFinite() &&
+                face.landmarks.all { it.x.isFinite() && it.y.isFinite() && it.z.isFinite() }
+        }) { "Face tracking requires finite, non-empty normalized detections" }
+        // Validation precedes mutation, so a rejected inference result cannot poison future IDs,
+        // timestamps or interpolation state. Non-negative monotonic timestamps make subtraction safe.
         previousTimestampMs = timestampMs
         tracks.removeAll { timestampMs - it.lastSeenMs > maxGapMs }
         val candidates = buildList {
             tracks.forEachIndexed { ti, track -> detections.forEachIndexed { di, detection ->
                 val score = intersectionOverUnion(track.detection.box, detection.box)
-                if (score >= iouThreshold) add(Triple(score, ti, di))
+                if (score > 0f && score >= iouThreshold) add(Triple(score, ti, di))
             } }
         }.sortedByDescending { it.first }
         val usedTracks = mutableSetOf<Int>()

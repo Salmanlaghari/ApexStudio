@@ -2,6 +2,8 @@ package com.apexstudio.app.ai.mediapipe
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.AssetManager
+import com.apexstudio.app.ai.models.SourceModelAssets
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
@@ -67,7 +69,9 @@ class BundledMediaPipeModelsCancellationTest {
     private fun withContext(block: (Context, File) -> Unit) {
         val root = Files.createTempDirectory("mediapipe-cancel").toFile()
         val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) {
+            private val sourceAssets = SourceModelAssets.assetManager()
             override fun getApplicationContext(): Context = this
+            override fun getAssets(): AssetManager = sourceAssets
             override fun getNoBackupFilesDir(): File = root
         }
         try { block(context, root) } finally { root.deleteRecursively() }

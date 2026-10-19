@@ -2,6 +2,8 @@ package com.apexstudio.app.data.captions
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.AssetManager
+import com.apexstudio.app.ai.models.SourceModelAssets
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
@@ -92,7 +94,9 @@ class WhisperBundledModelCancellationTest {
     }
 
     private class TestContext(base: Context, private val testFilesDir: File) : ContextWrapper(base) {
+        private val sourceAssets = SourceModelAssets.assetManager()
         override fun getApplicationContext(): Context = this
+        override fun getAssets(): AssetManager = sourceAssets
         override fun getFilesDir(): File = testFilesDir
     }
 }

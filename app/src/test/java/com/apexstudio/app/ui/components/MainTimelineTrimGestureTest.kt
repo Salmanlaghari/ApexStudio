@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -42,6 +43,44 @@ class MainTimelineTrimGestureTest {
 
     @Test fun headGripUsesPhysicalDensity() = checkDensity(head = true)
     @Test fun tailGripUsesPhysicalDensity() = checkDensity(head = false)
+
+    @Test fun speedRampedHeadGripUsesOutputTimeGeometry() {
+        val ramped = rampedClip()
+        var committed: Pair<Long, Long>? = null
+        composeRule.setContent {
+            val configuration = LocalViewConfiguration.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(2f),
+                LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by configuration {
+                    override val touchSlop = 0f
+                },
+            ) {
+                VideoTimeline(
+                    clips = listOf(ramped), totalDurationMs = 8_000L, playheadMs = 0L,
+                    selectedClipId = ramped.id, onOpenSpeed = {}, onOpenTrim = {},
+                    onTrimClip = { _, start, end -> committed = start to end },
+                )
+            }
+        }
+
+        dragGrip(head = true, deltaPx = 54f) // 500 output ms at 2x density.
+        composeRule.runOnIdle {
+            val (start, end) = requireNotNull(committed)
+            assertEquals(500.0, (ramped.effectiveDurationMs() -
+                ramped.copy(trimStartMs = start).effectiveDurationMs()).toDouble(), 2.0)
+            assertEquals(ramped.trimEndMs, end)
+            org.junit.Assert.assertNotEquals(ramped.trimStartMs + 500L, start)
+        }
+    }
+
+    private fun rampedClip() = source.copy(
+        durationMs = 4_000L,
+        speedPoints = listOf(
+            SpeedPoint(0f, 0.5f),
+            SpeedPoint(0.5f, 0.5f),
+            SpeedPoint(1f, 2f),
+        ),
+    )
 
     private fun checkDensity(head: Boolean) {
         var committed: Pair<Long, Long>? = null

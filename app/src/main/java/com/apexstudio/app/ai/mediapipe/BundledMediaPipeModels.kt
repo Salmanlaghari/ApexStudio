@@ -24,24 +24,40 @@ object BundledMediaPipeModels {
      * Return a verified app-private file for a bundled model. An existing file is reused only if its
      * SHA-256 still matches; corruption triggers a fresh verified copy from the packaged asset.
      * Copy uses a temporary sibling followed by rename, so readers never observe a partial file.
+     * Cancellation polls around chunk reads and publication, not during blocking IO or lock waits.
      */
     @Synchronized
-    fun modelFile(context: Context, model: Model): File {
+    fun modelFile(context: Context, model: Model, checkCancelled: () -> Unit = {}): File {
+        checkCancelled()
         val app = context.applicationContext
         val directory = File(app.noBackupFilesDir, "mediapipe/models").apply {
             if (!exists() && !mkdirs()) throw IllegalStateException("Cannot create MediaPipe model directory")
         }
         val destination = File(directory, model.assetName)
-        if (destination.isFile && sha256(destination) == model.sha256) return destination
+        if (destination.isFile && sha256(destination, checkCancelled) == model.sha256) {
+            checkCancelled()
+            return destination
+        }
 
         val temporary = File(directory, "${model.assetName}.tmp")
         try {
+            checkCancelled()
             app.assets.open("$ASSET_DIRECTORY/${model.assetName}").use { input ->
-                FileOutputStream(temporary).use { output -> input.copyTo(output) }
+                FileOutputStream(temporary).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        checkCancelled()
+                        val count = input.read(buffer)
+                        checkCancelled()
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
             }
-            check(sha256(temporary) == model.sha256) {
+            check(sha256(temporary, checkCancelled) == model.sha256) {
                 "Bundled MediaPipe asset failed SHA-256 verification: ${model.assetName}"
             }
+            checkCancelled()
             if (destination.exists() && !destination.delete()) {
                 throw IllegalStateException("Cannot replace invalid MediaPipe model: ${model.assetName}")
             }
@@ -49,6 +65,7 @@ object BundledMediaPipeModels {
                 // Some file systems may not support rename replacement; preserve atomicity by failing.
                 throw IllegalStateException("Cannot atomically install MediaPipe model: ${model.assetName}")
             }
+            checkCancelled()
             return destination
         } finally {
             if (temporary.exists()) temporary.delete()
@@ -56,10 +73,14 @@ object BundledMediaPipeModels {
     }
 
     /** Explicit alias for callers that prefer a verb. */
-    fun materialize(context: Context, model: Model): File = modelFile(context, model)
+    fun materialize(context: Context, model: Model, checkCancelled: () -> Unit = {}): File =
+        modelFile(context, model, checkCancelled)
 
-    fun openFace(context: Context, maxFaces: Int = 3): MediaPipeLandmarkers.FaceDetector =
-        MediaPipeLandmarkers.openFace(context, modelFile(context, Model.FACE), maxFaces)
+    fun openFace(context: Context, maxFaces: Int = 3, checkCancelled: () -> Unit = {}): MediaPipeLandmarkers.FaceDetector {
+        val file = modelFile(context, Model.FACE, checkCancelled)
+        checkCancelled()
+        return MediaPipeLandmarkers.openFace(context, file, maxFaces)
+    }
 
     fun openPose(context: Context, maxPoses: Int = 1): MediaPipeLandmarkers.PoseDetector =
         MediaPipeLandmarkers.openPose(context, modelFile(context, Model.POSE), maxPoses)
@@ -70,12 +91,15 @@ object BundledMediaPipeModels {
     fun openPortraitEffects(context: Context): MediaPipePortraitEffects =
         MediaPipePortraitEffects.open(context, modelFile(context, Model.SELFIE_SEGMENTER))
 
-    private fun sha256(file: File): String {
+    private fun sha256(file: File, checkCancelled: () -> Unit): String {
+        checkCancelled()
         val digest = MessageDigest.getInstance("SHA-256")
         FileInputStream(file).use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
+                checkCancelled()
                 val count = input.read(buffer)
+                checkCancelled()
                 if (count < 0) break
                 digest.update(buffer, 0, count)
             }

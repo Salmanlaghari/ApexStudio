@@ -68,6 +68,22 @@ class ExportEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "ExportEngine"
+
+        /**
+         * The curve fractions are defined across each source's retained trim,
+         * and Media3 reports processor timestamps relative to the clipped item.
+         * Keep those bounds together when constructing that item's processors.
+         */
+        internal fun audioConfigForSource(
+            config: ExportConfig,
+            source: AudioExportSource
+        ): ExportConfig = config.copy(
+            trimStartMs = source.trimStartMs,
+            trimEndMs = source.trimEndMs,
+            speedPoints = source.speedPoints,
+            denoiseEnabled = source.denoiseEnabled,
+            denoiseStrength = source.denoiseStrength
+        )
     }
 
     private val _exportState = MutableStateFlow(ExportProgressState())
@@ -709,11 +725,7 @@ class ExportEngine(private val context: Context) {
                         .setEffects(
                             Effects(
                                 buildExportAudioProcessors(
-                                    config.copy(
-                                        speedPoints = src.speedPoints,
-                                        denoiseEnabled = src.denoiseEnabled,
-                                        denoiseStrength = src.denoiseStrength
-                                    )
+                                    audioConfigForSource(config, src)
                                 ),
                                 emptyList()
                             )

@@ -7,6 +7,7 @@ import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -134,7 +135,10 @@ object AiFeatureRegistry {
         val bundled = mediaPipeModelFor(id)
         if (bundled != null || id == AiFeatureId.SUBTITLES) {
             return try {
-                val available = if (bundled != null) BundledMediaPipeModels.modelFile(context, bundled).isFile
+                val modelContext = kotlinx.coroutines.currentCoroutineContext()
+                val available = if (bundled != null) BundledMediaPipeModels.modelFile(context, bundled) {
+                    modelContext.ensureActive()
+                }.isFile
                     else WhisperCaptionEngine.isModelReady(context)
                 AiFeatureAvailability(id, if (available) AiAvailability.READY else AiAvailability.MODEL_MISSING,
                     if (available) {

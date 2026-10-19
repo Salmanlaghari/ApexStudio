@@ -28,6 +28,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*EditorTrimPositionTest' \
   --tests '*TimelineTrimScaleTest' \
   --tests '*MainTimelineTrimGestureTest' \
+  --tests '*TimelineClipGestureTest' \
+  --tests '*ExportAudioSourceConfigTest' \
   --tests '*AudioTrackPlacementTest' \
   --tests '*AudioPlaybackPositionTest' \
   --tests '*LocalAudioImportPolicyTest' \

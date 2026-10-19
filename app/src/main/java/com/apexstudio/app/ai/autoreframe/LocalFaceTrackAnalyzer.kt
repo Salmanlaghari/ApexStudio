@@ -165,7 +165,11 @@ class LocalFaceTrackAnalyzer(
             retriever.setDataSource(context.applicationContext, localUri)
             cancellation.throwIfCancelled()
             currentCoroutineContext().ensureActive()
-            BundledMediaPipeModels.openFace(context.applicationContext, maximumFaces).use { detector ->
+            val modelContext = currentCoroutineContext()
+            BundledMediaPipeModels.openFace(context.applicationContext, maximumFaces) {
+                cancellation.throwIfCancelled()
+                modelContext.ensureActive()
+            }.use { detector ->
                 val tracker = FaceTrackSmoother()
                 var previousCrop: NormalizedCrop? = null
                 var targetTrackId: Long? = null

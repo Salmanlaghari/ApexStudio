@@ -1,10 +1,13 @@
 package com.apexstudio.app.ui.components
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -12,9 +15,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.swipe
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -49,6 +54,7 @@ class TimelineClipGestureTest {
         scrollState: ScrollState? = null,
         onOpenSpeed: () -> Unit = {},
         onOpenTrim: () -> Unit = {},
+        onTrimClip: (String, Long, Long) -> Unit = { _, _, _ -> },
     ) {
         VideoTimeline(
             clips = clips,
@@ -61,6 +67,7 @@ class TimelineClipGestureTest {
             scrollState = scrollState ?: rememberScrollState(),
             onOpenSpeed = onOpenSpeed,
             onOpenTrim = onOpenTrim,
+            onTrimClip = onTrimClip,
             modifier = Modifier,
         )
     }
@@ -210,5 +217,64 @@ class TimelineClipGestureTest {
             }
         composeRule.waitForIdle()
         composeRule.runOnIdle { org.junit.Assert.assertTrue((movedToMs ?: 0L) > 0L) }
+    }
+
+    @Test
+    fun speedRampedOverlayHeadGripUsesOutputTimeGeometry() = checkRampedOverlayTrim(head = true)
+
+    @Test
+    fun speedRampedOverlayTailGripUsesOutputTimeGeometry() = checkRampedOverlayTrim(head = false)
+
+    private fun checkRampedOverlayTrim(head: Boolean) {
+        val overlay = clip("ramped-overlay").copy(
+            durationMs = 4_000L,
+            trimEndMs = 1_500L,
+            type = ClipType.OVERLAY,
+            trackIndex = 1,
+            speedPoints = listOf(
+                SpeedPoint(0f, 0.5f),
+                SpeedPoint(0.5f, 0.5f),
+                SpeedPoint(1f, 2f),
+            ),
+        )
+        var committed: Pair<Long, Long>? = null
+        composeRule.setContent {
+            val configuration = LocalViewConfiguration.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(2f),
+                LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by configuration {
+                    override val touchSlop = 0f
+                },
+            ) {
+                timeline(
+                    selectedClipId = overlay.id,
+                    clips = listOf(overlay),
+                    onTrimClip = { _, start, end -> committed = start to end },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(
+            "timeline-overlay-trim-${if (head) "start" else "end"}-${overlay.id}",
+            useUnmergedTree = true,
+        ).performTouchInput {
+            down(center)
+            moveBy(Offset(54f, 0f)) // 500 output ms at 2x density.
+            up()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            val (start, end) = requireNotNull(committed)
+            val changed = overlay.copy(trimStartMs = start, trimEndMs = end)
+            val outputDelta = if (head) {
+                overlay.effectiveDurationMs() - changed.effectiveDurationMs()
+            } else {
+                changed.effectiveDurationMs() - overlay.effectiveDurationMs()
+            }
+            assertEquals(500.0, outputDelta.toDouble(), 2.0)
+            if (head) org.junit.Assert.assertNotEquals(overlay.trimStartMs + 500L, start)
+            else org.junit.Assert.assertNotEquals(overlay.trimEndMs + 500L, end)
+        }
     }
 }

@@ -1,6 +1,10 @@
 package com.apexstudio.app.ui.components
 
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class TimelineTrimScaleTest {
@@ -44,4 +48,68 @@ class TimelineTrimScaleTest {
         assertEquals(0L, sourceTrimDeltaToMs(10f, -.1f, 2f))
         assertEquals(0L, sourceTrimDeltaToMs(10f, .1f, 0f))
     }
+
+    @Test
+    fun `ramped main head drag maps timeline delta through resulting output duration`() {
+        val clip = rampedClip()
+        val trimmedStart = timelineTrimStartForOutputDeltaMs(clip, 500L)
+        val changed = clip.copy(trimStartMs = trimmedStart)
+
+        assertEquals(500.0, (clip.effectiveDurationMs() - changed.effectiveDurationMs()).toDouble(), 2.0)
+        assertNotEquals("output milliseconds are not source milliseconds on this ramp", 1_500L, trimmedStart)
+    }
+
+    @Test
+    fun `ramped main tail drag maps timeline delta through resulting output duration`() {
+        val clip = rampedClip()
+        val trimmedEnd = timelineTrimEndForOutputDeltaMs(clip, -500L)
+        val changed = clip.copy(trimEndMs = trimmedEnd)
+
+        assertEquals(-500.0, (changed.effectiveDurationMs() - clip.effectiveDurationMs()).toDouble(), 2.0)
+        assertNotEquals("output milliseconds are not source milliseconds on this ramp", 2_500L, trimmedEnd)
+    }
+
+    @Test
+    fun `flat speed retains one to one output to source trim deltas`() {
+        val clip = rampedClip().copy(speedPoints = emptyList())
+
+        assertEquals(1_500L, timelineTrimStartForOutputDeltaMs(clip, 500L))
+        assertEquals(2_500L, timelineTrimEndForOutputDeltaMs(clip, -500L))
+    }
+
+    @Test
+    fun `ramped trim inversion clamps at source and minimum-span boundaries`() {
+        val clip = rampedClip()
+
+        assertEquals(0L, timelineTrimStartForOutputDeltaMs(clip, Long.MIN_VALUE))
+        assertEquals(clip.trimEndMs - 100L, timelineTrimStartForOutputDeltaMs(clip, Long.MAX_VALUE))
+        assertEquals(clip.trimStartMs + 100L, timelineTrimEndForOutputDeltaMs(clip, Long.MIN_VALUE))
+        assertEquals(clip.durationMs, timelineTrimEndForOutputDeltaMs(clip, Long.MAX_VALUE))
+    }
+
+    @Test
+    fun `zero output drag preserves exact source bounds under rounded fast curves`() {
+        val clip = rampedClip().copy(
+            trimStartMs = 1_001L,
+            trimEndMs = 3_001L,
+            speedPoints = listOf(SpeedPoint(0f, 8f), SpeedPoint(1f, 8f)),
+        )
+        assertEquals(1_001L, timelineTrimStartForOutputDeltaMs(clip, 0L))
+        assertEquals(3_001L, timelineTrimEndForOutputDeltaMs(clip, 0L))
+    }
+
+    private fun rampedClip() = MediaClip(
+        id = "ramped-trim",
+        name = "ramped-trim",
+        uri = "file:///ramped-trim.mp4",
+        type = ClipType.VIDEO,
+        durationMs = 4_000L,
+        trimStartMs = 1_000L,
+        trimEndMs = 3_000L,
+        speedPoints = listOf(
+            SpeedPoint(0f, 0.5f),
+            SpeedPoint(0.5f, 0.5f),
+            SpeedPoint(1f, 2f),
+        ),
+    )
 }

@@ -7,6 +7,8 @@ package com.apexstudio.app.data.export
  * timeline position.
  */
 internal object ExportAudioTimelineMapping {
+    private const val SPEED_CHANGE_INTERVAL_US = 10_000L
+
     /** Converts a non-negative millisecond position to frames, saturating on overflow. */
     fun millisToFrames(millis: Long, sampleRate: Int): Long {
         require(sampleRate > 0) { "sampleRate must be positive" }
@@ -40,6 +42,27 @@ internal object ExportAudioTimelineMapping {
         val start = startFrame.coerceAtLeast(0L)
         val count = frameCount.coerceAtLeast(0L)
         return if (start > Long.MAX_VALUE - count) Long.MAX_VALUE else start + count
+    }
+
+    /**
+     * Next 10 ms source-time boundary for a variable-speed audio processor,
+     * or null when the curve has reached its end. Media3 providers must not
+     * return the current/past timestamp: doing so at the clip endpoint can
+     * leave the processor repeatedly querying a speed change that cannot occur.
+     */
+    fun nextSpeedChangeTimeUs(timeUs: Long, spanUs: Long): Long? {
+        if (spanUs <= 0L) return null
+        val currentUs = timeUs.coerceAtLeast(0L)
+        if (currentUs >= spanUs) return null
+
+        val remainderUs = currentUs % SPEED_CHANGE_INTERVAL_US
+        val deltaUs = SPEED_CHANGE_INTERVAL_US - remainderUs
+        val nextUs = if (currentUs > Long.MAX_VALUE - deltaUs) {
+            Long.MAX_VALUE
+        } else {
+            currentUs + deltaUs
+        }
+        return minOf(nextUs, spanUs)
     }
 
     data class SourceTrim(val startMs: Long, val frameCount: Long)

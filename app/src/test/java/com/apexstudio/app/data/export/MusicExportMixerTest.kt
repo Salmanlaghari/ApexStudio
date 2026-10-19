@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.export
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -109,5 +110,24 @@ class MusicExportMixerTest {
             ExportAudioTimelineMapping.SourceTrim(0L, Long.MAX_VALUE),
             ExportAudioTimelineMapping.sourceTrim(0L, Long.MAX_VALUE, 44_100)
         )
+    }
+
+    @Test
+    fun `speed change boundaries advance and stop at the clipped span end`() {
+        assertEquals(10_000L, ExportAudioTimelineMapping.nextSpeedChangeTimeUs(0L, 25_000L))
+        assertEquals(20_000L, ExportAudioTimelineMapping.nextSpeedChangeTimeUs(10_000L, 25_000L))
+        assertEquals(25_000L, ExportAudioTimelineMapping.nextSpeedChangeTimeUs(20_000L, 25_000L))
+        assertNull(ExportAudioTimelineMapping.nextSpeedChangeTimeUs(25_000L, 25_000L))
+        assertNull(ExportAudioTimelineMapping.nextSpeedChangeTimeUs(30_000L, 25_000L))
+    }
+
+    @Test
+    fun `speed change boundary does not overflow near maximum timestamp`() {
+        assertEquals(
+            Long.MAX_VALUE,
+            ExportAudioTimelineMapping.nextSpeedChangeTimeUs(Long.MAX_VALUE - 1L, Long.MAX_VALUE)
+        )
+        assertNull(ExportAudioTimelineMapping.nextSpeedChangeTimeUs(Long.MAX_VALUE, Long.MAX_VALUE))
+        assertNull(ExportAudioTimelineMapping.nextSpeedChangeTimeUs(0L, 0L))
     }
 }

@@ -667,9 +667,10 @@ class ExportEngine(private val context: Context) {
 
             override fun getNextSpeedChangeTimeUs(timeUs: Long): Long {
                 if (!hasCurve) return androidx.media3.common.C.TIME_UNSET
-                // Next 10 ms boundary (source time).
-                val next = ((timeUs / 10_000L) + 1L) * 10_000L
-                return next.coerceAtMost(spanUs)
+                // Next 10 ms boundary (source time); stop querying once the
+                // clipped item reaches the end of its curve span.
+                return ExportAudioTimelineMapping.nextSpeedChangeTimeUs(timeUs, spanUs)
+                    ?: androidx.media3.common.C.TIME_UNSET
             }
         }
     }

@@ -19,6 +19,10 @@ class TfliteFloatModel private constructor(
     // Do not let callers mutate the interpreter's checked shapes through the public IntArray properties.
     private val checkedInputShape = inputShape.copyOf()
     private val checkedOutputShape = outputShape.copyOf()
+    // These fixed-shape direct buffers are retained for the interpreter lifetime. Allocating them
+    // for every frame lets native memory grow faster than the per-tensor shape bound suggests.
+    private val inBuffer = directFloatBuffer(elementCount(checkedInputShape))
+    private val outBuffer = directFloatBuffer(elementCount(checkedOutputShape))
     val inputShape: IntArray get() = checkedInputShape.copyOf()
     val outputShape: IntArray get() = checkedOutputShape.copyOf()
     private var closed = false
@@ -30,12 +34,11 @@ class TfliteFloatModel private constructor(
         require(input.size == expectedInput) {
             "Expected $expectedInput input values for ${checkedInputShape.contentToString()}, got ${input.size}."
         }
-        val inBytes = Math.multiplyExact(input.size, Float.SIZE_BYTES)
-        val inBuffer = ByteBuffer.allocateDirect(inBytes).order(ByteOrder.nativeOrder())
+        inBuffer.clear()
         input.forEach(inBuffer::putFloat)
         inBuffer.rewind()
         val nOut = elementCount(checkedOutputShape)
-        val outBuffer = ByteBuffer.allocateDirect(Math.multiplyExact(nOut, Float.SIZE_BYTES)).order(ByteOrder.nativeOrder())
+        outBuffer.clear()
         interpreter.run(inBuffer, outBuffer)
         outBuffer.rewind()
         return FloatArray(nOut) { outBuffer.float }
@@ -52,6 +55,12 @@ class TfliteFloatModel private constructor(
     companion object {
         /** Bound each float tensor to 16M values (64 MiB), before any direct-buffer allocation. */
         internal const val MAX_TENSOR_ELEMENTS: Int = 16_777_216
+        /** Bound both retained direct tensor buffers together to 64 MiB. */
+        internal const val MAX_TOTAL_BUFFER_ELEMENTS: Int = 16_777_216
+
+        private fun directFloatBuffer(elements: Int): ByteBuffer = ByteBuffer
+            .allocateDirect(Math.multiplyExact(elements, Float.SIZE_BYTES))
+            .order(ByteOrder.nativeOrder())
 
         fun open(modelFile: File, threads: Int = 2): TfliteFloatModel {
             require(threads in 1..8)
@@ -75,13 +84,25 @@ class TfliteFloatModel private constructor(
                 require(inputShape.isNotEmpty() && outputShape.isNotEmpty() && inputShape.all { it > 0 } && outputShape.all { it > 0 }) {
                     "Dynamic or empty model tensor shapes are unsupported."
                 }
-                elementCount(inputShape)
-                elementCount(outputShape)
+                tensorBufferElementCount(inputShape, outputShape)
                 return TfliteFloatModel(interpreter, inputShape, outputShape)
-            } catch (e: Exception) {
-                interpreter.close()
-                throw e
+            } catch (failure: Throwable) {
+                try {
+                    interpreter.close()
+                } catch (closeFailure: Throwable) {
+                    failure.addSuppressed(closeFailure)
+                }
+                throw failure
             }
+        }
+
+        /** Validate the combined resident direct-buffer budget before allocating either buffer. */
+        internal fun tensorBufferElementCount(inputShape: IntArray, outputShape: IntArray): Int {
+            val total = Math.addExact(elementCount(inputShape), elementCount(outputShape))
+            require(total <= MAX_TOTAL_BUFFER_ELEMENTS) {
+                "Input and output tensors exceed the safe $MAX_TOTAL_BUFFER_ELEMENTS-element combined buffer limit"
+            }
+            return total
         }
 
         internal fun elementCount(shape: IntArray): Int {

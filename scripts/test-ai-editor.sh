@@ -42,6 +42,20 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*AudioExportSourceProbeTest' \
   --tests '*ExportVideoEffectLayersTest' \
   --tests '*ProjectTimingModelVersionTest' \
+  --tests '*ProjectCompositionTimelineTest' \
+  --tests '*ProjectCompositionExportTest' \
+  --tests '*EditorProjectExportControllerTest' \
+  --tests '*ProjectExportPreflightTest' \
+  --tests '*PhotoExportConfigTest' \
+  --tests '*ImagePackReviewRegressionTest' \
+  --tests '*PreviewLayerTouchRoutingTest' \
+  --tests '*AiToolsPanelTest' \
+  --tests '*ModelDownloadsDialogTest' \
+  --tests '*EditorPreviewControlsRegressionTest' \
+  --tests '*PhotoPreviewGeometryTest' \
+  --tests '*CameraKitDeliveryRouteTest' \
+  --tests '*PhotoVideoEncoderTest' \
+  --tests '*TrimRangeNormalizationTest' \
   --tests '*EditorAudioExportSourcesTest' \
   --tests '*EditorOverlayAudioExportSourcesTest' \
   --tests '*OverlayAudio*Test' \
@@ -76,8 +90,9 @@ python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
   --tests '*ManualCropPanelTest' \
   --tests '*CropSourceDimensionsTest' \
   --tests '*EditorManualCropTest' \
-  --tests '*CameraKitConfigTest' \
   --tests '*VideoCropPresetTest' \
   --tests '*VideoCropGlEffectTest' \
   --tests '*ModernFxShadersTest' \
   --tests '*LutAssetIntegrityTest'
+./gradlew :feature:camerakit:testDebugUnitTest --no-daemon --max-workers="${GRADLE_TEST_WORKERS:-2}" \
+  --tests '*CameraKitConfigTest'

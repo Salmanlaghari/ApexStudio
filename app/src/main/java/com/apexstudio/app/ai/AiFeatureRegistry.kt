@@ -113,7 +113,7 @@ object AiFeatureRegistry {
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "Pinned MODNet photographic portrait-matting backend is bundled. Global moderation blocks user-content inference; realtime preview/export and device-quality acceptance remain incomplete."),
         AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Bundled learned ESPCN x3 luma backend with tiled host inference. Not an approved editor/export tool, exact 1080p converter or 4K pipeline."),
-        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is bundled for evaluation. Aspect ratio is distorted; global moderation blocks user-content inference. Preview/export, style-image provenance review and device-quality acceptance are incomplete."),
+        AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is debug/evaluation-only and excluded from release builds pending license/provenance review. Aspect ratio is distorted; global moderation blocks user-content inference. Preview/export and device-quality acceptance are incomplete."),
         AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "Fail-closed: validated sexual/violent/hateful coverage is not supplied.")
     )
 

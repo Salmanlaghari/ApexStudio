@@ -17,6 +17,11 @@ import java.util.Locale
 class ApexApp : Application() {
     val isDebug: Boolean = true
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        com.google.android.play.core.splitcompat.SplitCompat.install(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
 

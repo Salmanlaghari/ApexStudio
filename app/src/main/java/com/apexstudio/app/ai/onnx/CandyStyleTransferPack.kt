@@ -13,6 +13,7 @@ object CandyStyleTransferPack {
     const val MODEL_ID = "onnx-model-zoo-candy-9"
     const val REVISION = "f24fcf558bd4564360f41cf3b5321975a33f962f"
     const val SHA256 = "9d11a3529d1e547da6ae07201d93484dbab2ec0a3614535752c8f40f0fe2968a"
+    const val SIZE_BYTES = 6_728_029L
     const val ASSET_PATH = "models/style_transfer/candy-9.onnx"
     const val ARTIFACT_SOURCE_URL =
         "https://huggingface.co/onnxmodelzoo/candy-9/resolve/$REVISION/candy-9.onnx"
@@ -36,6 +37,9 @@ object CandyStyleTransferPack {
 
     private val lock = Any()
 
+    internal fun isVerifiedFile(file: File): Boolean =
+        file.isFile && file.length() == SIZE_BYTES && OnnxImageModels.sha256(file) == SHA256
+
     /** Copy the bundled, checksum-pinned asset into app-private storage without any network I/O. */
     fun materialize(context: Context): File = synchronized(lock) {
         val directory = File(context.filesDir, "ai-models/style-transfer")
@@ -43,15 +47,15 @@ object CandyStyleTransferPack {
             throw IOException("Cannot create private style-transfer model directory")
         }
         val target = File(directory, "candy-9.onnx")
-        if (target.isFile && OnnxImageModels.sha256(target) == SHA256) return@synchronized target
+        if (isVerifiedFile(target)) return@synchronized target
 
         val temporary = File(directory, "candy-9.onnx.part")
         try {
-            context.assets.open(ASSET_PATH).use { input ->
+            com.apexstudio.app.ai.models.ModelAssetAccess.open(context, ASSET_PATH).use { input ->
                 temporary.outputStream().buffered().use { output -> input.copyTo(output) }
             }
-            if (OnnxImageModels.sha256(temporary) != SHA256) {
-                throw IOException("Bundled Candy-9 asset SHA-256 mismatch")
+            if (!isVerifiedFile(temporary)) {
+                throw IOException("Bundled Candy-9 asset size or SHA-256 mismatch")
             }
             if (target.exists() && !target.delete()) {
                 throw IOException("Cannot replace invalid cached Candy-9 model")

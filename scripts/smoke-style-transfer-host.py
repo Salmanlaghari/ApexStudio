@@ -10,7 +10,7 @@ import numpy as np
 import onnxruntime as ort
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = ROOT / "app/src/main/assets/models/style_transfer/candy-9.onnx"
+MODEL = ROOT / "app/src/debug/assets/models/style_transfer/candy-9.onnx"
 EXPECTED_SHA256 = "9d11a3529d1e547da6ae07201d93484dbab2ec0a3614535752c8f40f0fe2968a"
 
 

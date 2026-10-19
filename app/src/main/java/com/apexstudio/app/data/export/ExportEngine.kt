@@ -37,6 +37,7 @@ import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.domain.model.DenoiseStrength
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -184,6 +185,13 @@ class ExportEngine(private val context: Context) {
     private var postMixJob: Job? = null
     private var overlayAudioTransformer: Transformer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val projectRunLock = Any()
+    private var projectRun: ProjectExportRun? = null
+    private var projectExportJob: Job? = null
+
+    private data class ProjectExportRun(
+        val cancelled: AtomicBoolean = AtomicBoolean(false)
+    )
 
     data class ExportProgressState(
         val isExporting: Boolean = false,
@@ -339,6 +347,252 @@ class ExportEngine(private val context: Context) {
     )
 
     /**
+     * Exports a deliberately limited, sequential V1 video-only project.
+     * Unsupported content is rejected before a Transformer is created; clips
+     * are never filtered out or silently rendered without their edits.
+     */
+    fun startProjectExport(
+        clips: List<MediaClip>,
+        config: ExportConfig,
+        outputFileName: String = "apex_studio_project_export.mp4"
+    ) {
+        val run = ProjectExportRun()
+        synchronized(projectRunLock) {
+            if (projectRun != null || _exportState.value.isExporting || transformer != null ||
+                overlayAudioTransformer != null || postMixJob?.isActive == true
+            ) {
+                Log.w(TAG, "Project export refused because another export is active")
+                return
+            }
+            val reason = projectCompositionUnsupportedReason(clips, config)
+            if (reason != null) {
+                _exportState.value = ExportProgressState(error = reason)
+                return
+            }
+            projectRun = run
+            _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
+            projectExportJob = CoroutineScope(Dispatchers.IO).launch {
+                var partialFile: File? = null
+                var mixedFile: File? = null
+                try {
+                    val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+                    if (!outputDir.exists() && !outputDir.mkdirs()) {
+                        throw IllegalStateException("Cannot create project export directory")
+                    }
+                    val destination = File(outputDir, outputFileName).canonicalFile
+                    if (destination.parentFile != outputDir.canonicalFile) {
+                        throw IllegalArgumentException("Project export filename must not contain a path")
+                    }
+                    val partial = File.createTempFile("apex_project_", ".mp4", outputDir)
+                    partialFile = partial
+                    if (!partial.delete()) throw IllegalStateException("Cannot prepare project export output")
+
+                    val plan = ProjectCompositionTimeline.build(clips)
+                    if (plan.entries.size != clips.size || plan.durationMs <= 0L) {
+                        throw IllegalStateException("Project composition could not include every video clip")
+                    }
+                    val (outputWidth, outputHeight) =
+                        com.apexstudio.app.data.effect.AspectCropTransformation.targetSizeFor(
+                            config.resolution, config.aspectRatio
+                        )
+                    val items = plan.entries.map { entry ->
+                        val clip = entry.clip
+                        val itemConfig = config.copy(
+                            trimStartMs = entry.sourceStartMs,
+                            trimEndMs = entry.sourceEndMs,
+                            clipSpeed = clip.speedMultiplier,
+                            speedPoints = clip.speedPoints,
+                            volume = (config.volume * clip.volume).coerceIn(0f, 2f),
+                            denoiseEnabled = config.denoiseEnabled || clip.denoiseEnabled,
+                            denoiseStrength = if (clip.denoiseEnabled) clip.denoiseStrength else config.denoiseStrength
+                        )
+                        val speedPair = buildSpeedProvider(itemConfig)?.let {
+                            Effects.createExperimentalSpeedChangingEffect(it)
+                        }
+                        val videoEffects = buildList<androidx.media3.common.Effect> {
+                            add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
+                            speedPair?.second?.let(::add)
+                        }
+                        val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
+                        val input = MediaItem.Builder()
+                            .setUri(Uri.parse(clip.uri))
+                            .setClippingConfiguration(
+                                MediaItem.ClippingConfiguration.Builder()
+                                    .setStartPositionMs(entry.sourceStartMs)
+                                    .setEndPositionMs(entry.sourceEndMs)
+                                    .build()
+                            )
+                            .build()
+                        EditedMediaItem.Builder(input)
+                            .setFrameRate(config.fps)
+                            .setEffects(Effects(audioProcessors, videoEffects))
+                            .build()
+                    }
+                    val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
+                    renderProjectComposition(composition, config, partial, run)
+                    currentCoroutineContext().ensureActive()
+                    check(!run.cancelled.get()) { "Project export was cancelled" }
+
+                    var finishedFile = partial
+                    if (config.musicMixTracks.isNotEmpty()) {
+                        val mixed = File.createTempFile("apex_project_music_", ".mp4", outputDir)
+                        mixedFile = mixed
+                        if (!mixed.delete()) throw IllegalStateException("Cannot prepare project music mix output")
+                        val coroutineContext = currentCoroutineContext()
+                        val mixResult = MusicExportMixer.mixMusicIntoVideo(
+                            context, partial, config.musicMixTracks, mixed
+                        ) { coroutineContext.ensureActive() }
+                        coroutineContext.ensureActive()
+                        if (mixResult.skippedTracks > 0) {
+                            throw IllegalStateException("Project music postmix skipped ${mixResult.skippedTracks} track(s)")
+                        }
+                        finishedFile = mixed
+                    }
+                    currentCoroutineContext().ensureActive()
+                    check(!run.cancelled.get()) { "Project export was cancelled" }
+                    if (destination.exists() && !destination.delete()) {
+                        throw IllegalStateException("Cannot replace existing project export")
+                    }
+                    if (!finishedFile.renameTo(destination)) {
+                        throw IllegalStateException("Could not finalize project export file")
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (isCurrentProjectRun(run)) {
+                            _exportState.value = ExportProgressState(
+                                isExporting = false,
+                                progress = 1f,
+                                outputUri = Uri.fromFile(destination).toString()
+                            )
+                        }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Log.e(TAG, "startProjectExport failed", failure)
+                    withContext(Dispatchers.Main.immediate) {
+                        if (isCurrentProjectRun(run) && !run.cancelled.get()) {
+                            _exportState.value = ExportProgressState(
+                                error = failure.message ?: "Project export failed"
+                            )
+                        }
+                    }
+                } finally {
+                    partialFile?.let { if (it.exists()) it.delete() }
+                    mixedFile?.let { if (it.exists()) it.delete() }
+                    synchronized(projectRunLock) {
+                        if (projectRun === run) {
+                            projectRun = null
+                            projectExportJob = null
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun isCurrentProjectRun(run: ProjectExportRun): Boolean = synchronized(projectRunLock) {
+        projectRun === run && !run.cancelled.get()
+    }
+
+    /** Compose callback API is main-looper confined, like the selected-clip route. */
+    private suspend fun renderProjectComposition(
+        composition: Composition,
+        config: ExportConfig,
+        outputFile: File,
+        run: ProjectExportRun
+    ) = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val settled = AtomicBoolean(false)
+            var active: Transformer? = null
+            continuation.invokeOnCancellation {
+                run.cancelled.set(true)
+                mainHandler.post {
+                    active?.let { renderer ->
+                        try { renderer.cancel() } catch (_: Exception) {}
+                        if (transformer === renderer) transformer = null
+                    }
+                    if (outputFile.exists()) outputFile.delete()
+                }
+            }
+            try {
+                val encoderSettings = VideoEncoderSettings.Builder()
+                    .setBitrate(projectTargetBitrate(config))
+                    .setEncodingProfileLevel(
+                        MediaCodecInfo.CodecProfileLevel.AVCProfileHigh,
+                        MediaCodecInfo.CodecProfileLevel.AVCLevel51
+                    )
+                    .build()
+                val encoderFactory = DefaultEncoderFactory.Builder(context)
+                    .setRequestedVideoEncoderSettings(encoderSettings)
+                    .setEnableFallback(true)
+                    .build()
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        progressJob?.cancel()
+                        if (transformer === active) transformer = null
+                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
+                            continuation.resumeWith(Result.success(Unit))
+                        }
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        progressJob?.cancel()
+                        if (transformer === active) transformer = null
+                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
+                            continuation.resumeWith(Result.failure(exportException))
+                        }
+                    }
+                }
+                active = Transformer.Builder(context)
+                    .setLooper(Looper.getMainLooper())
+                    .setEncoderFactory(encoderFactory)
+                    .addListener(listener)
+                    .build()
+                transformer = active
+                active!!.start(composition, outputFile.absolutePath)
+                startProgressTracking(active!!)
+            } catch (failure: Exception) {
+                active?.let {
+                    try { it.cancel() } catch (_: Exception) {}
+                    if (transformer === it) transformer = null
+                }
+                if (settled.compareAndSet(false, true)) continuation.resumeWith(Result.failure(failure))
+            }
+        }
+    }
+
+    private fun projectTargetBitrate(config: ExportConfig): Int {
+        val base = if (config.bitrateMbps > 0) config.bitrateMbps * 1_000_000 else when (config.resolution.lowercase()) {
+            "4k", "2160p" -> 50_000_000
+            "1440p" -> 24_000_000
+            "720p" -> 6_000_000
+            else -> 18_000_000
+        }
+        val qualityFactor = when (config.quality.lowercase()) {
+            "low" -> 0.5f
+            "medium" -> 0.75f
+            else -> 1f
+        }
+        return (base * qualityFactor).toInt().coerceAtLeast(1_000_000)
+    }
+
+    private fun reserveNonProjectExport(): Boolean = synchronized(projectRunLock) {
+        if (projectRun != null || _exportState.value.isExporting || transformer != null ||
+            overlayAudioTransformer != null || postMixJob?.isActive == true
+        ) {
+            Log.w(TAG, "Export refused because another export is active")
+            false
+        } else {
+            _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
+            true
+        }
+    }
+
+    /**
      * Initiates hardware-accelerated video export on a background Coroutine.
      */
     fun startExport(
@@ -346,6 +600,7 @@ class ExportEngine(private val context: Context) {
         config: ExportConfig,
         outputFileName: String = "apex_studio_export.mp4"
     ) {
+        if (!reserveNonProjectExport()) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
@@ -839,6 +1094,7 @@ class ExportEngine(private val context: Context) {
         config: ExportConfig,
         outputFileName: String = "apex_studio_audio.m4a"
     ) {
+        if (!reserveNonProjectExport()) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
@@ -912,6 +1168,7 @@ class ExportEngine(private val context: Context) {
         template: TimelineTemplate,
         outputFileName: String = "apex_template_export.mp4"
     ) {
+        if (!reserveNonProjectExport()) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 _exportState.value = ExportProgressState(isExporting = true, progress = 0f)
@@ -1247,6 +1504,12 @@ class ExportEngine(private val context: Context) {
         progressJob = null
         postMixJob?.cancel()
         postMixJob = null
+        synchronized(projectRunLock) {
+            projectRun?.cancelled?.set(true)
+            projectRun = null
+            projectExportJob?.cancel()
+            projectExportJob = null
+        }
         try { overlayAudioTransformer?.cancel() } catch (_: Exception) {}
         overlayAudioTransformer = null
         transformer?.cancel()

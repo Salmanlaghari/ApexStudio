@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "notice": "Debug/evaluation-only model inventory. This pack is excluded from release source assets; integrity and provenance are not approval for production use or user-content inference.",
+  "models": [
+    {
+      "path": "style_transfer/candy-9.onnx",
+      "bytes": 6728029,
+      "sha256": "9d11a3529d1e547da6ae07201d93484dbab2ec0a3614535752c8f40f0fe2968a",
+      "source": "https://huggingface.co/onnxmodelzoo/candy-9/resolve/f24fcf558bd4564360f41cf3b5321975a33f962f/candy-9.onnx",
+      "license": "BSD-3-Clause model SPDX / Apache-2.0 Hub metadata; see both bundled license texts and NOTICE.md",
+      "licenseFile": "style_transfer/LICENSE-BSD-3-Clause.txt",
+      "additionalLicenseFiles": [
+        "style_transfer/LICENSE-APACHE-2.0.txt"
+      ],
+      "immutableRevision": "f24fcf558bd4564360f41cf3b5321975a33f962f"
+    }
+  ]
+}

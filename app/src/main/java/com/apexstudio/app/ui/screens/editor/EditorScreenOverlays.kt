@@ -30,6 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -328,9 +331,9 @@ fun LensesPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.lensesPanelOpen) return
-    // LensesScreen is self-contained (own ViewModel); embedding it as an
-    // overlay keeps the editor state alive underneath.
-    com.apexstudio.app.camerakit.LensesScreen(onBack = { vm.closeLensesPanel() })
+    // Request the Play-delivered feature from the base app; the editor stays
+    // alive underneath and the feature Activity returns here on Back.
+    com.apexstudio.app.camerakit.CameraKitDeliveryRoute(onBack = { vm.closeLensesPanel() })
 }
 
 /** Transmission templates bottom-sheet overlay. */
@@ -1142,8 +1145,8 @@ fun AddMediaMenuSheetOverlay(
 }
 
 /**
- * Main video preview area. ColumnScope extension so the weight(1f) layout
- * behaves exactly as before extraction.
+ * Main video preview area. ColumnScope extension so the preview can consume
+ * the remaining editor height, or the whole safe window area in fullscreen.
  */
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
@@ -1151,6 +1154,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     vm: EditorViewModel,
     exoPlayer: ExoPlayer?,
     isCoverMode: Boolean,
+    isFullscreenPreview: Boolean = false,
+    onFullscreenToggle: () -> Unit = {},
     currentSelectedClip: MediaClip?,
     seekPlayerAndState: (Long) -> Unit,
     onOpenAddMediaMenu: () -> Unit,
@@ -1169,7 +1174,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         modifier = Modifier
             .fillMaxWidth()
             .weight(1f)
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .padding(
+                horizontal = if (isFullscreenPreview) 0.dp else 12.dp,
+                vertical = if (isFullscreenPreview) 0.dp else 4.dp
+            )
     ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
@@ -1513,11 +1521,31 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 8.dp)
         )
+
+        if (isFullscreenPreview) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .clickable(onClick = onFullscreenToggle, role = Role.Button)
+                    .semantics { contentDescription = "Exit fullscreen preview" }
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
+            ) {
+                Text(
+                    text = "Exit fullscreen",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
     }
 }
 
 /**
- * Transport row + adjust bar + timeline quick actions + timeline track area.
+ * Transport row + timeline track area.
  * ColumnScope extension so the weight(1f) layout behaves exactly as before
  * extraction.
  */
@@ -1620,24 +1648,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             .weight(1.2f)
     )
 
-    // ---- BOTTOM LINE (below the timeline) ----
-    // Timeline-only tools (keyframe nav + zoom). Everything else that
-    // used to live here moved to the bottom bars: Overlay / Effects /
-    // Adjust to the main bottom bar, Transition to the main bottom bar
-    // (nearest V1 junction to playhead), Split + Curves (Keyframe
-    // Studio) to the clip bar, Move <-/-> to drag-reorder, and the
-    // Adjust chips row is gone (same controls in the Adjust panel).
-    BottomTimelineActionRow(
-        hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
-        canEditKeyframe = kfClip != null,
-        timelineZoom = state.timelineZoom,
-        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
-        onPrevKeyframe = { vm.jumpToPrevKeyframe() },
-        onNextKeyframe = { vm.jumpToNextKeyframe() },
-        onZoomIn = { vm.zoomInTimeline() },
-        onZoomOut = { vm.zoomOutTimeline() },
-        modifier = Modifier.fillMaxWidth()
-    )
 }
 
 /* ================= Phase 3 overlays ================= */

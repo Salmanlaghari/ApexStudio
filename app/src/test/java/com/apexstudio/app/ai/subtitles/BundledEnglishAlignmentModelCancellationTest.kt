@@ -2,6 +2,8 @@ package com.apexstudio.app.ai.subtitles
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.AssetManager
+import com.apexstudio.app.ai.models.SourceModelAssets
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
@@ -88,7 +90,9 @@ class BundledEnglishAlignmentModelCancellationTest {
     }
 
     private class TestContext(base: Context, private val testFilesDir: File) : ContextWrapper(base) {
+        private val sourceAssets = SourceModelAssets.assetManager()
         override fun getApplicationContext(): Context = this
+        override fun getAssets(): AssetManager = sourceAssets
         override fun getFilesDir(): File = testFilesDir
     }
 }

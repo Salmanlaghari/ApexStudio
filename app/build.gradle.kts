@@ -25,6 +25,30 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
   .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+// Model weights remain source-controlled for provenance and host tests but are
+// omitted from APK/AAB assets by default. Use -PincludeBundledAiModels=true only
+// for bundled-fallback regression builds.
+val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
+  .map(String::toBoolean).orElse(false)
+val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
+val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  from(layout.projectDirectory.dir("src/main/assets"))
+  if (!includeBundledAiModels.get()) {
+    exclude(
+      "models/mediapipe/*.task", "models/mediapipe/*.tflite",
+      "models/whisper/*.onnx", "models/whisper/*.txt",
+      "models/alignment/*.onnx", "models/super_resolution/*.onnx",
+      "models/background_removal/*.onnx"
+    )
+  }
+  into(stagedAssets)
+}
+val stagedDebugAssets = layout.buildDirectory.dir("generated/debugRuntimeAssets")
+val stageDebugRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  from(layout.projectDirectory.dir("src/debug/assets"))
+  if (!includeBundledAiModels.get()) exclude("models/style_transfer/*.onnx")
+  into(stagedDebugAssets)
+}
 val identityAssets = layout.buildDirectory.dir("generated/buildIdentityAssets")
 val generateBuildIdentity by tasks.registering {
   // Capture plain values now; the task action must not capture this script.
@@ -39,7 +63,10 @@ val generateBuildIdentity by tasks.registering {
     output.writeText(identityText)
   }
 }
-tasks.named("preBuild").configure { dependsOn(generateBuildIdentity) }
+tasks.named("preBuild").configure { dependsOn(generateBuildIdentity, stageRuntimeAssets) }
+tasks.matching { it.name == "preDebugBuild" || it.name == "mergeDebugAssets" }.configureEach {
+  dependsOn(stageDebugRuntimeAssets)
+}
 
 // Royalty-free music library (Jamendo API): the free client ID is read from the
 // JAMENDO_CLIENT_ID env var first, then from local.properties (same key).
@@ -58,6 +85,8 @@ fun musicApiKey(name: String): String {
 android {
   namespace = "com.apexstudio.app"
   compileSdk = 36
+  // Camera Kit is downloaded only after explicit user action through Play.
+  dynamicFeatures += setOf(":feature:camerakit")
 
   defaultConfig {
     applicationId = "com.apexstudio.app"
@@ -76,7 +105,8 @@ android {
     buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
 
-  sourceSets.getByName("main").assets.srcDir(identityAssets)
+  sourceSets.getByName("main").assets.setSrcDirs(listOf(stagedAssets, identityAssets))
+  sourceSets.getByName("debug").assets.setSrcDirs(listOf(stagedDebugAssets))
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
@@ -112,7 +142,10 @@ android {
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")
       ndk {
-        abiFilters += listOf("arm64-v8a", "x86_64")
+        // Phone delivery omits emulator-only native copies; ordinary debug
+        // builds retain x86_64 for local/emulator development.
+        abiFilters += if (providers.gradleProperty("apexPhoneBuild").orNull == "true")
+          listOf("arm64-v8a") else listOf("arm64-v8a", "x86_64")
       }
     }
   }
@@ -135,6 +168,9 @@ android {
   packaging {
     resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     jniLibs {
+      // Compress native libraries in downloadable APKs. Android extracts them
+      // at install time; installed storage is larger than the APK download.
+      useLegacyPackaging = true
       // FFmpegKit and other native libs both provide libc++_shared.so — pick first to avoid duplicate packaging conflict.
       pickFirsts += listOf(
         "**/libc++_shared.so",
@@ -190,10 +226,11 @@ dependencies {
   implementation("androidx.media3:media3-session:1.5.0")
   implementation("androidx.media3:media3-datasource:1.5.0")
 
-  // Camera Kit SDK lives in :feature:camerakit (see that module's
-  // build.gradle.kts) — the app must not import the SDK directly, so the
-  // DFM follow-up (dynamic-feature + on-demand download) is mechanical.
-  implementation(project(":feature:camerakit"))
+  // SplitInstall API for the Camera Kit Play on-demand feature.
+  implementation(libs.play.feature.delivery)
+  // Only the manifest-visible legal window theme lives in base. Camera Kit
+  // SDK classes/native libraries remain in the on-demand feature.
+  implementation("androidx.appcompat:appcompat:1.7.0")
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
   // Full build includes libx264, libmp3lame, and concat protocol support.

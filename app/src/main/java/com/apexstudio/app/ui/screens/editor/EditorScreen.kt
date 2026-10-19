@@ -58,6 +58,12 @@ internal fun resolveMainPreviewClip(clips: List<MediaClip>, selectedClipId: Stri
         ?: clips.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
 }
 
+/** Whether the editor chrome should remain visible around the expanded preview. */
+internal fun editorChromeVisible(isFullscreenPreview: Boolean): Boolean = !isFullscreenPreview
+
+/** The compact preview sizing control cycles between its two supported player modes. */
+internal fun toggleCoverFitMode(isCoverMode: Boolean): Boolean = !isCoverMode
+
 @Composable
 fun EditorScreen(
     projectId: String,
@@ -687,22 +693,26 @@ fun EditorScreen(
             .navigationBarsPadding()
             .background(Color(0xFF0A0A0F))
     ) {
-        TopAppBarSection(
-            canUndo = state.canUndo,
-            canRedo = state.canRedo,
-            resolution = state.selectedResolution,
-            onSelectResolution = { vm.setSelectedResolution(it) },
-            isCoverMode = isCoverMode,
-            onToggleCoverMode = { isCoverMode = !isCoverMode },
-            onFullscreenToggle = { vm.toggleFullscreenPreview() },
-            onBack = onBack,
-            onUndo = { vm.undo() },
-            onRedo = { vm.redo() },
-            onHelp = { vm.openHelpDialog() },
-            onExport = onExport
-        )
+        if (editorChromeVisible(state.isFullscreenPreview)) {
+            TopAppBarSection(
+                canUndo = state.canUndo,
+                canRedo = state.canRedo,
+                resolution = state.selectedResolution,
+                onSelectResolution = { vm.setSelectedResolution(it) },
+                isCoverMode = isCoverMode,
+                onToggleCoverMode = { isCoverMode = toggleCoverFitMode(isCoverMode) },
+                onFullscreenToggle = { vm.toggleFullscreenPreview() },
+                onBack = onBack,
+                onUndo = { vm.undo() },
+                onRedo = { vm.redo() },
+                onHelp = { vm.openHelpDialog() },
+                onExport = onExport
+            )
+        }
 
-        if (state.project?.hasLegacyAbsolutePlacementTimingRisk() == true) {
+        if (editorChromeVisible(state.isFullscreenPreview) &&
+            state.project?.hasLegacyAbsolutePlacementTimingRisk() == true
+        ) {
             androidx.compose.material3.Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -726,6 +736,8 @@ fun EditorScreen(
             vm = vm,
             exoPlayer = exoPlayer,
             isCoverMode = isCoverMode,
+            isFullscreenPreview = state.isFullscreenPreview,
+            onFullscreenToggle = { vm.toggleFullscreenPreview() },
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
             onOpenAddMediaMenu = { showAddMediaMenu = true },
@@ -733,48 +745,50 @@ fun EditorScreen(
             overlayIsVideo = overlayIsVideo
         )
 
-        EditorTransportSection(
-            state = state,
-            vm = vm,
-            seekPlayerAndState = seekPlayerAndState,
-            // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
-            // set here and the picker launches immediately, so the pick
-            // can never be misrouted to V1 (the old bug: the ClipType was
-            // dropped and the generic menu's "Video" entry reset the flag).
-            onOpenAddMediaMenu = { type ->
-                if (type == ClipType.OVERLAY) {
-                    vm.setPendingAddAsOverlay(true)
-                    vm.setPendingAddAsAudio(false)
-                    mediaPicker.pickMultipleMedia.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                    )
-                } else if (type == ClipType.AUDIO) {
-                    // A1 lane "+" — audio goes straight to the audio
-                    // picker and lands in project.audioTracks (A1 lane).
-                    vm.setPendingAddAsOverlay(false)
-                    vm.setPendingAddAsAudio(true)
-                    importPhoneMusic()
-                } else {
-                    vm.setPendingAddAsOverlay(false)
-                    vm.setPendingAddAsAudio(false)
-                    showAddMediaMenu = true
+        if (editorChromeVisible(state.isFullscreenPreview)) {
+            EditorTransportSection(
+                state = state,
+                vm = vm,
+                seekPlayerAndState = seekPlayerAndState,
+                // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
+                // set here and the picker launches immediately, so the pick
+                // can never be misrouted to V1 (the old bug: the ClipType was
+                // dropped and the generic menu's "Video" entry reset the flag).
+                onOpenAddMediaMenu = { type ->
+                    if (type == ClipType.OVERLAY) {
+                        vm.setPendingAddAsOverlay(true)
+                        vm.setPendingAddAsAudio(false)
+                        mediaPicker.pickMultipleMedia.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        )
+                    } else if (type == ClipType.AUDIO) {
+                        // A1 lane "+" — audio goes straight to the audio
+                        // picker and lands in project.audioTracks (A1 lane).
+                        vm.setPendingAddAsOverlay(false)
+                        vm.setPendingAddAsAudio(true)
+                        importPhoneMusic()
+                    } else {
+                        vm.setPendingAddAsOverlay(false)
+                        vm.setPendingAddAsAudio(false)
+                        showAddMediaMenu = true
+                    }
                 }
-            }
-        )
+            )
 
-        // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
-        // to keep this composable under the JVM 64KB method limit.
-        EditorBottomToolbarSection(
-            state = state,
-            vm = vm,
-            mediaPicker = mediaPicker,
-            onAi = { showAiPanel = true },
-            onCrop = { showCropPanel = true },
-            onDeviceAudio = importPhoneMusic
-        )
-        if (localAudioImporting) {
-            androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+            // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
+            // to keep this composable under the JVM 64KB method limit.
+            EditorBottomToolbarSection(
+                state = state,
+                vm = vm,
+                mediaPicker = mediaPicker,
+                onAi = { showAiPanel = true },
+                onCrop = { showCropPanel = true },
+                onDeviceAudio = importPhoneMusic
+            )
+            if (localAudioImporting) {
+                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+            }
         }
     }
 

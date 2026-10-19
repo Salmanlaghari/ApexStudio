@@ -44,6 +44,37 @@ class FailClosedModerationGateTest {
         assertDenied { FailClosedModerationGate(classifier()).requireAllowed(byteArrayOf(1)) }
     }
 
+    @Test fun unapprovedClassifierIsNotInvokedEvenWhenMetadataAndAllClearOutputLookValid() {
+        var calls = 0
+        val unapproved = object : ValidatedModerationClassifier {
+            override val metadata = ClassifierMetadata(
+                "plausible-model-name", "1", "b".repeat(64), all, "claimed validation evidence",
+            )
+            override fun classify(imageBytes: ByteArray): ModerationScores {
+                calls++
+                return ModerationScores(all.associateWith { 0f })
+            }
+        }
+
+        assertDenied { FailClosedModerationGate(unapproved).requireAllowed(byteArrayOf(1)) }
+        assertTrue(calls == 0)
+    }
+
+    @Test fun oversizedInputIsDeniedBeforeClassifierInvocation() {
+        var calls = 0
+        val counting = object : ValidatedModerationClassifier {
+            override val metadata = ClassifierMetadata("classifier", "1", "a".repeat(64), all, "evidence")
+            override fun classify(imageBytes: ByteArray): ModerationScores {
+                calls++
+                return ModerationScores(all.associateWith { 0f })
+            }
+        }
+        val oversized = ByteArray(32 * 1024 * 1024 + 1)
+
+        assertDenied { FailClosedModerationGate(counting).requireAllowed(oversized) }
+        assertTrue(calls == 0)
+    }
+
     @Test fun nonFiniteAndOutOfRangeScoresAreCoveredWhenApprovalExists() {
         // Gate fails earlier on unapproved artifact, so malformed outputs can never authorize action either.
         val bad = all.associateWith { Float.NaN }

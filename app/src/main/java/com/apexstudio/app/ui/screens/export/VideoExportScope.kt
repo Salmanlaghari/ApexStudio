@@ -15,7 +15,7 @@ internal data class VideoExportScope(
     val notice: String?
         get() = when {
             baseClip == null -> "No main video or photo is available for video export."
-            mainClipCount > 1 -> "Video export saves only the selected main clip (or the first main clip when no main clip is selected), not all $mainClipCount main clips. Whole-project video export is not available yet."
+            mainClipCount > 1 -> "Selected-clip export saves only the selected main clip (or the first main clip when no main clip is selected), not all $mainClipCount main clips. Whole project (basic) is a separate mode and rejects unsupported edits."
             else -> null
         }
 }

@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.apexstudio.app.ai.AiAvailability
 import com.apexstudio.app.ai.AiFeatureAvailability
 import com.apexstudio.app.ai.AiFeatureId
 import com.apexstudio.app.ai.AiFeatureRegistry
@@ -9,9 +10,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+internal const val AI_PROTECTED_BLOCKER =
+    "Blocked pending validated all-category moderation for sexual, violent, and hateful content across every protected workflow. This validation is not available yet."
+internal const val AI_PROTECTED_STATUS_LABEL = "Unavailable · safety validation pending"
+internal const val LOCAL_REVIEW_ACTION_LABEL = "Open offline scene + face review"
+
 /** Keep model readiness and end-to-end editor readiness separate. */
 internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCard> {
-    val safetyReady = inventory.any { it.id == AiFeatureId.CONTENT_MODERATION && it.isReady }
     return inventory.map { feature ->
         val name = feature.id.name
         val title = when (name) {
@@ -39,15 +44,12 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
             name == "CONTENT_MODERATION" -> "Safety"
             else -> "Smart editing"
         }
-        // A runtime/algorithm is not an editor effect. Until a reviewed safety
-        // classifier AND validated full-clip/export integration exist, do not
-        // turn a switch on or claim the user's video has been processed.
-        val reason = when {
-            !feature.isReady -> feature.message
-            !safetyReady -> "Blocked: a validated offline sexual/violent/hateful-content classifier is not configured. " + feature.message
-            else -> "Backend available; full-clip editor application and export validation are still required."
-        }
-        AiToolCard(name, title, feature.message, group, ready = false, unavailableReason = reason)
+        // Inventory is informational only. Model readiness never changes the
+        // protected-tool status or creates a control that could enable it.
+        val inventoryStatus = if (feature.isReady) "Local backend detected" else "Local backend unavailable"
+        AiToolCard(name, title, "$inventoryStatus: ${feature.message}", group,
+            statusLabel = AI_PROTECTED_STATUS_LABEL,
+            unavailableReason = AI_PROTECTED_BLOCKER)
     }
 }
 
@@ -58,23 +60,27 @@ fun AiToolsOverlay(
     onOpenGestures: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current.applicationContext
-    var cards by remember { mutableStateOf<List<AiToolCard>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var message by remember { mutableStateOf("Checking installed local models…") }
-    LaunchedEffect(context) {
+    var cards by remember { mutableStateOf(aiToolCards(AiFeatureId.entries.map { id ->
+        AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE, "Local pack inventory has not been checked yet.")
+    })) }
+    var showDownloads by remember { mutableStateOf(false) }
+    var inventoryRevision by remember { mutableIntStateOf(0) }
+    var message by remember { mutableStateOf("Checking local model inventory for information only…") }
+    LaunchedEffect(context, inventoryRevision) {
         try {
             cards = withContext(Dispatchers.IO) { aiToolCards(AiFeatureRegistry.all(context)) }
-            message = "Protected user-content AI is blocked: no app-reviewed offline classifier validates sexual, violent, and hateful coverage. Captions and Background Apply will not run; ordinary editing and informational offline analysis/review remain available. Model presence is not moderation approval. No download starts here."
+            message = "Local model inventory checked for information only. No download starts here."
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            message = "Could not read the local model inventory. AI remains OFF; your project is unchanged."
-        } finally {
-            loading = false
+            message = "Could not read the local model inventory. Protected AI remains unavailable; your project is unchanged."
         }
     }
-    AiToolsPanel(tools = cards, processing = loading, progress = 0f, message = message,
-        onToggle = { _, _ -> message = "This feature is not ready; no changes were made." },
-        onCancel = onClose, onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
-        onOpenGestures = onOpenGestures)
+    AiToolsPanel(tools = cards, message = message,
+        onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
+        onOpenGestures = onOpenGestures, onOpenDownloads = { showDownloads = true })
+    if (showDownloads) ModelDownloadsDialog(onDismiss = {
+        showDownloads = false
+        inventoryRevision++
+    })
 }

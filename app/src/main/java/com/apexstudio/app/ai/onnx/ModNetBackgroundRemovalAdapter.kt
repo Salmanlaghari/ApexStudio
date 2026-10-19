@@ -40,6 +40,13 @@ class ModNetBackgroundRemovalAdapter(private val modelFile: File) {
         const val MAX_SOURCE_PIXELS = 8_388_608L
         const val MAX_ASSET_BYTES = 50_000_000L
 
+        internal fun maskBitmap(pixels: IntArray, width: Int, height: Int): Bitmap {
+            require(width > 0 && height > 0 && width.toLong() * height == pixels.size.toLong()) {
+                "MODNet mask pixels must exactly match positive dimensions"
+            }
+            return Bitmap.createBitmap(pixels, 0, width, width, height, Bitmap.Config.ARGB_8888)
+        }
+
         private val env: OrtEnvironment by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             OrtEnvironment.getEnvironment()
         }
@@ -47,6 +54,12 @@ class ModNetBackgroundRemovalAdapter(private val modelFile: File) {
         /** Install only the exact bundled bytes; no download, substitution, or learned fallback. */
         @Synchronized
         fun fromBundledAssets(context: Context, cacheDir: File = context.cacheDir): ModNetBackgroundRemovalAdapter {
+            com.apexstudio.app.ai.models.ModelAssetAccess.installedFile(context, MODEL_ASSET)?.let { installed ->
+                check(installed.length() == MODEL_SIZE_BYTES && OnnxImageModels.sha256(installed) == MODEL_SHA256) {
+                    "Installed MODNet model size or SHA-256 mismatch"
+                }
+                return ModNetBackgroundRemovalAdapter(installed)
+            }
             val target = File(cacheDir, "models/$MODEL_ID.onnx")
             if (!target.isFile || target.length() != MODEL_SIZE_BYTES ||
                 OnnxImageModels.sha256(target) != MODEL_SHA256
@@ -55,7 +68,7 @@ class ModNetBackgroundRemovalAdapter(private val modelFile: File) {
                 check(parent.isDirectory || parent.mkdirs()) { "Cannot create model cache directory" }
                 val temp = File.createTempFile("modnet-", ".tmp", parent)
                 try {
-                    context.assets.open(MODEL_ASSET).use { input ->
+                    com.apexstudio.app.ai.models.ModelAssetAccess.open(context, MODEL_ASSET).use { input ->
                         temp.outputStream().buffered().use { output -> input.copyTo(output) }
                     }
                     check(temp.length() == MODEL_SIZE_BYTES && OnnxImageModels.sha256(temp) == MODEL_SHA256) {
@@ -212,7 +225,7 @@ class ModNetBackgroundRemovalAdapter(private val modelFile: File) {
                 val gray = alphaByte(output[i])
                 maskPixels[i] = (0xff shl 24) or (gray shl 16) or (gray shl 8) or gray
             }
-            val lowResolutionMask = Bitmap.createBitmap(maskPixels, inputWidth, inputHeight, Bitmap.Config.ARGB_8888)
+            val lowResolutionMask = maskBitmap(maskPixels, inputWidth, inputHeight)
             try {
                 val fullSizeMask = if (inputWidth == source.width && inputHeight == source.height) lowResolutionMask
                 else Bitmap.createScaledBitmap(lowResolutionMask, source.width, source.height, true)

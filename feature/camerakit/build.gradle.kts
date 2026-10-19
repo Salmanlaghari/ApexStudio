@@ -1,29 +1,13 @@
 import java.util.Properties
 
 plugins {
-  alias(libs.plugins.android.library)
+  alias(libs.plugins.android.dynamic.feature)
   alias(libs.plugins.kotlin.android)
   alias(libs.plugins.kotlin.compose)
 }
 
-// Camera Kit SDK (Snap) isolated in its own module — the largest safe step
-// toward on-demand delivery (Play Feature Delivery / Dynamic Feature Module).
-//
-// WHY A SEPARATE MODULE: the SDK (~88 MB AAR footprint: ~96 MB of .so files
-// across ABIs) is the single biggest contributor to APK size. It cannot be
-// moved to the file-based PackManager (native libs + dex must load from the
-// APK), so the correct mechanism is a Dynamic Feature Module served by Play.
-// This module is the prerequisite: the base app no longer has ANY direct
-// Camera Kit import (it depends only on this module's public API), so the
-// DFM follow-up is mechanical:
-//   1. Change this module's plugin to `com.android.dynamic-feature` +
-//      `dist:onDemand="true"` in its manifest.
-//   2. Base: replace `implementation(project(":feature:camerakit"))` with
-//      `dynamicFeatures = [":feature:camerakit"]` and access LensesScreen
-//      via SplitInstallManager + Intent (wrap it in a feature Activity).
-//   3. Add the "download to use AR Face / Lens" prompt + progress (Packs UI pattern).
-// Until then the SDK stays bundled (behavior identical) — this module only
-// isolates it. See the PR description for measured with/without sizes.
+// Play Feature Delivery keeps Camera Kit's dex and native libraries out of the
+// lightweight base APK until the user explicitly requests AR lenses.
 
 android {
   namespace = "com.apexstudio.app.camerakit"
@@ -31,7 +15,6 @@ android {
 
   defaultConfig {
     minSdk = 26
-    consumerProguardFiles("consumer-rules.pro")
 
     // Snap Camera Kit API token: same source as the app module used to read —
     // SNAP_CAMERA_KIT_TOKEN env var (CI secret) falling back to
@@ -71,9 +54,16 @@ android {
     compose = true
     buildConfig = true
   }
+  buildTypes {
+    getByName("release") {
+      proguardFiles("consumer-rules.pro")
+    }
+  }
 }
 
 dependencies {
+  implementation(project(":app"))
+  implementation(libs.play.feature.delivery)
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.material.icons.core)
@@ -92,4 +82,5 @@ dependencies {
   implementation("com.snap.camerakit:camerakit:$cameraKitVersion")
   implementation("com.snap.camerakit:camerakit-kotlin:$cameraKitVersion")
   implementation("com.snap.camerakit:support-camerax:$cameraKitVersion")
+  testImplementation("junit:junit:4.13.2")
 }

@@ -193,7 +193,8 @@ fun VideoPreviewArea(
                     settings = photoClip.photoEdit,
                     cropActive = photoCropActive,
                     onCropChange = { onPhotoCropRectChange?.invoke(it) },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    isCoverMode = isCoverMode
                 )
             } else if (exoPlayer != null) {
                 AndroidView(

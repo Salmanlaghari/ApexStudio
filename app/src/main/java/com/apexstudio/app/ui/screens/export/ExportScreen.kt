@@ -17,7 +17,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +53,8 @@ fun ExportScreen(
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val editorState by vm.state.collectAsStateWithLifecycle()
+    val audioState by vm.audio.collectAsStateWithLifecycle()
+    var wholeProject by rememberSaveable(projectId) { mutableStateOf(false) }
     val fxList = vm.fx.collectAsStateWithLifecycle().value
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
 
@@ -71,7 +75,9 @@ fun ExportScreen(
     val selectedBitrateMbps = export.settings.bitrateMbps
     // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
     val videoScope = videoExportScope(editorState)
-    val projectDurationMs = videoScope.durationMs.coerceAtLeast(1L)
+    val projectBlockReason = wholeProjectExportUnsupportedReason(editorState, audioState, export.settings)
+    val projectTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(projectMainExportClips(editorState))
+    val projectDurationMs = (if (wholeProject) projectTimeline.durationMs else videoScope.durationMs).coerceAtLeast(1L)
     val effectiveBitrateMbps = if (selectedBitrateMbps > 0) selectedBitrateMbps else when {
         selectedResolution.contains("4k", ignoreCase = true) ||
                 selectedResolution.contains("2160") -> 50
@@ -108,7 +114,18 @@ fun ExportScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             AudioExportWarning(export.warning)
-            VideoExportScopeWarning(videoScope)
+            SectionLabel("VIDEO SCOPE")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !wholeProject, enabled = !export.isExporting,
+                    onClick = { wholeProject = false }, label = { Text("Selected clip") })
+                FilterChip(selected = wholeProject, enabled = !export.isExporting,
+                    onClick = { wholeProject = true }, label = { Text("Whole project (basic)") })
+            }
+            if (wholeProject) {
+                AudioExportWarning(projectBlockReason ?: "Basic whole-project export: main videos in timeline order, with hard cuts. Advanced visual composition is not supported by this route.")
+            } else {
+                VideoExportScopeWarning(videoScope)
+            }
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fxList) { fx ->
@@ -406,7 +423,7 @@ fun ExportScreen(
             val isTrimmed = trimStart > 0L || (trimEnd < clipDuration && trimEnd > 0L)
             val trimmedDuration = (trimEnd - trimStart).coerceAtLeast(0L)
 
-            SectionLabel("MEDIA3 TRANSFORMER TRIMMING")
+            SectionLabel(if (wholeProject) "SELECTED CLIP TRIM • PROJECT KEEPS EVERY CLIP'S TRIM" else "MEDIA3 TRANSFORMER TRIMMING")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
@@ -542,12 +559,12 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable(enabled = videoScope.baseClip != null && !export.isExporting) {
+                .clickable(enabled = !export.isExporting && if (wholeProject) projectBlockReason == null else videoScope.baseClip != null) {
                     // Single export path: the ViewModel's engine bakes
                     // crop + LUT filter + FX + speed + keyframes + text
                     // overlays into the MP4 and mirrors progress into
                     // vm.export for the button / gauge below.
-                    vm.startExport(
+                    if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
                         resolution = selectedResolution,
                         fps = selectedFps.toInt(),
                         quality = "high"
@@ -567,7 +584,8 @@ fun ExportScreen(
                 Text(
                     if (export.isExporting)
                         "Exporting… ${(export.progress * 100).toInt()}%"
-                    else "Export $selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
+                    else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
+                    else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp

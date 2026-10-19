@@ -3,6 +3,7 @@ package com.apexstudio.app.data.captions
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.apexstudio.app.ai.models.ModelAssetAccess
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.audio.PcmAudioExtractor
@@ -62,6 +63,7 @@ object WhisperCaptionEngine {
 
     /** Files from the bundled private install, or from a legacy PackManager install. */
     fun modelFiles(context: Context, checkCancelled: () -> Unit = {}): Triple<File, File, File>? {
+        downloadedModelFiles(context)?.let { return it }
         bundledModelFiles(context, checkCancelled)?.let { return it }
         return packModelFiles(context)
     }
@@ -69,9 +71,24 @@ object WhisperCaptionEngine {
     /** True offline once the bundled model is present in app-private storage. */
     suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
         val installContext = coroutineContext
-        installBundledModel(context.applicationContext) { installContext.ensureActive() }
-        bundledModelFiles(context) { installContext.ensureActive() } != null ||
+        downloadedModelFiles(context) != null ||
+            (try {
+                installBundledModel(context.applicationContext) { installContext.ensureActive() }
+                bundledModelFiles(context) { installContext.ensureActive() } != null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }) ||
             (PACK_IDS.all { PackManager.isDownloaded(context, it) } && packModelFiles(context) != null)
+    }
+
+    private fun downloadedModelFiles(context: Context): Triple<File, File, File>? {
+        val files = bundledAssets.map { asset ->
+            ModelAssetAccess.installedFile(context, "$BUNDLED_ASSET_DIR/${asset.name}") ?: return null
+        }
+        if (files.indices.any { index -> !isWhisperAssetVerified(files[index], bundledAssets[index].size, bundledAssets[index].sha256) }) return null
+        return Triple(files[0], files[1], files[2])
     }
 
     private fun packModelFiles(context: Context): Triple<File, File, File>? {
@@ -110,7 +127,7 @@ object WhisperCaptionEngine {
                 checkCancelled()
                 val stagedFile = File(staging, asset.name)
                 val digest = MessageDigest.getInstance("SHA-256")
-                context.assets.open("$BUNDLED_ASSET_DIR/${asset.name}").use { input ->
+                ModelAssetAccess.open(context, "$BUNDLED_ASSET_DIR/${asset.name}").use { input ->
                     FileOutputStream(stagedFile).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {

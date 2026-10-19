@@ -31,14 +31,14 @@ object VideoThumbnailExtractor {
         timeMs: Long
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, Uri.parse(videoUri))
-            val bitmap = retriever.getFrameAtTime(
-                timeMs * 1000, // microseconds
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-            )
-            retriever.release()
-            bitmap?.let { resize(it, THUMB_WIDTH, THUMB_HEIGHT) }
+            withResourceRelease(MediaMetadataRetriever(), { it.release() }) { retriever ->
+                retriever.setDataSource(context, Uri.parse(videoUri))
+                val bitmap = retriever.getFrameAtTime(
+                    timeMs * 1000, // microseconds
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                )
+                bitmap?.let { resize(it, THUMB_WIDTH, THUMB_HEIGHT) }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract frame at ${timeMs}ms from $videoUri", e)
             null
@@ -57,27 +57,27 @@ object VideoThumbnailExtractor {
     ): List<Pair<Long, Bitmap>> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Pair<Long, Bitmap>>()
         try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, Uri.parse(videoUri))
-            val interval = durationMs / (count + 1)
-            for (i in 1..count) {
-                val timeMs = i * interval
-                try {
-                    val bitmap = retriever.getFrameAtTime(
-                        timeMs * 1000,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                    )
-                    if (bitmap != null) {
-                        val resized = resize(bitmap, THUMB_WIDTH, THUMB_HEIGHT)
-                        if (resized != null) {
-                            results.add(timeMs to resized)
+            withResourceRelease(MediaMetadataRetriever(), { it.release() }) { retriever ->
+                retriever.setDataSource(context, Uri.parse(videoUri))
+                val interval = durationMs / (count + 1)
+                for (i in 1..count) {
+                    val timeMs = i * interval
+                    try {
+                        val bitmap = retriever.getFrameAtTime(
+                            timeMs * 1000,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+                        if (bitmap != null) {
+                            val resized = resize(bitmap, THUMB_WIDTH, THUMB_HEIGHT)
+                            if (resized != null) {
+                                results.add(timeMs to resized)
+                            }
                         }
+                    } catch (_: Exception) {
+                        // Skip failed frames
                     }
-                } catch (_: Exception) {
-                    // Skip failed frames
                 }
             }
-            retriever.release()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract thumbnail strip from $videoUri", e)
         }
@@ -89,13 +89,12 @@ object VideoThumbnailExtractor {
      */
     suspend fun getDurationMs(context: Context, videoUri: String): Long = withContext(Dispatchers.IO) {
         try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, Uri.parse(videoUri))
-            val duration = retriever.extractMetadata(
-                MediaMetadataRetriever.METADATA_KEY_DURATION
-            )?.toLongOrNull() ?: 0L
-            retriever.release()
-            duration
+            withResourceRelease(MediaMetadataRetriever(), { it.release() }) { retriever ->
+                retriever.setDataSource(context, Uri.parse(videoUri))
+                retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get duration for $videoUri", e)
             0L

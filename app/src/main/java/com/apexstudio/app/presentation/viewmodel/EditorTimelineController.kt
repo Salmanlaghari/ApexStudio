@@ -559,27 +559,61 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
 }
 
 
+private fun EditorViewModel.undoSnapshot(): EditorUndoSnapshot? = _state.value.let { s ->
+    s.project?.let { EditorUndoSnapshot(it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers) }
+}
+
+private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
+    val duration = snapshot.project.durationMs.coerceAtLeast(0L)
+    val position = livePlayheadMs().coerceIn(0L, duration)
+    _playerPosition.value = position
+    _audio.update { it.copy(tracks = snapshot.project.audioTracks) }
+    _state.update { state ->
+        state.copy(
+            project = snapshot.project,
+            durationMs = duration,
+            playerPositionMs = position,
+            currentTimeMs = position,
+            hiddenVideoLayers = snapshot.hiddenVideoLayers,
+            lockedVideoLayers = snapshot.lockedVideoLayers,
+            extraVideoLayers = snapshot.extraVideoLayers,
+            selectedClipId = state.selectedClipId?.takeIf { id ->
+                snapshot.project.clips.any { it.id == id }
+            },
+            selectedOverlayClipId = state.selectedOverlayClipId?.takeIf { id ->
+                snapshot.project.clips.any { it.id == id && it.type == ClipType.OVERLAY }
+            },
+            selectedTextOverlayId = state.selectedTextOverlayId?.takeIf { id ->
+                snapshot.project.clips.any { clip -> clip.textOverlays.any { it.id == id } }
+            },
+            selectedStickerId = state.selectedStickerId?.takeIf { id ->
+                snapshot.project.stickers.any { it.id == id }
+            },
+            selectedAudioTrackId = state.selectedAudioTrackId?.takeIf { id ->
+                snapshot.project.audioTracks.any { it.id == id }
+            },
+            canUndo = undoStack.isNotEmpty(),
+            canRedo = redoStack.isNotEmpty(),
+        )
+    }
+    persistProject()
+}
+
 fun EditorViewModel.undo() = viewModelScope.launch {
-    val current = _state.value.project?.clips ?: return@launch
+    val current = undoSnapshot() ?: return@launch
     if (undoStack.isEmpty()) return@launch
     redoStack.addLast(current)
     val prev = undoStack.removeLast()
-    _state.update {
-        it.copy(project = it.project?.copy(clips = prev),
-            canUndo = undoStack.isNotEmpty(), canRedo = true)
-    }
+    restoreUndoSnapshot(prev)
 }
 
 
 fun EditorViewModel.redo() = viewModelScope.launch {
-    val current = _state.value.project?.clips ?: return@launch
+    val current = undoSnapshot() ?: return@launch
     if (redoStack.isEmpty()) return@launch
     undoStack.addLast(current)
     val next = redoStack.removeLast()
-    _state.update {
-        it.copy(project = it.project?.copy(clips = next),
-            canUndo = true, canRedo = redoStack.isNotEmpty())
-    }
+    restoreUndoSnapshot(next)
 }
 
 
@@ -1127,7 +1161,9 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
 
 
 internal fun EditorViewModel.pushUndo() {
-    val current = _state.value.project?.clips ?: return
+    val state = _state.value
+    val project = state.project ?: return
+    val current = EditorUndoSnapshot(project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers)
     undoStack.addLast(current)
     if (undoStack.size > 50) undoStack.removeFirst()
     redoStack.clear()
@@ -1236,6 +1272,7 @@ const val MAX_VIDEO_LAYERS = 10
 /** Toggle a video layer's visibility (eye). Hidden layers are skipped in preview, export and timeline. */
 fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
     val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    pushUndo()
     _state.update { s ->
         val hidden = s.hiddenVideoLayers.toMutableSet()
         if (l in hidden) hidden.remove(l) else hidden.add(l)
@@ -1247,6 +1284,7 @@ fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
 /** Toggle a video layer's lock. Locked layers can't be edited until unlocked. */
 fun EditorViewModel.toggleVideoLayerLock(layer: Int) {
     val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    pushUndo()
     _state.update { s ->
         val locked = s.lockedVideoLayers.toMutableSet()
         if (l in locked) locked.remove(l) else locked.add(l)

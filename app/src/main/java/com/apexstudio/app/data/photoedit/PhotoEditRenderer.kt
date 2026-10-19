@@ -150,14 +150,12 @@ object PhotoEditRenderer {
             var bitmap = openStream(context, uri)?.use {
                 BitmapFactory.decodeStream(it, null, decodeOpts)
             } ?: return@withContext null
-            // 3. EXIF orientation.
+            // 3. EXIF orientation. EXIF has eight meaningful orientations;
+            // handling rotation alone leaves mirrored camera images backwards.
             val orientation = readExifOrientation(context, uri)
-            if (orientation != 0) {
-                val m = Matrix().apply { postRotate(orientation.toFloat()) }
-                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
-                if (rotated != bitmap) bitmap.recycle()
-                bitmap = rotated
-            }
+            val oriented = applyExifOrientation(bitmap, orientation)
+            if (oriented !== bitmap) bitmap.recycle()
+            bitmap = oriented
             // 4. Final downscale if still over maxDim (sample is power-of-2).
             val lw = max(bitmap.width, bitmap.height)
             if (lw > maxDim) {
@@ -200,15 +198,32 @@ object PhotoEditRenderer {
     private fun readExifOrientation(context: Context, uri: Uri): Int {
         return try {
             val exif = openStream(context, uri)?.use { ExifInterface(it) } ?: return 0
-            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
-            }
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         } catch (e: Exception) {
-            0
+            ExifInterface.ORIENTATION_NORMAL
         }
+    }
+
+    /** Applies all eight EXIF image orientations without mutating [src]. */
+    internal fun applyExifOrientation(src: Bitmap, orientation: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        val (outW, outH, values) = when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> Triple(w, h, floatArrayOf(-1f, 0f, w.toFloat(), 0f, 1f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_180 -> Triple(w, h, floatArrayOf(-1f, 0f, w.toFloat(), 0f, -1f, h.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> Triple(w, h, floatArrayOf(1f, 0f, 0f, 0f, -1f, h.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_TRANSPOSE -> Triple(h, w, floatArrayOf(0f, 1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_90 -> Triple(h, w, floatArrayOf(0f, -1f, h.toFloat(), 1f, 0f, 0f, 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_TRANSVERSE -> Triple(h, w, floatArrayOf(0f, -1f, h.toFloat(), -1f, 0f, w.toFloat(), 0f, 0f, 1f))
+            ExifInterface.ORIENTATION_ROTATE_270 -> Triple(h, w, floatArrayOf(0f, 1f, 0f, -1f, 0f, w.toFloat(), 0f, 0f, 1f))
+            else -> return src
+        }
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val transform = Matrix().apply {
+            setValues(values)
+        }
+        Canvas(out).drawBitmap(src, transform, Paint(Paint.FILTER_BITMAP_FLAG))
+        return out
     }
 
     // ------------------------------------------------------------------

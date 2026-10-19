@@ -30,6 +30,12 @@ class PhotoExportConfigTest {
         assertEquals("high", result.quality)
     }
 
+    @Test fun `explicit photo canvas is not cropped again by video export settings`() {
+        val canvas = photo.copy(photoEdit = PhotoEditSettings(canvas = PhotoCanvasSettings(aspectPreset = "4:5")))
+        assertTrue(config(clip = canvas).preserveInputAspectRatio)
+        assertFalse(config().preserveInputAspectRatio)
+    }
+
     @Test fun `photo export keeps FX timing without double applying baked grading`() {
         val result = config(EditorState(fxSpeed = 1.8f, fxIntensity = 0.4f))
         assertEquals(1.8f, result.fxSpeed, 0f)

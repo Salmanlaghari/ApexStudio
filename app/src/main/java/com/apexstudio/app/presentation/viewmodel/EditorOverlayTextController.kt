@@ -72,6 +72,8 @@ fun EditorViewModel.selectTextOverlay(id: String?) = _state.update {
 
 
 fun EditorViewModel.addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.35f) {
+    if (_state.value.project?.clips?.none { it.id == clipId } != false) return
+    pushUndo()
     val overlay = com.apexstudio.app.domain.model.TextOverlay.of(
         text = text, x = x, y = y
     )
@@ -194,6 +196,9 @@ fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: c
 
 
 fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (clip.textOverlays.none { it.id == overlayId }) return
+    pushUndo()
     updateClip(clipId) { clip ->
         clip.copy(textOverlays = clip.textOverlays.filterNot { it.id == overlayId })
     }

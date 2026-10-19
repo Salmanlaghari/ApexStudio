@@ -27,7 +27,7 @@ class EditorManualCropTest {
         assertTrue(vm.applyVideoCropDraft(before.id, before.clips.first(), crop))
         assertEquals(crop, vm.state.value.project!!.clips.first().videoCrop)
         assertEquals(before.clips.last(), vm.state.value.project!!.clips.last())
-        assertEquals(before.clips, vm.undoStack.single())
+        assertEquals(before, vm.undoStack.single().project)
     }
     @Test fun unchangedCropDoesNotAddAnotherHistoryEntry() {
         val vm = editor()

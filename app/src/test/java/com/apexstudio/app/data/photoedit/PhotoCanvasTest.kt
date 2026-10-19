@@ -2,6 +2,7 @@ package com.apexstudio.app.data.photoedit
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.ExifInterface
 import com.apexstudio.app.domain.model.PhotoCanvasSettings
 import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.VideoAdjustments
@@ -53,6 +54,60 @@ class PhotoCanvasTest {
     @Test fun `invalid geometry is rejected`() {
         assertTrue(runCatching { PhotoCanvasGeometry.calculate(0, 100, 1f, false) }.isFailure)
         assertTrue(runCatching { PhotoCanvasGeometry.calculate(100, 100, Float.NaN, false) }.isFailure)
+    }
+
+    @Test fun `EXIF orientation applies rotations mirrors and transposes`() {
+        val sourceColors = arrayOf(
+            intArrayOf(Color.RED, Color.GREEN, Color.BLUE),
+            intArrayOf(Color.CYAN, Color.MAGENTA, Color.YELLOW)
+        )
+        val src = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888).apply {
+            for (y in sourceColors.indices) for (x in sourceColors[y].indices) {
+                setPixel(x, y, sourceColors[y][x])
+            }
+        }
+        val expected = mapOf(
+            ExifInterface.ORIENTATION_NORMAL to arrayOf(
+                intArrayOf(Color.RED, Color.GREEN, Color.BLUE), intArrayOf(Color.CYAN, Color.MAGENTA, Color.YELLOW)
+            ),
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL to arrayOf(
+                intArrayOf(Color.BLUE, Color.GREEN, Color.RED), intArrayOf(Color.YELLOW, Color.MAGENTA, Color.CYAN)
+            ),
+            ExifInterface.ORIENTATION_ROTATE_180 to arrayOf(
+                intArrayOf(Color.YELLOW, Color.MAGENTA, Color.CYAN), intArrayOf(Color.BLUE, Color.GREEN, Color.RED)
+            ),
+            ExifInterface.ORIENTATION_FLIP_VERTICAL to arrayOf(
+                intArrayOf(Color.CYAN, Color.MAGENTA, Color.YELLOW), intArrayOf(Color.RED, Color.GREEN, Color.BLUE)
+            ),
+            ExifInterface.ORIENTATION_TRANSPOSE to arrayOf(
+                intArrayOf(Color.RED, Color.CYAN), intArrayOf(Color.GREEN, Color.MAGENTA), intArrayOf(Color.BLUE, Color.YELLOW)
+            ),
+            ExifInterface.ORIENTATION_ROTATE_90 to arrayOf(
+                intArrayOf(Color.CYAN, Color.RED), intArrayOf(Color.MAGENTA, Color.GREEN), intArrayOf(Color.YELLOW, Color.BLUE)
+            ),
+            ExifInterface.ORIENTATION_TRANSVERSE to arrayOf(
+                intArrayOf(Color.YELLOW, Color.BLUE), intArrayOf(Color.MAGENTA, Color.GREEN), intArrayOf(Color.CYAN, Color.RED)
+            ),
+            ExifInterface.ORIENTATION_ROTATE_270 to arrayOf(
+                intArrayOf(Color.BLUE, Color.YELLOW), intArrayOf(Color.GREEN, Color.MAGENTA), intArrayOf(Color.RED, Color.CYAN)
+            )
+        )
+        try {
+            expected.forEach { (orientation, rows) ->
+                val rendered = PhotoEditRenderer.applyExifOrientation(src, orientation)
+                try {
+                    assertEquals("width for EXIF orientation $orientation", rows[0].size, rendered.width)
+                    assertEquals("height for EXIF orientation $orientation", rows.size, rendered.height)
+                    for (y in rows.indices) for (x in rows[y].indices) {
+                        assertEquals("pixel ($x,$y), EXIF orientation $orientation", rows[y][x], rendered.getPixel(x, y))
+                    }
+                } finally {
+                    if (rendered !== src) rendered.recycle()
+                }
+            }
+            assertEquals(Color.RED, src.getPixel(0, 0))
+            assertFalse(src.isRecycled)
+        } finally { src.recycle() }
     }
 
     @Test fun `solid background is not affected by photo grading and source remains intact`() {

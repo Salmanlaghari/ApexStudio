@@ -73,6 +73,7 @@ internal fun projectCompositionUnsupportedReason(
     if (config.aspectRatio !in setOf("16:9", "9:16", "1:1")) {
         return "Project export does not support aspect ratio '${config.aspectRatio}'."
     }
+    if (config.preserveInputAspectRatio) return "Project export needs one fixed output aspect ratio."
     if (config.fps !in setOf(24, 25, 30, 50, 60)) return "Project export supports 24, 25, 30, 50, or 60 fps."
     if (config.quality.lowercase() !in setOf("low", "medium", "high")) {
         return "Project export does not support quality '${config.quality}'."

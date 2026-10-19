@@ -343,6 +343,7 @@ fun EditorViewModel.startPhotoExport(
         resolution.contains("4320") || resolution.contains("8k", ignoreCase = true) -> 3840
         resolution.contains("4k", ignoreCase = true) || resolution.contains("2160") -> 3840
         resolution.contains("1440") -> 2560
+        resolution.contains("720") -> 1280
         else -> 1920 // 1080p and below
     }
     val ctx = context ?: return
@@ -487,6 +488,7 @@ internal fun buildPhotoExportConfig(
         fps = fps,
         quality = quality,
         aspectRatio = aspectRatio,
+        preserveInputAspectRatio = !clip.photoEdit.canvas.isOriginal,
         bitrateMbps = bitrateMbps,
         // Photo edits are baked into the frames already.
         filterPreset = null,

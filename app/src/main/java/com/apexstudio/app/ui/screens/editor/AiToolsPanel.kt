@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.aireport.AI_REPORT_CONTACT
+import com.apexstudio.app.data.aireport.openAiContentReportEmail
 import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
 import com.apexstudio.app.ui.theme.ApexPalette
 
@@ -59,8 +61,11 @@ fun AiToolsPanel(
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
-    onClearReportFeedback: () -> Unit
+    onClearReportFeedback: () -> Unit,
+    onComposeReport: ((AiContentReportTarget, AiContentReportReason) -> Boolean)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var emailFeedback by remember { mutableStateOf<String?>(null) }
     var group by remember { mutableStateOf<String?>(null) }
     var selectedTool by remember { mutableStateOf<AiToolCard?>(null) }
     var showSafetyInfo by remember { mutableStateOf(false) }
@@ -121,13 +126,14 @@ fun AiToolsPanel(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Report AI content", style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-                Text("Reports are saved on this device only. They are not sent to the developer and do not constitute a developer submission.",
+                Text("Report / Suggestions: $AI_REPORT_CONTACT. Open an email draft with a clip reference and reason; no media attachment and no automatic send. If no email app is available, only a local flag is saved, not sent to the developer.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
-                Button(onClick = { onClearReportFeedback(); showReportDialog = true }, enabled = reportTarget != null && !reportState.isSaving) {
+                Button(onClick = { emailFeedback = null; onClearReportFeedback(); showReportDialog = true }, enabled = reportTarget != null && !reportState.isSaving) {
                     Text("Flag AI content")
                 }
                 if (reportTarget == null) Text("Select a clip in the current project to create a report reference.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
+                emailFeedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary) }
                 reportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
                     color = if (reportState.saved) MaterialTheme.colorScheme.primary else ApexPalette.TextSecondary) }
             }
@@ -137,7 +143,19 @@ fun AiToolsPanel(
         target = reportTarget,
         state = reportState,
         onDismiss = { showReportDialog = false },
-        onSubmit = onSubmitReport
+        onSubmit = { reason ->
+            reportTarget?.let { target ->
+                val opened = onComposeReport?.invoke(target, reason)
+                    ?: openAiContentReportEmail(context, target, reason)
+                if (opened) {
+                    emailFeedback = "Email draft opened for $AI_REPORT_CONTACT. Review and send it in your email app; delivery has not been confirmed."
+                    showReportDialog = false
+                } else {
+                    emailFeedback = "No email app available. Saving a local-only flag; nothing is sent. Contact $AI_REPORT_CONTACT manually."
+                    onSubmitReport(reason)
+                }
+            }
+        }
     )
     selectedTool?.let { tool ->
         AlertDialog(onDismissRequest = { selectedTool = null },
@@ -176,8 +194,8 @@ private fun AiContentReportDialog(
         onDismissRequest = { if (!state.isSaving) onDismiss() },
         title = { Text("Flag AI content") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Choose the reason. A reference to the selected project clip${if (target?.textOverlayId != null) " and selected text overlay" else ""} and your reason will be stored on this device. No media or text is copied or uploaded.")
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Choose a reason to open an email draft to $AI_REPORT_CONTACT with the selected project clip${if (target?.textOverlayId != null) " and text overlay" else ""} reference. No media or text content is attached. You must send the email yourself. Without an email app, a local-only flag is saved instead.")
                 AiContentReportReason.entries.forEach { reason ->
                     Row(Modifier.fillMaxWidth().clickable(enabled = !state.isSaving) { selectedReason = reason },
                         verticalAlignment = Alignment.CenterVertically) {
@@ -190,7 +208,7 @@ private fun AiContentReportDialog(
         },
         confirmButton = {
             TextButton(onClick = { selectedReason?.let(onSubmit) }, enabled = selectedReason != null && target != null && !state.isSaving && !state.saved) {
-                Text(when { state.isSaving -> "Saving…"; state.saved -> "Saved"; else -> "Save on device" })
+                Text(when { state.isSaving -> "Saving local flag…"; state.saved -> "Saved locally — not sent"; else -> "Open email draft" })
             }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.isSaving) { Text("Cancel") } }

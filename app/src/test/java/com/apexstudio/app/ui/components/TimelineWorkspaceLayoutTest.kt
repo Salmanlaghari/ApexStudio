@@ -63,6 +63,7 @@ class TimelineWorkspaceLayoutTest {
         onScrub: (Long) -> Unit = {},
         clips: List<MediaClip> = listOf(clip("main")),
         audioTracks: List<AudioTrack> = emptyList(),
+        audioWaveform: FloatArray = FloatArray(0),
         selectedAudioTrackId: String? = null,
         playheadMs: Long = 0L,
         scrollState: ScrollState = androidx.compose.foundation.rememberScrollState(),
@@ -77,6 +78,7 @@ class TimelineWorkspaceLayoutTest {
                 audioTracks = audioTracks,
                 selectedAudioTrackId = selectedAudioTrackId,
                 textOverlays = textOverlays,
+                audioWaveform = audioWaveform,
                 totalDurationMs = 120_000L,
                 playheadMs = playheadMs,
                 onOpenSpeed = {},
@@ -90,6 +92,52 @@ class TimelineWorkspaceLayoutTest {
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+
+    @Test
+    fun loneMainVideoUsesOtherwiseEmptyHeightButSupportingRowsStayCompact() {
+        assertEquals(160.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
+        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
+        assertEquals(256.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(256.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(178.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(208.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
+        assertEquals(64.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
+        assertEquals(0.dp, mainVideoLaneHeight(720f, hasMainVideo = false))
+    }
+
+    @Test
+    fun waveformOnlyMainLaneUsesViewportSlackWithoutLeavingLargeDeadTail() {
+        composeRule.setContent {
+            workspace(heightDp = 400, audioWaveform = floatArrayOf(0.1f, 0.7f, 0.3f))
+        }
+        composeRule.waitForIdle()
+
+        val root = composeRule.onNodeWithTag("timeline-test-root").fetchSemanticsNode().boundsInRoot
+        val main = composeRule.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
+        val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
+
+        assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
+        assertTrue("A lone V1 should use spare viewport space, but stay bounded: $main", main.height in 255f..257f)
+        assertTrue("V1 and its waveform should use nearly all of this viewport", root.bottom - waveform.bottom < 40f)
+    }
+
+    @Test
+    fun populatedSupportingLaneIsAccountedForBeforeMainVideoUsesRemainingSpace() {
+        composeRule.setContent {
+            workspace(
+                heightDp = 400,
+                clips = listOf(clip("main"), clip("overlay", type = ClipType.OVERLAY, trackIndex = 1)),
+                audioWaveform = floatArrayOf(0.1f, 0.7f, 0.3f),
+            )
+        }
+        composeRule.waitForIdle()
+
+        val main = composeRule.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithContentDescription("Source audio waveform").assertExists()
+        composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
+        assertEquals("V1 should use only the viewport left after its supporting row", 208f, main.height, 2f)
+        composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true).assertExists()
     }
 
     @Test

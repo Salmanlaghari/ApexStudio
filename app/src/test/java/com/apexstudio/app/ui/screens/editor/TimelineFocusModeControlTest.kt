@@ -58,6 +58,8 @@ class TimelineFocusModeControlTest {
         val normalPreviewHeight = paneHeight("preview-pane")
         val normalTimelineHeight = paneHeight("timeline-pane")
         assertTrue("normal preview should have useful height", normalPreviewHeight > 100f)
+        assertTrue("default mobile editing should prioritize the timeline", normalTimelineHeight > normalPreviewHeight)
+        assertTrue("default timeline should be a useful working area", normalTimelineHeight > 300f)
 
         compose.onNodeWithContentDescription("Expand timeline to full height").performClick()
 
@@ -75,6 +77,33 @@ class TimelineFocusModeControlTest {
         compose.onNodeWithContentDescription("Expand timeline to full height").assertIsDisplayed()
         assertEquals(normalPreviewHeight, paneHeight("preview-pane"), 1f)
         assertEquals(normalTimelineHeight, paneHeight("timeline-pane"), 1f)
+    }
+
+    @Test
+    fun defaultTimelineFirstSplitKeepsPreviewReachableAt400Dp() {
+        compose.setContent {
+            var isFocused by remember { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().height(400.dp)) {
+                Box(
+                    Modifier
+                        .weight(editorPreviewLayoutWeight(isFocused))
+                        .fillMaxWidth()
+                        .testTag("preview-pane")
+                )
+                TimelineFocusModeControl(isFocused = isFocused, onToggle = { isFocused = !isFocused })
+                Box(
+                    Modifier
+                        .weight(timelineTrackLayoutWeight(isFocused))
+                        .fillMaxWidth()
+                        .testTag("timeline-pane")
+                )
+            }
+        }
+
+        val previewHeight = paneHeight("preview-pane")
+        val timelineHeight = paneHeight("timeline-pane")
+        assertTrue("Preview should stay reachable in the default mobile layout: $previewHeight", previewHeight > 100f)
+        assertTrue("Timeline should remain the larger working pane: $timelineHeight", timelineHeight > previewHeight)
     }
 
     private fun paneHeight(tag: String): Float = compose

@@ -32,7 +32,8 @@ fun VideoUpscaleOverlay(vm: EditorViewModel, onClose: () -> Unit) {
     VideoUpscalePanel(eligible, progress,
         onApply = { target?.let { vm.applyExistingVideoUpscale(it.first, it.second) } },
         onCancel = vm::cancelExistingVideoUpscale,
-        onClose = { if (progress.processing) vm.cancelExistingVideoUpscale(); onClose() })
+        onClose = { if (progress.processing) vm.cancelExistingVideoUpscale(); onClose() },
+        sourceDurationMs = clip?.durationMs)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,21 +44,25 @@ internal fun VideoUpscalePanel(
     onApply: () -> Unit,
     onCancel: () -> Unit,
     onClose: () -> Unit,
+    sourceDurationMs: Long? = null,
 ) {
+    val durationBlockReason = sourceDurationMs?.let(com.apexstudio.app.data.video.VideoUpscaleEngine::sourceDurationBlockReason)
     ModalBottomSheet(onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = ApexPalette.BgSurface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("AI Video Upscale · ESPCN x3", style = MaterialTheme.typography.titleLarge)
+            durationBlockReason?.let { Text(it, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("video_upscale_duration_blocker")) }
             Text("Learned, on-device luma upscaling of an existing project video. Not generative AI, not 4K restoration. No prompt or image input.")
-            Text("Source: up to 640×360 (or 360×640), even dimensions, at most 30 seconds and 30 fps. Output: 3× each edge, up to 1920×1080 (or portrait equivalent). SDR video, silent or one AAC audio track only; audio must not outlast the video. Codec, storage and model integrity are checked before processing.",
+            Text("Source: up to 640×360 (or 360×640), even dimensions, at most 30 seconds and 30 fps. Output: 3× each edge, up to 1920×1080 (or portrait equivalent). SDR video, silent or one AAC audio track only. Audio past the processed video end is trimmed; because AAC packets are indivisible, the final audio may stop up to one packet early. Codec, storage and model integrity are checked before processing.",
                 style = MaterialTheme.typography.bodySmall)
-            Text("Processing the whole source may be slow. Original audio and trim are preserved. After success preview and export read the same processed video. Undo restores the original clip.",
+            Text("Processing the whole source may be slow. Source audio stays synchronized and the selected project trim is preserved. After success preview and export read the same processed video. Undo restores the original clip.",
                 style = MaterialTheme.typography.bodySmall)
             if (!eligible && !progress.processing) Text("Select an unchanged main-track video in this project, then reopen this panel.")
             if (progress.processing) LinearProgressIndicator(progress = { progress.progress01 }, modifier = Modifier.fillMaxWidth())
             if (progress.message.isNotBlank()) Text(progress.message, modifier = Modifier.testTag("video_upscale_status"))
-            Button(onClick = onApply, enabled = eligible && !progress.processing,
+            Button(onClick = onApply, enabled = eligible && durationBlockReason == null && !progress.processing,
                 modifier = Modifier.fillMaxWidth().testTag("apply_project_video_upscale")) { Text("Upscale selected video 3×") }
             if (progress.processing) OutlinedButton(onClick = onCancel,
                 modifier = Modifier.fillMaxWidth().testTag("cancel_project_video_upscale")) { Text("Cancel processing") }

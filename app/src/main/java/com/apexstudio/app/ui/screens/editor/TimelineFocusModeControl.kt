@@ -17,13 +17,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
 
-/** Small positive weight preserves composition while making the preview effectively zero-height. */
+/** Preserve the preview subtree in focus mode; the mobile default keeps it visible but secondary. */
 internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 0.001f else 1f
+    if (isTimelineFocused) 0.001f else 0.8f
 
-/** Give the timeline the complete remaining height in focus mode. */
+/** The mobile default gives the timeline 2/3 of remaining height; focus mode gives it nearly all. */
 internal fun timelineTrackLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 3f else 1.2f
+    if (isTimelineFocused) 3f else 1.6f
 
 /**
  * Persistent, discoverable mode switch. Keeping it beside transport makes the

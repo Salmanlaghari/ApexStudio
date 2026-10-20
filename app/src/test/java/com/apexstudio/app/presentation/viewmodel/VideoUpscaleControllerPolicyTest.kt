@@ -26,6 +26,17 @@ class VideoUpscaleControllerPolicyTest {
         assertInvalid { VideoUpscaleEngine.validateSource(641, 361, 1_000) }
     }
 
+    @Test fun sourceDurationPreflightExplainsOwnersClipAndBoundaryBeforeAnyProcessing() {
+        assertEquals(null, VideoUpscaleEngine.sourceDurationBlockReason(30_000L))
+        assertTrue(VideoUpscaleEngine.sourceDurationBlockReason(30_001L)!!.contains("00:30.001"))
+        val reason = VideoUpscaleEngine.sourceDurationBlockReason(179_000L)!!
+        assertTrue(reason.contains("02:59 source is not supported"))
+        assertTrue(reason.contains("up to 00:30"))
+        assertTrue(reason.contains("No processing will start"))
+        assertTrue(reason.contains("shorter timeline trim does not bypass"))
+        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 179_000L) }
+    }
+
     @Test fun selectedMainVideoCommitRequiresExactProjectAndClipSnapshot() {
         val clip = MediaClip(
             id = "video-1", name = "source.mp4", uri = "content://media/source/1",

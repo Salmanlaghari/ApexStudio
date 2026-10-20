@@ -80,17 +80,40 @@ class AiToolsPanelTest {
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
     }
 
-    @Test fun reportReasonSelectionInvokesRequiredSubmitCallback() {
+    @Test fun unavailableEmailFallsBackToClearlyLabelledLocalFlag() {
         var submitted: AiContentReportReason? = null
         val target = AiContentReportTarget("project", "clip", "VIDEO")
         compose.setContent { MaterialTheme {
             AiToolsPanel(listOf(tool), "", onClose = {}, reportTarget = target,
-                reportState = AiContentReportUiState(), onSubmitReport = { submitted = it }, onClearReportFeedback = {})
+                reportState = AiContentReportUiState(), onSubmitReport = { submitted = it },
+                onClearReportFeedback = {}, onComposeReport = { _, _ -> false })
         } }
         compose.onNodeWithText("Flag AI content").activateVisibleControl()
         compose.onNodeWithText("Hateful content").activateVisibleControl()
-        compose.onNodeWithText("Save on device").activateVisibleControl()
+        compose.onNodeWithText("Open email draft").activateVisibleControl()
         compose.runOnIdle { assertEquals(AiContentReportReason.HATEFUL, submitted) }
+    }
+
+    @Test fun emailDraftIsNotClaimedAsSubmittedAndDoesNotSaveLocalFlag() {
+        var drafts = 0
+        var localFlags = 0
+        val target = AiContentReportTarget("project", "clip", "VIDEO")
+        compose.setContent { MaterialTheme {
+            AiToolsPanel(listOf(tool), "", onClose = {}, reportTarget = target,
+                reportState = AiContentReportUiState(), onSubmitReport = { localFlags++ },
+                onClearReportFeedback = {}, onComposeReport = { receivedTarget, reason ->
+                    assertEquals(target, receivedTarget)
+                    assertEquals(AiContentReportReason.VIOLENT, reason)
+                    drafts++
+                    true
+                })
+        } }
+        compose.onNodeWithText("Flag AI content").activateVisibleControl()
+        compose.onNodeWithText("Violent content").activateVisibleControl()
+        compose.onNodeWithText("Open email draft").activateVisibleControl()
+        compose.runOnIdle { assertEquals(1, drafts); assertEquals(0, localFlags) }
+        compose.onNodeWithText("delivery has not been confirmed", substring = true).assertExists()
+        compose.onNodeWithText("Report / Suggestions: laghariprince2@gmail.com", substring = true).assertExists()
     }
 
     @Test fun upscaleHasAnActualActionWithoutPromptOrImageInput() {

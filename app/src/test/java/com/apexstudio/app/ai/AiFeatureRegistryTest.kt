@@ -1,9 +1,15 @@
 package com.apexstudio.app.ai
-
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AiFeatureRegistryTest {
     @Test fun everyFeatureHasAnHonestDescription() {
         assertEquals(AiFeatureId.entries.toSet(), AiFeatureRegistry.descriptions.keys)
@@ -14,7 +20,8 @@ class AiFeatureRegistryTest {
         assertEquals(BundledMediaPipeModels.Model.FACE, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.FACE_BLUR))
         assertEquals(BundledMediaPipeModels.Model.FACE, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.FACE_AWARE_REFRAME))
         assertEquals(BundledMediaPipeModels.Model.POSE, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.SKELETON_OVERLAY))
-        assertEquals(BundledMediaPipeModels.Model.HAND, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.GESTURE_CONTROL))
+        assertEquals(BundledMediaPipeModels.Model.HAND, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.MEDIAPIPE_HAND))
+        assertNull(AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.GESTURE_CONTROL))
         assertEquals(BundledMediaPipeModels.Model.SELFIE_SEGMENTER, AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.BACKGROUND_BLUR))
         assertNull(AiFeatureRegistry.mediaPipeModelFor(AiFeatureId.CONTENT_MODERATION))
     }
@@ -35,5 +42,13 @@ class AiFeatureRegistryTest {
             assertNull(AiFeatureRegistry.mediaPipeModelFor(feature))
             assertTrue(AiFeatureRegistry.knownRequirements.getValue(feature).isNotEmpty())
         }
+    }
+    @Test fun gestureControlIsInformationalAndDoesNotInspectOrUnlockCameraModel() = runBlocking {
+        val result = AiFeatureRegistry.get(RuntimeEnvironment.getApplication(), AiFeatureId.GESTURE_CONTROL)
+        assertEquals(AiAvailability.ENGINE_UNAVAILABLE, result.availability)
+        assertFalse(result.isReady)
+        assertTrue(result.requiredModels.isEmpty())
+        assertTrue(result.message.contains("Informational only"))
+        assertTrue(AiFeatureRegistry.knownRequirements[AiFeatureId.GESTURE_CONTROL].orEmpty().isEmpty())
     }
 }

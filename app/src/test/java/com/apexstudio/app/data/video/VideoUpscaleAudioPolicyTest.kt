@@ -4,9 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VideoUpscaleAudioPolicyTest {
-    @Test fun aacWithinVideoDurationIsPassthroughEligible() {
+    @Test fun longerEqualAndShorterAacTracksAreEligibleForBoundaryTrim() {
+        VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", 2_000_000L, 1_000L)
+        VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", 1_000_000L, 1_000L)
         VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", 500_000L, 1_000L)
-        VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", 1_000_999L, 1_000L)
         VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", null, 1_000L)
     }
 
@@ -21,20 +22,21 @@ class VideoUpscaleAudioPolicyTest {
         }
     }
 
-    @Test fun audioTailBeyondVideoIsRejectedRatherThanExtendingOutput() {
-        try {
-            VideoUpscaleEngine.validateAudioPassthrough("audio/mp4a-latm", 2_000_000L, 1_000L)
-            fail("Audio-only tail must not be introduced")
-        } catch (failure: IllegalArgumentException) {
-            assertTrue(failure.message.orEmpty().contains("extends beyond the video"))
-        }
-    }
+    @Test fun completeAacPacketsMustEndAtOrBeforeProcessedVideoBoundary() {
+        val videoEndUs = 1_000_000L
+        // A 44.1 kHz AAC-LC packet is 1024 samples (about 23.22 ms).
+        val packetDurationUs = VideoUpscaleEngine.aacPacketDurationUs(44_100, 2)
+        assertEquals(23_220L, packetDurationUs)
 
-    @Test fun packetBoundaryIsExclusiveAndNegativeOrEndTimestampsAreNotWritten() {
-        assertFalse(VideoUpscaleEngine.audioSampleWithinVideo(-1L, 1_000L))
-        assertTrue(VideoUpscaleEngine.audioSampleWithinVideo(0L, 1_000L))
-        assertTrue(VideoUpscaleEngine.audioSampleWithinVideo(999_999L, 1_000L))
-        assertFalse(VideoUpscaleEngine.audioSampleWithinVideo(1_000_000L, 1_000L))
-        assertFalse(VideoUpscaleEngine.audioSampleWithinVideo(Long.MAX_VALUE, 1_000L))
+        // Long source audio is safely trimmed; packets that fit remain synchronized from PTS zero.
+        assertTrue(VideoUpscaleEngine.audioPacketEndsWithinVideo(976_780L, packetDurationUs!!, videoEndUs))
+        assertFalse(VideoUpscaleEngine.audioPacketEndsWithinVideo(976_781L, packetDurationUs, videoEndUs))
+        assertFalse(VideoUpscaleEngine.audioPacketEndsWithinVideo(videoEndUs, packetDurationUs, videoEndUs))
+
+        // Equal-length audio retains a packet ending exactly at video EOS; shorter audio is retained.
+        assertTrue(VideoUpscaleEngine.audioPacketEndsWithinVideo(464_399L, packetDurationUs, videoEndUs))
+        assertFalse(VideoUpscaleEngine.audioPacketEndsWithinVideo(-1L, packetDurationUs, videoEndUs))
+        assertFalse(VideoUpscaleEngine.audioPacketEndsWithinVideo(0L, 0L, videoEndUs))
+        assertFalse(VideoUpscaleEngine.audioPacketEndsWithinVideo(Long.MAX_VALUE, packetDurationUs, videoEndUs))
     }
 }

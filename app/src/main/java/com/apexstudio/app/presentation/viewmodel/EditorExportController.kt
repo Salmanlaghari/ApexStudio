@@ -17,13 +17,24 @@ import java.io.File
 
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
 
-fun EditorViewModel.setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+fun EditorViewModel.setSelectedResolution(res: String) {
+    updateExport { it.copy(resolution = ExportResolution.canonical(res)) }
+}
 
 fun EditorViewModel.toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
 
 
 fun EditorViewModel.updateExport(upd: (ExportSettings) -> ExportSettings) {
-    _export.update { it.copy(settings = upd(it.settings)) }
+    var canonicalResolution = "1080P"
+    _export.update { current ->
+        val updated = upd(current.settings)
+        canonicalResolution = ExportResolution.canonical(updated.resolution)
+        current.copy(settings = updated.copy(resolution = canonicalResolution))
+    }
+    _state.update { state ->
+        if (state.selectedResolution == canonicalResolution) state
+        else state.copy(selectedResolution = canonicalResolution)
+    }
 }
 
 /** Canvas selection is not an export source: an overlay remains a composited layer. */
@@ -43,12 +54,13 @@ fun EditorViewModel.startExport(
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     if (_export.value.isExporting) return
+    val resolvedResolution = ExportResolution.canonical(resolution)
     val s = _state.value
     val selected = resolveExportBaseClip(s)
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
-        startPhotoExport(selected, resolution, fps, quality, aspectRatio, bitrateMbps)
+        startPhotoExport(selected, resolvedResolution, fps, quality, aspectRatio, bitrateMbps)
         return
     }
     val inputUri = selected?.uri ?: return
@@ -117,7 +129,7 @@ fun EditorViewModel.startExport(
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
-            resolution = resolution,
+            resolution = resolvedResolution,
             fps = fps,
             quality = quality,
             aspectRatio = aspectRatio,

@@ -29,6 +29,26 @@ class VideoUpscalePanelTest {
         compose.onNodeWithTag("cancel_project_video_upscale").assertDoesNotExist()
     }
 
+    @Test fun ownersTwoMinute59SecondSourceIsBlockedBeforeProcessing() {
+        compose.setContent { MaterialTheme { VideoUpscalePanel(true, VideoUpscaleUiState(),
+            onApply = { error("Long source must not start") }, onCancel = {}, onClose = {},
+            sourceDurationMs = 179_000L) } }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithTag("video_upscale_duration_blocker").assertIsDisplayed()
+        compose.onNodeWithText("This 02:59 source is not supported", substring = true).assertExists()
+        compose.onNodeWithText("a shorter timeline trim does not bypass", substring = true).assertExists()
+        compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
+        compose.onNodeWithTag("cancel_project_video_upscale").assertDoesNotExist()
+    }
+
+    @Test fun thirtySecondSourceDoesNotHaveADurationBlocker() {
+        compose.setContent { MaterialTheme { VideoUpscalePanel(true, VideoUpscaleUiState(),
+            onApply = {}, onCancel = {}, onClose = {}, sourceDurationMs = 30_000L) } }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithTag("video_upscale_duration_blocker").assertDoesNotExist()
+        compose.onNodeWithTag("apply_project_video_upscale").assertIsEnabled()
+    }
+
     @Test fun imageOrStaleTargetCannotStartProcessing() {
         compose.setContent { MaterialTheme { VideoUpscalePanel(false, VideoUpscaleUiState(),
             onApply = { error("Must not start") }, onCancel = {}, onClose = {}) } }

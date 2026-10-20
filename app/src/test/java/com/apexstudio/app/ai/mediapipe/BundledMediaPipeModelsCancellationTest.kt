@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.AssetManager
 import com.apexstudio.app.ai.AiModelUnavailableException
+import com.apexstudio.app.ai.models.OnDemandModelPacks
 import com.apexstudio.app.ai.models.SourceModelAssets
 import java.io.File
 import java.nio.file.Files
@@ -56,6 +57,23 @@ class BundledMediaPipeModelsCancellationTest {
         assertFalse(File(directory, "${model.assetName}.tmp").exists())
     }
 
+    @Test fun verifiedOnDemandMediaPipePackIsUsedDirectlyWithoutBundledAssetCopy() = withContext { context, root ->
+        val pack = OnDemandModelPacks.catalog.getValue("mediapipe-vision-models")
+        val installedDirectory = File(File(File(root, "ai-model-packs"), pack.id), pack.revision).apply { mkdirs() }
+        context.assets.open(pack.licenseAssetPath).use { source ->
+            File(installedDirectory, "LICENSE.txt").outputStream().use { source.copyTo(it) }
+        }
+        pack.artifacts.forEach { artifact ->
+            val output = File(installedDirectory, artifact.path).apply { parentFile?.mkdirs() }
+            context.assets.open("models/${artifact.path}").use { source -> output.outputStream().use { source.copyTo(it) } }
+        }
+
+        val installed = BundledMediaPipeModels.modelFile(context, BundledMediaPipeModels.Model.FACE)
+
+        assertEquals(File(installedDirectory, "mediapipe/mediapipe-face-landmarker.task").canonicalFile, installed.canonicalFile)
+        assertFalse("verified pack should be used directly, not recopied to bundled cache", File(root, "mediapipe").exists())
+    }
+
     @Test fun cancellationBeforeNativeFaceOpenAvoidsInference() = withContext { context, root ->
         val expected = CancellationException("face entry")
         assertSame(expected, cancellation { BundledMediaPipeModels.openFace(context) { throw expected } })
@@ -96,6 +114,7 @@ class BundledMediaPipeModelsCancellationTest {
             private val sourceAssets = SourceModelAssets.assetManager()
             override fun getApplicationContext(): Context = this
             override fun getAssets(): AssetManager = sourceAssets
+            override fun getFilesDir(): File = root
             override fun getNoBackupFilesDir(): File = root
         }
         try { block(context, root) } finally { root.deleteRecursively() }

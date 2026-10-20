@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.FileNotFoundException
 
 /** Stable IDs intended for editor/UI integration. */
 enum class AiFeatureId {
@@ -51,7 +52,7 @@ object AiFeatureRegistry {
         AiFeatureId.FACE_AWARE_REFRAME -> BundledMediaPipeModels.Model.FACE
         AiFeatureId.MEDIAPIPE_POSE, AiFeatureId.POSE_EFFECTS,
         AiFeatureId.SKELETON_OVERLAY -> BundledMediaPipeModels.Model.POSE
-        AiFeatureId.MEDIAPIPE_HAND, AiFeatureId.GESTURE_CONTROL -> BundledMediaPipeModels.Model.HAND
+        AiFeatureId.MEDIAPIPE_HAND -> BundledMediaPipeModels.Model.HAND
         AiFeatureId.BACKGROUND_BLUR, AiFeatureId.BACKGROUND_REPLACE -> BundledMediaPipeModels.Model.SELFIE_SEGMENTER
         else -> null
     }
@@ -104,7 +105,7 @@ object AiFeatureRegistry {
         AiFeatureId.BACKGROUND_BLUR to AiFeatureDescription("Background blur", "Bundled person segmentation supports the existing pre-rendered background workflow; not real-time AI preview."),
         AiFeatureId.POSE_EFFECTS to AiFeatureDescription("Pose effects", "Bundled pose model and frame-level skeleton processing; no validated full-clip effect integration."),
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
-        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Explicitly armed front-camera hand sessions are wired to bounded source-edge trims and timeline zoom. Live camera/gesture input is outside the existing-project-video scope."),
+        AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Informational only. Live-camera gesture control is outside the existing-project-video tool scope and is not enabled."),
         AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Local Whisper speech recognition for a selected existing project video; inserts editable phrase captions without prompts or content generation."),
         AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Opt-in English CTC acoustic alignment on an existing project video; unsupported text or low-confidence timing fails closed rather than inventing word times."),
         AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Local person segmentation and deterministic compositing for an existing project video, with fixed blur/colour or an image already in the project; no image generation."),
@@ -125,6 +126,12 @@ object AiFeatureRegistry {
 
     private suspend fun inspectLocalBackend(context: Context, id: AiFeatureId): AiFeatureAvailability {
         val requirements = knownRequirements[id].orEmpty()
+        // This live-camera concept is deliberately not an existing-project-video action.
+        // Do not inspect/materialize the hand model or let model readiness unlock it.
+        if (id == AiFeatureId.GESTURE_CONTROL) return AiFeatureAvailability(
+            id, AiAvailability.ENGINE_UNAVAILABLE,
+            "Informational only: live-camera gesture control is not available for existing-project video editing. No model was inspected or downloaded."
+        )
         if (id in setOf(AiFeatureId.SMART_TRIM, AiFeatureId.SCENE_ANALYSIS, AiFeatureId.AUTO_CROP, AiFeatureId.STYLE_ANALYSIS)) {
             return AiFeatureAvailability(id, AiAvailability.READY,
                 "Deterministic local signal analysis, not learned AI. Review suggestions before applying edits.")
@@ -205,6 +212,9 @@ object AiFeatureRegistry {
                     requirements, if (available) requirements.map { it.id } else emptyList())
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: FileNotFoundException) {
+                AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                    "Required local model is not installed or packaged in this build. Use an explicit model download if supported; protected AI stays OFF and no network request was made.", requirements)
             } catch (_: Exception) {
                 AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
                     "Local model verification or installation failed. Protected AI stays OFF; no network request was made.", requirements)

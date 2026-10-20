@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +25,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ai.models.OnDemandModelPacks
 import kotlinx.coroutines.CancellationException
@@ -43,6 +46,9 @@ fun ModelDownloadsDialog(onDismiss: () -> Unit) {
     val failures = remember { mutableStateMapOf<String, String>() }
     val jobs = remember { mutableStateMapOf<String, Job>() }
     val packs = remember { manager.availablePacks().sortedBy { it.totalBytes } }
+    // Leave room for the dialog title, system bars and fixed Done action even
+    // on short/landscape screens; only the model choices themselves scroll.
+    val listMaxHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.48f).coerceAtMost(360.dp)
 
     LaunchedEffect(manager) {
         packs.forEach { pack -> installed[pack.id] = manager.installedDirectory(pack.id) != null }
@@ -52,8 +58,14 @@ fun ModelDownloadsDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Optional AI models") },
         text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Scroll to see all models and their details.", style = MaterialTheme.typography.bodySmall)
             LazyColumn(
-                modifier = Modifier.heightIn(max = 360.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = listMaxHeight)
+                    .testTag("model-download-list"),
+                contentPadding = PaddingValues(bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -111,6 +123,7 @@ fun ModelDownloadsDialog(onDismiss: () -> Unit) {
                         }
                     }
                 }
+            }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }

@@ -103,6 +103,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -149,6 +150,28 @@ internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float):
     return if (pxPerMs.isFinite() && pxPerMs > 0f && deltaPx.isFinite()) {
         (deltaPx / pxPerMs).toLong()
     } else 0L
+}
+
+/**
+ * Use otherwise-idle viewport space for a lone main filmstrip, but keep its
+ * height bounded. A source waveform is part of V1's content, not a separate
+ * editing lane. Supporting-lane content is subtracted first, so V1 only grows
+ * into genuinely unused space and the supporting rows remain compact.
+ */
+internal fun mainVideoLaneHeight(
+    availableTimelineHeightDp: Float,
+    hasMainVideo: Boolean,
+    supportingLanesHeightDp: Float = 0f,
+    hasWaveformStrip: Boolean = false,
+): Dp {
+    if (!hasMainVideo) return 0.dp
+    if (!availableTimelineHeightDp.isFinite() || availableTimelineHeightDp < 240f) {
+        return 64.dp
+    }
+    val supportingHeight = supportingLanesHeightDp.takeIf { it.isFinite() && it > 0f } ?: 0f
+    val fixedContentDp = 100f + (if (hasWaveformStrip) 22f else 0f) + supportingHeight
+    val sensibleMaximumDp = if (hasWaveformStrip) 256f else 160f
+    return (availableTimelineHeightDp - fixedContentDp).coerceIn(64f, sensibleMaximumDp).dp
 }
 
 /**
@@ -260,6 +283,7 @@ fun VideoTimeline(
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    var measuredTimelineHeightDp by remember { mutableFloatStateOf(0f) }
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
     // Build the per-layer and text-owner indexes once per project update.
@@ -529,8 +553,6 @@ fun VideoTimeline(
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
     val rulerHeight = 36.dp
-    // The main video remains visually dominant above supporting layers.
-    val v1Height = 64.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -564,6 +586,14 @@ fun VideoTimeline(
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
+    val supportingLanesHeightDp = (overlayRowsTotal + textLaneTotal + stickerLaneTotal +
+        fxLaneTotal + a1Total + a2Total).toFloat()
+    val v1Height = mainVideoLaneHeight(
+        availableTimelineHeightDp = measuredTimelineHeightDp,
+        hasMainVideo = hasMainVideo,
+        supportingLanesHeightDp = supportingLanesHeightDp,
+        hasWaveformStrip = showWaveformStrip,
+    )
     // Pinned header: ruler + (when present) gap + V1 (+ waveform strip
     // when the clip has audio) stays fixed while the other tracks scroll.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
@@ -583,6 +613,7 @@ fun VideoTimeline(
     // The rail mirrors the same row geometry and vertical offset as the lanes.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
+            .onSizeChanged { measuredTimelineHeightDp = with(density) { it.height.toDp().value } }
             .background(Color(0xFF101722))
             .border(1.dp, Color(0xFF273447))
     ) {

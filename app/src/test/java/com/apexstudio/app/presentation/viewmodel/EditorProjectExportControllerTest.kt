@@ -21,13 +21,24 @@ class EditorProjectExportControllerTest {
 
     @Test fun `global audio and output settings reach project config`() {
         val config = buildProjectExportConfig(state, AudioStudioState(volume = 0.4f, pitchSemitones = 3f), settings)
-        assertEquals("1080p", config.resolution)
+        assertEquals("1080P", config.resolution)
         assertEquals("9:16", config.aspectRatio)
         assertEquals(30, config.fps)
         assertEquals(12, config.bitrateMbps)
         assertEquals(0.4f, config.volume, 0f)
         assertEquals(3f, config.pitchSemitones, 0f)
         assertEquals(0f, buildProjectExportConfig(state, AudioStudioState(isMuted = true), settings).volume, 0f)
+    }
+
+    @Test fun `historical 8K export settings are mapped to supported 4K output`() {
+        val config = buildProjectExportConfig(
+            state,
+            AudioStudioState(),
+            settings.copy(resolution = "8K Ultra HD")
+        )
+        assertEquals("4K", config.resolution)
+        assertEquals(30, config.fps)
+        assertEquals("9:16", config.aspectRatio)
     }
 
     @Test fun `project music respects mute and solo before engine postmix`() {

@@ -53,8 +53,9 @@ fun AiToolsPanel(
     message: String,
     onClose: () -> Unit,
     onOpenLocalAnalysis: (() -> Unit)? = null,
-    onOpenGestures: (() -> Unit)? = null,
     onOpenDownloads: (() -> Unit)? = null,
+    onOpenVideoPresets: (() -> Unit)? = null,
+    onOpenVideoUpscale: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
@@ -77,16 +78,23 @@ fun AiToolsPanel(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close AI tools", tint = ApexPalette.TextPrimary) }
             }
-            Text("Protected AI paused · safety approval required", modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
-            if (onOpenLocalAnalysis != null || onOpenGestures != null) {
+            Text("Local video tools · Google Play policy scope", modifier = Modifier.padding(horizontal = 16.dp),
+                color = ApexPalette.TextPrimary, style = MaterialTheme.typography.labelMedium)
+            Text("Existing project videos only · no prompts · no generation", modifier = Modifier.padding(horizontal = 16.dp),
+                color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            if (onOpenVideoPresets != null) OutlinedButton(onClick = onOpenVideoPresets,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_presets")) {
+                Text("Enhance, templates + filters · not ML AI")
+            }
+            if (onOpenVideoUpscale != null) Button(onClick = onOpenVideoUpscale,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_upscale")) {
+                Text("AI Video Upscale · ESPCN x3")
+            }
+            if (onOpenLocalAnalysis != null) {
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Local tools", color = ApexPalette.TextSecondary, style = MaterialTheme.typography.labelMedium)
-                    if (onOpenLocalAnalysis != null) OutlinedIconButton(onClick = onOpenLocalAnalysis) {
+                    OutlinedIconButton(onClick = onOpenLocalAnalysis) {
                         Icon(Icons.Default.MovieFilter, LOCAL_REVIEW_ACTION_LABEL)
-                    }
-                    if (onOpenGestures != null) OutlinedIconButton(onClick = onOpenGestures) {
-                        Icon(Icons.Default.PanTool, "Camera gesture controls")
                     }
                 }
             }
@@ -104,8 +112,8 @@ fun AiToolsPanel(
                     Surface(onClick = { selectedTool = tool }, modifier = Modifier.aspectRatio(1f).testTag("protected_ai_card_${tool.id}"),
                         shape = MaterialTheme.shapes.medium, color = ApexPalette.BgElevated) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(aiToolIcon(tool.id), "${tool.title}; unavailable, tap for details", modifier = Modifier.size(28.dp), tint = ApexPalette.TextSecondary)
-                            Icon(Icons.Default.Lock, null, modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp).size(12.dp), tint = MaterialTheme.colorScheme.error)
+                            Icon(aiToolIcon(tool.id), "${tool.title}; backend information, tap for details", modifier = Modifier.size(28.dp), tint = ApexPalette.TextSecondary)
+                            Icon(Icons.Default.Info, null, modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp).size(12.dp), tint = ApexPalette.TextSecondary)
                         }
                     }
                 }
@@ -147,10 +155,10 @@ fun AiToolsPanel(
             confirmButton = { TextButton(onClick = { selectedTool = null }) { Text("Close") } })
     }
     if (showSafetyInfo) AlertDialog(onDismissRequest = { showSafetyInfo = false },
-        title = { Text("Protected AI is unavailable") },
+        title = { Text("Video-only processing availability") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(AI_PROTECTED_BLOCKER)
-            Text("Local review tools are separate. Detecting or downloading a model does not authorize protected AI.")
+            Text("Fixed Enhance, Templates and Filters are deterministic, not ML AI. ESPCN is learned video upscaling, not generative AI. Other backends remain informational until their scope, licenses and preview/export wiring are ready.")
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(onClick = { showSafetyInfo = false }) { Text("Close") } })

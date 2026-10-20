@@ -120,13 +120,38 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
         return inferForModelValidation(source, onProgress)
     }
 
+    /** Open one pinned, schema-validated session for sequential frames in the bounded video engine. */
+    internal suspend fun openValidatedVideoSession(): OrtSession {
+        val status = availability()
+        if (status !is ModelAvailability.Ready) {
+            throw LocalModelException((status as ModelAvailability.Unavailable).reason)
+        }
+        return withContext(Dispatchers.IO) { openSession() }
+    }
+
+    /** Internal frame entrypoint; still-image callers continue to use [upscale] and remain blocked by scope. */
+    internal suspend fun upscaleExistingProjectVideoFrame(
+        source: Bitmap,
+        session: OrtSession,
+        onProgress: (ModelProgress) -> Unit = {}
+    ): Bitmap {
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.ONNX_UPSCALING)
+        return inferForModelValidation(source, onProgress, session)
+    }
+
     /** Low-level model-evaluation seam for instrumentation, not an approved user-content action. */
-    internal suspend fun inferForModelValidation(source: Bitmap, onProgress: (ModelProgress) -> Unit = {}): Bitmap = withContext(Dispatchers.Default) {
+    internal suspend fun inferForModelValidation(
+        source: Bitmap,
+        onProgress: (ModelProgress) -> Unit = {},
+        reusableSession: OrtSession? = null
+    ): Bitmap = withContext(Dispatchers.Default) {
         coroutineContext.ensureActive()
         val (outWidth, outHeight) = outputDimensions(source.width, source.height)
-        val modelReady = availability()
-        if (modelReady !is ModelAvailability.Ready)
-            throw LocalModelException((modelReady as ModelAvailability.Unavailable).reason)
+        if (reusableSession == null) {
+            val modelReady = availability()
+            if (modelReady !is ModelAvailability.Ready)
+                throw LocalModelException((modelReady as ModelAvailability.Unavailable).reason)
+        }
 
         val inputPixels = IntArray(Math.multiplyExact(source.width, source.height))
         source.getPixels(inputPixels, 0, source.width, 0, 0, source.width, source.height)
@@ -149,9 +174,10 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
         val output = IntArray(Math.multiplyExact(outWidth, outHeight))
         var complete = 0
         val total = xs.size * ys.size
-        openSession().use { session ->
+        val inferenceContext = coroutineContext
+        val runTiles: (OrtSession) -> Unit = { session ->
             for (yi in ys.indices) for (xi in xs.indices) {
-                coroutineContext.ensureActive()
+                inferenceContext.ensureActive()
                 val x = xs[xi]
                 val y = ys[yi]
                 val tile = FloatArray(TILE_SIZE * TILE_SIZE)
@@ -180,7 +206,7 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
                     }
                 }
                 if (values.any { !it.isFinite() }) throw LocalModelException("ESPCN output contains non-finite values")
-                coroutineContext.ensureActive()
+                inferenceContext.ensureActive()
                 val xInterval = ownedInterval(source.width, xs, xi)
                 val yInterval = ownedInterval(source.height, ys, yi)
                 for (sy in yInterval) {
@@ -208,6 +234,8 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
                 onProgress(ModelProgress(0.1f + 0.85f * complete / total, "ESPCN luma tiles $complete/$total"))
             }
         }
+        if (reusableSession != null) runTiles(reusableSession)
+        else openSession().use(runTiles)
         coroutineContext.ensureActive()
         onProgress(ModelProgress(1f, "complete"))
         Bitmap.createBitmap(output, outWidth, outHeight, Bitmap.Config.ARGB_8888)

@@ -145,6 +145,9 @@ class LocalFaceTrackAnalyzer(
         cancellation: AiCancellationToken = AiCancellationToken(),
         onProgress: (Float) -> Unit = {},
     ): FaceTrackAnalysisResult = withContext(Dispatchers.IO) {
+        com.apexstudio.app.ai.safety.GlobalModerationEnforcement.requireApproved(
+            com.apexstudio.app.ai.safety.ProtectedAiAction.FACE_TRACK_REVIEW
+        )
         require(sourceStartMs >= 0L && sourceEndMs > sourceStartMs) { "Invalid source time range" }
         require(sourceEndMs - 1L <= Long.MAX_VALUE / 1_000L) { "Source timestamp exceeds decoder range" }
         val timestamps = FaceTrackSampling.timestamps(sourceStartMs, sourceEndMs, minimumIntervalMs, maximumSamples)

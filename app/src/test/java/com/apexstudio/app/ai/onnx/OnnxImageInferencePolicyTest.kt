@@ -2,8 +2,10 @@ package com.apexstudio.app.ai.onnx
 
 import android.graphics.Bitmap
 import com.apexstudio.app.ai.AiModelUnavailableException
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,8 +34,7 @@ class OnnxImageInferencePolicyTest {
                     OnnxImageModels.runImage(model, image, contract, onProgress = { progress = true })
                     throw AssertionError("Unmoderated $task inference must be denied")
                 } catch (blocked: AiModelUnavailableException) {
-                    assertTrue(blocked.message.orEmpty().contains(action.displayName))
-                    assertTrue(blocked.message.orEmpty().contains("No protected AI processing was run"))
+                    assertEquals(GlobalModerationEnforcement.statusMessage(action), blocked.message)
                 }
                 assertFalse(progress)
                 assertFalse(image.isRecycled)

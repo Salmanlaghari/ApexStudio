@@ -37,13 +37,13 @@ class EditorFaceCropApplyTest {
         }
     }
 
-    @Test fun reviewMarksNeverBypassGlobalModerationOrMutateHistory() {
+    @Test fun reviewMarksDoNotEnableOutOfScopeFaceReframeOrMutateHistory() {
         val vm = editor()
         val before = vm.state.value.project
         assertFalse(vm.applyReviewedFaceCropTrack())
         assertEquals(before, vm.state.value.project)
         assertTrue(vm.undoStack.isEmpty())
-        assertTrue(vm.faceTrackReview.value.error!!.contains("hateful"))
+        assertTrue(vm.faceTrackReview.value.error!!.contains("video-only tool scope"))
     }
 
     @Test fun everyMeasuredSampleMustBeReviewed() {

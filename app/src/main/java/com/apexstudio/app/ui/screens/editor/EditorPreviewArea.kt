@@ -134,16 +134,20 @@ fun VideoPreviewArea(
     // Main-track video crop; IMAGE clips use photoClip.photoEdit.crop instead.
     videoCrop: VideoCropSettings? = null,
     faceCropConfig: FaceCropRenderConfig? = null,
+    projectVideoEffectId: String? = null,
     modifier: Modifier = Modifier
 ) {
-    // Current preview grading remains Compose-based; this crop-only effect is
-    // attached to the real V1 decoder so its source pixels match Transformer.
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, photoClip?.id) {
+    // Fixed project-video effects run on decoded pixels with the same matrix and
+    // shader as export, not the approximate legacy Compose filter overlay.
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
         if (photoClip == null) {
             // A persisted dynamic track supersedes static/manual crop geometry.
             val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
-            player.setVideoEffects(listOfNotNull(dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop)))
+            player.setVideoEffects(listOfNotNull(
+                dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
+                com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId)
+            ))
         } else {
             player.setVideoEffects(emptyList())
         }

@@ -58,7 +58,7 @@ class EspcnSuperResolutionTest {
         } finally { model.delete() }
     }
 
-    @Test fun publicUpscaleDeniesBeforeModelReadOrProgressWhenModerationIsUnavailable() = runBlocking {
+    @Test fun standaloneUpscaleDeniesBeforeModelReadOrProgressOutsideVideoScope() = runBlocking {
         val model = File.createTempFile("fake-super-resolution", ".onnx")
         val image = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         var progress = false
@@ -67,9 +67,9 @@ class EspcnSuperResolutionTest {
             model.delete() // If the model is touched before policy, this test fails with the wrong error.
             try {
                 adapter.upscale(image) { progress = true }
-                fail("Unmoderated user-content upscaling must be blocked")
+                fail("Standalone still-image upscaling must remain unavailable")
             } catch (blocked: AiModelUnavailableException) {
-                assertTrue(blocked.message!!.contains("hateful"))
+                assertTrue(blocked.message!!.contains("Standalone still-image inference is unavailable"))
             }
             assertFalse(progress)
             assertFalse(image.isRecycled)
@@ -89,10 +89,9 @@ class EspcnSuperResolutionTest {
             model.delete() // Gate must win over model availability/inspection.
             try {
                 adapter.upscale(image) { progress = true }
-                fail("Unmoderated ONNX upscaling must be blocked")
+                fail("Standalone ONNX still-image upscaling must remain unavailable")
             } catch (blocked: AiModelUnavailableException) {
-                assertTrue(blocked.message.orEmpty().contains("hateful"))
-                assertTrue(blocked.message.orEmpty().contains("No protected AI processing was run"))
+                assertTrue(blocked.message.orEmpty().contains("Standalone still-image inference is unavailable"))
             }
             assertFalse(progress)
             assertFalse(image.isRecycled)

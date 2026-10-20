@@ -7,42 +7,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AiToolsCatalogTest {
-    @Test fun everyProtectedFeatureShowsSafetyBlockAndHasNoToggleState() {
-        val inventory = AiFeatureId.entries.map { AiFeatureAvailability(it, AiAvailability.READY, "Local backend available") }
-        val cards = aiToolCards(inventory)
+    @Test fun backendInventoryIsNotAGlobalUnlockOrAModerationRequirement() {
+        val cards = aiToolCards(AiFeatureId.entries.map {
+            AiFeatureAvailability(it, AiAvailability.READY, "Local backend available")
+        })
         assertEquals(AiFeatureId.entries.size, cards.size)
         assertEquals(cards.size, cards.map { it.id }.distinct().size)
         assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
-        assertTrue(cards.all { it.unavailableReason == AI_PROTECTED_BLOCKER })
-        assertTrue(AI_PROTECTED_BLOCKER.contains("sexual, violent, and hateful"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("existing-project video"))
+        assertFalse(AI_PROTECTED_BLOCKER.contains("all-category moderation"))
     }
 
-    @Test fun availableAlgorithmCannotBypassMissingModeration() {
-        val cards = aiToolCards(listOf(
-            AiFeatureAvailability(AiFeatureId.SMART_TRIM, AiAvailability.READY, "Signal analysis"),
-            AiFeatureAvailability(AiFeatureId.CONTENT_MODERATION, AiAvailability.ENGINE_UNAVAILABLE, "No safety classifier")
-        ))
-        val smartTrim = cards.first { it.id == "SMART_TRIM" }
-        assertEquals(AI_PROTECTED_STATUS_LABEL, smartTrim.statusLabel)
-        assertTrue(smartTrim.unavailableReason.contains("validated all-category moderation"))
-        assertTrue(smartTrim.detail.startsWith("Local backend detected"))
-    }
-
-    @Test fun modelErrorsAreNotHiddenBehindGenericSafetyMessage() {
-        val cards = aiToolCards(listOf(AiFeatureAvailability(
-            AiFeatureId.SUBTITLES, AiAvailability.MODEL_MISSING, "Whisper files are missing"
-        )))
-        assertEquals(AI_PROTECTED_STATUS_LABEL, cards.single().statusLabel)
-        assertTrue(cards.single().detail.contains("Whisper files are missing"))
-        assertTrue(cards.single().unavailableReason.contains("sexual, violent, and hateful"))
-    }
-
-    @Test fun localReviewEntryIsClearlySeparateFromProtectedFeatureCards() {
-        assertEquals("Open offline scene + face review", LOCAL_REVIEW_ACTION_LABEL)
-        val protectedCard = aiToolCards(listOf(AiFeatureAvailability(
-            AiFeatureId.SCENE_ANALYSIS, AiAvailability.READY, "Local backend available"
+    @Test fun deterministicAnalysisIsNotFalselyLabelledAsLearnedAI() {
+        val card = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.AUTO_CROP, AiAvailability.READY, "Signal analysis"
         ))).single()
-        assertEquals(AI_PROTECTED_STATUS_LABEL, protectedCard.statusLabel)
-        assertFalse(protectedCard.title.contains("Available local review"))
+        assertTrue(card.title.contains("not subject AI"))
+        assertTrue(card.detail.startsWith("Local backend detected"))
+    }
+
+    @Test fun modelErrorsRemainVisible() {
+        val card = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.SUBTITLES, AiAvailability.MODEL_MISSING, "Whisper files are missing"
+        ))).single()
+        assertTrue(card.detail.contains("Whisper files are missing"))
+        assertEquals(AI_PROTECTED_BLOCKER, card.unavailableReason)
+    }
+
+    @Test fun upscalePointsToRealVideoEntryAndDoesNotExposeStillImageAPI() {
+        val card = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.ONNX_UPSCALING, AiAvailability.READY, "ESPCN locally available"
+        ))).single()
+        assertTrue(card.unavailableReason.contains("Open AI Video Upscale"))
+        assertTrue(card.unavailableReason.contains("No standalone still-image"))
+    }
+
+    @Test fun unreviewedArtisticModelRemainsUnavailableForActualLicenseAndIntegrationReasons() {
+        val card = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.ONNX_STYLE_TRANSFER, AiAvailability.READY, "Model bytes present"
+        ))).single()
+        assertTrue(card.unavailableReason.contains("license/provenance"))
+        assertTrue(card.unavailableReason.contains("full-video integration"))
+    }
+
+    @Test fun liveCameraRemainsOutOfScopeAndReviewHasSeparateEntry() {
+        assertEquals("Open offline scene + face review", LOCAL_REVIEW_ACTION_LABEL)
+        val card = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.GESTURE_CONTROL, AiAvailability.READY, "Model bytes present"
+        ))).single()
+        assertTrue(card.detail.contains("outside the existing-project-video scope"))
     }
 }

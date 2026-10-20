@@ -25,9 +25,9 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
   .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-// Model weights remain source-controlled for provenance and host tests but are
-// omitted from APK/AAB assets by default. Use -PincludeBundledAiModels=true only
-// for bundled-fallback regression builds.
+// Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
+// ESPCN model stays bundled for bounded, offline video upscaling. Use
+// -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
 val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
@@ -37,7 +37,7 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
     exclude(
       "models/mediapipe/*.task", "models/mediapipe/*.tflite",
       "models/whisper/*.onnx", "models/whisper/*.txt",
-      "models/alignment/*.onnx", "models/super_resolution/*.onnx",
+      "models/alignment/*.onnx",
       "models/background_removal/*.onnx"
     )
   }

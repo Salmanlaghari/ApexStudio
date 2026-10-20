@@ -48,13 +48,13 @@ class EditorGestureControllerTest {
         assertNull(GestureEditPlanner.timelineZoom(1f, 1f))
     }
 
-    @Test fun explicitArmCannotBypassUnapprovedGlobalModeration() {
+    @Test fun explicitArmCannotEnableGestureAiOutsideTheVideoOnlyScope() {
         val vm = editor()
         val before = vm.state.value.project
         assertNull(vm.beginGestureEditing())
         assertNull(vm.gestureEditing.value.session)
         assertNull(vm.editorGestureSession)
-        assertTrue(vm.gestureEditing.value.message.contains("hateful"))
+        assertTrue(vm.gestureEditing.value.message.contains("existing-project-video scope"))
         assertEquals(before, vm.state.value.project)
         assertTrue(vm.undoStack.isEmpty())
     }

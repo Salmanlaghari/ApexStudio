@@ -60,6 +60,9 @@ internal fun projectCompositionUnsupportedReason(
         if (clip.textOverlays.isNotEmpty()) return "Video clip '${clip.name}' has captions or text overlays."
         if (clip.stickers.isNotEmpty()) return "Video clip '${clip.name}' has stickers."
         if (clip.gpuFilterConfig != GpuFilterConfig()) return "Video clip '${clip.name}' has a color/filter edit."
+        if (clip.projectVideoEffectId != null && com.apexstudio.app.data.template.ProjectVideoPresets.effect(clip.projectVideoEffectId) == null) {
+            return "Video clip '${clip.name}' has an unknown project-video effect."
+        }
         if (clip.videoCrop != VideoCropSettings()) return "Video clip '${clip.name}' has a crop edit."
         if (clip.faceCropTrack != null) return "Video clip '${clip.name}' has an automatic face-crop track."
         if (clip.mask != null) return "Video clip '${clip.name}' has a shape-mask edit."

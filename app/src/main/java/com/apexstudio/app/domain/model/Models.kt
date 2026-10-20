@@ -35,6 +35,35 @@ data class VideoCropSettings(
     }
 }
 
+/** One deterministic visual effect applied over an absolute source-media time range. */
+@Serializable
+data class WorkspaceEffect(
+    /** Stable preset id from [WorkspaceEffectPresets]. */
+    val id: String,
+    /** Inclusive absolute source timestamp in milliseconds. */
+    val startMs: Long,
+    /** Exclusive absolute source timestamp in milliseconds. */
+    val endMs: Long,
+    /** Blend/strength amount, clamped to 0..1 by the renderer. */
+    val intensity: Float = 1f
+)
+
+/** Preset ids supported by the shared preview/export GL renderer. */
+object WorkspaceEffectPresets {
+    const val MONO = "mono"
+    const val WARM = "warm"
+    const val PIXELATE = "pixelate"
+    const val SPLIT_2 = "split2"
+    const val SPLIT_3 = "split3"
+
+    val all: Set<String> = setOf(MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3)
+}
+
+/** Pure half-open range check shared by preview/export and regression tests. */
+fun WorkspaceEffect.isActiveAtSourceTime(sourceTimeMs: Long): Boolean =
+    startMs >= 0L && endMs > startMs && sourceTimeMs >= startMs && sourceTimeMs < endMs &&
+        intensity.isFinite() && intensity > 0f && id in WorkspaceEffectPresets.all
+
 @Serializable
 data class MediaClip(
     val id: String,
@@ -171,7 +200,10 @@ data class MediaClip(
     // export bakes the same mask via MaskGlEffect (V1) or
     // PipOverlayGlEffect (V2 overlay). Backwards-compatible: older
     // project JSONs without this field deserialise as null.
-    val mask: VideoMask? = null
+    val mask: VideoMask? = null,
+    // Ranged deterministic workspace effects, using absolute source-media time.
+    // Kept at the end so older positional MediaClip construction remains source-compatible.
+    val workspaceEffects: List<WorkspaceEffect> = emptyList()
 ) {
     /**
      * True when this overlay clip (type == [ClipType.OVERLAY]) should be

@@ -60,6 +60,26 @@ class PhaseZeroToolbarTest {
         assertEquals(1, calls["split"] ?: 0)
     }
 
+    @Test
+    fun `mobile quick tools dispatch music text enhance templates canvas effects stickers captions and filters`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            testToolbar(ToolbarSelectionKind.NONE, calls)
+        }
+
+        listOf(
+            "Music", "Text", "Enhance", "Templates", "Canvas",
+            "Effects", "Stickers", "Subtitles", "Filters"
+        ).forEach { label ->
+            composeRule.onNodeWithText(label).performScrollTo().performClick()
+        }
+
+        listOf(
+            "music", "text", "adjust", "templates", "crop",
+            "effects", "stickers", "captions", "filters"
+        ).forEach { action -> assertEquals("$action callback", 1, calls[action] ?: 0) }
+    }
+
     /** Explicit test-only callbacks keep every production action wired and observable. */
     @Composable
     private fun testToolbar(
@@ -75,6 +95,9 @@ class PhaseZeroToolbarTest {
             onText = { count("text") },
             onEffects = { count("effects") },
             onStickers = { count("stickers") },
+            onCaptions = { count("captions") },
+            onTemplates = { count("templates") },
+            onCrop = { count("crop") },
             onArFace = { count("ar-face") },
             onLenses = { count("lenses") },
             onFilters = { count("filters") },

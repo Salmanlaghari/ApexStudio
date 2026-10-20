@@ -223,6 +223,8 @@ class ExportEngine(private val context: Context) {
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         /** Fixed non-AI effect; resolved by the same catalog/shader as the video decoder preview. */
         val projectVideoEffectId: String? = null,
+        /** Ranged, absolute-source-time visual effects for selected-clip export. */
+        val workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
         // Preferred per-clip crop source. The legacy editor-state cropRect
         // remains a fallback for older callers/projects.
         val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
@@ -431,6 +433,7 @@ class ExportEngine(private val context: Context) {
                         val videoEffects = buildList<androidx.media3.common.Effect> {
                             com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                                 ?.let { add(it) }
+                            addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(clip.workspaceEffects, entry.sourceStartMs))
                             add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
                             if (config.filterPreset != null && config.filterIntensity > 0f) {
                                 add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
@@ -771,6 +774,10 @@ class ExportEngine(private val context: Context) {
 
                 com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(config.projectVideoEffectId)
                     ?.let { videoEffects.add(it) }
+                // Match preview: source crop → fixed color → ranged effect, before output resize/speed.
+                videoEffects.addAll(
+                    com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(config.workspaceEffects, config.trimStartMs)
+                )
 
                 // 1.5 Rotation and Flipping
                 if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {

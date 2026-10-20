@@ -3,18 +3,16 @@ package com.apexstudio.app.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/**
- * Light neutrals for editor tool panels and sheets only. Keep accent, status,
- * and track colors aligned with [ApexPalette] so media semantics and selection
- * cues do not change when the surrounding controls switch to light surfaces.
+/** PR #170 dark editing surfaces, lifted only slightly with a neutral-white tint.
+ * Geometry, accent colors and media pixels are unchanged; this is not a light-theme redesign.
  */
 object EditorPalette {
-    val BgDeep = Color(0xFFF3F5F8)
-    val BgBase = Color(0xFFFFFFFF)
-    val BgSurface = Color(0xFFFFFFFF)
-    val BgElevated = Color(0xFFF1F4F7)
-    val BgGlass = Color(0xF2FFFFFF)
-    val BgGlassSoft = Color(0xD9FFFFFF)
+    val BgDeep = Color(0xFF10131A)
+    val BgBase = Color(0xFF141820)
+    val BgSurface = Color(0xFF1B212C)
+    val BgElevated = Color(0xFF252D3A)
+    val BgGlass = Color(0xF2262E3B)
+    val BgGlassSoft = Color(0xD9262E3B)
 
     // Semantic accents intentionally unchanged from ApexPalette.
     val NeonCyan = ApexPalette.NeonCyan
@@ -26,17 +24,17 @@ object EditorPalette {
     val NeonAmber = ApexPalette.NeonAmber
     val TrackBlue = ApexPalette.TrackBlue
 
-    val TextPrimary = Color(0xFF111827)
-    val TextSecondary = Color(0xFF475569)
-    val TextTertiary = Color(0xFF64748B)
+    val TextPrimary = Color(0xFFF3F5F7)
+    val TextSecondary = Color(0xFFC1CAD6)
+    val TextTertiary = Color(0xFF9DAABA)
     val TextMuted = Color(0xFF94A3B8)
 
     val Success = ApexPalette.Success
     val Warning = ApexPalette.Warning
     val Danger = ApexPalette.Danger
 
-    val Divider = Color(0xFFE2E8F0)
-    val BorderGlass = Color(0xFFCBD5E1)
+    val Divider = Color(0xFF303A49)
+    val BorderGlass = Color(0xFF3B4657)
 
     val TrackVideo = ApexPalette.TrackVideo
     val TrackAudio = ApexPalette.TrackAudio
@@ -46,7 +44,7 @@ object EditorPalette {
     val GradientPrimary = Brush.linearGradient(listOf(NeonCyan, NeonPurple))
     val GradientSurface = Brush.verticalGradient(listOf(BgSurface, BgDeep))
     val GradientGlass = Brush.verticalGradient(
-        listOf(Color(0xFFFFFFFF), Color(0xCCFFFFFF))
+        listOf(Color(0xFF293341), Color(0xCC1B212C))
     )
     val GradientAccent = Brush.linearGradient(listOf(NeonPurple, NeonCyan))
 }

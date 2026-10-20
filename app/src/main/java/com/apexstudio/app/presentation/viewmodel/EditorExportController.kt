@@ -142,6 +142,7 @@ fun EditorViewModel.startExport(
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,
             projectVideoEffectId = selected?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
+            workspaceEffects = selected?.workspaceEffects.orEmpty(),
             videoCrop = selected?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,

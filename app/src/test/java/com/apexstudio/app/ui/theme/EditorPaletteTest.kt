@@ -8,10 +8,13 @@ import org.junit.Test
 
 class EditorPaletteTest {
     @Test
-    fun editorPaletteUsesLightSurfacesAndDarkText() {
-        assertEquals(Color.White, EditorPalette.BgBase)
-        assertEquals(Color.White, EditorPalette.BgSurface)
-        assertTrue(EditorPalette.TextPrimary.luminance() < EditorPalette.BgBase.luminance())
+    fun editorPaletteKeepsDarkPr170SurfacesWithOnlyASubtleNeutralLift() {
+        assertTrue(EditorPalette.BgBase.luminance() < 0.03f)
+        assertTrue(EditorPalette.BgSurface.luminance() < 0.04f)
+        assertTrue(EditorPalette.BgSurface != Color.White)
+        assertTrue(EditorPalette.BgDeep.luminance() < EditorPalette.BgBase.luminance())
+        assertTrue(EditorPalette.BgSurface.luminance() > EditorPalette.BgBase.luminance())
+        assertTrue(EditorPalette.TextPrimary.luminance() > EditorPalette.BgBase.luminance())
     }
 
     @Test

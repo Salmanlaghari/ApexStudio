@@ -13,11 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.ui.theme.EditorPalette
 
 // Left Tool Rail floating over video preview
 @Composable
@@ -34,7 +34,7 @@ fun LeftToolRail(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.94f))
+            .background(EditorPalette.BgSurface.copy(alpha = 0.96f))
             .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -61,7 +61,7 @@ fun RightToolRail(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.94f))
+            .background(EditorPalette.BgSurface.copy(alpha = 0.96f))
             .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -89,12 +89,12 @@ private fun RailItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = Color(0xFF111827),
+            tint = EditorPalette.TextPrimary,
             modifier = Modifier.size(18.dp)
         )
         Text(
             text = label,
-            color = Color(0xFF374151),
+            color = EditorPalette.TextSecondary,
             fontSize = 9.sp,
             fontWeight = FontWeight.Medium
         )

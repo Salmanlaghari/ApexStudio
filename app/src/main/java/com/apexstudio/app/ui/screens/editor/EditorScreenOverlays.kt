@@ -1349,6 +1349,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
             projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
+            workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
+            onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,

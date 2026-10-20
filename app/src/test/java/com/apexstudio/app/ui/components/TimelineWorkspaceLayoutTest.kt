@@ -95,19 +95,19 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun loneMainVideoUsesOtherwiseEmptyHeightButSupportingRowsStayCompact() {
-        assertEquals(160.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
+    fun mainVideoLaneStaysFixedAt64DpRegardlessOfViewportAndSupportingRows() {
+        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
         assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
-        assertEquals(256.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(256.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(178.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(208.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
+        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(64.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
         assertEquals(64.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
         assertEquals(0.dp, mainVideoLaneHeight(720f, hasMainVideo = false))
     }
 
     @Test
-    fun waveformOnlyMainLaneUsesViewportSlackWithoutLeavingLargeDeadTail() {
+    fun waveformDoesNotExpandTheFixedHeightMainLane() {
         composeRule.setContent {
             workspace(heightDp = 400, audioWaveform = floatArrayOf(0.1f, 0.7f, 0.3f))
         }
@@ -118,8 +118,11 @@ class TimelineWorkspaceLayoutTest {
         val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
-        assertTrue("A lone V1 should use spare viewport space, but stay bounded: $main", main.height in 255f..257f)
-        assertTrue("V1 and its waveform should use nearly all of this viewport", root.bottom - waveform.bottom < 40f)
+        assertEquals("V1 remains the compact fixed-height lane", 64f, main.height, 1f)
+        // The labeled pinned region contains the pre-existing 10dp row gap
+        // plus the compact 12dp waveform strip (PR170 geometry).
+        assertEquals("10dp separation + 12dp waveform strip", 22f, waveform.height, 1f)
+        assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
     }
 
     @Test
@@ -136,7 +139,7 @@ class TimelineWorkspaceLayoutTest {
         val main = composeRule.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         composeRule.onNodeWithContentDescription("Source audio waveform").assertExists()
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
-        assertEquals("V1 should use only the viewport left after its supporting row", 208f, main.height, 2f)
+        assertEquals("V1 remains fixed-height beside its supporting row", 64f, main.height, 1f)
         composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true).assertExists()
     }
 

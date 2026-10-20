@@ -15,7 +15,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /** Preserve the preview subtree in focus mode; the mobile default keeps it visible but secondary. */
 internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float =

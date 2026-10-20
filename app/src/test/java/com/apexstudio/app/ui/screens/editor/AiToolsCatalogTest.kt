@@ -62,4 +62,24 @@ class AiToolsCatalogTest {
         ))).single()
         assertTrue(card.detail.contains("outside the existing-project-video scope"))
     }
+
+    @Test fun onlyExistingVideoWorkflowIdsHaveCardDestinations() {
+        listOf("SMART_TRIM", "SCENE_ANALYSIS", "STYLE_ANALYSIS", "AUTO_CROP", "FACE_TRACKING")
+            .forEach { assertEquals(AiToolAction.LOCAL_ANALYSIS, aiToolActionForId(it)) }
+        assertEquals(AiToolAction.VIDEO_UPSCALE, aiToolActionForId("ONNX_UPSCALING"))
+        assertEquals(AiToolAction.CAPTIONS, aiToolActionForId("SUBTITLES"))
+        assertEquals(AiToolAction.CAPTIONS, aiToolActionForId("WORD_TIMED_SUBTITLES"))
+        assertEquals(AiToolAction.BACKGROUND_REPLACE, aiToolActionForId("BACKGROUND_REPLACE"))
+        listOf("FACE_AWARE_REFRAME", "FACE_BLUR", "MEDIAPIPE_HAND", "ONNX_STYLE_TRANSFER", "ONNX_BACKGROUND_REMOVAL", "DEPTH_2D_TO_3D")
+            .forEach { assertNull("$it must not be routed to a fake action", aiToolActionForId(it)) }
+    }
+
+    @Test fun faceReframeAndDepthConversionExplainWhyTheyAreNotEnabled() {
+        val reframe = aiToolCards(listOf(AiFeatureAvailability(
+            AiFeatureId.FACE_AWARE_REFRAME, AiAvailability.READY, "Face model present"
+        ))).single()
+        assertTrue(reframe.unavailableReason.contains("not release-ready"))
+        assertTrue(reframe.unavailableReason.contains("export rejects face-crop tracks"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("no integrated, tested depth model"))
+    }
 }

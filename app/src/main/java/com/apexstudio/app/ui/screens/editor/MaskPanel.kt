@@ -37,7 +37,7 @@ import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPreset
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Compact, mobile-first mask editor. Presets and shape thumbnails are horizontal
@@ -70,7 +70,7 @@ fun MaskPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Mask", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("Mask", color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.Close, contentDescription = "Close mask", tint = Color.White.copy(alpha = 0.75f))
             }
@@ -78,7 +78,7 @@ fun MaskPanel(
 
         // Recipes are deliberately first, so common one-tap looks are not
         // buried beneath sliders. Applying a recipe is an explicit replacement.
-        Text("PRESETS", color = Color.White.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("PRESETS", color = ApexPalette.TextPrimary.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -94,13 +94,13 @@ fun MaskPanel(
                         .clickable { onUpdate(preset.apply()) }
                         .padding(horizontal = 11.dp, vertical = 8.dp)
                 ) {
-                    Text(preset.label, color = if (selected) MaterialTheme.colorScheme.secondary else Color.White.copy(alpha = 0.82f), fontSize = 11.sp, maxLines = 1)
+                    Text(preset.label, color = if (selected) MaterialTheme.colorScheme.secondary else ApexPalette.TextPrimary.copy(alpha = 0.82f), fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
 
         Spacer(Modifier.height(11.dp))
-        Text("SHAPE", color = Color.White.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("SHAPE", color = ApexPalette.TextPrimary.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier
@@ -129,7 +129,7 @@ fun MaskPanel(
                     MaskShapePreview(shape, Modifier.size(width = 34.dp, height = 26.dp))
                     Text(
                         shape.label,
-                        color = if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.8f),
+                        color = if (selected) MaterialTheme.colorScheme.primary else ApexPalette.TextPrimary.copy(alpha = 0.8f),
                         fontSize = 9.sp,
                         maxLines = 1,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
@@ -140,7 +140,7 @@ fun MaskPanel(
 
         if (mask == null) {
             Spacer(Modifier.height(9.dp))
-            Text("Choose a preset or shape to add a centered mask.", color = Color.White.copy(alpha = 0.56f), fontSize = 11.sp)
+            Text("Choose a preset or shape to add a centered mask.", color = ApexPalette.TextPrimary.copy(alpha = 0.56f), fontSize = 11.sp)
         }
 
         Spacer(Modifier.height(9.dp))
@@ -200,7 +200,7 @@ fun MaskPanel(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                    Text("Fine-tune", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Fine-tune", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Text(if (fineTuneExpanded) "−" else "+", color = MaterialTheme.colorScheme.primary, fontSize = 17.sp)
             }
@@ -218,8 +218,8 @@ fun MaskPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Invert mask", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Keep everything outside the shape", color = Color.White.copy(alpha = 0.56f), fontSize = 10.sp)
+                        Text("Invert mask", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Keep everything outside the shape", color = ApexPalette.TextPrimary.copy(alpha = 0.56f), fontSize = 10.sp)
                     }
                     Switch(
                         checked = mask.invert,
@@ -284,7 +284,7 @@ private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
 private fun MaskSliderRow(label: String, valueLabel: String, value: Float, onValueChange: (Float) -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(valueLabel, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Slider(

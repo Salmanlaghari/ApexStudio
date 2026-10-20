@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.HistoryDraftsTab
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

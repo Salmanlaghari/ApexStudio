@@ -31,6 +31,7 @@ internal fun buildProjectExportConfig(
     bitrateMbps = settings.bitrateMbps,
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
+    videoDrawings = state.project?.videoDrawings.orEmpty(),
     adjustments = state.adjustments,
     fxPreset = FxPreset.byId(state.activeFxId),
     fxIntensity = state.fxIntensity,

@@ -63,7 +63,7 @@ import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeCurve
 import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.domain.model.KeyframeTrack
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlin.math.cos
 import kotlin.math.exp
@@ -234,7 +234,7 @@ fun KeyframePanel(
                 while (t <= effectiveDuration) {
                     val x = (t.toFloat() / effectiveDuration) * size.width
                     drawLine(
-                        color = Color.White.copy(alpha = 0.12f),
+                        color = ApexPalette.TextPrimary.copy(alpha = 0.12f),
                         start = Offset(x, 0f),
                         end = Offset(x, size.height),
                         strokeWidth = 1f
@@ -645,7 +645,7 @@ fun KeyframePanel(
                             style = Stroke(width = 2.5f)
                         )
                         // Start and End keyframe dots
-                        drawCircle(color = Color.White, radius = 4f, center = Offset(0f, h))
+                        drawCircle(color = ApexPalette.TextPrimary, radius = 4f, center = Offset(0f, h))
                         drawCircle(color = ApexPalette.NeonCyan, radius = 4f, center = Offset(w, 0f))
                     }
                     Text(

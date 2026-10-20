@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.ar.ArFilterCategory
 import com.apexstudio.app.data.ar.ArFilterPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Filter panel for AR/AI face filters, beauty retouching, anime styles,
@@ -88,7 +88,7 @@ fun ArFilterPanel(
                 }
                 Text(
                     text = "AI / AR Face & Festival Filters",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
@@ -286,7 +286,7 @@ fun ArFilterPanel(
                 )
                 Text(
                     text = "${(intensity * 100).toInt()}%",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(40.dp)

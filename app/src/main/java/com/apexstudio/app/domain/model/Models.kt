@@ -798,6 +798,8 @@ data class Project(
     val lastTransitionDurationMs: Long = 500L,
     val transitions: List<ClipTransition> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
+    /** Freehand artwork over video; default-empty for legacy project JSON. */
+    val videoDrawings: List<VideoDrawingLayer> = emptyList(),
     val coverFrameMs: Long? = null,
     val coverCustomUri: String? = null,
     /**

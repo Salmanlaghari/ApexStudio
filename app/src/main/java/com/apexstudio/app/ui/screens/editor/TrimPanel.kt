@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -211,7 +211,7 @@ fun TrimPanel(
                     Text("START TIMESTAMP", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Text(
                         TimeFormat.formatMs(trimStart),
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -252,7 +252,7 @@ fun TrimPanel(
                     Text("END TIMESTAMP", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Text(
                         TimeFormat.formatMs(trimEnd),
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -330,7 +330,7 @@ fun TrimPanel(
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Media3 Transformer Trimming...",
-                            color = Color.White,
+                            color = ApexPalette.TextPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -706,7 +706,7 @@ fun TrimPanel(
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "Media3 Transformer Cut",
-                                color = Color.White,
+                                color = ApexPalette.TextPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )

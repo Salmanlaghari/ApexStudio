@@ -45,8 +45,8 @@ fun PlaybackControlBar(
             .fillMaxWidth()
             .height(52.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF101722))
-            .border(1.dp, Color(0xFF273447), RoundedCornerShape(12.dp))
+            .background(Color.White)
+            .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -74,7 +74,8 @@ fun PlaybackControlBar(
                 .width(52.dp)
                 .height(40.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(ApexPalette.NeonCyan)
+                .background(Color(0xFFE5E7EB))
+                .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
                 .clickable(onClick = onTogglePlay, role = Role.Button)
                 .semantics { contentDescription = if (isPlaying) "Pause playback" else "Play playback" },
             contentAlignment = Alignment.Center
@@ -82,7 +83,7 @@ fun PlaybackControlBar(
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = null,
-                tint = Color(0xFF101722),
+                tint = Color(0xFF111827),
                 modifier = Modifier.size(25.dp)
             )
         }
@@ -123,7 +124,7 @@ private fun TransportIconButton(
         Icon(
             imageVector = imageVector,
             contentDescription = null,
-            tint = if (enabled) Color(0xFF8C9AAF) else Color(0xFF465365),
+            tint = if (enabled) Color(0xFF111827) else Color(0xFF9CA3AF),
             modifier = Modifier.size(21.dp)
         )
     }
@@ -136,9 +137,9 @@ private fun KeyframeDiamondAddButton(
     onClick: () -> Unit
 ) {
     val diamondColor = when {
-        !enabled -> Color(0xFF465365)
-        hasKeyframeAtPlayhead -> ApexPalette.NeonCyan
-        else -> Color(0xFF8C9AAF)
+        !enabled -> Color(0xFF9CA3AF)
+        hasKeyframeAtPlayhead -> Color(0xFF2563EB)
+        else -> Color(0xFF111827)
     }
     Box(
         modifier = Modifier
@@ -163,7 +164,7 @@ private fun KeyframeDiamondAddButton(
         }
         Text(
             text = "+",
-            color = if (!enabled) Color(0xFF465365) else if (hasKeyframeAtPlayhead) Color(0xFF101722) else ApexPalette.NeonCyan,
+            color = if (!enabled) Color(0xFF9CA3AF) else if (hasKeyframeAtPlayhead) Color(0xFF111827) else Color(0xFF2563EB),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )

@@ -16,7 +16,7 @@ import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTemplate
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextMotion
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoEffect
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextTemplate
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /** A frozen target prevents a delayed selection from editing a different clip or project. */
 @Composable
@@ -99,6 +99,8 @@ internal fun ProjectVideoPresetsPanel(
             }
             Text("Video Filters", style = MaterialTheme.typography.titleMedium)
             Text("Applies a fixed effect to this clip only, without replacing the source file. Undo restores the previous edit.", style = MaterialTheme.typography.bodySmall)
+            Text("Natural HD, Daylight and Vivid mix RGB pixel colors using the same renderer in preview and export. HD is a color look, not recovered detail, HDR or a resolution upgrade.",
+                style = MaterialTheme.typography.bodySmall)
             ProjectVideoPresets.effects.forEach { preset ->
                 OutlinedButton(onClick = { onVideoEffect(preset.id) }, enabled = eligible,
                     modifier = Modifier.fillMaxWidth().testTag("video_effect_${preset.id}")) {

@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.state.AudioStudioState
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Audio mixer bottom sheet. Renders the three canonical track rows

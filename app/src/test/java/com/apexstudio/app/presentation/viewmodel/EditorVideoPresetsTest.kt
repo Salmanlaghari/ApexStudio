@@ -37,7 +37,7 @@ class EditorVideoPresetsTest {
     @Test
     fun `catalogs are fixed and title factories create fresh literal overlays`() {
         assertEquals(3, ProjectVideoPresets.textTemplates.size)
-        assertEquals(3, ProjectVideoPresets.effects.size)
+        assertEquals(6, ProjectVideoPresets.effects.size)
         assertEquals(3, ProjectVideoPresets.textMotions.size)
         assertEquals(2, ProjectVideoPresets.videoTemplates.size)
         assertEquals(1, ProjectVideoPresets.videoEnhancements.size)

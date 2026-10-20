@@ -25,7 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.ChromaKeySettings
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 @Composable
 fun ChromaKeyPanel(
@@ -64,7 +64,7 @@ fun ChromaKeyPanel(
                 )
                 Text(
                     text = "3D Chroma Key & Virtual Background",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -91,8 +91,8 @@ fun ChromaKeyPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("Chroma Key Enabled", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text("Remove green/blue background with 3D projection", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                Text("Chroma Key Enabled", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Remove green/blue background with 3D projection", color = ApexPalette.TextPrimary.copy(alpha = 0.6f), fontSize = 10.sp)
             }
             Switch(
                 checked = settings.enabled,
@@ -108,7 +108,7 @@ fun ChromaKeyPanel(
             Spacer(Modifier.height(14.dp))
 
             // Key Color Preset Row
-            Text("KEY COLOR", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("KEY COLOR", color = ApexPalette.TextPrimary.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -136,7 +136,7 @@ fun ChromaKeyPanel(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(color))
-                            Text(label, color = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Text(label, color = if (isSelected) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -175,7 +175,7 @@ fun ChromaKeyPanel(
             Spacer(Modifier.height(12.dp))
 
             // Virtual Background Selection
-            Text("VIRTUAL BACKGROUND", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("VIRTUAL BACKGROUND", color = ApexPalette.TextPrimary.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
 
             val bgTypes = listOf(
@@ -212,13 +212,13 @@ fun ChromaKeyPanel(
                                 Icon(
                                     imageVector = Icons.Default.Image,
                                     contentDescription = null,
-                                    tint = if (isSelected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.7f),
+                                    tint = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary.copy(alpha = 0.7f),
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
                             Text(
                                 text = label,
-                                color = if (isSelected) ApexPalette.NeonCyan else Color.White,
+                                color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
@@ -241,7 +241,7 @@ private fun SliderRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
+            Text(label, color = ApexPalette.TextPrimary.copy(alpha = 0.8f), fontSize = 11.sp)
             Text("${(value * 100).toInt()}%", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Slider(

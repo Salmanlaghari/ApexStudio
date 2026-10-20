@@ -13,7 +13,7 @@ import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.VideoUpscaleUiState
 import com.apexstudio.app.presentation.viewmodel.applyExistingVideoUpscale
 import com.apexstudio.app.presentation.viewmodel.cancelExistingVideoUpscale
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 @Composable
 fun VideoUpscaleOverlay(vm: EditorViewModel, onClose: () -> Unit) {

@@ -52,7 +52,7 @@ import com.apexstudio.app.presentation.state.clipLayerAnchor
 import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
@@ -434,6 +434,7 @@ fun TextPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             TextPanel(
                 overlays = textOverlays,
+                initialTab = if (state.textPanelStartsOnCaptions) TextPanelTab.CAPTIONS else TextPanelTab.EDIT,
                 selectedId = activeOverlayId,
                 onAdd = { textClip?.let { vm.addTextOverlay(it.id) } },
                 onSelect = { vm.selectTextOverlay(it) },
@@ -1173,7 +1174,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     // source of truth shared with the player binding): true = video,
     // false = image (positive evidence), ABSENT = pending or
     // unanswerable (never defaulted to image).
-    overlayIsVideo: Map<String, Boolean> = emptyMap()
+    overlayIsVideo: Map<String, Boolean> = emptyMap(),
+    drawingEnabled: Boolean = false,
+    drawingTool: com.apexstudio.app.domain.model.VideoDrawingTool = com.apexstudio.app.domain.model.VideoDrawingTool.BRUSH,
+    drawingColorArgb: Long = 0xFFFF3B82L,
+    drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1333,6 +1338,13 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             exoPlayer = exoPlayer,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
+            drawingLayers = state.project?.videoDrawings.orEmpty(),
+            drawingClipId = mainPreviewClip?.id,
+            drawingEnabled = drawingEnabled,
+            drawingTool = drawingTool,
+            drawingColorArgb = drawingColorArgb,
+            drawingBrushWidth = drawingBrushWidth,
+            onDrawingLayerChange = vm::updateVideoDrawingLayer,
             videoCrop = (state.project?.clips?.firstOrNull { it.id == state.selectedClipId && it.trackIndex == 0 }
                 ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
@@ -1547,7 +1559,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             ) {
                 Text(
                     text = "Exit fullscreen",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1943,4 +1955,34 @@ fun BackgroundReplacePanelOverlay(
             )
         }
     }
+}
+
+/** Drawing-tool sheet host; state and persistence remain owned by EditorViewModel. */
+@Composable
+fun VideoDrawingToolsOverlay(
+    isOpen: Boolean,
+    tool: com.apexstudio.app.domain.model.VideoDrawingTool,
+    colorArgb: Long,
+    brushWidth: Float,
+    strokeCount: Int,
+    onToolChange: (com.apexstudio.app.domain.model.VideoDrawingTool) -> Unit,
+    onColorChange: (Long) -> Unit,
+    onBrushWidthChange: (Float) -> Unit,
+    onUndo: () -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit
+) {
+    if (!isOpen) return
+    VideoDrawingControlsSheet(
+        tool = tool,
+        colorArgb = colorArgb,
+        brushWidth = brushWidth,
+        strokeCount = strokeCount,
+        onToolChange = onToolChange,
+        onColorChange = onColorChange,
+        onBrushWidthChange = onBrushWidthChange,
+        onUndo = onUndo,
+        onClear = onClear,
+        onClose = onClose
+    )
 }

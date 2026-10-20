@@ -17,7 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.*
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlin.math.roundToInt
 
 /** Local draft only: Cancel and sheet disposal cannot alter the project or its history. */

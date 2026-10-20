@@ -45,6 +45,10 @@ internal fun resolveExportBaseClip(state: EditorState): MediaClip? {
     return mainClips.firstOrNull { it.id == state.selectedClipId } ?: mainClips.firstOrNull()
 }
 
+/** Global art and this source clip's art only; another clip's drawings never leak into export. */
+internal fun selectedExportDrawings(state: EditorState, clipId: String?): List<VideoDrawingLayer> =
+    state.project?.videoDrawings.orEmpty().filter { it.clipId == null || it.clipId == clipId }
+
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
     fps: Int = _export.value.settings.frameRate,
@@ -158,6 +162,8 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             stickers = stickers,
+            videoDrawings = selectedExportDrawings(s, selected?.id),
+            videoDrawingClipId = selected?.id,
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
@@ -523,6 +529,8 @@ internal fun buildPhotoExportConfig(
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
         stickers = stickers,
+        videoDrawings = selectedExportDrawings(s, clip.id),
+        videoDrawingClipId = clip.id,
         // Trim is baked into the still-video duration.
         trimStartMs = 0L,
         trimEndMs = 0L,

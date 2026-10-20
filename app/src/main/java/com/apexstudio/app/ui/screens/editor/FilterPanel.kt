@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterEngine
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -73,7 +73,7 @@ fun FilterPanel(
         ) {
             Text(
                 "Filters",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -268,7 +268,7 @@ private fun FilterChip(
             )
             Text(
                 label,
-                color = if (selected) ApexPalette.NeonCyan else Color.White,
+                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                 fontSize = 8.sp,
                 lineHeight = 9.sp,
                 fontWeight = FontWeight.Bold,

@@ -99,6 +99,32 @@ object ProjectVideoPresets {
     // alpha is unchanged. These use ColorMatrixGlEffect rather than the approximate
     // Compose-only GPU filter preview, allowing callers to share the exact same shader.
     val effects: List<ProjectVideoEffect> = listOf(
+        // Original, conservative RGB recipes. "HD" names describe the color look only:
+        // they do not reconstruct detail, change resolution, or synthesize HDR metadata.
+        ProjectVideoEffect(
+            id = "natural-hd", label = "Natural HD · Balanced Color", matrixValues = listOf(
+                1.04f, 0f, 0f, 0f, -5f,
+                0f, 1.04f, 0f, 0f, -5f,
+                0f, 0f, 1.04f, 0f, -5f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+        ProjectVideoEffect(
+            id = "daylight-clean", label = "Daylight · Clean Whites", matrixValues = listOf(
+                1.02f, 0f, 0f, 0f, -2f,
+                0f, 1.02f, 0f, 0f, -2f,
+                0f, 0f, 1.02f, 0f, -2f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+        ProjectVideoEffect(
+            id = "vivid-balanced", label = "Vivid · Balanced RGB", matrixValues = listOf(
+                1.05f, -0.025f, -0.025f, 0f, 0f,
+                -0.025f, 1.05f, -0.025f, 0f, 0f,
+                -0.025f, -0.025f, 1.05f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
         ProjectVideoEffect(
             id = "warm-film", label = "Warm Film", matrixValues = listOf(
                 1.04f, 0.02f, 0f, 0f, 4f,

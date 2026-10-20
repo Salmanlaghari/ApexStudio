@@ -15,7 +15,7 @@ import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.*
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.util.Locale
 
 /** Ordinary signal-analysis suggestions are deliberately separate from protected model-based AI. */

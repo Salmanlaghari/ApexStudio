@@ -44,8 +44,9 @@ class AiToolsPanelTest {
         compose.onNodeWithText(tool.detail).assertDoesNotExist()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertDoesNotExist()
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
-        compose.onNodeWithTag("protected_ai_card_SMART_TRIM").activateVisibleControl()
-        compose.onNodeWithText(tool.title).assertExists()
+        compose.onNodeWithTag("ai_tool_info_SMART_TRIM").activateVisibleControl()
+        // The card remains visible behind the dialog, so this title is intentionally duplicated.
+        compose.onAllNodesWithText(tool.title).assertCountEquals(2)
         compose.onNodeWithText(tool.detail).assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -69,6 +70,7 @@ class AiToolsPanelTest {
         compose.onNodeWithText("without prompts or new media generation", substring = true).assertExists()
         compose.onNodeWithText("does not waive privacy or restricted-content policies", substring = true).assertExists()
         compose.onNodeWithText("Face-crop application remains unavailable", substring = true).assertExists()
+        compose.onNodeWithText("Depth-based 2D-to-3D video conversion is not supported", substring = true).assertExists()
     }
 
     @Test fun downloadIconOpensExplicitModelChooserWithoutEnablingAI() {
@@ -127,9 +129,52 @@ class AiToolsPanelTest {
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
     }
 
+    @Test fun supportedCardsOpenOnlyTheirExistingVideoWorkflowAndKeepInfoAvailable() {
+        var analysis = 0
+        var upscale = 0
+        var captions = 0
+        var background = 0
+        val cards = listOf(
+            tool,
+            AiToolCard("ONNX_UPSCALING", "AI upscale", "Backend detected", "Advanced", AI_PROTECTED_STATUS_LABEL, "Details"),
+            AiToolCard("SUBTITLES", "Whisper captions", "Backend detected", "Subtitles", AI_PROTECTED_STATUS_LABEL, "Details"),
+            AiToolCard("BACKGROUND_REPLACE", "Background replacement", "Backend detected", "Smart editing", AI_PROTECTED_STATUS_LABEL, "Details")
+        )
+        compose.setContent { MaterialTheme { AiToolsPanel(cards, "", onClose = {},
+            onOpenLocalAnalysis = { analysis++ }, onOpenVideoUpscale = { upscale++ },
+            onOpenCaptions = { captions++ }, onOpenBackgroundReplace = { background++ },
+            reportTarget = null, reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
+        compose.onNodeWithTag("protected_ai_card_SMART_TRIM").activateVisibleControl()
+        compose.onNodeWithTag("protected_ai_card_ONNX_UPSCALING").activateVisibleControl()
+        compose.onNodeWithTag("protected_ai_card_SUBTITLES").activateVisibleControl()
+        compose.onNodeWithTag("protected_ai_card_BACKGROUND_REPLACE").activateVisibleControl()
+        compose.runOnIdle { assertEquals(1, analysis); assertEquals(1, upscale); assertEquals(1, captions); assertEquals(1, background) }
+        compose.onNodeWithTag("ai_tool_info_SMART_TRIM").activateVisibleControl()
+        compose.onNodeWithText(tool.unavailableReason).assertExists()
+    }
+
+    @Test fun missingCallbackAndUnsupportedToolStayInformational() {
+        var actions = 0
+        val unsupported = AiToolCard("FACE_AWARE_REFRAME", "Auto reframe", "Face backend detected", "Smart editing",
+            AI_PROTECTED_STATUS_LABEL, "Full-clip application is not release-ready.")
+        compose.setContent { MaterialTheme { AiToolsPanel(listOf(unsupported), "", onClose = {},
+            onOpenLocalAnalysis = { actions++ }, reportTarget = null, reportState = AiContentReportUiState(),
+            onSubmitReport = {}, onClearReportFeedback = {}) } }
+        compose.onNodeWithTag("protected_ai_card_FACE_AWARE_REFRAME").activateVisibleControl()
+        compose.onNodeWithText("Full-clip application is not release-ready.").assertExists()
+        compose.runOnIdle { assertEquals(0, actions) }
+    }
+
     private fun SemanticsNodeInteraction.activateVisibleControl() {
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
+        try {
+            assertIsDisplayed()
+        } catch (_: AssertionError) {
+            // Sheet cards may be below the fold; visible dialog actions have no scroll ancestor.
+            performScrollTo()
+            compose.waitForIdle()
+        }
         assertIsDisplayed()
         performSemanticsAction(SemanticsActions.OnClick) { action -> action() }
         compose.waitForIdle()

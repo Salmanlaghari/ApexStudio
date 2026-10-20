@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import android.os.SystemClock
 import kotlinx.coroutines.delay
 import com.apexstudio.app.data.animation.AnimationPresetType
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -289,19 +289,19 @@ private fun CustomizedCard(onClick: () -> Unit) {
                 rows.forEachIndexed { i, fy ->
                     val y = h * fy
                     drawLine(
-                        color = Color.White.copy(alpha = 0.45f),
+                        color = ApexPalette.TextPrimary.copy(alpha = 0.45f),
                         start = Offset(w * 0.16f, y),
                         end = Offset(w * 0.84f, y),
                         strokeWidth = 4f
                     )
                     val kx = w * knobX[i]
                     drawLine(
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         start = Offset(kx - w * 0.22f, y),
                         end = Offset(kx, y),
                         strokeWidth = 4f
                     )
-                    drawCircle(color = Color.White, radius = 9f, center = Offset(kx, y))
+                    drawCircle(color = ApexPalette.TextPrimary, radius = 9f, center = Offset(kx, y))
                     drawCircle(color = Color(0xFF0E7490), radius = 4.5f, center = Offset(kx, y))
                 }
             }

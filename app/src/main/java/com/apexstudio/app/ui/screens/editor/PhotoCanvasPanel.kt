@@ -15,12 +15,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.PhotoCanvasSettings
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 @Composable
 internal fun PhotoCanvasPanel(settings: PhotoCanvasSettings, onChange: (PhotoCanvasSettings) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("photo-canvas-panel")) {
-        Text("Canvas size", color = Color.White)
+        Text("Canvas size", color = ApexPalette.TextPrimary)
         Text("Fit keeps the entire photo. Fill crops the edges. Your original image is unchanged.",
             color = ApexPalette.TextSecondary, fontSize = 12.sp)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -38,7 +38,7 @@ internal fun PhotoCanvasPanel(settings: PhotoCanvasSettings, onChange: (PhotoCan
                 FilterChip(selected = !settings.fill, onClick = { onChange(settings.copy(fill = false)) }, label = { Text("Fit") })
                 FilterChip(selected = settings.fill, onClick = { onChange(settings.copy(fill = true)) }, label = { Text("Fill") })
             }
-            Text("Background", color = Color.White, fontSize = 12.sp)
+            Text("Background", color = ApexPalette.TextPrimary, fontSize = 12.sp)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PhotoCanvasSettings.BACKGROUNDS.forEach { (label, argb) ->
                     FilterChip(

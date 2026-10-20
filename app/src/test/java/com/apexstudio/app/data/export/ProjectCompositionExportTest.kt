@@ -4,6 +4,9 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.VideoDrawingPoint
+import com.apexstudio.app.domain.model.VideoDrawingStroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -82,6 +85,22 @@ class ProjectCompositionExportTest {
             overlayAudioSources = listOf(ExportEngine.AudioExportSource(uri = "file:///voice.m4a", trimEndMs = 500L))
         ))!!.contains("timeline audio overlays"))
         assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(fps = 29))!!.contains("fps"))
+    }
+
+    @Test
+    fun `whole project export rejects artwork instead of silently omitting it`() {
+        val base = listOf(clip())
+        assertNull(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig(
+            videoDrawings = listOf(VideoDrawingLayer(id = "empty"))
+        )))
+        val drawings = listOf(VideoDrawingLayer(
+            id = "paint",
+            clipId = "v1",
+            strokes = listOf(VideoDrawingStroke(points = listOf(VideoDrawingPoint(0.2f, 0.3f))))
+        ))
+        assertTrue(projectCompositionUnsupportedReason(
+            base, ExportEngine.ExportConfig(videoDrawings = drawings)
+        )!!.contains("does not support project or clip drawings"))
     }
 
     @Test

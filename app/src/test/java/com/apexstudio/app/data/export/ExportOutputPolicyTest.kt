@@ -48,11 +48,36 @@ class ExportOutputPolicyTest {
         assertEquals(1f, matrix[5], 0f)
     }
 
+    @Test fun `drawing canvas follows the post crop viewport aspect`() {
+        assertEquals(
+            1280 to 720,
+            selectedDrawingCanvasSize(ExportEngine.ExportConfig(resolution = "720p"), 4f / 5f)
+        )
+        assertEquals(
+            1024 to 1280,
+            selectedDrawingCanvasSize(
+                ExportEngine.ExportConfig(resolution = "720p", preserveInputAspectRatio = true),
+                4f / 5f
+            )
+        )
+    }
+
     @Test fun `quality scales automatic presets but explicit bitrate remains authoritative`() {
         assertEquals(6_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "720p", quality = "high")))
         assertEquals(3_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "720p", quality = "low")))
         assertEquals(18_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "1440p", quality = "medium")))
         assertEquals(12_000_000, exportTargetBitrate(ExportEngine.ExportConfig(bitrateMbps = 12, quality = "low")))
         assertEquals(100_000_000, exportTargetBitrate(ExportEngine.ExportConfig(bitrateMbps = Int.MAX_VALUE)))
+    }
+
+    @Test fun `fps scales automatic bitrate upward only and never overrides an explicit bitrate`() {
+        assertEquals(6_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "720p", fps = 24)))
+        assertEquals(6_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "720p", fps = 30)))
+        assertEquals(12_000_000, exportTargetBitrate(ExportEngine.ExportConfig(resolution = "720p", fps = 120)))
+        assertEquals(12_000_000, exportTargetBitrate(ExportEngine.ExportConfig(
+            resolution = "720p", fps = 120, bitrateMbps = 12, quality = "low"
+        )))
+        assertEquals(24, effectiveExportFrameRate(0))
+        assertEquals(120, effectiveExportFrameRate(240))
     }
 }

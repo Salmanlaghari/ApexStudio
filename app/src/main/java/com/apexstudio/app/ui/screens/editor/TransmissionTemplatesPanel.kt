@@ -24,7 +24,7 @@ import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.template.TemplateArtCatalog
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.ui.components.templates.TemplateArtwork
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Bottom-sheet transmission template picker. Mirrors the styling of
@@ -64,7 +64,7 @@ fun TransmissionTemplatesPanel(
         ) {
             Text(
                 "Transmission",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 modifier = Modifier.weight(1f)

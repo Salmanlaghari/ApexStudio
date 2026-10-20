@@ -7,6 +7,9 @@ import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.effect.AspectCropTransformation
 
+/** Output settings expose 24–120 fps; clamp stale or programmatic values to that range. */
+internal fun effectiveExportFrameRate(requestedFps: Int): Int = requestedFps.coerceIn(24, 120)
+
 /** Requested output settings, shared by selected-clip and sequential-project exports. */
 internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
     val base = if (config.bitrateMbps > 0) {
@@ -25,7 +28,11 @@ internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
         "medium" -> 0.75f
         else -> 1f
     }
-    return (base * qualityFactor).toInt().coerceAtLeast(1_000_000)
+    // The preset values are calibrated around 60 fps. Keep more bits per second
+    // for high-rate exports so bits per encoded frame do not collapse at 90/120 fps.
+    // Lowering FPS must not silently downgrade the chosen quality preset.
+    val frameRateFactor = (effectiveExportFrameRate(config.fps) / 60f).coerceIn(1f, 2f)
+    return (base * qualityFactor * frameRateFactor).toInt().coerceIn(1_000_000, 100_000_000)
 }
 
 /**
@@ -41,8 +48,28 @@ internal fun selectedVideoOutputEffects(config: ExportEngine.ExportConfig): List
         if (config.preserveInputAspectRatio || config.faceCropConfig != null)
             PreservingOutputSizeTransformation(maxOf(width, height))
         else ProjectOutputSizeTransformation(width, height),
-        FrameDropEffect.createDefaultFrameDropEffect(config.fps.toFloat())
+        FrameDropEffect.createDefaultFrameDropEffect(effectiveExportFrameRate(config.fps).toFloat())
     )
+}
+
+/** Drawing pixels share the post-crop viewport, including preserve-input and face-crop exports. */
+internal fun selectedDrawingCanvasSize(
+    config: ExportEngine.ExportConfig,
+    sourceAspectRatio: Float?
+): Pair<Int, Int> {
+    val (targetWidth, targetHeight) = AspectCropTransformation.targetSizeFor(
+        config.resolution, config.aspectRatio
+    )
+    val targetAspect = targetWidth.toFloat() / targetHeight
+    val aspect = (config.faceCropConfig?.track?.outputAspectRatio
+        ?: if (config.preserveInputAspectRatio) sourceAspectRatio else targetAspect)
+        ?.takeIf { it.isFinite() && it > 0f } ?: targetAspect
+    if (!config.preserveInputAspectRatio && config.faceCropConfig == null) {
+        return targetWidth to targetHeight
+    }
+    val longEdge = maxOf(targetWidth, targetHeight)
+    val shortEdge = ((longEdge / maxOf(aspect, 1f / aspect) / 2f).toInt() * 2).coerceAtLeast(2)
+    return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
 }
 
 /** Resize an already-framed canvas/reframe without removing its boundaries/background. */

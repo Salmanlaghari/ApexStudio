@@ -26,6 +26,9 @@ internal fun projectCompositionUnsupportedReason(
     config: ExportEngine.ExportConfig
 ): String? {
     if (clips.isEmpty()) return "Project export needs at least one main-track video clip."
+    if (config.videoDrawings.any { it.strokes.isNotEmpty() }) {
+        return "Project export does not support project or clip drawings yet; export a selected clip to include artwork."
+    }
 
     clips.forEach { clip ->
         if (clip.type != ClipType.VIDEO || clip.trackIndex != 0) {

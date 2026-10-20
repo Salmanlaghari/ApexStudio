@@ -38,7 +38,7 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.DenoiseStrength
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * CapCut-style contextual bottom toolbar.
@@ -119,6 +119,7 @@ fun ContextualBottomToolbar(
     selectionKind: ToolbarSelectionKind,
     // Global tools
     onText: () -> Unit,
+    onDraw: () -> Unit = {},
     onEffects: () -> Unit,
     onStickers: () -> Unit,
     // Global tools: AR Face opens the native AR face-filter card carousel
@@ -223,6 +224,7 @@ fun ContextualBottomToolbar(
             // Mockup bottom tabs, exact order/labels/icons: Text (active cyan),
             // Stickers, Effects, Filters, AR Face, Adjust.
             CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
+            CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.NeonPink, onClick = onDraw),
             CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
@@ -769,6 +771,7 @@ fun EditorBottomToolbarSection(
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel,
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
     onAi: () -> Unit = {},
+    onDraw: () -> Unit = {},
     onDeviceAudio: () -> Unit = {
         vm.setPendingAddAsOverlay(false)
         vm.setPendingAddAsAudio(true)
@@ -831,6 +834,7 @@ fun EditorBottomToolbarSection(
         },
         isTrackMuted = selectedAudioTrack?.isMuted == true,
         onText = { vm.openTextPanel() },
+        onDraw = onDraw,
         onEffects = { vm.openFxPanel() },
         onStickers = { vm.openStickerPanel() },
         onArFace = { vm.openArFilterPanel() },

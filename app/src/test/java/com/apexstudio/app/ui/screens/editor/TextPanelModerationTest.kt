@@ -21,6 +21,18 @@ import org.robolectric.annotation.Config
 class TextPanelModerationTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun captionEntryStartsOnActualControlsWithoutRunningRecognition() {
+        var starts = 0
+        compose.setContent {
+            TextPanel(overlays = emptyList(), selectedId = null, onAdd = {}, onSelect = {},
+                onTextChange = {}, onColorChange = {}, onBgChange = {}, onSizeChange = {},
+                onDelete = {}, onClose = {}, initialTab = TextPanelTab.CAPTIONS,
+                onAutoCaptions = { starts++ })
+        }
+        compose.onNodeWithText("Generate Auto Captions").assertIsEnabled()
+        compose.runOnIdle { assertEquals(0, starts) }
+    }
+
     @Test
     fun existingVideoCaptionActionIsEnabledWithoutClassifierApprovalAndClearingRemainsAvailable() {
         var clearCalls = 0

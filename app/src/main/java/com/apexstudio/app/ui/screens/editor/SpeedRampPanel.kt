@@ -60,7 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.SpeedPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Bottom-sheet style panel for variable playback speed (slow-mo /
@@ -528,7 +528,7 @@ private fun SpeedCurveEditor(
                     val y = math.speedToGraphY(sp) * h
                     drawLine(
                         color = if (sp == 1f) Color.White.copy(alpha = 0.35f)
-                        else Color.White.copy(alpha = 0.12f),
+                        else ApexPalette.TextPrimary.copy(alpha = 0.12f),
                         start = Offset(0f, y),
                         end = Offset(w, y),
                         strokeWidth = 1f

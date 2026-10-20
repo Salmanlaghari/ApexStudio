@@ -31,7 +31,7 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.applyVideoCropDraft
 import com.apexstudio.app.presentation.viewmodel.applyVideoCropPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -49,7 +49,7 @@ fun CropToolsOverlay(state: EditorState, vm: EditorViewModel, onClose: () -> Uni
         if (selectedClip == null) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Crop, contentDescription = null, tint = ApexPalette.NeonCyan)
-                Text("Select a video or photo clip to crop", color = Color.White, modifier = Modifier.padding(top = 8.dp))
+                Text("Select a video or photo clip to crop", color = ApexPalette.TextPrimary, modifier = Modifier.padding(top = 8.dp))
                 Text("Audio selections are never substituted with another clip.", color = ApexPalette.TextTertiary, fontSize = 11.sp)
                 Text("Close", color = ApexPalette.NeonCyan, modifier = Modifier.padding(top = 14.dp).clickable(onClick = onClose))
             }
@@ -82,7 +82,7 @@ private fun CropToolsForClip(state: EditorState, vm: EditorViewModel, clip: Medi
                     .size(48.dp).clip(RoundedCornerShape(8.dp)).background(ApexPalette.BgElevated))
             } else Icon(Icons.Default.BrokenImage, contentDescription = "Video source", tint = ApexPalette.NeonCyan)
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                Text(clip.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(clip.name, color = ApexPalette.TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(when {
                     loading -> "Reading source dimensions…"
                     size != null -> "Source ${size.width} × ${size.height}"

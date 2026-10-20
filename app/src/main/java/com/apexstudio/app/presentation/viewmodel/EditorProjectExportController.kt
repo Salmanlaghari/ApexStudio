@@ -6,6 +6,7 @@ import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ExportResolution
 import com.apexstudio.app.domain.model.ExportSettings
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.state.AudioStudioState
@@ -23,13 +24,14 @@ internal fun buildProjectExportConfig(
     settings: ExportSettings,
     filterPreset: FilterPreset? = null
 ): ExportEngine.ExportConfig = ExportEngine.ExportConfig(
-    resolution = settings.resolution,
+    resolution = ExportResolution.canonical(settings.resolution),
     fps = settings.frameRate,
     quality = settings.quality.label.lowercase(),
     aspectRatio = settings.aspectRatio,
     bitrateMbps = settings.bitrateMbps,
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
+    videoDrawings = state.project?.videoDrawings.orEmpty(),
     adjustments = state.adjustments,
     fxPreset = FxPreset.byId(state.activeFxId),
     fxIntensity = state.fxIntensity,

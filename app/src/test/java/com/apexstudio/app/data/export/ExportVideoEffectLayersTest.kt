@@ -4,6 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ExportVideoEffectLayersTest {
+    @Test fun frameArtworkIsAfterMainGeometryButUnderPipLikePreview() {
+        assertEquals(listOf("crop", "output-size", "drawing", "pip", "caption"),
+            composeVideoEffectLayers(listOf("crop", "output-size"), listOf("pip"),
+                listOf("caption"), mainArtworkEffects = listOf("drawing")))
+    }
+
     @Test
     fun mainVideoTransformsRunBeforePipAndForegroundRunsAbovePip() {
         val effects = composeVideoEffectLayers(

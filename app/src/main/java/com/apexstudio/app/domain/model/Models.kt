@@ -798,6 +798,8 @@ data class Project(
     val lastTransitionDurationMs: Long = 500L,
     val transitions: List<ClipTransition> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
+    /** Freehand artwork over video; default-empty for legacy project JSON. */
+    val videoDrawings: List<VideoDrawingLayer> = emptyList(),
     val coverFrameMs: Long? = null,
     val coverCustomUri: String? = null,
     /**
@@ -1220,8 +1222,27 @@ data class LutPreset(
     val thumbnail: String
 )
 
+/** Canonical resolution values accepted by the editor and export pipeline. */
+object ExportResolution {
+    val supported: List<String> = listOf("720P", "1080P", "1440P", "4K")
+
+    /**
+     * Convert current and historical UI labels to a supported output preset.
+     * Older builds exposed 8K although device encoder support was not checked;
+     * map it down to the supported 4K ceiling rather than silently requesting 8K.
+     */
+    fun canonical(value: String?): String = when {
+        value.isNullOrBlank() -> "1080P"
+        value.contains("8k", ignoreCase = true) || value.contains("4320") -> "4K"
+        value.contains("4k", ignoreCase = true) || value.contains("2160") -> "4K"
+        value.contains("1440") -> "1440P"
+        value.contains("720") -> "720P"
+        else -> "1080P"
+    }
+}
+
 data class ExportSettings(
-    val resolution: String = "8K Ultra HD",
+    val resolution: String = "1080P",
     val frameRate: Int = 60,
     val quality: ExportQuality = ExportQuality.HIGH,
     val estimatedSizeGb: Float = 1.8f,

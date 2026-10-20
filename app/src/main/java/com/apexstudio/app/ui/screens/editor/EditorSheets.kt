@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
@@ -19,7 +20,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.domain.model.VideoDrawingStroke
+import com.apexstudio.app.domain.model.VideoDrawingTool
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.isActive
 
 @Composable
@@ -48,7 +51,7 @@ fun SpeedControlSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Default.Speed, contentDescription = null, tint = ApexPalette.NeonCyan)
-                    Text("Speed Control", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Speed Control", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
                 androidx.compose.material3.IconButton(onClick = onClose) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
@@ -73,7 +76,7 @@ fun SpeedControlSheet(
                     ) {
                         Text(
                             text = "${speed}x",
-                            color = if (isSelected) Color.Black else Color.White,
+                            color = if (isSelected) Color.Black else ApexPalette.TextPrimary,
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
@@ -209,5 +212,93 @@ private fun AddMediaRow(
             tint = ApexPalette.TextSecondary,
             modifier = Modifier.size(18.dp)
         )
+    }
+}
+
+/** Controls for painting directly over the preview. All edits are supplied by the caller. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun VideoDrawingControlsSheet(
+    tool: VideoDrawingTool,
+    colorArgb: Long,
+    brushWidth: Float,
+    strokeCount: Int,
+    onToolChange: (VideoDrawingTool) -> Unit,
+    onColorChange: (Long) -> Unit,
+    onBrushWidthChange: (Float) -> Unit,
+    onUndo: () -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onClose,
+        containerColor = ApexPalette.BgElevated,
+        scrimColor = Color.Black.copy(alpha = 0.35f)
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Draw on video", color = ApexPalette.TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Marks are saved with the project", color = ApexPalette.TextSecondary, fontSize = 11.sp)
+                }
+                androidx.compose.material3.IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close drawing tools", tint = ApexPalette.TextPrimary)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DrawingModeChip(Modifier.weight(1f), "Brush", tool == VideoDrawingTool.BRUSH, ApexPalette.NeonCyan) { onToolChange(VideoDrawingTool.BRUSH) }
+                DrawingModeChip(Modifier.weight(1f), "Eraser", tool == VideoDrawingTool.ERASER, ApexPalette.NeonPink) { onToolChange(VideoDrawingTool.ERASER) }
+            }
+            Text("COLOR", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                listOf(0xFFFF3B82L, 0xFF19D3F3L, 0xFFFFD54FL, 0xFF73E6A6L, 0xFFFFFFFFL, 0xFF8C6CFFL).forEach { argb ->
+                    val color = Color(argb.toInt())
+                    Box(
+                        Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(color)
+                            .border(if (colorArgb == argb) 3.dp else 1.dp, if (colorArgb == argb) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.35f), RoundedCornerShape(50))
+                            .clickable(enabled = tool == VideoDrawingTool.BRUSH) { onColorChange(argb) }
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Stroke width", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("${(brushWidth * 1000).toInt()}‰", color = ApexPalette.NeonCyan, fontSize = 12.sp)
+            }
+            androidx.compose.material3.Slider(
+                value = brushWidth.coerceIn(VideoDrawingStroke.MIN_WIDTH, 0.06f),
+                onValueChange = onBrushWidthChange,
+                valueRange = VideoDrawingStroke.MIN_WIDTH..0.06f,
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = ApexPalette.NeonCyan, activeTrackColor = ApexPalette.NeonCyan)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DrawingModeChip(Modifier.weight(1f), "Undo  •  $strokeCount", strokeCount > 0, ApexPalette.NeonCyan, enabled = strokeCount > 0, onClick = onUndo)
+                DrawingModeChip(Modifier.weight(1f), "Clear all", false, ApexPalette.Danger, enabled = strokeCount > 0, onClick = onClear)
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun DrawingModeChip(
+    modifier: Modifier,
+    label: String,
+    selected: Boolean,
+    tint: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier.clip(RoundedCornerShape(9.dp))
+            .background(if (selected) tint.copy(alpha = 0.2f) else ApexPalette.BgSurface)
+            .border(1.dp, if (selected) tint else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = if (enabled) tint else ApexPalette.TextTertiary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }

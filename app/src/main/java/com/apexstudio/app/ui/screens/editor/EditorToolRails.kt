@@ -34,7 +34,7 @@ fun LeftToolRail(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(Color.White.copy(alpha = 0.94f))
             .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -61,7 +61,7 @@ fun RightToolRail(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(Color.White.copy(alpha = 0.94f))
             .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -89,15 +89,14 @@ private fun RailItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = Color.White,
+            tint = Color(0xFF111827),
             modifier = Modifier.size(18.dp)
         )
         Text(
             text = label,
-            color = Color(0xFFD1D5DB),
+            color = Color(0xFF374151),
             fontSize = 9.sp,
             fontWeight = FontWeight.Medium
         )
     }
 }
-

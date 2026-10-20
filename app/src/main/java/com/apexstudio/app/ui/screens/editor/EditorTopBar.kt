@@ -29,6 +29,7 @@ import com.apexstudio.app.ui.theme.ApexPalette
 // Export button so the video preview gets maximum full view area.
 @Composable
 fun TopAppBarSection(
+    title: String = "ApexStudio",
     canUndo: Boolean = false,
     canRedo: Boolean = false,
     resolution: String = "1080P",
@@ -51,38 +52,44 @@ fun TopAppBarSection(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
-            .padding(horizontal = 10.dp),
+            .height(48.dp)
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: back + compact single-line title
+        // Back navigation and the current project name stay outside the video.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f)
         ) {
             Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Menu",
-                tint = Color.White,
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color(0xFF111827),
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(22.dp)
                     .clickable(onClick = onBack)
             )
 
-            Column(modifier = Modifier.clickable { showBuildIdentity = true }) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { showBuildIdentity = true }
+            ) {
                 Text(
-                    text = "ApexStudio",
-                    color = Color.White,
+                    text = title.ifBlank { "Untitled project" },
+                    color = Color(0xFF111827),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     softWrap = false
                 )
                 Text(
                     text = "Build ${BuildIdentity.shortCommit}",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 8.sp,
+                    color = Color(0xFF6B7280),
+                    fontSize = 9.sp,
                     maxLines = 1
                 )
             }
@@ -97,14 +104,14 @@ fun TopAppBarSection(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(7.dp))
-                    .background(Color(0xFF1B1B26))
-                    .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
+                    .background(Color(0xFFF3F4F6))
+                    .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(7.dp))
                     .clickable(onClick = onToggleCoverMode)
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = if (isCoverMode) "COVER" else "FIT",
-                    color = Color(0xFFD1D5DB),
+                    color = Color(0xFF111827),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -114,15 +121,15 @@ fun TopAppBarSection(
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(Color(0xFF1B1B26))
-                    .border(1.dp, Color(0xFF2E2E40), CircleShape)
+                    .background(Color(0xFFF3F4F6))
+                    .border(1.dp, Color(0xFFD1D5DB), CircleShape)
                     .clickable(onClick = onFullscreenToggle)
                     .padding(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Fullscreen,
                     contentDescription = "Fullscreen",
-                    tint = Color.White,
+                    tint = Color(0xFF111827),
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -132,8 +139,8 @@ fun TopAppBarSection(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(7.dp))
-                        .background(Color(0xFF1B1B26))
-                        .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
+                        .background(Color(0xFFF3F4F6))
+                        .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(7.dp))
                         .clickable { showResolutionDropdown = true }
                         .padding(horizontal = 7.dp, vertical = 4.dp)
                 ) {
@@ -143,14 +150,14 @@ fun TopAppBarSection(
                     ) {
                         Text(
                             text = resolution,
-                            color = Color(0xFFD1D5DB),
+                            color = Color(0xFF111827),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 10.sp
                         )
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Resolution",
-                            tint = Color(0xFF9CA3AF),
+                            tint = Color(0xFF4B5563),
                             modifier = Modifier.size(12.dp)
                         )
                     }
@@ -159,14 +166,14 @@ fun TopAppBarSection(
                 androidx.compose.material3.DropdownMenu(
                     expanded = showResolutionDropdown,
                     onDismissRequest = { showResolutionDropdown = false },
-                    modifier = Modifier.background(ApexPalette.BgElevated)
+                    modifier = Modifier.background(Color.White)
                 ) {
                     listOf("720P", "1080P", "1440P", "4K").forEach { res ->
                         androidx.compose.material3.DropdownMenuItem(
                             text = {
                                 Text(
                                     text = res,
-                                    color = if (res == resolution) Color(0xFF8B5CF6) else Color.White,
+                                    color = if (res == resolution) Color(0xFF2563EB) else Color(0xFF111827),
                                     fontWeight = FontWeight.SemiBold
                                 )
                             },
@@ -184,10 +191,9 @@ fun TopAppBarSection(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
-                        )
+                        Color(0xFFE5E7EB)
                     )
+                    .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(8.dp))
                     .clickable(onClick = onExport)
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
@@ -198,12 +204,12 @@ fun TopAppBarSection(
                     Icon(
                         imageVector = Icons.Default.Upload,
                         contentDescription = "Export",
-                        tint = Color.White,
+                        tint = Color(0xFF111827),
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
                         text = "Export",
-                        color = Color.White,
+                        color = Color(0xFF111827),
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         maxLines = 1,

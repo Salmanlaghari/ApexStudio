@@ -341,7 +341,9 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF08080E))
+            // Keep empty timeline space visibly part of the light editor,
+            // rather than presenting it as an unused black lane.
+            .background(Color(0xFFF7F8FA))
             .padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Top
     ) {
@@ -432,8 +434,8 @@ fun BottomTimelineActionRow(
             .fillMaxWidth()
             .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF101722))
-            .border(1.dp, Color(0xFF273447), RoundedCornerShape(12.dp))
+            .background(Color.White)
+            .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
     ) {
         val viewportWidth = maxWidth
         Row(
@@ -457,14 +459,14 @@ fun BottomTimelineActionRow(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (!canEditKeyframe) Color(0xFF151F2D) else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF192434))
+                        .background(if (!canEditKeyframe) Color(0xFFF3F4F6) else if (hasKeyframeAtPlayhead) Color(0xFFDBEAFE) else Color(0xFFF3F4F6))
                         .clickable(enabled = canEditKeyframe, onClick = onToggleKeyframe, role = Role.Button)
                         .semantics { contentDescription = if (!canEditKeyframe) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe at playhead" else "Add keyframe at playhead" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (hasKeyframeAtPlayhead) "−KF" else "+KF",
-                        color = if (!canEditKeyframe) Color(0xFF465365) else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else Color(0xFFB7C4D5),
+                        color = if (!canEditKeyframe) Color(0xFF9CA3AF) else if (hasKeyframeAtPlayhead) Color(0xFF1D4ED8) else Color(0xFF111827),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -485,7 +487,7 @@ fun BottomTimelineActionRow(
                 )
                 Text(
                     text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
-                    color = Color(0xFF8C9AAF),
+                    color = Color(0xFF111827),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
@@ -520,7 +522,7 @@ private fun TimelinePrecisionButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (enabled) Color(0xFF8C9AAF) else Color(0xFF465365),
+            tint = if (enabled) Color(0xFF111827) else Color(0xFF9CA3AF),
             modifier = Modifier.size(19.dp)
         )
     }

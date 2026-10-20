@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.effect.VideoCropPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Reusable video crop chooser. Each option maps to a deterministic,
@@ -56,7 +56,7 @@ fun CropPresetPanel(
             Icon(Icons.Default.Crop, contentDescription = null, tint = ApexPalette.NeonCyan)
             Text(
                 "Crop & frame",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f).padding(start = 8.dp)
@@ -87,7 +87,7 @@ fun CropPresetPanel(
                 ) {
                     Text(
                         preset.label,
-                        color = if (selected) ApexPalette.NeonCyan else Color.White,
+                        color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )

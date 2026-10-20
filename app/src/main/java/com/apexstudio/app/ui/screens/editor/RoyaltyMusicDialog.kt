@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.audio.FreeRoyaltyMusic
 import com.apexstudio.app.data.audio.RoyaltyTrack
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 @Composable
@@ -87,7 +87,7 @@ fun RoyaltyMusicDialog(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonPurple, modifier = Modifier.size(18.dp))
-                Text("Upload Local Music from Device", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Upload Local Music from Device", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 

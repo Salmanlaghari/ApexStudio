@@ -97,6 +97,7 @@ data class EditorState(
     // sheet is up; selectedTextOverlayId points at the caption being
     // edited / dragged on the preview.
     val textPanelOpen: Boolean = false,
+    val textPanelStartsOnCaptions: Boolean = false,
     val selectedTextOverlayId: String? = null,
     // Set to true while the Trim & Set Points bottom sheet is open.
     val trimPanelOpen: Boolean = false,

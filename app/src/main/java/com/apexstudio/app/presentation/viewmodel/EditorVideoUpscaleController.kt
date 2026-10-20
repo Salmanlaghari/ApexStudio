@@ -59,6 +59,10 @@ fun EditorViewModel.applyExistingVideoUpscale(
             _videoUpscaleUi.value = VideoUpscaleUiState(message = "The selected video has invalid source or trim metadata.")
             return
         }
+        VideoUpscaleEngine.sourceDurationBlockReason(expectedClip.durationMs)?.let { reason ->
+            _videoUpscaleUi.value = VideoUpscaleUiState(message = reason)
+            return
+        }
         videoUpscaleJob?.cancel()
         val outputDir = context.getExternalFilesDir("video_upscale") ?: File(context.filesDir, "video_upscale")
         val output = File(outputDir, "espcn_${UUID.randomUUID()}.mp4")

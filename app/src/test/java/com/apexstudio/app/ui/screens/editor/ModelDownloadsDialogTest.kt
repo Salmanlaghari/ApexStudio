@@ -22,6 +22,11 @@ class ModelDownloadsDialogTest {
         compose.onNodeWithText("Optional AI models").assertExists()
         assertTrue(compose.onAllNodesWithText("Download").fetchSemanticsNodes().isNotEmpty())
         compose.onAllNodesWithText("Cancel").assertCountEquals(0)
+        compose.onNodeWithText("Done").assertIsDisplayed()
+        compose.onNodeWithTag("model-download-list")
+            .performScrollToNode(hasText("MODNet background removal"))
+        compose.onNodeWithText("MODNet background removal").assertIsDisplayed()
+        compose.onNodeWithText("Done").assertIsDisplayed()
         compose.onNodeWithText("Done").performClick()
         compose.runOnIdle { assertEquals(1, dismissed) }
     }

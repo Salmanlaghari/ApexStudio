@@ -50,7 +50,7 @@ import com.apexstudio.app.data.text.TextAnimEngine
 import com.apexstudio.app.data.text.TextPreset
 import com.apexstudio.app.data.text.TextPresetEngine
 import com.apexstudio.app.domain.model.TextOverlay
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.presentation.viewmodel.CaptionPhase
 import com.apexstudio.app.presentation.viewmodel.CaptionUiState
 
@@ -141,10 +141,11 @@ fun TextPanel(
     canApplyTemplate: Boolean = true,
     // Opens the mask panel (shape/feather/invert) for the selected
     // text overlay; mask keyframes live on the timeline gold strip.
-    onOpenTextMask: () -> Unit = {}
+    onOpenTextMask: () -> Unit = {},
+    initialTab: TextPanelTab = TextPanelTab.EDIT
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
-    var activeTab by remember { mutableStateOf(TextPanelTab.EDIT) }
+    var activeTab by remember(initialTab) { mutableStateOf(initialTab) }
     var showCustomColor by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf(TextPresetEngine.categories.first()) }
     val scrollState = rememberScrollState()
@@ -168,7 +169,7 @@ fun TextPanel(
         ) {
             Text(
                 "Text & Titles",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 modifier = Modifier.weight(1f)
@@ -289,16 +290,6 @@ fun TextPanel(
 
         Spacer(Modifier.height(8.dp))
 
-        if (selected == null) {
-            Text(
-                "Tap + Add to place a caption on the video. Drag or tap on video to edit.",
-                color = ApexPalette.TextTertiary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(vertical = 12.dp)
-            )
-            return@Column
-        }
-
         // Section Tabs: Edit & Font, Style & Color, Animation, Presets
         Row(
             modifier = Modifier
@@ -336,6 +327,26 @@ fun TextPanel(
 
         Spacer(Modifier.height(10.dp))
 
+        // Recognition creates overlays; it must not require one to exist first.
+        if (activeTab == TextPanelTab.CAPTIONS) {
+            AutoCaptionsTab(
+                captionUiState = captionUiState,
+                onAutoCaptions = onAutoCaptions,
+                onClearCaptions = onClearCaptions,
+                onLanguageChange = onCaptionLanguageChange,
+                onTimingChange = onCaptionTimingChange,
+                onCancelCaptions = onCancelCaptions,
+                hasAutoCaptions = hasAutoCaptions
+            )
+            return@Column
+        }
+        if (selected == null) {
+            Text("Tap + Add to place a caption on the video. Drag or tap on video to edit.",
+                color = ApexPalette.TextTertiary, fontSize = 12.sp,
+                modifier = Modifier.padding(vertical = 12.dp))
+            return@Column
+        }
+
         // Mask row: shape/feather/invert for the selected text, edited
         // in the Mask panel. A mask with keyframes shows the gold
         // strip on the timeline text lane (drag diamonds to retime).
@@ -354,7 +365,7 @@ fun TextPanel(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Mask",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -384,7 +395,7 @@ fun TextPanel(
                     maxLines = 2,
                     placeholder = { Text("Enter text...", color = ApexPalette.TextTertiary) },
                     textStyle = androidx.compose.ui.text.TextStyle(
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 14.sp
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -426,7 +437,7 @@ fun TextPanel(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("-", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("-", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Slider
@@ -456,7 +467,7 @@ fun TextPanel(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("+", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(Modifier.width(8.dp))
@@ -534,7 +545,7 @@ fun TextPanel(
                                         ) {
                                             Text(
                                                 fontLabel,
-                                                color = if (isSel) ApexPalette.NeonCyan else Color.White,
+                                                color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                                                 fontSize = 13.sp,
                                                 fontFamily = chipFont,
                                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
@@ -574,7 +585,7 @@ fun TextPanel(
                                 .clickable { onStyleChange(!selected.isBold, selected.isItalic) }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("B", color = if (selected.isBold) ApexPalette.NeonCyan else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("B", color = if (selected.isBold) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
 
                         // Italic toggle
@@ -586,7 +597,7 @@ fun TextPanel(
                                 .clickable { onStyleChange(selected.isBold, !selected.isItalic) }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("I", color = if (selected.isItalic) ApexPalette.NeonCyan else Color.White, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 11.sp)
+                            Text("I", color = if (selected.isItalic) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 11.sp)
                         }
                     }
                 }
@@ -621,7 +632,7 @@ fun TextPanel(
                                 if (selected.colorArgb == c) {
                                     Icon(
                                         Icons.Default.Check, null,
-                                        tint = if (c == 0xFFFFFFFFL || c == 0xFFFFC400L || c == 0xFF00E5FFL) Color.Black else Color.White,
+                                        tint = if (c == 0xFFFFFFFFL || c == 0xFFFFC400L || c == 0xFF00E5FFL) Color.Black else ApexPalette.TextPrimary,
                                         modifier = Modifier.size(13.dp)
                                     )
                                 }
@@ -748,7 +759,7 @@ fun TextPanel(
                                     .clickable { onShadowChange(argb) }
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                             ) {
-                                Text(label, color = if (sel) ApexPalette.NeonCyan else Color.White, fontSize = 10.sp)
+                                Text(label, color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 10.sp)
                             }
                         }
                     }
@@ -778,7 +789,7 @@ fun TextPanel(
                             ) {
                                 Text(
                                     label,
-                                    color = if (sel) ApexPalette.NeonCyan else Color.White,
+                                    color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -843,7 +854,7 @@ fun TextPanel(
                                     .clickable { onGradientChange(null) }
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
-                                Text("None", color = if (sel) ApexPalette.NeonCyan else Color.White, fontSize = 10.sp)
+                                Text("None", color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 10.sp)
                             }
                         }
                         items(TEXT_GRADIENTS, key = { it.first }) { (label, start, end) ->
@@ -862,7 +873,7 @@ fun TextPanel(
                             ) {
                                 Text(
                                     label,
-                                    color = Color.White,
+                                    color = ApexPalette.TextPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
                                     style = androidx.compose.ui.text.TextStyle(
@@ -977,7 +988,7 @@ fun TextPanel(
                                 )
                                 Text(
                                     text = "${selected.animationType} → ${selected.outroAnimationType}",
-                                    color = Color.White.copy(alpha = 0.7f),
+                                    color = ApexPalette.TextPrimary.copy(alpha = 0.7f),
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -1226,7 +1237,7 @@ private fun AnimationOptionRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     opt.label,
-                    color = if (isSelected) ApexPalette.NeonCyan else Color.White,
+                    color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1293,7 +1304,7 @@ private fun AutoCaptionsTab(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     "Auto Captions (Offline AI)",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1561,7 +1572,7 @@ private fun WhisperPackDownloadCard(
     ) {
         Text(
             "AI Model Needed",
-            color = Color.White,
+            color = ApexPalette.TextPrimary,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )

@@ -38,9 +38,11 @@ import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.VideoDrawingLayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -251,6 +253,10 @@ class ExportEngine(private val context: Context) {
         val transitionGlId: String? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
+        /** Active artwork layers for selected-clip export; callers filter to global + selected clip. */
+        val videoDrawings: List<VideoDrawingLayer> = emptyList(),
+        /** Source clip id used by VideoDrawingRenderer to include matching clip-specific layers. */
+        val videoDrawingClipId: String? = null,
         val stickers: List<com.apexstudio.app.domain.model.StickerOverlay> = emptyList(),
         val rotationAngle: Float = 0f,
         val isFlippedHorizontal: Boolean = false,
@@ -458,7 +464,9 @@ class ExportEngine(private val context: Context) {
                                 ))
                             }
                             speedPair?.second?.let(::add)
-                            add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(config.fps.toFloat()))
+                            add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
+                                effectiveExportFrameRate(config.fps).toFloat()
+                            ))
                         }
                         val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
                         val input = MediaItem.Builder()
@@ -471,13 +479,13 @@ class ExportEngine(private val context: Context) {
                             )
                             .build()
                         EditedMediaItem.Builder(input)
-                            .setFrameRate(config.fps)
+                            .setFrameRate(effectiveExportFrameRate(config.fps))
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
                     val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
                     diagnostics.stage("project_preparation_completed", "durationMs=${plan.durationMs}")
-                    renderProjectComposition(composition, config, partial, run, diagnostics)
+                    val renderResult = renderProjectComposition(composition, config, partial, run, diagnostics)
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
 
@@ -505,13 +513,21 @@ class ExportEngine(private val context: Context) {
                     if (!finishedFile.renameTo(destination)) {
                         throw IllegalStateException("Could not finalize project export file")
                     }
-                    diagnostics.stage("project_export_completed", "outputBytes=${destination.length()}")
+                    val validationWarning = validateEncodedOutput(
+                        destination, config.fps, renderResult.videoFrameCount,
+                        renderResult.durationMs, diagnostics
+                    )
+                    diagnostics.stage(
+                        "project_export_completed",
+                        "outputBytes=${destination.length()} videoFrames=${renderResult.videoFrameCount}"
+                    )
                     withContext(Dispatchers.Main.immediate) {
                         if (isCurrentProjectRun(run)) {
                             _exportState.value = ExportProgressState(
                                 isExporting = false,
                                 progress = 1f,
-                                outputUri = Uri.fromFile(destination).toString()
+                                outputUri = Uri.fromFile(destination).toString(),
+                                warning = validationWarning
                             )
                         }
                     }
@@ -567,8 +583,8 @@ class ExportEngine(private val context: Context) {
         outputFile: File,
         run: ProjectExportRun,
         diagnostics: ExportDiagnosticTrace
-    ) = withContext(Dispatchers.Main.immediate) {
-        suspendCancellableCoroutine<Unit> { continuation ->
+    ): ExportResult = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine<ExportResult> { continuation ->
             val settled = AtomicBoolean(false)
             var active: Transformer? = null
             continuation.invokeOnCancellation {
@@ -593,9 +609,12 @@ class ExportEngine(private val context: Context) {
                 val listener = object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
-                        diagnostics.stage("project_transformer_completed")
+                        diagnostics.stage(
+                            "project_transformer_completed",
+                            "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount}"
+                        )
                         if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
-                            continuation.resumeWith(Result.success(Unit))
+                            continuation.resumeWith(Result.success(exportResult))
                         }
                     }
 
@@ -605,7 +624,11 @@ class ExportEngine(private val context: Context) {
                         exportException: ExportException
                     ) {
                         if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
-                        diagnostics.stage("project_transformer_failed", "errorCode=${exportException.errorCodeName}")
+                        diagnostics.stage(
+                            "project_transformer_failed",
+                            "errorCode=${exportException.errorCodeName} errorType=${exportException.cause?.javaClass?.simpleName} " +
+                                "message=${exportException.message} frames=${exportResult.videoFrameCount} durationMs=${exportResult.durationMs}"
+                        )
                         if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
                             continuation.resumeWith(Result.failure(exportException))
                         }
@@ -659,6 +682,16 @@ class ExportEngine(private val context: Context) {
             try {
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 diagnostics.stage("video_preparation_started")
+                try {
+                    val sourceAudit = inspectSourceVideoFormat(context, inputUri)
+                    diagnostics.stage("source_video_format", "${sourceAudit.diagnosticSummary()} requestedFps=${effectiveExportFrameRate(config.fps)}")
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    // A missing metadata field is not a decoded-frame failure. Transformer
+                    // remains responsible for decoding and reports real codec errors below.
+                    diagnostics.stage("source_video_format_unavailable", "failure=${failure.javaClass.simpleName}")
+                }
                 currentCoroutineContext().ensureActive()
                 require(config.projectVideoEffectId == null ||
                     com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
@@ -911,15 +944,31 @@ class ExportEngine(private val context: Context) {
 
                 // Main-source geometry, grading and animation must not also transform PiP.
                 // Composite PiP after the main chain and captions/stickers above the PiP layer.
+                val drawingEffects = mutableListOf<androidx.media3.common.Effect>()
+                if (config.videoDrawings.any { it.strokes.isNotEmpty() }) {
+                    val (drawingWidth, drawingHeight) = selectedDrawingCanvasSize(
+                        config,
+                        if (config.preserveInputAspectRatio) queryAspectRatio(inputUri) else null
+                    )
+                    val drawingBitmap = com.apexstudio.app.ui.screens.editor.VideoDrawingRenderer.renderBitmap(
+                        drawingWidth, drawingHeight, config.videoDrawings, config.videoDrawingClipId
+                    )
+                    drawingEffects.add(
+                        androidx.media3.effect.OverlayEffect(
+                            listOf(androidx.media3.effect.BitmapOverlay.createStaticBitmapOverlay(drawingBitmap))
+                        )
+                    )
+                }
                 val composedVideoEffects = composeVideoEffectLayers(
                     mainVideoEffects = videoEffects + selectedVideoOutputEffects(config),
                     pipOverlayEffects = pipOverlayEffects,
-                    foregroundEffects = foregroundEffects
+                    foregroundEffects = foregroundEffects,
+                    mainArtworkEffects = drawingEffects
                 )
                 currentCoroutineContext().ensureActive()
                 diagnostics.stage("video_preparation_completed")
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setFrameRate(config.fps)
+                    .setFrameRate(effectiveExportFrameRate(config.fps))
                     .setEffects(Effects(audioProcessors, composedVideoEffects))
                     .build()
 
@@ -1319,6 +1368,29 @@ class ExportEngine(private val context: Context) {
         }
     }
 
+    /** Demuxes the completed output on a worker and returns only evidence-backed warnings. */
+    private fun validateEncodedOutput(
+        outputFile: File,
+        requestedFps: Int,
+        transformerFrameCount: Int?,
+        transformerDurationMs: Long?,
+        diagnostics: ExportDiagnosticTrace?
+    ): String? = try {
+        val audit = inspectEncodedVideo(
+            context = context,
+            file = outputFile,
+            requestedFps = requestedFps,
+            transformerFrameCount = transformerFrameCount,
+            transformerDurationMs = transformerDurationMs
+        )
+        diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
+        audit.warning
+    } catch (failure: Exception) {
+        diagnostics?.stage("encoded_output_validation_failed", "failure=${failure.javaClass.simpleName}")
+        Log.w(TAG, "Could not validate encoded export output", failure)
+        "Export finished, but its encoded video stream could not be validated."
+    }
+
     internal fun buildHardwareTransformer(
         config: ExportConfig,
         outputFile: File,
@@ -1344,17 +1416,31 @@ class ExportEngine(private val context: Context) {
                 if (nonProjectRun !== run || !finishTransformerRun(active)) return
                 diagnostics?.stage(
                     "video_transformer_completed",
-                    "durationMs=${exportResult.durationMs} outputBytes=${outputFile.length()}"
+                    "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount} outputBytes=${outputFile.length()}"
                 )
+                val outputValidation = CoroutineScope(Dispatchers.IO).async {
+                    validateEncodedOutput(
+                        outputFile, config.fps, exportResult.videoFrameCount,
+                        exportResult.durationMs, diagnostics
+                    )
+                }
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
                     diagnostics?.stage("export_completed")
+                    val outputUri = Uri.fromFile(outputFile).toString()
                     mainHandler.post {
                         if (nonProjectRun !== run) return@post
                         _exportState.value = ExportProgressState(
                             isExporting = false,
                             progress = 1f,
-                            outputUri = Uri.fromFile(outputFile).toString()
+                            outputUri = outputUri
                         )
+                    }
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val validationWarning = outputValidation.await()
+                        mainHandler.post {
+                            if (nonProjectRun !== run || _exportState.value.outputUri != outputUri) return@post
+                            _exportState.value = _exportState.value.copy(warning = validationWarning)
+                        }
                     }
                     return
                 }
@@ -1368,6 +1454,7 @@ class ExportEngine(private val context: Context) {
                 }
                 postMixJob?.cancel()
                 postMixJob = CoroutineScope(Dispatchers.IO).launch {
+                    var videoValidationWarning = outputValidation.await()
                     val mixContext = currentCoroutineContext()
                     val owner = mixContext.job
                     val mixedFile = File(outputFile.parentFile, outputFile.nameWithoutExtension + "_music.mp4")
@@ -1425,7 +1512,8 @@ class ExportEngine(private val context: Context) {
                         if (tracks.isEmpty()) {
                             publishPostMixState(owner, ExportProgressState(
                                     isExporting = false, progress = 1f,
-                                    outputUri = Uri.fromFile(outputFile).toString(), warning = overlayWarning
+                                    outputUri = Uri.fromFile(outputFile).toString(),
+                                    warning = listOfNotNull(videoValidationWarning, overlayWarning).distinct().joinToString(" ").ifBlank { null }
                                 ))
                             return@launch
                         }
@@ -1440,12 +1528,18 @@ class ExportEngine(private val context: Context) {
                             "mixedTracks=${result.mixedTracks} skippedTracks=${result.skippedTracks} outputBytes=${mixedFile.length()}"
                         )
                         Log.i(TAG, "Audio mix done: ${result.mixedTracks} mixed, ${result.skippedTracks} skipped")
+                        val mixedOutputWarning = validateEncodedOutput(
+                            mixedFile, config.fps, exportResult.videoFrameCount,
+                            exportResult.durationMs, diagnostics
+                        )
+                        videoValidationWarning = listOfNotNull(videoValidationWarning, mixedOutputWarning)
+                            .distinct().joinToString(" ").ifBlank { null }
                         if (!outputFile.delete()) Log.w(TAG, "Could not delete intermediate export file")
                         val mixWarning = AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
                         publishPostMixState(owner, ExportProgressState(
                                 isExporting = false, progress = 1f,
                                 outputUri = Uri.fromFile(mixedFile).toString(),
-                                warning = listOfNotNull(overlayWarning, mixWarning).distinct().joinToString(" ").ifBlank { null }
+                                warning = listOfNotNull(videoValidationWarning, overlayWarning, mixWarning).distinct().joinToString(" ").ifBlank { null }
                             ))
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         if (mixedFile.exists()) mixedFile.delete()
@@ -1454,7 +1548,7 @@ class ExportEngine(private val context: Context) {
                         diagnostics?.stage("post_mix_failed", "failure=${e.javaClass.simpleName}")
                         Log.w(TAG, "Audio mix failed; keeping video without postmix audio", e)
                         if (mixedFile.exists() && !mixedFile.delete()) Log.w(TAG, "Could not delete partial mixed file")
-                        val warning = listOfNotNull(overlayWarning, AudioMixExportNotice.MIX_FAILED).distinct().joinToString(" ")
+                        val warning = listOfNotNull(videoValidationWarning, overlayWarning, AudioMixExportNotice.MIX_FAILED).distinct().joinToString(" ")
                         publishPostMixState(owner, ExportProgressState(
                                 isExporting = false, progress = 1f,
                                 outputUri = Uri.fromFile(outputFile).toString(), warning = warning
@@ -1473,7 +1567,11 @@ class ExportEngine(private val context: Context) {
                 exportException: ExportException
             ) {
                 if (nonProjectRun !== run || !finishTransformerRun(active)) return
-                diagnostics?.stage("video_transformer_failed", "errorCode=${exportException.errorCodeName}")
+                diagnostics?.stage(
+                    "video_transformer_failed",
+                    "errorCode=${exportException.errorCodeName} errorType=${exportException.cause?.javaClass?.simpleName} " +
+                        "message=${exportException.message}"
+                )
                 mainHandler.post {
                     if (nonProjectRun !== run) return@post
                     _exportState.value = ExportProgressState(

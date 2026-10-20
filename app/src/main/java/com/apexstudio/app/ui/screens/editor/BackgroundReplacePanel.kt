@@ -49,7 +49,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.BackgroundPhase
 import com.apexstudio.app.presentation.viewmodel.BackgroundUiState
 import com.apexstudio.app.ui.components.HsvColorPicker
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Background replace panel (PR-G): per-clip MediaPipe person
@@ -288,7 +288,7 @@ fun BackgroundReplacePanel(
                                     .background(c)
                                     .border(
                                         2.dp,
-                                        if (colorArgb == argb) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.25f),
+                                        if (colorArgb == argb) ApexPalette.NeonCyan else ApexPalette.TextPrimary.copy(alpha = 0.25f),
                                         CircleShape
                                     )
                                     .clickable { colorArgb = argb },

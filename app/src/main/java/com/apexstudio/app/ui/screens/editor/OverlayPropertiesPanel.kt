@@ -44,7 +44,7 @@ import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.OverlayBlend
 import com.apexstudio.app.domain.model.VideoMask
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.util.Locale
 
 /**
@@ -144,7 +144,7 @@ fun OverlayPropertiesPanel(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = "Overlay Properties",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -159,7 +159,7 @@ fun OverlayPropertiesPanel(
         }
         Text(
             text = clip.name,
-            color = Color.White.copy(alpha = 0.6f),
+            color = ApexPalette.TextPrimary.copy(alpha = 0.6f),
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 2.dp)
         )
@@ -242,7 +242,7 @@ fun OverlayPropertiesPanel(
         if (activeShape == OverlayMaskShape.ROUNDED) {
             Text(
                 text = "Rounded = rectangle with a soft edge (no corner-radius field yet).",
-                color = Color.White.copy(alpha = 0.5f),
+                color = ApexPalette.TextPrimary.copy(alpha = 0.5f),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 4.dp)
             )
@@ -271,7 +271,7 @@ fun OverlayPropertiesPanel(
                         .border(
                             width = if (selected) 2.dp else 1.dp,
                             color = if (selected) ApexPalette.NeonCyan
-                            else Color.White.copy(alpha = 0.3f),
+                            else ApexPalette.TextPrimary.copy(alpha = 0.3f),
                             shape = CircleShape
                         )
                         .clickable {
@@ -371,7 +371,7 @@ fun OverlayPropertiesPanel(
             }
             Text(
                 text = "${clip.keyframes.keyframes.size} keyframe(s)",
-                color = Color.White.copy(alpha = 0.6f),
+                color = ApexPalette.TextPrimary.copy(alpha = 0.6f),
                 fontSize = 12.sp
             )
         }
@@ -399,7 +399,7 @@ fun OverlayPropertiesPanel(
                             text = "x ${String.format(Locale.US, "%.2f", kf.translateX)} · " +
                                     "y ${String.format(Locale.US, "%.2f", kf.translateY)} · " +
                                     "${(kf.scale * 100).toInt()}% · ${kf.rotationDeg.toInt()}°",
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = ApexPalette.TextPrimary.copy(alpha = 0.6f),
                             fontSize = 11.sp
                         )
                         IconButton(
@@ -467,7 +467,7 @@ enum class OverlayMaskShape(val label: String) {
 private fun PanelSectionLabel(text: String, topPadding: Dp = 16.dp) {
     Text(
         text = text,
-        color = Color.White,
+        color = ApexPalette.TextPrimary,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = topPadding, bottom = 8.dp)
@@ -508,8 +508,8 @@ private fun PanelSliderRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Text(text = valueLabel, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+        Text(text = label, color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = valueLabel, color = ApexPalette.TextPrimary.copy(alpha = 0.7f), fontSize = 12.sp)
     }
     Slider(
         value = value.coerceIn(0f, 1f),
@@ -534,7 +534,7 @@ private fun PanelChip(
             .clip(RoundedCornerShape(16.dp))
             .background(
                 if (selected) ApexPalette.NeonCyan
-                else Color.White.copy(alpha = 0.08f)
+                else ApexPalette.TextPrimary.copy(alpha = 0.08f)
             )
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -542,7 +542,7 @@ private fun PanelChip(
     ) {
         Text(
             text = label,
-            color = if (selected) Color.Black else Color.White,
+            color = if (selected) Color.Black else ApexPalette.TextPrimary,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         )

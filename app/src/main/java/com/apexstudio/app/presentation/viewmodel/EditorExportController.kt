@@ -17,13 +17,24 @@ import java.io.File
 
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
 
-fun EditorViewModel.setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+fun EditorViewModel.setSelectedResolution(res: String) {
+    updateExport { it.copy(resolution = ExportResolution.canonical(res)) }
+}
 
 fun EditorViewModel.toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
 
 
 fun EditorViewModel.updateExport(upd: (ExportSettings) -> ExportSettings) {
-    _export.update { it.copy(settings = upd(it.settings)) }
+    var canonicalResolution = "1080P"
+    _export.update { current ->
+        val updated = upd(current.settings)
+        canonicalResolution = ExportResolution.canonical(updated.resolution)
+        current.copy(settings = updated.copy(resolution = canonicalResolution))
+    }
+    _state.update { state ->
+        if (state.selectedResolution == canonicalResolution) state
+        else state.copy(selectedResolution = canonicalResolution)
+    }
 }
 
 /** Canvas selection is not an export source: an overlay remains a composited layer. */
@@ -34,6 +45,10 @@ internal fun resolveExportBaseClip(state: EditorState): MediaClip? {
     return mainClips.firstOrNull { it.id == state.selectedClipId } ?: mainClips.firstOrNull()
 }
 
+/** Global art and this source clip's art only; another clip's drawings never leak into export. */
+internal fun selectedExportDrawings(state: EditorState, clipId: String?): List<VideoDrawingLayer> =
+    state.project?.videoDrawings.orEmpty().filter { it.clipId == null || it.clipId == clipId }
+
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
     fps: Int = _export.value.settings.frameRate,
@@ -43,12 +58,13 @@ fun EditorViewModel.startExport(
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     if (_export.value.isExporting) return
+    val resolvedResolution = ExportResolution.canonical(resolution)
     val s = _state.value
     val selected = resolveExportBaseClip(s)
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
-        startPhotoExport(selected, resolution, fps, quality, aspectRatio, bitrateMbps)
+        startPhotoExport(selected, resolvedResolution, fps, quality, aspectRatio, bitrateMbps)
         return
     }
     val inputUri = selected?.uri ?: return
@@ -117,7 +133,7 @@ fun EditorViewModel.startExport(
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
-            resolution = resolution,
+            resolution = resolvedResolution,
             fps = fps,
             quality = quality,
             aspectRatio = aspectRatio,
@@ -146,6 +162,8 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             stickers = stickers,
+            videoDrawings = selectedExportDrawings(s, selected?.id),
+            videoDrawingClipId = selected?.id,
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
@@ -511,6 +529,8 @@ internal fun buildPhotoExportConfig(
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
         stickers = stickers,
+        videoDrawings = selectedExportDrawings(s, clip.id),
+        videoDrawingClipId = clip.id,
         // Trim is baked into the still-video duration.
         trimStartMs = 0L,
         trimEndMs = 0L,

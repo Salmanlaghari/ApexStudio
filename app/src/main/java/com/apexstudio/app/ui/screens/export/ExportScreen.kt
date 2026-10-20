@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.apexstudio.app.domain.model.ExportResolution
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -67,7 +68,13 @@ fun ExportScreen(
     // Motion Graphics chips had a hardcoded `selected = fx.id ==
     // "chrom"` (only one card ever highlighted) plus an empty
     // `.clickable { }` that did nothing.
-    val selectedResolution = export.settings.resolution
+    val storedResolution = export.settings.resolution
+    val selectedResolution = ExportResolution.canonical(storedResolution)
+    LaunchedEffect(storedResolution) {
+        if (storedResolution != selectedResolution) {
+            vm.updateExport { it.copy(resolution = selectedResolution) }
+        }
+    }
     val selectedFps = export.settings.frameRate.toFloat()
     val activeFxId = editorState.activeFxId
     // Pro Phase 1: aspect ratio + bitrate from ExportSettings
@@ -182,10 +189,10 @@ fun ExportScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         for ((label, sub) in listOf(
-                            "720p" to "1280×720",
-                            "1080p" to "1920×1080",
-                            "4K" to "3840×2160",
-                            "8K" to "7680×4320"
+                            "720P" to "1280×720",
+                            "1080P" to "1920×1080",
+                            "1440P" to "2560×1440",
+                            "4K" to "3840×2160"
                         )) {
                             ResolutionPill(
                                 label = label,
@@ -371,14 +378,14 @@ fun ExportScreen(
                         // showing a misleading "0%" before the user
                         // taps the button.
                         GaugeArc(
-                            progress = if (export.isExporting || export.progress > 0f) export.progress else 0f,
+                            progress = if (export.isExporting || export.outputUri != null) export.progress else 0f,
                             modifier = Modifier.size(56.dp)
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 exportProgressLabel(export.isExporting, export.progress)
-                                    ?: if (export.progress > 0f) "Export Complete"
+                                    ?: if (export.outputUri != null && export.progress >= 1f) "Export Complete"
                                     else "Estimated File Size",
                                 color = ApexPalette.TextTertiary,
                                 fontSize = 9.sp

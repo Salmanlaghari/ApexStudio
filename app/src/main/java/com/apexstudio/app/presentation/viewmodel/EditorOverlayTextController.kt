@@ -55,9 +55,12 @@ fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, nam
 }
 
 
-fun EditorViewModel.openTextPanel() = _state.update { it.copy(textPanelOpen = true) }
+fun EditorViewModel.openTextPanel() = _state.update { it.copy(textPanelOpen = true, textPanelStartsOnCaptions = false) }
 
-fun EditorViewModel.closeTextPanel() = _state.update { it.copy(textPanelOpen = false) }
+/** Opens the real speech-recognition controls without running inference automatically. */
+fun EditorViewModel.openCaptionsPanel() = _state.update { it.copy(textPanelOpen = true, textPanelStartsOnCaptions = true) }
+
+fun EditorViewModel.closeTextPanel() = _state.update { it.copy(textPanelOpen = false, textPanelStartsOnCaptions = false) }
 
 fun EditorViewModel.selectTextOverlay(id: String?) = _state.update {
     // Single selection: picking a text overlay clears a stale sticker

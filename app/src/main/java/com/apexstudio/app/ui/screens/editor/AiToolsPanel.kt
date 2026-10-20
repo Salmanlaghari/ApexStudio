@@ -4,9 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,8 +17,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.aireport.AI_REPORT_CONTACT
+import com.apexstudio.app.data.aireport.openAiContentReportEmail
 import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /** Inventory is not permission to run a protected action. */
 data class AiToolCard(
@@ -32,6 +31,17 @@ data class AiToolCard(
     val statusLabel: String,
     val unavailableReason: String
 )
+
+/** Existing-video destinations only; inventory entries without a proven destination stay informational. */
+internal enum class AiToolAction { LOCAL_ANALYSIS, VIDEO_UPSCALE, CAPTIONS, BACKGROUND_REPLACE }
+
+internal fun aiToolActionForId(id: String): AiToolAction? = when (id) {
+    "SMART_TRIM", "SCENE_ANALYSIS", "STYLE_ANALYSIS", "AUTO_CROP", "FACE_TRACKING" -> AiToolAction.LOCAL_ANALYSIS
+    "ONNX_UPSCALING" -> AiToolAction.VIDEO_UPSCALE
+    "SUBTITLES", "WORD_TIMED_SUBTITLES" -> AiToolAction.CAPTIONS
+    "BACKGROUND_REPLACE" -> AiToolAction.BACKGROUND_REPLACE
+    else -> null
+}
 
 private fun aiToolIcon(id: String): ImageVector = when {
     id.contains("CAPTION") || id.contains("WHISPER") -> Icons.Default.Subtitles
@@ -46,7 +56,7 @@ private fun aiToolIcon(id: String): ImageVector = when {
     else -> Icons.Default.AutoAwesome
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AiToolsPanel(
     tools: List<AiToolCard>,
@@ -56,11 +66,16 @@ fun AiToolsPanel(
     onOpenDownloads: (() -> Unit)? = null,
     onOpenVideoPresets: (() -> Unit)? = null,
     onOpenVideoUpscale: (() -> Unit)? = null,
+    onOpenCaptions: (() -> Unit)? = null,
+    onOpenBackgroundReplace: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
     onSubmitReport: (AiContentReportReason) -> Unit,
-    onClearReportFeedback: () -> Unit
+    onClearReportFeedback: () -> Unit,
+    onComposeReport: ((AiContentReportTarget, AiContentReportReason) -> Boolean)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var emailFeedback by remember { mutableStateOf<String?>(null) }
     var group by remember { mutableStateOf<String?>(null) }
     var selectedTool by remember { mutableStateOf<AiToolCard?>(null) }
     var showSafetyInfo by remember { mutableStateOf(false) }
@@ -104,16 +119,39 @@ fun AiToolsPanel(
                     FilterChip(selected = group == value, onClick = { group = value }, label = { Text(value) })
                 }
             }
-            LazyVerticalGrid(columns = GridCells.Adaptive(72.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+            // One vertical scroll surface: a nested capped lazy grid clipped its
+            // lower cards and trapped touch/accessibility scrolling on small screens.
+            FlowRow(maxItemsInEachRow = 2,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(tools.filter { group == null || it.group == group }, key = { it.id }) { tool ->
-                    Surface(onClick = { selectedTool = tool }, modifier = Modifier.aspectRatio(1f).testTag("protected_ai_card_${tool.id}"),
+                tools.filter { group == null || it.group == group }.forEach { tool ->
+                    val action = when (aiToolActionForId(tool.id)) {
+                        AiToolAction.LOCAL_ANALYSIS -> onOpenLocalAnalysis
+                        AiToolAction.VIDEO_UPSCALE -> onOpenVideoUpscale
+                        AiToolAction.CAPTIONS -> onOpenCaptions
+                        AiToolAction.BACKGROUND_REPLACE -> onOpenBackgroundReplace
+                        null -> null
+                    }
+                    val actionLabel = when {
+                        action == null -> "View availability details"
+                        aiToolActionForId(tool.id) == AiToolAction.LOCAL_ANALYSIS -> "Open offline analysis"
+                        aiToolActionForId(tool.id) == AiToolAction.VIDEO_UPSCALE -> "Open AI Video Upscale"
+                        aiToolActionForId(tool.id) == AiToolAction.CAPTIONS -> "Open Text → Captions"
+                        else -> "Open Background tool"
+                    }
+                    Surface(onClick = { action?.invoke() ?: run { selectedTool = tool } },
+                        modifier = Modifier.weight(1f).heightIn(min = 88.dp).testTag("protected_ai_card_${tool.id}"),
                         shape = MaterialTheme.shapes.medium, color = ApexPalette.BgElevated) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(aiToolIcon(tool.id), "${tool.title}; backend information, tap for details", modifier = Modifier.size(28.dp), tint = ApexPalette.TextSecondary)
-                            Icon(Icons.Default.Info, null, modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp).size(12.dp), tint = ApexPalette.TextSecondary)
+                        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(aiToolIcon(tool.id), null, modifier = Modifier.size(22.dp), tint = ApexPalette.TextSecondary)
+                                Spacer(Modifier.weight(1f))
+                                IconButton(onClick = { selectedTool = tool }, modifier = Modifier.size(32.dp).testTag("ai_tool_info_${tool.id}")) {
+                                    Icon(Icons.Default.Info, "${tool.title} availability details", modifier = Modifier.size(18.dp), tint = ApexPalette.TextSecondary)
+                                }
+                            }
+                            Text(tool.title, color = ApexPalette.TextPrimary, style = MaterialTheme.typography.labelMedium, maxLines = 2)
+                            Text(actionLabel, color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                         }
                     }
                 }
@@ -121,13 +159,14 @@ fun AiToolsPanel(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Report AI content", style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-                Text("Reports are saved on this device only. They are not sent to the developer and do not constitute a developer submission.",
+                Text("Report / Suggestions: $AI_REPORT_CONTACT. Open an email draft with a clip reference and reason; no media attachment and no automatic send. If no email app is available, only a local flag is saved, not sent to the developer.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
-                Button(onClick = { onClearReportFeedback(); showReportDialog = true }, enabled = reportTarget != null && !reportState.isSaving) {
+                Button(onClick = { emailFeedback = null; onClearReportFeedback(); showReportDialog = true }, enabled = reportTarget != null && !reportState.isSaving) {
                     Text("Flag AI content")
                 }
                 if (reportTarget == null) Text("Select a clip in the current project to create a report reference.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
+                emailFeedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary) }
                 reportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
                     color = if (reportState.saved) MaterialTheme.colorScheme.primary else ApexPalette.TextSecondary) }
             }
@@ -137,7 +176,19 @@ fun AiToolsPanel(
         target = reportTarget,
         state = reportState,
         onDismiss = { showReportDialog = false },
-        onSubmit = onSubmitReport
+        onSubmit = { reason ->
+            reportTarget?.let { target ->
+                val opened = onComposeReport?.invoke(target, reason)
+                    ?: openAiContentReportEmail(context, target, reason)
+                if (opened) {
+                    emailFeedback = "Email draft opened for $AI_REPORT_CONTACT. Review and send it in your email app; delivery has not been confirmed."
+                    showReportDialog = false
+                } else {
+                    emailFeedback = "No email app available. Saving a local-only flag; nothing is sent. Contact $AI_REPORT_CONTACT manually."
+                    onSubmitReport(reason)
+                }
+            }
+        }
     )
     selectedTool?.let { tool ->
         AlertDialog(onDismissRequest = { selectedTool = null },
@@ -158,7 +209,7 @@ fun AiToolsPanel(
         title = { Text("Video-only processing availability") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(AI_PROTECTED_BLOCKER)
-            Text("Google Play's AI-Generated Content policy describes content created by generative models based on user prompts and gives prompt-to-content examples; this is not a blanket video exemption. Whisper speech recognition, optional English acoustic word timing, segmentation/compositing, sampled face review and ESPCN upscale run locally on selected existing project videos without prompts or new media generation. This scope does not waive privacy or restricted-content policies. Face-crop application remains unavailable because project export rejects face-crop tracks; artistic style transfer remains unavailable pending license/provenance review and end-to-end integration.")
+            Text("Google Play's AI-Generated Content policy describes content created by generative models based on user prompts and gives prompt-to-content examples; this is not a blanket video exemption. Whisper speech recognition, optional English acoustic word timing, segmentation/compositing, sampled face review and ESPCN upscale run locally on selected existing project videos without prompts or new media generation. This scope does not waive privacy or restricted-content policies. Face-crop application remains unavailable because project export rejects face-crop tracks; artistic style transfer remains unavailable pending license/provenance review and end-to-end integration. Depth-based 2D-to-3D video conversion is not supported: no integrated and tested depth model is available. Depth Anything V2 Small is Apache-2.0 (24.8M parameters), while larger variants are non-commercial; model availability or license alone is not sufficient to enable this workflow.")
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(onClick = { showSafetyInfo = false }) { Text("Close") } })
@@ -176,8 +227,8 @@ private fun AiContentReportDialog(
         onDismissRequest = { if (!state.isSaving) onDismiss() },
         title = { Text("Flag AI content") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Choose the reason. A reference to the selected project clip${if (target?.textOverlayId != null) " and selected text overlay" else ""} and your reason will be stored on this device. No media or text is copied or uploaded.")
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Choose a reason to open an email draft to $AI_REPORT_CONTACT with the selected project clip${if (target?.textOverlayId != null) " and text overlay" else ""} reference. No media or text content is attached. You must send the email yourself. Without an email app, a local-only flag is saved instead.")
                 AiContentReportReason.entries.forEach { reason ->
                     Row(Modifier.fillMaxWidth().clickable(enabled = !state.isSaving) { selectedReason = reason },
                         verticalAlignment = Alignment.CenterVertically) {
@@ -190,7 +241,7 @@ private fun AiContentReportDialog(
         },
         confirmButton = {
             TextButton(onClick = { selectedReason?.let(onSubmit) }, enabled = selectedReason != null && target != null && !state.isSaving && !state.saved) {
-                Text(when { state.isSaving -> "Saving…"; state.saved -> "Saved"; else -> "Save on device" })
+                Text(when { state.isSaving -> "Saving local flag…"; state.saved -> "Saved locally — not sent"; else -> "Open email draft" })
             }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.isSaving) { Text("Cancel") } }

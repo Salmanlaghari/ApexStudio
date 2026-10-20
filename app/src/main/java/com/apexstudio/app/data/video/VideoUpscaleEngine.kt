@@ -52,9 +52,19 @@ object VideoUpscaleEngine {
     private const val TAG = "VideoUpscaleEngine"
     private val dispatcher = Executors.newSingleThreadExecutor { r -> Thread(r, "VideoUpscale").apply { isDaemon = true } }.asCoroutineDispatcher()
 
-    data class SourceInfo(val width: Int, val height: Int, val durationMs: Long, val rotation: Int, val frameRate: Int) {
+    data class SourceInfo(val width: Int, val height: Int, val durationMs: Long, val rotation: Int, val frameRate: Int, val durationUs: Long = durationMs * 1000L) {
         val outputWidth: Int get() = (if (rotation == 90 || rotation == 270) height else width) * SCALE
         val outputHeight: Int get() = (if (rotation == 90 || rotation == 270) width else height) * SCALE
+    }
+
+    fun sourceDurationBlockReason(durationMs: Long): String? {
+        if (durationMs <= MAX_DURATION_MS) return null
+        val totalSeconds = durationMs / 1000L
+        val clock = java.lang.String.format(java.util.Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
+        val duration = if (durationMs % 1000L == 0L) clock else clock +
+            java.lang.String.format(java.util.Locale.US, ".%03d", durationMs % 1000L)
+        return "This $duration source is not supported. ESPCN accepts source videos up to 00:30. " +
+            "No processing will start. The whole source is processed, so a shorter timeline trim does not bypass this limit; use a separately exported source of 00:30 or less."
     }
 
     /** Validates practical device bounds before allocating a model session or large frame buffers. */
@@ -79,17 +89,29 @@ object VideoUpscaleEngine {
     }
 
     /** No silent audio loss or implicit format conversion. AAC is the supported MP4 passthrough. */
-    internal fun validateAudioPassthrough(mime: String?, durationUs: Long?, videoDurationMs: Long) {
+    @Suppress("UNUSED_PARAMETER")
+    internal fun validateAudioPassthrough(mime: String?, audioDurationUs: Long?, videoDurationMs: Long) {
         require(mime == MediaFormat.MIMETYPE_AUDIO_AAC) {
             "AI Video Upscale supports AAC audio or silent video only. Convert this source audio to AAC first."
         }
-        require(durationUs == null || durationUs <= videoDurationMs * 1000L + 999L) {
-            "Source audio extends beyond the video. Trim or remux the source before upscaling."
-        }
+        // AAC duration mismatch is handled by dropping whole packets at the output video boundary.
     }
 
-    internal fun audioSampleWithinVideo(ptsUs: Long, videoDurationMs: Long): Boolean =
-        ptsUs >= 0L && ptsUs < videoDurationMs * 1000L
+    /** AAC packets are indivisible during passthrough; never mux a packet that would cross video EOS. */
+    internal fun audioPacketEndsWithinVideo(ptsUs: Long, packetDurationUs: Long, videoDurationUs: Long): Boolean =
+        ptsUs >= 0L && packetDurationUs > 0L && ptsUs < videoDurationUs && packetDurationUs <= videoDurationUs - ptsUs
+
+    /** AAC packet duration, including common high-efficiency and low-delay profiles. */
+    internal fun aacPacketDurationUs(sampleRate: Int, profile: Int?): Long? {
+        if (sampleRate <= 0) return null
+        val samplesPerPacket = when (profile) {
+            MediaCodecInfo.CodecProfileLevel.AACObjectHE,
+            MediaCodecInfo.CodecProfileLevel.AACObjectHE_PS -> 2048
+            MediaCodecInfo.CodecProfileLevel.AACObjectELD -> 512
+            else -> 1024
+        }
+        return (samplesPerPacket * 1_000_000L + sampleRate - 1L) / sampleRate
+    }
 
     /** Render entire media source to a unique temporary sibling and atomically publish on success. */
     suspend fun process(
@@ -184,6 +206,12 @@ object VideoUpscaleEngine {
             var audioOut = -1
             var muxStarted = false
             var audioEos = false
+            val audioTrackDurationUs = audioFormat?.let { if (it.containsKey(MediaFormat.KEY_DURATION)) it.getLong(MediaFormat.KEY_DURATION) else null }
+            val nominalAudioPacketDurationUs = audioFormat?.let {
+                val sampleRate = if (it.containsKey(MediaFormat.KEY_SAMPLE_RATE)) it.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 0
+                val profile = if (it.containsKey(MediaFormat.KEY_AAC_PROFILE)) it.getInteger(MediaFormat.KEY_AAC_PROFILE) else null
+                aacPacketDurationUs(sampleRate, profile)
+            }
             val declaredAudioBufferSize = if (audioFormat?.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE) == true)
                 audioFormat!!.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(1) else 256 * 1024
             require(declaredAudioBufferSize <= MAX_AUDIO_SAMPLE_BYTES) { "Audio packets exceed the safe passthrough buffer limit." }
@@ -193,15 +221,30 @@ object VideoUpscaleEngine {
                 if (!muxStarted || audioFormat == null || audioEos) return
                 while (true) {
                     val pts = try { audioExt.sampleTime } catch (_: Exception) { -1L }
-                    if (!audioSampleWithinVideo(pts, info.durationMs)) { audioEos = true; return }
+                    if (pts < 0L || pts >= info.durationUs) { audioEos = true; return }
                     if (pts > timeUs) return
                     audioBuffer.clear()
                     val size = audioExt.readSampleData(audioBuffer, 0)
                     if (size < 0) { audioEos = true; return }
                     check(size <= audioBuffer.capacity()) { "Audio packet exceeds its declared passthrough buffer size." }
-                    audioInfo.set(0, size, pts, audioExt.sampleFlags)
+                    val flags = audioExt.sampleFlags
+                    val advanced = audioExt.advance()
+                    val nextPts = if (advanced) audioExt.sampleTime else -1L
+                    // MediaMuxer cannot represent a partial AAC frame. Use the next packet boundary
+                    // when available and the nominal AAC frame duration for the terminal packet;
+                    // track duration metadata can include encoder padding/edit-list trimming that
+                    // a passthrough mux does not preserve.
+                    val packetDurationUs = when {
+                        nextPts > pts -> maxOf(nextPts - pts, nominalAudioPacketDurationUs ?: 0L)
+                        else -> nominalAudioPacketDurationUs
+                            ?: audioTrackDurationUs?.takeIf { it > pts }?.minus(pts)
+                    }
+                    if (packetDurationUs == null || !audioPacketEndsWithinVideo(pts, packetDurationUs, info.durationUs)) {
+                        audioEos = true
+                        return
+                    }
+                    audioInfo.set(0, size, pts, flags)
                     mx.writeSampleData(audioOut, audioBuffer, audioInfo)
-                    audioExt.advance()
                 }
             }
             fun drainEncoder(end: Boolean): Boolean {
@@ -313,10 +356,10 @@ object VideoUpscaleEngine {
                 if (eosIndex < 0) drainEncoder(false)
             }
             check(eosIndex >= 0) { "Video encoder did not accept end-of-stream." }
-            enc.queueInputBuffer(eosIndex, 0, 0, info.durationMs * 1000L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            enc.queueInputBuffer(eosIndex, 0, 0, info.durationUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             check(drainEncoder(true)) { "Video encoder did not finish." }
             check(muxStarted) { "No video frames were encoded." }
-            copyAudioUntil(info.durationMs * 1000L - 1L)
+            copyAudioUntil(info.durationUs - 1L)
             mx.stop()
             check(tmp.isFile && tmp.length() > 0L) { "Rendered video is empty." }
             coroutineContext.ensureActive()
@@ -362,10 +405,11 @@ object VideoUpscaleEngine {
             val f = format ?: throw IllegalArgumentException("No video track in this clip.")
             val width = f.getInteger(MediaFormat.KEY_WIDTH)
             val height = f.getInteger(MediaFormat.KEY_HEIGHT)
-            val durationMs = if (f.containsKey(MediaFormat.KEY_DURATION)) f.getLong(MediaFormat.KEY_DURATION) / 1000L else {
+            val durationUs = if (f.containsKey(MediaFormat.KEY_DURATION)) f.getLong(MediaFormat.KEY_DURATION) else {
                 retriever.setDataSource(context, Uri.parse(uri))
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) * 1000L
             }
+            val durationMs = (durationUs + 999L) / 1000L
             val audioTracks = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
                 .filter { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
             require(audioTracks.size <= 1) { "Multiple source audio tracks are not supported; select a single AAC track before upscaling." }
@@ -392,7 +436,7 @@ object VideoUpscaleEngine {
                 (f.containsKey(MediaFormat.KEY_COLOR_TRANSFER) && f.getInteger(MediaFormat.KEY_COLOR_TRANSFER) in
                     setOf(MediaFormat.COLOR_TRANSFER_ST2084, MediaFormat.COLOR_TRANSFER_HLG))
             require(!hasHdr) { "HDR and 10-bit video are not supported; use SDR 8-bit source media." }
-            val info = validateSource(width, height, durationMs, rotation, fps)
+            val info = validateSource(width, height, durationMs, rotation, fps).copy(durationUs = durationUs)
             return Triple(mime!!, f, info)
         } finally { extractor.release(); retriever.release() }
     }

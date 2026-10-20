@@ -38,7 +38,7 @@ import com.apexstudio.app.data.autoclip.AUTO_CLIP_STYLES
 import com.apexstudio.app.data.autoclip.AutoClipEngine
 import com.apexstudio.app.data.autoclip.AutoClipPlan
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Phase 3: Auto Clip panel — TikTok-style 1-tap edits.

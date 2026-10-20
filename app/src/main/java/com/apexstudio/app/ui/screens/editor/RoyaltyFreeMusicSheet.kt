@@ -47,7 +47,7 @@ import com.apexstudio.app.data.music.MusicLibraryController
 import com.apexstudio.app.data.music.MusicLibraryTab
 import com.apexstudio.app.data.music.MusicLibraryUiState
 import com.apexstudio.app.data.music.RemoteMusicTrack
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.io.File
 
 // ---------------------------------------------------------------------------
@@ -495,7 +495,7 @@ private fun DiscoverTrackRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title,
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
                     maxLines = 1
@@ -542,7 +542,7 @@ private fun DiscoverTrackRow(
                 Icon(
                     imageVector = if (isPreviewing) Icons.Default.Stop else Icons.Default.PlayArrow,
                     contentDescription = if (isPreviewing) "Stop preview" else "Preview",
-                    tint = if (isPreviewing) ApexPalette.NeonCyan else Color.White,
+                    tint = if (isPreviewing) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -609,7 +609,7 @@ private fun ApiKeySetupCard() {
     ) {
         Text(
             "Unlock 500,000+ royalty-free tracks",
-            color = Color.White,
+            color = ApexPalette.TextPrimary,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp
         )
@@ -658,7 +658,7 @@ private fun ErrorCard(message: String, isOffline: Boolean, onRetry: () -> Unit) 
         )
         Text(
             if (isOffline) "You're offline" else "Couldn't load tracks",
-            color = Color.White,
+            color = ApexPalette.TextPrimary,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp
         )
@@ -782,7 +782,7 @@ private fun OfflineTab(onSelectSong: (String, String, Long) -> Unit) {
                         Icon(
                             imageVector = if (isPlayingThis) Icons.Default.Stop else Icons.Default.PlayArrow,
                             contentDescription = "Preview",
-                            tint = if (isPlayingThis) Color.Black else Color.White,
+                            tint = if (isPlayingThis) Color.Black else ApexPalette.TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -793,7 +793,7 @@ private fun OfflineTab(onSelectSong: (String, String, Long) -> Unit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = song.title,
-                                color = Color.White,
+                                color = ApexPalette.TextPrimary,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
                             )
@@ -909,7 +909,7 @@ private fun ImportTab(onImportAudio: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text(
             "Import audio from your device",
-            color = Color.White,
+            color = ApexPalette.TextPrimary,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp
         )
@@ -935,7 +935,7 @@ private fun ImportTab(onImportAudio: () -> Unit) {
         ) {
             Text(
                 "Choose audio file",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp
             )

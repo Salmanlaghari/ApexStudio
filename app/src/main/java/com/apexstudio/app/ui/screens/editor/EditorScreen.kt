@@ -40,7 +40,8 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -78,6 +79,20 @@ fun EditorScreen(
         factory = EditorViewModelFactory(projectId = projectId)
     )
 ) {
+    com.apexstudio.app.ui.theme.EditorLightTheme {
+        EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm)
+    }
+}
+
+@Composable
+private fun EditorScreenContent(
+    projectId: String,
+    onBack: () -> Unit,
+    onExport: () -> Unit,
+    onColor: () -> Unit,
+    onAudio: () -> Unit,
+    vm: EditorViewModel
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
@@ -111,6 +126,11 @@ fun EditorScreen(
     var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
+    var isDrawingMode by remember(projectId) { mutableStateOf(false) }
+    var showVideoDrawingTools by remember(projectId) { mutableStateOf(false) }
+    var drawingTool by remember(projectId) { mutableStateOf(com.apexstudio.app.domain.model.VideoDrawingTool.BRUSH) }
+    var drawingColorArgb by remember(projectId) { mutableLongStateOf(0xFFFF3B82L) }
+    var drawingBrushWidth by remember(projectId) { mutableFloatStateOf(com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH) }
     // Phase 3: mood filter passed from Auto Clip -> Music Library.
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
     // Phase 3: saved projects for History/Drafts panel.
@@ -711,10 +731,11 @@ fun EditorScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color(0xFF0A0A0F))
+            .background(Color(0xFFF7F8FA))
     ) {
         if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
+                title = state.project?.name ?: "Untitled project",
                 canUndo = state.canUndo,
                 canRedo = state.canRedo,
                 resolution = state.selectedResolution,
@@ -728,6 +749,20 @@ fun EditorScreen(
                 onHelp = { vm.openHelpDialog() },
                 onExport = onExport
             )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = "${TimeFormat.msToShort(state.playerPositionMs)} / ${TimeFormat.msToShort(state.durationMs)}",
+                    color = Color(0xFF111827),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp
+                )
+            }
         }
 
         if (editorChromeVisible(state.isFullscreenPreview) &&
@@ -763,7 +798,11 @@ fun EditorScreen(
             seekPlayerAndState = seekPlayerAndState,
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
-            overlayIsVideo = overlayIsVideo
+            overlayIsVideo = overlayIsVideo,
+            drawingEnabled = isDrawingMode,
+            drawingTool = drawingTool,
+            drawingColorArgb = drawingColorArgb,
+            drawingBrushWidth = drawingBrushWidth
         )
 
         if (editorChromeVisible(state.isFullscreenPreview)) {
@@ -805,6 +844,12 @@ fun EditorScreen(
                 vm = vm,
                 mediaPicker = mediaPicker,
                 onAi = { showAiPanel = true },
+                onDraw = {
+                    if (mainPreviewClip != null) {
+                        isDrawingMode = !isDrawingMode
+                        showVideoDrawingTools = isDrawingMode
+                    }
+                },
                 onCrop = { showCropPanel = true },
                 onDeviceAudio = importPhoneMusic
             )
@@ -827,6 +872,12 @@ fun EditorScreen(
     }, onOpenVideoUpscale = {
         showAiPanel = false
         showVideoUpscale = true
+    }, onOpenBackgroundReplace = {
+        showAiPanel = false
+        vm.openBackgroundPanel()
+    }, onOpenCaptions = {
+        showAiPanel = false
+        vm.openCaptionsPanel()
     }, reportTarget = aiReportTarget, reportState = aiContentReportState,
         onSubmitReport = { reason ->
             val current = vm.state.value
@@ -859,6 +910,20 @@ fun EditorScreen(
     // EditorScreenOverlays.kt) to keep EditorScreen under the JVM 64KB
     // method limit. Pure extraction, behavior unchanged.
     TrimPanelOverlay(state = state, vm = vm, exoPlayer = exoPlayer, onExport = onExport)
+    VideoDrawingToolsOverlay(
+        isOpen = showVideoDrawingTools,
+        tool = drawingTool,
+        colorArgb = drawingColorArgb,
+        brushWidth = drawingBrushWidth,
+        strokeCount = state.project?.videoDrawings.orEmpty()
+            .filter { it.clipId == mainPreviewClip?.id }.sumOf { it.strokes.size },
+        onToolChange = { drawingTool = it },
+        onColorChange = { drawingColorArgb = it },
+        onBrushWidthChange = { drawingBrushWidth = it },
+        onUndo = { vm.undoVideoDrawingStroke(mainPreviewClip?.id) },
+        onClear = { vm.clearVideoDrawings(mainPreviewClip?.id) },
+        onClose = { showVideoDrawingTools = false }
+    )
     GpuFilterPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
     ColorGradingPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
     AdjustmentsPanelOverlay(state = state, vm = vm)

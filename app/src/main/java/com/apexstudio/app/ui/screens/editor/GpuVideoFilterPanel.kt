@@ -37,7 +37,7 @@ import com.apexstudio.app.data.filter.GpuColorProfiles
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -122,7 +122,7 @@ fun GpuVideoFilterPanel(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "GPU Video Filters & Effects",
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 16.sp
                     )
@@ -197,7 +197,7 @@ fun GpuVideoFilterPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("A/B Split Divider Position", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("${(splitPosition * 100).toInt()}%", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("${(splitPosition * 100).toInt()}%", color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Slider(
                     value = splitPosition,
@@ -360,7 +360,7 @@ fun GpuVideoFilterPanel(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         activeProfile.name,
-                                        color = Color.White,
+                                        color = ApexPalette.TextPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -409,7 +409,7 @@ fun GpuVideoFilterPanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Preset Strength", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("${(config.profileIntensity * 100).toInt()}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("${(config.profileIntensity * 100).toInt()}%", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         Slider(
                             value = config.profileIntensity,
@@ -862,7 +862,7 @@ fun GpuVideoFilterPanel(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.NotInterested, contentDescription = null, tint = ApexPalette.TextSecondary, modifier = Modifier.size(22.dp))
                             Spacer(Modifier.height(4.dp))
-                            Text("None", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("None", color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -1132,7 +1132,7 @@ private fun GpuColorProfileCard(
                 ) {
                     Text(
                         profile.category,
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1167,7 +1167,7 @@ private fun GpuColorProfileCard(
             ) {
                 Text(
                     profile.name,
-                    color = if (isSelected) ApexPalette.NeonCyan else Color.White,
+                    color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1

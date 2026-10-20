@@ -23,6 +23,27 @@ class DashboardEditorEntriesTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun compactHeaderKeepsSettingsInsidePhoneAtLargeFontScale() {
+        var settingsOpened = false
+        compose.setContent {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, 1.8f)
+            ) {
+                Box(Modifier.width(288.dp)) {
+                    DashboardHeader(onOpenSettings = { settingsOpened = true })
+                }
+            }
+        }
+        val header = compose.onNodeWithTag("dashboard-header").fetchSemanticsNode().boundsInRoot
+        val settings = compose.onNodeWithTag("dashboard-settings").fetchSemanticsNode().boundsInRoot
+        assertTrue(settings.left >= header.left)
+        assertTrue(settings.right <= header.right)
+        compose.onNodeWithTag("dashboard-settings").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(settingsOpened) }
+    }
+
+    @Test
     fun narrowDashboardStacksEditorEntriesInsteadOfCompressingThemSideBySide() {
         compose.setContent {
             Box(Modifier.width(320.dp)) {

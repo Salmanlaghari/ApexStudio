@@ -186,7 +186,7 @@ object WhisperCaptionEngine {
         onProgress: (Float) -> Unit = {}
     ): List<CaptionSegment>? = withContext(Dispatchers.IO) {
         // Enforce before model materialization, PCM decode, inference, or progress that implies success.
-        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS, uri.toString())
         WhisperInferenceGate.withLock {
         val appContext = context.applicationContext
         val installContext = coroutineContext

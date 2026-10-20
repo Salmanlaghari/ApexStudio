@@ -27,8 +27,8 @@ class WhisperModelIntegrityTest {
             WhisperModel.load(file, file, file)
             throw AssertionError("Raw model loading must fail before native processing")
         } catch (failure: AiModelUnavailableException) {
-            assertTrue(failure.message.orEmpty().contains("Whisper caption generation"))
-            assertTrue(failure.message.orEmpty().contains("not enabled in the selected video-only tool scope"))
+            assertTrue(failure.message.orEmpty().contains("only from the editor's Auto Captions action"))
+            assertTrue(failure.message.orEmpty().contains("selected existing project video"))
         }
     }
 

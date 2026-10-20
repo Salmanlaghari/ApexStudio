@@ -34,6 +34,52 @@ data class MaskPoint(val x: Float, val y: Float)
 object MaskModel {
 
     /**
+     * Complete centered geometry for a newly selected shape. This is
+     * intentionally independent of the previous mask so stale dimensions,
+     * recipe ids, inversion, or rotation cannot leak across shape changes.
+     */
+    fun defaultForShape(shape: MaskShape): VideoMask {
+        val (width, height) = when (shape) {
+            MaskShape.LINEAR -> 0.6f to 1f
+            MaskShape.MIRROR -> 0.7f to 1f
+            MaskShape.BLUR_FACE -> 0.42f to 0.42f
+            MaskShape.CIRCLE -> 0.52f to 0.52f
+            MaskShape.ELLIPSE -> 0.58f to 0.72f
+            MaskShape.DRAW -> 0.6f to 0.6f
+            else -> 0.58f to 0.58f
+        }
+        return VideoMask(
+            shape = shape,
+            centerX = 0.5f,
+            centerY = 0.5f,
+            sizeX = width,
+            sizeY = height,
+            feather = 0.15f,
+            invert = false,
+            opacity = 1f,
+            enabled = true,
+            rotationDeg = 0f,
+            presetId = null
+        )
+    }
+
+    /** Preserve animation elsewhere, but make a new shape's defaults visible immediately. */
+    fun selectShape(shape: MaskShape, previous: VideoMask?, atMs: Long): VideoMask {
+        val next = defaultForShape(shape)
+        val keys = previous?.maskKeyframes.orEmpty()
+        if (keys.isEmpty()) return next
+        val time = atMs.coerceAtLeast(0L)
+        val stamp = MaskKeyframe(
+            id = "mask-$time", timeMs = time,
+            centerX = next.centerX, centerY = next.centerY,
+            sizeX = next.sizeX, sizeY = next.sizeY,
+            rotationDeg = next.rotationDeg, feather = next.feather,
+            opacity = next.opacity, invert = next.invert
+        )
+        return next.copy(maskKeyframes = (keys.filterNot { it.timeMs == time } + stamp).sortedBy { it.timeMs })
+    }
+
+    /**
      * Maximum polygon length, including the duplicated closing point.
      * The export uniform is `vec2 uPoly[32]`, so all shapes must land
      * within this; peripheral shapes are resampled to fit.

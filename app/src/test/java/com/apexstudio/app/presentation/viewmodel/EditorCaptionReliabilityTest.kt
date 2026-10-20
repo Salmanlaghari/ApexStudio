@@ -20,6 +20,12 @@ class EditorCaptionReliabilityTest {
     private fun snapshot(vm: EditorViewModel) = CaptionSourceSnapshot("project", vm.state.value.project!!.clips.single())
     private val segments = listOf(CaptionSegment("Hello", 1_000L, 3_000L))
 
+    @Test fun captionEligibilityRequiresAnExistingVideoSourceNotAStillOrBlankUri() {
+        assertTrue(isExistingProjectVideoCaptionSource(clip()))
+        assertFalse(isExistingProjectVideoCaptionSource(clip().copy(type = ClipType.IMAGE)))
+        assertFalse(isExistingProjectVideoCaptionSource(clip().copy(uri = " ")))
+    }
+
     @Test fun sourceTrimOffsetIsNotAddedToClipRelativeCaptions() {
         val cues = captionOverlaysFor(clip(), segments)
         assertEquals(1_000L, cues.single().startMs)

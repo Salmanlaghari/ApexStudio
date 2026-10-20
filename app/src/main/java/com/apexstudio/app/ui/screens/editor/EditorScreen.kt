@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -87,6 +88,9 @@ fun EditorScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    // Keep the timeline in composition while changing only its available height;
+    // this retains its remembered scroll position, selection and media bindings.
+    var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
     // of the editor. The player's audio sink (DenoiseRenderersFactory)
@@ -698,6 +702,10 @@ fun EditorScreen(
         }
     }
 
+    BackHandler(enabled = isTimelineFocusMode && !state.isFullscreenPreview) {
+        isTimelineFocusMode = false
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -748,6 +756,7 @@ fun EditorScreen(
             vm = vm,
             exoPlayer = exoPlayer,
             isCoverMode = isCoverMode,
+            isTimelineFocusMode = isTimelineFocusMode,
             isFullscreenPreview = state.isFullscreenPreview,
             onFullscreenToggle = { vm.toggleFullscreenPreview() },
             currentSelectedClip = currentSelectedClip,
@@ -762,6 +771,8 @@ fun EditorScreen(
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,
+                isTimelineFocusMode = isTimelineFocusMode,
+                onTimelineFocusModeChange = { isTimelineFocusMode = it },
                 // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
                 // set here and the picker launches immediately, so the pick
                 // can never be misrouted to V1 (the old bug: the ClipType was

@@ -37,13 +37,13 @@ class EditorFaceCropApplyTest {
         }
     }
 
-    @Test fun reviewMarksDoNotEnableOutOfScopeFaceReframeOrMutateHistory() {
+    @Test fun reviewMarksDoNotEnableUnexportableFaceReframeOrMutateHistory() {
         val vm = editor()
         val before = vm.state.value.project
         assertFalse(vm.applyReviewedFaceCropTrack())
         assertEquals(before, vm.state.value.project)
         assertTrue(vm.undoStack.isEmpty())
-        assertTrue(vm.faceTrackReview.value.error!!.contains("video-only tool scope"))
+        assertTrue(vm.faceTrackReview.value.error!!.contains("project export explicitly rejects face-crop tracks"))
     }
 
     @Test fun everyMeasuredSampleMustBeReviewed() {

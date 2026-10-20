@@ -1,6 +1,8 @@
 package com.apexstudio.app.ai.safety
 
 import com.apexstudio.app.ai.AiModelUnavailableException
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -90,5 +92,43 @@ class GlobalModerationEnforcementTest {
             // Cancellation must not leave the ThreadLocal capability behind.
         }
         assertDenied(ProtectedAiAction.ONNX_UPSCALING)
+    }
+
+    @Test fun captionsAndEnglishAlignmentAreLimitedToTheSameProjectVideoUri(): Unit = runBlocking {
+        val clip = MediaClip("video", "Video", "content://project/video", 10_000L,
+            trimEndMs = 10_000L, type = ClipType.VIDEO)
+        GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS, clip.uri)
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS)
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WORD_ALIGNMENT, clip.uri)
+            assertDenied(ProtectedAiAction.BACKGROUND_REPLACEMENT)
+            try {
+                GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WHISPER_CAPTIONS, "content://other/video")
+                throw AssertionError("A different media URI must stay out of scope")
+            } catch (_: AiModelUnavailableException) { }
+        }
+        assertDenied(ProtectedAiAction.WHISPER_CAPTIONS)
+        assertDenied(ProtectedAiAction.WORD_ALIGNMENT)
+        try {
+            GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip.copy(type = ClipType.IMAGE)) { }
+            throw AssertionError("Caption scope must reject still images")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun faceReviewAndBackgroundCompositingStaySeparateFromReframeAndGenerativeActions(): Unit = runBlocking {
+        val clip = MediaClip("video", "Video", "file:///project/video.mp4", 10_000L,
+            trimEndMs = 10_000L, type = ClipType.VIDEO)
+        GlobalModerationEnforcement.withExistingProjectVideoBackgroundReplacement(clip.uri) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT, clip.uri)
+            assertDenied(ProtectedAiAction.ONNX_STYLE_TRANSFER)
+            assertDenied(ProtectedAiAction.WHISPER_CAPTIONS)
+        }
+        GlobalModerationEnforcement.withExistingProjectVideoFaceReview(clip) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_TRACK_REVIEW, clip.uri)
+            assertDenied(ProtectedAiAction.FACE_AWARE_REFRAME)
+            assertDenied(ProtectedAiAction.GESTURE_EDITING)
+        }
+        assertDenied(ProtectedAiAction.BACKGROUND_REPLACEMENT)
+        assertDenied(ProtectedAiAction.FACE_TRACK_REVIEW)
     }
 }

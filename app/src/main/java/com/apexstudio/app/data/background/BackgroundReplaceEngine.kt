@@ -161,7 +161,7 @@ object BackgroundReplaceEngine {
         onProgress: (Float) -> Unit = {}
     ): File = withContext(processingDispatcher) {
         // Do not load the segmenter, decode media, or create an output while moderation is unavailable.
-        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT)
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT, sourceUri)
         val safe = settings.sanitized()
         val appContext = context.applicationContext
         val model = modelFile(appContext)

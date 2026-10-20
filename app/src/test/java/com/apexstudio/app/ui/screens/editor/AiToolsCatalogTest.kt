@@ -14,7 +14,8 @@ class AiToolsCatalogTest {
         assertEquals(AiFeatureId.entries.size, cards.size)
         assertEquals(cards.size, cards.map { it.id }.distinct().size)
         assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
-        assertTrue(AI_PROTECTED_BLOCKER.contains("existing-project video"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("scoped existing-video editor actions"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("Other model inventory is not a processing control"))
         assertFalse(AI_PROTECTED_BLOCKER.contains("all-category moderation"))
     }
 
@@ -31,7 +32,11 @@ class AiToolsCatalogTest {
             AiFeatureId.SUBTITLES, AiAvailability.MODEL_MISSING, "Whisper files are missing"
         ))).single()
         assertTrue(card.detail.contains("Whisper files are missing"))
-        assertEquals(AI_PROTECTED_BLOCKER, card.unavailableReason)
+        assertEquals(AI_PROTECTED_STATUS_LABEL, card.statusLabel)
+        assertTrue(card.unavailableReason.startsWith(
+            "Available in Text → Captions for an existing project video."
+        ))
+        assertTrue(card.unavailableReason.contains("model readiness and audio access are checked when run"))
     }
 
     @Test fun upscalePointsToRealVideoEntryAndDoesNotExposeStillImageAPI() {

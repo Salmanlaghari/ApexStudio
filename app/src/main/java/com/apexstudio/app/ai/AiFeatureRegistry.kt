@@ -100,14 +100,14 @@ object AiFeatureRegistry {
         AiFeatureId.AUTO_CROP to AiFeatureDescription("Auto crop", "Luma-gradient crop suggestion; not subject or face detection."),
         AiFeatureId.FACE_AWARE_REFRAME to AiFeatureDescription("Face-aware reframe", "Bundled face model and crop-track geometry. Full-clip application is not release-ready."),
         AiFeatureId.FACE_BLUR to AiFeatureDescription("Face blur", "Bundled face landmarks and frame-level privacy renderer; full-clip editor/export integration remains incomplete."),
-        AiFeatureId.FACE_TRACKING to AiFeatureDescription("Face tracking", "Bundled face landmarks; temporal identity/crop geometry is not a validated tracking editor."),
+        AiFeatureId.FACE_TRACKING to AiFeatureDescription("Face tracking", "Local sampled face detection and crop candidates are available for explicit review on existing project videos; applying the automatic crop remains unavailable because project export rejects face-crop tracks."),
         AiFeatureId.BACKGROUND_BLUR to AiFeatureDescription("Background blur", "Bundled person segmentation supports the existing pre-rendered background workflow; not real-time AI preview."),
         AiFeatureId.POSE_EFFECTS to AiFeatureDescription("Pose effects", "Bundled pose model and frame-level skeleton processing; no validated full-clip effect integration."),
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
         AiFeatureId.GESTURE_CONTROL to AiFeatureDescription("Gesture control", "Explicitly armed front-camera hand sessions are wired to bounded source-edge trims and timeline zoom. Live camera/gesture input is outside the existing-project-video scope."),
-        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Local Whisper backend; subtitles are outside the currently enabled video-tool integration."),
-        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Local English acoustic alignment backend; not enabled in this video-tool release."),
-        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Local segmentation backend; background replacement is not enabled in the selected video-tool scope."),
+        AiFeatureId.SUBTITLES to AiFeatureDescription("Auto subtitles", "Local Whisper speech recognition for a selected existing project video; inserts editable phrase captions without prompts or content generation."),
+        AiFeatureId.WORD_TIMED_SUBTITLES to AiFeatureDescription("Word-timed subtitles", "Opt-in English CTC acoustic alignment on an existing project video; unsupported text or low-confidence timing fails closed rather than inventing word times."),
+        AiFeatureId.BACKGROUND_REPLACE to AiFeatureDescription("Background replace", "Local person segmentation and deterministic compositing for an existing project video, with fixed blur/colour or an image already in the project; no image generation."),
         AiFeatureId.MEDIAPIPE_FACE to AiFeatureDescription("Face landmarks", "Official bundled Face Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
@@ -129,8 +129,20 @@ object AiFeatureRegistry {
             return AiFeatureAvailability(id, AiAvailability.READY,
                 "Deterministic local signal analysis, not learned AI. Review suggestions before applying edits.")
         }
-        if (id == AiFeatureId.WORD_TIMED_SUBTITLES) return AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE,
-            "Bundled English CTC supports word-by-word and full-phrase karaoke experiments. Not enabled in the selected video-tool release; multilingual word alignment and device acceptance are incomplete.", requirements)
+        if (id == AiFeatureId.WORD_TIMED_SUBTITLES) return try {
+            val modelContext = kotlinx.coroutines.currentCoroutineContext()
+            val modelFile = com.apexstudio.app.ai.subtitles.BundledEnglishAlignmentModel.modelFile(context) {
+                modelContext.ensureActive()
+            }
+            AiFeatureAvailability(id, AiAvailability.READY,
+                "Verified English CTC alignment model is available locally. This opt-in feature works only with English captions on existing project videos; unsupported text or low-confidence intervals fail without invented timing.",
+                requirements, if (modelFile.isFile) requirements.map { it.id } else emptyList())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
+                "Bundled English CTC model is missing or failed integrity verification; word timing stays unavailable. No network fallback.", requirements)
+        }
         if (id == AiFeatureId.ONNX_UPSCALING) return try {
             com.apexstudio.app.ai.onnx.EspcnSuperResolutionAdapter.fromBundledAssets(context)
             AiFeatureAvailability(id, AiAvailability.READY,
@@ -183,10 +195,11 @@ object AiFeatureRegistry {
                         val protectedAction = when (id) {
                             AiFeatureId.SUBTITLES -> ProtectedAiAction.WHISPER_CAPTIONS
                             AiFeatureId.BACKGROUND_REPLACE -> ProtectedAiAction.BACKGROUND_REPLACEMENT
+                            AiFeatureId.FACE_TRACKING -> ProtectedAiAction.FACE_TRACK_REVIEW
                             else -> null
                         }
                         if (protectedAction != null) {
-                            "Local model bytes are available, but ${GlobalModerationEnforcement.statusMessage(protectedAction)}"
+                            "Local model bytes are available. ${GlobalModerationEnforcement.statusMessage(protectedAction)}"
                         } else "Local model bytes available. Backend readiness does not itself enable a video editor tool."
                     } else "Bundled/local model is missing or could not be materialized; no network request was made. No model-backed action can run without its required local artifact.",
                     requirements, if (available) requirements.map { it.id } else emptyList())

@@ -56,9 +56,13 @@ fun LocalAnalysisOverlay(
                     Text(if (analysis.isReady) "Analyze again" else "Analyze")
                 }
             }
+            val faceReviewTargetClip = editor.project?.let { project ->
+                editor.selectedClipId?.let { selectedId -> project.clips.firstOrNull { it.id == selectedId } }
+                    ?: project.clips.firstOrNull { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
+            }
             Text("Offline face tracking review", modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-            Text("Face-model review is not enabled in this release's selected video-tool scope. Deterministic scene analysis above remains available; Google Play policy is not presented as requiring a blanket all-frame classifier.",
+            Text("Local face detection and crop suggestions run on bounded samples of the selected project video (up to 180 frames, about 500 ms apart). Review only: the automatic reframe cannot be applied because project export rejects face-crop tracks; use manual crop instead.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
             val selectedFaceCropClip = editor.project?.clips?.firstOrNull { it.id == editor.selectedClipId && it.faceCropTrack != null }
@@ -77,10 +81,10 @@ fun LocalAnalysisOverlay(
                 }
             }
             OutlinedButton(onClick = { vm.startLocalFaceTrackReview() },
-                enabled = GlobalModerationEnforcement.readiness.approved && !faceReview.isRunning && !analysis.isRunning,
+                enabled = faceReviewTargetClip?.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
+                    !faceReview.isRunning && !analysis.isRunning,
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-                Text(if (!GlobalModerationEnforcement.readiness.approved) "Face review unavailable · outside enabled tool scope"
-                    else if (faceReview.isReady) "Analyze face tracks again" else "Analyze face tracks offline")
+                Text(if (faceReview.isReady) "Analyze face tracks again" else "Analyze face tracks offline")
             }
             if (analysis.isRunning) {
                 LinearProgressIndicator(progress = { analysis.progress.coerceIn(0f, 1f) },
@@ -197,14 +201,6 @@ fun LocalAnalysisOverlay(
                                 )
                             }
                         }
-                    }
-                    val allReviewed = result.samples.isNotEmpty() && result.samples.all {
-                        it.timestampMs in faceReview.reviewedSampleTimestamps
-                    }
-                    Button(onClick = { vm.applyReviewedFaceCropTrack() },
-                        enabled = allReviewed && GlobalModerationEnforcement.readiness.approved,
-                        modifier = Modifier.padding(horizontal = 16.dp)) {
-                        Text("Apply reviewed reframe")
                     }
                     Text(GlobalModerationEnforcement.statusMessage(ProtectedAiAction.FACE_AWARE_REFRAME),
                         modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall,

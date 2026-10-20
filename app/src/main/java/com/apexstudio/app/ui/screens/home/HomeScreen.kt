@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,17 +26,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashMarker
-import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
-import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
@@ -108,17 +109,12 @@ fun HomeScreen(
             .background(ApexPalette.BgBase)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            AppTopBar(
-                title = "ApexStudio",
-                subtitle = "Cinematic Editor • 8K HDR NLE",
-                onHome = { /* already on home */ },
-                onExport = onExport,
-                onSettings = onOpenSettings
-            )
+            DashboardHeader(onOpenSettings = onOpenSettings)
         }
 
         item {
@@ -135,11 +131,47 @@ fun HomeScreen(
         }
 
         item {
-            SectionLabel("Your Projects (${projects.size})")
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SectionLabel("Your Projects (${projects.size})")
+                Text("Pick up where you left off", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
+        }
+        if (projects.isEmpty()) {
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Your next story starts here", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("Choose a video or photo above. Your original media stays unchanged.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
+                    }
+                }
+            }
         }
 
         items(projects, key = { it.id }) { p ->
             ProjectRow(p, onOpen = { onProjectOpen(p.id) })
+        }
+    }
+}
+
+@Composable
+internal fun DashboardHeader(onOpenSettings: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("dashboard-header"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("YOUR CREATIVE SPACE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("ApexStudio", color = ApexPalette.TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Make every frame yours.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
+        }
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                .background(ApexPalette.BgElevated).testTag("dashboard-settings")
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = ApexPalette.TextPrimary)
         }
     }
 }
@@ -222,13 +254,17 @@ private fun DashboardEditorEntry(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .testTag(testTag),
-        cornerRadius = 16.dp,
-        contentPadding = PaddingValues(12.dp)
+        cornerRadius = 20.dp,
+        contentPadding = PaddingValues(16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(icon, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(22.dp))
-            Text(title, color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Text(subtitle, color = ApexPalette.TextSecondary, fontSize = 10.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(subtitle, color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
         }
     }
 }
@@ -238,8 +274,8 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 100.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .heightIn(min = 164.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -251,11 +287,12 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
             )
             .border(
                 width = 1.dp,
-                color = ApexPalette.NeonCyan.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(16.dp)
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(24.dp)
             )
             .clickable(enabled = enabled, onClick = onCreate)
-            .padding(14.dp)
+            .testTag("dashboard-new-project")
+            .padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -265,7 +302,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                ApexPalette.NeonCyan.copy(alpha = 0.3f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
                                 Color.Transparent
                             )
                         )
@@ -278,7 +315,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                                listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
                             )
                         ),
                     contentAlignment = Alignment.Center
@@ -297,20 +334,20 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                     "New Video Project",
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp
+                    fontSize = 22.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "8K • HDR • 240 fps NLE Engine",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 10.5.sp,
+                    "EDIT • LAYER • CREATE",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "Start a new video editing project",
+                    "Choose your clips. Shape your story.",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 9.5.sp
+                    fontSize = 13.sp
                 )
             }
             Icon(
@@ -350,7 +387,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.linearGradient(
-                            listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan)
+                            listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.primary)
                         )
                     ),
                 contentAlignment = Alignment.Center
@@ -369,7 +406,8 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    maxLines = 1
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -395,14 +433,14 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                         .background(ApexPalette.BgElevated)
                         .border(
                             1.dp,
-                            ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                             RoundedCornerShape(6.dp)
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
                         p.resolution,
-                        color = ApexPalette.NeonCyan,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )

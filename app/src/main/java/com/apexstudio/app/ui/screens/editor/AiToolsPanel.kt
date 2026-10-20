@@ -78,13 +78,13 @@ fun AiToolsPanel(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close AI tools", tint = ApexPalette.TextPrimary) }
             }
-            Text("Local video tools · Google Play policy scope", modifier = Modifier.padding(horizontal = 16.dp),
+            Text("Local video editing tools", modifier = Modifier.padding(horizontal = 16.dp),
                 color = ApexPalette.TextPrimary, style = MaterialTheme.typography.labelMedium)
             Text("Existing project videos only · no prompts · no generation", modifier = Modifier.padding(horizontal = 16.dp),
                 color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
             if (onOpenVideoPresets != null) OutlinedButton(onClick = onOpenVideoPresets,
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_presets")) {
-                Text("Enhance, templates + filters · not ML AI")
+                Text("Enhance, filters, templates + animated titles · not ML AI")
             }
             if (onOpenVideoUpscale != null) Button(onClick = onOpenVideoUpscale,
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_upscale")) {
@@ -158,7 +158,7 @@ fun AiToolsPanel(
         title = { Text("Video-only processing availability") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(AI_PROTECTED_BLOCKER)
-            Text("Fixed Enhance, Templates and Filters are deterministic, not ML AI. ESPCN is learned video upscaling, not generative AI. Other backends remain informational until their scope, licenses and preview/export wiring are ready.")
+            Text("Google Play's AI-Generated Content policy describes content created by generative models based on user prompts and gives prompt-to-content examples; this is not a blanket video exemption. Whisper speech recognition, optional English acoustic word timing, segmentation/compositing, sampled face review and ESPCN upscale run locally on selected existing project videos without prompts or new media generation. This scope does not waive privacy or restricted-content policies. Face-crop application remains unavailable because project export rejects face-crop tracks; artistic style transfer remains unavailable pending license/provenance review and end-to-end integration.")
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(onClick = { showSafetyInfo = false }) { Text("Close") } })

@@ -17,18 +17,19 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class FaceReviewModerationTest {
-    @Test fun outOfScopeReviewBackendFailsBeforeParsingOrDecodingAMediaSource() = runBlocking {
+    @Test fun rawFaceAnalyzerFailsBeforeParsingOrDecodingOutsideEditorVideoScope() = runBlocking {
         try {
             LocalFaceTrackAnalyzer().analyze(RuntimeEnvironment.getApplication(),
                 "https://must-not-be-opened.invalid/video.mp4", 0L, 1_000L)
-            fail("Face-model review is not enabled in the existing-project video tool scope")
+            fail("Face review must require the scoped existing-project video controller")
         } catch (blocked: AiModelUnavailableException) {
-            assertTrue(blocked.message.orEmpty().contains("model-based face-track review"))
-            assertTrue(blocked.message.orEmpty().contains("video-only tool scope"))
+            assertTrue(blocked.message.orEmpty().contains("available only for a selected existing project video"))
+            assertTrue(blocked.message.orEmpty().contains("it does not apply edits"))
+            assertTrue(blocked.message.orEmpty().contains("Project export rejects face-crop tracks"))
         }
     }
 
-    @Test fun editorEntryRemainsOutOfScopeWithoutProjectMutationUndoOrJobCreation() {
+    @Test fun editorEntryValidatesVideoAndContextBeforeStartingAnalysis() {
         val clip = MediaClip("video", "Video", "file:///video.mp4", 2_000L, trimEndMs = 2_000L)
         val project = Project("project", "Project", 2_000L, clips = listOf(clip))
         val vm = EditorViewModel()
@@ -38,7 +39,7 @@ class FaceReviewModerationTest {
         assertTrue(vm.undoStack.isEmpty())
         assertNull(vm.faceTrackReviewJob)
         assertNull(vm.faceTrackReviewToken)
-        assertTrue(vm.faceTrackReview.value.error.orEmpty().contains("video-only tool scope"))
+        assertTrue(vm.faceTrackReview.value.error.orEmpty().contains("editor context is unavailable"))
         assertFalse(vm.faceTrackReview.value.isRunning)
     }
 }

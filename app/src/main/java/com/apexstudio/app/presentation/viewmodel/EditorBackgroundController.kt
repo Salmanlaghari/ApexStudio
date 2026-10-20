@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
-import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
@@ -152,14 +151,6 @@ fun EditorViewModel.applyBackgroundReplace(
         )
         return
     }
-    if (!GlobalModerationEnforcement.readiness.approved) {
-        _backgroundUi.value = _backgroundUi.value.copy(
-            phase = BackgroundPhase.FAILED,
-            progress01 = 0f,
-            message = GlobalModerationEnforcement.statusMessage(ProtectedAiAction.BACKGROUND_REPLACEMENT),
-        )
-        return
-    }
     if (backgroundJob?.isActive == true) return // Ignore duplicate Apply taps.
 
     backgroundJob?.cancel()
@@ -224,19 +215,21 @@ fun EditorViewModel.applyBackgroundReplace(
                 it.copy(phase = BackgroundPhase.PROCESSING, progress01 = 0f,
                     message = "Segmenting person… (on-device AI)")
             }
-            val processed = BackgroundReplaceEngine.process(
-                ctxApp,
-                sourceUri,
-                effective,
-                outputFile
-            ) { progress ->
-                // Progress originates on the engine worker. Dispatch it
-                // to Main and re-check request identity when it executes.
-                viewModelScope.launch(Dispatchers.Main.immediate) {
-                    publishBackgroundState(requestJob) {
-                        it.copy(phase = BackgroundPhase.PROCESSING,
-                            progress01 = progress,
-                            message = "Processing ${(progress * 100).toInt()}%…")
+            val processed = GlobalModerationEnforcement.withExistingProjectVideoBackgroundReplacement(sourceUri) {
+                BackgroundReplaceEngine.process(
+                    ctxApp,
+                    sourceUri,
+                    effective,
+                    outputFile
+                ) { progress ->
+                    // Progress originates on the engine worker. Dispatch it
+                    // to Main and re-check request identity when it executes.
+                    viewModelScope.launch(Dispatchers.Main.immediate) {
+                        publishBackgroundState(requestJob) {
+                            it.copy(phase = BackgroundPhase.PROCESSING,
+                                progress01 = progress,
+                                message = "Processing ${(progress * 100).toInt()}%…")
+                        }
                     }
                 }
             }

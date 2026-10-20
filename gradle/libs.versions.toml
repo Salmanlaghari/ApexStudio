@@ -27,8 +27,10 @@ robolectric = "4.14.1"
 roborazzi = "1.39.0"
 secrets = "2.0.1"
 googleServices = "4.4.2"
+jna = "5.19.1"
 
 [libraries]
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

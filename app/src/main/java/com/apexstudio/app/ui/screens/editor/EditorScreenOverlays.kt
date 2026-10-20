@@ -1160,6 +1160,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     vm: EditorViewModel,
     exoPlayer: ExoPlayer?,
     isCoverMode: Boolean,
+    isTimelineFocusMode: Boolean = false,
     isFullscreenPreview: Boolean = false,
     onFullscreenToggle: () -> Unit = {},
     currentSelectedClip: MediaClip?,
@@ -1179,10 +1180,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .weight(1f)
+            // Keep the preview/player subtree composed in focus mode while
+            // yielding essentially all available height to the timeline.
+            .weight(editorPreviewLayoutWeight(isTimelineFocusMode && !isFullscreenPreview))
             .padding(
-                horizontal = if (isFullscreenPreview) 0.dp else 12.dp,
-                vertical = if (isFullscreenPreview) 0.dp else 4.dp
+                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 12.dp,
+                vertical = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 4.dp
             )
     ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
@@ -1563,7 +1566,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     state: EditorState,
     vm: EditorViewModel,
     seekPlayerAndState: (Long) -> Unit,
-    onOpenAddMediaMenu: (ClipType) -> Unit
+    onOpenAddMediaMenu: (ClipType) -> Unit,
+    isTimelineFocusMode: Boolean = false,
+    onTimelineFocusModeChange: (Boolean) -> Unit = {}
 ) {
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
@@ -1584,6 +1589,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             kfClip?.let { vm.toggleKeyframeAtPlayheadFor(it.id) }
         },
         onFullscreenToggle = { vm.toggleFullscreenPreview() }
+    )
+
+    TimelineFocusModeControl(
+        isFocused = isTimelineFocusMode,
+        onToggle = { onTimelineFocusModeChange(!isTimelineFocusMode) }
     )
 
     // The timeline area is just the timeline: the Adjust chips row
@@ -1654,7 +1664,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .weight(1.2f)
+            .weight(timelineTrackLayoutWeight(isTimelineFocusMode))
     )
 
 }

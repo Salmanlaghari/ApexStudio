@@ -11,12 +11,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.geometry.Offset
+import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
@@ -59,15 +62,20 @@ class TimelineWorkspaceLayoutTest {
         vScrollState: ScrollState = androidx.compose.foundation.rememberScrollState(),
         onScrub: (Long) -> Unit = {},
         clips: List<MediaClip> = listOf(clip("main")),
+        audioTracks: List<AudioTrack> = emptyList(),
+        selectedAudioTrackId: String? = null,
         playheadMs: Long = 0L,
         scrollState: ScrollState = androidx.compose.foundation.rememberScrollState(),
         textOverlays: List<TextOverlay> = emptyList(),
         onAddMedia: (ClipType) -> Unit = {},
         onDeleteClips: (Set<String>) -> Unit = {},
+        onSelectAudioTrack: (String) -> Unit = {},
     ) {
         Box(Modifier.requiredSize(widthDp.dp, heightDp.dp).testTag("timeline-test-root")) {
             VideoTimeline(
                 clips = clips,
+                audioTracks = audioTracks,
+                selectedAudioTrackId = selectedAudioTrackId,
                 textOverlays = textOverlays,
                 totalDurationMs = 120_000L,
                 playheadMs = playheadMs,
@@ -75,6 +83,7 @@ class TimelineWorkspaceLayoutTest {
                 onOpenTrim = {},
                 onAddMedia = onAddMedia,
                 onDeleteClips = onDeleteClips,
+                onSelectAudioTrack = onSelectAudioTrack,
                 scrollState = scrollState,
                 vScrollState = vScrollState,
                 onScrub = onScrub,
@@ -229,6 +238,61 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithContentDescription("Effects and filters").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Music").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Voice and sound effects").assertDoesNotExist()
+    }
+
+    @Test
+    fun emptyMainLaneIsHiddenButOverlayGapAndPlacementRemainInCompactWorkspace() {
+        val overlay = clip("overlay", type = ClipType.OVERLAY, trackIndex = 1, offsetMs = 3_000L)
+        composeRule.setContent {
+            workspace(heightDp = 180, clips = listOf(overlay))
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithContentDescription("Main video track").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
+        val chip = composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        // V2 remains at its original 3s project offset (54dp/s), after the
+        // fixed 48dp track rail. Hiding V1 is a view-only change, not a ripple.
+        assertTrue("Overlay's intentional 3s gap should remain visible: $chip", chip.left >= 48f + 3_000f * 0.054f - 2f)
+        assertTrue("Overlay chip should remain touchable in the compact viewport", chip.width > 0f && chip.height > 0f)
+    }
+
+    @Test
+    fun emptyMainLaneAndSupportingLayerStayAlignedInFullHeightWorkspace() {
+        composeRule.setContent {
+            workspace(
+                heightDp = 500,
+                clips = listOf(clip("overlay", type = ClipType.OVERLAY, trackIndex = 1, offsetMs = 3_000L)),
+            )
+        }
+        composeRule.onNodeWithContentDescription("Main video track").assertDoesNotExist()
+        val rail = composeRule.onNodeWithContentDescription("V2 overlay").fetchSemanticsNode().boundsInRoot
+        val chip = composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("V2 label must align with its visible layer: rail=$rail chip=$chip", kotlin.math.abs(rail.center.y - chip.center.y) < 12f)
+    }
+
+    @Test
+    fun audioSelectionStartsEmptyAndSelectingAnyLaneCallsTheRealSelectionAction() {
+        val selectedId = mutableStateOf<String?>(null)
+        composeRule.setContent {
+            workspace(
+                clips = emptyList(),
+                selectedAudioTrackId = selectedId.value,
+                audioTracks = listOf(
+                    AudioTrack("music-a", "Music A", "file:///music-a.wav", trimEndMs = 4_000L),
+                    AudioTrack("music-b", "Music B", "file:///music-b.wav", trimEndMs = 4_000L),
+                ),
+                onSelectAudioTrack = { selectedId.value = it },
+            )
+        }
+        val secondTrack = composeRule.onNodeWithTag("timeline-audio-track-music-b", useUnmergedTree = true)
+        secondTrack.assertIsNotSelected()
+        secondTrack
+            .performClick()
+        composeRule.runOnIdle { assertEquals("music-b", selectedId.value) }
+        secondTrack.assertIsSelected()
     }
     @Test
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {

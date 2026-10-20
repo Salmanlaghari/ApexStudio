@@ -172,7 +172,7 @@ object EnglishWordAlignment {
         sourceEndMs: Long,
         onProgress: (Float) -> Unit = {},
     ): List<WordCue> = withContext(Dispatchers.Default) {
-        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WORD_ALIGNMENT)
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.WORD_ALIGNMENT, uri.toString())
         if (sourceStartMs < 0L || sourceEndMs <= sourceStartMs) {
             fail(EnglishAlignmentFailure.INVALID_RANGE, "Source trim must have a non-negative start and a later end")
         }

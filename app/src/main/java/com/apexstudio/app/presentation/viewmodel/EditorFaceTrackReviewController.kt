@@ -39,20 +39,6 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
     faceTrackReviewToken = null
     faceTrackReviewJob = null
 
-    try {
-        com.apexstudio.app.ai.safety.GlobalModerationEnforcement.requireApproved(
-            com.apexstudio.app.ai.safety.ProtectedAiAction.FACE_TRACK_REVIEW
-        )
-    } catch (blocked: com.apexstudio.app.ai.AiModelUnavailableException) {
-        _faceTrackReview.value = FaceTrackReviewUiState(
-            status = FaceTrackReviewStatus.ERROR,
-            message = "Face-model review is locked; no frames were decoded or inferred.",
-            error = blocked.message,
-            reframeTarget = reframeTarget,
-        )
-        return
-    }
-
     val targetId = clipId ?: _state.value.selectedClipId
         ?: _state.value.project?.clips?.firstOrNull { it.type == ClipType.VIDEO }?.id
     val project = _state.value.project
@@ -102,29 +88,32 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
     )
     faceTrackReviewJob = viewModelScope.launch {
         try {
-            val result = LocalFaceTrackAnalyzer(outputAspectRatio = reframeTarget.aspectRatio).analyze(
-                context = appContext,
-                uri = snapshot.uri,
-                sourceStartMs = startMs,
-                sourceEndMs = endMs,
-                cancellation = token,
-            ) { progress ->
-                // Decoder/model callbacks run on a worker. Serialize identity checks and lifecycle
-                // mutations on Main so an old worker cannot cancel or overwrite a replacement run.
-                viewModelScope.launch {
-                    if (faceTrackReviewToken === token) {
-                        if (!isFaceTrackSnapshotCurrent(snapshot)) {
-                            invalidateStaleFaceTrackReview(snapshot)
-                        } else {
-                            _faceTrackReview.update { state ->
-                                if (state.status == FaceTrackReviewStatus.RUNNING && state.sourceSnapshot == snapshot) {
-                                    state.copy(progress = progress.coerceIn(0f, 1f))
-                                } else state
+            val result = com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+                .withExistingProjectVideoFaceReview(clip) {
+                    LocalFaceTrackAnalyzer(outputAspectRatio = reframeTarget.aspectRatio).analyze(
+                        context = appContext,
+                        uri = snapshot.uri,
+                        sourceStartMs = startMs,
+                        sourceEndMs = endMs,
+                        cancellation = token,
+                    ) { progress ->
+                        // Decoder/model callbacks run on a worker. Serialize identity checks and lifecycle
+                        // mutations on Main so an old worker cannot cancel or overwrite a replacement run.
+                        viewModelScope.launch {
+                            if (faceTrackReviewToken === token) {
+                                if (!isFaceTrackSnapshotCurrent(snapshot)) {
+                                    invalidateStaleFaceTrackReview(snapshot)
+                                } else {
+                                    _faceTrackReview.update { state ->
+                                        if (state.status == FaceTrackReviewStatus.RUNNING && state.sourceSnapshot == snapshot) {
+                                            state.copy(progress = progress.coerceIn(0f, 1f))
+                                        } else state
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
             if (faceTrackReviewToken === token) {
                 if (!isFaceTrackSnapshotCurrent(snapshot)) {
                     invalidateStaleFaceTrackReview(snapshot)

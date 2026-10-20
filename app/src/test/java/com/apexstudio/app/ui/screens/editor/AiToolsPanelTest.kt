@@ -30,7 +30,8 @@ class AiToolsPanelTest {
             onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithTag("open_project_video_presets").activateVisibleControl()
         compose.runOnIdle { assertEquals(1, opens) }
-        compose.onNodeWithText("Local video tools · Google Play policy scope").assertExists()
+        compose.onNodeWithText("Local video editing tools").assertExists()
+        compose.onNodeWithText("Enhance, filters, templates + animated titles · not ML AI").assertExists()
         compose.onNodeWithContentDescription("Camera gesture controls").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -39,7 +40,7 @@ class AiToolsPanelTest {
     @Test fun compactIconsHideFullDetailsUntilTappedAndNeverExposeProtectedSwitch() {
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
             reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
-        compose.onNodeWithText("Local video tools · Google Play policy scope").assertExists()
+        compose.onNodeWithText("Local video editing tools").assertExists()
         compose.onNodeWithText(tool.detail).assertDoesNotExist()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertDoesNotExist()
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -64,6 +65,10 @@ class AiToolsPanelTest {
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
         compose.onNodeWithText("Video-only processing availability").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
+        compose.onNodeWithText("not a blanket video exemption", substring = true).assertExists()
+        compose.onNodeWithText("without prompts or new media generation", substring = true).assertExists()
+        compose.onNodeWithText("does not waive privacy or restricted-content policies", substring = true).assertExists()
+        compose.onNodeWithText("Face-crop application remains unavailable", substring = true).assertExists()
     }
 
     @Test fun downloadIconOpensExplicitModelChooserWithoutEnablingAI() {

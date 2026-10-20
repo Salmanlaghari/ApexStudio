@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "ApexStudio"
 include(":app")
 include(":feature:camerakit")
+include(":gpuimage-native")

@@ -3,12 +3,12 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
-import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
 import com.apexstudio.app.ai.subtitles.EnglishWordAlignment
 import com.apexstudio.app.ai.subtitles.TimingPrecision
 import com.apexstudio.app.ai.subtitles.WordCue
 import com.apexstudio.app.domain.model.ClipTimeMapping
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
@@ -74,6 +74,9 @@ internal data class CaptionSourceSnapshot(val projectId: String, val clip: Media
         clip.textOverlays.filter { it.presetId == "caption_auto" } ==
         current.textOverlays.filter { it.presetId == "caption_auto" }
 }
+
+internal fun isExistingProjectVideoCaptionSource(clip: MediaClip): Boolean =
+    clip.type == ClipType.VIDEO && clip.uri.isNotBlank()
 
 /** Engine segments are relative to the trimmed SOURCE; text overlays use clip OUTPUT time.
  * Both boundaries must pass through the original speed curve (not an independently restarted ramp).
@@ -202,19 +205,14 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
         _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED, message = "Clip not found")
         return
     }
+    if (!isExistingProjectVideoCaptionSource(clip)) {
+        _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED,
+            message = "Auto captions require a video already in this project.")
+        return
+    }
     if (_captionUi.value.phase == CaptionPhase.TRANSCRIBING) return
     captionJob?.cancel()
     captionJob = null
-    if (!GlobalModerationEnforcement.readiness.approved) {
-        _captionUi.value = _captionUi.value.copy(
-            phase = CaptionPhase.FAILED,
-            progress01 = 0f,
-            segmentsAdded = 0,
-            requestId = null,
-            message = GlobalModerationEnforcement.statusMessage(ProtectedAiAction.WHISPER_CAPTIONS),
-        )
-        return
-    }
     val request = UUID.randomUUID().toString()
     val language = _captionUi.value.language
     val timingMode = _captionUi.value.timingMode
@@ -241,13 +239,15 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
                 return@launch
             }
             updateCaptionRequest(request) { it.copy(message = "Listening… (on-device AI)") }
-            val segments = WhisperCaptionEngine.transcribe(
-                ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
-            ) { p ->
-                updateCaptionRequest(request) { it.copy(
-                    progress01 = p.coerceIn(0f, 1f) * if (timingMode != CaptionTimingMode.PHRASE) 0.65f else 1f,
-                    message = "Transcribing ${(p * 100).toInt()}%…",
-                ) }
+            val segments = GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip) {
+                WhisperCaptionEngine.transcribe(
+                    ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
+                ) { p ->
+                    updateCaptionRequest(request) { it.copy(
+                        progress01 = p.coerceIn(0f, 1f) * if (timingMode != CaptionTimingMode.PHRASE) 0.65f else 1f,
+                        message = "Transcribing ${(p * 100).toInt()}%…",
+                    ) }
+                }
             }
             ensureActive()
             if (_captionUi.value.requestId != request) return@launch
@@ -259,10 +259,12 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
             var karaokeWords: List<WordCue>? = null
             val finalSegments = if (timingMode != CaptionTimingMode.PHRASE && segments.isNotEmpty()) {
                 updateCaptionRequest(request) { it.copy(message = "Aligning English words offline…", progress01 = .65f) }
-                val words = EnglishWordAlignment.align(ctx.applicationContext, android.net.Uri.parse(clip.uri),
-                    segments, clip.trimStartMs, clip.trimEndMs) { progress ->
-                    updateCaptionRequest(request) { it.copy(progress01 = .65f + .35f * progress.coerceIn(0f, 1f),
-                        message = "Aligning English words ${(progress * 100).toInt()}%…") }
+                val words = GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip) {
+                    EnglishWordAlignment.align(ctx.applicationContext, android.net.Uri.parse(clip.uri),
+                        segments, clip.trimStartMs, clip.trimEndMs) { progress ->
+                        updateCaptionRequest(request) { it.copy(progress01 = .65f + .35f * progress.coerceIn(0f, 1f),
+                            message = "Aligning English words ${(progress * 100).toInt()}%…") }
+                    }
                 }
                 ensureActive()
                 if (_captionUi.value.requestId != request) return@launch

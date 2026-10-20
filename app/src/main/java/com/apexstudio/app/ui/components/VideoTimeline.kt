@@ -115,6 +115,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import com.apexstudio.app.data.media.SyntheticWaveform
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
@@ -477,11 +478,13 @@ fun VideoTimeline(
     // video clips (0..9). A layer appears ONLY when it holds clips —
     // empty tracks are never shown (no "+ Add overlay (OVLx)" / "+ OVL2"
     // placeholder rows; a track is created automatically when the user
-    // adds an overlay from the bottom bar). Layer 0 is always present
-    // (main V1).
+    // adds an overlay from the bottom bar). Unlike the old editor, an empty
+    // project does not reserve a black V1 lane: hiding that presentation
+    // must not rewrite clips, offsets, or intentional timeline gaps.
     val videoLayers = remember(layerContentIndex) {
         layerContentIndex.videoByLayer.keys.sorted().take(10)
     }
+    val hasMainVideo = videoClips.isNotEmpty()
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
     val overlayLayerHeight = 60.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
@@ -540,7 +543,7 @@ fun VideoTimeline(
     // every track stays visible; the outer vertical scroll handles overflow.
     val a1Height = (musicTracks.size * 46).dp
     val a2Height = (voiceTracks.size * 46).dp
-    // Dynamic timeline height: ruler + V1 + optional waveform strip +
+    // Dynamic timeline height: ruler + optional V1 + optional waveform strip +
     // overlay rows (only layers holding clips) + text + sticker + FX +
     // A1 + A2, with 10dp spacing between rows — built from the same
     // per-row heights the canvas renders, so nothing is clipped.
@@ -561,10 +564,10 @@ fun VideoTimeline(
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
-    // Pinned header: ruler + gap + V1 (+ waveform strip when the clip
-    // has audio) stays fixed while the other tracks scroll vertically
-    // underneath it.
-    val fixedHeaderHeight = rulerHeight.value.toInt() + 10 + v1Height.value.toInt() +
+    // Pinned header: ruler + (when present) gap + V1 (+ waveform strip
+    // when the clip has audio) stays fixed while the other tracks scroll.
+    val fixedHeaderHeight = rulerHeight.value.toInt() +
+        (if (hasMainVideo) 10 + v1Height.value.toInt() else 0) +
         (if (showWaveformStrip) 10 + waveformStripHeight else 0)
     val timelineTotalDp = fixedHeaderHeight +
         10 +
@@ -638,10 +641,15 @@ fun VideoTimeline(
                     .height(timelineTotalDp.dp).graphicsLayer { translationY = -vScrollState.value.toFloat() }
                 else Modifier.fillMaxHeight()
             )) {
-                TimelineLaneLabel("SEC", rulerHeight + 10.dp, Color(0xFF8C9AAF))
-                // Keep the identity rail aligned with the main-video and waveform rows,
-                // but leave those rows unlabeled per the simplified timeline header request.
-                Spacer(Modifier.fillMaxWidth().height(v1Height).semantics { contentDescription = "Main video track" })
+                TimelineLaneLabel(
+                    "SEC",
+                    rulerHeight + if (hasMainVideo) 10.dp else 0.dp,
+                    Color(0xFF8C9AAF)
+                )
+                // Keep the identity rail aligned with rows that actually
+                // exist; an empty V1 is not a rendered track.
+                if (hasMainVideo) Spacer(Modifier.fillMaxWidth().height(v1Height)
+                    .semantics { contentDescription = "Main video track" })
                 if (showWaveformStrip) Spacer(Modifier.fillMaxWidth().height((10 + waveformStripHeight).dp)
                     .semantics { contentDescription = "Source audio waveform" })
                 Box(Modifier.fillMaxWidth().then(
@@ -731,7 +739,7 @@ fun VideoTimeline(
             Column(modifier = Modifier.fillMaxSize().then(
                 if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier
             )) {
-                // PINNED HEADER: ruler + V1 stay fixed while the other
+                // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
                 // tracks scroll vertically. Horizontally synced with the
                 // scrolling content via translationX (no recomposition
                 // per scroll frame); clipped so it never draws over the
@@ -780,11 +788,12 @@ fun VideoTimeline(
                                     .testTag("timeline-ruler")
                             )
 
-                            // TRACK 1: V1 (Main Video + Photo Filmstrip Track, layer 0 only)
-                            // No playhead param: TimelineVideoTrack never
-                            // used it (dead param) — the playhead is drawn
-                            // by TimelinePlayheadOverlay, not the V1 row.
-                            TimelineVideoTrack(
+                            // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
+                            // layer 0 only). Keep its timing model untouched;
+                            // simply don't consume screen space when it has
+                            // no clips, so overlay/audio-only workspaces use
+                            // the freed height for their real layers.
+                            if (hasMainVideo) TimelineVideoTrack(
                                 videoClips = videoClips,
                                 selectedClipId = selectedClipId,
                                 msToDp = msToDp,
@@ -2845,7 +2854,10 @@ private fun TimelineAudioTrack(
             (audioTracks.firstOrNull()?.id ?: "master").hashCode().toLong(), 160
         )
     }
-    val effectiveSelectedId = selectedAudioTrackId ?: audioTracks.firstOrNull()?.id
+    // A track is selected only after a user tap. Highlighting the first row
+    // without updating EditorState made the UI look selected while its
+    // contextual actions still targeted the global tools.
+    val effectiveSelectedId = selectedAudioTrackId
 
     Column(
         modifier = modifier
@@ -2936,6 +2948,8 @@ private fun AudioTrackLaneRow(
                 .clip(RoundedCornerShape(6.dp))
                 .background(if (isSelected) Color(0xFF0B3B48) else Color(0xFF111827))
                 .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) Color.White else accent.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                .testTag("timeline-audio-track-${track.id}")
+                .semantics { selected = isSelected }
                 .clickable(onClick = onSelect)
                 .pointerInput(track, msToDp) {
                     detectDragGestures(

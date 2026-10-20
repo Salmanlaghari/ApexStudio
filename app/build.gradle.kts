@@ -1,4 +1,7 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import com.apexstudio.buildlogic.StripGpuImageDecoderTransform
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+import org.gradle.api.attributes.Usage
 import java.util.Properties
 
 plugins {
@@ -192,6 +195,34 @@ secrets {
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
+// Keep the upstream GPUImage AAR's APIs/resources, but replace only its bundled
+// 4KB-aligned yuv-decoder JNI binaries with the local 16KB-aligned rebuild.
+dependencies.registerTransform(StripGpuImageDecoderTransform::class.java) {
+  from.attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
+  to.attribute(
+    ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+    StripGpuImageDecoderTransform.OUTPUT_ARTIFACT_TYPE
+  )
+}
+val gpuImageAarConfiguration = configurations.create("gpuImageAar") {
+  isCanBeConsumed = false
+  isCanBeResolved = true
+  isTransitive = false
+  attributes.attribute(
+    Usage.USAGE_ATTRIBUTE,
+    objects.named(Usage::class.java, Usage.JAVA_RUNTIME)
+  )
+}
+dependencies.add(gpuImageAarConfiguration.name, "jp.co.cyberagent.android:gpuimage:2.1.0")
+val gpuImageWithoutDecoder = gpuImageAarConfiguration.incoming.artifactView {
+  attributes {
+    attribute(
+      ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+      StripGpuImageDecoderTransform.OUTPUT_ARTIFACT_TYPE
+    )
+  }
+}.files
+
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
@@ -244,11 +275,18 @@ dependencies {
   implementation("org.freedesktop.gstreamer:gst1-java-core:1.4.0") {
     exclude(group = "net.java.dev.jna", module = "jna")
   }
-  implementation("net.java.dev.jna:jna:5.14.0@aar")
+  // JNA >= 5.17 fixes Android 16 KB calls/RELRO boundaries; keep the Android AAR.
+  implementation(libs.jna) {
+    artifact {
+      type = "aar"
+      extension = "aar"
+    }
+  }
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-  implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
+  implementation(files(gpuImageWithoutDecoder))
+  implementation(project(":gpuimage-native"))
   implementation("com.google.mlkit:face-detection:16.1.7")
   // NOTE: ML Kit segmentation-selfie was removed (app-size work): it had zero
   // imports — all person segmentation goes through MediaPipe Tasks Vision

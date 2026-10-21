@@ -138,9 +138,7 @@ class StickerGlEffect(
             // to place a sticker. Position / size are normalised
             // against the canvas so the composition is resolution
             // independent.
-            val longEdge = 1600
-            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            val (w, h) = if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+            val (w, h) = StickerSpriteSize.forAspect(aspect)
 
             val bitmap = requireNotNull(StickerImageCache(context).get(assetPath)) {
                 "Sticker asset is missing or cannot be decoded: $assetPath"
@@ -171,9 +169,7 @@ class StickerGlEffect(
 
         /** Sprite canvas size for the current video aspect (shared PNG/Lottie). */
         private fun spriteSize(aspect: Float): Pair<Int, Int> {
-            val longEdge = 1600
-            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+            return StickerSpriteSize.forAspect(aspect)
         }
 
         private fun uploadLottieFrame(frame: android.graphics.Bitmap, eff: StickerOverlay = sticker) {

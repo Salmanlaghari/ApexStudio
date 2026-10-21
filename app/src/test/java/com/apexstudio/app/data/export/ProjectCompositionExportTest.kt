@@ -68,7 +68,7 @@ class ProjectCompositionExportTest {
                 id = "title", text = "YOUR STORY", startMs = 300L, endMs = 1_400L, presetId = "title-bold"
             )),
             stickers = listOf(
-                StickerOverlay(id = "emoji", symbolOrUri = "🔥", startMs = 500L, endMs = 1_800L),
+                StickerOverlay(id = "emoji", symbolOrUri = "🔥", startMs = 500L, endMs = 1_800L, rotationDeg = 25f, opacity = 0.4f),
                 StickerOverlay(id = "png", symbolOrUri = "love/red-heart.webp", assetPath = "stickers/love/red-heart.webp")
             )
         )
@@ -78,6 +78,9 @@ class ProjectCompositionExportTest {
         assertEquals(500L, emoji.startMs)
         assertEquals(1_800L, emoji.endMs)
         assertEquals("🔥", emoji.text)
+        assertEquals(25f, emoji.rotationDeg, 0f)
+        assertEquals(0.4f, emoji.opacity, 0f)
+        assertEquals(source.stickers.first().keyframes, emoji.keyframes)
         assertEquals(
             source.stickers.first().sizeScale * com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
             emoji.sizeScale,

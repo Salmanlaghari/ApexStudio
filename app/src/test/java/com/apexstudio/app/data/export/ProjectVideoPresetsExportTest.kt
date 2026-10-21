@@ -20,9 +20,12 @@ class ProjectVideoPresetsExportTest {
         assertTrue(reason.orEmpty().contains("unknown project-video effect"))
     }
 
-    @Test fun existingTextCompositionRestrictionIsStillHonest() {
+    @Test fun perClipTemplateTitleIsExportableButExportWideTitleStillHasExplicitGate() {
         val titled = clip.copy(textOverlays = listOf(ProjectVideoPresets.textTemplates.first().createTextOverlay()))
         val reason = projectCompositionUnsupportedReason(listOf(titled), ExportEngine.ExportConfig())
-        assertTrue(reason.orEmpty().contains("captions or text overlays"))
+        assertNull(reason)
+        val globalReason = projectCompositionUnsupportedReason(listOf(clip), ExportEngine.ExportConfig(
+            textOverlays = titled.textOverlays))
+        assertTrue(globalReason.orEmpty().contains("export-wide captions"))
     }
 }

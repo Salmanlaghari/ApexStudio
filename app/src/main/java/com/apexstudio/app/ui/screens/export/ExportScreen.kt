@@ -143,9 +143,11 @@ fun ExportScreen(
             )
         }
     }
-    val measuredOutputSize by produceState<ActualOutputSize?>(initialValue = null, context, export.outputUri) {
-        val uri = export.outputUri ?: return@produceState
-        value = withContext(Dispatchers.IO) { measureCompletedOutputSize(context, uri) }
+    // A new URI gets a fresh state immediately; never display the previous file's bytes while reading it.
+    var measuredOutputSize by remember(context, export.outputUri) { mutableStateOf<ActualOutputSize?>(null) }
+    LaunchedEffect(context, export.outputUri) {
+        val uri = export.outputUri ?: return@LaunchedEffect
+        measuredOutputSize = withContext(Dispatchers.IO) { measureCompletedOutputSize(context, uri) }
     }
 
 
@@ -434,7 +436,7 @@ fun ExportScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 exportProgressLabel(export.isExporting, export.progress)
-                                    ?: if (export.outputUri != null && export.progress >= 1f) "Actual file size"
+                                    ?: if (export.outputUri != null && export.progress >= 1f) "Actual last-export file size"
                                     else "Estimated video payload (not total file size)",
                                 color = ApexPalette.TextTertiary,
                                 fontSize = 9.sp

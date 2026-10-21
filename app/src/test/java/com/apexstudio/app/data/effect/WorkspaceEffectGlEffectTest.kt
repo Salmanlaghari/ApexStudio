@@ -64,7 +64,7 @@ class WorkspaceEffectGlEffectTest {
         assertTrue(shader.contains("uniform float uExposure"))
         assertTrue(shader.contains("uniform float uContrast"))
         assertTrue(shader.contains("uniform float uSaturation"))
-        assertTrue(shader.contains("exp2(uExposure * uEnabled)"))
+        assertTrue(shader.contains("effected * exp2(uExposure)"))
         assertTrue(WorkspaceEffectPresets.all.containsAll(WorkspaceEffectPresets.filterIds))
         assertTrue(WorkspaceEffectPresets.all.containsAll(setOf(
             WorkspaceEffectPresets.MONO,

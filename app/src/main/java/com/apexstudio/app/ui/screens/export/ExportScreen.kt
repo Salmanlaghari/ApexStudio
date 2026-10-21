@@ -132,6 +132,17 @@ fun ExportScreen(
     val payloadEstimate = remember(renderedDurationMs, outputBitrateBps, audioMayBeIncluded) {
         estimateExportPayload(renderedDurationMs, outputBitrateBps, audioMayBeIncluded)
     }
+    val canRequestVideoExport = export.isExportEngineReady &&
+        (if (wholeProject) projectBlockReason == null else videoScope.baseClip != null && selectedBlockReason == null)
+    val requestVideoExport: () -> Unit = {
+        if (export.isExporting) vm.cancelCurrentExport()
+        else if (canRequestVideoExport) {
+            if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
+                resolution = selectedResolution, fps = selectedFps.toInt(), quality = selectedQuality,
+                aspectRatio = selectedAspect, bitrateMbps = selectedBitrateMbps
+            )
+        }
+    }
     val measuredOutputSize by produceState<ActualOutputSize?>(initialValue = null, context, export.outputUri) {
         val uri = export.outputUri ?: return@produceState
         value = withContext(Dispatchers.IO) { measureCompletedOutputSize(context, uri) }
@@ -149,7 +160,7 @@ fun ExportScreen(
             title = "Export",
             subtitle = "ApexStudio • Export Settings",
             onBack = { if (export.isExporting) vm.cancelCurrentExport() else onBack() },
-            onExport = if (export.isExporting) null else onExport
+            onExport = if (!export.isExporting && canRequestVideoExport) requestVideoExport else null
         )
         Column(
             modifier = Modifier
@@ -629,20 +640,7 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable(enabled = export.isExporting || (export.isExportEngineReady && if (wholeProject) projectBlockReason == null else selectedBlockReason == null)) {
-                    // Single export path: the ViewModel's engine bakes
-                    // crop + LUT filter + FX + speed + keyframes + text
-                    // overlays into the MP4 and mirrors progress into
-                    // vm.export for the button / gauge below.
-                    if (export.isExporting) vm.cancelCurrentExport()
-                    else if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
-                        resolution = selectedResolution,
-                        fps = selectedFps.toInt(),
-                        quality = selectedQuality,
-                        aspectRatio = selectedAspect,
-                        bitrateMbps = selectedBitrateMbps
-                    )
-                },
+                .clickable(enabled = export.isExporting || canRequestVideoExport, onClick = requestVideoExport),
             contentAlignment = Alignment.Center
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -659,6 +657,7 @@ fun ExportScreen(
                         if (export.progress <= 0f) "Cancel • Preparing export…"
                         else "Cancel • Exporting… ${(export.progress * 100).toInt()}%"
                     else if (!export.isExportEngineReady) "Export engine unavailable"
+                    else if (!wholeProject && videoScope.baseClip == null) "Select a project clip to export"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
                     else if (!wholeProject && selectedBlockReason != null && videoScope.baseClip != null) "Selected-clip export unavailable for these edits"
                     else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",

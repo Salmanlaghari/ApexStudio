@@ -142,7 +142,7 @@ fun AppTopBar(
             ) {
                 Icon(
                     Icons.Default.IosShare,
-                    null,
+                    "Export",
                     tint = ApexPalette.NeonCyan,
                     modifier = Modifier.size(20.dp)
                 )

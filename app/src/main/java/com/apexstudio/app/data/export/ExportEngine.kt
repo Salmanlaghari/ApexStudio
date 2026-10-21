@@ -289,7 +289,9 @@ class ExportEngine(private val context: Context) {
         // so added music is actually audible in the exported video. Empty = no-op.
         val musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
         // Timeline audio overlays are prepared by Media3, then mixed into the completed video.
-        val overlayAudioSources: List<AudioExportSource> = emptyList()
+        val overlayAudioSources: List<AudioExportSource> = emptyList(),
+        /** Project-global start of this clip; keyframes are stored in this clock. */
+        val keyframeTimelineStartMs: Long = 0L
     )
 
     /**
@@ -422,8 +424,10 @@ class ExportEngine(private val context: Context) {
                         val itemConfig = config.copy(
                             trimStartMs = entry.sourceStartMs,
                             trimEndMs = entry.sourceEndMs,
+                            keyframeTimelineStartMs = entry.timelineStartMs,
                             clipSpeed = clip.speedMultiplier,
                             speedPoints = clip.speedPoints,
+                            keyframes = clip.keyframes,
                             volume = (config.volume * clip.volume).coerceIn(0f, 2f),
                             denoiseEnabled = config.denoiseEnabled || clip.denoiseEnabled,
                             denoiseStrength = if (clip.denoiseEnabled) clip.denoiseStrength else config.denoiseStrength
@@ -431,6 +435,7 @@ class ExportEngine(private val context: Context) {
                         val speedPair = buildSpeedProvider(itemConfig)?.let {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
+                        val keyframeClock = keyframeClockFor(itemConfig)
                         val videoEffects = buildList<androidx.media3.common.Effect> {
                             clip.videoCrop.takeUnless { it.isFullFrame }
                                 ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
@@ -469,6 +474,15 @@ class ExportEngine(private val context: Context) {
                                 add(com.apexstudio.app.data.fx.FxGlEffect(
                                     config.fxPreset, config.fxIntensity, config.fxSpeed
                                 ))
+                            }
+                            // Keyframes are in project-global time. This effect runs before
+                            // speed changes PTS, so the mapper can apply this clip's source trim,
+                            // speed curve, and sequential project placement exactly once.
+                            if (!clip.keyframes.isEmpty()) {
+                                add(com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                                    trackProvider = { clip.keyframes },
+                                    timeMsAtPresentationTimeUs = keyframeClock::projectTimeMs
+                                ).buildEffects().first())
                             }
                             speedPair?.second?.let(::add)
                             // These windows are clip-output-relative: the trimmed sequence item starts at 0,
@@ -896,6 +910,18 @@ class ExportEngine(private val context: Context) {
                     }
                 }
 
+                // Keyframes are stored against the project playhead. Evaluate them on the
+                // clipped source clock before SpeedChangeEffect rewrites frame timestamps.
+                val keyframeClock = keyframeClockFor(config)
+                if (!config.keyframes.isEmpty()) {
+                    videoEffects.add(
+                        com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                            trackProvider = { config.keyframes },
+                            timeMsAtPresentationTimeUs = keyframeClock::projectTimeMs
+                        ).buildEffects().first()
+                    )
+                }
+
                 // 5. Speed Ramping with Audio/Video synchronization
                 // Variable curve (PR-E): the SpeedProvider follows the
                 // curve; constant speed is the no-curve fallback.
@@ -906,34 +932,6 @@ class ExportEngine(private val context: Context) {
                 speedPair?.let {
                     // Its paired audio processor is already in the production chain.
                     videoEffects.add(it.second)
-                }
-
-                // 6. Keyframe Animation
-                if (!config.keyframes.isEmpty()) {
-                    videoEffects.add(
-                        com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                            trackProvider = { config.keyframes }
-                        ).buildEffects().first()
-                    )
-                }
-
-                // 6b. Per-clip saturation keyframes (CapCut "Color
-                // Change"): the keyframed factor multiplies the global
-                // saturation at every frame (saturation composes
-                // exactly: sat(sat(c, g), f) == sat(c, g*f), so the
-                // ColorMatrix stage above + this stage = global x
-                // keyframed). Base = all-default adjustments so only
-                // the keyframed saturation applies here. Same frame
-                // time convention as KeyframeAnimationEffect above.
-                if (config.keyframes.hasSaturationPins()) {
-                    videoEffects.add(
-                        com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
-                            adjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
-                            saturationAt = { frameTimeMs ->
-                                config.keyframes.saturationFactorAt(frameTimeMs)
-                            }
-                        )
-                    )
                 }
 
                 // 7. Caption / Text Overlays & Stickers
@@ -1116,14 +1114,24 @@ class ExportEngine(private val context: Context) {
         return DenoiseAudioProcessor(config.denoiseStrength, enabled = true)
     }
 
+    private fun keyframeClockFor(config: ExportConfig) =
+        com.apexstudio.app.data.animation.KeyframeAnimationClock(
+            trimStartMs = config.trimStartMs,
+            trimEndMs = config.trimEndMs,
+            timelineStartMs = config.keyframeTimelineStartMs,
+            clipSpeed = config.clipSpeed,
+            speedPoints = config.speedPoints
+        )
+
     /**
      * Builds the Media3 [SpeedProvider] for an export, or null when no
      * speed change applies (constant 1x, no curve).
      *
      * Timestamp base: the effect receives presentation times relative
-     * to the clipped item start (0-based), the same convention
-     * KeyframeAnimationEffect already relies on — so the fraction is
-     * timeUs / trimmed-span. [getNextSpeedChangeTimeUs] re-queries
+     * to the clipped item start (0-based), so the fraction is
+     * timeUs / trimmed-span. KeyframeAnimationEffect runs before this
+     * speed stage and explicitly maps the same source-relative timestamp
+     * into project time. [getNextSpeedChangeTimeUs] re-queries
      * every 10 ms of source time so the effect tracks the curve
      * instead of caching one rate for the whole clip.
      */

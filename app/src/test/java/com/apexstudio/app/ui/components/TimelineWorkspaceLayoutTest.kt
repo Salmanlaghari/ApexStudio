@@ -23,6 +23,8 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -95,15 +97,33 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun mainVideoLaneStaysFixedAt64DpRegardlessOfViewportAndSupportingRows() {
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
+    fun mainVideoLaneStaysFixedAt56DpRegardlessOfViewportAndSupportingRows() {
+        assertEquals(56.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
+        assertEquals(56.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
+        assertEquals(56.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(56.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(56.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(56.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
+        assertEquals(56.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
         assertEquals(0.dp, mainVideoLaneHeight(720f, hasMainVideo = false))
+    }
+
+    @Test
+    fun compactHeightCountsOnlyPopulatedRowsForTheParentEditorLayout() {
+        val empty = EditorState()
+        val singleMain = EditorState(
+            project = Project(id = "p", name = "Project", durationMs = 30_000L, clips = listOf(clip("main"))),
+        )
+        val mainAndOverlay = EditorState(
+            project = Project(
+                id = "p", name = "Project", durationMs = 30_000L,
+                clips = listOf(clip("main"), clip("overlay", type = ClipType.OVERLAY, trackIndex = 1)),
+            ),
+        )
+
+        assertEquals(64.dp, compactTimelineHeight(empty)) // header + compact ruler only
+        assertEquals(130.dp, compactTimelineHeight(singleMain))
+        assertEquals(178.dp, compactTimelineHeight(mainAndOverlay))
     }
 
     @Test
@@ -118,10 +138,8 @@ class TimelineWorkspaceLayoutTest {
         val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
-        assertEquals("V1 remains the compact fixed-height lane", 64f, main.height, 1f)
-        // The labeled pinned region contains the pre-existing 10dp row gap
-        // plus the compact 12dp waveform strip (PR170 geometry).
-        assertEquals("10dp separation + 12dp waveform strip", 22f, waveform.height, 1f)
+        assertEquals("V1 remains the compact fixed-height lane", 56f, main.height, 1f)
+        assertEquals("The waveform remains a compact 12dp strip", 12f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
     }
 
@@ -139,7 +157,9 @@ class TimelineWorkspaceLayoutTest {
         val main = composeRule.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         composeRule.onNodeWithContentDescription("Source audio waveform").assertExists()
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
-        assertEquals("V1 remains fixed-height beside its supporting row", 64f, main.height, 1f)
+        assertEquals("V1 remains fixed-height beside its supporting row", 56f, main.height, 1f)
+        val overlay = composeRule.onNodeWithContentDescription("V2 overlay").fetchSemanticsNode().boundsInRoot
+        assertEquals("Populated overlay layers use the compact row height", 28f, overlay.height, 1f)
         composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true).assertExists()
     }
 
@@ -238,7 +258,7 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun accessibleMainRailStaysFixedAndAlignedWithItsClipDuringHorizontalScroll() {
+    fun mainVideoTrackScrollsWithItsClipDuringHorizontalScroll() {
         val scrollState = ScrollState(0)
         composeRule.setContent {
             workspace(
@@ -260,11 +280,14 @@ class TimelineWorkspaceLayoutTest {
         val railAfter = rail.fetchSemanticsNode().boundsInRoot
         val clipAfter = mainClip.fetchSemanticsNode().boundsInRoot
 
-        assertEquals(railBefore.center.x, railAfter.center.x, 0.5f)
+        // The accessible lane spans the complete timeline content width and
+        // is clipped by the viewport, so its reported horizontal center is
+        // not a scrolling position. The clip tag is the actual content item.
         assertEquals(clipBefore.center.x - 30f, clipAfter.center.x, 3f)
+        assertEquals("V1 semantics stay bounded to the compact row", 56f, railAfter.height, 1f)
         assertTrue(
-            "Accessible main-track rail and clip should share the same lane: rail=$railAfter clip=$clipAfter",
-            kotlin.math.abs(railAfter.center.y - clipAfter.center.y) < 18f,
+            "Accessible V1 row should contain its actual clip: row=$railAfter clip=$clipAfter",
+            clipAfter.center.y in railAfter.top..railAfter.bottom,
         )
     }
 
@@ -303,9 +326,9 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
         val chip = composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
-        // V2 remains at its original 3s project offset (54dp/s), after the
-        // fixed 48dp track rail. Hiding V1 is a view-only change, not a ripple.
-        assertTrue("Overlay's intentional 3s gap should remain visible: $chip", chip.left >= 48f + 3_000f * 0.054f - 2f)
+        // There is no identity gutter: V2 remains at its original 3s
+        // project offset from the shared timeline origin (54dp/s).
+        assertTrue("Overlay's intentional 3s gap should remain visible: $chip", chip.left >= 3_000f * 0.054f - 2f)
         assertTrue("Overlay chip should remain touchable in the compact viewport", chip.width > 0f && chip.height > 0f)
     }
 
@@ -354,6 +377,19 @@ class TimelineWorkspaceLayoutTest {
             click(Offset(x, center.y))
         }
         composeRule.runOnIdle { assertTrue("108dp at 54dp/s must seek 2s: $scrubbedMs", kotlin.math.abs(scrubbedMs - 2_000L) <= 2L) }
+    }
+
+    @Test
+    fun compactRulerHasNoSecGutterAndStartsAtTheSameOriginAsTheVideoLane() {
+        composeRule.setContent { workspace() }
+        composeRule.onNodeWithText("SEC").assertDoesNotExist()
+
+        val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val main = composeRule.onNodeWithContentDescription("Main video track")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Compact ruler keeps its 20dp height", 20f, ruler.height, 1f)
+        assertEquals("Ruler and V1 share the same 00:00 origin", ruler.left, main.left, 0.5f)
     }
 
     @Test

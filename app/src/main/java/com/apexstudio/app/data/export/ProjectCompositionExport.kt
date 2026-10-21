@@ -65,7 +65,6 @@ internal fun projectCompositionUnsupportedReason(
             return "Video clip '${clip.name}' has an invalid audio gain."
         }
         if (clip.backgroundReplace != null) return "Video clip '${clip.name}' has a background-replacement edit."
-        if (!clip.keyframes.isEmpty()) return "Video clip '${clip.name}' has transform keyframes."
         if (clip.textOverlays.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a caption with an invalid time range."
         }

@@ -182,6 +182,11 @@ fun EditorViewModel.startExport(
             videoDrawingClipId = selected?.id,
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
+            keyframeTimelineStartMs = selected?.let { clip ->
+                com.apexstudio.app.domain.model.SpeedCurveMath.timelineStartMsForClip(
+                    s.project?.clips.orEmpty(), clip
+                )
+            } ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
             // Per-clip Volume tool: the clip's own gain multiplies the
             // global audio volume, so what the user hears in the preview
@@ -544,6 +549,8 @@ internal fun buildPhotoExportConfig(
         // IMAGE timeline ignores legacy constant speed; retain its curve.
         clipSpeed = 1f,
         speedPoints = clip.speedPoints,
+        keyframeTimelineStartMs = com.apexstudio.app.domain.model.SpeedCurveMath
+            .timelineStartMsForClip(s.project?.clips.orEmpty(), clip),
         // Shape mask (Mask tool) on the photo clip.
         mask = clip.mask,
         keyframes = clip.keyframes,
@@ -558,9 +565,10 @@ internal fun buildPhotoExportConfig(
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,
-        // Trim is baked into the still-video duration.
+        // The generated still-video is zero-based, but its duration remains the
+        // retained source span used as the speed-curve/keyframe mapping domain.
         trimStartMs = 0L,
-        trimEndMs = 0L,
+        trimEndMs = photoExportSourceDurationMs(clip),
         // Stills carry no audio.
         pitchSemitones = 0f,
         volume = 1f,

@@ -1,0 +1,39 @@
+# Approved editor follow-up: what to test on your phone
+
+This follow-up starts from merged PR #172 (`f4ce16d6621e368668ce9ab73ca0fe9213eaf219`). It implements the owner-approved corrected editor reference without replacing the app's horizontal editing structure. **Do not merge until the owner tests the exact supplied APK and explicitly approves.**
+
+## Layout and real controls
+
+The normal timeline is content-bounded, with a compact dark tick ruler, 56dp main filmstrip and 28dp populated support rows. The empty left identity/eye gutter and full-width SEC row are gone; every track shares the 00:00 origin. Extra tracks scroll rather than consuming the entire preview. Focused timeline mode remains available.
+
+ApexStudio is small, outside the frame; the project name and build-identity dialog remain in the header. There is no fabricated status-bar time or sample loading image inside the preview. The transport shows the actual project clock, previous/next main-clip boundaries, play/pause, undo/redo and fullscreen. The selected-video keyframe control sits immediately above the timeline, not over the picture. Actual keyframe diamonds remain attached to the filmstrip.
+
+The primary dock is horizontally scrollable: **Media, Audio, Text, Overlay, Stickers, FX, Filters, More**. Media opens the main-track picker; Audio imports phone audio; Overlay offers distinct image/video picker routes. Existing additional tools stay under More, with their existing project controllers. Unsupported export scope is explained there instead of claiming every timeline feature is exportable.
+
+## Action audit
+
+| Action | Project/preview behavior | Export behavior and honest limit |
+|---|---|---|
+| Main-clip navigation / seek / play | The project clock selects and binds the correct V1 source. Trimmed and speed-adjusted source seeks use `ClipTimeMapping`; stale source clocks cannot overwrite a cross-clip seek. | Sequential V1 export uses the same trim/speed model. Actual phone decoding, clip-boundary continuity and audio-tail behavior still need device checks. |
+| Keyframes | The selected-video control mutates the actual track; the panel edits real project keyframes. Main preview uses project time. | Export maps clipped-source timestamps through trim, speed and project placement. Later-clip/trim/speed regression tests cover the clock; this is not a claim of device-render verification. |
+| FX / Filters | Selecting a preset previews a draft. Apply commits the retained source range; Cancel discards the draft. | Supported ranged effects share the shader implementation with export. Invalid/unsupported ranges stop export rather than disappear. |
+| Text / stickers / PiP | Existing panels mutate the project; overlays retain their gesture/keyframe controllers. Preview uses the active main clip's crop and text owner. | Selected-clip and whole-project export are different scopes. Project-level stickers, visible PiP and other unsupported composition edits explicitly block whole-project export. Do not interpret a successful selected-clip export as a complete-project export. |
+| Audio | Phone picker and existing volume/trim/track controls retain real project mutations and live audio synchronization. | Canonical project music tracks use the supported postmix route. Legacy audio/SFX clips and unsupported timeline-audio configurations are rejected explicitly. |
+| Boundary transitions | The chooser animates source endpoint thumbnails and saves the selected junction setting. | **Not end-to-end:** main timeline playback does not render boundary transitions, and whole-project export remains blocked. The panel and More explain this. This PR does not claim to implement that missing composition engine. |
+| Enhance / ESPCN | Deterministic color presets are distinct from learned upscaling. Only existing project video is processed locally, without prompts, generation or cloud processing. | The same processed video URI is used by preview/export. The reported 02:59 source remains unsupported by the 00:30 whole-source ESPCN cap; trimming the timeline does not bypass it. Codec, dimensions, model and storage checks may also reject a source. |
+| Missing media / Retry | Missing user media is no longer silently replaced or materialized as generated demo footage. Retry reloads the active project's actual URI at the actual project position. | Missing media must fail rather than export substituted footage. Existing media/project records are not deleted or migrated. Explicit demo/template identifiers remain separate. |
+
+Whole-project composition still has explicit limits beyond the rows above, including photos, masks, drawings, AR, certain per-clip GPU edits/background replacement and unsupported global effects. Its preflight messages are the authoritative current capability gate. These are known limitations, not newly completed features. The app must never silently drop them.
+
+## Test the exact APK, preserving existing projects
+
+1. Check the supplied provenance SHA against the PR head. Tap the small ApexStudio/project header to open build identity (or use Settings > About). If the installed app reports a signing conflict, stop and preserve the installation and projects; do not uninstall or clear app data.
+2. Open the same existing 02:59 project from the device screenshots. Confirm a large undistorted preview, compact timeline, no SEC gutter, no eye controls, no dead black lane, and real 00:00 alignment. Test portrait and landscape, short and long projects, horizontal tool scrolling, timeline pinch/scroll/trim and focus mode.
+3. Select a video: the keyframe control appears above the timeline. Add/edit/remove diamonds, deselect the video, and verify the control hides. Compare saved/reopened project state.
+4. Use two differently trimmed clips, with a speed change on the second. Seek before/after the junction, use previous/next, and play across it without selecting the next clip. Verify source identity, audio and final position. Test music extending past V1 and seeking back out of that tail.
+5. Apply each enabled FX/filter to a short range, cancel another draft, undo/redo and reopen the project. Export a supported scope and inspect the resulting file at times before, inside and after the range. Repeat for keyframe position, zoom, rotation, opacity and saturation on a later, trimmed, sped-up clip.
+6. Verify text/sticker/PiP/audio changes in preview and the actual exported file in the supported scope. Try an unsupported whole-project configuration and confirm an explicit blocker, not a silently incomplete movie. Test transition disclosure and removal.
+7. Confirm the 02:59 ESPCN input is accurately rejected without starting processing. For a supported short video, verify on-device processing, undo to the original URI, and matching processed preview/export. Do not expect optional AI weights or Camera Kit feature delivery to be proven by a lean local APK alone.
+8. Rename or temporarily revoke access to a test source outside the app, then reload: an error must appear, never substituted sample footage. Restore access afterwards; do not delete the owner's media.
+
+Host/JVM tests, static APK alignment, host GLES pixels and a successful build are not physical-device tests, full exported-video parity proofs, Play delivery verification or Google Play approval. Record device model, Android version, exact build SHA and any failing action before approving a merge.

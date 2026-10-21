@@ -155,6 +155,12 @@ fun TransitionPickerSheet(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(top = 2.dp)
                 )
+                Text(
+                    "Panel preview only: boundary transitions are not rendered in main timeline playback or whole-project export. Apply saves the choice, but that export route stays blocked until the transition is removed.",
+                    color = ApexPalette.Warning,
+                    fontSize = 10.sp,
+                    modifier = Modifier.widthIn(max = 280.dp).padding(top = 4.dp)
+                )
             }
 
             IconButton(

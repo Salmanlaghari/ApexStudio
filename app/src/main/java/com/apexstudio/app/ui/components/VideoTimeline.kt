@@ -59,8 +59,6 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Transform
@@ -169,7 +167,41 @@ internal fun mainVideoLaneHeight(
 ): Dp {
     // Keep legacy parameters source-compatible, but viewport slack, waveform
     // presence, and supporting rows must never change V1's compact geometry.
-    return if (hasMainVideo) 64.dp else 0.dp
+    return if (hasMainVideo) 56.dp else 0.dp
+}
+
+/** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
+internal fun compactTimelineHeight(state: EditorState): Dp {
+    val project = state.project
+    val clips = project?.clips.orEmpty()
+    val hasMain = clips.any { it.trackIndex == 0 && it.type != ClipType.OVERLAY }
+    val overlayLayers = clips.asSequence()
+        .filter { it.type == ClipType.OVERLAY && it.trackIndex in 1..9 }
+        .map { it.trackIndex }.distinct().count()
+    val hasText = clips.any { it.textOverlays.isNotEmpty() }
+    val hasStickers = project?.stickers?.isNotEmpty() == true
+    val hasFx = !state.activeFilterId.isNullOrBlank() || !state.activeFxId.isNullOrBlank() ||
+        adjustmentsSummary(state.adjustments).isNotEmpty()
+    val musicRows = project?.audioTracks.orEmpty().count { it.kind == AudioTrack.Kind.MUSIC }
+    val voiceRows = project?.audioTracks.orEmpty().count { it.kind != AudioTrack.Kind.MUSIC }
+    val hasWaveform = state.audioWaveform.isNotEmpty() && hasMain
+
+    // Header + compact ruler, then only rows that contain real content. The
+    // row and inter-row spacing values mirror VideoTimeline's composition.
+    var height = 44 + 20
+    if (hasMain) height += 10 + 56
+    if (hasWaveform) height += 10 + 12
+    val supportRows = overlayLayers + (if (hasText) 1 else 0) +
+        (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
+        (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
+    if (supportRows > 0) height += 10
+    height += overlayLayers * (28 + 10)
+    if (hasText) height += 28 + 10
+    if (hasStickers) height += 28 + 10
+    if (hasFx) height += 28 + 10
+    height += musicRows * 46 + if (musicRows > 0) 10 else 0
+    height += voiceRows * 46 + if (voiceRows > 0) 10 else 0
+    return height.dp
 }
 
 /**
@@ -507,7 +539,7 @@ fun VideoTimeline(
     }
     val hasMainVideo = videoClips.isNotEmpty()
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
-    val overlayLayerHeight = 60.dp
+    val overlayLayerHeight = 28.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -549,7 +581,7 @@ fun VideoTimeline(
     // Shared lane geometry for the pinned identity rail and scrollable canvas.
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
-    val rulerHeight = 36.dp
+    val rulerHeight = 20.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -563,9 +595,9 @@ fun VideoTimeline(
     val a1Height = (musicTracks.size * 46).dp
     val a2Height = (voiceTracks.size * 46).dp
     // Supporting lanes keep their own compact heights; V1 remains fixed at 64dp.
-    val textLaneHeight = 40
-    val stickerLaneHeight = 40
-    val fxLaneHeight = 40
+    val textLaneHeight = 28
+    val stickerLaneHeight = 28
+    val fxLaneHeight = 28
     // Same "something applied" test the FX lane itself uses for
     // its segments — the lane renders only when this is true.
     val hasFx = !activeFilterId.isNullOrBlank() || !activeFxId.isNullOrBlank() ||
@@ -579,7 +611,7 @@ fun VideoTimeline(
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
-    val v1Height = mainVideoLaneHeight(0f, hasMainVideo)
+    val v1Height = if (hasMainVideo) 56.dp else 0.dp
     // Pinned header: ruler + (when present) gap + V1 (+ waveform strip
     // when the clip has audio) stays fixed while the other tracks scroll.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
@@ -651,46 +683,9 @@ fun VideoTimeline(
             }
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
-            Box(Modifier.width(48.dp).fillMaxHeight().clipToBounds().background(Color(0xFF1B212C))) {
-            Column(Modifier.fillMaxWidth().then(
-                if (compactHeight) Modifier.wrapContentHeight(Alignment.Top, unbounded = true)
-                    .height(timelineTotalDp.dp).graphicsLayer { translationY = -vScrollState.value.toFloat() }
-                else Modifier.fillMaxHeight()
-            )) {
-                TimelineLaneLabel(
-                    "SEC",
-                    rulerHeight + if (hasMainVideo) 10.dp else 0.dp,
-                    Color(0xFF9DAABA)
-                )
-                // Keep the identity rail aligned with rows that actually
-                // exist; an empty V1 is not a rendered track.
-                if (hasMainVideo) Spacer(Modifier.fillMaxWidth().height(v1Height)
-                    .semantics { contentDescription = "Main video track" })
-                if (showWaveformStrip) Spacer(Modifier.fillMaxWidth().height((10 + waveformStripHeight).dp)
-                    .semantics { contentDescription = "Source audio waveform" })
-                Box(Modifier.fillMaxWidth().then(
-                    if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f)
-                ).clipToBounds()) {
-                    Column(Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true).height(scrollableTotalDp.dp)
-                        .graphicsLayer { translationY = if (compactHeight) 0f else -vScrollState.value.toFloat() }
-                        .padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        videoLayers.filter { it in 1..9 }.forEach { layer ->
-                            TimelineLaneLabel("V${layer + 1}", overlayLayerHeight, Color(0xFF6555A5),
-                                active = layerContentIndex.videoByLayer[layer].orEmpty()
-                                    .any { it.id == selectedClipId },
-                                description = "V${layer + 1} overlay")
-                        }
-                        if (textOverlays.isNotEmpty()) TimelineLaneLabel("TXT", textLaneHeight.dp, Color(0xFF9A5A00), selectedTextOverlayId != null, "Text")
-                        if (stickers.isNotEmpty()) TimelineLaneLabel("STK", stickerLaneHeight.dp, Color(0xFFB83269), selectedStickerId != null, "Stickers")
-                        if (hasFx) TimelineLaneLabel("FX", fxLaneHeight.dp, Color(0xFF6555A5), description = "Effects and filters")
-                        // Retain audio-row geometry without displaying the A1 identity label.
-                        if (musicTracks.isNotEmpty()) Spacer(Modifier.fillMaxWidth().height(a1Height)
-                            .semantics { contentDescription = "Music" })
-                        if (voiceTracks.isNotEmpty()) TimelineLaneLabel("A2", a2Height, Color(0xFF2563A4), voiceTracks.any { it.id == selectedAudioTrackId }, "Voice and sound effects")
-                    }
-                }
-            }
-            }
+            // No fixed-width identity rail: the ruler and every track share
+            // the same visible 00:00 origin with no label/eye gutter.
+            Spacer(Modifier.width(0.dp))
         // --- TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(
             modifier = Modifier
@@ -883,6 +878,11 @@ fun VideoTimeline(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(v1Height)
+                                    // This boundary keeps lane bounds separate from the full-height
+                                    // timeline deselect target.
+                                    .semantics(mergeDescendants = true) {
+                                        contentDescription = "Main video track"
+                                    }
                             )
 
                             // Thin audio waveform strip directly under
@@ -896,11 +896,12 @@ fun VideoTimeline(
                                 val stripWidthDp =
                                     (firstClip.effectiveDurationMs() * msToDp).dp
                                 Box(
-                                    modifier = Modifier
+                                modifier = Modifier
                                         .width(stripWidthDp)
                                         .height(waveformStripHeight.dp)
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(Color(0xFFF1F3F5))
+                                        .semantics { contentDescription = "Source audio waveform" }
                                 ) {
                                     AudioWaveformBars(
                                         samples = audioWaveform,
@@ -977,6 +978,9 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(overlayLayerHeight)
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = "V${layer + 1} overlay"
+                                        }
                                 )
                             }
 
@@ -998,6 +1002,7 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(textLaneHeight.dp)
+                                        .semantics(mergeDescendants = true) { contentDescription = "Text" }
                                 )
                             }
 
@@ -1016,6 +1021,7 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(stickerLaneHeight.dp)
+                                        .semantics(mergeDescendants = true) { contentDescription = "Stickers" }
                                 )
                             }
 
@@ -1045,6 +1051,9 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(fxLaneHeight.dp)
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = "Effects and filters"
+                                        }
                                 )
                             }
 
@@ -1067,6 +1076,7 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a1Height)
+                                        .semantics(mergeDescendants = true) { contentDescription = "Music" }
                                 )
                             }
                             if (voiceTracks.isNotEmpty()) {
@@ -1086,6 +1096,9 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a2Height)
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = "Voice and sound effects"
+                                        }
                                 )
                             }
                         }
@@ -1319,24 +1332,6 @@ fun VideoTimeline(
 // SUB-COMPONENTS
 // ==========================================
 
-/** Informational lane identity, never a fake mute/lock control. */
-@Composable
-private fun TimelineLaneLabel(
-    label: String,
-    height: Dp,
-    color: Color,
-    active: Boolean = false,
-    description: String = label
-) {
-    Box(Modifier.fillMaxWidth().height(height)
-        .background(if (active) color.copy(alpha = 0.12f) else Color.Transparent)
-        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        if (active) Box(Modifier.align(Alignment.CenterStart).width(2.dp).fillMaxHeight().background(color))
-        Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace)
-    }
-}
-
 /**
  * Time Ruler with scale tick marks and beat diamond markers.
  */
@@ -1352,8 +1347,7 @@ private fun TimelineTimeRuler(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFFF2F4F7))
+            .background(Color(0xFF171D27))
             .pointerInput(durationMs, msToDp) {
                 detectTapGestures { offset ->
                     val scrubMs = ((offset.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
@@ -1385,7 +1379,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f * 33.33f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFFD1D5DB),
+                                color = Color(0xFF475569),
                                 start = Offset(fXPx, h - 3f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1401,7 +1395,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f5 * 166.7f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFFB8C0CA),
+                                color = Color(0xFF64748B),
                                 start = Offset(fXPx, h - 5.5f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1413,7 +1407,7 @@ private fun TimelineTimeRuler(
                 // Half-second tick (15 frames at 30fps)
                 val halfXPx = ((secStartMs + 500L) * msToDp).dp.toPx()
                 drawLine(
-                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.6f) else Color(0xFF9CA3AF),
+                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.6f) else Color(0xFF64748B),
                     start = Offset(halfXPx, h - if (secondWidthDp >= 180.dp) 8f else 6f),
                     end = Offset(halfXPx, h),
                     strokeWidth = if (secondWidthDp >= 180.dp) 1.5f else 1f
@@ -1421,7 +1415,7 @@ private fun TimelineTimeRuler(
 
                 // Full second tick
                 drawLine(
-                    color = Color(0xFF64748B),
+                    color = Color(0xFF94A3B8),
                     start = Offset(secXPx, h - 12f),
                     end = Offset(secXPx, h),
                     strokeWidth = 1.5f
@@ -1430,7 +1424,7 @@ private fun TimelineTimeRuler(
 
             // Neutral baseline keeps timing separate from clip selection accents.
             drawLine(
-                color = Color(0xFFAAB2BD),
+                color = Color(0xFF334155),
                 start = Offset(0f, h - 0.75f),
                 end = Offset(size.width, h - 0.75f),
                 strokeWidth = 1.5f
@@ -1477,7 +1471,7 @@ private fun TimelineTimeRuler(
                     Text(
                         // CapCut-style: compact MM:SS majors at every step.
                         text = TimeFormat.msToShort(sec * 1000L),
-                        color = Color(0xFF374151),
+                        color = Color(0xFFCBD5E1),
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold
@@ -1624,13 +1618,13 @@ private fun TimelineVideoLayerRow(
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
     // Readable overlay filmstrip with its own name and keyframe strip.
-    // Vertical padding centres the 52dp content box in the 60dp row.
+    // Compact 28dp content row keeps every populated layer visible without
+    // reserving a tall empty strip between tracks.
     // The row renders ONLY when the layer holds clips (the caller
     // never passes an empty layer), so there is no empty branch.
     Column(
         modifier = modifier
-            .background(if (isHidden) Color(0xFFF3F4F6) else Color(0xFFF6F7F9))
-            .padding(vertical = 4.dp)
+            .background(if (isHidden) Color(0xFF111827) else Color(0xFF0A1B2D))
     ) {
         if (isHidden) {
             Text(
@@ -1643,7 +1637,7 @@ private fun TimelineVideoLayerRow(
         }
 
         // Filmstrip plus keyframe strip, sharing the lane rail geometry.
-        Box(modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(28.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 // Speed-ramped clips occupy their OUTPUT length.
@@ -1668,7 +1662,7 @@ private fun TimelineVideoLayerRow(
                     modifier = Modifier
                         .offset(x = clipOffsetDp)
                         .width(clipWidthDp)
-                        .height(52.dp)
+                        .height(28.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -1677,7 +1671,7 @@ private fun TimelineVideoLayerRow(
                                 IntOffset(trimStartDxPx.roundToInt(), 0)
                             }
                             .width(liveChipWidthDp.coerceAtLeast(24.dp))
-                            .height(42.dp)
+                            .height(22.dp)
                             .testTag("timeline-overlay-clip-${clip.id}")
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(5.dp))
@@ -1759,13 +1753,13 @@ private fun TimelineVideoLayerRow(
                             frameIntervalMs = frameIntervalMs,
                             visibleWindowPx = visibleWindowPx,
                             filmstripFrames = filmstripFrames,
-                            placeholderIconSize = 12.dp,
+                            placeholderIconSize = 10.dp,
                             modifier = Modifier.fillMaxSize()
                         )
-                        Text(clip.name, color = Color.White, fontSize = 9.sp, maxLines = 1,
+                        Text(clip.name, color = Color.White, fontSize = 8.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 14.dp, bottom = 3.dp)
-                                .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp))
+                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 13.dp, bottom = 2.dp)
+                                .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
                         if (isLocked) {
                             Icon(
                                 Icons.Default.Lock,
@@ -1907,9 +1901,10 @@ private fun TimelineTextLane(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFFF6F7F9))
-            .border(1.dp, Color(0xFFDDE2E8), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .background(Color(0xFF0A1B2D))
+            .border(1.dp, Color(0xFF203047), RoundedCornerShape(8.dp))
+            // After the border, the compact row has 26dp to split into
+            // separate text-keyframe and mask-keyframe hit lanes.
     ) {
         textOverlays.forEach { textOverlay ->
             val ownerClipId = textOwnerByOverlayId[textOverlay.id]
@@ -1924,16 +1919,16 @@ private fun TimelineTextLane(
                 modifier = Modifier
                     .offset(x = ovOffsetDp)
                     .width(ovWidthDp)
-                    .height(if (textOverlay.mask != null) 42.dp else 30.dp)
+                    .height(if (textOverlay.mask != null) 26.dp else 18.dp)
                     .testTag("timeline-keyframe-layer-text-${textOverlay.id}")
             ) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .width(ovWidthDp)
-                        .height(18.dp)
+                        .height(16.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (isSelected) Color(0xFF3B1D4D) else Color(0xFF2A1538))
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF8E16C8), Color(0xFFC51DE9))))
                         .border(
                             width = if (isSelected) 1.5.dp else 1.dp,
                             color = if (isSelected) Color.White else ApexPalette.NeonPink.copy(alpha = 0.6f),
@@ -1975,7 +1970,9 @@ private fun TimelineTextLane(
                     showLaneBackground = false,
                     markerTagPrefix = "text-${textOverlay.id}",
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .height(if (textOverlay.mask != null) 16.dp else 18.dp)
+                        .align(Alignment.TopStart)
                         .testTag("timeline-keyframe-layer-text-markers-${textOverlay.id}")
                 )
                 // Mask keyframe strip (gold) — only when the text has
@@ -2002,7 +1999,7 @@ private fun TimelineTextLane(
                         showLaneBackground = false,
                         markerTagPrefix = "text-mask-${textOverlay.id}",
                         modifier = Modifier
-                            .height(12.dp)
+                        .height(10.dp)
                             .align(Alignment.BottomStart)
                             .testTag("timeline-keyframe-layer-text-mask-${textOverlay.id}")
                     )
@@ -2664,9 +2661,9 @@ private fun TimelineStickerLane(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFFF6F7F9))
-            .border(1.dp, Color(0xFFDDE2E8), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .background(Color(0xFF0A1B2D))
+            .border(1.dp, Color(0xFF203047), RoundedCornerShape(8.dp))
+            .padding(vertical = 3.dp)
     ) {
         stickers.forEach { sticker ->
             val start = sticker.startMs.coerceAtLeast(0L)
@@ -2685,14 +2682,14 @@ private fun TimelineStickerLane(
                 modifier = Modifier
                     .offset(x = (start * msToDp).dp)
                     .width(segWidthDp)
-                    .height(if (hasKeyframeLane) 36.dp else 24.dp)
+                    .height(22.dp)
                     .testTag("timeline-keyframe-layer-sticker-${sticker.id}")
             ) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .width(segWidthDp)
-                        .height(24.dp)
+                        .height(20.dp)
                         .clip(RoundedCornerShape(5.dp))
                         .background(if (isSelected) Color(0xFF4A2B3D) else Color(0xFF2E1B28))
                         .border(
@@ -2774,7 +2771,7 @@ private fun TimelineFxTrack(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFF8F7FC))
             .border(1.dp, Color(0xFFE4DDF2), RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(

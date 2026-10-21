@@ -196,11 +196,11 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(8.dp))
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
             .background(ApexPalette.BgBase)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(24.dp))
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }
@@ -259,13 +259,8 @@ fun VideoPreviewArea(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Placeholder video frame thumbnail render
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
-                        )
-                    )
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Video preview unavailable", color = ApexPalette.TextSecondary, fontSize = 12.sp)
                 }
             }
 
@@ -374,50 +369,7 @@ fun VideoPreviewArea(
         }
     }
 
-        // Plain timecode pill, top-left inside the preview. (Was "REC • …"
-        // with a red dot — REC implies recording; this is playback/editing.)
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Text(
-                text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
-        }
-
-        // Small filename chip, bottom-left inside the preview
-        // (free corner — mirrors the time pill / HDR badge style).
-        // Shown only when something is selected and not playing.
-        if (selectionFileLabel != null && !isPlaying) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp)
-                    .widthIn(max = 150.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = selectionFileLabel,
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-            }
-        }
-
+        // Playback time is in the transport row; no filename/time/keyframe HUD covers the media.
         // Keyframe values stay in their editing panel; never cover the video with a debug HUD.
         // Interactive PiP overlay canvas (video / image overlays on the V2
         // track): tap to select, drag to move, pinch to scale/rotate,

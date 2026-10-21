@@ -2,6 +2,8 @@ package com.apexstudio.app.data.export
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
@@ -52,6 +54,21 @@ class ProjectCompositionExportTest {
             )
         )
         assertNull(projectCompositionUnsupportedReason(listOf(first, second), config))
+    }
+
+    @Test
+    fun `project export accepts clip keyframes but still rejects export wide keyframes`() {
+        val animated = clip().copy(
+            speedMultiplier = 2f,
+            keyframes = KeyframeTrack(listOf(Keyframe.identity(timeMs = 1_000L)))
+        )
+
+        assertNull(projectCompositionUnsupportedReason(listOf(animated), ExportEngine.ExportConfig()))
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(keyframes = KeyframeTrack(
+                listOf(Keyframe.identity(timeMs = 1_000L))
+            ))
+        )!!.contains("global keyframes"))
     }
 
     @Test

@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -23,6 +24,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,13 +49,26 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
  * CapCut-style contextual bottom toolbar.
  *
  * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → global tools (Text, Stickers, Effects, Filters, AR Face, Adjust)
+ * - Nothing selected → primary tools (Media, Audio, Text, Overlay, Stickers, FX, Filters, More)
  * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
  * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
  *
  * A collapse chevron as the first item deselects and returns to global tools.
  */
 enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO, TEXT, STICKER }
+
+/** Approved, always-visible global tool order. Kept explicit for UI regression tests. */
+internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
+    "Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"
+)
+
+/** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
+internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
+    "Music", "Enhance", "Templates", "Canvas",
+    "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face", "Lenses",
+    "Camera", "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History"
+)
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
     val project = state.project ?: return ToolbarSelectionKind.NONE
@@ -223,25 +241,40 @@ fun ContextualBottomToolbar(
     onCaptions: () -> Unit = onText,
     onTemplates: () -> Unit = onEditPack,
     onChallenge: () -> Unit = onText,
-    onNext: () -> Unit = {}
+    onNext: () -> Unit = {},
+    // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
+    onMedia: () -> Unit = {}
 ) {
-    // One always-visible, horizontally scrollable row: put the high-frequency
-    // mobile editing actions first, then retain the complete legacy tool set
-    // behind them in the same row (rather than adding a second, tall toolbar).
-    // Enhance has its independent quick-preset route; Templates opens the shipped
-    // one-tap transmission preset browser; Canvas is the real crop-mode route.
+    var showMoreTools by remember { mutableStateOf(false) }
+    var showOverlayChoices by remember { mutableStateOf(false) }
+
+    // The mockup's compact primary row stays fixed. More reveals the supported
+    // legacy tools in a second horizontally-scrollable row below it.
     val mainItems: List<CtxToolItem> = listOf(
+        CtxToolItem("Media", Icons.Default.VideoLibrary, onClick = onMedia),
+        CtxToolItem("Audio", Icons.Default.MusicNote, onClick = onDeviceAudio),
+        CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
+        CtxToolItem("Overlay", Icons.Default.Layers, onClick = { showOverlayChoices = true }),
+        CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
+        CtxToolItem("FX", Icons.Default.AutoAwesome, onClick = onEffects),
+        CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
+        CtxToolItem(
+            "More", Icons.Default.MoreHoriz,
+            tint = if (showMoreTools) ApexPalette.NeonCyan else Color(0xFF8C9AAF),
+            onClick = { showMoreTools = !showMoreTools }
+        )
+    )
+
+    // Supported tools formerly shown in the main scrolling row. Keep each wired
+    // to its existing route; nothing is represented by a placeholder action.
+    val secondaryItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
-            CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
             CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
             CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
-            CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-            CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
             CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),
             CtxToolItem("Subtitles", Icons.Default.Subtitles, onClick = onCaptions),
             CtxToolItem("Next", Icons.Default.Share, onClick = onNext),
-            CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
 
             // Additional supported tools remain available after the quick set.
             CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.NeonPink, onClick = onDraw),
@@ -274,6 +307,41 @@ fun ContextualBottomToolbar(
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory)
     )
+    check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
+    check(secondaryItems.map { it.label } == CONTEXTUAL_MORE_TOOL_ORDER)
+
+    if (showOverlayChoices) {
+        AlertDialog(
+            onDismissRequest = { showOverlayChoices = false },
+            title = { Text("Add overlay") },
+            text = { Text("Choose an image or video to place over your project.") },
+            confirmButton = {
+                Text(
+                    "Image",
+                    modifier = Modifier.clickable {
+                        showOverlayChoices = false
+                        onAddOverlayImage()
+                    }.padding(horizontal = 16.dp, vertical = 10.dp)
+                )
+            },
+            dismissButton = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Video",
+                        modifier = Modifier.clickable {
+                            showOverlayChoices = false
+                            onAddOverlayVideo()
+                        }.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    Text(
+                        "Cancel",
+                        modifier = Modifier.clickable { showOverlayChoices = false }
+                            .padding(horizontal = 8.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        )
+    }
 
     // Clip action bar: the merged union of the old contextual bar and the
     // old timeline quick-actions row — one entry per action, no duplicates.
@@ -312,7 +380,7 @@ fun ContextualBottomToolbar(
                     tint = ApexPalette.NeonCyan, onClick = onOverlayProps
                 ) + CtxToolItem(
                     if (isLayerHidden) "Show" else "Hide",
-                    if (isLayerHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
                     tint = ApexPalette.NeonCyan, onClick = onToggleLayerVisibility
                 ) + CtxToolItem(
                     if (isLayerLocked) "Unlock" else "Lock",
@@ -432,7 +500,26 @@ fun ContextualBottomToolbar(
                 }
             )
         }
-        ToolbarBarRow(items = mainItems, surfaceColor = Color(0xFF101722))
+        ToolbarBarRow(
+            items = mainItems,
+            surfaceColor = Color(0xFF101722),
+            itemWidth = 42.dp,
+            compact = true
+        )
+        AnimatedVisibility(
+            visible = showMoreTools,
+            enter = fadeIn(animationSpec = tween(160)) + slideInVertically(animationSpec = tween(160)) { it / 2 },
+            exit = fadeOut(animationSpec = tween(160)) + slideOutVertically(animationSpec = tween(160)) { it / 2 }
+        ) {
+            Column {
+                ToolbarBarRow(items = secondaryItems, surfaceColor = Color(0xFF151F2D))
+                Text(
+                    "Whole-project export supports sequential main-track video. PiP, project stickers, transitions and other unsupported edits stop that route rather than being dropped. Selected-clip export is a different scope; review its limits on the export screen.",
+                    color = ApexPalette.TextSecondary, fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
     }
 }
 
@@ -446,7 +533,9 @@ private fun ToolbarBarRow(
     items: List<CtxToolItem>,
     surfaceColor: Color,
     modifier: Modifier = Modifier,
-    leadingContent: @Composable (RowScope.() -> Unit)? = null
+    leadingContent: @Composable (RowScope.() -> Unit)? = null,
+    itemWidth: androidx.compose.ui.unit.Dp = 66.dp,
+    compact: Boolean = false
 ) {
     Box(
         modifier = modifier
@@ -477,7 +566,7 @@ private fun ToolbarBarRow(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .width(66.dp)
+                                .width(itemWidth)
                                 .fillMaxHeight()
                                 .clickable(onClick = item.onClick)
                         ) {
@@ -505,7 +594,7 @@ private fun ToolbarBarRow(
                             Text(
                                 text = item.label,
                                 color = item.tint,
-                                fontSize = 10.sp,
+                                fontSize = if (compact) 9.sp else 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 softWrap = false
@@ -801,8 +890,20 @@ fun EditorBottomToolbarSection(
     onQuickTemplates: () -> Unit = { vm.openTransmissionTemplatesPanel() },
     onQuickFilters: () -> Unit = { vm.openFilterPanel() },
     onChallenge: () -> Unit = { vm.openTextPanel() },
-    onNext: () -> Unit = {}
+    onNext: () -> Unit = {},
+    // Main-timeline media picker; EditorScreen may override when it owns the route.
+    onMedia: () -> Unit = {
+        vm.setPendingAddAsOverlay(false)
+        vm.setPendingAddAsAudio(false)
+        vm.setPendingAddToLayer(null)
+        mediaPicker.pickMultipleMedia.launch(
+            androidx.activity.result.PickVisualMediaRequest(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
+            )
+        )
+    }
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
@@ -841,6 +942,8 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 best?.let { (fromId, toId) -> vm.openTransitionPicker(fromId, toId) }
+            } else {
+                android.widget.Toast.makeText(context, "Transitions need two main-track clips. Whole-project transition export is not supported yet.", android.widget.Toast.LENGTH_LONG).show()
             }
         },
         onToggleLayerVisibility = {
@@ -871,6 +974,7 @@ fun EditorBottomToolbarSection(
         onTemplates = onQuickTemplates,
         onChallenge = onChallenge,
         onNext = onNext,
+        onMedia = onMedia,
         onAdjust = { vm.openAdjustmentsPanel() },
         onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at

@@ -6,6 +6,8 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.ui.screens.editor.CONTEXTUAL_MORE_TOOL_ORDER
+import com.apexstudio.app.ui.screens.editor.CONTEXTUAL_PRIMARY_TOOL_ORDER
 import com.apexstudio.app.ui.screens.editor.ToolbarSelectionKind
 import com.apexstudio.app.ui.screens.editor.resolveToolbarSelection
 import kotlinx.coroutines.flow.update
@@ -62,6 +64,25 @@ class ContextualToolbarTest {
         selectedClipId = selectedClipId,
         selectedAudioTrackId = selectedAudioTrackId
     )
+
+    // --- Toolbar layout contract ---
+
+    @Test
+    fun `primary tools follow approved compact order`() {
+        assertEquals(
+            listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"),
+            CONTEXTUAL_PRIMARY_TOOL_ORDER
+        )
+    }
+
+    @Test
+    fun `More retains the supported secondary tool routes`() {
+        assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
+        assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
+            "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
+            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove"
+        )))
+    }
 
     // --- resolveToolbarSelection ---
 

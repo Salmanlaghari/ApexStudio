@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,9 +75,11 @@ fun TopAppBarSection(
                     .padding(8.dp)
             )
 
-            Column(modifier = Modifier.weight(1f).clickable { showBuildIdentity = true }) {
+            Column(modifier = Modifier.weight(1f)
+                .semantics { contentDescription = "Build identity" }
+                .clickable { showBuildIdentity = true }) {
                 Text(
-                    text = title.ifBlank { "Untitled project" },
+                    text = "ApexStudio",
                     color = EditorPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
@@ -84,10 +88,11 @@ fun TopAppBarSection(
                     softWrap = false
                 )
                 Text(
-                    text = "Build ${BuildIdentity.shortCommit}",
+                    text = title.ifBlank { "Untitled project" },
                     color = EditorPalette.TextSecondary,
                     fontSize = 8.sp,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }
@@ -111,23 +116,6 @@ fun TopAppBarSection(
                     color = EditorPalette.TextPrimary,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Fullscreen Preview Toggle
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(EditorPalette.BgElevated)
-                    .border(1.dp, EditorPalette.BorderGlass, CircleShape)
-                    .clickable(onClick = onFullscreenToggle)
-                    .padding(5.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Fullscreen,
-                    contentDescription = "Fullscreen",
-                    tint = EditorPalette.TextPrimary,
-                    modifier = Modifier.size(14.dp)
                 )
             }
 
@@ -188,7 +176,7 @@ fun TopAppBarSection(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(
-                        EditorPalette.BgElevated
+                        EditorPalette.GradientPrimary
                     )
                     .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
                     .clickable(onClick = onExport)

@@ -9,12 +9,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -29,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1194,7 +1204,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // yielding essentially all available height to the timeline.
             .weight(editorPreviewLayoutWeight(isTimelineFocusMode && !isFullscreenPreview))
             .padding(
-                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 12.dp,
+                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 6.dp,
                 vertical = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 4.dp
             )
     ) {
@@ -1203,8 +1213,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val selectedClip = resolveEditorSelectionClip(
             state.project?.clips.orEmpty(), state.selectedClipId
         )
-        val mainPreviewClip = resolveMainPreviewClip(
-            state.project?.clips.orEmpty(), state.selectedClipId
+        val mainPreviewClip = timelinePreviewClip(
+            state.project?.clips.orEmpty(), state.playerPositionMs
         )
         val animatedTransform = remember(mainPreviewClip, state.playerPositionMs) {
             mainPreviewClip?.keyframes?.interpolateAt(state.playerPositionMs)
@@ -1307,23 +1317,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         }
 
         val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
-        val textOverlays = selectedClip?.textOverlays ?: emptyList()
-        var showUpcomingPreview by remember { mutableStateOf(false) }
-
-        // Auto-hide screen controls: hidden by default, visible for 2s on video screen tap
-        var screenControlsVisible by remember { mutableStateOf(false) }
-        var hideControlsJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-
-        fun triggerScreenControls() {
-            screenControlsVisible = true
-            showUpcomingPreview = true
-            hideControlsJob?.cancel()
-            hideControlsJob = scope.launch {
-                delay(2000L)
-                screenControlsVisible = false
-                showUpcomingPreview = false
-            }
-        }
+        val textOwner = selectedClip?.takeIf { it.type == ClipType.OVERLAY && it.isOverlayActiveAt(state.playerPositionMs) }
+            ?: mainPreviewClip
+        val textOverlays = textOwner?.textOverlays ?: emptyList()
 
         // Small filename chip (bottom-left in the preview): the
         // selected clip/track name, moved here from the clip bar.
@@ -1350,8 +1346,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth,
             onDrawingLayerChange = vm::updateVideoDrawingLayer,
-            videoCrop = (state.project?.clips?.firstOrNull { it.id == state.selectedClipId && it.trackIndex == 0 }
-                ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
+            videoCrop = mainPreviewClip?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
             projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
@@ -1381,7 +1376,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             adjustments = state.adjustments,
             activeFilterId = state.activeFilterId,
             filterIntensity = state.filterIntensity,
-            gpuFilterConfig = state.activeGpuFilterConfig,
+            gpuFilterConfig = mainPreviewClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
             gpuFilterCompareMode = state.gpuFilterCompareMode,
             gpuFilterSplitPosition = state.gpuFilterSplitPosition,
             lutCompareMode = state.lutCompareMode,
@@ -1408,8 +1403,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Overlay (V2 PiP) clips preview their mask as a hard clip on
             // the PiP box itself, so the main-frame scrim is restricted to
             // non-overlay clips.
-            mask = currentSelectedClip?.takeIf { it.type != ClipType.OVERLAY }?.mask,
-            maskEditMode = state.maskPanelOpen,
+            mask = mainPreviewClip?.mask,
+            maskEditMode = state.maskPanelOpen && currentSelectedClip?.id == mainPreviewClip?.id,
             onMaskCenterLive = { x, y ->
                 currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = false) }
             },
@@ -1431,16 +1426,19 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 mainPreviewClip?.id?.let { vm.setPhotoCrop(it, rect) }
             },
             onTapVideo = {
-                triggerScreenControls()
+                vm.togglePlay()
             },
             onRetryLoad = {
                 exoPlayer?.let { player ->
                     vm.setPlayerError(null)
                     try {
-                        val fallbackUri = MediaUriResolver.resolvePlayableUri(context, null)
-                        player.setMediaItem(MediaItem.fromUri(fallbackUri))
+                        val clip = mainPreviewClip ?: error("No project video is available")
+                        val sourceUri = MediaUriResolver.resolvePlayableUri(context, clip.uri)
+                        player.setMediaItem(MediaItem.Builder().setUri(sourceUri).setMediaId(clip.id).build())
                         player.prepare()
-                        player.play()
+                        player.seekTo(com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(
+                            state.project?.clips.orEmpty(), clip, vm.playerPositionFlow.value))
+                        player.playWhenReady = state.isPlaying
                     } catch (e: Exception) {
                         vm.setPlayerError("Error reloading video: ${e.message}")
                     }
@@ -1449,36 +1447,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             modifier = Modifier.fillMaxSize()
         )
 
-        val controlsAlpha by animateFloatAsState(
-            targetValue = if (screenControlsVisible) 1f else 0f,
-            animationSpec = tween(250),
-            label = "controlsAlpha"
-        )
-
         // All editing actions live in the horizontally scrolling bottom dock.
         // Floating vertical rails intercepted PiP drag/resize touches and covered
         // the source picture on narrow phones. Keep the preview gesture-only.
-
-        // Screen Controls Auto-hide Indicator Badge
-        if (controlsAlpha > 0.01f) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 8.dp)
-                    .graphicsLayer { alpha = controlsAlpha }
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 10.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text = "⚡ Tap screen to show controls • Auto-hiding in 2s",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
 
         // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
         ScreenWordingObjects(
@@ -1488,19 +1459,19 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             coverTextStyle = state.coverTextStyle,
             selectedTextOverlayId = state.selectedTextOverlayId,
             currentTimeMs = state.currentTimeMs,
-            captionTimeMs = selectedClip?.let { clip ->
+            captionTimeMs = textOwner?.let { clip ->
                 com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
                     state.project?.clips.orEmpty(), clip, state.currentTimeMs)
             } ?: state.currentTimeMs,
             isPlaying = state.isPlaying,
             onSelectTextOverlay = { id -> vm.selectTextOverlay(id) },
             onMoveTextOverlay = { id, dx, dy ->
-                val clipId = selectedClip?.id ?: state.project?.clips?.firstOrNull()?.id
+                val clipId = textOwner?.id
                 if (clipId != null) {
                     // CapCut behaviour: when the text has keyframes the
                     // drag writes a keyframe at the playhead (the text
                     // animates); otherwise the base position moves.
-                    val ov = selectedClip?.textOverlays?.firstOrNull { it.id == id }
+                    val ov = textOwner?.textOverlays?.firstOrNull { it.id == id }
                     vm.moveTextOverlayAtPlayhead(
                         clipId, id,
                         (ov?.x ?: 0.5f) + dx, (ov?.y ?: 0.5f) + dy
@@ -1508,17 +1479,17 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 }
             },
             onDeleteTextOverlay = { id ->
-                selectedClip?.let { vm.removeTextOverlay(it.id, id) }
+                textOwner?.let { vm.removeTextOverlay(it.id, id) }
             },
             onDuplicateTextOverlay = { id ->
-                selectedClip?.let { vm.duplicateTextOverlay(it.id, id) }
+                textOwner?.let { vm.duplicateTextOverlay(it.id, id) }
             },
             onEditTextOverlay = { id ->
                 vm.selectTextOverlay(id)
                 vm.openTextPanel()
             },
             onSizeScaleChange = { id, scale ->
-                selectedClip?.let { vm.setTextOverlaySize(it.id, id, scale) }
+                textOwner?.let { vm.setTextOverlaySize(it.id, id, scale) }
             },
             // Sticker canvas editing (feature/sticker-library)
             selectedStickerId = state.selectedStickerId,
@@ -1531,26 +1502,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             onCropSticker = { id, l, t, r, b -> vm.setStickerCrop(id, l, t, r, b) },
             onCutoutSticker = { id, shape -> vm.setStickerCutout(id, shape) },
             modifier = Modifier.fillMaxSize()
-        )
-
-        // Upcoming frames preview overlay triggered on screen tap
-        UpcomingFramesPreviewOverlay(
-            visible = showUpcomingPreview,
-            videoUri = mainPreviewClip?.uri,
-            currentTimeMs = state.playerPositionMs,
-            durationMs = state.durationMs,
-            onSeekTo = { seekPlayerAndState(it) },
-            onPlayPreviewSnippet = {
-                scope.launch {
-                    if (!state.isPlaying) vm.togglePlay()
-                    delay(3000L)
-                    if (state.isPlaying) vm.togglePlay()
-                }
-            },
-            onDismiss = { showUpcomingPreview = false },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp)
         )
 
         if (isFullscreenPreview) {
@@ -1591,7 +1542,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 ) {
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
-    val kfClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val kfClip = selectedKeyframeVideo(state)
     val hasKeyframeAtPlayhead =
         kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
 
@@ -1607,13 +1558,39 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onToggleKeyframe = {
             kfClip?.let { vm.toggleKeyframeAtPlayheadFor(it.id) }
         },
-        onFullscreenToggle = { vm.toggleFullscreenPreview() }
+        onFullscreenToggle = { vm.toggleFullscreenPreview() },
+        currentTimeMs = state.playerPositionMs,
+        durationMs = state.durationMs,
+        canNavigate = state.durationMs > 0L,
+        onPrevious = {
+            seekPlayerAndState(editorClipBoundary(state.project?.clips.orEmpty(), vm.playerPositionFlow.value, state.durationMs, false))
+        },
+        onNext = {
+            seekPlayerAndState(editorClipBoundary(state.project?.clips.orEmpty(), vm.playerPositionFlow.value, state.durationMs, true))
+        },
+        showInlineKeyframe = false
     )
 
-    TimelineFocusModeControl(
-        isFocused = isTimelineFocusMode,
-        onToggle = { onTimelineFocusModeChange(!isTimelineFocusMode) }
-    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (kfClip != null) {
+            SelectedVideoKeyframeControl(
+                hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
+                onToggleKeyframe = { vm.toggleKeyframeAtPlayheadFor(kfClip.id) },
+                onOpenAnimation = { vm.setKeyframePanelOpen(true) },
+                modifier = Modifier.weight(1f)
+            )
+        } else Spacer(Modifier.weight(1f))
+        androidx.compose.material3.TextButton(onClick = { onTimelineFocusModeChange(!isTimelineFocusMode) },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            modifier = Modifier.height(36.dp).semantics {
+                contentDescription = if (isTimelineFocusMode) "Restore preview and normal timeline layout" else "Expand timeline to full height"
+            }
+        ) {
+            Text(if (isTimelineFocusMode) "Show preview" else "Timeline", fontSize = 10.sp, color = ApexPalette.TextSecondary)
+            Icon(if (isTimelineFocusMode) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null,
+                tint = ApexPalette.TextSecondary, modifier = Modifier.size(16.dp))
+        }
+    }
 
     // The timeline area is just the timeline: the Adjust chips row
     // and the duplicate tool rows were removed (their functions live
@@ -1626,7 +1603,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             val snapped = vm.findMagneticSnapPoint(targetMs)
             seekPlayerAndState(snapped)
         },
-        onSelectClip = { vm.selectClip(it) },
+        onSelectClip = { id ->
+            vm.selectClip(id)
+            val clips = state.project?.clips.orEmpty()
+            val clip = clips.firstOrNull { it.id == id && it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
+            if (clip != null && timelinePreviewClip(clips, vm.playerPositionFlow.value)?.id != clip.id) {
+                seekPlayerAndState(com.apexstudio.app.domain.model.SpeedCurveMath.timelineStartMsForClip(clips, clip))
+            }
+        },
         // Tapping empty timeline space clears the selection (hides the
         // clip action bar again).
         onDeselect = { vm.clearSelection() },
@@ -1683,7 +1667,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .weight(timelineTrackLayoutWeight(isTimelineFocusMode))
+            .then(if (isTimelineFocusMode) Modifier.weight(timelineTrackLayoutWeight(true)) else Modifier.height(
+                com.apexstudio.app.ui.components.compactTimelineHeight(state)
+                    .coerceAtMost((LocalConfiguration.current.screenHeightDp * 0.36f).dp)
+            ))
     )
 
 }

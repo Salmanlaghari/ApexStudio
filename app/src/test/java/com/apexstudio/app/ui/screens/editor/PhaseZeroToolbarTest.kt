@@ -25,6 +25,7 @@ class PhaseZeroToolbarTest {
             testToolbar(ToolbarSelectionKind.NONE, calls)
         }
 
+        composeRule.onNodeWithText("More").performScrollTo().performClick()
         composeRule.onNodeWithText("Add Image").performScrollTo().performClick()
         composeRule.onNodeWithText("Add Video").performScrollTo().performClick()
 
@@ -67,10 +68,11 @@ class PhaseZeroToolbarTest {
             testToolbar(ToolbarSelectionKind.NONE, calls)
         }
 
-        listOf(
-            "Music", "Text", "Enhance", "Templates", "Canvas",
-            "Effects", "Stickers", "Subtitles", "Filters"
-        ).forEach { label ->
+        listOf("Text", "FX", "Stickers", "Filters").forEach { label ->
+            composeRule.onNodeWithText(label).performScrollTo().performClick()
+        }
+        composeRule.onNodeWithText("More").performScrollTo().performClick()
+        listOf("Music", "Enhance", "Templates", "Canvas", "Subtitles").forEach { label ->
             composeRule.onNodeWithText(label).performScrollTo().performClick()
         }
 
@@ -83,6 +85,7 @@ class PhaseZeroToolbarTest {
     @Test fun `global Enhance and video Adjust use independent callbacks`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
+        composeRule.onNodeWithText("More").performScrollTo().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         assertEquals(1, calls["enhance"] ?: 0)
@@ -96,6 +99,7 @@ class PhaseZeroToolbarTest {
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var quickEnhance = 0
         composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
+        composeRule.onNodeWithText("More").performScrollTo().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()

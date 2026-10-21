@@ -93,7 +93,7 @@ class PhaseZeroToolbarTest {
         val vm = com.apexstudio.app.presentation.viewmodel.EditorViewModel()
         val clip = com.apexstudio.app.domain.model.MediaClip("v", "V", "file:///v.mp4", 5000L, trimEndMs = 5000L)
         vm._state.value = vm.state.value.copy(project = com.apexstudio.app.domain.model.Project("p", "P", 5000L, clips = listOf(clip)), selectedClipId = clip.id)
-        val picker = io.mockk.mockk<com.apexstudio.app.data.picker.MediaPickerHelper>(relaxed = true)
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var quickEnhance = 0
         composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()

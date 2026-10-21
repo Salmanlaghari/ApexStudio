@@ -22,8 +22,16 @@ class RangeTimeRendererTest {
         assertTrue(graph.contains("[0:v]trim=start=4.000:end=5.000"))
         assertTrue(graph.contains("setpts=2*(PTS-STARTPTS)"))
         assertTrue(graph.contains("atempo=0.5"))
+        assertTrue(graph.contains("[0:a:0]atrim=start=2.000:end=4.000"))
         assertTrue(graph.contains("concat=n=3:v=1:a=1 [vout][aout]"))
         assertTrue("Audio gaps/tails are padded and clipped to each video segment", graph.contains("apad,atrim=duration=4.000"))
+    }
+
+    @Test fun audioGraphSelectsOneDeterministicStreamWhenInputHasMultipleAudioTracks() {
+        val graph = graph(RangeTimeOperation.REVERSE, hasAudio = true)
+        assertTrue(graph.contains("[0:a:0]"))
+        assertFalse(graph.contains("[0:a]atrim"))
+        assertTrue(graph.contains("areverse,asetpts=PTS-STARTPTS"))
     }
 
     @Test fun repeatDuplicatesOnlySelectedRangeExactlyOnce() {

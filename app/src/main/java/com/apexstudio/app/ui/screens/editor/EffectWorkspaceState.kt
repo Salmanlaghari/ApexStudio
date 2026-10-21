@@ -14,6 +14,18 @@ internal data class WorkspaceRange(val startMs: Long, val endMs: Long) {
             val right = (clip.trimStartMs + (span * b).toLong()).coerceIn(left + minimum, clip.trimEndMs)
             return WorkspaceRange(left, right)
         }
+
+        /** Normalize two source-clock marks into a non-empty, in-trim playback selection. */
+        fun fromPlaybackMarks(clip: MediaClip, firstMs: Long, secondMs: Long): WorkspaceRange {
+            val span = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1L)
+            val minimum = minOf(100L, span)
+            val low = minOf(firstMs, secondMs).coerceIn(clip.trimStartMs, clip.trimEndMs)
+            val high = maxOf(firstMs, secondMs).coerceIn(clip.trimStartMs, clip.trimEndMs)
+            if (high - low >= minimum) return WorkspaceRange(low, high)
+            val start = (low - (minimum - (high - low)) / 2L)
+                .coerceIn(clip.trimStartMs, clip.trimEndMs - minimum)
+            return WorkspaceRange(start, start + minimum)
+        }
     }
 }
 

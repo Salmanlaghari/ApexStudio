@@ -28,6 +28,9 @@ class RangeTimeHostGraphTest {
     }
     private fun probe(file: File, entry: String) = run("/usr/bin/ffprobe", "-v", "error", "-show_entries", entry,
         "-of", "default=noprint_wrappers=1:nokey=1", file.path).toString(Charsets.UTF_8).trim()
+    private fun streamDuration(file: File, selector: String) = run("/usr/bin/ffprobe", "-v", "error", "-select_streams", selector,
+        "-show_entries", "stream=duration", "-of", "default=noprint_wrappers=1:nokey=1", file.path)
+        .toString(Charsets.UTF_8).trim().toDouble()
 
     @Test fun `production filter graph renders slow repeat reverse with audio and retains pixel ordering`() {
         assumeTrue(File("/usr/bin/ffmpeg").canExecute() && File("/usr/bin/ffprobe").canExecute())
@@ -47,6 +50,10 @@ class RangeTimeHostGraphTest {
                 assertTrue("$operation duration $duration", kotlin.math.abs(duration - expected) < .25)
                 assertTrue(probe(output, "stream=codec_type").contains("audio"))
                 assertTrue(probe(output, "stream=codec_type").contains("video"))
+                val videoDuration = streamDuration(output, "v:0")
+                val audioDuration = streamDuration(output, "a:0")
+                assertTrue("$operation audio/video duration drift: $audioDuration vs $videoDuration",
+                    kotlin.math.abs(audioDuration - videoDuration) <= .1)
             }
             val reverse = File(folder, "REVERSE.mp4")
             val red = run("/usr/bin/ffmpeg", "-v", "error", "-i", reverse.path,

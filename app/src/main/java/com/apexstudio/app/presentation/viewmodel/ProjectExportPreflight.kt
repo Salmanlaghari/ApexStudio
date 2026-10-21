@@ -10,6 +10,11 @@ import com.apexstudio.app.presentation.state.EditorState
 internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     val project = state.project ?: return "No project is open."
     if (0 in state.hiddenVideoLayers) return "The main video track is hidden. Show it before whole-project export."
+    val unsupportedAudioClip = project.clips.firstOrNull { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
+    if (unsupportedAudioClip != null) {
+        val kind = if (unsupportedAudioClip.type == ClipType.SFX) "sound-effect" else "audio"
+        return "Whole-project export does not yet include legacy $kind clip '${unsupportedAudioClip.name}'. Use the supported project audio-track controls or remove that clip."
+    }
     if (state.activeArFilterId != null) {
         return "Whole-project export does not yet render AR filters. Use selected-clip export to keep that edit."
     }

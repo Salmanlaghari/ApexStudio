@@ -5,8 +5,10 @@ import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.SpeedCurve
 import com.apexstudio.app.domain.model.SpeedCurveMath
+import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
@@ -60,13 +62,19 @@ internal fun projectCompositionUnsupportedReason(
         }
         if (clip.backgroundReplace != null) return "Video clip '${clip.name}' has a background-replacement edit."
         if (!clip.keyframes.isEmpty()) return "Video clip '${clip.name}' has transform keyframes."
-        if (clip.textOverlays.isNotEmpty()) return "Video clip '${clip.name}' has captions or text overlays."
-        if (clip.stickers.isNotEmpty()) return "Video clip '${clip.name}' has stickers."
+        if (clip.textOverlays.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
+            return "Video clip '${clip.name}' has a caption with an invalid time range."
+        }
+        if (clip.stickers.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
+            return "Video clip '${clip.name}' has a sticker with an invalid time range."
+        }
         if (clip.gpuFilterConfig != GpuFilterConfig()) return "Video clip '${clip.name}' has a color/filter edit."
         if (clip.projectVideoEffectId != null && com.apexstudio.app.data.template.ProjectVideoPresets.effect(clip.projectVideoEffectId) == null) {
             return "Video clip '${clip.name}' has an unknown project-video effect."
         }
-        if (clip.videoCrop != VideoCropSettings()) return "Video clip '${clip.name}' has a crop edit."
+        if (clip.videoCrop.sanitized() != clip.videoCrop) {
+            return "Video clip '${clip.name}' has an invalid crop edit."
+        }
         if (clip.faceCropTrack != null) return "Video clip '${clip.name}' has an automatic face-crop track."
         if (clip.mask != null) return "Video clip '${clip.name}' has a shape-mask edit."
         if (!clip.photoEdit.isDefault) return "Video clip '${clip.name}' has photo-only edits."
@@ -109,7 +117,7 @@ internal fun projectCompositionUnsupportedReason(
         return "Project export does not support AR filters."
     }
     if (config.transitionType != null || config.transitionGlId != null) return "Project export does not support transitions."
-    if (config.textOverlays.isNotEmpty() || config.stickers.isNotEmpty()) return "Project export does not support captions or stickers."
+    if (config.textOverlays.isNotEmpty() || config.stickers.isNotEmpty()) return "Project export does not support export-wide captions or stickers; attach them to a video clip."
     if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
         return "Project export does not support global rotation or flips."
     }
@@ -122,6 +130,23 @@ internal fun projectCompositionUnsupportedReason(
     // musicMixTracks are supported as an explicit postmix after video composition.
     return null
 }
+
+/** Overlay windows are expressed in the clip's output clock, starting at zero after its trim. */
+private fun Long.isValidProjectOverlayTime(endMs: Long): Boolean = this >= 0L && endMs >= this
+
+/** Uses the same emoji-to-text representation and size calibration as selected-clip export. */
+internal fun projectEmojiStickerAsTextOverlay(sticker: StickerOverlay): TextOverlay = TextOverlay(
+    id = sticker.id,
+    text = sticker.symbolOrUri,
+    x = sticker.x,
+    y = sticker.y,
+    sizeScale = sticker.sizeScale * com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
+    startMs = sticker.startMs,
+    endMs = sticker.endMs,
+    rotationDeg = sticker.rotationDeg,
+    opacity = sticker.opacity,
+    keyframes = sticker.keyframes
+)
 
 /**
  * Applies the same crop and size to every item, including clips whose input

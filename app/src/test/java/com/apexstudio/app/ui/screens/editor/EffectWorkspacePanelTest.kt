@@ -11,6 +11,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.setPlayerError
+import com.apexstudio.app.presentation.viewmodel.setPlayerPosition
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -18,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class EffectWorkspacePanelTest {
@@ -71,6 +73,30 @@ class EffectWorkspacePanelTest {
             assertTrue(vm.undoStack.isEmpty())
         }
     }
+
+    @Test fun `holding play at two playback positions records a source range`() {
+        val vm = editor()
+        val previews = mutableListOf<MediaClip>()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, {})
+            }
+        }
+        vm.setPlayerPosition(400L, forceStateSync = true)
+        compose.runOnIdle { }
+        compose.onNodeWithTag("workspace-play-range-control").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
+        vm.setPlayerPosition(1_400L, forceStateSync = true)
+        compose.runOnIdle { }
+        compose.onNodeWithTag("workspace-play-range-control").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
+        compose.onNodeWithText("Monochrome").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.runOnIdle {
+            val effect = previews.last().workspaceEffects.single()
+            assertEquals(400L, effect.startMs)
+            assertEquals(1_400L, effect.endMs)
+            assertFalse(vm.state.value.canUndo)
+        }
+    }
+
     @Test fun `failed preview is explicitly unavailable and cannot be applied`() {
         val vm = editor()
         compose.setContent {
@@ -86,6 +112,28 @@ class EffectWorkspacePanelTest {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertTrue(vm.undoStack.isEmpty())
         }
+    }
+
+    @Test fun `holding a preset records playback until release without saving early`() {
+        val vm = editor()
+        val previews = mutableListOf<MediaClip>()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, {})
+            }
+        }
+        compose.runOnIdle { vm.setPlayerPosition(400L, forceStateSync = true) }
+        compose.onNodeWithText("Monochrome").performTouchInput { longClick(durationMillis = 700L) }
+        compose.runOnIdle {
+            val effect = previews.last().workspaceEffects.single()
+            assertTrue(effect.startMs <= 400L)
+            assertTrue(effect.endMs > effect.startMs)
+            assertTrue(effect.endMs < clip.trimEndMs)
+            assertFalse(vm.state.value.isPlaying)
+            assertTrue(vm.undoStack.isEmpty())
+        }
+        compose.onNodeWithText("Apply").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.runOnIdle { assertEquals(1, vm.undoStack.size) }
     }
 
 }

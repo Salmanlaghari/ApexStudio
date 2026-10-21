@@ -40,7 +40,7 @@ class EditorVideoPresetsTest {
         assertEquals(6, ProjectVideoPresets.effects.size)
         assertEquals(3, ProjectVideoPresets.textMotions.size)
         assertEquals(2, ProjectVideoPresets.videoTemplates.size)
-        assertEquals(1, ProjectVideoPresets.videoEnhancements.size)
+        assertEquals(4, ProjectVideoPresets.videoEnhancements.size)
         assertEquals(ProjectVideoPresets.textTemplates.size,
             ProjectVideoPresets.textTemplates.map { it.id }.toSet().size)
         assertEquals(ProjectVideoPresets.effects.size,
@@ -241,6 +241,35 @@ class EditorVideoPresetsTest {
         // Reapplying an identical preset succeeds but does not create a no-op history entry.
         assertTrue(vm.applyProjectVideoEffect(after.id, edited, effect.id))
         assertEquals(1, vm.undoStack.size)
+    }
+
+    @Test
+    fun `enhance choices are distinct shared local effects and persist with undo`() {
+        val choices = ProjectVideoPresets.videoEnhancements
+        assertEquals(4, choices.size)
+        assertEquals(choices.size, choices.map { it.id }.toSet().size)
+        assertEquals(choices.size, choices.map { it.colorMatrix().array.toList() }.toSet().size)
+        choices.forEach { choice ->
+            assertNotNull(ProjectVideoPresets.effect(choice.id))
+            assertNotNull(ProjectVideoPresets.colorEffect(choice.id))
+            assertEquals(20, choice.colorMatrix().array.size)
+            assertTrue(choice.colorMatrix().array.all { it.isFinite() })
+        }
+
+        val vm = editor()
+        val before = vm.state.value.project!!
+        val captured = before.clips.first()
+        val selectedEnhancement = choices.last()
+        assertTrue(vm.applyProjectVideoEffect(before.id, captured, selectedEnhancement.id))
+        val changed = vm.state.value.project!!.clips.first()
+        assertEquals(selectedEnhancement.id, changed.projectVideoEffectId)
+        assertEquals(before, vm.undoStack.single().project)
+
+        val restored = Json.decodeFromString<MediaClip>(Json.encodeToString(changed))
+        assertEquals(selectedEnhancement.id, restored.projectVideoEffectId)
+        assertNotNull(ProjectVideoPresets.colorEffect(restored.projectVideoEffectId))
+        vm.undo()
+        assertEquals(before, vm.state.value.project)
     }
 
     @Test

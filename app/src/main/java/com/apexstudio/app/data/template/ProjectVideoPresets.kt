@@ -161,6 +161,30 @@ object ProjectVideoPresets {
                 0f, 0f, 0f, 1f, 0f,
             ),
         ),
+        ProjectVideoEffect(
+            id = "video-enhance-brighten", label = "Video Enhance · Brighten", matrixValues = listOf(
+                1f, 0f, 0f, 0f, 7f,
+                0f, 1f, 0f, 0f, 7f,
+                0f, 0f, 1f, 0f, 7f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+        ProjectVideoEffect(
+            id = "video-enhance-contrast", label = "Video Enhance · Contrast", matrixValues = listOf(
+                1.08f, 0f, 0f, 0f, -10.2f,
+                0f, 1.08f, 0f, 0f, -10.2f,
+                0f, 0f, 1.08f, 0f, -10.2f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+        ProjectVideoEffect(
+            id = "video-enhance-saturation", label = "Video Enhance · Color Boost", matrixValues = listOf(
+                1.08412f, -0.07044f, -0.01368f, 0f, 0f,
+                -0.03588f, 1.04956f, -0.01368f, 0f, 0f,
+                -0.03588f, -0.07044f, 1.10632f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
     )
 
     fun textTemplate(id: String): ProjectVideoTextTemplate? = textTemplates.firstOrNull { it.id == id }

@@ -38,6 +38,8 @@ fun EditorViewModel.openStickerPanel() = _state.update { it.copy(stickerPanelOpe
 fun EditorViewModel.closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
 
 fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, name: String) {
+    if (_state.value.project == null || symbolOrUri.isBlank()) return
+    pushUndo()
     val newSticker = StickerOverlay(
         symbolOrUri = symbolOrUri,
         category = category,
@@ -52,6 +54,7 @@ fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, nam
         val updatedStickers = proj.stickers + newSticker
         st.copy(project = proj.copy(stickers = updatedStickers))
     }
+    persistProject()
 }
 
 
@@ -521,6 +524,9 @@ fun EditorViewModel.rotateSticker(stickerId: String, deltaDeg: Float, persist: B
     }
 
 fun EditorViewModel.removeSticker(stickerId: String) {
+    val project = _state.value.project ?: return
+    if (project.stickers.none { it.id == stickerId } && project.clips.none { clip -> clip.stickers.any { it.id == stickerId } }) return
+    pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val cleared = s.copy(
@@ -551,6 +557,8 @@ fun EditorViewModel.setStickerCutout(stickerId: String, shape: String) =
 
 /** Add a bundled PNG sticker from the library to the project canvas. */
 fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: String) {
+    if (_state.value.project == null || assetPath.isBlank()) return
+    pushUndo()
     val newSticker = StickerOverlay(
         symbolOrUri = "",
         category = category,

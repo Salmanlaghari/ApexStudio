@@ -74,7 +74,10 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                 program.setFloatUniform("uEnabled", if (enabled) 1f else 0f)
                 program.setFloatUniform("uIntensity", effect.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f)
                 program.setFloatUniform("uKind", kindFor(effect.id).toFloat())
+                val elapsedMs = if (sourceTimeMs >= effect.startMs) sourceTimeMs - effect.startMs else 0L
+                program.setFloatUniform("uElapsed", (elapsedMs.coerceAtMost(86_400_000L) / 1_000f))
                 program.setFloatsUniform("uTexel", floatArrayOf(1f / width, 1f / height))
+                program.setFloatUniform("uAspect", width.toFloat() / height.toFloat())
                 program.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
@@ -97,6 +100,11 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             WorkspaceEffectPresets.PIXELATE -> 2
             WorkspaceEffectPresets.SPLIT_2 -> 3
             WorkspaceEffectPresets.SPLIT_3 -> 4
+            WorkspaceEffectPresets.CARTOON -> 5
+            WorkspaceEffectPresets.BUBBLE -> 6
+            WorkspaceEffectPresets.HEARTS -> 7
+            WorkspaceEffectPresets.HEARTBEAT -> 8
+            WorkspaceEffectPresets.ICE -> 9
             else -> -1
         }
 
@@ -119,7 +127,54 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             uniform float uEnabled;
             uniform float uIntensity;
             uniform float uKind;
+            uniform float uElapsed;
+            uniform float uAspect;
             uniform vec2 uTexel;
+
+            float hash21(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            float heartField(vec2 p) {
+                p.x = abs(p.x);
+                float a = p.x * p.x + p.y * p.y - 1.0;
+                return a * a * a - p.x * p.x * p.y * p.y * p.y;
+            }
+
+            vec3 addHeart(vec3 base, vec2 uv, vec2 center, float size, vec3 color) {
+                vec2 p = vec2((uv.x - center.x) / size, (center.y - uv.y) / size);
+                float shape = 1.0 - smoothstep(-0.025, 0.035, heartField(p));
+                float shine = 1.0 - smoothstep(0.0, 0.24, length(p - vec2(-0.27, 0.38)));
+                return mix(base, min(color * (1.0 + shine * 0.28), vec3(1.0)), shape * 0.92);
+            }
+
+            vec3 bubbleLook(vec2 uv) {
+                vec2 warped = uv;
+                float rim = 0.0;
+                float shine = 0.0;
+                for (int i = 0; i < 3; i++) {
+                    vec2 center = (i == 0)
+                        ? vec2(0.27 + 0.035 * sin(uElapsed * 0.65), 0.34 + 0.025 * cos(uElapsed * 0.8))
+                        : ((i == 1)
+                            ? vec2(0.69 + 0.03 * cos(uElapsed * 0.5 + 1.0), 0.62 + 0.035 * sin(uElapsed * 0.7))
+                            : vec2(0.48 + 0.04 * sin(uElapsed * 0.4 + 2.0), 0.22 + 0.025 * cos(uElapsed * 0.6)));
+                    vec2 delta = (uv - center) * vec2(uAspect, 1.0);
+                    float distanceToCenter = length(delta);
+                    float radius = (i == 1) ? 0.145 : 0.105;
+                    float inside = 1.0 - smoothstep(radius - 0.012, radius + 0.012, distanceToCenter);
+                    float edge = 1.0 - smoothstep(0.014, 0.033, abs(distanceToCenter - radius));
+                    vec2 lensOffset = (center - uv) * (inside * 0.18);
+                    warped += lensOffset;
+                    rim = max(rim, edge);
+                    float glint = 1.0 - smoothstep(0.018, 0.045, length(delta - vec2(-radius * 0.36, radius * 0.48)));
+                    shine = max(shine, glint * inside);
+                }
+                vec3 refracted = texture2D(uTexSampler, clamp(warped, vec2(0.001), vec2(0.999))).rgb;
+                return mix(refracted, vec3(0.72, 0.91, 1.0), rim * 0.58) + vec3(0.18, 0.28, 0.34) * shine;
+            }
+
             void main() {
                 vec4 original = texture2D(uTexSampler, vTextureCoord);
                 vec3 effected = original.rgb;
@@ -132,10 +187,36 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                     float blockPx = mix(32.0, 6.0, uIntensity);
                     vec2 pixel = floor(vTextureCoord / uTexel / blockPx) * blockPx + blockPx * 0.5;
                     effected = texture2D(uTexSampler, pixel * uTexel).rgb;
-                } else {
+                } else if (uKind < 4.5) {
                     float count = (uKind < 3.5) ? 2.0 : 3.0;
                     vec2 sourceUv = vec2(fract(vTextureCoord.x * count), vTextureCoord.y);
                     effected = texture2D(uTexSampler, sourceUv).rgb;
+                } else if (uKind < 5.5) {
+                    vec3 north = texture2D(uTexSampler, vTextureCoord + vec2(0.0, uTexel.y * 2.0)).rgb;
+                    vec3 east = texture2D(uTexSampler, vTextureCoord + vec2(uTexel.x * 2.0, 0.0)).rgb;
+                    float edge = max(length(original.rgb - north), length(original.rgb - east));
+                    float ink = smoothstep(0.12, 0.38, edge);
+                    float steps = mix(9.0, 4.0, uIntensity);
+                    vec3 poster = floor(original.rgb * steps + 0.5) / steps;
+                    effected = poster * mix(vec3(1.0), vec3(0.22, 0.25, 0.31), ink * 0.8);
+                } else if (uKind < 6.5) {
+                    effected = bubbleLook(vTextureCoord);
+                } else if (uKind < 7.5) {
+                    float bob = sin(uElapsed * 2.0) * 0.035;
+                    effected = addHeart(original.rgb, vTextureCoord, vec2(0.22, 0.28 + bob), 0.095, vec3(1.0, 0.25, 0.40));
+                    effected = addHeart(effected, vTextureCoord, vec2(0.53, 0.66 - bob), 0.078, vec3(1.0, 0.48, 0.66));
+                    effected = addHeart(effected, vTextureCoord, vec2(0.79, 0.39 + bob), 0.088, vec3(0.98, 0.31, 0.52));
+                } else if (uKind < 8.5) {
+                    float phase = fract(uElapsed * 1.15);
+                    float firstBeat = (phase - 0.09) * 27.0;
+                    float secondBeat = (phase - 0.24) * 25.0;
+                    float beat = max(exp(-firstBeat * firstBeat), 0.72 * exp(-secondBeat * secondBeat));
+                    effected = original.rgb * (vec3(1.0) + vec3(0.14, -0.16, -0.10) * beat) + vec3(0.10, 0.008, 0.018) * beat;
+                } else {
+                    vec2 cell = floor(vTextureCoord * vec2(54.0, 54.0));
+                    float frostSpeck = step(0.994, hash21(cell));
+                    float vignette = smoothstep(0.0, 0.7, length((vTextureCoord - 0.5) * vec2(uAspect, 1.0)));
+                    effected = original.rgb * vec3(0.78, 0.93, 1.17) + vec3(0.05, 0.12, 0.18) * vignette + vec3(0.75, 0.91, 1.0) * frostSpeck * 0.45;
                 }
                 gl_FragColor = vec4(mix(original.rgb, effected, uEnabled * uIntensity), original.a);
             }

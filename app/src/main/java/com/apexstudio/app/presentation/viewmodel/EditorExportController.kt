@@ -61,6 +61,11 @@ fun EditorViewModel.startExport(
     val resolvedResolution = ExportResolution.canonical(resolution)
     val s = _state.value
     val selected = resolveExportBaseClip(s)
+    val scopeReason = selectedVideoExportUnsupportedReason(s)
+    if (scopeReason != null) {
+        _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
+        return
+    }
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {

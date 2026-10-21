@@ -91,6 +91,7 @@ private fun EditorScreenContent(
     onAudio: () -> Unit,
     vm: EditorViewModel
 ) {
+    var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
@@ -860,6 +861,8 @@ private fun EditorScreenContent(
                 onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
                 onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
                 onQuickFilters = { quickPresetSection = QuickVideoPresetSection.FILTERS },
+                onChallenge = { showLocalChallenge = true },
+                onNext = onExport,
                 onAi = { showAiPanel = true },
                 onDraw = {
                     if (mainPreviewClip != null) {
@@ -899,6 +902,7 @@ private fun EditorScreenContent(
     val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
         resolveAiContentReportTarget(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId)
     }
+    if (showLocalChallenge) LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
     quickPresetSection?.let { section ->
         QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
     }

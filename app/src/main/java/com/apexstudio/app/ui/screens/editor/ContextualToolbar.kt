@@ -220,7 +220,9 @@ fun ContextualBottomToolbar(
     // Subtitles opens the existing speech-recognition/captions panel. Kept
     // optional for source compatibility with standalone toolbar callers.
     onCaptions: () -> Unit = onText,
-    onTemplates: () -> Unit = onEditPack
+    onTemplates: () -> Unit = onEditPack,
+    onChallenge: () -> Unit = onText,
+    onNext: () -> Unit = {}
 ) {
     // One always-visible, horizontally scrollable row: put the high-frequency
     // mobile editing actions first, then retain the complete legacy tool set
@@ -235,7 +237,9 @@ fun ContextualBottomToolbar(
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
             CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
+            CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),
             CtxToolItem("Subtitles", Icons.Default.Subtitles, onClick = onCaptions),
+            CtxToolItem("Next", Icons.Default.Share, onClick = onNext),
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
 
             // Additional supported tools remain available after the quick set.
@@ -794,7 +798,9 @@ fun EditorBottomToolbarSection(
     onEffectsWorkspace: () -> Unit = { vm.openFxPanel() },
     onQuickEnhance: () -> Unit = { vm.openAdjustmentsPanel() },
     onQuickTemplates: () -> Unit = { vm.openTransmissionTemplatesPanel() },
-    onQuickFilters: () -> Unit = { vm.openFilterPanel() }
+    onQuickFilters: () -> Unit = { vm.openFilterPanel() },
+    onChallenge: () -> Unit = { vm.openTextPanel() },
+    onNext: () -> Unit = {}
 ) {
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
@@ -862,6 +868,8 @@ fun EditorBottomToolbarSection(
         onChromaKey = onChromaKey,
         onCaptions = { vm.openCaptionsPanel() },
         onTemplates = onQuickTemplates,
+        onChallenge = onChallenge,
+        onNext = onNext,
         onAdjust = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.

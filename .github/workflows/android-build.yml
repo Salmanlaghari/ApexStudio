@@ -89,6 +89,13 @@ jobs:
           python3 scripts/verify-ai-models.py
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
 
+      - name: Host GLES workspace shader pixel regression (not Android)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libgles2 libgl1-mesa-dri
+          python3 -m pip install numpy PyOpenGL
+          python3 scripts/verify-workspace-shaders.py
+
       - name: Full JVM regression suite
         run: |
           ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon

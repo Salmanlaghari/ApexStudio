@@ -55,8 +55,30 @@ object WorkspaceEffectPresets {
     const val PIXELATE = "pixelate"
     const val SPLIT_2 = "split2"
     const val SPLIT_3 = "split3"
+    const val CARTOON = "cartoon"
+    const val BUBBLE = "bubble"
+    const val HEARTS = "hearts"
+    const val HEARTBEAT = "heartbeat"
+    const val ICE = "ice"
 
-    val all: Set<String> = setOf(MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3)
+    /** These are lightweight GLSL looks, not neural filters, face tracking, or imported art. */
+    val all: Set<String> = setOf(
+        MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3, CARTOON, BUBBLE, HEARTS, HEARTBEAT, ICE
+    )
+
+    fun label(id: String): String = when (id) {
+        MONO -> "Monochrome"
+        WARM -> "Warm"
+        PIXELATE -> "Pixelate"
+        SPLIT_2 -> "2 tiles"
+        SPLIT_3 -> "3 tiles"
+        CARTOON -> "Cartoon · posterized"
+        BUBBLE -> "Bubble lens"
+        HEARTS -> "Hearts · procedural"
+        HEARTBEAT -> "Heartbeat pulse"
+        ICE -> "Ice · cool tint"
+        else -> "Unknown effect"
+    }
 }
 
 /** Pure half-open range check shared by preview/export and regression tests. */

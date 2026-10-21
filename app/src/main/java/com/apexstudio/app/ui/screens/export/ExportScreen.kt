@@ -18,6 +18,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -82,9 +83,11 @@ fun ExportScreen(
     val selectedBitrateMbps = export.settings.bitrateMbps
     // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
     val videoScope = videoExportScope(editorState)
+    val selectedBlockReason = selectedVideoExportUnsupportedReason(editorState)
     androidx.activity.compose.BackHandler {
         if (export.isExporting) vm.cancelCurrentExport() else onBack()
     }
+    var shareError by remember { mutableStateOf<String?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val projectFilterPreset = remember(context, editorState.activeFilterId) {
         val filterId = editorState.activeFilterId
@@ -143,6 +146,7 @@ fun ExportScreen(
                 AudioExportWarning(projectBlockReason ?: "Whole-project export: main videos in timeline order with global LUT filters, color adjustments and FX. Cuts are hard cuts; photos, visible PiP layers, AR and advanced composition are not supported by this route.")
             } else {
                 VideoExportScopeWarning(videoScope)
+                AudioExportWarning(selectedBlockReason)
             }
             SectionLabel("MOTION GRAPHICS")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -160,23 +164,9 @@ fun ExportScreen(
                 }
             }
 
-            SectionLabel("TRANSITIONS")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(transitionsList) { t ->
-                    TransitionCard(
-                        label = t.label,
-                        icon = t.icon,
-                        // Transitions list is still display-only —
-                        // there's no per-clip transition state yet
-                        // (see the Transmission panel's TODO about
-                        // per-clip transitions). Cards render but
-                        // don't toggle; clicking is a no-op until
-                        // that model lands.
-                        onClick = { },
-                        modifier = Modifier.width(70.dp)
-                    )
-                }
-            }
+            // Do not present decorative transition cards as working export actions.
+            Text("Transitions are edited on the timeline. Whole-project export currently supports hard cuts only.",
+                color = ApexPalette.TextSecondary, fontSize = 10.sp)
 
             SectionLabel("RESOLUTION")
             GlassCard(
@@ -530,17 +520,20 @@ fun ExportScreen(
                             color = ApexPalette.TextSecondary,
                             fontSize = 10.sp
                         )
-                        // TODO: ExportEngine currently returns
-                        // Uri.fromFile(...) which produces a file://
-                        // URI. On Android 11+ sharing that URI to
-                        // another app (e.g. WhatsApp, Drive) trips
-                        // FileUriExposedException. The proper fix is
-                        // to write the output via MediaStore in
-                        // ExportEngine.startExport so the URI is a
-                        // content:// that survives scoped storage.
-                        // Out of scope for this PR — the share
-                        // action still works inside the app's own
-                        // process.
+                        OutlinedButton(enabled = !export.isExporting, onClick = {
+                            shareError = runCatching {
+                                shareCompletedExport(context, requireNotNull(export.outputUri))
+                            }.exceptionOrNull()?.let {
+                                it.message ?: "No sharing app is available. The export remains saved."
+                            }
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Share / Next")
+                        }
+                        Text("Shares the last completed export. Re-export after changing edits or settings. Nothing is published automatically.",
+                            color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        shareError?.let { Text(it, color = ApexPalette.Danger, fontSize = 11.sp) }
                         Text(
                             export.outputUri ?: "",
                             color = Color.White,
@@ -577,7 +570,7 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable(enabled = export.isExporting || if (wholeProject) projectBlockReason == null else videoScope.baseClip != null) {
+                .clickable(enabled = export.isExporting || if (wholeProject) projectBlockReason == null else selectedBlockReason == null) {
                     // Single export path: the ViewModel's engine bakes
                     // crop + LUT filter + FX + speed + keyframes + text
                     // overlays into the MP4 and mirrors progress into
@@ -605,6 +598,7 @@ fun ExportScreen(
                         if (export.progress <= 0f) "Cancel • Preparing export…"
                         else "Cancel • Exporting… ${(export.progress * 100).toInt()}%"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
+                    else if (!wholeProject && selectedBlockReason != null && videoScope.baseClip != null) "Selected-clip export unavailable for these edits"
                     else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
                     color = ApexPalette.BgDeep,
                     fontWeight = FontWeight.ExtraBold,

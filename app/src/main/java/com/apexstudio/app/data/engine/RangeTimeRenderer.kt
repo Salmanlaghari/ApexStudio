@@ -125,14 +125,14 @@ object RangeTimeRenderer {
                 rangeEndMs = endMs,
                 clipEndMs = clip.trimEndMs,
                 operation = operation,
-                hasAudio = sourceInfo.hasAudio
+                hasAudio = sourceInfo.audioTrackCount > 0
             )
             val session = executeCancellable(command)
             check(ReturnCode.isSuccess(session.returnCode)) {
                 "FFmpeg could not render the selected range (code ${session.returnCode?.value ?: "unknown"})."
             }
             check(tmp.isFile && tmp.length() > 0L) { "FFmpeg completed without producing a video file." }
-            val rendered = inspectRenderedOutput(tmp)
+            val rendered = inspectRenderedOutput(tmp, expectedAudio = sourceInfo.audioTrackCount > 0)
             val expectedDurationMs = clip.trimEndMs - clip.trimStartMs + when (operation) {
                 RangeTimeOperation.SLOW, RangeTimeOperation.REPEAT -> endMs - startMs
                 RangeTimeOperation.REVERSE -> 0L
@@ -140,6 +140,12 @@ object RangeTimeRenderer {
             val durationToleranceMs = maxOf(150L, expectedDurationMs / 50L)
             require(kotlin.math.abs(rendered.durationMs - expectedDurationMs) <= durationToleranceMs) {
                 "The rendered video's duration did not match the requested range operation."
+            }
+            rendered.audioDurationMs?.let { audioDurationMs ->
+                val audioToleranceMs = maxOf(250L, rendered.durationMs / 50L)
+                require(kotlin.math.abs(audioDurationMs - rendered.durationMs) <= audioToleranceMs) {
+                    "The rendered audio track is not synchronized with the video duration."
+                }
             }
             currentCoroutineContext().ensureActive()
             // A same-directory hard link publishes a complete file atomically and fails if the
@@ -211,7 +217,8 @@ object RangeTimeRenderer {
             segmentPieces += v.toString()
             if (hasAudio) {
                 val aLabel = "a$index"
-                val a = StringBuilder("[0:a]atrim=start=${seconds(startMs)}:end=${seconds(endMs)},asetpts=PTS-STARTPTS")
+                // A bare [0:a] is ambiguous for sources with multiple audio tracks.
+                val a = StringBuilder("[0:a:0]atrim=start=${seconds(startMs)}:end=${seconds(endMs)},asetpts=PTS-STARTPTS")
                 if (affected) when (operation) {
                     RangeTimeOperation.SLOW -> a.append(",atempo=0.5")
                     RangeTimeOperation.REPEAT -> Unit
@@ -237,8 +244,14 @@ object RangeTimeRenderer {
         return segmentPieces.joinToString(";")
     }
 
-    private data class SourceInfo(val width: Int, val height: Int, val rotation: Int, val durationMs: Long, val hasAudio: Boolean, val frameRate: Int)
-    private data class OutputInfo(val width: Int, val height: Int, val durationMs: Long)
+    private data class SourceInfo(val width: Int, val height: Int, val rotation: Int, val durationMs: Long, val audioTrackCount: Int, val frameRate: Int)
+    private data class OutputInfo(
+        val width: Int,
+        val height: Int,
+        val durationMs: Long,
+        val hasAudio: Boolean,
+        val audioDurationMs: Long?
+    )
 
     private fun inspectSource(file: File): SourceInfo {
         val retriever = MediaMetadataRetriever()
@@ -252,7 +265,7 @@ object RangeTimeRenderer {
             require(width > 0 && height > 0 && durationMs > 0L) { "The selected local file is not a readable video." }
             extractor.setDataSource(file.absolutePath)
             var hasVideo = false
-            var hasAudio = false
+            var audioTrackCount = 0
             var frameRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
                 ?.toFloatOrNull()?.toInt()?.takeIf { it in 1..60 } ?: 60
             for (track in 0 until extractor.trackCount) {
@@ -264,27 +277,53 @@ object RangeTimeRenderer {
                         frameRate = format.getInteger(MediaFormat.KEY_FRAME_RATE).takeIf { it > 0 } ?: 60
                     }
                 }
-                if (mime.startsWith("audio/")) hasAudio = true
+                if (mime.startsWith("audio/")) audioTrackCount++
             }
             require(hasVideo) { "The selected local file contains no video track." }
+            require(audioTrackCount <= 1) {
+                "Range Time currently supports at most one audio track; choose a single-track source so no audio is silently discarded."
+            }
             require(rotation in setOf(0, 90, 180, 270)) { "The source video has unsupported rotation metadata." }
-            return SourceInfo(width, height, rotation, durationMs, hasAudio, frameRate)
+            return SourceInfo(width, height, rotation, durationMs, audioTrackCount, frameRate)
         } finally {
             extractor.release()
             retriever.release()
         }
     }
 
-    private fun inspectRenderedOutput(file: File): OutputInfo {
+    private fun inspectRenderedOutput(file: File, expectedAudio: Boolean): OutputInfo {
         val retriever = MediaMetadataRetriever()
+        val extractor = MediaExtractor()
         try {
             retriever.setDataSource(file.absolutePath)
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             require(width >= 2 && height >= 2 && duration > 0L) { "The rendered MP4 failed video metadata verification." }
-            return OutputInfo(width, height, duration)
+            extractor.setDataSource(file.absolutePath)
+            var hasVideo = false
+            var hasAudio = false
+            var audioDurationMs: Long? = null
+            for (track in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(track)
+                when {
+                    format.getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/") -> hasVideo = true
+                    format.getString(MediaFormat.KEY_MIME).orEmpty().startsWith("audio/") -> {
+                        hasAudio = true
+                        audioDurationMs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+                            (format.getLong(MediaFormat.KEY_DURATION) / 1_000L).coerceAtLeast(0L)
+                        } else null
+                    }
+                }
+            }
+            require(hasVideo) { "The rendered MP4 has no readable video track." }
+            require(hasAudio == expectedAudio) {
+                if (expectedAudio) "The rendered MP4 lost the source audio track."
+                else "The rendered MP4 unexpectedly contains an audio track."
+            }
+            return OutputInfo(width, height, duration, hasAudio, audioDurationMs)
         } finally {
+            extractor.release()
             retriever.release()
         }
     }

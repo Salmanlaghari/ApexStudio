@@ -141,7 +141,7 @@ class TextOverlayGlEffect(
                         // previous timestamp or retain its full-frame sprite.
                         deleteCachedTexture()
                         cachedKey = null
-                        Log.w(TAG, "Text overlay frame failed at ${timeMs}ms", e)
+                        throw VideoFrameProcessingException("Text/caption render failed at ${timeMs}ms; export stopped rather than omitting the edit", e)
                     }
                 }
 

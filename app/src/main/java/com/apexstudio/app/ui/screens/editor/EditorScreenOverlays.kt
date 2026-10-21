@@ -736,7 +736,7 @@ fun StickerPanelOverlay(
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             StickerPanel(
-                onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath, cat, name) },
+                onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath = assetPath, category = cat, name = name) },
                 onClose = { vm.closeStickerPanel() }
             )
         }

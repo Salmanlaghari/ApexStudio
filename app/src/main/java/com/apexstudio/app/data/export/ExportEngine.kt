@@ -431,6 +431,9 @@ class ExportEngine(private val context: Context) {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
                         val videoEffects = buildList<androidx.media3.common.Effect> {
+                            clip.videoCrop.takeUnless { it.isFullFrame }
+                                ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
+                                ?.let { add(it) }
                             com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                                 ?.let { add(it) }
                             addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(clip.workspaceEffects, entry.sourceStartMs))
@@ -467,6 +470,25 @@ class ExportEngine(private val context: Context) {
                                 ))
                             }
                             speedPair?.second?.let(::add)
+                            // These windows are clip-output-relative: the trimmed sequence item starts at 0,
+                            // and the caption/sticker effects follow speed processing on that output clock.
+                            val aspect = outputWidth.toFloat() / outputHeight
+                            val captions = clip.textOverlays.filter { it.text.isNotBlank() }
+                            if (captions.isNotEmpty()) {
+                                add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))
+                            }
+                            // Keep sticker layering in editor order, above captions and prior stickers.
+                            clip.stickers.forEach { sticker ->
+                                if (sticker.isPngSticker()) {
+                                    add(com.apexstudio.app.data.effect.StickerGlEffect(context, sticker, aspect))
+                                } else {
+                                    add(com.apexstudio.app.data.effect.TextOverlayGlEffect(
+                                        context,
+                                        com.apexstudio.app.data.export.projectEmojiStickerAsTextOverlay(sticker),
+                                        aspect
+                                    ))
+                                }
+                            }
                             add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                 effectiveExportFrameRate(config.fps).toFloat()
                             ))
@@ -934,16 +956,7 @@ class ExportEngine(private val context: Context) {
                             // TextOverlay sizeScale so the export font size
                             // matches the preview's emoji font size exactly
                             // (see StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR).
-                            val overlay = TextOverlay(
-                                id = sticker.id,
-                                text = sticker.symbolOrUri,
-                                x = sticker.x,
-                                y = sticker.y,
-                                sizeScale = sticker.sizeScale *
-                                    com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
-                                startMs = sticker.startMs,
-                                endMs = sticker.endMs
-                            )
+                            val overlay = projectEmojiStickerAsTextOverlay(sticker)
                             foregroundEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                         }
                     }

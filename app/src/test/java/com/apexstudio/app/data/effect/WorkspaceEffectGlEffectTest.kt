@@ -56,12 +56,24 @@ class WorkspaceEffectGlEffectTest {
         assertTrue(shader.contains("fract(vTextureCoord.x * count)"))
         assertTrue(shader.contains("texture2D(uTexSampler, sourceUv)"))
         assertTrue(shader.contains("uEnabled * uIntensity"))
+        assertTrue(shader.contains("uniform float uElapsed"))
+        assertTrue(shader.contains("float heartField(vec2 p)"))
+        assertTrue(shader.contains("vec3 bubbleLook(vec2 uv)"))
+        assertTrue(shader.contains("float ink = smoothstep(0.12, 0.38, edge)"))
+        assertTrue(shader.contains("float phase = fract(uElapsed * 1.15)"))
         assertTrue(WorkspaceEffectPresets.all.containsAll(setOf(
             WorkspaceEffectPresets.MONO,
             WorkspaceEffectPresets.WARM,
             WorkspaceEffectPresets.PIXELATE,
             WorkspaceEffectPresets.SPLIT_2,
-            WorkspaceEffectPresets.SPLIT_3
+            WorkspaceEffectPresets.SPLIT_3,
+            WorkspaceEffectPresets.CARTOON,
+            WorkspaceEffectPresets.BUBBLE,
+            WorkspaceEffectPresets.HEARTS,
+            WorkspaceEffectPresets.HEARTBEAT,
+            WorkspaceEffectPresets.ICE
         )))
+        assertEquals("Cartoon · posterized", WorkspaceEffectPresets.label(WorkspaceEffectPresets.CARTOON))
+        assertEquals("Hearts · procedural", WorkspaceEffectPresets.label(WorkspaceEffectPresets.HEARTS))
     }
 }

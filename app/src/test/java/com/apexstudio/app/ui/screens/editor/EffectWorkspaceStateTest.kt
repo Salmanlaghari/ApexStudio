@@ -26,4 +26,10 @@ class EffectWorkspaceStateTest {
         assertEquals(WorkspaceRange(2_000L, 8_000L), WorkspaceRange.fromFractions(source, Float.NaN, Float.NaN))
         assertEquals(WorkspaceRange(2_000L, 8_000L), WorkspaceRange.fromFractions(source, -1f, 2f))
     }
+
+    @Test fun `playback marks preserve source time order and enforce nonempty in-trim range`() {
+        assertEquals(WorkspaceRange(3_000L, 5_500L), WorkspaceRange.fromPlaybackMarks(source, 5_500L, 3_000L))
+        assertEquals(WorkspaceRange(7_900L, 8_000L), WorkspaceRange.fromPlaybackMarks(source, 8_000L, 8_000L))
+        assertEquals(WorkspaceRange(2_000L, 2_100L), WorkspaceRange.fromPlaybackMarks(source, -50L, 2_020L))
+    }
 }

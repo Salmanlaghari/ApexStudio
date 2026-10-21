@@ -79,6 +79,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -122,6 +123,7 @@ import androidx.compose.ui.semantics.selected
 import com.apexstudio.app.data.media.SyntheticWaveform
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipTransition
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.MediaClip
@@ -129,6 +131,8 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
+import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.WorkspaceFilterPresets
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -2040,6 +2044,13 @@ private fun KeyframeDiamondStrip(
     ) {
         val spanDur = spanDurationMs.coerceAtLeast(1L)
         keyframes.forEach { kf ->
+            // Keep the gesture coroutine alive across marker updates, but make
+            // each event/release observe the latest timeline data and callbacks.
+            val currentKeyframe by rememberUpdatedState(kf)
+            val currentSpanStartMs by rememberUpdatedState(spanStartMs)
+            val currentSpanDurationMs by rememberUpdatedState(spanDur)
+            val currentOnSeekToKeyframe by rememberUpdatedState(onSeekToKeyframe)
+            val currentOnMoveKeyframe by rememberUpdatedState(onMoveKeyframe)
             val frac = ((kf.timeMs - spanStartMs).toFloat() / spanDur.toFloat()).coerceIn(0f, 1f)
             var dragDx by remember(kf.id) { mutableFloatStateOf(0f) }
             var isDragging by remember(kf.id) { mutableStateOf(false) }
@@ -2106,12 +2117,18 @@ private fun KeyframeDiamondStrip(
                             }
                             if (dragged) {
                                 val deltaMs = sourceTrimDeltaToMs(totalDx, msToDp, density)
-                                val newTimeMs = (kf.timeMs + deltaMs).coerceIn(spanStartMs, spanStartMs + spanDur)
+                                val latestKeyframe = currentKeyframe
+                                val latestSpanStartMs = currentSpanStartMs
+                                val latestSpanDurationMs = currentSpanDurationMs
+                                val newTimeMs = (latestKeyframe.timeMs + deltaMs)
+                                    .coerceIn(latestSpanStartMs, latestSpanStartMs + latestSpanDurationMs)
                                 dragDx = 0f
                                 isDragging = false
-                                if (newTimeMs != kf.timeMs) onMoveKeyframe(kf.id, newTimeMs)
+                                if (newTimeMs != latestKeyframe.timeMs) {
+                                    currentOnMoveKeyframe(latestKeyframe.id, newTimeMs)
+                                }
                             } else {
-                                onSeekToKeyframe(kf.timeMs)
+                                currentOnSeekToKeyframe(currentKeyframe.timeMs)
                             }
                         }
                     }
@@ -2326,6 +2343,42 @@ private fun TimelineVideoTrack(
                         placeholderIconSize = 14.dp,
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    // Persisted source-time looks are visible as colored, labeled range
+                    // bands on the clip itself. The strip is decorative and leaves the
+                    // established clip selection/trim gestures untouched.
+                    if (clip.workspaceEffects.isNotEmpty() && effTrimEnd > effTrimStart) {
+                        BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+                            val displayedClip = clip.copy(trimStartMs = effTrimStart, trimEndMs = effTrimEnd)
+                            val outputSpan = ClipTimeMapping.mainClipDurationMs(displayedClip).toFloat().coerceAtLeast(1f)
+                            clip.workspaceEffects.forEachIndexed { effectIndex, effect ->
+                                val visibleStart = maxOf(effect.startMs, effTrimStart)
+                                val visibleEnd = minOf(effect.endMs, effTrimEnd)
+                                if (effect.id in WorkspaceEffectPresets.all && visibleEnd > visibleStart) {
+                                    val left = (ClipTimeMapping.mainOutputOffsetAtSourceMs(displayedClip, visibleStart) / outputSpan).coerceIn(0f, 1f)
+                                    val right = (ClipTimeMapping.mainOutputOffsetAtSourceMs(displayedClip, visibleEnd) / outputSpan).coerceIn(left, 1f)
+                                    val bandWidth = (maxWidth * (right - left)).coerceAtLeast(18.dp)
+                                    val row = effectIndex % 3
+                                    val preset = WorkspaceFilterPresets.find(effect.id)
+                                    val tint = Color(preset?.swatchArgb ?: 0xFF5E91CA)
+                                    Box(
+                                        Modifier.offset(x = maxWidth * left, y = maxHeight - (14 + row * 12).dp)
+                                            .width(bandWidth).height(11.dp).clip(RoundedCornerShape(3.dp))
+                                            .background(tint.copy(alpha = 0.93f))
+                                            .border(0.5.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(3.dp)),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Text(
+                                            WorkspaceEffectPresets.label(effect.id),
+                                            color = Color(0xFF10141B), fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                                            maxLines = 1, overflow = TextOverflow.Clip,
+                                            modifier = Modifier.padding(horizontal = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Text(clip.name, color = Color.White, fontSize = 9.sp, maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

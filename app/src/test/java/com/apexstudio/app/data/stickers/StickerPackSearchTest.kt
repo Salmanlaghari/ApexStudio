@@ -6,6 +6,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.Locale
 
 /**
  * Unit tests for the sticker library's tag-based search and manifest
@@ -80,5 +81,32 @@ class StickerPackSearchTest {
     @Test
     fun `categories preserves first-seen order`() {
         assertEquals(listOf("love", "fire", "sad"), StickerPack.categories(entries))
+    }
+
+    @Test
+    fun `search supports localized 3d tags without breaking existing packs`() {
+        val mixedPacks = StickerPack.parseManifest(
+            """{"stickers":[
+                {"id":"fluent3d-red-heart","file":"3d/red-heart.png","name":"3D Red Heart","category":"3d","tags":["dil","heart","دل","3d"]},
+                {"id":"twemoji-fire","file":"fire/fire.webp","name":"Fire","category":"fire","tags":["fire","hot","flame"]},
+                {"id":"animated-heart","file":"animated/heart.json","name":"Heart","category":"animated","tags":["heart","love"]}
+            ]}"""
+        )
+
+        assertEquals("fluent3d-red-heart", StickerPack.search(mixedPacks, "dil").single().id)
+        assertEquals("fluent3d-red-heart", StickerPack.search(mixedPacks, "دل").single().id)
+        assertEquals("twemoji-fire", StickerPack.search(mixedPacks, "flame").single().id)
+        assertEquals("animated-heart", StickerPack.search(mixedPacks, "love").single().id)
+    }
+
+    @Test
+    fun `search uses locale root for case folding`() {
+        val previousLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"))
+            assertEquals("fire", StickerPack.search(entries, "FIRE").single().id)
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
     }
 }

@@ -88,6 +88,7 @@ jobs:
         run: |
           python3 scripts/verify-ai-models.py
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
 
       - name: Host GLES workspace shader pixel regression (not Android)
         run: |

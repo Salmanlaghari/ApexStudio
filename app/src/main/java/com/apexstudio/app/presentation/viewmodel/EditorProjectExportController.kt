@@ -83,7 +83,10 @@ fun EditorViewModel.startWholeProjectExport() {
         _export.update { it.copy(error = reason, outputUri = null, warning = null) }
         return
     }
-    val engine = exportEngine ?: return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
     val clips = projectMainExportClips(snapshot)
     val config = buildProjectExportConfig(snapshot, audioSnapshot, settings, filterPreset)
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null, warning = null) }

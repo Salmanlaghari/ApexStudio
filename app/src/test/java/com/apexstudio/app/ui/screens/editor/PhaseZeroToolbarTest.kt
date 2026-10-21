@@ -75,9 +75,31 @@ class PhaseZeroToolbarTest {
         }
 
         listOf(
-            "music", "text", "adjust", "templates", "crop",
+            "music", "text", "enhance", "templates", "crop",
             "effects", "stickers", "captions", "filters"
         ).forEach { action -> assertEquals("$action callback", 1, calls[action] ?: 0) }
+    }
+
+    @Test fun `global Enhance and video Adjust use independent callbacks`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
+        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
+        assertEquals(1, calls["enhance"] ?: 0)
+        assertEquals(1, calls["adjust"] ?: 0)
+    }
+
+    @Test fun `editor wrapper keeps quick Enhance separate from actual Adjust panel`() {
+        val vm = com.apexstudio.app.presentation.viewmodel.EditorViewModel()
+        val clip = com.apexstudio.app.domain.model.MediaClip("v", "V", "file:///v.mp4", 5000L, trimEndMs = 5000L)
+        vm._state.value = vm.state.value.copy(project = com.apexstudio.app.domain.model.Project("p", "P", 5000L, clips = listOf(clip)), selectedClipId = clip.id)
+        val picker = io.mockk.mockk<com.apexstudio.app.data.picker.MediaPickerHelper>(relaxed = true)
+        var quickEnhance = 0
+        composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
+        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
+        composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
     }
 
     /** Explicit test-only callbacks keep every production action wired and observable. */
@@ -104,6 +126,7 @@ class PhaseZeroToolbarTest {
             onAddOverlayImage = { count("add-image") },
             onAddOverlayVideo = { count("add-video") },
             onAdjust = { count("adjust") },
+            onEnhance = { count("enhance") },
             onReplace = { count("replace") },
             onSpeed = { count("speed") },
             onVolume = { count("volume") },

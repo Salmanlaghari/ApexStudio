@@ -39,6 +39,7 @@ import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.hasValidParameters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -629,7 +630,7 @@ class ExportEngine(private val context: Context) {
                     .build()
                 val encoderFactory = DefaultEncoderFactory.Builder(context)
                     .setRequestedVideoEncoderSettings(encoderSettings)
-                    .setEnableFallback(true)
+                    .setEnableFallback(false) // Never silently change the owner's requested output settings.
                     .build()
                 val listener = object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -721,6 +722,9 @@ class ExportEngine(private val context: Context) {
                 require(config.projectVideoEffectId == null ||
                     com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
                     "Unknown project-video effect; export stopped rather than dropping the edit."
+                }
+                require(config.workspaceEffects.size <= 16 && config.workspaceEffects.all { it.hasValidParameters() }) {
+                    "Invalid ranged filter or custom grading values; export stopped rather than dropping the edit."
                 }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
@@ -1427,7 +1431,7 @@ class ExportEngine(private val context: Context) {
 
         val encoderFactory = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(encoderSettings)
-            .setEnableFallback(true)
+            .setEnableFallback(false) // Never silently change the owner's requested output settings.
             .build()
 
         var active: Transformer? = null

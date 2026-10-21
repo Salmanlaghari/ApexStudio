@@ -29,6 +29,15 @@ class EffectWorkspacePanelTest {
         vm._state.value = vm.state.value.copy(project = Project("project", "Project", 2_000L, clips = listOf(clip)), selectedClipId = clip.id)
     }
 
+    @Test fun `source time maps live or fallback project playhead and clamps to clip trim`() {
+        val previous = MediaClip("previous", "Previous", "file:///previous.mp4", 500L, trimEndMs = 500L)
+        val clips = listOf(previous, clip)
+
+        assertEquals(400L, sourceTimeAtProjectPlayhead(clips, clip, 900L, 100L))
+        assertEquals(400L, sourceTimeAtProjectPlayhead(clips, clip, null, 900L))
+        assertEquals(2_000L, sourceTimeAtProjectPlayhead(clips, clip, null, 5_000L))
+    }
+
     @Test fun `preset previews without mutation then Apply commits exactly one undo entry`() {
         val vm = editor()
         val previews = mutableListOf<MediaClip>()
@@ -86,6 +95,8 @@ class EffectWorkspacePanelTest {
         compose.runOnIdle { }
         compose.onNodeWithTag("workspace-play-range-control").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
         vm.setPlayerPosition(1_400L, forceStateSync = true)
+        // Simulate the intentionally throttled EditorState mirror lagging behind the live flow.
+        vm._state.value = vm.state.value.copy(playerPositionMs = 500L, currentTimeMs = 500L)
         compose.runOnIdle { }
         compose.onNodeWithTag("workspace-play-range-control").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
         compose.onNodeWithText("Monochrome").performSemanticsAction(SemanticsActions.OnClick) { it() }

@@ -24,10 +24,10 @@ internal enum class QuickVideoPresetSection(val title: String) {
 internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPresetSection, onClose: () -> Unit) {
     val editor by vm.state.collectAsState()
     val upscale by vm.videoUpscaleUi.collectAsState()
-    val target = remember { vm.state.value.let { state ->
-        state.project?.let { project -> project.clips.firstOrNull { it.id == state.selectedClipId }?.let { project.id to it } }
-    } }
-    var error by remember { mutableStateOf<String?>(null) }
+    val target = editor.project?.let { project ->
+        project.clips.firstOrNull { it.id == editor.selectedClipId }?.let { project.id to it }
+    }
+    var error by remember(editor.project?.id, editor.selectedClipId, section) { mutableStateOf<String?>(null) }
     val capturedClip = target?.second
     val eligible = capturedClip != null && capturedClip.type == ClipType.VIDEO && capturedClip.trackIndex == 0 &&
         capturedClip.uri.isNotBlank() && editor.project?.id == target?.first && editor.selectedClipId == capturedClip.id &&

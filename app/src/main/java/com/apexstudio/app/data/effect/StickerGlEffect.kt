@@ -311,8 +311,8 @@ class StickerGlEffect(
             void main() {
                 vec4 video = texture2D(uTexSampler, vTextureCoord);
                 vec4 sticker = texture2D(uOverlaySampler, vTextureCoord);
-                // Straight alpha blend of the sticker sprite.
-                vec3 outRgb = sticker.rgb * sticker.a + video.rgb * (1.0 - sticker.a);
+                // Canvas ARGB_8888 uploads premultiplied RGB. Do not multiply alpha twice.
+                vec3 outRgb = sticker.rgb + video.rgb * (1.0 - sticker.a);
                 gl_FragColor = vec4(outRgb, video.a);
             }
         """.trimIndent()

@@ -1,6 +1,11 @@
 package com.apexstudio.app.ui.components
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -188,6 +193,69 @@ class TimelineKeyframeLaneTest {
             assertEquals(listOf(listOf("main", "title", "text-kf", 1_500L)), movedText)
             assertEquals(listOf(Triple("sticker", "sticker-kf", 1_500L)), movedSticker)
             assertEquals(listOf(listOf("main", "title", "mask-kf", 1_500L)), movedMask)
+        }
+    }
+
+    @Test
+    fun sameMarkerCanBeDraggedAgainUsingItsUpdatedTimeAndLatestCallback() {
+        val (initialClips, textOverlays, stickers) = fixtures()
+        val moves = mutableListOf<Pair<Int, Long>>()
+        composeRule.setContent {
+            val configuration = LocalViewConfiguration.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(2f),
+                LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by configuration {
+                    override val touchSlop = 0f
+                },
+            ) {
+                var clips by remember { mutableStateOf(initialClips) }
+                var callbackRevision by remember { mutableIntStateOf(0) }
+                VideoTimeline(
+                    clips = clips,
+                    textOverlays = textOverlays,
+                    stickers = stickers,
+                    totalDurationMs = 10_000L,
+                    playheadMs = 0L,
+                    onMoveKeyframe = { clipId, keyframeId, newTimeMs ->
+                        moves += callbackRevision to newTimeMs
+                        clips = clips.map { clip ->
+                            if (clip.id != clipId) clip else clip.copy(
+                                keyframes = clip.keyframes.copy(
+                                    keyframes = clip.keyframes.keyframes.map { keyframe ->
+                                        if (keyframe.id == keyframeId) keyframe.copy(timeMs = newTimeMs) else keyframe
+                                    },
+                                ),
+                            )
+                        }
+                        callbackRevision++
+                    },
+                    onOpenSpeed = {},
+                    onOpenTrim = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val marker = composeRule.onNodeWithTag(
+            "timeline-keyframe-marker-main-main-main-kf",
+            useUnmergedTree = true,
+        )
+        marker.performTouchInput {
+            down(center)
+            moveBy(Offset(54f, 0f)) // 500 ms at the test's 2 px/dp density.
+            up()
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("timeline-keyframe-marker-main-main-main-kf", useUnmergedTree = true)
+            .performTouchInput {
+                down(center)
+                moveBy(Offset(54f, 0f))
+                up()
+            }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertEquals("The second drag must start from 1,500ms and use the recomposed callback", listOf(1_500L, 2_000L), moves.map { it.second })
+            assertEquals("Each recomposition must supply the callback used by that gesture", listOf(0, 1), moves.map { it.first })
         }
     }
 }

@@ -61,6 +61,11 @@ class WorkspaceEffectGlEffectTest {
         assertTrue(shader.contains("vec3 bubbleLook(vec2 uv)"))
         assertTrue(shader.contains("float ink = smoothstep(0.12, 0.38, edge)"))
         assertTrue(shader.contains("float phase = fract(uElapsed * 1.15)"))
+        assertTrue(shader.contains("uniform float uExposure"))
+        assertTrue(shader.contains("uniform float uContrast"))
+        assertTrue(shader.contains("uniform float uSaturation"))
+        assertTrue(shader.contains("exp2(uExposure * uEnabled)"))
+        assertTrue(WorkspaceEffectPresets.all.containsAll(WorkspaceEffectPresets.filterIds))
         assertTrue(WorkspaceEffectPresets.all.containsAll(setOf(
             WorkspaceEffectPresets.MONO,
             WorkspaceEffectPresets.WARM,

@@ -514,6 +514,11 @@ fun TextPanelOverlay(
                         vm.applyTextPreset(textClip.id, activeOverlayId, preset)
                     }
                 },
+                onApplyDesignMotion = { preset ->
+                    if (textClip != null && activeOverlayId != null) {
+                        vm.applyTextDesignMotion(textClip.id, activeOverlayId, preset)
+                    }
+                },
                 onAnimationChange = { anim ->
                     if (textClip != null && activeOverlayId != null) {
                         vm.setTextOverlayAnimation(textClip.id, activeOverlayId, anim)

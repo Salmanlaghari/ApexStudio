@@ -13,6 +13,7 @@ import androidx.media3.effect.GlShaderProgram
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.domain.model.isActiveAtSourceTime
 
 /**
@@ -73,6 +74,9 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                 program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 program.setFloatUniform("uEnabled", if (enabled) 1f else 0f)
                 program.setFloatUniform("uIntensity", effect.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f)
+                program.setFloatUniform("uExposure", effect.exposure.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f)
+                program.setFloatUniform("uContrast", effect.contrast.takeIf { it.isFinite() }?.coerceIn(0.5f, 1.5f) ?: 1f)
+                program.setFloatUniform("uSaturation", effect.saturation.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f)
                 program.setFloatUniform("uKind", kindFor(effect.id).toFloat())
                 val elapsedMs = if (sourceTimeMs >= effect.startMs) sourceTimeMs - effect.startMs else 0L
                 program.setFloatUniform("uElapsed", (elapsedMs.coerceAtMost(86_400_000L) / 1_000f))
@@ -105,6 +109,18 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             WorkspaceEffectPresets.HEARTS -> 7
             WorkspaceEffectPresets.HEARTBEAT -> 8
             WorkspaceEffectPresets.ICE -> 9
+            WorkspaceEffectPresets.FILTER_SOFT_WARM -> 10
+            WorkspaceEffectPresets.FILTER_COOL -> 11
+            WorkspaceEffectPresets.FILTER_FADED -> 12
+            WorkspaceEffectPresets.FILTER_AMBER -> 13
+            WorkspaceEffectPresets.FILTER_ROSE -> 14
+            WorkspaceEffectPresets.FILTER_MINT -> 15
+            WorkspaceEffectPresets.FILTER_TEAL_ORANGE -> 16
+            WorkspaceEffectPresets.FILTER_CRISP -> 17
+            WorkspaceEffectPresets.FILTER_MATTE -> 18
+            WorkspaceEffectPresets.FILTER_BW_CONTRAST -> 19
+            WorkspaceEffectPresets.FILTER_SEPIA -> 20
+            WorkspaceEffectPresets.FILTER_LAVENDER -> 21
             else -> -1
         }
 
@@ -126,6 +142,9 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             uniform sampler2D uTexSampler;
             uniform float uEnabled;
             uniform float uIntensity;
+            uniform float uExposure;
+            uniform float uContrast;
+            uniform float uSaturation;
             uniform float uKind;
             uniform float uElapsed;
             uniform float uAspect;
@@ -212,19 +231,62 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                     float secondBeat = (phase - 0.24) * 25.0;
                     float beat = max(exp(-firstBeat * firstBeat), 0.72 * exp(-secondBeat * secondBeat));
                     effected = original.rgb * (vec3(1.0) + vec3(0.14, -0.16, -0.10) * beat) + vec3(0.10, 0.008, 0.018) * beat;
-                } else {
+                } else if (uKind < 9.5) {
                     vec2 cell = floor(vTextureCoord * vec2(54.0, 54.0));
                     float frostSpeck = step(0.994, hash21(cell));
                     float vignette = smoothstep(0.0, 0.7, length((vTextureCoord - 0.5) * vec2(uAspect, 1.0)));
                     effected = original.rgb * vec3(0.78, 0.93, 1.17) + vec3(0.05, 0.12, 0.18) * vignette + vec3(0.75, 0.91, 1.0) * frostSpeck * 0.45;
+                } else if (uKind < 10.5) {
+                    effected = original.rgb * vec3(1.06, 1.01, 0.94) + vec3(0.018, 0.006, -0.012);
+                    effected = pow(max(effected, vec3(0.0)), vec3(0.96));
+                } else if (uKind < 11.5) {
+                    float luma = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    effected = original.rgb * vec3(0.91, 1.00, 1.10) + vec3(0.008, 0.018, 0.035) * (1.0 - luma);
+                } else if (uKind < 12.5) {
+                    float luma = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    vec3 muted = mix(vec3(luma), original.rgb, 0.76);
+                    effected = mix(vec3(0.075), muted * 0.86 + vec3(0.10), 0.92);
+                } else if (uKind < 13.5) {
+                    effected = original.rgb * vec3(1.12, 1.01, 0.83) + vec3(0.035, 0.012, -0.022);
+                } else if (uKind < 14.5) {
+                    effected = original.rgb * vec3(1.045, 0.94, 1.00) + vec3(0.018, 0.003, 0.021);
+                } else if (uKind < 15.5) {
+                    effected = original.rgb * vec3(0.91, 1.035, 0.98) + vec3(0.012, 0.025, 0.018);
+                } else if (uKind < 16.5) {
+                    float luma = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    float shadows = 1.0 - smoothstep(0.18, 0.72, luma);
+                    float highlights = smoothstep(0.24, 0.82, luma);
+                    effected = original.rgb + vec3(-0.015, 0.035, 0.055) * shadows + vec3(0.075, 0.018, -0.025) * highlights;
+                } else if (uKind < 17.5) {
+                    vec3 centered = (original.rgb - 0.5) * 1.12 + 0.5;
+                    float luma = dot(centered, vec3(0.299, 0.587, 0.114));
+                    effected = mix(vec3(luma), centered, 1.08);
+                } else if (uKind < 18.5) {
+                    effected = (original.rgb - 0.5) * 0.88 + 0.5;
+                    effected = effected * vec3(0.98, 1.00, 1.03) + vec3(0.055, 0.048, 0.045);
+                } else if (uKind < 19.5) {
+                    float gray = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    float contrast = clamp((gray - 0.5) * 1.42 + 0.5, 0.0, 1.0);
+                    effected = vec3(contrast);
+                } else if (uKind < 20.5) {
+                    float gray = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    effected = vec3(gray) * vec3(1.12, 0.91, 0.70) + vec3(0.025, 0.012, 0.0);
+                } else if (uKind < 21.5) {
+                    effected = original.rgb * vec3(0.98, 0.91, 1.08) + vec3(0.018, 0.012, 0.035);
+                } else {
+                    effected = original.rgb;
                 }
-                gl_FragColor = vec4(mix(original.rgb, effected, uEnabled * uIntensity), original.a);
+                vec3 graded = effected * exp2(uExposure);
+                graded = (graded - 0.5) * uContrast + 0.5;
+                float gradedLuma = dot(graded, vec3(0.299, 0.587, 0.114));
+                graded = mix(vec3(gradedLuma), graded, uSaturation);
+                gl_FragColor = vec4(mix(original.rgb, clamp(graded, 0.0, 1.0), uEnabled * uIntensity), original.a);
             }
         """.trimIndent()
 
         /** The one canonical effect-chain constructor used in preview and both export routes. */
         fun createEffects(effects: List<WorkspaceEffect>, sourceTimeOffsetMs: Long = 0L): List<GlEffect> = effects
-            .filter { it.id in WorkspaceEffectPresets.all && it.endMs > it.startMs && it.startMs >= 0L && it.intensity.isFinite() && it.intensity > 0f }
+            .filter { it.hasValidParameters() && it.intensity > 0f }
             .map { WorkspaceEffectGlEffect(it, sourceTimeOffsetMs) }
 
         /** Source-clock evaluation happens before any export speed transformation. */

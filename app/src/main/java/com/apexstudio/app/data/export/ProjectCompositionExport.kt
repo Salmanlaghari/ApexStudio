@@ -10,6 +10,7 @@ import com.apexstudio.app.domain.model.SpeedCurve
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.domain.model.hasValidParameters
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
 internal fun monotonicProjectExportProgress(previous: Float, reported: Float): Float {
@@ -47,6 +48,9 @@ internal fun projectCompositionUnsupportedReason(
         if (clip.durationMs <= 0L) return "Video clip '${clip.name}' has no valid source duration."
         if (clip.trimStartMs < 0L || clip.trimEndMs <= clip.trimStartMs || clip.trimEndMs > clip.durationMs) {
             return "Video clip '${clip.name}' has an invalid trim range."
+        }
+        if (clip.workspaceEffects.size > 16 || clip.workspaceEffects.any { !it.hasValidParameters(clip.durationMs) }) {
+            return "Video clip '${clip.name}' has an invalid or unsupported ranged filter; export stopped rather than dropping it."
         }
         if (!clip.speedMultiplier.isFinite() || clip.speedMultiplier !in SpeedCurveMath.MIN_SPEED..SpeedCurveMath.MAX_SPEED) {
             return "Video clip '${clip.name}' has an unsupported playback speed."
@@ -118,6 +122,7 @@ internal fun projectCompositionUnsupportedReason(
     }
     if (config.transitionType != null || config.transitionGlId != null) return "Project export does not support transitions."
     if (config.textOverlays.isNotEmpty() || config.stickers.isNotEmpty()) return "Project export does not support export-wide captions or stickers; attach them to a video clip."
+    if (config.workspaceEffects.isNotEmpty()) return "Project export does not support export-wide ranged filters; attach them to a video clip."
     if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
         return "Project export does not support global rotation or flips."
     }

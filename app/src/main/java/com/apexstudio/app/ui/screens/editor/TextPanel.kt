@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.text.TextAnimEngine
 import com.apexstudio.app.data.text.TextPreset
 import com.apexstudio.app.data.text.TextPresetEngine
+import com.apexstudio.app.data.text.TextDesignMotionPack
+import com.apexstudio.app.data.text.TextDesignMotionPreset
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.presentation.viewmodel.CaptionPhase
@@ -125,6 +127,7 @@ fun TextPanel(
     onDuplicate: (String) -> Unit = {},
     onDelete: (String) -> Unit,
     onApplyPreset: (TextPreset) -> Unit = {},
+    onApplyDesignMotion: (TextDesignMotionPreset) -> Unit = {},
     onAnimationChange: (String) -> Unit = {},
     onClose: () -> Unit,
     captionUiState: CaptionUiState = CaptionUiState(),
@@ -148,6 +151,7 @@ fun TextPanel(
     var activeTab by remember(initialTab) { mutableStateOf(initialTab) }
     var showCustomColor by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf(TextPresetEngine.categories.first()) }
+    var designMotionQuery by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
     Column(
@@ -1130,6 +1134,69 @@ fun TextPanel(
             }
 
             TextPanelTab.PRESETS -> {
+                Text(
+                    "Text Design + Motion  ·  ${TextDesignMotionPack.presets.size} combinations",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Each applies an editable look and a renderer-supported animation to your text.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
+                Spacer(Modifier.height(5.dp))
+                OutlinedTextField(
+                    value = designMotionQuery,
+                    onValueChange = { designMotionQuery = it },
+                    singleLine = true,
+                    placeholder = { Text("Search design or motion", color = ApexPalette.TextTertiary) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ApexPalette.NeonCyan,
+                        unfocusedBorderColor = ApexPalette.BorderGlass,
+                        focusedContainerColor = ApexPalette.BgElevated,
+                        unfocusedContainerColor = ApexPalette.BgElevated,
+                        cursorColor = ApexPalette.NeonCyan
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val matchingDesignMotions = TextDesignMotionPack.search(designMotionQuery)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    modifier = Modifier.fillMaxWidth().height(65.dp)
+                ) {
+                    items(matchingDesignMotions, key = { it.id }) { preset ->
+                        val current = selected.presetId == preset.id
+                        Column(
+                            modifier = Modifier
+                                .width(136.dp)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
+                                .border(1.5.dp, if (current) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+                                .clickable { onApplyDesignMotion(preset) }
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                preset.designName,
+                                color = Color(preset.colorArgb.toInt()),
+                                fontSize = 11.sp,
+                                fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
+                                fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+                                maxLines = 1
+                            )
+                            Text(preset.motionName, color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1)
+                        }
+                    }
+                }
+                if (matchingDesignMotions.isEmpty()) {
+                    Text("No matching text combinations", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("More color and font looks", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
                 // Preset Categories
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

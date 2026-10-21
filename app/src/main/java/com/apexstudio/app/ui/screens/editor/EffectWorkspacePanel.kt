@@ -47,6 +47,19 @@ import java.io.File
 
 private enum class WorkspaceCategory(val label: String) { VISUAL("Visual"), SPLIT("Split screen"), TIME("Time") }
 
+/** Converts the live project playhead (or state fallback) to this clip's clamped source time. */
+internal fun sourceTimeAtProjectPlayhead(
+    clips: List<MediaClip>,
+    clip: MediaClip,
+    liveProjectTimeMs: Long?,
+    fallbackProjectTimeMs: Long,
+): Long {
+    val projectTimeMs = liveProjectTimeMs?.takeIf { it >= 0L } ?: fallbackProjectTimeMs
+    val projectClips = clips.ifEmpty { listOf(clip) }
+    return ClipTimeMapping.sourceAtProjectTime(projectClips, clip, projectTimeMs)
+        .coerceIn(clip.trimStartMs, clip.trimEndMs)
+}
+
 /** A contextual bottom workspace, not a replacement for the established editor layout. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -64,6 +77,9 @@ internal fun EffectWorkspacePanel(
     val scope = rememberCoroutineScope()
     val thumbnails by vm.thumbnails.collectAsStateWithLifecycle()
     val editorState by vm.state.collectAsStateWithLifecycle()
+    val livePlayerPositionMs by vm.playerPositionFlow.collectAsStateWithLifecycle(
+        initialValue = editorState.currentTimeMs,
+    )
     var category by remember { mutableStateOf(WorkspaceCategory.VISUAL) }
     var range by remember(originalClip) { mutableStateOf(WorkspaceRange.full(originalClip)) }
     var playbackRangeStart by remember(originalClip.id) { mutableStateOf<Long?>(null) }
@@ -118,9 +134,12 @@ internal fun EffectWorkspacePanel(
 
     fun sourceTimeAtPlayhead(): Long {
         val clips = editorState.project?.clips.orEmpty().ifEmpty { listOf(originalClip) }
-        val projectTime = editorState.playerPositionMs.takeIf { it >= 0L } ?: editorState.currentTimeMs
-        return ClipTimeMapping.sourceAtProjectTime(clips, originalClip, projectTime)
-            .coerceIn(originalClip.trimStartMs, originalClip.trimEndMs)
+        return sourceTimeAtProjectPlayhead(
+            clips = clips,
+            clip = originalClip,
+            liveProjectTimeMs = livePlayerPositionMs,
+            fallbackProjectTimeMs = editorState.currentTimeMs,
+        )
     }
 
     fun startHeldEffect(id: String) {

@@ -66,6 +66,13 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
         return
     }
+    val settingsReason = videoExportSettingsUnsupportedReason(
+        resolvedResolution, fps, quality, aspectRatio, bitrateMbps
+    )
+    if (settingsReason != null) {
+        _export.update { it.copy(error = settingsReason, outputUri = null, warning = null) }
+        return
+    }
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
@@ -73,7 +80,10 @@ fun EditorViewModel.startExport(
         return
     }
     val inputUri = selected?.uri ?: return
-    val engine = exportEngine ?: return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
@@ -310,7 +320,10 @@ fun EditorViewModel.startAudioExport(
 ) {
     if (_export.value.isExporting) return
     val s = _state.value
-    val engine = exportEngine ?: return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     val audioSt = _audio.value
@@ -322,7 +335,9 @@ fun EditorViewModel.startAudioExport(
         s.hiddenVideoLayers
     )
     if (sources.isEmpty()) {
-        _export.update { it.copy(isExporting = false, progress = 0f) }
+        _export.update {
+            it.copy(isExporting = false, progress = 0f, error = "No audio sources are available to export.")
+        }
         return
     }
     engine.startAudioExport(
@@ -360,7 +375,10 @@ fun EditorViewModel.startPhotoExport(
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     if (_export.value.isExporting) return
-    val engine = exportEngine ?: return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
     // Derive the photo still-video resolution from the user-selected export
     // quality. Capped at 4K: 8K intermediates (7680px, ~600MB transient)
     // risk OOM and exceed MediaCodec H.264 limits on most devices.
@@ -371,7 +389,10 @@ fun EditorViewModel.startPhotoExport(
         resolution.contains("720") -> 1280
         else -> 1920 // 1080p and below
     }
-    val ctx = context ?: return
+    val ctx = context ?: run {
+        _export.update { it.copy(error = "Photo export is unavailable without an application context.", outputUri = null) }
+        return
+    }
     // Freeze project layers and settings before the asynchronous photo encoding.
     val snapshot = _state.value
     val config = buildPhotoExportConfig(snapshot, clip, resolution, fps, quality, aspectRatio, bitrateMbps)

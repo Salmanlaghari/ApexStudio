@@ -73,4 +73,11 @@ class EditorChallengeControllerTest {
         assertEquals(beforeDelete, vm.state.value.project)
     }
 
+    @Test fun combiningMarksInValidUnicodeTagsArePreserved() {
+        assertEquals("#नमस्ते", normalizeChallengeTag("#नमस्ते"))
+        assertEquals("#cafe\u0301", normalizeChallengeTag("#cafe\u0301"))
+        assertNull(normalizeChallengeTag("a".repeat(49)))
+        assertNull(normalizeChallengeTag("not a tag"))
+    }
+
 }

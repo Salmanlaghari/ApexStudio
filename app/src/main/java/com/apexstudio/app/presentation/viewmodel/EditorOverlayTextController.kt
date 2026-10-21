@@ -201,6 +201,27 @@ fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: c
     updateTextOverlay(clipId, overlayId) { preset.applyTo(it) }
 
 
+/** Apply one curated text look + supported motion as a single undoable edit. */
+fun EditorViewModel.applyTextDesignMotion(
+    clipId: String,
+    overlayId: String,
+    preset: com.apexstudio.app.data.text.TextDesignMotionPreset
+) = synchronized(this) {
+    val state = _state.value
+    if (state.selectedClipId != clipId || (state.selectedTextOverlayId != null && state.selectedTextOverlayId != overlayId)) return@synchronized
+    val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@synchronized
+    val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return@synchronized
+    val canonical = com.apexstudio.app.data.text.TextDesignMotionPack.presets.firstOrNull { it.id == preset.id }
+        ?.takeIf { it == preset } ?: return@synchronized
+    if (canonical.applyTo(target) == target) return@synchronized
+    pushUndo()
+    updateClip(clipId) { currentClip ->
+        currentClip.copy(textOverlays = currentClip.textOverlays.map { current ->
+            if (current.id == overlayId) canonical.applyTo(current) else current
+        })
+    }
+}
+
 fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     if (clip.textOverlays.none { it.id == overlayId }) return

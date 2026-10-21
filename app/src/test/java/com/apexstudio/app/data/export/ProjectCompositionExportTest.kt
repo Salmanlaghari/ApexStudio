@@ -9,6 +9,8 @@ import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingPoint
 import com.apexstudio.app.domain.model.VideoDrawingStroke
+import com.apexstudio.app.domain.model.WorkspaceEffect
+import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -171,5 +173,26 @@ class ProjectCompositionExportTest {
             "Video clip 'v1' has an invalid trim range.",
             projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())
         )
+    }
+
+    @Test
+    fun `project export rejects malformed persisted filter customization instead of dropping it`() {
+        val invalid = clip().copy(workspaceEffects = listOf(
+            WorkspaceEffect(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, 250L, 1_500L, exposure = Float.NaN)
+        ))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
+            .contains("invalid or unsupported ranged filter"))
+    }
+
+    @Test
+    fun `project export rejects export wide ranged filters but accepts clip ranged filters`() {
+        val effect = WorkspaceEffect(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, 250L, 1_500L)
+
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(workspaceEffects = listOf(effect))
+        )!!.contains("export-wide ranged filters"))
+        assertNull(projectCompositionUnsupportedReason(
+            listOf(clip().copy(workspaceEffects = listOf(effect))), ExportEngine.ExportConfig()
+        ))
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,12 +37,17 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.domain.model.ExportResolution
+import com.apexstudio.app.data.engine.AudioPlaybackMix
+import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.exportTargetBitrate
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ExportScreen(
@@ -83,7 +89,7 @@ fun ExportScreen(
     val selectedBitrateMbps = export.settings.bitrateMbps
     // Live file-size estimate: bitrate x duration (was hardcoded "1.8 GB")
     val videoScope = videoExportScope(editorState)
-    val selectedBlockReason = selectedVideoExportUnsupportedReason(editorState)
+    val selectedScopeBlockReason = selectedVideoExportUnsupportedReason(editorState)
     androidx.activity.compose.BackHandler {
         if (export.isExporting) vm.cancelCurrentExport() else onBack()
     }
@@ -98,19 +104,37 @@ fun ExportScreen(
     }
     val projectBlockReason = wholeProjectExportUnsupportedReason(editorState, audioState, export.settings, projectFilterPreset)
     val projectTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(projectMainExportClips(editorState))
-    val projectDurationMs = (if (wholeProject) projectTimeline.durationMs else videoScope.durationMs).coerceAtLeast(1L)
-    val effectiveBitrateMbps = if (selectedBitrateMbps > 0) selectedBitrateMbps else when {
-        selectedResolution.contains("4k", ignoreCase = true) ||
-                selectedResolution.contains("2160") -> 50
-        selectedResolution.contains("720") -> 6
-        else -> 18
+    val selectedQuality = export.settings.quality.label.lowercase()
+    val selectedSettingsBlockReason = videoExportSettingsUnsupportedReason(
+        selectedResolution, export.settings.frameRate, selectedQuality, selectedAspect, selectedBitrateMbps
+    )
+    val selectedBlockReason = selectedScopeBlockReason ?: selectedSettingsBlockReason
+    val renderedDurationMs = if (wholeProject) projectTimeline.durationMs else videoScope.durationMs
+    val outputBitrateBps = remember(selectedResolution, selectedFps, selectedQuality, selectedBitrateMbps) {
+        exportTargetBitrate(ExportEngine.ExportConfig(
+            resolution = selectedResolution,
+            fps = selectedFps.toInt(),
+            quality = selectedQuality,
+            bitrateMbps = selectedBitrateMbps
+        ))
     }
-    val estimatedSizeText = remember(effectiveBitrateMbps, projectDurationMs) {
-        val bytes = effectiveBitrateMbps * 1_000_000L / 8 * (projectDurationMs / 1000f)
-        when {
-            bytes >= 1_000_000_000L -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1_000_000_000f)
-            else -> String.format(java.util.Locale.US, "%d MB", (bytes / 1_000_000L).toInt())
-        }
+    val scopeAudioSources = if (wholeProject) projectMainExportClips(editorState) else listOfNotNull(videoScope.baseClip)
+    val projectAudioTracks = editorState.project?.audioTracks.orEmpty()
+    val hasEnabledMusic = projectAudioTracks.any { AudioPlaybackMix.isEnabled(it, projectAudioTracks) }
+    val hasAudibleOverlay = !wholeProject && editorState.project?.clips.orEmpty().any {
+        it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
+            it.trackIndex !in editorState.hiddenVideoLayers && it.overlayVolume.isFinite() && it.overlayVolume > 0f
+    }
+    val audioMayBeIncluded =
+        (!audioState.isMuted && audioState.volume > 0f && scopeAudioSources.any {
+            it.type == com.apexstudio.app.domain.model.ClipType.VIDEO && it.volume > 0f
+        }) || hasEnabledMusic || hasAudibleOverlay
+    val payloadEstimate = remember(renderedDurationMs, outputBitrateBps, audioMayBeIncluded) {
+        estimateExportPayload(renderedDurationMs, outputBitrateBps, audioMayBeIncluded)
+    }
+    val measuredOutputSize by produceState<ActualOutputSize?>(initialValue = null, context, export.outputUri) {
+        val uri = export.outputUri ?: return@produceState
+        value = withContext(Dispatchers.IO) { measureCompletedOutputSize(context, uri) }
     }
 
 
@@ -155,6 +179,7 @@ fun ExportScreen(
                         label = fx.label,
                         icon = fx.icon,
                         selected = fx.id == activeFxId,
+                        enabled = !export.isExporting,
                         onClick = {
                             // Tapping the same FX again clears it.
                             vm.setActiveFx(if (fx.id == activeFxId) null else fx.id)
@@ -188,6 +213,7 @@ fun ExportScreen(
                                 label = label,
                                 sub = sub,
                                 selected = selectedResolution == label,
+                                enabled = !export.isExporting,
                                 onClick = {
                                     vm.updateExport { it.copy(resolution = label) }
                                 },
@@ -217,6 +243,7 @@ fun ExportScreen(
                             label = label,
                             sub = sub,
                             selected = selectedAspect == label,
+                            enabled = !export.isExporting,
                             onClick = {
                                 vm.updateExport { it.copy(aspectRatio = label) }
                             },
@@ -226,7 +253,8 @@ fun ExportScreen(
                 }
             }
 
-            SectionLabel("FRAME RATE")
+            Text("FPS is an output ceiling: higher-rate source frames can be dropped; lower-rate sources are not interpolated.", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+            SectionLabel("MAXIMUM OUTPUT FPS")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
@@ -241,6 +269,7 @@ fun ExportScreen(
                         )
                         Slider(
                             value = selectedFps,
+                            enabled = !export.isExporting,
                             onValueChange = { v ->
                                 vm.updateExport { it.copy(frameRate = v.toInt()) }
                             },
@@ -281,7 +310,7 @@ fun ExportScreen(
                                         ApexPalette.NeonCyan,
                                         RoundedCornerShape(6.dp)
                                     )
-                                    .clickable {
+                                    .clickable(enabled = !export.isExporting) {
                                         vm.updateExport { it.copy(frameRate = f.toInt()) }
                                     }
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
@@ -327,7 +356,7 @@ fun ExportScreen(
                                     if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                                     RoundedCornerShape(8.dp)
                                 )
-                                .clickable {
+                                .clickable(enabled = !export.isExporting) {
                                     vm.updateExport { it.copy(bitrateMbps = mbps) }
                                 }
                                 .padding(vertical = 8.dp),
@@ -351,7 +380,26 @@ fun ExportScreen(
                 }
             }
 
-            SectionLabel("BITRATE & QUALITY")
+            SectionLabel("QUALITY • AUTO BITRATE ONLY")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (quality in com.apexstudio.app.domain.model.ExportQuality.entries) {
+                    FilterChip(
+                        selected = export.settings.quality == quality,
+                        enabled = !export.isExporting && selectedBitrateMbps == 0,
+                        onClick = { vm.updateExport { it.copy(quality = quality) } },
+                        label = { Text(quality.label) }
+                    )
+                }
+            }
+            if (selectedBitrateMbps != 0) {
+                Text(
+                    "Quality is disabled while a fixed bitrate is selected; the explicit bitrate takes precedence.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
+            }
+
+            SectionLabel("SIZE ESTIMATE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
@@ -375,26 +423,43 @@ fun ExportScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 exportProgressLabel(export.isExporting, export.progress)
-                                    ?: if (export.outputUri != null && export.progress >= 1f) "Export Complete"
-                                    else "Estimated File Size",
+                                    ?: if (export.outputUri != null && export.progress >= 1f) "Actual file size"
+                                    else "Estimated video payload (not total file size)",
                                 color = ApexPalette.TextTertiary,
                                 fontSize = 9.sp
                             )
-                            // Pro Phase 1: live estimate from bitrate x duration
-                            // (was hardcoded "1.8 GB").
+                            val sizeDescription = when {
+                                export.outputUri != null -> when (val measured = measuredOutputSize) {
+                                    is ActualOutputSize.Measured -> "${formatByteCount(measured.bytes)} (${measured.bytes} bytes)"
+                                    is ActualOutputSize.Unavailable -> measured.reason
+                                    null -> "Reading completed file size…"
+                                }
+                                payloadEstimate != null -> "≈ ${formatByteCount(payloadEstimate.videoBytes)}"
+                                else -> "Unavailable — rendered duration or bitrate is invalid"
+                            }
                             Text(
-                                estimatedSizeText,
+                                sizeDescription,
                                 color = ApexPalette.TextPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                "$effectiveBitrateMbps Mbps • $selectedAspect • H.264",
+                                "Requested ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • ${com.apexstudio.app.util.TimeFormat.formatMs(renderedDurationMs)} • $selectedAspect • H.264 / MP4",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+                    if (export.outputUri == null) {
+                        Text(
+                            if (audioMayBeIncluded)
+                                "Video-payload estimate only for this scope (${if (wholeProject) "whole project" else "selected clip"}). Audio may be included but Media3 does not configure its AAC bitrate; audio and container overhead are excluded. Actual file bytes are measured after export."
+                            else
+                                "Video-payload estimate only for this scope (${if (wholeProject) "whole project" else "selected clip"}); no configured audio mix is expected. Container overhead is excluded and encoded size can vary. Actual file bytes are measured after export.",
+                            color = ApexPalette.TextSecondary,
+                            fontSize = 10.sp
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     // Pro Phase 1: no-watermark differentiator badge
@@ -508,15 +573,15 @@ fun ExportScreen(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                if (export.warning == null) "Media3 Transformer Export Complete!"
-                                else "Video saved with audio warning",
+                                if (export.warning == null) "Export complete"
+                                else "Export complete with warning",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
                         Text(
-                            "Exported trimmed MP4 to device storage:",
+                            "Completed file saved on this device:",
                             color = ApexPalette.TextSecondary,
                             fontSize = 10.sp
                         )
@@ -534,12 +599,6 @@ fun ExportScreen(
                         Text("Shares the last completed export. Re-export after changing edits or settings. Nothing is published automatically.",
                             color = ApexPalette.TextSecondary, fontSize = 10.sp)
                         shareError?.let { Text(it, color = ApexPalette.Danger, fontSize = 11.sp) }
-                        Text(
-                            export.outputUri ?: "",
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            maxLines = 2
-                        )
                     }
                 }
             }
@@ -570,7 +629,7 @@ fun ExportScreen(
                         listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
                     )
                 )
-                .clickable(enabled = export.isExporting || if (wholeProject) projectBlockReason == null else selectedBlockReason == null) {
+                .clickable(enabled = export.isExporting || (export.isExportEngineReady && if (wholeProject) projectBlockReason == null else selectedBlockReason == null)) {
                     // Single export path: the ViewModel's engine bakes
                     // crop + LUT filter + FX + speed + keyframes + text
                     // overlays into the MP4 and mirrors progress into
@@ -579,7 +638,9 @@ fun ExportScreen(
                     else if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
                         resolution = selectedResolution,
                         fps = selectedFps.toInt(),
-                        quality = "high"
+                        quality = selectedQuality,
+                        aspectRatio = selectedAspect,
+                        bitrateMbps = selectedBitrateMbps
                     )
                 },
             contentAlignment = Alignment.Center
@@ -597,6 +658,7 @@ fun ExportScreen(
                     if (export.isExporting)
                         if (export.progress <= 0f) "Cancel • Preparing export…"
                         else "Cancel • Exporting… ${(export.progress * 100).toInt()}%"
+                    else if (!export.isExportEngineReady) "Export engine unavailable"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
                     else if (!wholeProject && selectedBlockReason != null && videoScope.baseClip != null) "Selected-clip export unavailable for these edits"
                     else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
@@ -616,7 +678,7 @@ fun ExportScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF1A2233))
                 .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                .clickable(enabled = !export.isExporting) {
+                .clickable(enabled = !export.isExporting && export.isExportEngineReady) {
                     vm.startAudioExport()
                 },
             contentAlignment = Alignment.Center
@@ -630,13 +692,19 @@ fun ExportScreen(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "Export Audio (AAC)",
+                    if (export.isExportEngineReady) "Export Audio (AAC)" else "Export engine unavailable",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
             }
         }
+        Text(
+            "Exports readable audio from V1, visible PiP, and enabled music tracks as AAC (.m4a). No size estimate: the AAC bitrate is not explicitly configured; completed file bytes are measured above.",
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+            color = ApexPalette.TextSecondary,
+            fontSize = 10.sp
+        )
     }
 }
 
@@ -657,6 +725,7 @@ private fun MotionGraphicsCard(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -671,7 +740,7 @@ private fun MotionGraphicsCard(
                 )
             )
             .border(1.5.dp, border, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -752,6 +821,7 @@ private fun ResolutionPill(
     label: String,
     sub: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -768,7 +838,7 @@ private fun ResolutionPill(
                 if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                 RoundedCornerShape(10.dp)
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

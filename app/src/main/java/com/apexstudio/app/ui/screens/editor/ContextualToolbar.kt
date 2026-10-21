@@ -137,6 +137,7 @@ fun ContextualBottomToolbar(
     onAddOverlayVideo: () -> Unit,
     // Video-clip tools
     onAdjust: () -> Unit,
+    onEnhance: () -> Unit = onAdjust,
     onReplace: () -> Unit,
     onSpeed: () -> Unit,
     onVolume: () -> Unit,
@@ -227,12 +228,12 @@ fun ContextualBottomToolbar(
     // One always-visible, horizontally scrollable row: put the high-frequency
     // mobile editing actions first, then retain the complete legacy tool set
     // behind them in the same row (rather than adding a second, tall toolbar).
-    // Enhance is the shipped Adjustments panel; Templates opens the shipped
+    // Enhance has its independent quick-preset route; Templates opens the shipped
     // one-tap transmission preset browser; Canvas is the real crop-mode route.
     val mainItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
-            CtxToolItem("Enhance", Icons.Default.Tune, onClick = onAdjust),
+            CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
             CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
@@ -870,7 +871,8 @@ fun EditorBottomToolbarSection(
         onTemplates = onQuickTemplates,
         onChallenge = onChallenge,
         onNext = onNext,
-        onAdjust = onQuickEnhance,
+        onAdjust = { vm.openAdjustmentsPanel() },
+        onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.
         // P4: same overlay (PiP) route and pending flags as before —

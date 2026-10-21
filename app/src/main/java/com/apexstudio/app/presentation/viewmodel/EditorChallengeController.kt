@@ -8,7 +8,16 @@ import kotlinx.coroutines.flow.update
 /** Local title only: no social account, publishing, ranking or remote challenge claims. */
 internal fun normalizeChallengeTag(value: String): String? {
     val tag = value.trim().removePrefix("#")
-    return tag.takeIf { it.length in 1..48 && it.all { c -> c.isLetterOrDigit() || c == '_' } }?.let { "#$it" }
+    if (tag.length !in 1..48) return null
+    val first = tag.codePointAt(0)
+    if (!Character.isLetterOrDigit(first) && first != '_'.code) return null
+    val valid = tag.codePoints().allMatch { code ->
+        Character.isLetterOrDigit(code) || code == '_'.code || when (Character.getType(code)) {
+            Character.NON_SPACING_MARK.toInt(), Character.COMBINING_SPACING_MARK.toInt(), Character.ENCLOSING_MARK.toInt() -> true
+            else -> false
+        }
+    }
+    return if (valid) "#$tag" else null
 }
 
 internal fun EditorViewModel.applyLocalChallenge(projectId: String, original: MediaClip, value: String): Boolean = synchronized(this) {

@@ -93,6 +93,7 @@ private fun EditorScreenContent(
 ) {
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()
+    var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     val state = workspacePreviewState(savedState, workspacePreview)
@@ -101,6 +102,7 @@ private fun EditorScreenContent(
         vm.setPlaying(false)
         workspaceTarget = null
         workspacePreview = null
+        workspaceIsFilters = false
     }
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
@@ -743,8 +745,8 @@ private fun EditorScreenContent(
     }
 
     val openEffectsWorkspace: () -> Unit = {
-        val clip = resolveEditorSelectionClip(savedState.project?.clips.orEmpty(), savedState.selectedClipId)
-        if (clip != null && clip.type == ClipType.VIDEO && clip.trackIndex == 0 && clip.trimEndMs > clip.trimStartMs) {
+        val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
+        if (clip != null) {
             vm.setPlaying(false)
             workspaceTarget = clip
             workspacePreview = clip
@@ -857,10 +859,10 @@ private fun EditorScreenContent(
                 state = state,
                 vm = vm,
                 mediaPicker = mediaPicker,
-                onEffectsWorkspace = openEffectsWorkspace,
+                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
                 onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
                 onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
-                onQuickFilters = { quickPresetSection = QuickVideoPresetSection.FILTERS },
+                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
                 onChallenge = { showLocalChallenge = true },
                 onNext = onExport,
                 onAi = { showAiPanel = true },
@@ -879,7 +881,8 @@ private fun EditorScreenContent(
             }
         }
         workspaceTarget?.let { captured ->
-            EffectWorkspacePanel(
+            ClipEffectWorkspaceHost(
+                filters = workspaceIsFilters,
                 projectId = projectId,
                 originalClip = captured,
                 vm = vm,

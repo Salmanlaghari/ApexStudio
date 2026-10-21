@@ -900,8 +900,8 @@ fun VideoTimeline(
                                         .width(stripWidthDp)
                                         .height(waveformStripHeight.dp)
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0xFFF1F3F5))
-                                        .semantics { contentDescription = "Source audio waveform" }
+                                        .background(Color(0xFF073A42))
+                                        .semantics(mergeDescendants = true) { contentDescription = "Source audio waveform" }
                                 ) {
                                     AudioWaveformBars(
                                         samples = audioWaveform,

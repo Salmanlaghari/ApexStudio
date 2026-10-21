@@ -48,7 +48,10 @@ class PhotoExportConfigTest {
     @Test fun `photo source trim is baked exactly once`() {
         val result = config()
         assertEquals(0L, result.trimStartMs)
-        assertEquals(0L, result.trimEndMs)
+        // The generated intermediate already contains only the retained 3s.
+        // Selecting its complete 0..3s span does not apply the original 1..4s
+        // trim again, and retains the domain needed by speed/keyframe clocks.
+        assertEquals(photoExportSourceDurationMs(photo), result.trimEndMs)
     }
 
     @Test fun `photo trim resolves unknown endpoint and clamps to source duration`() {

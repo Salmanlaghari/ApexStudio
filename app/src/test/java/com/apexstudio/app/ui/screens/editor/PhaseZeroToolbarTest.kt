@@ -106,6 +106,21 @@ class PhaseZeroToolbarTest {
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
     }
 
+    @Test fun approvedPrimaryDockAndOverlayChoicesDispatchRealRoutes() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(ToolbarSelectionKind.NONE, calls) }
+        listOf("Media", "Audio", "FX", "Filters").forEach {
+            composeRule.onNodeWithText(it).performScrollTo().performClick()
+        }
+        composeRule.onNodeWithText("Overlay").performScrollTo().performClick()
+        composeRule.onNodeWithText("Image").performClick()
+        composeRule.onNodeWithText("Overlay").performScrollTo().performClick()
+        composeRule.onNodeWithText("Video").performClick()
+        listOf("media", "device-audio", "effects", "filters", "add-image", "add-video").forEach {
+            assertEquals(it, 1, calls[it] ?: 0)
+        }
+    }
+
     /** Explicit test-only callbacks keep every production action wired and observable. */
     @Composable
     private fun testToolbar(
@@ -118,6 +133,8 @@ class PhaseZeroToolbarTest {
 
         ContextualBottomToolbar(
             selectionKind = selectionKind,
+            onMedia = { count("media") },
+            onDeviceAudio = { count("device-audio") },
             onText = { count("text") },
             onEffects = { count("effects") },
             onStickers = { count("stickers") },

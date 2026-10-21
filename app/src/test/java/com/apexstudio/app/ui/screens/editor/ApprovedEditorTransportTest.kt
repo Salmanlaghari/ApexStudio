@@ -76,24 +76,4 @@ class ApprovedEditorTransportTest {
         compose.runOnIdle { assertEquals(listOf("previous", "next", "keyframe", "animation"), calls) }
     }
 
-    @Test fun approvedPrimaryDockAndOverlayChoicesDispatchRealRoutes() {
-        val calls = mutableListOf<String>()
-        compose.setContent {
-            ContextualBottomToolbar(
-                selectionKind = ToolbarSelectionKind.NONE,
-                onMedia = { calls += "media" }, onDeviceAudio = { calls += "audio" },
-                onEffects = { calls += "fx" }, onFilters = { calls += "filters" },
-                onAddOverlayImage = { calls += "overlay-image" },
-                onAddOverlayVideo = { calls += "overlay-video" }
-            )
-        }
-        listOf("Media", "Audio", "FX", "Filters").forEach {
-            compose.onNodeWithText(it).performScrollTo().performClick()
-        }
-        compose.onNodeWithText("Overlay").performScrollTo().performClick()
-        compose.onNodeWithText("Image").performClick()
-        compose.onNodeWithText("Overlay").performScrollTo().performClick()
-        compose.onNodeWithText("Video").performClick()
-        compose.runOnIdle { assertEquals(listOf("media", "audio", "fx", "filters", "overlay-image", "overlay-video"), calls) }
-    }
 }

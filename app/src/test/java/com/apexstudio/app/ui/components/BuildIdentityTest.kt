@@ -25,7 +25,7 @@ class BuildIdentityTest {
 
     @Test fun editorBadgeOpensInstalledBuildDialog() {
         compose.setContent { TopAppBarSection() }
-        compose.onNodeWithContentDescription("Build identity").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("ApexStudio build identity. Project ApexStudio").assertIsDisplayed().performClick()
         compose.onNodeWithText("Installed build").assertIsDisplayed()
         compose.onNodeWithText(BuildIdentity.description).assertIsDisplayed()
         compose.onNodeWithText("Copy build info").performClick()

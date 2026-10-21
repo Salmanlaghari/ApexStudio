@@ -4,10 +4,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
@@ -32,7 +33,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
@@ -59,24 +59,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import com.apexstudio.app.domain.model.SpeedPreset
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
- * Bottom-sheet style panel for variable playback speed (slow-mo /
- * time-lapse). Pops up when the user taps the Speed button in the
- * editor's horizontal tool bar.
- *
- * - Six preset chips for the canonical rates (0.25x .. 8x) the model
- *   advertises. Picking one calls [onSelectPreset] which both updates
- *   the selected clip's speed and pushes the new rate to ExoPlayer
- *   so the preview immediately re-clocks.
- * - A continuous slider underneath covers every value in 0.25x..8x
- *   for users who want a non-standard rate. The slider's current
- *   value is shown next to the label so they can read it back.
- * - The panel surfaces the currently selected clip's existing rate
- *   so the user can see what's already set before they make a change.
+ * Compact speed controls for the editor. Rate presets and the custom rate
+ * slider retain their separate callbacks; video clips also expose the
+ * editable speed curve, and motion-blur controls retain their existing
+ * state callbacks. The control cards scroll horizontally within the panel.
  */
+
 @Composable
 fun SpeedRampPanel(
     selectedClipId: String?,
@@ -96,209 +89,108 @@ fun SpeedRampPanel(
     onClearCurve: () -> Unit = {},
     onClose: () -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(activeClipSpeed.coerceIn(0.1f, 10f)) }
-    var motionBlurOn by remember { mutableStateOf(opticalFlowEnabled) }
-    var blurIntensity by remember { mutableFloatStateOf(opticalFlowIntensity) }
+    var sliderValue by remember(selectedClipId, activeClipSpeed) { mutableFloatStateOf(activeClipSpeed.coerceIn(0.1f, 10f)) }
+    var motionBlurOn by remember(selectedClipId, opticalFlowEnabled) { mutableStateOf(opticalFlowEnabled) }
+    var blurIntensity by remember(selectedClipId, opticalFlowIntensity) { mutableFloatStateOf(opticalFlowIntensity) }
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+        modifier = Modifier.fillMaxWidth().height(300.dp)
+            .testTag("speed-ramp-panel-root")
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(ApexPalette.BgElevated)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.Speed,
-                contentDescription = null,
-                tint = ApexPalette.NeonCyan,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Speed Ramping & Motion Blur",
-                color = ApexPalette.TextPrimary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onClose) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(40.dp)) {
+            Icon(Icons.Default.Speed, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Speed & Motion", color = ApexPalette.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary)
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = if (selectedClipId == null)
-                "No clip selected — slider sets preview rate"
-            else
-                "Active clip: ${formatRate(activeClipSpeed)}  •  Range: 0.1x Slow-Mo to 10x Hyper-Speed",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(10.dp))
 
-        // Preset Chips including 0.1x and 10x
-        val extendedPresets = listOf(
-            "0.1x" to 0.1f,
-            "0.25x" to 0.25f,
-            "0.5x" to 0.5f,
-            "1x" to 1.0f,
-            "2x" to 2.0f,
-            "4x" to 4.0f,
-            "8x" to 8.0f,
-            "10x" to 10.0f
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(extendedPresets, key = { it.first }) { (label, mult) ->
-                val selected = kotlin.math.abs(sliderValue - mult) < 0.05f
-                SpeedPresetChip(
-                    label = label,
-                    selected = selected,
-                    onClick = {
-                        sliderValue = mult
-                        onCustomSpeed(mult)
-                    }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth().height(240.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()).testTag("speed-ramp-panel-cards"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "Custom Rate: ${formatRate(sliderValue)}",
-                color = ApexPalette.TextPrimary,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp
-            )
-            Text(
-                text = if (sliderValue < 1f) "Slow Motion" else if (sliderValue > 1f) "Fast Motion" else "Normal",
-                color = if (sliderValue < 1f) Color(0xFF60A5FA) else if (sliderValue > 1f) Color(0xFFF59E0B) else ApexPalette.TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-        Slider(
-            value = sliderValue,
-            onValueChange = { sliderValue = it },
-            onValueChangeFinished = { onCustomSpeed(sliderValue) },
-            valueRange = 0.1f..10f,
-            colors = SliderDefaults.colors(
-                thumbColor = ApexPalette.NeonCyan,
-                activeTrackColor = ApexPalette.NeonCyan,
-                inactiveTrackColor = ApexPalette.BorderGlass
-            )
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("0.1x (Slow-Mo)", color = ApexPalette.TextTertiary, fontSize = 10.sp)
-            Text("1x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
-            Text("5x", color = ApexPalette.TextTertiary, fontSize = 10.sp)
-            Text("10x (Hyper)", color = ApexPalette.TextTertiary, fontSize = 10.sp)
-        }
-
-        Spacer(Modifier.height(14.dp))
-        HorizontalDivider(color = ApexPalette.BorderGlass)
-        Spacer(Modifier.height(12.dp))
-
-        // Variable speed curve editor (PR-E): CapCut-style ramping.
-        // Only for video clips — a still image has no playback rate.
-        if (clipIsVideo) {
-            SpeedCurveEditor(
-                points = speedPoints,
-                baseSpeed = activeClipSpeed,
-                clipSourceDurationMs = clipSourceDurationMs,
-                onCurveChanged = onCurveChanged,
-                onClearCurve = onClearCurve
-            )
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = ApexPalette.BorderGlass)
-            Spacer(Modifier.height(12.dp))
-        }
-
-        // Optical Flow Motion Blur Section
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Optical Flow Motion Blur",
-                        color = ApexPalette.TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF3B82F6).copy(alpha = 0.25f))
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "8K Ultra HD",
-                            color = Color(0xFF93C5FD),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+            Column(
+                modifier = Modifier.width(280.dp).fillMaxHeight().speedPanelCard().padding(9.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text("Playback rate", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (selectedClipId == null) "Preview rate · ${formatRate(activeClipSpeed)}" else "Clip rate · ${formatRate(activeClipSpeed)}",
+                    color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                val extendedPresets = listOf("0.1x" to .1f, "0.25x" to .25f, "0.5x" to .5f, "1x" to 1f, "2x" to 2f, "4x" to 4f, "8x" to 8f, "10x" to 10f)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    items(extendedPresets, key = { it.first }) { (label, mult) ->
+                        val selected = kotlin.math.abs(sliderValue - mult) < .05f
+                        SpeedPresetChip(label, selected) {
+                            sliderValue = mult
+                            val preset = SpeedPreset.values().firstOrNull { kotlin.math.abs(it.multiplier - mult) < 0.001f }
+                            if (preset != null) onSelectPreset(preset) else onCustomSpeed(mult)
+                        }
                     }
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Seamless frame interpolation & directional motion blur",
-                    color = ApexPalette.TextSecondary,
-                    fontSize = 11.sp
-                )
-            }
-            Switch(
-                checked = motionBlurOn,
-                onCheckedChange = {
-                    motionBlurOn = it
-                    onToggleOpticalFlow(it)
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = ApexPalette.NeonCyan,
-                    uncheckedThumbColor = ApexPalette.TextTertiary,
-                    uncheckedTrackColor = ApexPalette.BgBase
-                )
-            )
-        }
-
-        if (motionBlurOn) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Blur Intensity: ${(blurIntensity * 100).toInt()}%",
-                    color = ApexPalette.TextSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.width(110.dp)
-                )
+                Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Custom · ${formatRate(sliderValue)}", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                    Text(if (sliderValue < 1f) "Slow" else if (sliderValue > 1f) "Fast" else "Normal",
+                        color = if (sliderValue < 1f) Color(0xFF60A5FA) else if (sliderValue > 1f) Color(0xFFF59E0B) else ApexPalette.TextSecondary,
+                        fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
                 Slider(
-                    value = blurIntensity,
-                    onValueChange = {
-                        blurIntensity = it
-                        onChangeOpticalFlowIntensity(it)
-                    },
-                    valueRange = 0.1f..1.0f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color(0xFF60A5FA),
-                        activeTrackColor = Color(0xFF60A5FA),
-                        inactiveTrackColor = ApexPalette.BorderGlass
-                    ),
-                    modifier = Modifier.weight(1f)
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = { onCustomSpeed(sliderValue) },
+                    valueRange = .1f..10f,
+                    colors = SliderDefaults.colors(thumbColor = ApexPalette.NeonCyan, activeTrackColor = ApexPalette.NeonCyan, inactiveTrackColor = ApexPalette.BorderGlass)
                 )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("0.1x", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                    Text("1x", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                    Text("5x", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                    Text("10x", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                }
+            }
+
+            if (clipIsVideo) {
+                Column(modifier = Modifier.width(300.dp).fillMaxHeight().speedPanelCard().padding(8.dp)) {
+                    SpeedCurveEditor(
+                        points = speedPoints,
+                        baseSpeed = activeClipSpeed,
+                        clipSourceDurationMs = clipSourceDurationMs,
+                        onCurveChanged = onCurveChanged,
+                        onClearCurve = onClearCurve
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.width(280.dp).fillMaxHeight().speedPanelCard().padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Optical Flow Motion Blur", color = ApexPalette.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("Frame interpolation and directional blur", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                    }
+                    Switch(
+                        checked = motionBlurOn,
+                        onCheckedChange = { motionBlurOn = it; onToggleOpticalFlow(it) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = ApexPalette.NeonCyan,
+                            uncheckedThumbColor = ApexPalette.TextTertiary, uncheckedTrackColor = ApexPalette.BgBase)
+                    )
+                }
+                if (motionBlurOn) {
+                    HorizontalDivider(color = ApexPalette.BorderGlass)
+                    Text("Blur intensity · ${(blurIntensity * 100).toInt()}%", color = ApexPalette.TextSecondary, fontSize = 11.sp)
+                    Slider(
+                        value = blurIntensity,
+                        onValueChange = { blurIntensity = it; onChangeOpticalFlowIntensity(it) },
+                        valueRange = .1f..1f,
+                        colors = SliderDefaults.colors(thumbColor = Color(0xFF60A5FA), activeTrackColor = Color(0xFF60A5FA), inactiveTrackColor = ApexPalette.BorderGlass)
+                    )
+                }
             }
         }
     }
@@ -331,7 +223,7 @@ private fun SpeedCurveEditor(
     onClearCurve: () -> Unit
 ) {
     val math = SpeedCurveMath
-    val draftState = remember(points) {
+    val draftState = remember(points, baseSpeed) {
         mutableStateOf(points.ifEmpty { math.flat(baseSpeed) })
     }
     var selectedIndex by remember(points) { mutableIntStateOf(-1) }
@@ -362,23 +254,22 @@ private fun SpeedCurveEditor(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            TextButton(onClick = {
-                selectedIndex = -1
-                onClearCurve()
-            }) {
-                Text("Reset", color = ApexPalette.TextSecondary, fontSize = 12.sp)
-            }
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                    .clickable { selectedIndex = -1; onClearCurve() }
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
+            ) { Text("Reset", color = ApexPalette.TextSecondary, fontSize = 10.sp) }
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            text = "Tap graph to add a point • drag points to reshape • select a point to toggle Sharp (straight drop/rise)",
+            text = "Tap or drag to shape · select a point for Sharp / Remove",
             color = ApexPalette.TextSecondary,
-            fontSize = 11.sp
+            fontSize = 9.sp
         )
         Spacer(Modifier.height(8.dp))
 
         // Preset chips: one tap applies the preset curve.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SpeedCurveMath.CurvePreset.values().forEach { preset ->
                 val isActive = hasCurve && draft == preset.points
                 SpeedPresetChip(
@@ -398,7 +289,7 @@ private fun SpeedCurveEditor(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(150.dp)
+                .height(76.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0xFF0A0E18))
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
@@ -585,8 +476,8 @@ private fun SpeedCurveEditor(
                         .align(Alignment.TopStart)
                         .offset(
                             x = 5.dp,
-                            y = ((math.speedToGraphY(sp) * 150f).dp - 6.dp)
-                                .coerceIn(0.dp, 138.dp)
+                            y = ((math.speedToGraphY(sp) * 76f).dp - 6.dp)
+                                .coerceIn(0.dp, 64.dp)
                         )
                 )
             }
@@ -613,14 +504,16 @@ private fun SpeedCurveEditor(
                 modifier = Modifier.weight(1f)
             )
             if (selectedIndex in 1 until draft.lastIndex) {
-                TextButton(onClick = {
-                    val cur = draftState.value
-                    draftState.value = cur.filterIndexed { i, _ -> i != selectedIndex }
-                    selectedIndex = -1
-                    onCurveChanged(draftState.value)
-                }) {
-                    Text("Remove point", color = Color(0xFFF87171), fontSize = 12.sp)
-                }
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                        .clickable {
+                            val cur = draftState.value
+                            draftState.value = cur.filterIndexed { i, _ -> i != selectedIndex }
+                            selectedIndex = -1
+                            onCurveChanged(draftState.value)
+                        }
+                        .padding(horizontal = 7.dp, vertical = 5.dp)
+                ) { Text("Remove point", color = Color(0xFFF87171), fontSize = 10.sp) }
             }
         }
         if (selectedIndex in draft.indices) {
@@ -643,26 +536,30 @@ private fun SpeedCurveEditor(
                 // eased curve. Not applicable to the first point
                 // (no segment ends there).
                 if (selectedIndex >= 1) {
-                    TextButton(onClick = {
-                        val cur = draftState.value
-                        val updated = cur.toMutableList()
-                        updated[selectedIndex] =
-                            updated[selectedIndex].copy(sharp = !p.sharp)
-                        draftState.value = updated
-                        onCurveChanged(updated)
-                    }) {
-                        Text(
-                            text = if (p.sharp) "Sharp: On" else "Sharp: Off",
-                            color = if (p.sharp) ApexPalette.NeonCyan
-                            else ApexPalette.TextSecondary,
-                            fontSize = 12.sp
-                        )
+                    Box(
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                val cur = draftState.value
+                                val updated = cur.toMutableList()
+                                updated[selectedIndex] = updated[selectedIndex].copy(sharp = !p.sharp)
+                                draftState.value = updated
+                                onCurveChanged(updated)
+                            }
+                            .padding(horizontal = 7.dp, vertical = 5.dp)
+                    ) {
+                        Text(text = if (p.sharp) "Sharp: On" else "Sharp: Off",
+                            color = if (p.sharp) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 10.sp)
                     }
                 }
             }
         }
     }
 }
+
+private fun Modifier.speedPanelCard(): Modifier = this
+    .clip(RoundedCornerShape(11.dp))
+    .background(ApexPalette.BgBase)
+    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(11.dp))
 
 private fun formatSeconds(ms: Long): String {
     val s = ms / 1000f

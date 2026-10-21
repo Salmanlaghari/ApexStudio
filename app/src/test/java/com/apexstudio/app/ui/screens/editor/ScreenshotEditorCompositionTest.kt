@@ -48,10 +48,11 @@ class ScreenshotEditorCompositionTest {
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
         compose.onNodeWithText("Keyframe").assertIsDisplayed()
         compose.onNodeWithText("Animation").assertIsDisplayed()
-        compose.onNodeWithText("Add Clip").assertIsDisplayed()
+        compose.onNodeWithText("TIMELINE").assertDoesNotExist()
+        compose.onNodeWithText("Add Clip").assertDoesNotExist()
         val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
         val animation = compose.onNodeWithContentDescription("Edit video keyframe animation").fetchSemanticsNode().boundsInRoot
-        val header = compose.onNodeWithText("TIMELINE").fetchSemanticsNode().boundsInRoot
+        val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("Keyframe and Animation must share the row above timeline", keyframe.bottom <= header.top && animation.bottom <= header.top)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
@@ -68,6 +69,11 @@ class ScreenshotEditorCompositionTest {
 
     @Test fun timelineAddClipRequestsRealVideoImportAndDoesNotCreateFakeMedia() {
         val vm = editor()
+        val shortClip = clip.copy(durationMs = 4_000L, trimEndMs = 4_000L)
+        vm._state.value = vm.state.value.copy(
+            project = vm.state.value.project!!.copy(clips = listOf(shortClip), durationMs = 4_000L),
+            durationMs = 4_000L
+        )
         var requested: com.apexstudio.app.domain.model.ClipType? = null
         compose.setContent {
             Column(Modifier.requiredSize(375.dp, 400.dp)) {
@@ -77,7 +83,7 @@ class ScreenshotEditorCompositionTest {
         compose.onNodeWithTag("timeline-add-media").performClick()
         compose.runOnIdle {
             assertEquals(com.apexstudio.app.domain.model.ClipType.VIDEO, requested)
-            assertEquals(listOf(clip), vm.state.value.project!!.clips)
+            assertEquals(listOf(shortClip), vm.state.value.project!!.clips)
         }
     }
 }

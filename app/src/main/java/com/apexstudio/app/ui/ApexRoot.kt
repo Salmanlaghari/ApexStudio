@@ -14,16 +14,13 @@ import androidx.compose.ui.graphics.Color
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
 import com.apexstudio.app.camerakit.CameraKitDeliveryRoute
-import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
-import com.apexstudio.app.ui.screens.colortools.ColorStudioScreen
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
 import com.apexstudio.app.ui.screens.editor.EditorScreen
-import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
 
-/** Export replaces the editor, rather than keeping hidden preview codecs alive beneath it. */
+/** Select a workspace; editor-owned workspaces release preview codecs before exporting. */
 internal fun apexContentTab(currentTab: String, showExportSettings: Boolean): String =
     if (showExportSettings) "export" else currentTab
 
@@ -61,33 +58,17 @@ fun ApexRoot() {
                             },
                             onOpenSettings = { overlay = Overlay.Settings }
                         )
-                        "edit" -> EditorScreen(
+                        "edit", "color", "audio", "export" -> EditorScreen(
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "home" },
                             onExport = { showExportSettings = true },
                             onColor = { currentTab = "color" },
-                            onAudio = { currentTab = "audio" }
-                        )
-                        "color" -> ColorStudioScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
-                        )
-                        "audio" -> AudioStudioScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
+                            onAudio = { currentTab = "audio" },
+                            entryWorkspace = apexContentTab(currentTab, showExportSettings),
+                            onCloseWorkspace = { showExportSettings = false; currentTab = "edit" }
                         )
                         "lenses" -> CameraKitDeliveryRoute(
                             onBack = { currentTab = "home" }
-                        )
-                        "export" -> ExportScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = {
-                                if (showExportSettings) showExportSettings = false
-                                else currentTab = "edit"
-                            },
-                            onExport = { showExportSettings = false }
                         )
                     }
                 }
@@ -95,7 +76,7 @@ fun ApexRoot() {
         }
 
         if (!showExportSettings) {
-            if (overlay == null && currentTab != "export" && currentTab != "edit") {
+            if (overlay == null && currentTab !in setOf("export", "edit", "color", "audio")) {
                 BottomNavBar(
                     current = currentTab,
                     onSelect = { tab ->

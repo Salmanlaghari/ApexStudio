@@ -1,23 +1,32 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,7 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.theme.EditorPalette
 
-/** Project identity and export controls shown above the editor preview. */
+/** Branded editor header: identity is in the mark, while project details remain semantic. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TopAppBarSection(
     title: String = "ApexStudio",
@@ -42,7 +52,9 @@ fun TopAppBarSection(
     onRedo: () -> Unit = {},
     onHelp: () -> Unit = {},
     onExport: () -> Unit = {},
-    projectId: String = ""
+    projectId: String = "",
+    exportEnabled: Boolean = true,
+    resolutionEnabled: Boolean = true
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
     var showBuildIdentity by remember { mutableStateOf(false) }
@@ -56,116 +68,75 @@ fun TopAppBarSection(
             .height(EditorLayoutMetrics.TopBarHeight)
             .padding(horizontal = EditorLayoutMetrics.TopBarHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
-            modifier = Modifier.weight(1f).padding(end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .widthIn(min = 40.dp)
-                    .fillMaxHeight()
-                    .clickable(onClick = onBack, role = Role.Button)
-                    .semantics { contentDescription = "Back" },
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = null,
-                    tint = EditorPalette.TextPrimary,
-                    modifier = Modifier.size(22.dp).padding(start = 2.dp)
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(onClick = { showBuildIdentity = true }, role = Role.Button)
-                    .semantics { contentDescription = "Build identity" },
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = title.ifBlank { "ApexStudio" },
-                    color = EditorPalette.TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    softWrap = false
-                )
-                Text(
-                    text = projectId.ifBlank { title.ifBlank { "Untitled project" } },
-                    color = EditorPalette.TextSecondary,
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    softWrap = false
-                )
-            }
-        }
-
-        Box(
             modifier = Modifier
-                .widthIn(min = 40.dp)
-                .height(24.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .background(EditorPalette.BgElevated)
-                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
-                .clickable(onClick = onToggleCoverMode, role = Role.Button)
-                .semantics { contentDescription = if (isCoverMode) "Switch to fit" else "Switch to cover" },
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .fillMaxHeight()
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = { showBuildIdentity = true },
+                    onLongClick = onBack
+                )
+                .semantics {
+                    contentDescription = "ApexStudio build identity. Project ${projectId.ifBlank { title }}"
+                    customActions = listOf(CustomAccessibilityAction("Back") {
+                        onBack()
+                        true
+                    })
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start
         ) {
-            Text(
-                text = if (isCoverMode) "COVER" else "FIT",
-                color = EditorPalette.TextPrimary,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 5.dp)
-            )
+            ApexStudioMark(Modifier.size(32.dp))
+            Spacer(Modifier.width(7.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 145.dp)) {
+                Text("Apex", color = EditorPalette.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, softWrap = false)
+                Text("Studio", color = EditorPalette.NeonPurple, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+            }
         }
 
         Box {
             Row(
                 modifier = Modifier
-                    .height(26.dp)
-                    .widthIn(min = 70.dp)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(EditorPalette.BgElevated)
-                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
-                    .clickable(onClick = { showResolutionDropdown = true }, role = Role.Button)
-                    .semantics { contentDescription = "Resolution: $resolution" }
-                    .padding(horizontal = 6.dp),
+                    .height(32.dp)
+                    .widthIn(min = 72.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
+                    .clickable(enabled = resolutionEnabled, onClick = { showResolutionDropdown = true }, role = Role.Button)
+                    .semantics {
+                        contentDescription = "Resolution: $resolution; preview ${if (isCoverMode) "cover" else "fit"}"
+                    }
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                Text(
-                    text = resolution,
-                    color = EditorPalette.TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.sp,
-                    maxLines = 1
-                )
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
-                    tint = EditorPalette.TextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
+                Text(resolution, color = EditorPalette.TextPrimary, fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp, maxLines = 1, softWrap = false)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = EditorPalette.TextSecondary,
+                    modifier = Modifier.size(18.dp))
             }
-            androidx.compose.material3.DropdownMenu(
+            DropdownMenu(
                 expanded = showResolutionDropdown,
                 onDismissRequest = { showResolutionDropdown = false },
                 modifier = Modifier.background(EditorPalette.BgSurface)
             ) {
+                DropdownMenuItem(
+                    text = { Text(if (isCoverMode) "Preview: Cover" else "Preview: Fit", color = EditorPalette.TextPrimary) },
+                    onClick = {
+                        onToggleCoverMode()
+                        showResolutionDropdown = false
+                    }
+                )
+                HorizontalDivider(color = EditorPalette.Divider)
                 listOf("720P", "1080P", "1440P", "4K").forEach { res ->
-                    androidx.compose.material3.DropdownMenuItem(
+                    DropdownMenuItem(
                         text = {
-                            Text(
-                                text = res,
-                                color = if (res == resolution) Color(0xFF2563EB) else EditorPalette.TextPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Text(res, color = if (res == resolution) EditorPalette.NeonCyan else EditorPalette.TextPrimary,
+                                fontWeight = FontWeight.SemiBold)
                         },
                         onClick = {
                             onSelectResolution(res)
@@ -178,32 +149,49 @@ fun TopAppBarSection(
 
         Row(
             modifier = Modifier
-                .widthIn(min = 72.dp)
-                .height(28.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .height(34.dp)
+                .widthIn(min = 78.dp)
+                .clip(RoundedCornerShape(9.dp))
                 .background(EditorPalette.GradientPrimary)
-                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
-                .clickable(onClick = onExport, role = Role.Button)
+                .clickable(enabled = exportEnabled, onClick = onExport, role = Role.Button)
                 .semantics { contentDescription = "Export" }
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Upload,
-                contentDescription = null,
-                tint = EditorPalette.TextPrimary,
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = "Export",
-                color = EditorPalette.TextPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.padding(start = 3.dp)
-            )
+            Icon(Icons.Default.Upload, contentDescription = null, tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(15.dp))
+            Text("Export", color = EditorPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
         }
+    }
+}
+
+/** Small original Compose vector mark; no raster or remote branding dependency. */
+@Composable
+private fun ApexStudioMark(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val outer = Path().apply {
+            moveTo(w * .5f, h * .04f)
+            lineTo(w * .98f, h * .94f)
+            lineTo(w * .02f, h * .94f)
+            close()
+        }
+        drawPath(outer, Brush.linearGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple)), style = Fill)
+        val cutout = Path().apply {
+            moveTo(w * .5f, h * .37f)
+            lineTo(w * .69f, h * .77f)
+            lineTo(w * .31f, h * .77f)
+            close()
+        }
+        drawPath(cutout, EditorPalette.BgBase, style = Fill)
+        drawLine(
+            brush = Brush.horizontalGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple)),
+            start = androidx.compose.ui.geometry.Offset(w * .37f, h * .84f),
+            end = androidx.compose.ui.geometry.Offset(w * .63f, h * .84f),
+            strokeWidth = h * .055f
+        )
     }
 }

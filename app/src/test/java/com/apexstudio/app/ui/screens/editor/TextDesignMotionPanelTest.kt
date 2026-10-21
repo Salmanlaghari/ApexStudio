@@ -5,6 +5,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.apexstudio.app.data.text.TextDesignMotionPreset
 import com.apexstudio.app.domain.model.TextOverlay
@@ -34,8 +35,10 @@ class TextDesignMotionPanelTest {
                 onApplyDesignMotion = { chosen = it }, initialTab = TextPanelTab.PRESETS
             )
         }
-        compose.onNode(hasSetTextAction()).performTextInput("amber typewriter")
-        compose.onNodeWithText("Amber Frame").assertIsDisplayed().performClick()
+        compose.onNode(hasSetTextAction())
+            .performScrollTo()
+            .performTextInput("amber typewriter")
+        compose.onNodeWithText("Amber Frame").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertNotNull(chosen)
             assertEquals("TYPEWRITER", chosen!!.animationType)

@@ -3,18 +3,17 @@ package com.apexstudio.app.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/** PR #170 dark editing surfaces, lifted only slightly with a neutral-white tint.
- * Geometry, accent colors and media pixels are unchanged; this is not a light-theme redesign.
+/** Deep navy editor chrome from the owner's locked 51303 purple/cyan design.
+ * Media pixels and semantic meaning are unchanged; populated timeline tracks
+ * carry the luminous accents rather than pale gray surfaces or empty lanes.
  */
 object EditorPalette {
-    val BgDeep = Color(0xFF10131A)
-    val BgBase = Color(0xFF141820)
-    val BgSurface = Color(0xFF1B212C)
-    val BgElevated = Color(0xFF252D3A)
-    val BgGlass = Color(0xF2262E3B)
-    val BgGlassSoft = Color(0xD9262E3B)
-
-    // Semantic accents intentionally unchanged from ApexPalette.
+    val BgDeep = Color(0xFF010914)
+    val BgBase = Color(0xFF020D19)
+    val BgSurface = Color(0xFF081A2C)
+    val BgElevated = Color(0xFF10253C)
+    val BgGlass = Color(0xF2081A2C)
+    val BgGlassSoft = Color(0xD9081A2C)
     val NeonCyan = ApexPalette.NeonCyan
     val NeonCyanGlow = ApexPalette.NeonCyanGlow
     val NeonPurple = ApexPalette.NeonPurple
@@ -23,28 +22,21 @@ object EditorPalette {
     val NeonPink = ApexPalette.NeonPink
     val NeonAmber = ApexPalette.NeonAmber
     val TrackBlue = ApexPalette.TrackBlue
-
-    val TextPrimary = Color(0xFFF3F5F7)
-    val TextSecondary = Color(0xFFC1CAD6)
-    val TextTertiary = Color(0xFF9DAABA)
-    val TextMuted = Color(0xFF94A3B8)
-
+    val TextPrimary = Color(0xFFF8FBFF)
+    val TextSecondary = Color(0xFFB9C8EE)
+    val TextTertiary = Color(0xFF9AADD1)
+    val TextMuted = Color(0xFF7488AA)
     val Success = ApexPalette.Success
     val Warning = ApexPalette.Warning
     val Danger = ApexPalette.Danger
-
-    val Divider = Color(0xFF303A49)
-    val BorderGlass = Color(0xFF3B4657)
-
+    val Divider = Color(0xFF1C3152)
+    val BorderGlass = Color(0xFF294273)
     val TrackVideo = ApexPalette.TrackVideo
     val TrackAudio = ApexPalette.TrackAudio
     val TrackOverlay = ApexPalette.TrackOverlay
     val TrackSfx = ApexPalette.TrackSfx
-
-    val GradientPrimary = Brush.linearGradient(listOf(NeonCyan, NeonPurple))
+    val GradientPrimary = Brush.horizontalGradient(listOf(Color(0xFF00D9FF), Color(0xFF9700FF)))
     val GradientSurface = Brush.verticalGradient(listOf(BgSurface, BgDeep))
-    val GradientGlass = Brush.verticalGradient(
-        listOf(Color(0xFF293341), Color(0xCC1B212C))
-    )
-    val GradientAccent = Brush.linearGradient(listOf(NeonPurple, NeonCyan))
+    val GradientGlass = Brush.verticalGradient(listOf(Color(0xFF112641), Color(0xE6061326)))
+    val GradientAccent = Brush.horizontalGradient(listOf(NeonPurple, NeonCyan))
 }

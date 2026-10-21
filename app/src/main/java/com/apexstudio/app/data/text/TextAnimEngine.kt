@@ -96,8 +96,8 @@ object TextAnimEngine {
     /**
      * Full animated state of [overlay] at [timeMs] (clip timeline ms):
      * intro/loop animation from [TextOverlay.animationType] timed at
-     * the clip start, plus the outro from
-     * [TextOverlay.outroAnimationType] timed at the clip end.
+     * the optional logical animation-window start (or clip start), plus the
+     * outro from [TextOverlay.outroAnimationType] timed at its optional end.
      *
      * @param forExport the GL export path can't do true perspective
      *   rotation, so legacy 3D presets degrade to 2D squash/tilt
@@ -161,7 +161,12 @@ object TextAnimEngine {
      */
     fun stateKey(overlay: TextOverlay, timeMs: Long): Any {
         val type = normalizeIntro(overlay.animationType)
-        val t = if (type == "PULSE" || type == "BOUNCE") (timeMs / 40L) * 40L else timeMs
+        val t = if (type == "PULSE" || type == "BOUNCE") {
+            val animationStartMs = overlay.animationWindowStartMs ?: overlay.startMs
+            animationStartMs + ((timeMs - animationStartMs) / 40L) * 40L
+        } else {
+            timeMs
+        }
         val s = compute(overlay, t, forExport = true)
         return listOf(
             (s.alpha * 255f).toInt(),
@@ -232,7 +237,8 @@ object TextAnimEngine {
         val type = normalizeIntro(overlay.animationType)
         if (type == "NONE") return State.Identity
         val dur = overlay.animationDurationMs.coerceAtLeast(200L)
-        val elapsed = (timeMs - overlay.startMs).coerceAtLeast(0L)
+        val animationStartMs = overlay.animationWindowStartMs ?: overlay.startMs
+        val elapsed = (timeMs - animationStartMs).coerceAtLeast(0L)
         val p = (elapsed.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
         return when (type) {
             "FADE_IN" -> State(alpha = easeOutCubic(p))
@@ -271,7 +277,7 @@ object TextAnimEngine {
             // Looping accents — run for the whole visible window.
             "PULSE" -> {
                 val loop = kotlin.math.sin(
-                    (timeMs - overlay.startMs).toFloat() / 1200f * 2f * kotlin.math.PI.toFloat()
+                    (timeMs - animationStartMs).toFloat() / 1200f * 2f * kotlin.math.PI.toFloat()
                 )
                 val s = 1f + 0.05f * loop
                 State(scaleX = s, scaleY = s)
@@ -279,7 +285,7 @@ object TextAnimEngine {
             "BOUNCE" -> {
                 val loop = kotlin.math.abs(
                     kotlin.math.sin(
-                        (timeMs - overlay.startMs).toFloat() / 900f * kotlin.math.PI.toFloat()
+                        (timeMs - animationStartMs).toFloat() / 900f * kotlin.math.PI.toFloat()
                     )
                 )
                 State(transYFrac = -0.02f * loop)
@@ -358,9 +364,10 @@ object TextAnimEngine {
     private fun computeOutro(overlay: TextOverlay, timeMs: Long): State {
         val type = normalizeOutro(overlay.outroAnimationType)
         if (type == "NONE") return State.Identity
-        if (overlay.endMs == Long.MAX_VALUE) return State.Identity
+        val animationEndMs = overlay.animationWindowEndMs ?: overlay.endMs
+        if (animationEndMs == Long.MAX_VALUE) return State.Identity
         val dur = overlay.outroAnimationDurationMs.coerceAtLeast(150L)
-        val outroStart = overlay.endMs - dur
+        val outroStart = animationEndMs - dur
         if (timeMs < outroStart) return State.Identity
         val q = ((timeMs - outroStart).toFloat() / dur.toFloat()).coerceIn(0f, 1f)
         return when (type) {

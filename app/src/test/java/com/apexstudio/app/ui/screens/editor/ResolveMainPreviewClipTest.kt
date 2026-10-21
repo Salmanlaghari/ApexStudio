@@ -6,6 +6,9 @@ import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.moveTextOverlayAtPlayhead
+import com.apexstudio.app.presentation.viewmodel.setTextOverlayText
+import com.apexstudio.app.presentation.viewmodel.duplicateTextOverlay
+import com.apexstudio.app.presentation.viewmodel.removeTextOverlay
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -81,4 +84,30 @@ class ResolveMainPreviewClipTest {
         assertEquals(v1, resolveMainPreviewClip(clips, audio.id))
         assertNull(resolveMainPreviewClip(listOf(audio), audio.id))
     }
+    @Test
+    fun legacySameIdAcrossClipsRemainsIndependentForEveryMutation() {
+        val v1Text = TextOverlay("text", text = "V1")
+        val overlayText = TextOverlay("text", text = "PiP")
+        val clips = listOf(v1.copy(textOverlays = listOf(v1Text)), imageOverlay.copy(textOverlays = listOf(overlayText)))
+        val vm = EditorViewModel()
+        vm._state.update {
+            it.copy(project = Project(id = "text-project", name = "text-project", clips = clips, durationMs = 20_000L),
+                selectedClipId = imageOverlay.id)
+        }
+        vm.setTextOverlayText(imageOverlay.id, "text", "Edited PiP")
+        var changed = vm.state.value.project!!.clips
+        assertEquals("V1", changed.first().textOverlays.single().text)
+        assertEquals("Edited PiP", changed.last().textOverlays.single().text)
+        vm.duplicateTextOverlay(imageOverlay.id, "text")
+        changed = vm.state.value.project!!.clips
+        assertEquals(1, changed.first().textOverlays.size)
+        assertEquals(2, changed.last().textOverlays.size)
+        val copy = changed.last().textOverlays.last()
+        assertEquals("Edited PiP", copy.text)
+        vm.removeTextOverlay(imageOverlay.id, "text")
+        changed = vm.state.value.project!!.clips
+        assertEquals("V1", changed.first().textOverlays.single().text)
+        assertEquals(listOf(copy), changed.last().textOverlays)
+    }
+
 }

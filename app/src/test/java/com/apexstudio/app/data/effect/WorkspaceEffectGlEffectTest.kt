@@ -3,6 +3,7 @@ package com.apexstudio.app.data.effect
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.WorkspaceFilterPresetAdditions
 import com.apexstudio.app.domain.model.isActiveAtSourceTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,5 +81,23 @@ class WorkspaceEffectGlEffectTest {
         )))
         assertEquals("Cartoon · posterized", WorkspaceEffectPresets.label(WorkspaceEffectPresets.CARTOON))
         assertEquals("Hearts · procedural", WorkspaceEffectPresets.label(WorkspaceEffectPresets.HEARTS))
+    }
+
+    @Test
+    fun originalKindsStayStableAndAllAddedLooksAndVfxHaveShaderBranches() {
+        assertEquals(50, WorkspaceFilterPresetAdditions.entries.size)
+        assertTrue(WorkspaceFilterPresetAdditions.entries.all { entry ->
+            entry.preset.id in WorkspaceEffectPresets.all && entry.preset.id in WorkspaceEffectPresets.filterIds &&
+                WorkspaceEffectGlEffect.kindFor(entry.preset.id) == 22
+        })
+        assertEquals(0, WorkspaceEffectGlEffect.kindFor(WorkspaceEffectPresets.MONO))
+        assertEquals(21, WorkspaceEffectGlEffect.kindFor(WorkspaceEffectPresets.FILTER_LAVENDER))
+        val vfxIds = listOf(
+            "vfx_chromatic_split", "vfx_scan_glitch", "vfx_light_leak", "vfx_vignette", "vfx_edge_glow"
+        )
+        vfxIds.forEachIndexed { index, id -> assertEquals(23 + index, WorkspaceEffectGlEffect.kindFor(id)) }
+        val shader = WorkspaceEffectGlEffect.fragmentShaderSource()
+        listOf("uniform vec3 uGain", "uniform vec3 uOffset", "uniform vec3 uTone", "uKind < 22.5", "uKind < 27.5")
+            .forEach { assertTrue("Missing shader support: $it", shader.contains(it)) }
     }
 }

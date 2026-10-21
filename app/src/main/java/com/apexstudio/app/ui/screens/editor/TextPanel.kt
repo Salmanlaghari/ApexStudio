@@ -145,7 +145,11 @@ fun TextPanel(
     // Opens the mask panel (shape/feather/invert) for the selected
     // text overlay; mask keyframes live on the timeline gold strip.
     onOpenTextMask: () -> Unit = {},
-    initialTab: TextPanelTab = TextPanelTab.EDIT
+    initialTab: TextPanelTab = TextPanelTab.EDIT,
+    timelineDurationMs: Long = 0L,
+    playheadMs: Long = 0L,
+    clipEnds: List<Pair<String, Long>> = emptyList(),
+    onRangeChange: ((Long, Long) -> Unit)? = null
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
     var activeTab by remember(initialTab) { mutableStateOf(initialTab) }
@@ -159,12 +163,11 @@ fun TextPanel(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding()
-            .heightIn(max = 420.dp)
+            .heightIn(max = 280.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp)
-            .verticalScroll(scrollState)
     ) {
         // Header
         Row(
@@ -191,6 +194,51 @@ fun TextPanel(
         }
 
         Spacer(Modifier.height(6.dp))
+
+        // Keep navigation in the panel chrome so it remains reachable while
+        // browsing a long font, caption, or preset collection below.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(ApexPalette.BgElevated)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf(
+                TextPanelTab.EDIT to "Edit & Font",
+                TextPanelTab.ANIMATION to "Animation",
+                TextPanelTab.PRESETS to "Presets",
+                TextPanelTab.CAPTIONS to "Captions"
+            ).forEach { (tab, label) ->
+                val isSel = activeTab == tab
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSel) ApexPalette.NeonCyan else Color.Transparent)
+                        .clickable { activeTab = tab }
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = if (isSel) Color(0xFF0A0E1A) else ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+        ) {
 
         // Caption chips: one pill per caption + add button
         LazyRow(
@@ -255,8 +303,9 @@ fun TextPanel(
 
         // One-tap templates: Text Reveal adds editable "Beautiful" text
         // + the walking-cat sticker + a keyframed mask at the playhead.
-        // Everything stays editable afterwards (text / sticker / mask).
-        Box(
+        // Keep unrelated shortcuts out of Presets so its search results remain
+        // visible and tappable in the compact panel while the keyboard is open.
+        if (activeTab != TextPanelTab.PRESETS) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
@@ -292,43 +341,6 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        // Section Tabs: Edit & Font, Style & Color, Animation, Presets
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(ApexPalette.BgElevated)
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            listOf(
-                TextPanelTab.EDIT to "Edit & Font",
-                TextPanelTab.ANIMATION to "Animation",
-                TextPanelTab.PRESETS to "Presets",
-                TextPanelTab.CAPTIONS to "Captions"
-            ).forEach { (tab, label) ->
-                val isSel = activeTab == tab
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSel) ApexPalette.NeonCyan else Color.Transparent)
-                        .clickable { activeTab = tab }
-                        .padding(vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        label,
-                        color = if (isSel) Color(0xFF0A0E1A) else ApexPalette.TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
-                    )
-                }
-            }
-        }
-
         Spacer(Modifier.height(10.dp))
 
         // Recognition creates overlays; it must not require one to exist first.
@@ -354,7 +366,7 @@ fun TextPanel(
         // Mask row: shape/feather/invert for the selected text, edited
         // in the Mask panel. A mask with keyframes shows the gold
         // strip on the timeline text lane (drag diamonds to retime).
-        Row(
+        if (activeTab != TextPanelTab.PRESETS) Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
@@ -391,6 +403,26 @@ fun TextPanel(
 
         when (activeTab) {
             TextPanelTab.EDIT -> {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(end = 4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (selected != null && onRangeChange != null && timelineDurationMs > 0L) {
+                        item(key = "text-duration-range-${selected.id}") {
+                            Column(Modifier.width(300.dp)) {
+                                TextDurationRangeCard(
+                                    overlay = selected,
+                                    timelineDurationMs = timelineDurationMs,
+                                    playheadMs = playheadMs,
+                                    clipEnds = clipEnds,
+                                    onRangeChange = onRangeChange
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        TextFeatureCard("Text & Font") {
                 OutlinedTextField(
                     value = selected.text,
                     onValueChange = onTextChange,
@@ -511,61 +543,58 @@ fun TextPanel(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(6.dp))
-                // Phase 4: sectioned font grid (45 fonts across categories)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    fontGroups.forEach { (category, options) ->
-                        Text(
-                            category.uppercase(),
-                            color = ApexPalette.TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            options.chunked(3).forEach { row ->
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    row.forEach { (fontKey, fontLabel) ->
-                                        val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
-                                        val chipFont = rememberTextFontFamily(fontKey, selected.isBold, selected.isItalic)
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(
-                                                    if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                                                    else ApexPalette.BgElevated
-                                                )
-                                                .border(
-                                                    1.dp,
-                                                    if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                                                    RoundedCornerShape(8.dp)
-                                                )
-                                                .clickable { onFontFamilyChange(fontKey) }
-                                                .padding(horizontal = 6.dp, vertical = 7.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                fontLabel,
-                                                color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                                                fontSize = 13.sp,
-                                                fontFamily = chipFont,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                maxLines = 1
+                // Font categories and their WYSIWYG chips are browsed as
+                // horizontal groups rather than a tall multi-row font grid.
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(fontGroups, key = { it.first }) { (category, options) ->
+                        Column(modifier = Modifier.width(278.dp)) {
+                            Text(
+                                category.uppercase(),
+                                color = ApexPalette.TextSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(options, key = { it.first }) { (fontKey, fontLabel) ->
+                                    val isSel = selected.fontFamily.equals(fontKey, ignoreCase = true)
+                                    val chipFont = rememberTextFontFamily(fontKey, selected.isBold, selected.isItalic)
+                                    Box(
+                                        modifier = Modifier
+                                            .width(92.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
+                                                else ApexPalette.BgElevated
                                             )
-                                        }
+                                            .border(
+                                                1.dp,
+                                                if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable { onFontFamilyChange(fontKey) }
+                                            .padding(horizontal = 6.dp, vertical = 7.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            fontLabel,
+                                            color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                            fontSize = 13.sp,
+                                            fontFamily = chipFont,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
                                     }
-                                    // Pad short rows so chips keep their width
-                                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                    item {
+                        TextFeatureCard("Style & Color") {
 
                 // Bold / Italic toggles
                 Row(
@@ -771,6 +800,10 @@ fun TextPanel(
 
                 Spacer(Modifier.height(10.dp))
 
+                        }
+                    }
+                    item {
+                        TextFeatureCard("Layout") {
                 // Text alignment relative to the anchor point
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -891,6 +924,10 @@ fun TextPanel(
 
                 Spacer(Modifier.height(10.dp))
 
+                        }
+                    }
+                    item {
+                        TextFeatureCard("Text Layer") {
                 // Quick Duplicate and Delete Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -930,10 +967,19 @@ fun TextPanel(
                         }
                     }
                 }
+                        }
+                    }
+                }
             }
 
             TextPanelTab.ANIMATION -> {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(end = 4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        TextFeatureCard("Preview & Intro") {
                     // --- Live intro → hold → outro demo, driven by the
                     // same TextAnimEngine that powers the preview layer
                     // and the export bake. ---
@@ -1074,16 +1120,23 @@ fun TextPanel(
                         fontWeight = FontWeight.Bold
                     )
 
-                    TEXT_ANIMATIONS.forEach { opt ->
-                        val isSel = TextAnimEngine.normalizeIntro(selected.animationType) == opt.id
-                        AnimationOptionRow(
-                            opt = opt,
-                            isSelected = isSel,
-                            onClick = { onAnimationChange(opt.id) }
-                        )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(TEXT_ANIMATIONS, key = { it.id }) { opt ->
+                            val isSel = TextAnimEngine.normalizeIntro(selected.animationType) == opt.id
+                            AnimationOptionRow(
+                                opt = opt,
+                                isSelected = isSel,
+                                onClick = { onAnimationChange(opt.id) },
+                                modifier = Modifier.width(190.dp)
+                            )
+                        }
                     }
 
-                    // Outro duration slider
+                    }
+                    }
+                    item {
+                        TextFeatureCard("Outro") {
+                        // Outro duration slider
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -1122,13 +1175,18 @@ fun TextPanel(
                         fontWeight = FontWeight.Bold
                     )
 
-                    TEXT_OUTRO_ANIMATIONS.forEach { opt ->
-                        val isSel = selected.outroAnimationType.equals(opt.id, ignoreCase = true)
-                        AnimationOptionRow(
-                            opt = opt,
-                            isSelected = isSel,
-                            onClick = { onOutroChange(opt.id) }
-                        )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(TEXT_OUTRO_ANIMATIONS, key = { it.id }) { opt ->
+                            val isSel = selected.outroAnimationType.equals(opt.id, ignoreCase = true)
+                            AnimationOptionRow(
+                                opt = opt,
+                                isSelected = isSel,
+                                onClick = { onOutroChange(opt.id) },
+                                modifier = Modifier.width(190.dp)
+                            )
+                        }
+                    }
+                        }
                     }
                 }
             }
@@ -1269,7 +1327,27 @@ fun TextPanel(
                     hasAutoCaptions = hasAutoCaptions
                 )
             }
+            }
+        }
+    }
 }
+
+@Composable
+private fun TextFeatureCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(300.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(title, color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        content()
     }
 }
 
@@ -1279,10 +1357,11 @@ private const val DEMO_CYCLE_MS = 2600L
 private fun AnimationOptionRow(
     opt: TextAnimationOption,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(

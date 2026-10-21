@@ -3,11 +3,13 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -429,10 +431,18 @@ fun TextPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.textPanelOpen) return
-    val textClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val activeOverlayId = state.selectedTextOverlayId
+    val textClip = state.project?.clips?.firstOrNull { owner -> owner.id == state.selectedClipId && owner.textOverlays.any { it.id == activeOverlayId } }
+        ?: state.project?.clips?.firstOrNull { owner -> owner.textOverlays.any { it.id == activeOverlayId } }
+        ?: state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
         ?: state.project?.clips?.firstOrNull()
     val textOverlays = textClip?.textOverlays ?: emptyList()
-    val activeOverlayId = state.selectedTextOverlayId
+    val activeRange = activeOverlayId?.let { vm.textOverlayProjectRange(it) }
+    val textTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(state.project?.clips.orEmpty())
+    val panelOverlays = textOverlays.map { overlay ->
+        if (overlay.id == activeOverlayId && activeRange != null)
+            overlay.copy(startMs = activeRange.startMs, endMs = activeRange.endMs) else overlay
+    }
     val captionUiState by vm.captionUi.collectAsState()
     Box(
         modifier = Modifier
@@ -443,9 +453,15 @@ fun TextPanelOverlay(
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             TextPanel(
-                overlays = textOverlays,
+                overlays = panelOverlays,
                 initialTab = if (state.textPanelStartsOnCaptions) TextPanelTab.CAPTIONS else TextPanelTab.EDIT,
                 selectedId = activeOverlayId,
+                timelineDurationMs = textTimeline.durationMs,
+                playheadMs = state.playerPositionMs,
+                clipEnds = textTimeline.entries.map { it.clip.name to it.timelineEndMs },
+                onRangeChange = if (activeOverlayId != null && activeRange != null) ({ start, end ->
+                    vm.updateTextOverlayProjectRange(activeOverlayId, start, end, ownerClipId = textClip?.id)
+                }) else null,
                 onAdd = { textClip?.let { vm.addTextOverlay(it.id) } },
                 onSelect = { vm.selectTextOverlay(it) },
                 onTextChange = { text ->
@@ -742,6 +758,10 @@ fun StickerPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.stickerPanelOpen) return
+    val selectedSticker = state.project?.let { project ->
+        (project.stickers + project.clips.flatMap { it.stickers })
+            .firstOrNull { it.id == state.selectedStickerId }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -752,7 +772,12 @@ fun StickerPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             StickerPanel(
                 onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath = assetPath, category = cat, name = name) },
-                onClose = { vm.closeStickerPanel() }
+                onClose = { vm.closeStickerPanel() },
+                selectedSticker = selectedSticker,
+                totalTimelineMs = state.durationMs,
+                onUpdateSticker = { updated -> vm.updateStickerProperties(updated.id) { updated } },
+                onDuplicate = { id -> vm.duplicateSticker(id) },
+                onDelete = { id -> vm.removeSticker(id) }
             )
         }
     }
@@ -1083,13 +1108,14 @@ fun KeyframePanelOverlay(
                 KeyframePanel(
                     track = track,
                     playheadMs = state.playerPositionMs,
-                    clipDurationMs = selectedClip?.durationMs ?: state.durationMs,
+                    clipDurationMs = state.durationMs,
                     canAdd = selectedClip != null,
                     onAdd = { atMs ->
                         selectedClip?.let {
-                            vm.addKeyframe(it.id, atMs)
+                            vm.addKeyframe(it.id, atMs, track.interpolateAt(atMs))
                         }
                     },
+                    onPaste = { pin, atMs -> selectedClip?.let { vm.pasteKeyframe(it.id, pin, atMs) } },
                     onUpdate = { kf ->
                         selectedClip?.let {
                             vm.updateKeyframe(it.id, kf.id) { _ -> kf }
@@ -1124,6 +1150,10 @@ fun KeyframePanelOverlay(
                     onApplyPreset = { preset ->
                         vm.applyAnimationPreset(preset)
                     },
+                    canApply = selectedClip != null,
+                    onApplyConfiguredPreset = { preset, mode, duration, intensity ->
+                        vm.applyConfiguredAnimationPreset(preset, mode, duration, intensity)
+                    },
                     onOpenCustomized = { showManualPanel = true },
                     onClose = { vm.setKeyframePanelOpen(false) }
                 )
@@ -1142,28 +1172,64 @@ fun AddMediaMenuSheetOverlay(
     onDismiss: () -> Unit
 ) {
     if (!show) return
-    AddMediaMenuSheet(
-        onPickVideo = {
+    val libraryState by vm.state.collectAsStateWithLifecycle()
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Box(Modifier.fillMaxSize().clickable(onClick = onDismiss), contentAlignment = Alignment.BottomCenter) {
+    Box(Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+    ProjectMediaLibraryPanel(
+        project = libraryState.project,
+        onImportMedia = { media ->
             vm.setPendingAddAsOverlay(false)
             vm.setPendingAddAsAudio(false)
+            vm.setPendingAddToLayer(null)
+            val audio = media.filter { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
+            audio.forEach { item ->
+                vm.addAudioTrack(name = item.name, uri = item.uri,
+                    kind = if (item.type == ClipType.SFX) AudioTrack.Kind.SFX else AudioTrack.Kind.MUSIC,
+                    sourceDurationMs = item.durationMs, startTimeMs = vm.livePlayheadMs())
+            }
+            val visual = media.filterNot { it.type == ClipType.AUDIO || it.type == ClipType.SFX }
+            if (visual.isNotEmpty()) {
+                vm.setPendingAddAsOverlay(visual.all { it.type == ClipType.OVERLAY })
+                vm.onMediaPicked(visual, replace = false)
+            }
+        },
+        onBrowseVideo = {
+            vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddAsAudio(false)
+            vm.setPendingAddToLayer(null)
+            onDismiss()
             mediaPicker.pickMultipleMedia.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
             )
         },
-        onPickOverlay = {
+        onBrowsePhotos = {
+            vm.setPendingAddAsOverlay(false)
+            vm.setPendingAddAsAudio(false)
+            vm.setPendingAddToLayer(null)
+            onDismiss()
+            mediaPicker.pickMultipleMedia.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        },
+        onBrowseOverlay = {
             vm.setPendingAddAsOverlay(true)
             vm.setPendingAddAsAudio(false)
+            onDismiss()
             mediaPicker.pickMultipleMedia.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
             )
         },
-        onPickAudio = {
+        onBrowseAudio = {
             vm.setPendingAddAsOverlay(false)
             vm.setPendingAddAsAudio(false)
+            onDismiss()
             onImportLocalAudio()
         },
-        onDismiss = onDismiss
+        onClose = onDismiss
     )
+    }
+    }
 }
 
 /**
@@ -1206,8 +1272,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             .padding(
                 horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 6.dp,
                 vertical = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 4.dp
-            )
+            ),
+        contentAlignment = Alignment.Center
     ) {
+        // The locked design has a landscape editing canvas, not a tall black
+        // portrait letterbox. Keep source FIT behavior and every overlay in the
+        // same canvas coordinates; fullscreen retains its full-window surface.
+        Box(if (isFullscreenPreview) Modifier.fillMaxSize() else
+            Modifier.fillMaxWidth().aspectRatio(LOCKED_EDITOR_PREVIEW_ASPECT)) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
         val selectedClip = resolveEditorSelectionClip(
@@ -1321,21 +1393,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             ?: mainPreviewClip
         val textOverlays = textOwner?.textOverlays ?: emptyList()
 
-        // Small filename chip (bottom-left in the preview): the
-        // selected clip/track name, moved here from the clip bar.
-        val selectionFileLabel = when (resolveToolbarSelection(state)) {
-            ToolbarSelectionKind.VIDEO, ToolbarSelectionKind.PHOTO ->
-                state.project?.clips?.firstOrNull { it.id == state.selectedClipId }?.name
-            ToolbarSelectionKind.AUDIO ->
-                state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }?.name
-                    ?: state.project?.clips?.firstOrNull { it.id == state.selectedClipId }?.name
-            ToolbarSelectionKind.TEXT -> "Text"
-            ToolbarSelectionKind.STICKER -> "Sticker"
-            ToolbarSelectionKind.NONE -> null
-        }
+        // Layer names belong on their timeline clips, not in a HUD over media.
 
         VideoPreviewArea(
-            selectionFileLabel = selectionFileLabel,
+            selectionFileLabel = null,
             exoPlayer = exoPlayer,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
@@ -1504,6 +1565,20 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             modifier = Modifier.fillMaxSize()
         )
 
+        val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }
+        var stickerTrayDismissed by remember(state.project?.id, state.selectedStickerId, stickers.map { it.id }) {
+            mutableStateOf(false)
+        }
+        if (!isFullscreenPreview && !stickerTrayDismissed) {
+            ProjectStickerQuickTray(
+                stickers = activeTrayStickers,
+                selectedStickerId = state.selectedStickerId,
+                onSelectSticker = { vm.selectSticker(it) },
+                onClose = { stickerTrayDismissed = true },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp)
+            )
+        }
+
         if (isFullscreenPreview) {
             Box(
                 modifier = Modifier
@@ -1523,11 +1598,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 )
             }
         }
+        }
     }
 }
 
 /**
- * Transport row + timeline track area.
+* Transport row + timeline track area.
  * ColumnScope extension so the weight(1f) layout behaves exactly as before
  * extraction.
  */
@@ -1649,7 +1725,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onOpenFx = { vm.openFxPanel() },
         onOpenFilter = { vm.openFilterPanel() },
         onOpenAdjust = { vm.openAdjustmentsPanel() },
-        onSelectTextOverlay = { _, overlayId -> vm.selectTextOverlay(overlayId) },
+        onSelectTextOverlay = { ownerId, overlayId ->
+            vm.selectClip(ownerId)
+            vm.selectTextOverlay(overlayId)
+            vm.textOverlayProjectRange(overlayId)?.let { range ->
+                if (state.playerPositionMs !in range.startMs until range.endMs) seekPlayerAndState(range.startMs)
+            }
+        },
+        onSetTextOverlayRange = { ownerId, overlayId, start, end ->
+            vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
+        },
         onSelectSticker = { vm.selectSticker(it) },
         // Reset FX clears the whole lane: FX + LUT filter + adjustments.
         onClearFx = {

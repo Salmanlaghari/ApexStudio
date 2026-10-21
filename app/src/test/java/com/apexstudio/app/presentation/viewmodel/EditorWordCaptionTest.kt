@@ -148,14 +148,20 @@ class EditorWordCaptionTest {
         assertEquals(0xFFFFFF00L, restored.highlightColorArgb)
     }
 
-    @Test fun generatedCaptionsRespectLocalWindowsButManualTextStaysEditable() {
+    @Test fun legacyWindowsStayInclusiveAndNewProjectRangesAreHalfOpen() {
         val automatic = TextOverlay.of(text = "phrase", presetId = "caption_auto").copy(startMs = 100L, endMs = 199L)
         assertFalse(TextOverlayKaraoke.isVisibleForEditor(automatic, -1L))
         assertFalse(TextOverlayKaraoke.isVisibleForEditor(automatic, 99L))
         assertTrue(TextOverlayKaraoke.isVisibleForEditor(automatic, 100L))
         assertTrue(TextOverlayKaraoke.isVisibleForEditor(automatic, 199L))
         assertFalse(TextOverlayKaraoke.isVisibleForEditor(automatic, 200L))
-        assertTrue(TextOverlayKaraoke.isVisibleForEditor(automatic.copy(presetId = null), 99L))
+        assertFalse(TextOverlayKaraoke.isVisibleForEditor(automatic.copy(presetId = null), 99L))
+        assertTrue(TextOverlayKaraoke.isVisibleForEditor(automatic.copy(presetId = null), 100L))
+        assertTrue(TextOverlayKaraoke.isVisibleForEditor(automatic.copy(presetId = null), 199L))
+        val projectRange = automatic.copy(rangeEndExclusive = true)
+        assertTrue(TextOverlayKaraoke.isVisibleForEditor(projectRange, 198L))
+        assertFalse(TextOverlayKaraoke.isVisibleForEditor(projectRange, 199L))
+        assertFalse(TextOverlayKaraoke.isVisibleForEditor(projectRange.copy(presetId = null), 199L))
         val unhighlightedGap = automatic.copy(presetId = null,
             highlightSourceFingerprint = TextOverlayKaraoke.fingerprint("phrase"))
         assertNull(TextOverlayKaraoke.validRange(unhighlightedGap))

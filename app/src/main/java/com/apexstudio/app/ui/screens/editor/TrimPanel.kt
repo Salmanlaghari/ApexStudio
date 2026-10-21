@@ -109,7 +109,7 @@ fun TrimPanel(
             .fillMaxWidth()
             // Cap the height so the panel never draws under the status bar
             // on short phones; the overlay wrapper adds status/nav insets.
-            .fillMaxHeight(0.92f)
+            .heightIn(max = 300.dp)
             .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
             .background(

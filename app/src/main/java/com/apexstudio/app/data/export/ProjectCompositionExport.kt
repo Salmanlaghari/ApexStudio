@@ -11,6 +11,7 @@ import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.domain.model.hasValidParameters
+import com.apexstudio.app.data.color.hasValidRenderParameters
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
 internal fun monotonicProjectExportProgress(previous: Float, reported: Float): Float {
@@ -29,6 +30,9 @@ internal fun projectCompositionUnsupportedReason(
     config: ExportEngine.ExportConfig
 ): String? {
     if (clips.isEmpty()) return "Project export needs at least one main-track video clip."
+    if (config.colorStudioGrade?.hasValidRenderParameters() == false) {
+        return "Project export has an invalid Color Studio grade; reset or adjust it before exporting."
+    }
     if (config.videoDrawings.any { it.strokes.isNotEmpty() }) {
         return "Project export does not support project or clip drawings yet; export a selected clip to include artwork."
     }
@@ -67,6 +71,14 @@ internal fun projectCompositionUnsupportedReason(
         if (clip.backgroundReplace != null) return "Video clip '${clip.name}' has a background-replacement edit."
         if (clip.textOverlays.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a caption with an invalid time range."
+        }
+        if (clip.textOverlays.any { text ->
+                val spansCut = (text.animationWindowStartMs != null && text.animationWindowStartMs != text.startMs) ||
+                    (text.animationWindowEndMs != null && text.animationWindowEndMs != text.endMs)
+                spansCut && (text.keyframes.keyframes.isNotEmpty() || text.maskKeyframes.isNotEmpty())
+            }) {
+            return "Video clip '${clip.name}' has project-spanning text with manual transform or mask keyframes. " +
+                "Continuous manual text-keyframe timing across cuts is not supported; keep this title within one clip or use preset text motion. Nothing was dropped."
         }
         if (clip.stickers.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a sticker with an invalid time range."

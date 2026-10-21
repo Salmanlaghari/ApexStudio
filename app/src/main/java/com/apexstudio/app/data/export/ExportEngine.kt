@@ -35,6 +35,8 @@ import com.apexstudio.app.data.gl.GlTransitionAdapterEffect
 import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
+import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.color.toLutTexture
 import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
@@ -291,7 +293,9 @@ class ExportEngine(private val context: Context) {
         // Timeline audio overlays are prepared by Media3, then mixed into the completed video.
         val overlayAudioSources: List<AudioExportSource> = emptyList(),
         /** Project-global start of this clip; keyframes are stored in this clock. */
-        val keyframeTimelineStartMs: Long = 0L
+        val keyframeTimelineStartMs: Long = 0L,
+        /** Optional Color Studio project grade. Applied to every eligible composed main-track clip. */
+        val colorStudioGrade: ColorStudioGrade? = null
     )
 
     /**
@@ -503,6 +507,14 @@ class ExportEngine(private val context: Context) {
                                         aspect
                                     ))
                                 }
+                            }
+                            // Apply to the completed clip image, including clip-attached foreground art,
+                            // identically for each sequence item. Unsupported extra tracks are rejected
+                            // by projectCompositionUnsupportedReason before this render path is reached.
+                            config.colorStudioGrade?.let { grade ->
+                                add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                                    context, preset = null, preloaded = grade.toLutTexture()
+                                ))
                             }
                             add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                 effectiveExportFrameRate(config.fps).toFloat()

@@ -23,8 +23,13 @@ class FilterWorkspacePanelTest {
     private fun editor(source: MediaClip = clip) = EditorViewModel().also {
         it._state.value = it.state.value.copy(project = Project("p", "P", 3000L, clips = listOf(source)), selectedClipId = source.id)
     }
-    private fun choose(id: String) = compose.onNodeWithTag("filter-preset-$id").performScrollTo().performClick()
+    private fun showCard(tag: String) = compose.onNodeWithTag(tag).performScrollTo()
+    private fun choose(id: String) {
+        showCard("filter-presets-card")
+        compose.onNodeWithTag("filter-preset-$id").performScrollTo().performClick()
+    }
     private fun moveStart() {
+        showCard("filter-source-card")
         compose.onNodeWithTag("filter-source-range").performScrollTo()
         compose.onAllNodes(
             SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress) and hasAnyAncestor(hasTestTag("filter-source-range")),
@@ -37,6 +42,7 @@ class FilterWorkspacePanelTest {
         var preview: MediaClip? = null; var closed = false
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, { preview = it }, {}, {}, { closed = true }) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        showCard("filter-customize-card")
         compose.onNodeWithTag("filter-customize-toggle").performScrollTo().performClick()
         compose.onNodeWithTag("filter-exposure").performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(0.5f) }
         moveStart()
@@ -48,7 +54,7 @@ class FilterWorkspacePanelTest {
             assertEquals(before, vm.state.value.project)
             assertTrue(vm.undoStack.isEmpty())
         }
-        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertTrue(closed); assertEquals(clip, preview)
             assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty())
@@ -60,10 +66,11 @@ class FilterWorkspacePanelTest {
         val source = clip.copy(workspaceEffects = listOf(old)); val vm = editor(source)
         compose.setContent { FilterWorkspacePanel("p", source, vm, false, {}, {}, {}, {}) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        showCard("filter-tuning-card")
         compose.onNodeWithTag("filter-new-range").performScrollTo().performClick()
         choose(WorkspaceEffectPresets.FILTER_COOL)
         moveStart()
-        compose.onNodeWithTag("filter-apply").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("filter-apply").assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle {
             val effects = vm.state.value.project!!.clips.single().workspaceEffects
             assertEquals(3, effects.size); assertEquals(old, effects.first())
@@ -87,7 +94,7 @@ class FilterWorkspacePanelTest {
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
         compose.runOnIdle { vm._state.value = vm.state.value.copy(playerError = "Unsupported GPU") }
-        compose.onNodeWithTag("filter-apply").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("filter-apply").assertIsDisplayed().assertIsNotEnabled()
         compose.runOnIdle { assertEquals(before, vm.state.value.project) }
     }
 

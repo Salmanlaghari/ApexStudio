@@ -71,7 +71,8 @@ class ScreenshotClipToolbarTest {
             }
 
         composeRule.onNodeWithText("More").performClick()
-        composeRule.onNodeWithText("Camera").performScrollTo().assertExists()
+        composeRule.onNodeWithText("Camera").assertDoesNotExist()
+        composeRule.onNodeWithText("Lenses").assertDoesNotExist()
         composeRule.onNodeWithText("Transition").performScrollTo().assertExists()
         composeRule.onNodeWithText("History").performScrollTo().assertExists()
     }
@@ -113,12 +114,22 @@ class ScreenshotClipToolbarTest {
         assertEquals(0, calls["track-mute"] ?: 0)
     }
 
+    @Test fun lockedDockDoesNotReintroduceRejectedClipBarUntilMoreIsOpened() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(calls, showSelectionToolsInitially = false) }
+        composeRule.onNodeWithText("Split").assertDoesNotExist()
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithText("Split").performScrollTo().performClick()
+        assertEquals(1, calls["split"])
+    }
+
     @Composable
     private fun testToolbar(
         calls: MutableMap<String, Int>,
         selectionKind: ToolbarSelectionKind = ToolbarSelectionKind.VIDEO,
         isOverlaySelected: Boolean = false,
-        isLegacyAudioClipSelected: Boolean = false
+        isLegacyAudioClipSelected: Boolean = false,
+        showSelectionToolsInitially: Boolean = true
     ) {
         fun count(action: String) {
             calls[action] = (calls[action] ?: 0) + 1
@@ -128,6 +139,7 @@ class ScreenshotClipToolbarTest {
             selectionKind = selectionKind,
             isOverlaySelected = isOverlaySelected,
             isLegacyAudioClipSelected = isLegacyAudioClipSelected,
+            showSelectionToolsInitially = showSelectionToolsInitially,
             onMedia = { count("media") },
             onDeviceAudio = { count("device-audio") },
             onText = { count("text") },

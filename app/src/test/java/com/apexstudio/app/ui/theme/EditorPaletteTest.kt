@@ -8,7 +8,9 @@ import org.junit.Test
 
 class EditorPaletteTest {
     @Test
-    fun editorPaletteKeepsDarkPr170SurfacesWithOnlyASubtleNeutralLift() {
+    fun editorPaletteUsesLockedDeepNavyRatherThanRejectedGrayChrome() {
+        assertEquals(Color(0xFF020D19), EditorPalette.BgBase)
+        assertEquals(Color(0xFF081A2C), EditorPalette.BgSurface)
         assertTrue(EditorPalette.BgBase.luminance() < 0.03f)
         assertTrue(EditorPalette.BgSurface.luminance() < 0.04f)
         assertTrue(EditorPalette.BgSurface != Color.White)

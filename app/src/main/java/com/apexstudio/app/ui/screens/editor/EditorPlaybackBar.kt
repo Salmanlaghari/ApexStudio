@@ -3,7 +3,6 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -13,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
@@ -25,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
 
-/** Transport row below the preview, wired to the editor's real playback actions. */
+/** Flat transport row beneath the preview, wired to the editor's real actions. */
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,
@@ -55,10 +53,11 @@ fun PlaybackControlBar(
         Text(
             text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
             color = EditorPalette.TextPrimary,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.weight(1f).padding(start = 4.dp)
+            modifier = Modifier.weight(1f).padding(start = 3.dp)
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             TransportIconButton(Icons.Default.SkipPrevious, "Previous clip boundary", canNavigate, onPrevious)
@@ -67,11 +66,9 @@ fun PlaybackControlBar(
                 description = if (isPlaying) "Pause playback" else "Play playback",
                 enabled = canNavigate,
                 onClick = onTogglePlay,
-                highlighted = true
+                prominent = true
             )
             TransportIconButton(Icons.Default.SkipNext, "Next clip boundary", canNavigate, onNext)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
             TransportIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", canUndo, onUndo)
             TransportIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", canRedo, onRedo)
             if (showInlineKeyframe) {
@@ -88,12 +85,11 @@ private fun TransportIconButton(
     description: String,
     enabled: Boolean = true,
     onClick: () -> Unit,
-    highlighted: Boolean = false
+    prominent: Boolean = false
 ) {
     Box(
         modifier = Modifier
             .size(width = 40.dp, height = 48.dp)
-            .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -102,7 +98,7 @@ private fun TransportIconButton(
             imageVector = imageVector,
             contentDescription = null,
             tint = if (enabled) EditorPalette.TextPrimary else EditorPalette.TextMuted,
-            modifier = Modifier.size(if (highlighted) 24.dp else 21.dp)
+            modifier = Modifier.size(if (prominent) 27.dp else 23.dp)
         )
     }
 }

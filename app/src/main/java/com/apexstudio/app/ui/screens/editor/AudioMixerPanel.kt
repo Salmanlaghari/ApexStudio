@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AudioTrack
@@ -102,11 +103,12 @@ fun AudioMixerPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 520.dp)
+            .heightIn(max = 260.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgElevated)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag("audio-mixer-panel-root")
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -127,68 +129,75 @@ fun AudioMixerPanel(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary)
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Mix V1 audio, music and SFX with per-track faders, mute, fades and volume keyframes.",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
 
-        // --- Top Quick-Access Buttons: Local Audio & Free Royalty Music (Immediately visible at top) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AddTrackButton(
-                label = "Local Audio",
-                icon = Icons.Default.FolderOpen,
-                accent = ApexPalette.NeonCyan,
-                modifier = Modifier.weight(1f),
-                onClick = onImportLocalAudio
-            )
-            AddTrackButton(
-                label = "Free Royalty Music",
-                icon = Icons.Default.GraphicEq,
-                accent = ApexPalette.NeonPurple,
-                modifier = Modifier.weight(1f),
-                onClick = onOpenRoyaltyFreeMusic
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        // Phase 4: live spectrum visualizer (vendored audio-visualizer-android).
-        MixerVisualizer(
-            audioSessionId = audioSessionId,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(14.dp))
-
-        // --- Original video audio row (synthetic, no track id) ---
-        AudioMixerRow(
-            label = "Original video audio",
-            icon = if (muteOriginalVideo) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-            volume = if (muteOriginalVideo) 0f else state.volume,
-            muted = muteOriginalVideo,
-            solo = false,
-            accent = ApexPalette.NeonPurple,
-            onVolume = { onMuteOriginal(it <= 0.001f) },
-            onMute = { onMuteOriginal(!muteOriginalVideo) },
-            onSolo = { /* no-op for the V1 row */ },
-            onRemove = null
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // --- Per-track rows ---
-        LazyColumn(
+        // Keep the title and close action pinned. Every feature group is a
+        // horizontal card, so the editor preview is not displaced by a tall
+        // vertical list on portrait phones.
+        LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 280.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .height(190.dp)
+                .testTag("audio-mixer-panel-cards"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            item(key = "quick-controls") {
+                Column(
+                    modifier = Modifier
+                        .width(292.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AddTrackButton(
+                        label = "Local Audio",
+                        icon = Icons.Default.FolderOpen,
+                        accent = ApexPalette.NeonCyan,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onImportLocalAudio
+                    )
+                    AddTrackButton(
+                        label = "Free Royalty Music",
+                        icon = Icons.Default.GraphicEq,
+                        accent = ApexPalette.NeonPurple,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onOpenRoyaltyFreeMusic
+                    )
+                    AudioMixerRow(
+                        label = "Original video audio",
+                        icon = if (muteOriginalVideo) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                        volume = if (muteOriginalVideo) 0f else state.volume,
+                        muted = muteOriginalVideo,
+                        solo = false,
+                        accent = ApexPalette.NeonPurple,
+                        onVolume = { onMuteOriginal(it <= 0.001f) },
+                        onMute = { onMuteOriginal(!muteOriginalVideo) },
+                        onSolo = {},
+                        onRemove = null,
+                        showVolume = false
+                    )
+                    Text(
+                        text = "Original gain is unavailable here; mute is supported.",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+            item(key = "visualizer") {
+                Column(
+                    modifier = Modifier
+                        .width(292.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    MixerVisualizer(audioSessionId = audioSessionId, modifier = Modifier.fillMaxWidth())
+                }
+            }
             items(state.tracks, key = { it.id }) { track ->
                 AudioTrackRow(
                     track = track,
@@ -219,7 +228,8 @@ private fun AudioMixerRow(
     onVolume: (Float) -> Unit,
     onMute: () -> Unit,
     onSolo: () -> Unit,
-    onRemove: (() -> Unit)?
+    onRemove: (() -> Unit)?,
+    showVolume: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -234,16 +244,18 @@ private fun AudioMixerRow(
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(label, color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Slider(
-                value = if (muted) 0f else volume,
-                onValueChange = { onVolume(it) },
-                valueRange = 0f..1f,
-                colors = SliderDefaults.colors(
-                    thumbColor = accent,
-                    activeTrackColor = accent,
-                    inactiveTrackColor = ApexPalette.BorderGlass
+            if (showVolume) {
+                Slider(
+                    value = if (muted) 0f else volume,
+                    onValueChange = { onVolume(it) },
+                    valueRange = 0f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = accent,
+                        activeTrackColor = accent,
+                        inactiveTrackColor = ApexPalette.BorderGlass
+                    )
                 )
-            )
+            }
         }
         IconButton(onClick = onMute) {
             Icon(
@@ -282,7 +294,7 @@ private fun AudioTrackRow(
     val kindLabel = audioTrackKindLabel(track.kind)
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(292.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))

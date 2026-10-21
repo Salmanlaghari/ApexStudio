@@ -19,6 +19,14 @@ from OpenGL import GLES2 as gl
 def run():
     root = Path(__file__).resolve().parents[1]
     source = (root / "app/src/main/java/com/apexstudio/app/data/effect/WorkspaceEffectGlEffect.kt").read_text()
+    additions = (root / "app/src/main/java/com/apexstudio/app/domain/model/WorkspaceFilterPresetAdditions.kt").read_text()
+    addition_rows = re.findall(r'look\("([^"]+)".*?Parameters\(([^)]*)\)\)', additions)
+    added_filters = []
+    for bare_id, parameter_text in addition_rows:
+        values = [float(value.strip().removesuffix("f")) for value in parameter_text.split(",")]
+        assert len(values) == 9, f"{bare_id}: expected 9 shader parameters"
+        added_filters.append(("filter_" + bare_id, values))
+    assert len(added_filters) == 50, f"expected 50 additional presets, found {len(added_filters)}"
     vertex = textwrap.dedent(re.search(r'private val VERTEX_SHADER = """(.*?)"""', source, re.S).group(1)).strip()
     fragment = textwrap.dedent(re.search(r'fun fragmentShaderSource\(\): String = """(.*?)"""', source, re.S).group(1)).strip()
     display = egl.eglGetDisplay(egl.EGL_DEFAULT_DISPLAY)
@@ -74,9 +82,14 @@ def run():
         gl.glUniform2f(gl.glGetUniformLocation(program, "uTexel"), 1 / width, 1 / height)
         gl.glUniform1f(gl.glGetUniformLocation(program, "uAspect"), width / height)
         gl.glViewport(0, 0, width, height)
-        def render(kind, enabled=1., intensity=1., elapsed=.08, exposure=0., contrast=1., saturation=1.):
+        def render(kind, enabled=1., intensity=1., elapsed=.08, exposure=0., contrast=1., saturation=1., params=None):
             for name, value in [("uKind", kind), ("uEnabled", enabled), ("uIntensity", intensity), ("uElapsed", elapsed), ("uExposure", exposure), ("uContrast", contrast), ("uSaturation", saturation)]:
                 gl.glUniform1f(gl.glGetUniformLocation(program, name), value)
+            gain = params[:3] if params else [1., 1., 1.]
+            offset = params[3:6] if params else [0., 0., 0.]
+            tone = params[6:9] if params else [1., 1., 1.]
+            for name, values in [("uGain", gain), ("uOffset", offset), ("uTone", tone)]:
+                gl.glUniform3f(gl.glGetUniformLocation(program, name), *values)
             gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
             gl.glFinish()
             output = np.empty_like(pixels)
@@ -99,6 +112,30 @@ def run():
                 assert not np.array_equal(output, render(kind, elapsed=.5)), f"{name}: time uniform did not animate"
             result.append({"preset": name, "changed_pixels": changed, "disabled_and_zero_intensity_identity": True, "animation_checked": animated})
         assert len(filter_outputs) == 12, "Every original color look must produce distinct output pixels"
+        added_outputs = set()
+        for preset_id, params in added_filters:
+            assert np.array_equal(render(22, enabled=0, params=params), pixels), f"{preset_id}: disabled preset modified pixels"
+            assert np.array_equal(render(22, intensity=0, params=params), pixels), f"{preset_id}: zero-strength preset modified pixels"
+            output = render(22, params=params)
+            changed = int(np.count_nonzero(np.any(output[:, :, :3] != pixels[:, :, :3], axis=-1)))
+            assert changed > 0, f"{preset_id}: preset did not change pixels"
+            assert np.array_equal(output[:, :, 3], pixels[:, :, 3]), f"{preset_id}: alpha changed"
+            added_outputs.add(output.tobytes())
+            result.append({"preset": preset_id, "kind": 22, "changed_pixels": changed, "disabled_and_zero_intensity_identity": True})
+        assert len(added_outputs) == len(added_filters), "Additional preset outputs are not all distinct"
+        vfx = [("vfx_chromatic_split", 23), ("vfx_scan_glitch", 24), ("vfx_light_leak", 25), ("vfx_vignette", 26), ("vfx_edge_glow", 27)]
+        for vfx_id, kind in vfx:
+            assert vfx_id in source or vfx_id in (root / "app/src/main/java/com/apexstudio/app/domain/model/Models.kt").read_text(), f"missing VFX mapping: {vfx_id}"
+            assert np.array_equal(render(kind, enabled=0), pixels), f"{vfx_id}: disabled effect modified pixels"
+            assert np.array_equal(render(kind, intensity=0), pixels), f"{vfx_id}: zero-strength effect modified pixels"
+            output = render(kind)
+            changed = int(np.count_nonzero(np.any(output[:, :, :3] != pixels[:, :, :3], axis=-1)))
+            assert changed > 0, f"{vfx_id}: did not change pixels"
+            assert np.array_equal(output[:, :, 3], pixels[:, :, 3]), f"{vfx_id}: alpha changed"
+            animated = kind in (24, 25)
+            if animated:
+                assert not np.array_equal(output, render(kind, elapsed=.67)), f"{vfx_id}: time parameter did not animate"
+            result.append({"preset": vfx_id, "kind": kind, "changed_pixels": changed, "time_varying": animated})
         custom_checks = []
         baseline = render(10)
         for parameter, value in [("exposure", .4), ("contrast", 1.4), ("saturation", 0.)]:
@@ -145,7 +182,8 @@ def run():
             alpha_results.append({"shader": shader_name, "transparent_partial_opaque_alpha": "pass"})
             gl.glDeleteTextures(1, [overlay_texture])
             gl.glDeleteProgram(overlay_program)
-        return {"backend": "host Mesa EGL / GLES2 (not Android)", "glsl_source": "WorkspaceEffectGlEffect.kt", "width": width, "height": height, "presets": result, "overlay_alpha": alpha_results, "distinct_color_looks": len(filter_outputs), "custom_color_controls": custom_checks}
+        gl_info = {key: ctypes.cast(gl.glGetString(value), ctypes.c_char_p).value.decode("utf-8", "replace") for key, value in [("vendor", gl.GL_VENDOR), ("renderer", gl.GL_RENDERER), ("version", gl.GL_VERSION)]}
+        return {"backend": "host Mesa EGL / GLES2 (not Android)", "gl": gl_info, "glsl_source": "WorkspaceEffectGlEffect.kt", "width": width, "height": height, "presets": result, "overlay_alpha": alpha_results, "distinct_original_color_looks": len(filter_outputs), "additional_preset_count": len(added_filters), "distinct_additional_color_looks": len(added_outputs), "vfx_count": len(vfx), "custom_color_controls": custom_checks}
 
     finally:
         egl.eglMakeCurrent(display, egl.EGL_NO_SURFACE, egl.EGL_NO_SURFACE, egl.EGL_NO_CONTEXT)

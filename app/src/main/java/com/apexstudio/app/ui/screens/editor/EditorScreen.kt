@@ -74,12 +74,14 @@ fun EditorScreen(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
+    entryWorkspace: String = "edit",
+    onCloseWorkspace: () -> Unit = {},
     vm: EditorViewModel = viewModel(
         key = projectId,
         factory = EditorViewModelFactory(projectId = projectId)
     )
 ) {
-    EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm)
+    EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm, entryWorkspace, onCloseWorkspace)
 }
 
 @Composable
@@ -89,7 +91,9 @@ private fun EditorScreenContent(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    entryWorkspace: String,
+    onCloseWorkspace: () -> Unit
 ) {
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()
@@ -97,6 +101,11 @@ private fun EditorScreenContent(
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     val state = workspacePreviewState(savedState, workspacePreview)
+    val isColorWorkspace = entryWorkspace == "color"
+    val isExportWorkspace = entryWorkspace == "export"
+    val previewPlaybackSuspended = isColorWorkspace || isExportWorkspace
+    var colorExportRequest by remember(projectId, isColorWorkspace) { mutableIntStateOf(0) }
+    val colorSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val workspacePreviewActive by rememberUpdatedState(workspaceTarget != null)
     val dismissWorkspace: () -> Unit = {
         vm.setPlaying(false)
@@ -105,6 +114,17 @@ private fun EditorScreenContent(
         workspaceIsFilters = false
     }
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
+    LaunchedEffect(entryWorkspace) {
+        if (entryWorkspace != "edit") {
+            dismissWorkspace()
+            if (vm.state.value.isFullscreenPreview) vm.toggleFullscreenPreview()
+        }
+        if (entryWorkspace == "audio") vm.openAudioMixer()
+    }
+    BackHandler(enabled = entryWorkspace != "edit") {
+        if (entryWorkspace == "audio") vm.closeAudioMixer()
+        onCloseWorkspace()
+    }
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
@@ -262,7 +282,15 @@ private fun EditorScreenContent(
             }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(previewPlaybackSuspended) {
+        if (previewPlaybackSuspended) {
+            vm.setPlaying(false)
+            exoPlayer?.let { vm.unregisterMainPlayerForAudioEffects(it); it.release() }
+            exoPlayer = null
+            overlayPlayer?.release()
+            overlayPlayer = null
+            return@LaunchedEffect
+        }
         try {
             // The RenderersFactory wires the shared denoise processor
             // into the player's audio sink (Media3 1.5.0 has no
@@ -341,7 +369,8 @@ private fun EditorScreenContent(
 
     // Overlay PiP player: muted, no controller — the preview section binds
     // it to the active video overlay clip (trimmed range, looping).
-    LaunchedEffect(Unit) {
+    LaunchedEffect(previewPlaybackSuspended) {
+        if (previewPlaybackSuspended) return@LaunchedEffect
         try {
             val player = ExoPlayer.Builder(context).build()
             player.volume = 0f
@@ -788,7 +817,7 @@ private fun EditorScreenContent(
             .navigationBarsPadding()
             .background(ApexPalette.BgBase)
     ) {
-        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
+        if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
                 title = state.project?.name ?: "Untitled project",
                 projectId = projectId,
@@ -799,11 +828,13 @@ private fun EditorScreenContent(
                 isCoverMode = isCoverMode,
                 onToggleCoverMode = { isCoverMode = toggleCoverFitMode(isCoverMode) },
                 onFullscreenToggle = { vm.toggleFullscreenPreview() },
-                onBack = onBack,
+                onBack = if (entryWorkspace == "edit") onBack else onCloseWorkspace,
                 onUndo = { vm.undo() },
                 onRedo = { vm.redo() },
                 onHelp = { vm.openHelpDialog() },
-                onExport = onExport
+                onExport = { if (isColorWorkspace) colorExportRequest++ else onExport() },
+                exportEnabled = !isExportWorkspace,
+                resolutionEnabled = !previewPlaybackSuspended
             )
 
         }
@@ -829,6 +860,17 @@ private fun EditorScreenContent(
             }
         }
 
+        if (isColorWorkspace) {
+            colorSaveableState.SaveableStateProvider("color:$projectId") {
+            com.apexstudio.app.ui.screens.colortools.ColorStudioScreen(
+                projectId = projectId, onBack = onCloseWorkspace, onExport = onExport,
+                embedded = true, modifier = Modifier.weight(1f), vm = vm,
+                exportRequest = colorExportRequest
+            )
+            }
+        } else if (isExportWorkspace) {
+            EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
+        } else {
         EditorPreviewSection(
             state = state,
             vm = vm,
@@ -847,8 +889,9 @@ private fun EditorScreenContent(
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth
         )
+        }
 
-        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
+        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
                 state = state,
                 vm = vm,
@@ -879,33 +922,13 @@ private fun EditorScreenContent(
                     }
                 }
             )
+        }
 
-            // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
-            // to keep this composable under the JVM 64KB method limit.
-            EditorBottomToolbarSection(
-                state = state,
-                vm = vm,
-                mediaPicker = mediaPicker,
-                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
-                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
-                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
-                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
-                onChallenge = { showLocalChallenge = true },
-                onNext = onExport,
-                onAi = { showAiPanel = true },
-                onDraw = {
-                    if (mainPreviewClip != null) {
-                        isDrawingMode = !isDrawingMode
-                        showVideoDrawingTools = isDrawingMode
-                    }
-                },
-                onCrop = { showCropPanel = true },
-                onDeviceAudio = importPhoneMusic
+        if (isExportWorkspace) {
+            com.apexstudio.app.ui.screens.export.ExportScreen(
+                projectId = projectId, onBack = onCloseWorkspace, onExport = onCloseWorkspace,
+                vm = vm, embedded = true
             )
-            if (localAudioImporting) {
-                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
-            }
         }
         workspaceTarget?.let { captured ->
             ClipEffectWorkspaceHost(
@@ -926,6 +949,36 @@ private fun EditorScreenContent(
                 onTogglePlayback = { vm.togglePlay() },
                 onDismiss = dismissWorkspace
             )
+        }
+        if (editorChromeVisible(state.isFullscreenPreview)) {
+            // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
+            // to keep this composable under the JVM 64KB method limit.
+            EditorBottomToolbarSection(
+                state = state,
+                vm = vm,
+                mediaPicker = mediaPicker,
+                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
+                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
+                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
+                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
+                onChallenge = { showLocalChallenge = true },
+                onNext = onExport,
+                onColorWorkspace = onColor,
+                onBeforeToolAction = { if (entryWorkspace != "edit") onCloseWorkspace() },
+                onAi = { showAiPanel = true },
+                onDraw = {
+                    if (mainPreviewClip != null) {
+                        isDrawingMode = !isDrawingMode
+                        showVideoDrawingTools = isDrawingMode
+                    }
+                },
+                onCrop = { showCropPanel = true },
+                onDeviceAudio = importPhoneMusic
+            )
+            if (localAudioImporting) {
+                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+            }
         }
     }
 
@@ -1040,9 +1093,7 @@ private fun EditorScreenContent(
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
     VoiceRecorderOverlay(state = state, vm = vm)
-    CameraCaptureOverlay(state = state, vm = vm)
     ArFilterPanelOverlay(state = state, vm = vm)
-    LensesPanelOverlay(state = state, vm = vm)
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     MaskPanelOverlay(state = state, vm = vm)

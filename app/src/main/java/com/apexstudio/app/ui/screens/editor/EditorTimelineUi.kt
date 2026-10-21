@@ -111,7 +111,8 @@ fun TimelineTrackArea(
     onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
     onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -379,6 +380,7 @@ fun TimelineTrackArea(
             onMoveStickerKeyframe = onMoveStickerKeyframe,
             onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
             onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
+            onSetTextOverlayRange = onSetTextOverlayRange,
             onSelectAudioTrack = onSelectAudioTrack,
             onMoveAudioTrack = onMoveAudioTrack,
             onTrimAudioTrack = onTrimAudioTrack,

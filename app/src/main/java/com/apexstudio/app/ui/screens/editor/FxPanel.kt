@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,14 +59,14 @@ fun FxPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // Half height so the preview + playhead stay visible while an
-            // effect is applied; the overlay wrapper adds status/nav insets.
-            .fillMaxHeight(0.55f)
+            // Keep the preview visible; FX presets and categories are already horizontal.
+            .heightIn(max = 240.dp)
             .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
+            .testTag("fx-panel-root")
     ) {
         // Drag handle
         Box(
@@ -77,13 +78,8 @@ fun FxPanel(
         )
         Spacer(Modifier.height(8.dp))
 
-        // Scrollable content; the "Keyframe animation" row stays sticky
-        // at the bottom (outside this scroll container).
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
+        // Keep the title and Close action pinned while controls scroll inside
+        // the compact editor workspace.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -108,6 +104,14 @@ fun FxPanel(
         }
         Spacer(Modifier.height(10.dp))
 
+        // Presets and controls are the only vertically scrollable area. The
+        // preset and category pickers themselves remain horizontal lists.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+
         var activeCategory by remember { mutableStateOf("All") }
 
         // Category pills
@@ -130,6 +134,7 @@ fun FxPanel(
                             RoundedCornerShape(10.dp)
                         )
                         .clickable { activeCategory = cat }
+                        .testTag("fx-category-${cat.lowercase().replace(" ", "-")}")
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
@@ -222,7 +227,7 @@ fun FxPanel(
             )
         }
 
-        } // end scrollable content
+        } // end scrollable controls
 
         if (onKeyframesClick != null) {
             Spacer(Modifier.height(4.dp))

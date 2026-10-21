@@ -287,6 +287,9 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
             scale = transform.scale,
             rotationDeg = transform.rotationDeg,
             opacity = transform.opacity,
+            volume = transform.volume,
+            effectIntensity = transform.effectIntensity,
+            filterIntensity = transform.filterIntensity,
             // Pin the current effective saturation (1f when nothing
             // pins it) so a later saturation pin interpolates from
             // the value the clip actually had at this keyframe
@@ -432,7 +435,22 @@ fun EditorViewModel.removeKeyframe(clipId: String, keyframeId: String) {
 
 
 fun EditorViewModel.clearKeyframes(clipId: String) {
+    if (_state.value.project?.clips?.none { it.id == clipId && it.keyframes.keyframes.isNotEmpty() } != false) return
+    pushUndo()
     updateClip(clipId) { it.copy(keyframes = KeyframeTrack()) }
+}
+
+/** Paste a pin as a single undoable edit, replacing only an exact-time collision. */
+fun EditorViewModel.pasteKeyframe(clipId: String, source: Keyframe, timeMs: Long) {
+    val project = _state.value.project ?: return
+    if (project.clips.none { it.id == clipId }) return
+    val targetTime = timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    pushUndo()
+    updateClip(clipId) { clip ->
+        val existing = clip.keyframes.keyframes.firstOrNull { it.timeMs == targetTime }
+        val pasted = source.copy(id = existing?.id ?: java.util.UUID.randomUUID().toString(), timeMs = targetTime)
+        clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.timeMs != targetTime } + pasted).sorted())
+    }
 }
 
 
@@ -537,6 +555,33 @@ fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
     persistProject()
 }
 
+
+fun EditorViewModel.applyConfiguredAnimationPreset(
+    preset: com.apexstudio.app.data.animation.AnimationPresetType,
+    mode: com.apexstudio.app.data.animation.AnimationPresetMode,
+    durationMs: Long,
+    intensity: Float
+): Boolean {
+    val state = _state.value
+    val project = state.project ?: return false
+    val clip = state.keyframeAnchor() ?: return false
+    val span = clip.effectiveDurationMs().coerceAtLeast(1L)
+    val requested = durationMs.coerceIn(
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MIN_DURATION_MS,
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MAX_DURATION_MS)
+    val actualDuration = minOf(requested, span)
+    val clipStart = SpeedCurveMath.timelineStartMsForClip(project.clips, clip)
+    val start = if (mode == com.apexstudio.app.data.animation.AnimationPresetMode.OUT)
+        clipStart + span - actualDuration else clipStart
+    val generated = com.apexstudio.app.data.animation.AnimationPresetOptions.createTrack(
+        preset, mode, requested, intensity.takeIf { it.isFinite() } ?: 1f)
+    val track = KeyframeTrack(generated.keyframes.map { pin ->
+        pin.copy(timeMs = start + (pin.timeMs.toDouble() / requested * actualDuration).toLong())
+    }).sorted()
+    pushUndo()
+    updateClip(clip.id) { it.copy(keyframes = track) }
+    return true
+}
 
 fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return

@@ -44,6 +44,7 @@ import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
 internal const val DEFAULT_PREVIEW_COVER_MODE = false
+internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 1.36f
 
 @Composable
 fun VideoPreviewArea(
@@ -151,7 +152,10 @@ fun VideoPreviewArea(
 ) {
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffects, photoClip?.id) {
+    val workspaceEffectBinding = remember(workspaceEffects) {
+        workspaceEffectPreviewBinding(workspaceEffects)
+    }
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
@@ -159,9 +163,15 @@ fun VideoPreviewArea(
                 player.setVideoEffects(listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
-                    *com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(workspaceEffects).toTypedArray()
+                    *workspaceEffectBinding.renderEffects.toTypedArray()
                 ))
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
+                // Replacing a video-effect chain while paused does not guarantee Media3
+                // redraws the already-presented frame. Seek to the same source position
+                // to invalidate that frame; never move the project playhead or auto-play.
+                else if (!player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY) {
+                    player.seekTo(player.currentPosition.coerceAtLeast(0L))
+                }
             } else player.setVideoEffects(emptyList())
         } catch (error: Exception) {
             onEffectPreviewFailure(error.message ?: "This device cannot preview this video effect.")
@@ -200,7 +210,7 @@ fun VideoPreviewArea(
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
             .background(Color.Black)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+            .border(0.5.dp, ApexPalette.BorderGlass.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }

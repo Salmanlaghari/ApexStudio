@@ -46,3 +46,11 @@ Lottie Simple License — <https://lottiefiles.com/lottie-simple-license>
 - `stickers/manifest.json` — Twemoji static stickers (CC-BY 4.0), attribution in `ATTRIBUTION.txt`
 - `stickers/packs.json` — six SVG packs (110 icons)
 - `app/src/main/assets/lottie/` — seven original ApexStudio animations
+
+---
+
+## Bundled 3D-look pack — `stickers/fluent3d/`
+
+64 unchanged transparent PNG renders from [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji), pinned to commit `1ffb34c752ecf5d402f04cfb4b392c77f57c54bc`. Copyright (c) Microsoft Corporation. Licensed under **MIT**; the complete copyright and license notice ships in `fluent3d/LICENSE.txt`. Per-file upstream URLs, SHA-256 hashes, dimensions and byte sizes ship in `fluent3d/SOURCES.json`. The developer-only script `scripts/vendor-fluent-3d-stickers.py` reproduces the curated selection from `scripts/fluent-3d-catalog.json`.
+
+These are flat transparent 3D-rendered sticker images, not rotatable 3D meshes, face-tracking lenses, generated images or remote search results. The application reads the bundled assets entirely offline. Existing Twemoji and original animated sticker packs remain available under their own existing notices above.

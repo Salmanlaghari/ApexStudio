@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette
 
 // Compact transport controls with consistent touch targets and stateful undo/redo.
 @Composable
@@ -43,10 +44,10 @@ fun PlaybackControlBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(EditorLayoutMetrics.PlaybackBarHeight)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
+            .background(EditorPalette.BgSurface)
+            .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(12.dp))
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -74,8 +75,8 @@ fun PlaybackControlBar(
                 .width(52.dp)
                 .height(40.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFE5E7EB))
-                .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
+                .background(ApexPalette.NeonCyan)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(12.dp))
                 .clickable(onClick = onTogglePlay, role = Role.Button)
                 .semantics { contentDescription = if (isPlaying) "Pause playback" else "Play playback" },
             contentAlignment = Alignment.Center
@@ -83,7 +84,7 @@ fun PlaybackControlBar(
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = null,
-                tint = Color(0xFF111827),
+                tint = Color(0xFF101722),
                 modifier = Modifier.size(25.dp)
             )
         }
@@ -124,7 +125,7 @@ private fun TransportIconButton(
         Icon(
             imageVector = imageVector,
             contentDescription = null,
-            tint = if (enabled) Color(0xFF111827) else Color(0xFF9CA3AF),
+            tint = if (enabled) EditorPalette.TextSecondary else EditorPalette.TextMuted,
             modifier = Modifier.size(21.dp)
         )
     }
@@ -137,9 +138,9 @@ private fun KeyframeDiamondAddButton(
     onClick: () -> Unit
 ) {
     val diamondColor = when {
-        !enabled -> Color(0xFF9CA3AF)
-        hasKeyframeAtPlayhead -> Color(0xFF2563EB)
-        else -> Color(0xFF111827)
+        !enabled -> EditorPalette.TextMuted
+        hasKeyframeAtPlayhead -> ApexPalette.NeonCyan
+        else -> EditorPalette.TextSecondary
     }
     Box(
         modifier = Modifier
@@ -164,7 +165,7 @@ private fun KeyframeDiamondAddButton(
         }
         Text(
             text = "+",
-            color = if (!enabled) Color(0xFF9CA3AF) else if (hasKeyframeAtPlayhead) Color(0xFF111827) else Color(0xFF2563EB),
+            color = if (!enabled) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) EditorPalette.TextPrimary else ApexPalette.NeonCyan,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )

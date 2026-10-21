@@ -27,4 +27,12 @@ class EditorChromeTest {
         compose.onNodeWithContentDescription("Back").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, backCount) }
     }
+    @Test fun longProjectNameDoesNotHideBackOrExport() {
+        compose.setContent {
+            TopAppBarSection(title = "A long project name that must leave both controls accessible")
+        }
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+        compose.onNodeWithText("Export").assertIsDisplayed()
+    }
+
 }

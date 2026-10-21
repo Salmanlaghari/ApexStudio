@@ -38,6 +38,8 @@ fun EditorViewModel.openStickerPanel() = _state.update { it.copy(stickerPanelOpe
 fun EditorViewModel.closeStickerPanel() = _state.update { it.copy(stickerPanelOpen = false) }
 
 fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, name: String) {
+    if (_state.value.project == null || symbolOrUri.isBlank()) return
+    pushUndo()
     val newSticker = StickerOverlay(
         symbolOrUri = symbolOrUri,
         category = category,
@@ -52,6 +54,7 @@ fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, nam
         val updatedStickers = proj.stickers + newSticker
         st.copy(project = proj.copy(stickers = updatedStickers))
     }
+    persistProject()
 }
 
 
@@ -197,6 +200,27 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
 fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
     updateTextOverlay(clipId, overlayId) { preset.applyTo(it) }
 
+
+/** Apply one curated text look + supported motion as a single undoable edit. */
+fun EditorViewModel.applyTextDesignMotion(
+    clipId: String,
+    overlayId: String,
+    preset: com.apexstudio.app.data.text.TextDesignMotionPreset
+) = synchronized(this) {
+    val state = _state.value
+    if (state.selectedClipId != clipId || (state.selectedTextOverlayId != null && state.selectedTextOverlayId != overlayId)) return@synchronized
+    val clip = state.project?.clips?.firstOrNull { it.id == clipId } ?: return@synchronized
+    val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return@synchronized
+    val canonical = com.apexstudio.app.data.text.TextDesignMotionPack.presets.firstOrNull { it.id == preset.id }
+        ?.takeIf { it == preset } ?: return@synchronized
+    if (canonical.applyTo(target) == target) return@synchronized
+    pushUndo()
+    updateClip(clipId) { currentClip ->
+        currentClip.copy(textOverlays = currentClip.textOverlays.map { current ->
+            if (current.id == overlayId) canonical.applyTo(current) else current
+        })
+    }
+}
 
 fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
@@ -521,6 +545,9 @@ fun EditorViewModel.rotateSticker(stickerId: String, deltaDeg: Float, persist: B
     }
 
 fun EditorViewModel.removeSticker(stickerId: String) {
+    val project = _state.value.project ?: return
+    if (project.stickers.none { it.id == stickerId } && project.clips.none { clip -> clip.stickers.any { it.id == stickerId } }) return
+    pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val cleared = s.copy(
@@ -551,6 +578,8 @@ fun EditorViewModel.setStickerCutout(stickerId: String, shape: String) =
 
 /** Add a bundled PNG sticker from the library to the project canvas. */
 fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: String) {
+    if (_state.value.project == null || assetPath.isBlank()) return
+    pushUndo()
     val newSticker = StickerOverlay(
         symbolOrUri = "",
         category = category,

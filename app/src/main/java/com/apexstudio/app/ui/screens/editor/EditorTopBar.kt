@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.components.BuildIdentity
 import com.apexstudio.app.ui.components.BuildIdentityDialog
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette
 
 // === 1. TOP APP BAR ===
 // COMPACT (Pro Phase 1): slim 40dp bar — small single-line title + small
@@ -52,44 +52,41 @@ fun TopAppBarSection(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .padding(horizontal = 12.dp),
+            .height(EditorLayoutMetrics.TopBarHeight)
+            .padding(horizontal = EditorLayoutMetrics.TopBarHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         // Back navigation and the current project name stay outside the video.
         Row(
+            modifier = Modifier.weight(1f).padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = Color(0xFF111827),
+                tint = EditorPalette.TextPrimary,
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(36.dp)
                     .clickable(onClick = onBack)
+                    .padding(8.dp)
             )
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { showBuildIdentity = true }
-            ) {
+            Column(modifier = Modifier.weight(1f).clickable { showBuildIdentity = true }) {
                 Text(
                     text = title.ifBlank { "Untitled project" },
-                    color = Color(0xFF111827),
+                    color = EditorPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     softWrap = false
                 )
                 Text(
                     text = "Build ${BuildIdentity.shortCommit}",
-                    color = Color(0xFF6B7280),
-                    fontSize = 9.sp,
+                    color = EditorPalette.TextSecondary,
+                    fontSize = 8.sp,
                     maxLines = 1
                 )
             }
@@ -104,14 +101,14 @@ fun TopAppBarSection(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(7.dp))
-                    .background(Color(0xFFF3F4F6))
-                    .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(7.dp))
+                    .background(EditorPalette.BgElevated)
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
                     .clickable(onClick = onToggleCoverMode)
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = if (isCoverMode) "COVER" else "FIT",
-                    color = Color(0xFF111827),
+                    color = EditorPalette.TextPrimary,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -121,15 +118,15 @@ fun TopAppBarSection(
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(Color(0xFFF3F4F6))
-                    .border(1.dp, Color(0xFFD1D5DB), CircleShape)
+                    .background(EditorPalette.BgElevated)
+                    .border(1.dp, EditorPalette.BorderGlass, CircleShape)
                     .clickable(onClick = onFullscreenToggle)
                     .padding(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Fullscreen,
                     contentDescription = "Fullscreen",
-                    tint = Color(0xFF111827),
+                    tint = EditorPalette.TextPrimary,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -139,8 +136,8 @@ fun TopAppBarSection(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(7.dp))
-                        .background(Color(0xFFF3F4F6))
-                        .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(7.dp))
+                        .background(EditorPalette.BgElevated)
+                        .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
                         .clickable { showResolutionDropdown = true }
                         .padding(horizontal = 7.dp, vertical = 4.dp)
                 ) {
@@ -150,14 +147,14 @@ fun TopAppBarSection(
                     ) {
                         Text(
                             text = resolution,
-                            color = Color(0xFF111827),
+                            color = EditorPalette.TextPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 10.sp
                         )
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Resolution",
-                            tint = Color(0xFF4B5563),
+                            tint = EditorPalette.TextSecondary,
                             modifier = Modifier.size(12.dp)
                         )
                     }
@@ -166,14 +163,14 @@ fun TopAppBarSection(
                 androidx.compose.material3.DropdownMenu(
                     expanded = showResolutionDropdown,
                     onDismissRequest = { showResolutionDropdown = false },
-                    modifier = Modifier.background(Color.White)
+                    modifier = Modifier.background(EditorPalette.BgSurface)
                 ) {
                     listOf("720P", "1080P", "1440P", "4K").forEach { res ->
                         androidx.compose.material3.DropdownMenuItem(
                             text = {
                                 Text(
                                     text = res,
-                                    color = if (res == resolution) Color(0xFF2563EB) else Color(0xFF111827),
+                                    color = if (res == resolution) Color(0xFF2563EB) else EditorPalette.TextPrimary,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             },
@@ -191,9 +188,9 @@ fun TopAppBarSection(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(
-                        Color(0xFFE5E7EB)
+                        EditorPalette.BgElevated
                     )
-                    .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(8.dp))
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
                     .clickable(onClick = onExport)
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
@@ -204,12 +201,12 @@ fun TopAppBarSection(
                     Icon(
                         imageVector = Icons.Default.Upload,
                         contentDescription = "Export",
-                        tint = Color(0xFF111827),
+                        tint = EditorPalette.TextPrimary,
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
                         text = "Export",
-                        color = Color(0xFF111827),
+                        color = EditorPalette.TextPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         maxLines = 1,

@@ -88,7 +88,7 @@ class StickerManifestJsonTest {
     }
 
     @Test
-    fun `attribution text is present for the CC-BY 4_0 pack`() {
+    fun `attribution text preserves the Twemoji CC-BY 4_0 credit`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val attribution = StickerPack.attribution(context)
         assertTrue(
@@ -96,10 +96,7 @@ class StickerManifestJsonTest {
             attribution.isNotBlank()
         )
         val requiredCredit = "Emoji artwork from Twemoji (https://twemoji.twitter.com), Copyright 2020 Twitter, Inc and other contributors, licensed under CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)"
-        assertEquals(
-            requiredCredit,
-            attribution
-        )
+        assertTrue("Combined attribution must preserve the exact Twemoji credit", attribution.contains(requiredCredit))
         assertEquals(
             requiredCredit,
             StickerPack.defaultAttribution()

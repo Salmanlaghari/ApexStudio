@@ -2,11 +2,15 @@ package com.apexstudio.app.data.export
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.SpeedCurveMath
+import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingPoint
 import com.apexstudio.app.domain.model.VideoDrawingStroke
+import com.apexstudio.app.domain.model.WorkspaceEffect
+import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -59,14 +63,45 @@ class ProjectCompositionExportTest {
     }
 
     @Test
-    fun `unsupported per item visual edits are never silently ignored`() {
-        val cropped = clip().copy(videoCrop = VideoCropSettings(left = 0.1f))
-        assertTrue(projectCompositionUnsupportedReason(listOf(cropped), ExportEngine.ExportConfig())!!.contains("crop edit"))
+    fun `per clip captions templates sticker variants and crop are eligible`() {
+        val source = clip().copy(
+            videoCrop = VideoCropSettings(left = 0.1f, top = 0.05f, right = 0.9f, bottom = 0.95f),
+            textOverlays = listOf(TextOverlay(
+                id = "title", text = "YOUR STORY", startMs = 300L, endMs = 1_400L, presetId = "title-bold"
+            )),
+            stickers = listOf(
+                StickerOverlay(id = "emoji", symbolOrUri = "🔥", startMs = 500L, endMs = 1_800L, rotationDeg = 25f, opacity = 0.4f),
+                StickerOverlay(id = "png", symbolOrUri = "love/red-heart.webp", assetPath = "stickers/love/red-heart.webp")
+            )
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(source), ExportEngine.ExportConfig()))
 
-        val captioned = clip().copy(textOverlays = listOf(com.apexstudio.app.domain.model.TextOverlay(
-            id = "title", text = "hello", x = 0.5f, y = 0.5f
+        val emoji = projectEmojiStickerAsTextOverlay(source.stickers.first())
+        assertEquals(500L, emoji.startMs)
+        assertEquals(1_800L, emoji.endMs)
+        assertEquals("🔥", emoji.text)
+        assertEquals(25f, emoji.rotationDeg, 0f)
+        assertEquals(0.4f, emoji.opacity, 0f)
+        assertEquals(source.stickers.first().keyframes, emoji.keyframes)
+        assertEquals(
+            source.stickers.first().sizeScale * com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
+            emoji.sizeScale,
+            0f
+        )
+    }
+
+    @Test
+    fun `malformed per clip overlay timing and unsupported visuals remain fail closed`() {
+        val invalidCaption = clip().copy(textOverlays = listOf(TextOverlay(
+            id = "title", text = "hello", startMs = 1_000L, endMs = 500L
         )))
-        assertTrue(projectCompositionUnsupportedReason(listOf(captioned), ExportEngine.ExportConfig())!!.contains("captions"))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalidCaption), ExportEngine.ExportConfig())!!.contains("caption with an invalid time range"))
+
+        val invalidSticker = clip().copy(stickers = listOf(StickerOverlay(startMs = -1L)))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalidSticker), ExportEngine.ExportConfig())!!.contains("sticker with an invalid time range"))
+
+        val malformedCrop = clip().copy(videoCrop = VideoCropSettings(left = Float.NaN))
+        assertTrue(projectCompositionUnsupportedReason(listOf(malformedCrop), ExportEngine.ExportConfig())!!.contains("invalid crop edit"))
 
         val replaced = clip().copy(backgroundReplace = com.apexstudio.app.domain.model.BackgroundReplaceSettings())
         assertTrue(projectCompositionUnsupportedReason(listOf(replaced), ExportEngine.ExportConfig())!!.contains("background-replacement"))
@@ -84,6 +119,9 @@ class ProjectCompositionExportTest {
         assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(
             overlayAudioSources = listOf(ExportEngine.AudioExportSource(uri = "file:///voice.m4a", trimEndMs = 500L))
         ))!!.contains("timeline audio overlays"))
+        assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(
+            textOverlays = listOf(TextOverlay(id = "global", text = "global"))
+        ))!!.contains("export-wide captions or stickers"))
         assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(fps = 29))!!.contains("fps"))
     }
 
@@ -135,5 +173,26 @@ class ProjectCompositionExportTest {
             "Video clip 'v1' has an invalid trim range.",
             projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())
         )
+    }
+
+    @Test
+    fun `project export rejects malformed persisted filter customization instead of dropping it`() {
+        val invalid = clip().copy(workspaceEffects = listOf(
+            WorkspaceEffect(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, 250L, 1_500L, exposure = Float.NaN)
+        ))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
+            .contains("invalid or unsupported ranged filter"))
+    }
+
+    @Test
+    fun `project export rejects export wide ranged filters but accepts clip ranged filters`() {
+        val effect = WorkspaceEffect(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, 250L, 1_500L)
+
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(workspaceEffects = listOf(effect))
+        )!!.contains("export-wide ranged filters"))
+        assertNull(projectCompositionUnsupportedReason(
+            listOf(clip().copy(workspaceEffects = listOf(effect))), ExportEngine.ExportConfig()
+        ))
     }
 }

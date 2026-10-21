@@ -3,6 +3,8 @@ package com.apexstudio.app.data.stickers
 import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.text.Normalizer
+import java.util.Locale
 
 /**
  * Bundled sticker library: openly-licensed PNG packs shipped under
@@ -40,7 +42,7 @@ data class StickerEntry(
     val category: String,
     val tags: List<String>,
     /**
-     * Lower-cased "name + category + tags" string, pre-computed once in
+     * Normalized "name + category + tags" string, pre-computed once in
      * [StickerPack.parseManifest] so [StickerPack.search] doesn't rebuild
      * it for every entry on every keystroke.
      */
@@ -71,9 +73,9 @@ object StickerPack {
                 category = e.category,
                 tags = e.tags,
                 searchHaystack = buildString {
-                    append(e.name.lowercase()).append(' ')
-                    append(e.category.lowercase()).append(' ')
-                    e.tags.forEach { append(it.lowercase()).append(' ') }
+                    append(normalizeSearchText(e.name)).append(' ')
+                    append(normalizeSearchText(e.category)).append(' ')
+                    e.tags.forEach { append(normalizeSearchText(it)).append(' ') }
                 }
             )
         }
@@ -99,10 +101,30 @@ object StickerPack {
      * Empty/blank query returns [entries] unchanged.
      */
     fun search(entries: List<StickerEntry>, query: String): List<StickerEntry> {
-        val tokens = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val tokens = normalizeSearchText(query).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (tokens.isEmpty()) return entries
         return entries.filter { entry ->
             tokens.all { it in entry.searchHaystack }
+        }
+    }
+
+    /** Locale-independent search folding for Latin and common Arabic-script variants. */
+    private fun normalizeSearchText(value: String): String {
+        val normalized = Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+        return buildString(normalized.length) {
+            normalized.forEach { character ->
+                when (character) {
+                    '\u0640' -> Unit // Arabic tatweel is decorative, not searchable.
+                    '\u0622', '\u0623', '\u0625', '\u0671' -> append('\u0627') // alef forms
+                    '\u0649' -> append('\u064a') // alef maqsura / ya
+                    '\u06cc' -> append('\u064a') // Persian/Urdu yeh
+                    '\u06a9' -> append('\u0643') // Persian/Urdu kaf
+                    else -> if (Character.getType(character) != Character.NON_SPACING_MARK.toInt() &&
+                        Character.getType(character) != Character.COMBINING_SPACING_MARK.toInt() &&
+                        Character.getType(character) != Character.ENCLOSING_MARK.toInt()
+                    ) append(character)
+                }
+            }
         }
     }
 

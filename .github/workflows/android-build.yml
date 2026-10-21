@@ -88,12 +88,21 @@ jobs:
         run: |
           python3 scripts/verify-ai-models.py
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
+
+      - name: Host GLES workspace shader pixel regression (not Android)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libgles2 libgl1-mesa-dri
+          python3 -m pip install numpy PyOpenGL
+          python3 scripts/verify-workspace-shaders.py
 
       - name: Full JVM regression suite
         run: |
           ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
           python3 -m unittest discover -s scripts/tests -p 'test_native_alignment.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_range_time_encoder.py'
 
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
@@ -113,6 +122,7 @@ jobs:
           python3 scripts/apk-provenance.py app/build/outputs/apk/debug/app-debug.apk \
             --commit "$SHA" --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             --output app/build/outputs/apk/debug/build-provenance.json
+          python3 scripts/verify-range-time-encoder.py app/build/outputs/apk/debug/app-debug.apk --output app/build/outputs/apk/debug/range-time-encoder.json
           mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/apexstudio-debug-$SHA.apk"
           echo "### Device-test APK — $SHA" >> "$GITHUB_STEP_SUMMARY"
           echo 'arm64 phone APK: optional AI weights are downloaded explicitly; Camera Kit needs Play feature delivery. Debug AAB is for bundle inspection, not Play upload.' >> "$GITHUB_STEP_SUMMARY"
@@ -127,6 +137,7 @@ jobs:
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/debug/build-provenance.json
             app/build/outputs/apk/debug/native-alignment-apk.json
+            app/build/outputs/apk/debug/range-time-encoder.json
             app/build/outputs/bundle/debug/*.aab
             app/build/outputs/bundle/debug/native-alignment-aab.json
           if-no-files-found: error

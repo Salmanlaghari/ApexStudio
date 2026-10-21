@@ -60,6 +60,48 @@ class PhaseZeroToolbarTest {
         assertEquals(1, calls["split"] ?: 0)
     }
 
+    @Test
+    fun `mobile quick tools dispatch music text enhance templates canvas effects stickers captions and filters`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            testToolbar(ToolbarSelectionKind.NONE, calls)
+        }
+
+        listOf(
+            "Music", "Text", "Enhance", "Templates", "Canvas",
+            "Effects", "Stickers", "Subtitles", "Filters"
+        ).forEach { label ->
+            composeRule.onNodeWithText(label).performScrollTo().performClick()
+        }
+
+        listOf(
+            "music", "text", "enhance", "templates", "crop",
+            "effects", "stickers", "captions", "filters"
+        ).forEach { action -> assertEquals("$action callback", 1, calls[action] ?: 0) }
+    }
+
+    @Test fun `global Enhance and video Adjust use independent callbacks`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
+        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
+        assertEquals(1, calls["enhance"] ?: 0)
+        assertEquals(1, calls["adjust"] ?: 0)
+    }
+
+    @Test fun `editor wrapper keeps quick Enhance separate from actual Adjust panel`() {
+        val vm = com.apexstudio.app.presentation.viewmodel.EditorViewModel()
+        val clip = com.apexstudio.app.domain.model.MediaClip("v", "V", "file:///v.mp4", 5000L, trimEndMs = 5000L)
+        vm._state.value = vm.state.value.copy(project = com.apexstudio.app.domain.model.Project("p", "P", 5000L, clips = listOf(clip)), selectedClipId = clip.id)
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        var quickEnhance = 0
+        composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
+        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
+        composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
+    }
+
     /** Explicit test-only callbacks keep every production action wired and observable. */
     @Composable
     private fun testToolbar(
@@ -75,12 +117,16 @@ class PhaseZeroToolbarTest {
             onText = { count("text") },
             onEffects = { count("effects") },
             onStickers = { count("stickers") },
+            onCaptions = { count("captions") },
+            onTemplates = { count("templates") },
+            onCrop = { count("crop") },
             onArFace = { count("ar-face") },
             onLenses = { count("lenses") },
             onFilters = { count("filters") },
             onAddOverlayImage = { count("add-image") },
             onAddOverlayVideo = { count("add-video") },
             onAdjust = { count("adjust") },
+            onEnhance = { count("enhance") },
             onReplace = { count("replace") },
             onSpeed = { count("speed") },
             onVolume = { count("volume") },

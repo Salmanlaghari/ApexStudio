@@ -264,7 +264,7 @@ dependencies {
   implementation("androidx.appcompat:appcompat:1.7.0")
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
-  // Full build includes libx264, libmp3lame, and concat protocol support.
+  // Non-GPL full build includes OpenH264 (not libx264), libmp3lame and concat support.
   // Maintained fork; this is a major-version/group change from the former
   // com.arthenica:ffmpeg-kit-full 6.0-2 coordinate. Do not infer source/API
   // compatibility from the artifact replacement; validate FFmpeg call sites.

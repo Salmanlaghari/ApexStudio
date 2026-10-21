@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
 import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
 import com.apexstudio.editor.thumbnail.TimelineThumbnailRequestPass
@@ -341,9 +342,9 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // Keep empty timeline space visibly part of the light editor,
-            // rather than presenting it as an unused black lane.
-            .background(Color(0xFFF7F8FA))
+            // Preserve the compact dark timeline workspace; only editor chrome
+            // receives the restrained light-neutral treatment.
+            .background(Color(0xFF111720))
             .padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Top
     ) {
@@ -432,10 +433,10 @@ fun BottomTimelineActionRow(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(EditorLayoutMetrics.TimelineActionHeight)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(12.dp))
+            .background(EditorPalette.BgSurface)
+            .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(12.dp))
     ) {
         val viewportWidth = maxWidth
         Row(
@@ -459,14 +460,14 @@ fun BottomTimelineActionRow(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (!canEditKeyframe) Color(0xFFF3F4F6) else if (hasKeyframeAtPlayhead) Color(0xFFDBEAFE) else Color(0xFFF3F4F6))
+                        .background(if (!canEditKeyframe) EditorPalette.BgElevated else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.18f) else EditorPalette.BgElevated)
                         .clickable(enabled = canEditKeyframe, onClick = onToggleKeyframe, role = Role.Button)
                         .semantics { contentDescription = if (!canEditKeyframe) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe at playhead" else "Add keyframe at playhead" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (hasKeyframeAtPlayhead) "−KF" else "+KF",
-                        color = if (!canEditKeyframe) Color(0xFF9CA3AF) else if (hasKeyframeAtPlayhead) Color(0xFF1D4ED8) else Color(0xFF111827),
+                        color = if (!canEditKeyframe) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else EditorPalette.TextPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -487,7 +488,7 @@ fun BottomTimelineActionRow(
                 )
                 Text(
                     text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
-                    color = Color(0xFF111827),
+                    color = EditorPalette.TextPrimary,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
@@ -522,7 +523,7 @@ private fun TimelinePrecisionButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (enabled) Color(0xFF111827) else Color(0xFF9CA3AF),
+            tint = if (enabled) EditorPalette.TextSecondary else EditorPalette.TextMuted,
             modifier = Modifier.size(19.dp)
         )
     }

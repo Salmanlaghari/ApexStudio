@@ -514,6 +514,11 @@ fun TextPanelOverlay(
                         vm.applyTextPreset(textClip.id, activeOverlayId, preset)
                     }
                 },
+                onApplyDesignMotion = { preset ->
+                    if (textClip != null && activeOverlayId != null) {
+                        vm.applyTextDesignMotion(textClip.id, activeOverlayId, preset)
+                    }
+                },
                 onAnimationChange = { anim ->
                     if (textClip != null && activeOverlayId != null) {
                         vm.setTextOverlayAnimation(textClip.id, activeOverlayId, anim)
@@ -736,7 +741,7 @@ fun StickerPanelOverlay(
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             StickerPanel(
-                onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath, cat, name) },
+                onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath = assetPath, category = cat, name = name) },
                 onClose = { vm.closeStickerPanel() }
             )
         }
@@ -1349,6 +1354,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 ?: state.project?.clips?.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) })?.videoCrop,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip),
             projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
+            workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
+            onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,

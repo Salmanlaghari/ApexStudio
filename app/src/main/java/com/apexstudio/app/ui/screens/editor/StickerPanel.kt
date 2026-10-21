@@ -49,11 +49,9 @@ private const val ALL_CATEGORY = "All"
 /**
  * Searchable sticker library picker.
  *
- * Shows the bundled openly-licensed PNG pack (`assets/stickers/`, Twemoji
- * CC-BY 4.0 — attribution in the footer). Typing in the search field
- * filters stickers by name / tags / category; category chips narrow the
- * grid further. Tapping a sticker adds it to the project canvas and
- * selects it so the user can immediately drag / resize it.
+ * Shows bundled sticker PNG packs (attribution in the footer). Typing in
+ * the search field filters local sticker names / tags / categories; chips
+ * narrow the grid further. Tapping a decoded sticker adds it to the canvas.
  */
 @Composable
 fun StickerPanel(
@@ -64,7 +62,10 @@ fun StickerPanel(
     val context = LocalContext.current
     val imageCache = remember { StickerImageCache(context) }
     val entries = remember { StickerPack.load(context) }
-    val categories = remember(entries) { listOf(ALL_CATEGORY) + StickerPack.categories(entries) }
+    val categories = remember(entries) {
+        val packCategories = StickerPack.categories(entries)
+        listOf(ALL_CATEGORY) + listOf("3d").filter { it in packCategories } + packCategories.filterNot { it == "3d" }
+    }
     val attribution = remember { StickerPack.attribution(context) }
 
     var query by remember { mutableStateOf("") }
@@ -111,7 +112,7 @@ fun StickerPanel(
 
         Spacer(Modifier.height(10.dp))
 
-        // Stickers | Animated tabs (Phase 4: Lottie)
+        // Stickers | Animated tabs (the animated pack has a separate scope).
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -140,6 +141,12 @@ fun StickerPanel(
         Spacer(Modifier.height(8.dp))
 
         if (showAnimated) {
+            Text(
+                "Separate bundled animated pack; static sticker search does not filter it.",
+                color = ApexPalette.TextSecondary,
+                fontSize = 10.sp
+            )
+            Spacer(Modifier.height(6.dp))
             AnimatedStickerGrid(onAddSticker = onAddSticker)
         } else {
         // Tag-based search
@@ -176,6 +183,12 @@ fun StickerPanel(
             textStyle = TextStyle(fontSize = 13.sp)
         )
 
+        Text(
+            "Offline · bundled stickers only",
+            color = ApexPalette.TextSecondary,
+            fontSize = 10.sp
+        )
+
         Spacer(Modifier.height(8.dp))
 
         // Category tabs
@@ -201,7 +214,7 @@ fun StickerPanel(
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
-                        cat.replaceFirstChar { it.uppercase() },
+                        if (cat == "3d") "3D look" else cat.replaceFirstChar { it.uppercase() },
                         color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
@@ -222,7 +235,8 @@ fun StickerPanel(
             ) {
                 Text(
                     text = if (entries.isEmpty()) "Sticker pack failed to load"
-                    else "No stickers match \"$query\"",
+                    else if (query.isBlank()) "No bundled stickers in this category"
+                    else "No bundled stickers match \"$query\"",
                     color = ApexPalette.TextSecondary,
                     fontSize = 12.sp
                 )
@@ -286,7 +300,7 @@ private fun StickerCell(
             .clip(RoundedCornerShape(10.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-            .clickable { onClick() },
+                        .then(if (bitmap != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
         val bmp = bitmap
@@ -308,4 +322,3 @@ private fun StickerCell(
         }
     }
 }
-

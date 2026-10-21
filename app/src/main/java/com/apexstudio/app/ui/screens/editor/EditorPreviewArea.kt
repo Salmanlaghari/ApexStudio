@@ -40,6 +40,7 @@ import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingTool
 import com.apexstudio.app.domain.model.VideoDrawingStroke
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
 internal const val DEFAULT_PREVIEW_COVER_MODE = false
@@ -144,21 +145,26 @@ fun VideoPreviewArea(
     videoCrop: VideoCropSettings? = null,
     faceCropConfig: FaceCropRenderConfig? = null,
     projectVideoEffectId: String? = null,
+    workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+    onEffectPreviewFailure: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, photoClip?.id) {
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffects, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
-        if (photoClip == null) {
-            // A persisted dynamic track supersedes static/manual crop geometry.
-            val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
-            player.setVideoEffects(listOfNotNull(
-                dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
-                com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId)
-            ))
-        } else {
-            player.setVideoEffects(emptyList())
+        try {
+            if (photoClip == null) {
+                val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
+                player.setVideoEffects(listOfNotNull(
+                    dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
+                    com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
+                    *com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(workspaceEffects).toTypedArray()
+                ))
+                if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
+            } else player.setVideoEffects(emptyList())
+        } catch (error: Exception) {
+            onEffectPreviewFailure(error.message ?: "This device cannot preview this video effect.")
         }
     }
     var photoAspectRatio by remember(photoClip?.id) { mutableStateOf<Float?>(null) }
@@ -193,8 +199,8 @@ fun VideoPreviewArea(
             .clip(RoundedCornerShape(24.dp))
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
-            .background(Color(0xFFF1F2F4))
-            .border(1.dp, Color(0xFFD1D5DB), RoundedCornerShape(24.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(24.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }
@@ -368,40 +374,51 @@ fun VideoPreviewArea(
         }
     }
 
-        // Project/source metadata and time belong to the surrounding editor chrome,
-        // not the video image. Do not label every source HDR without inspecting it.
-        // Keyframe HUD Badge when active transform is non-identity
-        if (animatedTransform != com.apexstudio.app.domain.model.AnimatedTransform.Identity) {
+        // Plain timecode pill, top-left inside the preview. (Was "REC • …"
+        // with a red dot — REC implies recording; this is playback/editing.)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            Text(
+                text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
+        }
+
+        // Small filename chip, bottom-left inside the preview
+        // (free corner — mirrors the time pill / HDR badge style).
+        // Shown only when something is selected and not playing.
+        if (selectionFileLabel != null && !isPlaying) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.BottomStart)
                     .padding(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.White.copy(alpha = 0.94f))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                    .widthIn(max = 150.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .graphicsLayer { rotationZ = 45f }
-                            .background(ApexPalette.NeonCyan)
-                    )
-                    Text(
-                        text = "KF: ${String.format(java.util.Locale.US, "%.2fx", animatedTransform.scale)} | ${animatedTransform.rotationDeg.toInt()}° | ${(animatedTransform.opacity * 100).toInt()}%",
-                        color = ApexPalette.NeonCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
-                }
+                Text(
+                    text = selectionFileLabel,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         }
 
+        // Keyframe values stay in their editing panel; never cover the video with a debug HUD.
         // Interactive PiP overlay canvas (video / image overlays on the V2
         // track): tap to select, drag to move, pinch to scale/rotate,
         // delete + resize handles on the selection. Replaces the old

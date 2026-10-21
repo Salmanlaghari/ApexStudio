@@ -17,6 +17,17 @@ class ProjectExportPreflightTest {
         assertNotNull(projectVisualScopeUnsupportedReason(EditorState()))
     }
 
+    @Test fun `legacy audio and sound effect clips are not filtered without a gate`() {
+        for ((type, expected) in listOf(
+            ClipType.AUDIO to "legacy audio clip",
+            ClipType.SFX to "legacy sound-effect clip"
+        )) {
+            val legacy = video.copy(id = type.name, name = type.name, type = type)
+            val edited = state.copy(project = state.project!!.copy(clips = listOf(video, legacy)))
+            assertTrue(projectVisualScopeUnsupportedReason(edited)!!.contains(expected))
+        }
+    }
+
     @Test fun `global LUT FX and standard grading are supported`() {
         for (edited in listOf(
             state.copy(activeFilterId = "lut"),

@@ -79,6 +79,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -102,6 +103,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -116,10 +118,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import com.apexstudio.app.data.media.SyntheticWaveform
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipTransition
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.MediaClip
@@ -127,6 +131,8 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
+import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.WorkspaceFilterPresets
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -140,6 +146,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /** Timeline scale is expressed in dp/ms, while pointer drag deltas are physical px. */
 internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Float): Float =
@@ -148,30 +155,21 @@ internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Fl
 internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float): Long {
     val pxPerMs = msToDp * density
     return if (pxPerMs.isFinite() && pxPerMs > 0f && deltaPx.isFinite()) {
-        (deltaPx / pxPerMs).toLong()
+        (deltaPx / pxPerMs).roundToLong()
     } else 0L
 }
 
-/**
- * Use otherwise-idle viewport space for a lone main filmstrip, but keep its
- * height bounded. A source waveform is part of V1's content, not a separate
- * editing lane. Supporting-lane content is subtracted first, so V1 only grows
- * into genuinely unused space and the supporting rows remain compact.
- */
+/** V1 is a compact fixed-height lane; viewport slack must never inflate its filmstrip. */
+@Suppress("UNUSED_PARAMETER")
 internal fun mainVideoLaneHeight(
     availableTimelineHeightDp: Float,
     hasMainVideo: Boolean,
     supportingLanesHeightDp: Float = 0f,
     hasWaveformStrip: Boolean = false,
 ): Dp {
-    if (!hasMainVideo) return 0.dp
-    if (!availableTimelineHeightDp.isFinite() || availableTimelineHeightDp < 240f) {
-        return 64.dp
-    }
-    val supportingHeight = supportingLanesHeightDp.takeIf { it.isFinite() && it > 0f } ?: 0f
-    val fixedContentDp = 100f + (if (hasWaveformStrip) 22f else 0f) + supportingHeight
-    val sensibleMaximumDp = if (hasWaveformStrip) 256f else 160f
-    return (availableTimelineHeightDp - fixedContentDp).coerceIn(64f, sensibleMaximumDp).dp
+    // Keep legacy parameters source-compatible, but viewport slack, waveform
+    // presence, and supporting rows must never change V1's compact geometry.
+    return if (hasMainVideo) 64.dp else 0.dp
 }
 
 /**
@@ -283,7 +281,6 @@ fun VideoTimeline(
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
-    var measuredTimelineHeightDp by remember { mutableFloatStateOf(0f) }
 
     val safeDurationMs = totalDurationMs.coerceAtLeast(1000L)
     // Build the per-layer and text-owner indexes once per project update.
@@ -565,11 +562,7 @@ fun VideoTimeline(
     // every track stays visible; the outer vertical scroll handles overflow.
     val a1Height = (musicTracks.size * 46).dp
     val a2Height = (voiceTracks.size * 46).dp
-    // Dynamic timeline height: ruler + optional V1 + optional waveform strip +
-    // overlay rows (only layers holding clips) + text + sticker + FX +
-    // A1 + A2, with 10dp spacing between rows — built from the same
-    // per-row heights the canvas renders, so nothing is clipped.
-    // Lanes that hold nothing contribute 0 (never shown).
+    // Supporting lanes keep their own compact heights; V1 remains fixed at 64dp.
     val textLaneHeight = 40
     val stickerLaneHeight = 40
     val fxLaneHeight = 40
@@ -586,14 +579,7 @@ fun VideoTimeline(
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
-    val supportingLanesHeightDp = (overlayRowsTotal + textLaneTotal + stickerLaneTotal +
-        fxLaneTotal + a1Total + a2Total).toFloat()
-    val v1Height = mainVideoLaneHeight(
-        availableTimelineHeightDp = measuredTimelineHeightDp,
-        hasMainVideo = hasMainVideo,
-        supportingLanesHeightDp = supportingLanesHeightDp,
-        hasWaveformStrip = showWaveformStrip,
-    )
+    val v1Height = mainVideoLaneHeight(0f, hasMainVideo)
     // Pinned header: ruler + (when present) gap + V1 (+ waveform strip
     // when the clip has audio) stays fixed while the other tracks scroll.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
@@ -613,9 +599,8 @@ fun VideoTimeline(
     // The rail mirrors the same row geometry and vertical offset as the lanes.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
-            .onSizeChanged { measuredTimelineHeightDp = with(density) { it.height.toDp().value } }
-            .background(Color(0xFFF7F8FA))
-            .border(1.dp, Color(0xFFDDE2E8))
+            .background(Color(0xFF171D27))
+            .border(1.dp, Color(0xFF303A49))
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
@@ -623,13 +608,13 @@ fun VideoTimeline(
         Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().height(44.dp)
-                .background(Color(0xFFF1F3F5)).padding(horizontal = 10.dp),
+                .background(Color(0xFF1B212C)).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(4.dp, 14.dp).background(Color(0xFF00A99D), RoundedCornerShape(2.dp)))
-            Text("TIMELINE", color = Color(0xFF111827), fontSize = 11.sp,
+            Text("TIMELINE", color = Color(0xFFF3F5F7), fontSize = 11.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
-            Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF5B6470),
+            Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF9DAABA),
                 fontSize = 10.sp, fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(start = 10.dp).testTag("timeline-duration"))
             Spacer(Modifier.weight(1f))
@@ -639,7 +624,7 @@ fun VideoTimeline(
                     scrollState.scrollTo((positionPx - scrollState.viewportSize / 2f).roundToInt().coerceAtLeast(0))
                 }
             }, modifier = Modifier.size(44.dp).testTag("timeline-reveal-playhead")) {
-                Icon(Icons.Default.CenterFocusStrong, "Reveal playhead", tint = Color(0xFF5F6B7A), modifier = Modifier.size(19.dp))
+                Icon(Icons.Default.CenterFocusStrong, "Reveal playhead", tint = Color(0xFF9DAABA), modifier = Modifier.size(19.dp))
             }
             IconButton(onClick = {
                 multiSelectMode = !multiSelectMode
@@ -647,7 +632,7 @@ fun VideoTimeline(
             }, modifier = Modifier.size(44.dp).testTag("timeline-multiselect")) {
                 Icon(Icons.Default.DoneAll,
                     if (multiSelectMode) "Exit multi-select" else "Select multiple clips",
-                    tint = if (multiSelectMode) Color(0xFF00A99D) else Color(0xFF5F6B7A),
+                    tint = if (multiSelectMode) Color(0xFF39D9D0) else Color(0xFF9DAABA),
                     modifier = Modifier.size(20.dp))
             }
             Row(
@@ -666,7 +651,7 @@ fun VideoTimeline(
             }
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
-            Box(Modifier.width(48.dp).fillMaxHeight().clipToBounds().background(Color(0xFFF1F3F5))) {
+            Box(Modifier.width(48.dp).fillMaxHeight().clipToBounds().background(Color(0xFF1B212C))) {
             Column(Modifier.fillMaxWidth().then(
                 if (compactHeight) Modifier.wrapContentHeight(Alignment.Top, unbounded = true)
                     .height(timelineTotalDp.dp).graphicsLayer { translationY = -vScrollState.value.toFloat() }
@@ -675,7 +660,7 @@ fun VideoTimeline(
                 TimelineLaneLabel(
                     "SEC",
                     rulerHeight + if (hasMainVideo) 10.dp else 0.dp,
-                    Color(0xFF5F6B7A)
+                    Color(0xFF9DAABA)
                 )
                 // Keep the identity rail aligned with rows that actually
                 // exist; an empty V1 is not a rendered track.
@@ -763,7 +748,7 @@ fun VideoTimeline(
                 val offset = scrollState.value.toFloat() % step
                 var x = -offset
                 while (x <= size.width) {
-                    drawLine(Color(0xFFE1E5EA), Offset(x, rulerHeight.toPx()), Offset(x, size.height), 1.dp.toPx())
+                    drawLine(Color(0xFF303A49), Offset(x, rulerHeight.toPx()), Offset(x, size.height), 1.dp.toPx())
                     x += step
                 }
             }
@@ -1679,13 +1664,15 @@ private fun TimelineVideoLayerRow(
                     with(density) { trimStartDxPx.toDp() } +
                     with(density) { trimEndDxPx.toDp() }
 
-                Column(
+                Box(
                     modifier = Modifier
                         .offset(x = clipOffsetDp)
                         .width(clipWidthDp)
+                        .height(52.dp)
                 ) {
                     Box(
                         modifier = Modifier
+                            .align(Alignment.TopStart)
                             .offset {
                                 IntOffset(trimStartDxPx.roundToInt(), 0)
                             }
@@ -1882,7 +1869,12 @@ private fun TimelineVideoLayerRow(
                         onMoveKeyframe = { id, time -> onMoveKeyframe(clip.id, id, time) },
                         onAddAtPlayhead = { onToggleKeyframeAtPlayhead(clip.id) },
                         accentColor = ApexPalette.NeonCyan,
-                        modifier = Modifier.height(10.dp)
+                        showLaneBackground = false,
+                        markerTagPrefix = "overlay-${clip.id}",
+                        addButtonAlignment = Alignment.BottomEnd,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("timeline-keyframe-layer-overlay-${clip.id}")
                     )
                 }
             }
@@ -1928,13 +1920,16 @@ private fun TimelineTextLane(
             val ovOffsetDp = (ovStartMs * msToDp).dp
 
             val isSelected = textOverlay.id == selectedTextOverlayId
-            Column(
+            Box(
                 modifier = Modifier
                     .offset(x = ovOffsetDp)
                     .width(ovWidthDp)
+                    .height(if (textOverlay.mask != null) 42.dp else 30.dp)
+                    .testTag("timeline-keyframe-layer-text-${textOverlay.id}")
             ) {
                 Box(
                     modifier = Modifier
+                        .align(Alignment.TopStart)
                         .width(ovWidthDp)
                         .height(18.dp)
                         .clip(RoundedCornerShape(4.dp))
@@ -1977,7 +1972,11 @@ private fun TimelineTextLane(
                         if (ownerClipId != null) onToggleTextKeyframeAtPlayhead(ownerClipId, textOverlay.id)
                     },
                     accentColor = ApexPalette.NeonPink,
-                    modifier = Modifier.height(12.dp)
+                    showLaneBackground = false,
+                    markerTagPrefix = "text-${textOverlay.id}",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("timeline-keyframe-layer-text-markers-${textOverlay.id}")
                 )
                 // Mask keyframe strip (gold) — only when the text has
                 // a mask. Mask keyframes carry (id, timeMs) only, so
@@ -2000,7 +1999,12 @@ private fun TimelineTextLane(
                             if (ownerClipId != null) onToggleTextMaskKeyframeAtPlayhead(ownerClipId, textOverlay.id)
                         },
                         accentColor = Color(0xFFFFC107),
-                        modifier = Modifier.height(12.dp)
+                        showLaneBackground = false,
+                        markerTagPrefix = "text-mask-${textOverlay.id}",
+                        modifier = Modifier
+                            .height(12.dp)
+                            .align(Alignment.BottomStart)
+                            .testTag("timeline-keyframe-layer-text-mask-${textOverlay.id}")
                     )
                 }
             }
@@ -2027,24 +2031,37 @@ private fun KeyframeDiamondStrip(
     onAddAtPlayhead: () -> Unit,
     accentColor: Color,
     showAddButton: Boolean = true,
+    showLaneBackground: Boolean = true,
+    markerTagPrefix: String? = null,
+    addButtonAlignment: Alignment = Alignment.CenterEnd,
     modifier: Modifier = Modifier
 ) {
+    val density = LocalDensity.current.density
     Box(
         modifier = modifier
             .width(stripWidthDp)
-            .background(Color(0xFFE9EDF2).copy(alpha = 0.6f))
+            .then(if (showLaneBackground) Modifier.background(Color(0xFFE9EDF2).copy(alpha = 0.6f)) else Modifier)
     ) {
         val spanDur = spanDurationMs.coerceAtLeast(1L)
         keyframes.forEach { kf ->
+            // Keep the gesture coroutine alive across marker updates, but make
+            // each event/release observe the latest timeline data and callbacks.
+            val currentKeyframe by rememberUpdatedState(kf)
+            val currentSpanStartMs by rememberUpdatedState(spanStartMs)
+            val currentSpanDurationMs by rememberUpdatedState(spanDur)
+            val currentOnSeekToKeyframe by rememberUpdatedState(onSeekToKeyframe)
+            val currentOnMoveKeyframe by rememberUpdatedState(onMoveKeyframe)
             val frac = ((kf.timeMs - spanStartMs).toFloat() / spanDur.toFloat()).coerceIn(0f, 1f)
             var dragDx by remember(kf.id) { mutableFloatStateOf(0f) }
             var isDragging by remember(kf.id) { mutableStateOf(false) }
+            var markerCoordinates by remember(kf.id) { mutableStateOf<LayoutCoordinates?>(null) }
             val diamondXdp = (frac * stripWidthDp.value).dp - 5.dp
 
             Box(
                 modifier = Modifier
                     .offset(x = diamondXdp)
                     .size(10.dp)
+                    .align(Alignment.CenterStart)
                     .graphicsLayer {
                         translationX = dragDx
                         rotationZ = 45f
@@ -2054,24 +2071,74 @@ private fun KeyframeDiamondStrip(
                         RoundedCornerShape(2.dp)
                     )
                     .border(1.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(2.dp))
-                    .pointerInput(kf.id) {
-                        detectDragGestures(
-                            onDragStart = { isDragging = true },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                dragDx += dragAmount.x
-                            },
-                            onDragEnd = {
-                                val deltaMs = (dragDx / msToDp).toLong()
-                                val newTimeMs = (kf.timeMs + deltaMs).coerceIn(spanStartMs, spanStartMs + spanDur)
+                    .onGloballyPositioned { markerCoordinates = it }
+                    .pointerInput(kf.id, msToDp, density) {
+                        awaitEachGesture {
+                            // Marker gestures are more specific than either
+                            // horizontal timeline scroller. Claim the down in
+                            // Main pass so the parent cannot consume the first
+                            // drag delta (which used to shorten physical drags
+                            // or cancel markers in horizontally-scrolled rows).
+                            val down = awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial,
+                            )
+                            down.consume()
+                            var previousRootX = markerCoordinates
+                                ?.localToRoot(down.position)?.x ?: down.position.x
+                            var totalDx = 0f
+                            var dragged = false
+                            var released = false
+                            while (!released) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                // Use root-space coordinates: the marker and
+                                // its scrollable ancestors may translate during
+                                // the gesture, but finger movement must remain
+                                // measured in physical screen pixels.
+                                val pointerRootX = markerCoordinates
+                                    ?.localToRoot(change.position)?.x ?: change.position.x
+                                val deltaX = pointerRootX - previousRootX
+                                previousRootX = pointerRootX
+                                if (change.pressed) {
+                                    totalDx += deltaX
+                                    if (!dragged && abs(totalDx) > viewConfiguration.touchSlop) {
+                                        dragged = true
+                                        isDragging = true
+                                    }
+                                    if (dragged) {
+                                        change.consume()
+                                        dragDx += deltaX
+                                    }
+                                } else {
+                                    change.consume()
+                                    released = true
+                                }
+                            }
+                            if (dragged) {
+                                val deltaMs = sourceTrimDeltaToMs(totalDx, msToDp, density)
+                                val latestKeyframe = currentKeyframe
+                                val latestSpanStartMs = currentSpanStartMs
+                                val latestSpanDurationMs = currentSpanDurationMs
+                                val newTimeMs = (latestKeyframe.timeMs + deltaMs)
+                                    .coerceIn(latestSpanStartMs, latestSpanStartMs + latestSpanDurationMs)
                                 dragDx = 0f
                                 isDragging = false
-                                if (newTimeMs != kf.timeMs) onMoveKeyframe(kf.id, newTimeMs)
-                            },
-                            onDragCancel = { dragDx = 0f; isDragging = false }
-                        )
+                                if (newTimeMs != latestKeyframe.timeMs) {
+                                    currentOnMoveKeyframe(latestKeyframe.id, newTimeMs)
+                                }
+                            } else {
+                                currentOnSeekToKeyframe(currentKeyframe.timeMs)
+                            }
+                        }
                     }
-                    .clickable { onSeekToKeyframe(kf.timeMs) }
+                    .then(markerTagPrefix?.let { Modifier.testTag("timeline-keyframe-marker-$it-${kf.id}") } ?: Modifier)
+                    .semantics {
+                        onClick(label = "Seek to keyframe") {
+                            onSeekToKeyframe(kf.timeMs)
+                            true
+                        }
+                    }
             ) {}
         }
 
@@ -2079,7 +2146,7 @@ private fun KeyframeDiamondStrip(
         if (showAddButton) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
+                    .align(addButtonAlignment)
                     .size(14.dp)
                     .clip(CircleShape)
                     .background(accentColor.copy(alpha = 0.25f))
@@ -2277,6 +2344,42 @@ private fun TimelineVideoTrack(
                         modifier = Modifier.fillMaxSize()
                     )
 
+                    // Persisted source-time looks are visible as colored, labeled range
+                    // bands on the clip itself. The strip is decorative and leaves the
+                    // established clip selection/trim gestures untouched.
+                    if (clip.workspaceEffects.isNotEmpty() && effTrimEnd > effTrimStart) {
+                        BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+                            val displayedClip = clip.copy(trimStartMs = effTrimStart, trimEndMs = effTrimEnd)
+                            val outputSpan = ClipTimeMapping.mainClipDurationMs(displayedClip).toFloat().coerceAtLeast(1f)
+                            clip.workspaceEffects.forEachIndexed { effectIndex, effect ->
+                                val visibleStart = maxOf(effect.startMs, effTrimStart)
+                                val visibleEnd = minOf(effect.endMs, effTrimEnd)
+                                if (effect.id in WorkspaceEffectPresets.all && visibleEnd > visibleStart) {
+                                    val left = (ClipTimeMapping.mainOutputOffsetAtSourceMs(displayedClip, visibleStart) / outputSpan).coerceIn(0f, 1f)
+                                    val right = (ClipTimeMapping.mainOutputOffsetAtSourceMs(displayedClip, visibleEnd) / outputSpan).coerceIn(left, 1f)
+                                    val bandWidth = (maxWidth * (right - left)).coerceAtLeast(18.dp)
+                                    val row = effectIndex % 3
+                                    val preset = WorkspaceFilterPresets.find(effect.id)
+                                    val tint = Color(preset?.swatchArgb ?: 0xFF5E91CA)
+                                    Box(
+                                        Modifier.offset(x = maxWidth * left, y = maxHeight - (14 + row * 12).dp)
+                                            .width(bandWidth).height(11.dp).clip(RoundedCornerShape(3.dp))
+                                            .background(tint.copy(alpha = 0.93f))
+                                            .border(0.5.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(3.dp)),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Text(
+                                            WorkspaceEffectPresets.label(effect.id),
+                                            color = Color(0xFF10141B), fontSize = 7.sp, fontWeight = FontWeight.Bold,
+                                            maxLines = 1, overflow = TextOverflow.Clip,
+                                            modifier = Modifier.padding(horizontal = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Text(clip.name, color = Color.White, fontSize = 9.sp, maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 4.dp)
@@ -2437,12 +2540,14 @@ private fun TimelineVideoTrack(
                             onSeekToKeyframe = { ms -> onSeekToKeyframe?.invoke(ms) },
                             onMoveKeyframe = { kfId, newTimeMs -> onMoveKeyframe(clip.id, kfId, newTimeMs) },
                             onAddAtPlayhead = {},
-                            accentColor = Color(0xFFFFD700),
-                            showAddButton = false,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(12.dp)
-                                .align(Alignment.BottomCenter)
+                        accentColor = Color(0xFFFFD700),
+                        showAddButton = false,
+                        showLaneBackground = false,
+                        markerTagPrefix = "main-${clip.id}",
+                        modifier = Modifier
+                                .fillMaxSize()
+                                .align(Alignment.Center)
+                                .testTag("timeline-keyframe-layer-main-${clip.id}")
                         )
                     }
 
@@ -2575,13 +2680,17 @@ private fun TimelineStickerLane(
                 else -> sticker.symbolOrUri.take(12)
             }
             val segWidthDp = (dur * msToDp).dp.coerceAtLeast(52.dp)
-            Column(
+            val hasKeyframeLane = isSelected || sticker.keyframes.keyframes.isNotEmpty()
+            Box(
                 modifier = Modifier
                     .offset(x = (start * msToDp).dp)
                     .width(segWidthDp)
+                    .height(if (hasKeyframeLane) 36.dp else 24.dp)
+                    .testTag("timeline-keyframe-layer-sticker-${sticker.id}")
             ) {
                 Box(
                     modifier = Modifier
+                        .align(Alignment.TopStart)
                         .width(segWidthDp)
                         .height(24.dp)
                         .clip(RoundedCornerShape(5.dp))
@@ -2609,7 +2718,7 @@ private fun TimelineStickerLane(
                 // Always shown for the selected sticker; for others it
                 // appears once they have keyframes — a static sticker
                 // stays a clean single row.
-                if (isSelected || sticker.keyframes.keyframes.isNotEmpty()) {
+                if (hasKeyframeLane) {
                     KeyframeDiamondStrip(
                         keyframes = sticker.keyframes.keyframes,
                         spanStartMs = start,
@@ -2622,7 +2731,11 @@ private fun TimelineStickerLane(
                         },
                         onAddAtPlayhead = { onToggleStickerKeyframeAtPlayhead(sticker.id) },
                         accentColor = Color(0xFFF472B6),
-                        modifier = Modifier.height(12.dp)
+                        showLaneBackground = false,
+                        markerTagPrefix = "sticker-${sticker.id}",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("timeline-keyframe-layer-sticker-markers-${sticker.id}")
                     )
                 }
             }

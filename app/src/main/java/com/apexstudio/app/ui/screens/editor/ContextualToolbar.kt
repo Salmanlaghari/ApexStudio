@@ -137,6 +137,7 @@ fun ContextualBottomToolbar(
     onAddOverlayVideo: () -> Unit,
     // Video-clip tools
     onAdjust: () -> Unit,
+    onEnhance: () -> Unit = onAdjust,
     onReplace: () -> Unit,
     onSpeed: () -> Unit,
     onVolume: () -> Unit,
@@ -216,19 +217,34 @@ fun ContextualBottomToolbar(
     onAi: () -> Unit = {},
     onDeviceAudio: () -> Unit = {},
     onCamera: () -> Unit = {},
-    onChromaKey: () -> Unit = {}
+    onChromaKey: () -> Unit = {},
+    // Subtitles opens the existing speech-recognition/captions panel. Kept
+    // optional for source compatibility with standalone toolbar callers.
+    onCaptions: () -> Unit = onText,
+    onTemplates: () -> Unit = onEditPack,
+    onChallenge: () -> Unit = onText,
+    onNext: () -> Unit = {}
 ) {
-    // Main tool bar: always visible (also the only bar when nothing is
-    // selected, or while playing).
+    // One always-visible, horizontally scrollable row: put the high-frequency
+    // mobile editing actions first, then retain the complete legacy tool set
+    // behind them in the same row (rather than adding a second, tall toolbar).
+    // Enhance has its independent quick-preset route; Templates opens the shipped
+    // one-tap transmission preset browser; Canvas is the real crop-mode route.
     val mainItems: List<CtxToolItem> = listOf(
-            // Mockup bottom tabs, exact order/labels/icons: Text (active cyan),
-            // Stickers, Effects, Filters, AR Face, Adjust.
+            CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
-            CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.NeonPink, onClick = onDraw),
-            CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
+            CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
+            CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
+            CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
+            CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
+            CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),
+            CtxToolItem("Subtitles", Icons.Default.Subtitles, onClick = onCaptions),
+            CtxToolItem("Next", Icons.Default.Share, onClick = onNext),
             CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
-            CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
+
+            // Additional supported tools remain available after the quick set.
+            CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.NeonPink, onClick = onDraw),
             CtxToolItem("AI", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
             CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
@@ -248,13 +264,11 @@ fun ContextualBottomToolbar(
             // Transition: nearest V1 junction to the playhead
             // (relocated from the timeline tool row).
             CtxToolItem("Transition", Icons.Default.Transform, onClick = onTransition),
-            CtxToolItem("Adjust", Icons.Default.Tune, iconRotationDeg = 90f, onClick = onAdjust),
             // Phase 3: pack panels + Auto Clip + Music + History.
             CtxToolItem("Edit Pack", Icons.Default.ContentCut, onClick = onEditPack),
             CtxToolItem("Scopes", Icons.Default.Insights, onClick = onScopes),
             CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, onClick = onBgRemover),
             CtxToolItem("Auto Clip", Icons.Default.Bolt, tint = ApexPalette.NeonPink, onClick = onAutoClip),
-            CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
             CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
@@ -779,7 +793,15 @@ fun EditorBottomToolbarSection(
     },
     onCrop: () -> Unit = { vm.setCropMode(true) },
     onCamera: () -> Unit = { vm.openCameraCapture() },
-    onChromaKey: () -> Unit = { vm.openChromaKeyPanel() }
+    onChromaKey: () -> Unit = { vm.openChromaKeyPanel() },
+    // Optional override for hosts that own a dedicated effects workspace;
+    // the default remains the real in-app FX panel route.
+    onEffectsWorkspace: () -> Unit = { vm.openFxPanel() },
+    onQuickEnhance: () -> Unit = { vm.openAdjustmentsPanel() },
+    onQuickTemplates: () -> Unit = { vm.openTransmissionTemplatesPanel() },
+    onQuickFilters: () -> Unit = { vm.openFilterPanel() },
+    onChallenge: () -> Unit = { vm.openTextPanel() },
+    onNext: () -> Unit = {}
 ) {
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
@@ -835,17 +857,22 @@ fun EditorBottomToolbarSection(
         isTrackMuted = selectedAudioTrack?.isMuted == true,
         onText = { vm.openTextPanel() },
         onDraw = onDraw,
-        onEffects = { vm.openFxPanel() },
+        onEffects = onEffectsWorkspace,
         onStickers = { vm.openStickerPanel() },
         onArFace = { vm.openArFilterPanel() },
         onLenses = { vm.openLensesPanel() },
-        onFilters = { vm.openFilterPanel() },
+        onFilters = onQuickFilters,
         onCrop = onCrop,
         onAi = onAi,
         onDeviceAudio = onDeviceAudio,
         onCamera = onCamera,
         onChromaKey = onChromaKey,
+        onCaptions = { vm.openCaptionsPanel() },
+        onTemplates = onQuickTemplates,
+        onChallenge = onChallenge,
+        onNext = onNext,
         onAdjust = { vm.openAdjustmentsPanel() },
+        onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.
         // P4: same overlay (PiP) route and pending flags as before —

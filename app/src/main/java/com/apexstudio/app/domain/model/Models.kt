@@ -35,6 +35,126 @@ data class VideoCropSettings(
     }
 }
 
+/** One deterministic visual effect applied over an absolute source-media time range. */
+@Serializable
+data class WorkspaceEffect(
+    /** Stable preset id from [WorkspaceEffectPresets]. */
+    val id: String,
+    /** Inclusive absolute source timestamp in milliseconds. */
+    val startMs: Long,
+    /** Exclusive absolute source timestamp in milliseconds. */
+    val endMs: Long,
+    /** Blend/strength amount, clamped to 0..1 by the renderer. */
+    val intensity: Float = 1f,
+    /** Exposure correction in stops; zero preserves every legacy saved effect. */
+    val exposure: Float = 0f,
+    /** Contrast multiplier; one is the neutral setting. */
+    val contrast: Float = 1f,
+    /** Saturation multiplier; one is the neutral setting. */
+    val saturation: Float = 1f
+)
+
+/** Strict persisted-value validation shared by apply and export preflights. */
+fun WorkspaceEffect.hasValidParameters(durationMs: Long? = null): Boolean =
+    id in WorkspaceEffectPresets.all &&
+        startMs >= 0L && endMs > startMs && (durationMs == null || endMs <= durationMs) &&
+        intensity.isFinite() && intensity in 0f..1f &&
+        exposure.isFinite() && exposure in -2f..2f &&
+        contrast.isFinite() && contrast in 0.5f..1.5f &&
+        saturation.isFinite() && saturation in 0f..2f
+
+/** Preset ids supported by the shared preview/export GL renderer. */
+object WorkspaceEffectPresets {
+    const val MONO = "mono"
+    const val WARM = "warm"
+    const val PIXELATE = "pixelate"
+    const val SPLIT_2 = "split2"
+    const val SPLIT_3 = "split3"
+    const val CARTOON = "cartoon"
+    const val BUBBLE = "bubble"
+    const val HEARTS = "hearts"
+    const val HEARTBEAT = "heartbeat"
+    const val ICE = "ice"
+
+    // Original, offline color looks (not LUT downloads or third-party presets).
+    const val FILTER_SOFT_WARM = "filter_soft_warm"
+    const val FILTER_COOL = "filter_cool"
+    const val FILTER_FADED = "filter_faded"
+    const val FILTER_AMBER = "filter_amber"
+    const val FILTER_ROSE = "filter_rose"
+    const val FILTER_MINT = "filter_mint"
+    const val FILTER_TEAL_ORANGE = "filter_teal_orange"
+    const val FILTER_CRISP = "filter_crisp"
+    const val FILTER_MATTE = "filter_matte"
+    const val FILTER_BW_CONTRAST = "filter_bw_contrast"
+    const val FILTER_SEPIA = "filter_sepia"
+    const val FILTER_LAVENDER = "filter_lavender"
+
+    /** These are lightweight GLSL looks, not neural filters, face tracking, or imported art. */
+    val all: Set<String> = setOf(
+        MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3, CARTOON, BUBBLE, HEARTS, HEARTBEAT, ICE,
+        FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
+        FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
+    )
+
+    val filterIds: Set<String> = setOf(
+        FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
+        FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
+    )
+
+    fun label(id: String): String = when (id) {
+        MONO -> "Monochrome"
+        WARM -> "Warm"
+        PIXELATE -> "Pixelate"
+        SPLIT_2 -> "2 tiles"
+        SPLIT_3 -> "3 tiles"
+        CARTOON -> "Cartoon · posterized"
+        BUBBLE -> "Bubble lens"
+        HEARTS -> "Hearts · procedural"
+        HEARTBEAT -> "Heartbeat pulse"
+        ICE -> "Ice · cool tint"
+        FILTER_SOFT_WARM -> "Soft Warm"
+        FILTER_COOL -> "Cool Air"
+        FILTER_FADED -> "Faded Film"
+        FILTER_AMBER -> "Amber Glow"
+        FILTER_ROSE -> "Rose Light"
+        FILTER_MINT -> "Mint Haze"
+        FILTER_TEAL_ORANGE -> "Teal / Ember"
+        FILTER_CRISP -> "Crisp Color"
+        FILTER_MATTE -> "Matte Fade"
+        FILTER_BW_CONTRAST -> "Bold Mono"
+        FILTER_SEPIA -> "Sepia Wash"
+        FILTER_LAVENDER -> "Lavender"
+        else -> "Unknown effect"
+    }
+}
+
+/** UI metadata for the original shader-based filter looks. Colors are decorative swatches only. */
+data class WorkspaceFilterPreset(val id: String, val label: String, val description: String, val swatchArgb: Long)
+
+object WorkspaceFilterPresets {
+    val all: List<WorkspaceFilterPreset> = listOf(
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_SOFT_WARM, "Soft Warm", "Gentle warmth with lifted highlights", 0xFFFFB77A),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_COOL, "Cool Air", "Blue-cyan shadows and clean whites", 0xFF77C8E8),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_FADED, "Faded Film", "Muted color and lifted black point", 0xFFD9B986),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_AMBER, "Amber Glow", "Golden amber wash", 0xFFFFA83D),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_ROSE, "Rose Light", "Soft rosy highlights", 0xFFE884A5),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_MINT, "Mint Haze", "Subtle green-cyan tint", 0xFF77D0B3),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, "Teal / Ember", "Cool shadows with warm highlights", 0xFF3AB9A7),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_CRISP, "Crisp Color", "Moderate saturation and contrast lift", 0xFF5D9FE8),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_MATTE, "Matte Fade", "Soft contrast with a matte black floor", 0xFFB8A7CE),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_BW_CONTRAST, "Bold Mono", "High-contrast black and white", 0xFF616773),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_SEPIA, "Sepia Wash", "Classic reddish-brown monochrome tint", 0xFFB77C4F),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_LAVENDER, "Lavender", "Cool violet highlights and shadows", 0xFF9A8DE0)
+    )
+    fun find(id: String): WorkspaceFilterPreset? = all.firstOrNull { it.id == id }
+}
+
+/** Pure half-open range check shared by preview/export and regression tests. */
+fun WorkspaceEffect.isActiveAtSourceTime(sourceTimeMs: Long): Boolean =
+    startMs >= 0L && endMs > startMs && sourceTimeMs >= startMs && sourceTimeMs < endMs &&
+        hasValidParameters() && intensity > 0f
+
 @Serializable
 data class MediaClip(
     val id: String,
@@ -171,7 +291,10 @@ data class MediaClip(
     // export bakes the same mask via MaskGlEffect (V1) or
     // PipOverlayGlEffect (V2 overlay). Backwards-compatible: older
     // project JSONs without this field deserialise as null.
-    val mask: VideoMask? = null
+    val mask: VideoMask? = null,
+    // Ranged deterministic workspace effects, using absolute source-media time.
+    // Kept at the end so older positional MediaClip construction remains source-compatible.
+    val workspaceEffects: List<WorkspaceEffect> = emptyList()
 ) {
     /**
      * True when this overlay clip (type == [ClipType.OVERLAY]) should be

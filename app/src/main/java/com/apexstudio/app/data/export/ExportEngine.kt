@@ -39,6 +39,7 @@ import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.hasValidParameters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -223,6 +224,8 @@ class ExportEngine(private val context: Context) {
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         /** Fixed non-AI effect; resolved by the same catalog/shader as the video decoder preview. */
         val projectVideoEffectId: String? = null,
+        /** Ranged, absolute-source-time visual effects for selected-clip export. */
+        val workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
         // Preferred per-clip crop source. The legacy editor-state cropRect
         // remains a fallback for older callers/projects.
         val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
@@ -429,8 +432,12 @@ class ExportEngine(private val context: Context) {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
                         val videoEffects = buildList<androidx.media3.common.Effect> {
+                            clip.videoCrop.takeUnless { it.isFullFrame }
+                                ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
+                                ?.let { add(it) }
                             com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                                 ?.let { add(it) }
+                            addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(clip.workspaceEffects, entry.sourceStartMs))
                             add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
                             if (config.filterPreset != null && config.filterIntensity > 0f) {
                                 add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
@@ -464,6 +471,25 @@ class ExportEngine(private val context: Context) {
                                 ))
                             }
                             speedPair?.second?.let(::add)
+                            // These windows are clip-output-relative: the trimmed sequence item starts at 0,
+                            // and the caption/sticker effects follow speed processing on that output clock.
+                            val aspect = outputWidth.toFloat() / outputHeight
+                            val captions = clip.textOverlays.filter { it.text.isNotBlank() }
+                            if (captions.isNotEmpty()) {
+                                add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))
+                            }
+                            // Keep sticker layering in editor order, above captions and prior stickers.
+                            clip.stickers.forEach { sticker ->
+                                if (sticker.isPngSticker()) {
+                                    add(com.apexstudio.app.data.effect.StickerGlEffect(context, sticker, aspect))
+                                } else {
+                                    add(com.apexstudio.app.data.effect.TextOverlayGlEffect(
+                                        context,
+                                        com.apexstudio.app.data.export.projectEmojiStickerAsTextOverlay(sticker),
+                                        aspect
+                                    ))
+                                }
+                            }
                             add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                 effectiveExportFrameRate(config.fps).toFloat()
                             ))
@@ -604,7 +630,7 @@ class ExportEngine(private val context: Context) {
                     .build()
                 val encoderFactory = DefaultEncoderFactory.Builder(context)
                     .setRequestedVideoEncoderSettings(encoderSettings)
-                    .setEnableFallback(true)
+                    .setEnableFallback(false) // Never silently change the owner's requested output settings.
                     .build()
                 val listener = object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -697,6 +723,9 @@ class ExportEngine(private val context: Context) {
                     com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
                     "Unknown project-video effect; export stopped rather than dropping the edit."
                 }
+                require(config.workspaceEffects.size <= 16 && config.workspaceEffects.all { it.hasValidParameters() }) {
+                    "Invalid ranged filter or custom grading values; export stopped rather than dropping the edit."
+                }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
                 if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
@@ -771,6 +800,10 @@ class ExportEngine(private val context: Context) {
 
                 com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(config.projectVideoEffectId)
                     ?.let { videoEffects.add(it) }
+                // Match preview: source crop → fixed color → ranged effect, before output resize/speed.
+                videoEffects.addAll(
+                    com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(config.workspaceEffects, config.trimStartMs)
+                )
 
                 // 1.5 Rotation and Flipping
                 if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
@@ -927,16 +960,7 @@ class ExportEngine(private val context: Context) {
                             // TextOverlay sizeScale so the export font size
                             // matches the preview's emoji font size exactly
                             // (see StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR).
-                            val overlay = TextOverlay(
-                                id = sticker.id,
-                                text = sticker.symbolOrUri,
-                                x = sticker.x,
-                                y = sticker.y,
-                                sizeScale = sticker.sizeScale *
-                                    com.apexstudio.app.data.stickers.StickerSpriteRenderer.EMOJI_TEXT_SIZE_FACTOR,
-                                startMs = sticker.startMs,
-                                endMs = sticker.endMs
-                            )
+                            val overlay = projectEmojiStickerAsTextOverlay(sticker)
                             foregroundEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                         }
                     }
@@ -1407,7 +1431,7 @@ class ExportEngine(private val context: Context) {
 
         val encoderFactory = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(encoderSettings)
-            .setEnableFallback(true)
+            .setEnableFallback(false) // Never silently change the owner's requested output settings.
             .build()
 
         var active: Transformer? = null

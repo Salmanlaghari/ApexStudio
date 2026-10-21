@@ -79,9 +79,7 @@ fun EditorScreen(
         factory = EditorViewModelFactory(projectId = projectId)
     )
 ) {
-    com.apexstudio.app.ui.theme.EditorLightTheme {
-        EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm)
-    }
+    EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm)
 }
 
 @Composable
@@ -93,7 +91,20 @@ private fun EditorScreenContent(
     onAudio: () -> Unit,
     vm: EditorViewModel
 ) {
-    val state by vm.state.collectAsStateWithLifecycle()
+    var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
+    val savedState by vm.state.collectAsStateWithLifecycle()
+    var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
+    var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
+    var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
+    val state = workspacePreviewState(savedState, workspacePreview)
+    val workspacePreviewActive by rememberUpdatedState(workspaceTarget != null)
+    val dismissWorkspace: () -> Unit = {
+        vm.setPlaying(false)
+        workspaceTarget = null
+        workspacePreview = null
+        workspaceIsFilters = false
+    }
+    BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
@@ -123,6 +134,7 @@ private fun EditorScreenContent(
     var isCoverMode by remember { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
     var showAiPanel by remember { mutableStateOf(false) }
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
+    var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
     var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
@@ -263,6 +275,7 @@ private fun EditorScreenContent(
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     val ready = playbackState == Player.STATE_READY
+                    if (ready) vm.setPlayerError(null)
                     vm.setPlayerReady(ready)
                     vm.setBuffering(playbackState == Player.STATE_BUFFERING)
                     if (playbackState == Player.STATE_ENDED) {
@@ -272,6 +285,11 @@ private fun EditorScreenContent(
                 override fun onPlayerError(error: PlaybackException) {
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
                     Log.e("EditorScreen", "ExoPlayer playback warning: $errorMsg", error)
+                    vm.setPlayerError(errorMsg)
+                    if (workspacePreviewActive) {
+                        vm.setPlaying(false)
+                        return
+                    }
                     try {
                         player.prepare()
                         if (state.isPlaying) {
@@ -360,7 +378,7 @@ private fun EditorScreenContent(
             }
         }
     }
-    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.uri) {
+    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.uri, mainPreviewClip?.trimStartMs, mainPreviewClip?.trimEndMs) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clip = mainPreviewClip
         if (clip == null) {
@@ -397,7 +415,7 @@ private fun EditorScreenContent(
             .setMediaId(clip.id)
             .build()
         val currentUri = player.currentMediaItem?.localConfiguration?.uri
-        if (currentUri != playableUri) {
+        if (currentUri != playableUri || player.currentMediaItem?.mediaId != clip.id) {
             try {
                 vm.setPlayerReady(false)
                 // Dimensions belong to the previously decoded item until the
@@ -726,14 +744,25 @@ private fun EditorScreenContent(
         isTimelineFocusMode = false
     }
 
+    val openEffectsWorkspace: () -> Unit = {
+        val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
+        if (clip != null) {
+            vm.setPlaying(false)
+            workspaceTarget = clip
+            workspacePreview = clip
+        } else {
+            android.widget.Toast.makeText(context, "Select a main-track project video first", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color(0xFFF7F8FA))
+            .background(ApexPalette.BgBase)
     ) {
-        if (editorChromeVisible(state.isFullscreenPreview)) {
+        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
             TopAppBarSection(
                 title = state.project?.name ?: "Untitled project",
                 canUndo = state.canUndo,
@@ -749,23 +778,10 @@ private fun EditorScreenContent(
                 onHelp = { vm.openHelpDialog() },
                 onExport = onExport
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
-                    text = "${TimeFormat.msToShort(state.playerPositionMs)} / ${TimeFormat.msToShort(state.durationMs)}",
-                    color = Color(0xFF111827),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp
-                )
-            }
+
         }
 
-        if (editorChromeVisible(state.isFullscreenPreview) &&
+        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null &&
             state.project?.hasLegacyAbsolutePlacementTimingRisk() == true
         ) {
             androidx.compose.material3.Surface(
@@ -793,7 +809,7 @@ private fun EditorScreenContent(
             isCoverMode = isCoverMode,
             isTimelineFocusMode = isTimelineFocusMode,
             isFullscreenPreview = state.isFullscreenPreview,
-            onFullscreenToggle = { vm.toggleFullscreenPreview() },
+            onFullscreenToggle = { if (workspaceTarget == null) vm.toggleFullscreenPreview() },
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
             onOpenAddMediaMenu = { showAddMediaMenu = true },
@@ -805,7 +821,7 @@ private fun EditorScreenContent(
             drawingBrushWidth = drawingBrushWidth
         )
 
-        if (editorChromeVisible(state.isFullscreenPreview)) {
+        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
             EditorTransportSection(
                 state = state,
                 vm = vm,
@@ -843,6 +859,12 @@ private fun EditorScreenContent(
                 state = state,
                 vm = vm,
                 mediaPicker = mediaPicker,
+                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
+                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
+                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
+                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
+                onChallenge = { showLocalChallenge = true },
+                onNext = onExport,
                 onAi = { showAiPanel = true },
                 onDraw = {
                     if (mainPreviewClip != null) {
@@ -858,10 +880,34 @@ private fun EditorScreenContent(
                 Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
             }
         }
+        workspaceTarget?.let { captured ->
+            ClipEffectWorkspaceHost(
+                filters = workspaceIsFilters,
+                projectId = projectId,
+                originalClip = captured,
+                vm = vm,
+                isPlaying = savedState.isPlaying,
+                onPreviewClip = { workspacePreview = it },
+                onSeekSource = { sourceMs ->
+                    val clip = workspacePreview ?: captured
+                    exoPlayer?.seekTo(sourceMs)
+                    val outputMs = com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                        state.project?.clips.orEmpty(), clip, sourceMs
+                    )
+                    vm.setPlayerPosition(outputMs, forceStateSync = true)
+                },
+                onTogglePlayback = { vm.togglePlay() },
+                onDismiss = dismissWorkspace
+            )
+        }
     }
 
     val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
         resolveAiContentReportTarget(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId)
+    }
+    if (showLocalChallenge) LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
+    quickPresetSection?.let { section ->
+        QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
     }
     if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
         showAiPanel = false

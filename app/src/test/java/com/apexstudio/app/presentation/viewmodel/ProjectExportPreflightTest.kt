@@ -51,6 +51,16 @@ class ProjectExportPreflightTest {
             stickers = listOf(StickerOverlay())))))
     }
 
+    @Test fun `persisted junction blocks export without legacy transition label or false fallback advice`() {
+        val saved = state.copy(project = state.project!!.copy(
+            transitions = listOf(ClipTransition(fromClipId = "v", toClipId = "next")),
+            lastTransitionType = null
+        ))
+        val reason = projectVisualScopeUnsupportedReason(saved)!!
+        assertTrue(reason.contains("Selected-clip export also does not render"))
+        assertFalse(reason.contains("Use selected-clip export to keep"))
+    }
+
     @Test fun `visible overlay blocks composition but hidden overlay stays hidden`() {
         val overlay = video.copy(id = "pip", type = ClipType.OVERLAY, trackIndex = 1)
         val withOverlay = state.copy(project = state.project!!.copy(clips = listOf(video, overlay)))

@@ -32,8 +32,11 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
         }) {
         return "Whole-project export does not yet composite visible PiP layers. Use selected-clip export to keep those layers."
     }
-    if (project.clips.any { it.type == ClipType.VIDEO && it.trackIndex != 0 && it.trackIndex !in state.hiddenVideoLayers }) {
-        return "Whole-project export supports only the main video track."
+    if (project.clips.any {
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) &&
+                it.trackIndex != 0 && it.trackIndex !in state.hiddenVideoLayers
+        }) {
+        return "Whole-project export supports only the main video track. Visible video or photo clips on other tracks cannot be omitted."
     }
     return null
 }

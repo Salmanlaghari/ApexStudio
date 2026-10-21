@@ -62,6 +62,11 @@ internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
     "Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"
 )
 
+/** Screenshot-priority actions shown first in the selected-video scroll row. */
+internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
+    "Split", "Trim", "Speed", "Volume", "Keyframe"
+)
+
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
 internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
     "Music", "Enhance", "Templates", "Canvas",
@@ -201,6 +206,9 @@ fun ContextualBottomToolbar(
     // True when the selected clip is an overlay (PiP) clip. The VIDEO
     // clip bar then also shows the "Properties" entry.
     isOverlaySelected: Boolean = false,
+    // AUDIO can resolve from either an audio track or a legacy audio clip.
+    // Track-only actions are unavailable for the latter.
+    isLegacyAudioClipSelected: Boolean = false,
     // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
     onAudioMix: () -> Unit,
     onRecord: () -> Unit,
@@ -346,74 +354,85 @@ fun ContextualBottomToolbar(
     // Clip action bar: the merged union of the old contextual bar and the
     // old timeline quick-actions row — one entry per action, no duplicates.
     val clipItems: List<CtxToolItem> = when (selectionKind) {
-        ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
-            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
-            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+        ToolbarSelectionKind.VIDEO -> buildList {
+            add(CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit))
+            add(CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim))
+            // PiP playback reads speedPoints, whereas the generic Speed panel
+            // writes speedMultiplier. Hide the misleading control for overlays.
+            if (!isOverlaySelected) {
+                add(CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed))
+            }
+            add(CtxToolItem(
+                "Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onVolume
+            ))
             // Keyframe toggles a keyframe at the playhead (distinct action);
             // Animation opens the keyframe/animation panel.
-            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
-            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            add(CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe))
+            add(CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation))
             // Phase 2: Filters on video clips too — filters were unreachable
             // when a video clip was selected (main use case).
-            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
-            CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
-            CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
-            CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects),
-            CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
+            add(CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters))
+            add(CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop))
+            add(CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust))
+            add(CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects))
+            add(CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask))
             // PR-G: per-clip Background replace (MediaPipe person
             // segmentation) — blur / colour / image behind the person.
-            CtxToolItem("Background", Icons.Default.Person, tint = ApexPalette.NeonCyan, onClick = onBackground),
-            CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
-            CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
-        ).let { items ->
+            add(CtxToolItem("Background", Icons.Default.Person, tint = ApexPalette.NeonCyan, onClick = onBackground))
+            add(CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace))
+            add(CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate))
+            add(CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete))
             // Overlay selected: the properties panel (opacity / blend /
             // mask / border / shadow / flip / volume / track /
             // keyframes) is the overlay's main editing surface — plus
             // Hide/Show and Lock/Unlock, relocated from the removed
             // left sidebar pills (they act on the clip's layer).
             if (isOverlaySelected) {
-                items + CtxToolItem(
+                add(CtxToolItem(
                     "Properties", Icons.Default.Tune,
                     tint = ApexPalette.NeonCyan, onClick = onOverlayProps
-                ) + CtxToolItem(
+                ))
+                add(CtxToolItem(
                     if (isLayerHidden) "Show" else "Hide",
                     if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
                     tint = ApexPalette.NeonCyan, onClick = onToggleLayerVisibility
-                ) + CtxToolItem(
+                ))
+                add(CtxToolItem(
                     if (isLayerLocked) "Unlock" else "Lock",
                     if (isLayerLocked) Icons.Default.LockOpen else Icons.Default.Lock,
                     tint = ApexPalette.NeonCyan, onClick = onToggleLayerLock
-                )
-            } else items
+                ))
+            }
         }
-        ToolbarSelectionKind.AUDIO -> listOf(
-            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
-            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
-            CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
-            CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
-            CtxToolItem(
-                if (beatsAnalyzing) "Beats…" else "Beats",
-                Icons.Default.GraphicEq,
-                if (beatsActive) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
-                onBeats
-            ),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
-            CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix),
-            CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic),
-            CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
-            CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord),
-            // Mute/Unmute for the selected track, relocated from the
-            // removed left sidebar pills.
-            CtxToolItem(
-                if (isTrackMuted) "Unmute" else "Mute",
-                if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                onClick = onToggleTrackMute
-            ),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
-        )
+        ToolbarSelectionKind.AUDIO -> buildList {
+            add(CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit))
+            add(CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim))
+            if (!isLegacyAudioClipSelected) add(CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade))
+            add(CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace))
+            if (!isLegacyAudioClipSelected) {
+                add(CtxToolItem(
+                    if (beatsAnalyzing) "Beats…" else "Beats",
+                    Icons.Default.GraphicEq,
+                    if (beatsActive) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                    onBeats
+                ))
+                add(CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume))
+            }
+            add(CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix))
+            add(CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic))
+            add(CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio))
+            add(CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord))
+            if (!isLegacyAudioClipSelected) {
+                // Mute/Unmute affects project audio tracks only.
+                add(CtxToolItem(
+                    if (isTrackMuted) "Unmute" else "Mute",
+                    if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    onClick = onToggleTrackMute
+                ))
+            }
+            add(CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete))
+        }
         // Photo clip selected → real photo-editing tools (PR F).
         ToolbarSelectionKind.PHOTO -> listOf(
             CtxToolItem("Crop", Icons.Default.Crop, ApexPalette.NeonCyan, onPhotoCrop),
@@ -442,6 +461,14 @@ fun ContextualBottomToolbar(
         ToolbarSelectionKind.NONE -> emptyList()
     }
 
+    val selectionNotice = when {
+        selectionKind == ToolbarSelectionKind.AUDIO && isLegacyAudioClipSelected ->
+            "Fade, Beats, Mute, and Volume are available for project audio tracks only."
+        selectionKind == ToolbarSelectionKind.VIDEO && isOverlaySelected ->
+            "Overlay speed editing is not available yet; use Properties for overlay volume."
+        else -> null
+    }
+
     // Compact two-level editing dock:
     // - Clip action bar (merged, one entry per action): only while a
     //   clip/overlay/track is selected AND the editor is not playing.
@@ -467,38 +494,48 @@ fun ContextualBottomToolbar(
             exit = fadeOut(animationSpec = tween(200)) +
                 slideOutVertically(animationSpec = tween(200)) { it }
         ) {
-            ToolbarBarRow(
-                items = clipItems,
-                surfaceColor = Color(0xFF151F2D),
-                leadingContent = {
-                    // CapCut-style collapse chevron: deselects, hiding
-                    // this bar again.
-                    Box(
-                        modifier = Modifier
-                            .width(44.dp)
-                            .fillMaxHeight()
-                            .clickable(onClick = onCollapse),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Deselect",
-                            tint = Color(0xFF8C9AAF),
-                            modifier = Modifier.size(22.dp)
+            Column {
+                ToolbarBarRow(
+                    items = clipItems,
+                    surfaceColor = Color(0xFF151F2D),
+                    leadingContent = {
+                        // CapCut-style collapse chevron: deselects, hiding
+                        // this bar again.
+                        Box(
+                            modifier = Modifier
+                                .width(44.dp)
+                                .fillMaxHeight()
+                                .clickable(onClick = onCollapse),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Deselect",
+                                tint = Color(0xFF8C9AAF),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight(0.6f)
+                                .background(Color(0xFF273447))
                         )
+                        // No filename chip here: it crowded the clip
+                        // bar's actions. The selected clip/track name now
+                        // shows as a small chip in the preview (bottom-left),
+                        // where it crowds nothing.
                     }
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight(0.6f)
-                            .background(Color(0xFF273447))
+                )
+                if (selectionNotice != null) {
+                    Text(
+                        text = selectionNotice,
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
-                    // No filename chip here: it crowded the clip
-                    // bar's actions. The selected clip/track name now
-                    // shows as a small chip in the preview (bottom-left),
-                    // where it crowds nothing.
                 }
-            )
+            }
         }
         ToolbarBarRow(
             items = mainItems,
@@ -917,11 +954,13 @@ fun EditorBottomToolbarSection(
     // hidden/locked.
     val selectedClip =
         state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val isLegacyAudioClipSelected = selectedClip?.type == ClipType.AUDIO || selectedClip?.type == ClipType.SFX
     val selectedOverlayLayer =
         selectedClip?.takeIf { it.type == ClipType.OVERLAY }?.trackIndex
             ?.takeIf { it in 1..9 }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
+        isLegacyAudioClipSelected = isLegacyAudioClipSelected,
         isPlaying = state.isPlaying,
         // Transition: nearest V1 junction to the playhead (relocated
         // from the removed timeline tool row).

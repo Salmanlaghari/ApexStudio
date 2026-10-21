@@ -791,6 +791,7 @@ private fun EditorScreenContent(
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
             TopAppBarSection(
                 title = state.project?.name ?: "Untitled project",
+                projectId = projectId,
                 canUndo = state.canUndo,
                 canRedo = state.canRedo,
                 resolution = state.selectedResolution,

@@ -5,7 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -24,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
 
-/** Real transport time stays outside the media, as in the approved editor. */
+/** Transport row below the preview, wired to the editor's real playback actions. */
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,
@@ -45,25 +46,39 @@ fun PlaybackControlBar(
     showInlineKeyframe: Boolean = true
 ) {
     Row(
-        Modifier.fillMaxWidth().height(EditorLayoutMetrics.PlaybackBarHeight).padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(EditorLayoutMetrics.PlaybackBarHeight)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
-            color = EditorPalette.TextPrimary, fontSize = 10.sp, maxLines = 1,
-            modifier = Modifier.weight(1f)
+            text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
+            color = EditorPalette.TextPrimary,
+            fontSize = 10.sp,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.weight(1f).padding(start = 4.dp)
         )
-        TransportIconButton(Icons.Default.SkipPrevious, "Previous clip boundary", canNavigate, onPrevious)
-        TransportIconButton(
-            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-            if (isPlaying) "Pause playback" else "Play playback", canNavigate, onTogglePlay
-        )
-        TransportIconButton(Icons.Default.SkipNext, "Next clip boundary", canNavigate, onNext)
-        TransportIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", canUndo, onUndo)
-        TransportIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", canRedo, onRedo)
-        if (showInlineKeyframe) KeyframeDiamondAddButton(hasKeyframeAtPlayhead, canEditKeyframe, onToggleKeyframe)
-        TransportIconButton(Icons.Default.Fullscreen, "Toggle fullscreen", true, onFullscreenToggle)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TransportIconButton(Icons.Default.SkipPrevious, "Previous clip boundary", canNavigate, onPrevious)
+            TransportIconButton(
+                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                description = if (isPlaying) "Pause playback" else "Play playback",
+                enabled = canNavigate,
+                onClick = onTogglePlay,
+                highlighted = true
+            )
+            TransportIconButton(Icons.Default.SkipNext, "Next clip boundary", canNavigate, onNext)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TransportIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", canUndo, onUndo)
+            TransportIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", canRedo, onRedo)
+            if (showInlineKeyframe) {
+                KeyframeDiamondAddButton(hasKeyframeAtPlayhead, canEditKeyframe, onToggleKeyframe)
+            }
+            TransportIconButton(Icons.Default.Fullscreen, "Toggle fullscreen", true, onFullscreenToggle)
+        }
     }
 }
 
@@ -72,16 +87,23 @@ private fun TransportIconButton(
     imageVector: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     enabled: Boolean = true,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    highlighted: Boolean = false
 ) {
     Box(
-        Modifier.size(32.dp).clip(RoundedCornerShape(6.dp))
+        modifier = Modifier
+            .size(width = 40.dp, height = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Icon(imageVector, null, tint = if (enabled) EditorPalette.TextPrimary else EditorPalette.TextMuted,
-            modifier = Modifier.size(22.dp))
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = if (enabled) EditorPalette.TextPrimary else EditorPalette.TextMuted,
+            modifier = Modifier.size(if (highlighted) 24.dp else 21.dp)
+        )
     }
 }
 
@@ -93,16 +115,16 @@ internal fun SelectedVideoKeyframeControl(
     onOpenAnimation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(modifier.height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
         KeyframeDiamondAddButton(hasKeyframeAtPlayhead, true, onToggleKeyframe)
         Text("Keyframe", color = EditorPalette.TextPrimary, fontSize = 11.sp)
         Row(
-            Modifier.padding(start = 12.dp).height(36.dp)
+            Modifier.padding(start = 12.dp).height(40.dp)
                 .clickable(onClick = onOpenAnimation, role = Role.Button)
                 .semantics { contentDescription = "Edit video keyframe animation" },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Animation, null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Link, null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(18.dp))
             Text("Animation", color = EditorPalette.TextSecondary, fontSize = 11.sp,
                 modifier = Modifier.padding(start = 4.dp))
         }
@@ -111,11 +133,9 @@ internal fun SelectedVideoKeyframeControl(
 
 @Composable
 private fun KeyframeDiamondAddButton(hasKeyframeAtPlayhead: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val color = if (!enabled) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead)
-        EditorPalette.NeonCyan else EditorPalette.TextPrimary
+    val color = if (!enabled) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) EditorPalette.NeonCyan else EditorPalette.TextSecondary
     Box(
-        Modifier.size(32.dp).clip(RoundedCornerShape(6.dp))
-            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+        Modifier.size(width = 48.dp, height = 40.dp).clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = if (!enabled) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe" else "Add keyframe" },
         contentAlignment = Alignment.Center
     ) {

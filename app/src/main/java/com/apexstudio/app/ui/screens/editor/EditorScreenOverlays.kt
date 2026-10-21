@@ -1571,7 +1571,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         showInlineKeyframe = false
     )
 
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
         if (kfClip != null) {
             SelectedVideoKeyframeControl(
                 hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
@@ -1582,11 +1582,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         } else Spacer(Modifier.weight(1f))
         androidx.compose.material3.TextButton(onClick = { onTimelineFocusModeChange(!isTimelineFocusMode) },
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-            modifier = Modifier.height(36.dp).semantics {
+            modifier = Modifier.height(44.dp).semantics {
                 contentDescription = if (isTimelineFocusMode) "Restore preview and normal timeline layout" else "Expand timeline to full height"
             }
         ) {
-            Text(if (isTimelineFocusMode) "Show preview" else "Timeline", fontSize = 10.sp, color = ApexPalette.TextSecondary)
+            Text(if (isTimelineFocusMode) "Show preview" else "Timeline", fontSize = 12.sp, color = ApexPalette.TextSecondary)
             Icon(if (isTimelineFocusMode) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null,
                 tint = ApexPalette.TextSecondary, modifier = Modifier.size(16.dp))
         }

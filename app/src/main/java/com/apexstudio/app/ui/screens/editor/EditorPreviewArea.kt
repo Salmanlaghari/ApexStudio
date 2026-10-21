@@ -199,7 +199,7 @@ fun VideoPreviewArea(
             .clip(RoundedCornerShape(8.dp))
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
-            .background(ApexPalette.BgBase)
+            .background(Color.Black)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
             .pointerInput(Unit) {
                 detectTapGestures(

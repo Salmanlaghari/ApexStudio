@@ -64,16 +64,22 @@ class ApprovedEditorTransportTest {
         compose.setContent {
             Column(Modifier.width(320.dp)) {
                 PlaybackControlBar(currentTimeMs = 12000L, durationMs = 45000L,
+                    canUndo = true, canRedo = true,
                     onPrevious = { calls += "previous" }, onNext = { calls += "next" },
+                    onTogglePlay = { calls += "play" }, onUndo = { calls += "undo" },
+                    onRedo = { calls += "redo" }, onFullscreenToggle = { calls += "fullscreen" },
                     showInlineKeyframe = false)
                 SelectedVideoKeyframeControl(false, { calls += "keyframe" }, { calls += "animation" })
             }
         }
         compose.onNodeWithText("00:12 / 00:45").assertIsDisplayed()
-        listOf("Previous clip boundary", "Next clip boundary", "Add keyframe", "Edit video keyframe animation").forEach {
+        listOf("Previous clip boundary", "Play playback", "Next clip boundary", "Undo", "Redo", "Toggle fullscreen",
+            "Add keyframe", "Edit video keyframe animation").forEach {
             compose.onNodeWithContentDescription(it).assertIsDisplayed().performClick()
         }
-        compose.runOnIdle { assertEquals(listOf("previous", "next", "keyframe", "animation"), calls) }
+        compose.runOnIdle {
+            assertEquals(listOf("previous", "play", "next", "undo", "redo", "fullscreen", "keyframe", "animation"), calls)
+        }
     }
 
 }

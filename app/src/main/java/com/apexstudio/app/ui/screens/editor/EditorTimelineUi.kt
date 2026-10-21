@@ -342,10 +342,9 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // Preserve the compact dark timeline workspace; only editor chrome
-            // receives the restrained light-neutral treatment.
-            .background(Color(0xFF111720))
-            .padding(top = 2.dp, bottom = 4.dp),
+            // Height is content-bounded by compactTimelineHeight. Extra wrapper
+            // padding would clip the bottom six dp of the actual filmstrip.
+            .background(Color(0xFF111720)),
         verticalArrangement = Arrangement.Top
     ) {
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering

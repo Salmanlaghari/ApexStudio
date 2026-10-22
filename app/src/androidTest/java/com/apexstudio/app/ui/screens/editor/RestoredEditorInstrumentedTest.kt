@@ -227,7 +227,7 @@ class RestoredEditorInstrumentedTest {
                     assertTrue("Animation inspector must retain $property", device.hasObject(By.text(property)))
                 }
                 device.findObject(By.desc("Close")).click() // manual inspector returns to cards
-                assertTrue(device.wait(Until.hasObject(By.text("Customized")), 10_000L))
+                assertTrue(device.wait(Until.hasObject(By.text("Animation")), 10_000L))
                 device.findObject(By.desc("Close")).click() // close cards, returning to the timeline
                 device.waitForIdle(1_000L)
                 val seenLayers = mutableSetOf<String>()

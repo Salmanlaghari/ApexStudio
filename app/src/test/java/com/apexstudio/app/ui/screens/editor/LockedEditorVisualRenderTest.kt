@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,13 +69,14 @@ class LockedEditorVisualRenderTest {
             LockedEditorVisualFixture(geometry)
         }
 
-        // Use ratios/tolerances rather than relying on a density-specific raw pixel size.
+        // The restored portrait layout allocates a flexible preview, not a
+        // fixed 16:9 pane; the timeline receives the larger 1.2 weight.
         val preview = requireNotNull(geometry.preview) { "Preview did not receive layout" }
-        val previewRatio = preview.width / preview.height
-        assertEquals("Preview should match the approved 16:9 landscape frame", 16f / 9f, previewRatio, 0.04f)
+        assertTrue("Flexible preview remains useful in portrait: $preview", preview.height > 100f)
 
         val timeline = requireNotNull(geometry.timeline) { "Timeline did not receive layout" }
         assertTrue("Timeline should have a compact viewport, not a second title/header row", timeline.height in 180f..380f)
+        assertTrue("The restored 1.2 timeline weight gives it more portrait workspace than preview", timeline.height > preview.height)
         assertTrue("Timeline should sit below the keyframe controls: timeline=$timeline keyframe=${geometry.keyframe}", timeline.top + 1f >= requireNotNull(geometry.keyframe).bottom)
 
         val dock = requireNotNull(geometry.primaryDock) { "Primary toolbar dock did not receive layout" }
@@ -175,8 +175,8 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp)
-                .aspectRatio(LOCKED_EDITOR_PREVIEW_ASPECT)
+                .weight(1f)
+                .padding(horizontal = 12.dp)
                 .onGloballyPositioned { geometry.preview = it.toRectPx() }
         ) {
             // Deliberately exercise the production empty-player preview state:
@@ -210,7 +210,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1.2f)
                 .onGloballyPositioned { geometry.timeline = it.toRectPx() }
         ) {
             VideoTimeline(

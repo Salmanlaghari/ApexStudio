@@ -21,7 +21,10 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette
 
-/** Both orientations use the same preview, model, player and timeline callbacks. */
+/**
+ * PR169/170's preview-first shell stacks preview and timeline by default.
+ * The side inspector remains available to hosts that explicitly opt into landscape.
+ */
 @Composable
 internal fun ColumnScope.AdaptiveEditorWorkspace(
     landscape: Boolean,

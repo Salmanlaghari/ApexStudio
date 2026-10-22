@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -37,24 +38,24 @@ class ScreenshotEditorCompositionTest {
         )
     }
 
-    @Test fun premiumPropertyActionOpensRealFilteredControlsWithoutChangingProjectData() {
+    @Test fun lowerToolsKeepKeyframeAndFullAnimationPropertiesAccessible() {
         val vm = editor()
         val original = vm.state.value.project
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         compose.setContent {
             val state by vm.state.collectAsState()
-            Column(Modifier.requiredSize(375.dp, 400.dp)) {
-                EditorTransportSection(state, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = {})
-            }
+            EditorBottomToolbarSection(state, vm, picker)
         }
-        compose.onNodeWithContentDescription("Open Opacity keyframe controls").performClick()
+        compose.onNodeWithText("Keyframe").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size) }
+        compose.onNodeWithText("Animation").performScrollTo().performClick()
         compose.runOnIdle {
             assertTrue(vm.state.value.keyframePanelOpen)
-            assertEquals("OPACITY", vm.state.value.keyframePropertyFilter)
-            assertEquals("Opening an inspector must preserve project data", original, vm.state.value.project)
+            assertEquals(original!!.clips.single().uri, vm.state.value.project!!.clips.single().uri)
         }
     }
 
-    @Test fun selectedVideoControlsAreImmediatelyAboveCompactTimelineAndMutateTheRealTrack() {
+    @Test fun selectedVideoHasOnlyCompactHeaderKeyframeAndNoPropertiesStrip() {
         val vm = editor()
         compose.setContent {
             val state by vm.state.collectAsState()
@@ -63,25 +64,21 @@ class ScreenshotEditorCompositionTest {
             }
         }
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
-        compose.onNodeWithText("Keyframe").assertIsDisplayed()
-        compose.onNodeWithText("Animation").assertIsDisplayed()
-        compose.onNodeWithText("TIMELINE").assertDoesNotExist()
-        compose.onNodeWithText("Add Clip").assertDoesNotExist()
+        listOf("Animation", "Position", "Scale", "Rotation", "Opacity").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
+        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
+        compose.onNodeWithText("Add Clip").assertIsDisplayed()
         val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
-        val animation = compose.onNodeWithContentDescription("Edit video keyframe animation").fetchSemanticsNode().boundsInRoot
         val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
-        assertTrue("Keyframe and Animation must share the row above timeline", keyframe.bottom <= header.top && animation.bottom <= header.top)
+        assertTrue("Compact keyframe belongs to the existing timeline header", keyframe.bottom <= header.top && header.top - keyframe.top <= 44f)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
-        assertEquals("Filmstrip must remain compact", 36f, track.height, 1f)
+        assertEquals("V1 filmstrip retains historical height", 64f, track.height, 1f)
         compose.onNodeWithContentDescription("Add keyframe").performClick()
         compose.runOnIdle {
             assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size)
             assertEquals(0L, vm.state.value.project!!.clips.single().keyframes.keyframes.single().timeMs)
             assertEquals(clip.uri, vm.state.value.project!!.clips.single().uri)
         }
-        compose.onNodeWithContentDescription("Edit video keyframe animation").performClick()
-        compose.runOnIdle { assertTrue(vm.state.value.keyframePanelOpen) }
     }
 
     @Test fun timelineAddClipRequestsRealVideoImportAndDoesNotCreateFakeMedia() {
@@ -97,7 +94,7 @@ class ScreenshotEditorCompositionTest {
                 EditorTransportSection(vm.state.value, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = { requested = it })
             }
         }
-        compose.onNodeWithTag("timeline-add-media").performClick()
+        compose.onNodeWithContentDescription("Add video media").performClick()
         compose.runOnIdle {
             assertEquals(com.apexstudio.app.domain.model.ClipType.VIDEO, requested)
             assertEquals(listOf(shortClip), vm.state.value.project!!.clips)

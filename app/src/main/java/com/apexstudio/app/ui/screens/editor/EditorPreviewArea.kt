@@ -207,11 +207,11 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
-            .background(Color.Black)
-            .border(0.5.dp, ApexPalette.BorderGlass.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }
@@ -542,6 +542,7 @@ internal fun PreviewContentCanvas(
     mediaAspectRatio: Float?,
     isCoverMode: Boolean,
     modifier: Modifier = Modifier,
+    frameModifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
     BoxWithConstraints(modifier = modifier) {
@@ -553,13 +554,13 @@ internal fun PreviewContentCanvas(
             isCoverMode
         )
         if (bounds == null) {
-            Box(Modifier.fillMaxSize(), content = content)
+            Box(Modifier.fillMaxSize().then(frameModifier), content = content)
         } else {
             val x = with(density) { bounds.left.toDp() }
             val y = with(density) { bounds.top.toDp() }
             val width = with(density) { (bounds.right - bounds.left).toDp() }
             val height = with(density) { (bounds.bottom - bounds.top).toDp() }
-            Box(Modifier.offset(x, y).size(width, height), content = content)
+            Box(Modifier.offset(x, y).size(width, height).then(frameModifier), content = content)
         }
     }
 }

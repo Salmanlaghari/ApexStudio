@@ -86,7 +86,7 @@ class ContextualToolbarTest {
         assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
         assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
             "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
-            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove"
+            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
         )))
     }
 

@@ -37,6 +37,7 @@ import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.VideoFitMode
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -136,7 +137,6 @@ private fun EditorScreenContent(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
-    val landscapeEditor = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
@@ -152,7 +152,12 @@ private fun EditorScreenContent(
     var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
-    var isCoverMode by remember { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
+    // Main-video framing belongs to the clip, not a transient preview-only switch.
+    // Existing photo controls keep their prior preview behavior.
+    var nonVideoCoverMode by remember(projectId) { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
+    val framingVideo = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+        ?.takeIf { it.type == ClipType.VIDEO }
+    val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
     var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
@@ -821,7 +826,12 @@ private fun EditorScreenContent(
                 resolution = state.selectedResolution,
                 onSelectResolution = { vm.setSelectedResolution(it) },
                 isCoverMode = isCoverMode,
-                onToggleCoverMode = { isCoverMode = toggleCoverFitMode(isCoverMode) },
+                onToggleCoverMode = {
+                    val clip = framingVideo
+                    if (clip != null) vm.setVideoFitMode(clip.id,
+                        if (isCoverMode) VideoFitMode.FIT else VideoFitMode.COVER)
+                    else nonVideoCoverMode = toggleCoverFitMode(nonVideoCoverMode)
+                },
                 onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 onBack = if (entryWorkspace == "edit") onBack else onCloseWorkspace,
                 onUndo = { vm.undo() },
@@ -867,7 +877,9 @@ private fun EditorScreenContent(
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
         AdaptiveEditorWorkspace(
-            landscape = landscapeEditor,
+            // PR169/170's preview-first stacked shell is the editor default;
+            // adaptive landscape remains available to explicit workspace hosts.
+            landscape = false,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
@@ -884,7 +896,7 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
-            fitAvailableHeight = landscapeEditor,
+            fitAvailableHeight = false,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
@@ -894,7 +906,7 @@ private fun EditorScreenContent(
             timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
-                compactLandscape = landscapeEditor,
+                compactLandscape = false,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,

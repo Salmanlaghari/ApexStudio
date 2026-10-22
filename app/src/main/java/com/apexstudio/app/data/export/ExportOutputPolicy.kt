@@ -47,7 +47,7 @@ internal fun selectedVideoOutputEffects(config: ExportEngine.ExportConfig): List
     return listOf(
         if (config.preserveInputAspectRatio || config.faceCropConfig != null)
             PreservingOutputSizeTransformation(maxOf(width, height))
-        else ProjectOutputSizeTransformation(width, height),
+        else ProjectOutputSizeTransformation(width, height, config.videoFitMode),
         FrameDropEffect.createDefaultFrameDropEffect(effectiveExportFrameRate(config.fps).toFloat())
     )
 }

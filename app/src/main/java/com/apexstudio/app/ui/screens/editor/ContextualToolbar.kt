@@ -1,12 +1,16 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,7 +29,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
@@ -38,7 +41,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.domain.model.ClipType
@@ -49,12 +51,11 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 /**
  * CapCut-style contextual bottom toolbar.
  *
- * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → primary tools (Media, Audio, Text, Overlay, Stickers, FX, Filters, More)
- * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
- * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
+ * Selected-item actions appear in a scrollable row above the persistent global
+ * dock (Media, Audio, Text, Overlay, Stickers, FX, Filters, More). Tapping More
+ * expands a secondary scrollable row without hiding the global dock.
  *
- * A collapse chevron as the first item deselects and returns to global tools.
+ * A fixed collapse chevron deselects the current item.
  */
 enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO, TEXT, STICKER }
 
@@ -73,7 +74,7 @@ internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
     "Music", "Enhance", "Color", "Templates", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
-    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History"
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Info"
 )
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
@@ -102,6 +103,7 @@ private data class CtxToolItem(
     val icon: ImageVector? = null,
     val tint: Color = Color(0xFF8C9AAF),
     val onClick: () -> Unit,
+    val contentDescription: String? = null,
     /** Text glyph rendered in place of [icon] (e.g. the mockup's bold "T" for Text). */
     val glyph: String? = null,
     /** Degrees to rotate [icon] (e.g. 90 for the mockup's horizontal Adjust sliders). */
@@ -210,8 +212,9 @@ fun ContextualBottomToolbar(
     // AUDIO can resolve from either an audio track or a legacy audio clip.
     // Track-only actions are unavailable for the latter.
     isLegacyAudioClipSelected: Boolean = false,
-    // The locked editor shows only its eight-item dock until More is opened.
-    showSelectionToolsInitially: Boolean = true,
+    // Retained for source compatibility; selection tools now follow the
+    // historical selected-row behavior regardless of the former pager default.
+    @Suppress("UNUSED_PARAMETER") showSelectionToolsInitially: Boolean = true,
     // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
     onAudioMix: () -> Unit,
     onRecord: () -> Unit,
@@ -260,15 +263,8 @@ fun ContextualBottomToolbar(
 ) {
     var showOverlayChoices by remember { mutableStateOf(false) }
     var showToolbarNotes by remember { mutableStateOf(false) }
+    var showMoreTools by remember { mutableStateOf(false) }
     val hasSelection = selectionKind != ToolbarSelectionKind.NONE
-    val pageCount = if (hasSelection) 3 else 2
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { pageCount })
-    val coroutineScope = rememberCoroutineScope()
-    // Selected-item actions are initially in view. Tabs expose the global and
-    // More workspaces without adding another stacked tool strip.
-    LaunchedEffect(selectionKind, showSelectionToolsInitially) {
-        pagerState.animateScrollToPage(if (hasSelection && showSelectionToolsInitially) 0 else if (hasSelection) 1 else 0)
-    }
     val mainItems: List<CtxToolItem> = listOf(
         CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
         CtxToolItem("Audio", Icons.Outlined.MusicNote, tint = ApexPalette.TextPrimary, onClick = onDeviceAudio),
@@ -280,7 +276,7 @@ fun ContextualBottomToolbar(
         CtxToolItem(
             "More", Icons.Outlined.MoreHoriz,
             tint = ApexPalette.TextPrimary,
-            onClick = { coroutineScope.launch { pagerState.animateScrollToPage(if (hasSelection) 2 else 1) } }
+            onClick = { showMoreTools = !showMoreTools }
         )
     )
 
@@ -323,7 +319,8 @@ fun ContextualBottomToolbar(
             CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
             CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
-            CtxToolItem("History", Icons.Default.History, onClick = onHistory)
+            CtxToolItem("History", Icons.Default.History, onClick = onHistory),
+            CtxToolItem("Info", Icons.Outlined.Info, onClick = { showToolbarNotes = true }, contentDescription = "Editing and export notes")
     )
     check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
     check(secondaryItems.map { it.label } == CONTEXTUAL_MORE_TOOL_ORDER)
@@ -479,24 +476,17 @@ fun ContextualBottomToolbar(
         else -> null
     }
 
-    // One bottom workspace: visible page tabs plus a single horizontally
-    // swipable action row. Context, primary, and More actions never stack.
-    fun routed(item: CtxToolItem) = item.copy(onClick = { onBeforeToolAction(); item.onClick() })
-    val clipPageIndex = if (hasSelection) 0 else -1
-    val toolsPageIndex = if (hasSelection) 1 else 0
-    val morePageIndex = if (hasSelection) 2 else 1
-    val clipPageItems = buildList {
-        add(CtxToolItem("Deselect", Icons.Default.KeyboardArrowDown, onClick = onCollapse))
-        addAll(clipItems)
-    }
-    val toolsItems = mainItems.map { item ->
-        if (item.label == "More") item.copy(onClick = { coroutineScope.launch { pagerState.animateScrollToPage(morePageIndex) } }) else item
-    }
-    val pageTabs = buildList {
-        if (hasSelection) add("Clip" to clipPageIndex)
-        add("Tools" to toolsPageIndex)
-        add("More tools" to morePageIndex)
-    }
+    // Restore the historical two-level dock: selected-item actions sit above
+    // the persistent eight-tool global dock. More temporarily adds a scrollable
+    // secondary row without replacing the global tools or introducing tabs.
+    fun routed(item: CtxToolItem) = item.copy(onClick = {
+        onBeforeToolAction()
+        item.onClick()
+    })
+    val showClipBar = hasSelection && !isPlaying
+    val clipPageItems = clipItems.map(::routed)
+    val toolsItems = mainItems.map(::routed)
+    val moreItems = secondaryItems.map(::routed)
 
     if (showToolbarNotes) {
         AlertDialog(
@@ -514,65 +504,67 @@ fun ContextualBottomToolbar(
         )
     }
 
-    val landscapeDock = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val dockPageHeight = if (landscapeDock) 56.dp else 64.dp
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFF101722))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
-            pageTabs.forEach { (label, page) ->
-                val selected = pagerState.currentPage == page
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxHeight()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.14f) else Color.Transparent)
-                        .clickable { coroutineScope.launch { pagerState.animateScrollToPage(page) } },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(label, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        AnimatedVisibility(
+            visible = showClipBar,
+            enter = fadeIn(animationSpec = tween(200)) + slideInVertically(animationSpec = tween(200)) { it },
+            exit = fadeOut(animationSpec = tween(200)) + slideOutVertically(animationSpec = tween(200)) { it }
+        ) {
+            ToolbarBarRow(
+                items = clipPageItems,
+                surfaceColor = Color(0xFF151F2D),
+                modifier = Modifier.testTag("editor_clip_toolbar"),
+                itemWidth = 58.dp,
+                leadingContent = {
+                    Box(
+                        modifier = Modifier.width(44.dp).fillMaxHeight().clickable {
+                            onBeforeToolAction()
+                            onCollapse()
+                        },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Deselect", tint = ApexPalette.TextSecondary, modifier = Modifier.size(22.dp))
+                    }
+                    Box(Modifier.width(1.dp).fillMaxHeight(0.6f).background(Color(0xFF273447)))
                 }
-            }
-            Box(
-                modifier = Modifier.size(width = 38.dp, height = 32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { showToolbarNotes = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Outlined.Info, contentDescription = "Editing and export notes", tint = ApexPalette.TextSecondary, modifier = Modifier.size(19.dp))
-            }
+            )
         }
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxWidth().height(dockPageHeight).testTag("editor_feature_pager"),
-            userScrollEnabled = true
-        ) { page ->
-            when {
-                hasSelection && page == clipPageIndex -> ToolbarBarRow(
-                    items = clipPageItems.map(::routed), surfaceColor = Color(0xFF111A28),
-                    itemWidth = 58.dp, barHeight = dockPageHeight
-                )
-                page == toolsPageIndex -> ToolbarBarRow(
-                    items = toolsItems.map(::routed), surfaceColor = ApexPalette.BgBase,
-                    itemWidth = 37.dp, compact = true,
-                    selectedLabel = when (selectionKind) {
-                        ToolbarSelectionKind.TEXT -> "Text"
-                        ToolbarSelectionKind.STICKER -> "Stickers"
-                        ToolbarSelectionKind.AUDIO -> "Audio"
-                        else -> null
-                    }, barHeight = dockPageHeight
-                )
-                else -> ToolbarBarRow(
-                    items = secondaryItems.map(::routed), surfaceColor = Color(0xFF111A28),
-                    itemWidth = 58.dp, barHeight = dockPageHeight
-                )
-            }
+        AnimatedVisibility(
+            visible = showMoreTools,
+            enter = fadeIn(animationSpec = tween(180)) + slideInVertically(animationSpec = tween(180)) { it },
+            exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(animationSpec = tween(180)) { it }
+        ) {
+            ToolbarBarRow(
+                items = moreItems,
+                surfaceColor = Color(0xFF111A28),
+                modifier = Modifier.testTag("editor_more_toolbar"),
+                itemWidth = 58.dp
+            )
         }
+        ToolbarBarRow(
+            items = toolsItems,
+            surfaceColor = Color(0xFF101722),
+            modifier = Modifier.testTag("editor_global_toolbar"),
+            itemWidth = 38.dp,
+            compact = true,
+            selectedLabel = when (selectionKind) {
+                ToolbarSelectionKind.TEXT -> "Text"
+                ToolbarSelectionKind.STICKER -> "Stickers"
+                ToolbarSelectionKind.AUDIO -> "Audio"
+                else -> null
+            }
+        )
     }
 }
 
 /**
- * One horizontally scrollable toolbar bar in the compact editing dock.
+ * One horizontally scrollable toolbar bar with reachable, full-size tool targets.
  * [leadingContent] (collapse chevron + selection chip) stays fixed while
  * the tool items scroll.
  */
@@ -587,7 +579,7 @@ private fun ToolbarBarRow(
     selectedLabel: String? = null,
     barHeight: androidx.compose.ui.unit.Dp = 46.dp
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
@@ -595,6 +587,7 @@ private fun ToolbarBarRow(
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
             .height(barHeight)
     ) {
+        val targetWidth = if (compact) (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth) else itemWidth
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
@@ -608,7 +601,7 @@ private fun ToolbarBarRow(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(if (compact) Modifier else Modifier.horizontalScroll(rememberScrollState())),
+                        .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     items.forEach { item ->
@@ -617,7 +610,7 @@ private fun ToolbarBarRow(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .then(if (compact) Modifier.weight(1f) else Modifier.width(itemWidth))
+                                .width(targetWidth)
                                 .fillMaxHeight()
                                 .padding(horizontal = if (compact) 1.dp else 0.dp, vertical = 4.dp)
                                 .clip(RoundedCornerShape(9.dp))
@@ -640,7 +633,7 @@ private fun ToolbarBarRow(
                             } else {
                                 Icon(
                                     imageVector = item.icon!!,
-                                    contentDescription = item.label,
+                                    contentDescription = item.contentDescription ?: item.label,
                                     tint = itemTint,
                                     modifier = Modifier
                                         .size(if (compact) 21.dp else 19.dp)
@@ -1135,7 +1128,7 @@ fun EditorBottomToolbarSection(
         },
         onSpeed = { vm.openSpeedPanel() },
         onVolume = { vm.openClipVolumeSheet() },
-        onAnimation = { vm.setKeyframePanelOpen(true) },
+        onAnimation = { vm.openKeyframeAnimationPanel() },
         onDelete = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO ->

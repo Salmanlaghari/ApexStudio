@@ -14,6 +14,21 @@ import kotlinx.coroutines.launch
  */
 private const val POSITION_STATE_SYNC_MIN_INTERVAL_MS = 100L
 
+/** Persist the selected main-track clip's composition placement choice. */
+fun EditorViewModel.setVideoFitMode(clipId: String, mode: VideoFitMode) {
+    val project = _state.value.project ?: return
+    val clip = project.clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.type != ClipType.VIDEO || clip.videoFitMode == mode) return
+    pushUndo()
+    _state.update { state ->
+        val current = state.project ?: return@update state
+        state.copy(project = current.copy(clips = current.clips.map {
+            if (it.id == clipId) it.copy(videoFitMode = mode) else it
+        }))
+    }
+    persistProject()
+}
+
 
 fun EditorViewModel.togglePlay() = setPlaying(!_state.value.isPlaying)
 

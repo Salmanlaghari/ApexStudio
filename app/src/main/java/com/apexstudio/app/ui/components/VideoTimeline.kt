@@ -183,8 +183,22 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     val overlayLayers = clips.asSequence()
         .filter { it.type == ClipType.OVERLAY && it.trackIndex in 1..9 }
         .map { it.trackIndex }.distinct().count()
-    val hasText = clips.any { it.textOverlays.isNotEmpty() }
-    val hasStickers = project?.stickers?.isNotEmpty() == true
+    val layerIndex = TimelineLayerContentIndex.from(clips)
+    val textLayers = mapProjectTextLayers(
+        clips,
+        clips.flatMap { it.textOverlays },
+        layerIndex.textOwnerByOverlayId,
+    )
+    val textRowCount = timelineLaneRowCount(timelineLaneRowIndices(textLayers.map {
+        TimelineLaneSpan(it.startMs, it.endMs)
+    }))
+    val stickerSpans = project?.stickers.orEmpty().map { sticker ->
+        val start = sticker.startMs.coerceAtLeast(0L)
+        TimelineLaneSpan(start, if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs)
+    }
+    val stickerRowCount = timelineLaneRowCount(timelineLaneRowIndices(stickerSpans))
+    val hasText = textRowCount > 0
+    val hasStickers = stickerRowCount > 0
     val hasFx = !state.activeFilterId.isNullOrBlank() || !state.activeFxId.isNullOrBlank() ||
         adjustmentsSummary(state.adjustments).isNotEmpty()
     val musicRows = project?.audioTracks.orEmpty().count { it.kind == AudioTrack.Kind.MUSIC }
@@ -201,8 +215,8 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
     if (supportRows > 0) height += 4
     height += overlayLayers * (28 + 4)
-    if (hasText) height += 28 + 4
-    if (hasStickers) height += 28 + 4
+    if (hasText) height += textRowCount * (28 + 4)
+    if (hasStickers) height += stickerRowCount * (28 + 4)
     if (hasFx) height += 28 + 4
     height += musicRows * 36 + if (musicRows > 0) 4 else 0
     height += voiceRows * 36 + if (voiceRows > 0) 4 else 0
@@ -345,6 +359,15 @@ fun VideoTimeline(
     val layerContentIndex = remember(clips) { TimelineLayerContentIndex.from(clips) }
     val logicalTextLayers = remember(clips, textOverlays, layerContentIndex) {
         mapProjectTextLayers(clips, textOverlays, layerContentIndex.textOwnerByOverlayId)
+    }
+    val textLaneRows = remember(logicalTextLayers) {
+        timelineLaneRowIndices(logicalTextLayers.map { TimelineLaneSpan(it.startMs, it.endMs) })
+    }
+    val stickerLaneRows = remember(stickers) {
+        timelineLaneRowIndices(stickers.map { sticker ->
+            val start = sticker.startMs.coerceAtLeast(0L)
+            TimelineLaneSpan(start, if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs)
+        })
     }
     // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
     // (tiny composable). Everything else uses a 10Hz-sampled snapshot so
@@ -623,8 +646,8 @@ fun VideoTimeline(
     val a1Height = (musicTracks.size * 36).dp
     val a2Height = (voiceTracks.size * 36).dp
     // Supporting lanes keep their own compact heights; V1 remains fixed at 36dp.
-    val textLaneHeight = 28
-    val stickerLaneHeight = 28
+    val textLaneHeight = timelineLaneRowCount(textLaneRows) * 28
+    val stickerLaneHeight = timelineLaneRowCount(stickerLaneRows) * 28
     val fxLaneHeight = 28
     // Same "something applied" test the FX lane itself uses for
     // its segments — the lane renders only when this is true.
@@ -965,6 +988,7 @@ fun VideoTimeline(
                             if (textOverlays.isNotEmpty()) {
                                 TimelineTextLane(
                                     textLayers = logicalTextLayers,
+                                    rowIndices = textLaneRows,
                                     msToDp = msToDp,
                                     timelineDurationMs = totalDurationMs,
                                     selectedTextOverlayId = selectedTextOverlayId,
@@ -988,6 +1012,7 @@ fun VideoTimeline(
                             if (stickers.isNotEmpty()) {
                                 TimelineStickerLane(
                                     stickers = stickers,
+                                    rowIndices = stickerLaneRows,
                                     msToDp = msToDp,
                                     selectedStickerId = selectedStickerId,
                                     onSelectSticker = onSelectSticker,
@@ -1782,6 +1807,10 @@ private fun TimelineVideoLayerRow(
                                 }
                             }
                             .clickable { onSelectClip(clip.id) }
+                            .semantics {
+                                contentDescription = "Overlay clip ${clip.name}, track V${layerIndex + 1}"
+                                selected = isSelected
+                            }
                     ) {
                         // Filmstrip thumbnails inside the PiP block:
                         // dp-interval cells, culled to the visible
@@ -1961,6 +1990,7 @@ internal fun mapProjectTextLayers(
 @Composable
 private fun TimelineTextLane(
     textLayers: List<MappedTimelineTextLayer>,
+    rowIndices: List<Int>,
     msToDp: Float,
     timelineDurationMs: Long,
     selectedTextOverlayId: String? = null,
@@ -1980,10 +2010,9 @@ private fun TimelineTextLane(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0A1B2D))
             .border(1.dp, Color(0xFF203047), RoundedCornerShape(8.dp))
-            // After the border, the compact row has 26dp to split into
-            // separate text-keyframe and mask-keyframe hit lanes.
+            // Overlapping segments occupy separate 28dp subrows.
     ) {
-        textLayers.forEach { layer ->
+        textLayers.forEachIndexed { itemIndex, layer ->
             val textOverlay = layer.overlay
             val ownerClipId = layer.ownerClipId
             val ovStartMs = layer.startMs.coerceAtLeast(0L)
@@ -1996,7 +2025,9 @@ private fun TimelineTextLane(
             Box(
                 modifier = Modifier
                     .offset(x = ovOffsetDp)
+                    .offset(y = ((rowIndices.getOrElse(itemIndex) { 0 }) * 28).dp)
                     .width(ovWidthDp)
+                    // Leave clearance for the rotated mask diamond at the row edge.
                     .height(if (textOverlay.mask != null) 26.dp else 18.dp)
                     .testTag("timeline-keyframe-layer-text-${textOverlay.id}")
             ) {
@@ -2014,6 +2045,10 @@ private fun TimelineTextLane(
                         )
                         .clickable {
                             if (ownerClipId != null) onSelectTextOverlay(ownerClipId, textOverlay.id)
+                        }
+                        .semantics {
+                            contentDescription = "Text overlay ${textOverlay.text.ifEmpty { "Title" }}"
+                            selected = isSelected
                         }
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
@@ -2777,6 +2812,7 @@ private fun TimelineVideoTrack(
 @Composable
 private fun TimelineStickerLane(
     stickers: List<StickerOverlay>,
+    rowIndices: List<Int>,
     msToDp: Float,
     selectedStickerId: String? = null,
     onSelectSticker: (String?) -> Unit = {},
@@ -2793,9 +2829,8 @@ private fun TimelineStickerLane(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0A1B2D))
             .border(1.dp, Color(0xFF203047), RoundedCornerShape(8.dp))
-            .padding(vertical = 3.dp)
     ) {
-        stickers.forEach { sticker ->
+        stickers.forEachIndexed { itemIndex, sticker ->
             val previewBitmap by produceState<Bitmap?>(initialValue = null, key1 = sticker.assetPath) {
                 val path = sticker.assetPath ?: return@produceState
                 value = withContext(Dispatchers.IO) { imageCache.get(path) }
@@ -2815,8 +2850,9 @@ private fun TimelineStickerLane(
             Box(
                 modifier = Modifier
                     .offset(x = (start * msToDp).dp)
+                    .offset(y = ((rowIndices.getOrElse(itemIndex) { 0 }) * 28).dp)
                     .width(segWidthDp)
-                    .height(22.dp)
+                    .height(28.dp)
                     .testTag("timeline-keyframe-layer-sticker-${sticker.id}")
             ) {
                 Box(
@@ -2837,6 +2873,10 @@ private fun TimelineStickerLane(
                             shape = RoundedCornerShape(7.dp)
                         )
                         .clickable { onSelectSticker(sticker.id) }
+                        .semantics {
+                            contentDescription = "Sticker $label"
+                            selected = isSelected
+                        }
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
@@ -2963,11 +3003,12 @@ private fun TimelineFxTrack(
                 // + chip to open the FX panel for more effects.
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF12243A))
                         .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.7f), CircleShape)
-                        .clickable(onClick = onOpenFxPanel),
+                        .clickable(onClick = onOpenFxPanel)
+                        .semantics { contentDescription = "Add effect" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text("+", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -2975,11 +3016,12 @@ private fun TimelineFxTrack(
                 // x chip: clears the whole lane (FX + LUT filter + adjustments).
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF12243A))
                         .border(1.dp, Color(0xFF64748B).copy(alpha = 0.7f), CircleShape)
-                        .clickable(onClick = onClearFx),
+                        .clickable(onClick = onClearFx)
+                        .semantics { contentDescription = "Clear effects and filters" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text("x", color = Color(0xFF9AA9C2), fontSize = 11.sp, fontWeight = FontWeight.Bold)

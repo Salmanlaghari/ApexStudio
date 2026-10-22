@@ -514,6 +514,8 @@ fun ContextualBottomToolbar(
         )
     }
 
+    val landscapeDock = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val dockPageHeight = if (landscapeDock) 56.dp else 64.dp
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -542,13 +544,13 @@ fun ContextualBottomToolbar(
         }
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxWidth().height(64.dp).testTag("editor_feature_pager"),
+            modifier = Modifier.fillMaxWidth().height(dockPageHeight).testTag("editor_feature_pager"),
             userScrollEnabled = true
         ) { page ->
             when {
                 hasSelection && page == clipPageIndex -> ToolbarBarRow(
                     items = clipPageItems.map(::routed), surfaceColor = Color(0xFF111A28),
-                    itemWidth = 58.dp, barHeight = 64.dp
+                    itemWidth = 58.dp, barHeight = dockPageHeight
                 )
                 page == toolsPageIndex -> ToolbarBarRow(
                     items = toolsItems.map(::routed), surfaceColor = ApexPalette.BgBase,
@@ -558,11 +560,11 @@ fun ContextualBottomToolbar(
                         ToolbarSelectionKind.STICKER -> "Stickers"
                         ToolbarSelectionKind.AUDIO -> "Audio"
                         else -> null
-                    }, barHeight = 64.dp
+                    }, barHeight = dockPageHeight
                 )
                 else -> ToolbarBarRow(
                     items = secondaryItems.map(::routed), surfaceColor = Color(0xFF111A28),
-                    itemWidth = 58.dp, barHeight = 64.dp
+                    itemWidth = 58.dp, barHeight = dockPageHeight
                 )
             }
         }

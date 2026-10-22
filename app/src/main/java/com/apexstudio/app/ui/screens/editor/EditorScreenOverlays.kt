@@ -1280,7 +1280,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     drawingEnabled: Boolean = false,
     drawingTool: com.apexstudio.app.domain.model.VideoDrawingTool = com.apexstudio.app.domain.model.VideoDrawingTool.BRUSH,
     drawingColorArgb: Long = 0xFFFF3B82L,
-    drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH
+    drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH,
+    fitAvailableHeight: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1292,7 +1293,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Keep the preview/player subtree composed in focus mode while
             // yielding essentially all available height to the timeline.
             .then(when {
-                isFullscreenPreview -> Modifier.weight(1f)
+                isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
                 isTimelineFocusMode -> Modifier.weight(editorPreviewLayoutWeight(true))
                 else -> Modifier.aspectRatio(LOCKED_EDITOR_PREVIEW_ASPECT)
             })
@@ -1648,7 +1649,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     seekPlayerAndState: (Long) -> Unit,
     onOpenAddMediaMenu: (ClipType) -> Unit,
     isTimelineFocusMode: Boolean = false,
-    onTimelineFocusModeChange: (Boolean) -> Unit = {}
+    onTimelineFocusModeChange: (Boolean) -> Unit = {},
+    compactLandscape: Boolean = false
 ) {
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
@@ -1656,6 +1658,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     val hasKeyframeAtPlayhead =
         kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
 
+    if (!compactLandscape) {
     PlaybackControlBar(
         isPlaying = state.isPlaying,
         canUndo = state.canUndo,
@@ -1680,8 +1683,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         showInlineKeyframe = false
     )
+    }
 
-    if (kfClip != null) {
+    if (kfClip != null && !compactLandscape) {
         SelectedVideoKeyframeControl(
             hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
             onToggleKeyframe = { vm.toggleKeyframeAtPlayheadFor(kfClip.id) },
@@ -1700,10 +1704,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // selected-video strip where it would steal width from its controls.
     CenteredTimelineWorkspace(
         contentHeight = com.apexstudio.app.ui.components.compactTimelineHeight(state) + 26.dp,
-        isFocused = isTimelineFocusMode
+        isFocused = isTimelineFocusMode || compactLandscape
     ) {
-    Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-        Spacer(Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (compactLandscape) {
+            LandscapeTimelineControls(state, vm, seekPlayerAndState, Modifier.weight(1f))
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
         Row(
             modifier = Modifier.height(26.dp).clickable(role = Role.Button) { onTimelineFocusModeChange(!isTimelineFocusMode) }
                 .semantics {

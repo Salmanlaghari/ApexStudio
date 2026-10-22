@@ -136,6 +136,7 @@ private fun EditorScreenContent(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
+    val landscapeEditor = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
@@ -871,6 +872,11 @@ private fun EditorScreenContent(
         } else if (isExportWorkspace) {
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
+        AdaptiveEditorWorkspace(
+            landscape = landscapeEditor,
+            focused = isTimelineFocusMode,
+            fullscreen = state.isFullscreenPreview,
+            preview = {
         EditorPreviewSection(
             state = state,
             vm = vm,
@@ -884,15 +890,17 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
+            fitAvailableHeight = landscapeEditor,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth
         )
-        }
-
+            },
+            timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
+                compactLandscape = landscapeEditor,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,
@@ -922,6 +930,11 @@ private fun EditorScreenContent(
                     }
                 }
             )
+        }
+
+            },
+            inspector = { LandscapeVideoInspector(state, vm) }
+        )
         }
 
         if (isExportWorkspace) {

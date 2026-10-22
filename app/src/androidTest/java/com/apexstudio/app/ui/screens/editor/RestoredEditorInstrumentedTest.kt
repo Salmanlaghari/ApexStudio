@@ -230,20 +230,20 @@ class RestoredEditorInstrumentedTest {
                 assertTrue(device.wait(Until.hasObject(By.text("Animation")), 10_000L))
                 device.findObject(By.desc("Close")).click() // close cards, returning to the timeline
                 device.waitForIdle(1_000L)
+                val trackBottom = device.findObject(By.desc("Animation")).visibleBounds.top - 40
+                val trackScrollStep = (30 * context.resources.displayMetrics.density).toInt()
                 val seenLayers = mutableSetOf<String>()
                 val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects")
                 repeat(8) {
                     expectedLayers.filterTo(seenLayers) { device.hasObject(By.desc(it)) }
-                    val lowerDock = device.findObject(By.desc("More"))
-                    device.swipe(device.displayWidth / 2, lowerDock.visibleBounds.top - 30,
-                        device.displayWidth / 2, timeline.visibleBounds.bottom + 120, 40)
+                    device.swipe(device.displayWidth / 2, trackBottom,
+                        device.displayWidth / 2, trackBottom - trackScrollStep, 25)
                     device.waitForIdle(500L)
                 }
                 assertTrue("All actual material rows must be reachable, found $seenLayers", seenLayers.containsAll(expectedLayers))
                 repeat(8) {
-                    val lowerDock = device.findObject(By.desc("More"))
-                    device.swipe(device.displayWidth / 2, timeline.visibleBounds.bottom + 120,
-                        device.displayWidth / 2, lowerDock.visibleBounds.top - 30, 40)
+                    device.swipe(device.displayWidth / 2, trackBottom - trackScrollStep,
+                        device.displayWidth / 2, trackBottom, 25)
                 }
                 device.waitForIdle(1_000L)
                 device.takeScreenshot(screenshot)

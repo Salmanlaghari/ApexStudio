@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.KeyframeParam
@@ -40,7 +42,10 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                 if (!focused) {
                     Column(Modifier.width(if (inspectorOpen) 224.dp else 48.dp).fillMaxHeight()
                         .background(EditorPalette.BgElevated).testTag("landscape-inspector")) {
-                        TextButton(onClick = { inspectorOpen = !inspectorOpen }, modifier = Modifier.height(44.dp)) {
+                        TextButton(onClick = { inspectorOpen = !inspectorOpen },
+                            modifier = Modifier.fillMaxWidth().height(48.dp).semantics {
+                                contentDescription = if (inspectorOpen) "Hide video properties" else "Show video properties"
+                            }) {
                             Text(if (inspectorOpen) "Hide properties ›" else "‹", maxLines = 1, fontSize = 11.sp)
                         }
                         if (inspectorOpen) {

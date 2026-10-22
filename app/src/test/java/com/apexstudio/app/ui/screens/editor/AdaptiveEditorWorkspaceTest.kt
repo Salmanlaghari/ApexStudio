@@ -38,11 +38,11 @@ class AdaptiveEditorWorkspaceTest {
         assertTrue(timeline.height > preview.height)
         assertEquals(840f, timeline.width, 1f)
         compose.onNodeWithText("Real properties").assertIsDisplayed()
-        compose.onNodeWithText("Hide properties ›").performClick()
+        compose.onNodeWithContentDescription("Hide video properties").assertHasClickAction().performClick()
         compose.onNodeWithText("Real properties").assertDoesNotExist()
         val expanded = compose.onNodeWithTag("landscape-preview").fetchSemanticsNode().boundsInRoot
         assertTrue("Collapsing properties must enlarge preview", expanded.width > preview.width)
-        compose.onNodeWithText("‹").performClick()
+        compose.onNodeWithContentDescription("Show video properties").assertHasClickAction().performClick()
         compose.onNodeWithText("Real properties").assertIsDisplayed()
     }
 

@@ -49,7 +49,7 @@ class LandscapeEditorInstrumentedTest {
                 // accessibility root while Compose/JIT starts. Wait for the actual
                 // editor first; keep the independent panel/action assertions intact.
                 val editorReady = device.wait(Until.hasObject(By.desc("ApexStudio build identity. Project ${project.id}")), 180_000)
-                val panelAvailable = editorReady && device.wait(Until.hasObject(By.text("Hide properties ›")), 60_000)
+                val panelAvailable = editorReady && device.wait(Until.hasObject(By.desc("Hide video properties")), 60_000)
                 val diagnostics = File(context.getExternalFilesDir(null), "landscape-runtime-diagnostics").apply { mkdirs() }
                 device.takeScreenshot(File(diagnostics, "panel-check.png"))
                 device.dumpWindowHierarchy(File(diagnostics, "panel-check.xml"))
@@ -77,10 +77,13 @@ class LandscapeEditorInstrumentedTest {
                 assertEquals(listOf(0L, 33L), vm.state.value.project!!.clips.first().keyframes.keyframes.map { it.timeMs }.sorted())
                 assertEquals(project.audioTracks, vm.state.value.project!!.audioTracks)
                 assertEquals(clip.textOverlays, vm.state.value.project!!.clips.first().textOverlays)
-                device.findObject(By.text("Hide properties ›")).click()
-                assertTrue(device.wait(Until.hasObject(By.text("‹")), 10_000))
-                device.findObject(By.text("‹")).click()
-                assertTrue(device.wait(Until.hasObject(By.text("Hide properties ›")), 10_000))
+                device.findObject(By.desc("Hide video properties")).click()
+                assertTrue(device.wait(Until.hasObject(By.desc("Show video properties")), 10_000))
+                device.findObject(By.desc("Show video properties")).click()
+                val reopened = device.wait(Until.hasObject(By.desc("Hide video properties")), 10_000)
+                device.takeScreenshot(File(diagnostics, "reopen-check.png"))
+                device.dumpWindowHierarchy(File(diagnostics, "reopen-check.xml"))
+                assertTrue("Properties panel did not reopen", reopened)
                 await(60_000L) { vm.state.value.isPlayerReady || vm.state.value.playerError != null }
                 assertTrue("Real decoder not ready: ${vm.state.value.playerError}", vm.state.value.isPlayerReady)
                 assertFalse(device.hasObject(By.text("Lenses")))

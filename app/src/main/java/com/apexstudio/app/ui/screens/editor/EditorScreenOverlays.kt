@@ -432,10 +432,13 @@ fun TextPanelOverlay(
 ) {
     if (!state.textPanelOpen) return
     val activeOverlayId = state.selectedTextOverlayId
-    val textClip = state.project?.clips?.firstOrNull { owner -> owner.id == state.selectedClipId && owner.textOverlays.any { it.id == activeOverlayId } }
+    val selectedTextClip = state.project?.clips?.firstOrNull { owner -> owner.id == state.selectedClipId && owner.textOverlays.any { it.id == activeOverlayId } }
         ?: state.project?.clips?.firstOrNull { owner -> owner.textOverlays.any { it.id == activeOverlayId } }
         ?: state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
         ?: state.project?.clips?.firstOrNull()
+    val rangeOwnerClipId = activeOverlayId?.let { vm.textOverlayProjectOwnerClipId(it) }
+    val textClip = rangeOwnerClipId?.let { ownerId -> state.project?.clips?.firstOrNull { it.id == ownerId } }
+        ?: selectedTextClip
     val textOverlays = textClip?.textOverlays ?: emptyList()
     val activeRange = activeOverlayId?.let { vm.textOverlayProjectRange(it) }
     val textTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(state.project?.clips.orEmpty())
@@ -613,7 +616,17 @@ fun AudioMixerPanelOverlay(
                 },
                 onMute = { trackId -> vm.toggleAudioTrackMute(trackId) },
                 onSolo = { trackId -> vm.toggleAudioTrackSolo(trackId) },
-                onTrim = { trackId, start, end -> vm.setAudioTrackTrim(trackId, start, end) },
+                onTrim = { trackId, start, end ->
+                    audioState.tracks.firstOrNull { it.id == trackId }?.let { track ->
+                        vm.trimAudioTrackPlacement(
+                            trackId,
+                            start,
+                            end,
+                            AudioTrackPlacement.timelineStartAfterHeadTrim(track, start)
+                        )
+                    }
+                },
+                onSplit = { trackId -> vm.splitAudioTrack(trackId, vm.playerPositionFlow.value) },
                 onFadeIn = { trackId, ms -> vm.setAudioTrackFadeIn(trackId, ms) },
                 onFadeOut = { trackId, ms -> vm.setAudioTrackFadeOut(trackId, ms) },
                 onClose = { vm.closeAudioMixer() },

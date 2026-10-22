@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -82,6 +85,7 @@ fun AudioMixerPanel(
     onMute: (trackId: String) -> Unit,
     onSolo: (trackId: String) -> Unit,
     onTrim: (trackId: String, startMs: Long, endMs: Long) -> Unit,
+    onSplit: (trackId: String) -> Unit = {},
     onFadeIn: (trackId: String, ms: Long) -> Unit,
     onFadeOut: (trackId: String, ms: Long) -> Unit,
     onImportLocalAudio: () -> Unit = {},
@@ -177,7 +181,8 @@ fun AudioMixerPanel(
                         onMute = { onMuteOriginal(!muteOriginalVideo) },
                         onSolo = {},
                         onRemove = null,
-                        showVolume = false
+                        showVolume = false,
+                        showSolo = false
                     )
                     Text(
                         text = "Original gain is unavailable here; mute is supported.",
@@ -213,6 +218,123 @@ fun AudioMixerPanel(
                     onSeekTo = onSeekTo
                 )
             }
+            items(state.tracks, key = { "trim-${it.id}" }) { track ->
+                AudioSourceTrimCard(
+                    track = track,
+                    playheadMs = playheadMs,
+                    onTrim = { startMs, endMs -> onTrim(track.id, startMs, endMs) },
+                    onSplit = { onSplit(track.id) }
+                )
+            }
+        }
+    }
+}
+
+/** Valid, source-relative retained bounds; null means the source is too short to trim safely. */
+internal data class AudioSourceTrimBounds(val startMs: Long, val endMs: Long) {
+    val durationMs: Long get() = endMs - startMs
+}
+
+internal fun normalizedAudioSourceTrimBounds(
+    sourceDurationMs: Long,
+    startMs: Long,
+    endMs: Long,
+    minimumDurationMs: Long = 100L
+): AudioSourceTrimBounds? {
+    if (minimumDurationMs <= 0L || sourceDurationMs < minimumDurationMs) return null
+    val start = startMs.coerceIn(0L, sourceDurationMs - minimumDurationMs)
+    val end = endMs.coerceIn(start + minimumDurationMs, sourceDurationMs)
+    return AudioSourceTrimBounds(start, end)
+}
+
+/** The playhead is project time; splitting also requires at least 100 ms on each retained side. */
+internal fun canSplitAudioTrackAtPlayhead(track: AudioTrack, playheadMs: Long): Boolean {
+    val sourceEnd = track.sourceEndMs
+    val span = track.trimEndMs - track.trimStartMs
+    if (sourceEnd <= 0L || track.trimStartMs < 0L || track.trimEndMs > sourceEnd ||
+        track.startTimeMs < 0L || span < 200L || playheadMs < track.startTimeMs
+    ) return false
+    val elapsed = playheadMs - track.startTimeMs
+    return elapsed in 100L..(span - 100L)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioSourceTrimCard(
+    track: AudioTrack,
+    playheadMs: Long,
+    onTrim: (Long, Long) -> Unit,
+    onSplit: () -> Unit
+) {
+    val sourceDuration = track.sourceEndMs
+    val currentBounds = normalizedAudioSourceTrimBounds(sourceDuration, track.trimStartMs, track.trimEndMs)
+    var range by remember(track.id, sourceDuration, track.trimStartMs, track.trimEndMs) {
+        mutableStateOf(
+            currentBounds?.let { it.startMs.toFloat()..it.endMs.toFloat() } ?: (0f..0f)
+        )
+    }
+    val accent = ApexPalette.NeonCyan
+    Column(
+        modifier = Modifier
+            .width(292.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text("Source trim · ${track.name}", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (currentBounds == null) {
+            Text("Source duration: ${sourceDuration.coerceAtLeast(0L)} ms · Too short to trim safely",
+                color = ApexPalette.TextSecondary, fontSize = 11.sp)
+        } else {
+            Text(
+                "Source ${range.start.toLong()}–${range.endInclusive.toLong()} / ${sourceDuration} ms · Retained ${range.endInclusive.toLong() - range.start.toLong()} ms" +
+                    if (track.sourceDurationMs <= 0L) " (known legacy boundary)" else "",
+                color = ApexPalette.TextSecondary,
+                fontSize = 9.sp
+            )
+            val retainedDuration = (range.endInclusive - range.start).toLong().coerceAtLeast(0L)
+            val projectEnd = if (track.startTimeMs > Long.MAX_VALUE - retainedDuration) Long.MAX_VALUE
+                else track.startTimeMs + retainedDuration
+            Text(
+                "Project ${track.startTimeMs}–$projectEnd ms · Playhead $playheadMs ms (project)",
+                color = ApexPalette.TextSecondary,
+                fontSize = 9.sp
+            )
+            RangeSlider(
+                value = range,
+                onValueChange = { candidate ->
+                    if (candidate.endInclusive - candidate.start >= 100f) range = candidate
+                },
+                valueRange = 0f..sourceDuration.toFloat(),
+                onValueChangeFinished = {
+                    normalizedAudioSourceTrimBounds(sourceDuration, range.start.toLong(), range.endInclusive.toLong())
+                        ?.let { onTrim(it.startMs, it.endMs) }
+                },
+                modifier = Modifier.testTag("audio-track-trim-range-${track.id}")
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (track.sourceDurationMs > 0L) "Reset source" else "Reset known bounds",
+                    color = accent,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onTrim(0L, sourceDuration) }
+                        .testTag("audio-track-trim-reset-${track.id}")
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                )
+                Button(
+                    onClick = onSplit,
+                    enabled = canSplitAudioTrackAtPlayhead(track, playheadMs),
+                    modifier = Modifier.testTag("audio-track-split-${track.id}")
+                ) { Text("Split at playhead", fontSize = 11.sp) }
+            }
         }
     }
 }
@@ -229,7 +351,8 @@ private fun AudioMixerRow(
     onMute: () -> Unit,
     onSolo: () -> Unit,
     onRemove: (() -> Unit)?,
-    showVolume: Boolean = true
+    showVolume: Boolean = true,
+    showSolo: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -254,6 +377,24 @@ private fun AudioMixerRow(
                         activeTrackColor = accent,
                         inactiveTrackColor = ApexPalette.BorderGlass
                     )
+                )
+            }
+        }
+        if (showSolo) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (solo) accent.copy(alpha = 0.2f) else Color.Transparent)
+                    .clickable(onClick = onSolo)
+                    .testTag("audio-track-solo")
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Solo",
+                    color = if (solo) accent else ApexPalette.TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }

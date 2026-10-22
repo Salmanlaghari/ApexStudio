@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.MediaClip
@@ -35,6 +36,7 @@ class AudioOverlayStickerCompactPanelsTest {
     fun audioMixerKeepsClosePinnedAndQuickActionsWorkInCompactPanel() {
         var imported = false
         var closed = false
+        var soloedTrackId: String? = null
         var densityScale = 1f
         compose.setContent {
             densityScale = LocalDensity.current.density
@@ -47,7 +49,7 @@ class AudioOverlayStickerCompactPanelsTest {
                     onRemoveTrack = {},
                     onVolume = { _, _ -> },
                     onMute = {},
-                    onSolo = {},
+                    onSolo = { soloedTrackId = it },
                     onTrim = { _, _, _ -> },
                     onFadeIn = { _, _ -> },
                     onFadeOut = { _, _ -> },
@@ -63,6 +65,9 @@ class AudioOverlayStickerCompactPanelsTest {
         compose.onNodeWithTag("audio-mixer-panel-cards").assertIsDisplayed()
         compose.onNodeWithText("Local Audio").performClick()
         compose.runOnIdle { assertTrue(imported) }
+        compose.onNodeWithTag("audio-mixer-panel-cards").performScrollToKey("music-1")
+        compose.onNodeWithTag("audio-track-solo").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("music-1", soloedTrackId) }
         compose.onNodeWithContentDescription("Close").performClick()
         compose.runOnIdle { assertTrue(closed) }
     }

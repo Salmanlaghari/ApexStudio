@@ -134,4 +134,26 @@ class TextProjectRangeControllerTest {
         assertEquals("Overlay", after.last().textOverlays.single().text)
     }
 
+    @Test fun projectRangeOwnerSkipsSameIdNonV1OverlayWhenSelectionHasNoText() {
+        val nonV1 = MediaClip("overlay", "Overlay", "file:///overlay.mp4", 1_000L,
+            trimEndMs = 1_000L, trackIndex = 1, type = ClipType.OVERLAY,
+            textOverlays = listOf(TextOverlay(id = "same", text = "Overlay", startMs = 200L, endMs = 800L)))
+        val selected = MediaClip("selected", "Selected", "file:///selected.mp4", 1_000L, trimEndMs = 1_000L)
+        val v1Text = MediaClip("v1-text", "V1 text", "file:///v1.mp4", 1_000L,
+            trimEndMs = 1_000L, textOverlays = listOf(TextOverlay(id = "same", text = "V1", startMs = 100L, endMs = 900L)))
+        val vm = EditorViewModel().apply {
+            _state.update { it.copy(project = Project("collision-range-owner", "Collision", 2_000L,
+                clips = listOf(nonV1, selected, v1Text)), selectedClipId = "selected", selectedTextOverlayId = "same") }
+        }
+
+        assertEquals("v1-text", vm.textOverlayProjectOwnerClipId("same"))
+        assertEquals(TextOverlayProjectRange(1_100L, 1_900L), vm.textOverlayProjectRange("same"))
+        vm.updateTextOverlayProjectRange("same", 1_200L, 1_800L, ownerClipId = vm.textOverlayProjectOwnerClipId("same"))
+
+        val after = vm.state.value.project!!.clips
+        assertEquals("Overlay", after.first().textOverlays.single().text)
+        assertEquals(TextOverlayProjectRange(1_200L, 1_800L), vm.textOverlayProjectRange("same"))
+        assertEquals("V1", after.last().textOverlays.single().text)
+    }
+
 }

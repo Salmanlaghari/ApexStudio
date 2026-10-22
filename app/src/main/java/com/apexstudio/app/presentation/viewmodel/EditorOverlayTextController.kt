@@ -307,6 +307,32 @@ fun EditorViewModel.textOverlayOwnerClipId(overlayId: String): String? {
     return target.clip.id
 }
 
+/**
+ * Resolve the V1 owner used by the project-clock range. Non-V1 overlays with a
+ * colliding ID must not steal the range controls from the V1 text layer.
+ */
+fun EditorViewModel.textOverlayProjectOwnerClipId(overlayId: String): String? {
+    val state = _state.value
+    val project = state.project ?: return null
+    val timeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(project.clips)
+    val selectedOwner = state.selectedClipId?.let { selectedId ->
+        project.clips.firstOrNull { clip ->
+            clip.id == selectedId && clip.textOverlays.any { it.id == overlayId }
+        }
+    }
+    if (selectedOwner != null) {
+        return selectedOwner.id.takeIf { ownerId -> timeline.entries.any { it.clip.id == ownerId } }
+    }
+    return timeline.entries.asSequence()
+        .flatMap { entry -> entry.clip.textOverlays.asSequence().map { entry.clip to it } }
+        .firstOrNull { (_, overlay) -> overlay.id == overlayId && overlay.projectTextLayerId != null }
+        ?.first?.id
+        ?: timeline.entries.asSequence()
+            .flatMap { entry -> entry.clip.textOverlays.asSequence().map { entry.clip to it } }
+            .firstOrNull { (_, overlay) -> overlay.id == overlayId }
+            ?.first?.id
+}
+
 /** Read the selected overlay's actual absolute project range for UI controls. */
 fun EditorViewModel.textOverlayProjectRange(overlayId: String): TextOverlayProjectRange? {
     val project = _state.value.project ?: return null

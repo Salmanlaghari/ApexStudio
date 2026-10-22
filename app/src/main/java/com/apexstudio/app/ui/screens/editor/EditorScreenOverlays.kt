@@ -1695,6 +1695,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 
     // The timeline focus switch remains in the timeline header, not in the
     // selected-video strip where it would steal width from its controls.
+    CenteredTimelineWorkspace(
+        contentHeight = com.apexstudio.app.ui.components.compactTimelineHeight(state) + 26.dp,
+        isFocused = isTimelineFocusMode
+    ) {
     Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.weight(1f))
         Row(
@@ -1794,10 +1798,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (isTimelineFocusMode) Modifier.weight(timelineTrackLayoutWeight(true)) else Modifier.weight(1f, fill = false).heightIn(
-                max = com.apexstudio.app.ui.components.compactTimelineHeight(state)
-            ))
+            .weight(1f)
     )
+    }
 
 }
 

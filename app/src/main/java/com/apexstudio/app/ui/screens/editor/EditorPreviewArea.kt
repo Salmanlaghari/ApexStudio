@@ -44,7 +44,7 @@ import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
 internal const val DEFAULT_PREVIEW_COVER_MODE = false
-internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 1.36f
+internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 16f / 9f
 
 @Composable
 fun VideoPreviewArea(
@@ -148,6 +148,7 @@ fun VideoPreviewArea(
     projectVideoEffectId: String? = null,
     workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
     onEffectPreviewFailure: (String) -> Unit = {},
+    compositionAspectRatio: Float = LOCKED_EDITOR_PREVIEW_ASPECT,
     modifier: Modifier = Modifier
 ) {
     // Fixed project-video effects run on decoded pixels with the same matrix and
@@ -326,15 +327,17 @@ fun VideoPreviewArea(
             // Shape mask (Mask tool): darken everything outside the mask
             // shape so the kept region is visible; drag to move/resize
             // while the mask panel is open.
-            MaskPreviewOverlay(
-                mask = mask,
-                editMode = maskEditMode,
-                onCenterChangeLive = onMaskCenterLive,
-                onCenterChangeFinished = onMaskCenterFinished,
-                onSizeChangeLive = onMaskSizeLive,
-            onSizeChangeFinished = onMaskSizeFinished,
-            modifier = Modifier.fillMaxSize()
-        )
+            PreviewContentCanvas(mediaAspectRatio, contentCoverMode) {
+                MaskPreviewOverlay(
+                    mask = mask,
+                    editMode = maskEditMode,
+                    onCenterChangeLive = onMaskCenterLive,
+                    onCenterChangeFinished = onMaskCenterFinished,
+                    onSizeChangeLive = onMaskSizeLive,
+                    onSizeChangeFinished = onMaskSizeFinished,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
         // Drawings are constrained to the same centered FIT bounds as the
         // actual media (or the full viewport in COVER mode). Coordinates
@@ -386,28 +389,30 @@ fun VideoPreviewArea(
         // delete + resize handles on the selection. Replaces the old
         // fixed bottom-end box, which could not be edited at all.
         if (overlayClips.isNotEmpty()) {
-            PipOverlayCanvas(
-                overlayClips = overlayClips,
-                selectedOverlayClipId = selectedOverlayClipId,
-                currentTimeMs = currentTimeMs,
-                overlayPlayer = overlayPlayer,
-                overlayPlayerClipId = overlayPlayerClipId,
-                overlayIsVideo = overlayIsVideo,
-                onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
-                onMoveOverlayClip = { id, dx, dy, persist ->
-                    onMoveOverlayClip?.invoke(id, dx, dy, persist)
-                },
-                onScaleOverlayClip = { id, scale, persist ->
-                    onScaleOverlayClip?.invoke(id, scale, persist)
-                },
-                onRotateOverlayClip = { id, deltaDeg, persist ->
-                    onRotateOverlayClip?.invoke(id, deltaDeg, persist)
-                },
-                onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
-                onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
-                onUpsertOverlayKeyframe = onUpsertOverlayKeyframe,
-                modifier = Modifier.fillMaxSize()
-            )
+            PreviewContentCanvas(compositionAspectRatio, isCoverMode = false) {
+                PipOverlayCanvas(
+                    overlayClips = overlayClips,
+                    selectedOverlayClipId = selectedOverlayClipId,
+                    currentTimeMs = currentTimeMs,
+                    overlayPlayer = overlayPlayer,
+                    overlayPlayerClipId = overlayPlayerClipId,
+                    overlayIsVideo = overlayIsVideo,
+                    onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
+                    onMoveOverlayClip = { id, dx, dy, persist ->
+                        onMoveOverlayClip?.invoke(id, dx, dy, persist)
+                    },
+                    onScaleOverlayClip = { id, scale, persist ->
+                        onScaleOverlayClip?.invoke(id, scale, persist)
+                    },
+                    onRotateOverlayClip = { id, deltaDeg, persist ->
+                        onRotateOverlayClip?.invoke(id, deltaDeg, persist)
+                    },
+                    onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
+                    onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
+                    onUpsertOverlayKeyframe = onUpsertOverlayKeyframe,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         if (playerError != null) {
@@ -517,6 +522,45 @@ internal fun previewContentBounds(
         val height = viewportWidth / aspect
         val top = (viewportHeight - height) / 2f
         PreviewContentBounds(0f, top, viewportWidth, top + height)
+    }
+}
+
+/** Output-frame aspect selected in export settings; the editor chrome stays 16:9. */
+internal fun previewCompositionAspect(aspectRatio: String): Float = when (aspectRatio) {
+    "9:16" -> 9f / 16f
+    "1:1" -> 1f
+    else -> 16f / 9f
+}
+
+/**
+ * Constrains frame-normalized interactive overlays to the pixels occupied by
+ * the source/output frame. FIT letterboxes are excluded; COVER remains full
+ * viewport because the player zoom-crops the source to fill it.
+ */
+@Composable
+internal fun PreviewContentCanvas(
+    mediaAspectRatio: Float?,
+    isCoverMode: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val bounds = previewContentBounds(
+            with(density) { maxWidth.toPx() },
+            with(density) { maxHeight.toPx() },
+            mediaAspectRatio,
+            isCoverMode
+        )
+        if (bounds == null) {
+            Box(Modifier.fillMaxSize(), content = content)
+        } else {
+            val x = with(density) { bounds.left.toDp() }
+            val y = with(density) { bounds.top.toDp() }
+            val width = with(density) { (bounds.right - bounds.left).toDp() }
+            val height = with(density) { (bounds.bottom - bounds.top).toDp() }
+            Box(Modifier.offset(x, y).size(width, height), content = content)
+        }
     }
 }
 

@@ -110,14 +110,15 @@ fun KeyframePanel(
     onClear: () -> Unit,
     onClose: () -> Unit,
     onUpsertParam: (KeyframeParam, Float) -> Unit,
-    onPaste: ((Keyframe, Long) -> Unit)? = null
+    onPaste: ((Keyframe, Long) -> Unit)? = null,
+    initialPropertyFilter: KeyframePropertyFilter = KeyframePropertyFilter.ALL
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
     var copiedKeyframe by remember { mutableStateOf<Keyframe?>(null) }
     var selectedKeyframeId by remember(sorted) {
         mutableStateOf(sorted.minByOrNull { kotlin.math.abs(it.timeMs - playheadMs) }?.id)
     }
-    var propertyFilter by remember { mutableStateOf(KeyframePropertyFilter.ALL) }
+    var propertyFilter by remember(initialPropertyFilter) { mutableStateOf(initialPropertyFilter) }
     val effectiveDuration = clipDurationMs.coerceAtLeast(1000L)
 
     val activeKeyframe = sorted.firstOrNull { it.id == selectedKeyframeId }

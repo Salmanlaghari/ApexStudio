@@ -37,6 +37,23 @@ class ScreenshotEditorCompositionTest {
         )
     }
 
+    @Test fun premiumPropertyActionOpensRealFilteredControlsWithoutChangingProjectData() {
+        val vm = editor()
+        val original = vm.state.value.project
+        compose.setContent {
+            val state by vm.state.collectAsState()
+            Column(Modifier.requiredSize(375.dp, 400.dp)) {
+                EditorTransportSection(state, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = {})
+            }
+        }
+        compose.onNodeWithContentDescription("Open Opacity keyframe controls").performClick()
+        compose.runOnIdle {
+            assertTrue(vm.state.value.keyframePanelOpen)
+            assertEquals("OPACITY", vm.state.value.keyframePropertyFilter)
+            assertEquals("Opening an inspector must preserve project data", original, vm.state.value.project)
+        }
+    }
+
     @Test fun selectedVideoControlsAreImmediatelyAboveCompactTimelineAndMutateTheRealTrack() {
         val vm = editor()
         compose.setContent {
@@ -56,7 +73,7 @@ class ScreenshotEditorCompositionTest {
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("Keyframe and Animation must share the row above timeline", keyframe.bottom <= header.top && animation.bottom <= header.top)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
-        assertEquals("Filmstrip must remain compact", 56f, track.height, 1f)
+        assertEquals("Filmstrip must remain compact", 36f, track.height, 1f)
         compose.onNodeWithContentDescription("Add keyframe").performClick()
         compose.runOnIdle {
             assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size)

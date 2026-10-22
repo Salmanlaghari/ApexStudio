@@ -172,7 +172,7 @@ internal fun mainVideoLaneHeight(
 ): Dp {
     // Keep legacy parameters source-compatible, but viewport slack, waveform
     // presence, and supporting rows must never change V1's compact geometry.
-    return if (hasMainVideo) 56.dp else 0.dp
+    return if (hasMainVideo) 36.dp else 0.dp
 }
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
@@ -194,19 +194,36 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     // A compact ruler sits directly on the main filmstrip; only real tracks
     // add height below it. Values mirror VideoTimeline's rendered geometry.
     var height = 20
-    if (hasMain) height += 56
+    if (hasMain) height += 36
     if (hasWaveform) height += 10 + 12
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
-    if (supportRows > 0) height += 10
-    height += overlayLayers * (28 + 10)
-    if (hasText) height += 28 + 10
-    if (hasStickers) height += 28 + 10
-    if (hasFx) height += 28 + 10
-    height += musicRows * 46 + if (musicRows > 0) 10 else 0
-    height += voiceRows * 46 + if (voiceRows > 0) 10 else 0
+    if (supportRows > 0) height += 4
+    height += overlayLayers * (28 + 4)
+    if (hasText) height += 28 + 4
+    if (hasStickers) height += 28 + 4
+    if (hasFx) height += 28 + 4
+    height += musicRows * 36 + if (musicRows > 0) 4 else 0
+    height += voiceRows * 36 + if (voiceRows > 0) 4 else 0
     return height.dp
+}
+
+/** Small in-row identity chip: it overlays the time-zero edge instead of reserving a gutter. */
+@Composable
+private fun TimelineLaneIdentity(label: String, accent: Color) {
+    Text(
+        text = label,
+        color = Color(0xFFE5F2FF),
+        fontSize = 8.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xE6101A2B))
+            .border(0.75.dp, accent.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    )
 }
 
 /**
@@ -601,11 +618,11 @@ fun VideoTimeline(
     // and broke on any track at exactly the boundary).
     val musicTracks = remember(audioTracks) { audioTracks.filter { it.kind == AudioTrack.Kind.MUSIC } }
     val voiceTracks = remember(audioTracks) { audioTracks.filter { it.kind != AudioTrack.Kind.MUSIC } }
-    // Lane heights grow 46dp per extra row (one AudioTrackLaneRow each) so
+    // Lane heights grow 36dp per extra row (one AudioTrackLaneRow each) so
     // every track stays visible; the outer vertical scroll handles overflow.
-    val a1Height = (musicTracks.size * 46).dp
-    val a2Height = (voiceTracks.size * 46).dp
-    // Supporting lanes keep their own compact heights; V1 remains fixed at 64dp.
+    val a1Height = (musicTracks.size * 36).dp
+    val a2Height = (voiceTracks.size * 36).dp
+    // Supporting lanes keep their own compact heights; V1 remains fixed at 36dp.
     val textLaneHeight = 28
     val stickerLaneHeight = 28
     val fxLaneHeight = 28
@@ -616,13 +633,13 @@ fun VideoTimeline(
     val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty()
     val waveformStripHeight = 12
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
-        .sumOf { overlayLayerHeight.value.toInt() + 10 }
-    val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
-    val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 10 else 0
-    val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
-    val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
-    val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
-    val v1Height = if (hasMainVideo) 56.dp else 0.dp
+        .sumOf { overlayLayerHeight.value.toInt() + 4 }
+    val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 4 else 0
+    val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 4 else 0
+    val fxLaneTotal = if (hasFx) fxLaneHeight + 4 else 0
+    val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 4 else 0
+    val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 4 else 0
+    val v1Height = if (hasMainVideo) 36.dp else 0.dp
     // Ruler and filmstrip meet edge-to-edge. The actual source waveform is
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
@@ -631,7 +648,7 @@ fun VideoTimeline(
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
         fxLaneTotal + a1Total + a2Total
     val timelineTotalDp = fixedHeaderHeight +
-        (if (supportRowsTotal > 0) 10 else 0) +
+        (if (supportRowsTotal > 0) 4 else 0) +
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
@@ -893,11 +910,11 @@ fun VideoTimeline(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                // 10dp gap between the pinned V1 row and
+                                // 4dp gap between the pinned V1 row and
                                 // the first scrolling row (was the
                                 // Column's spacedBy before the split).
-                                .padding(top = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                .padding(top = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
 
                             // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
@@ -1699,18 +1716,18 @@ private fun TimelineVideoLayerRow(
                             .height(22.dp)
                             .testTag("timeline-overlay-clip-${clip.id}")
                             .graphicsLayer { translationX = dragDx }
-                            .clip(RoundedCornerShape(5.dp))
+                            .clip(RoundedCornerShape(7.dp))
                             .background(
-                                if (isSelected) Color(0xFFD8F4F3)
-                                else if (isDragging) Color(0xFFB8EAE7)
-                                else Color(0xFFE7F7F6)
+                                if (isSelected) Color(0xFF124554)
+                                else if (isDragging) Color(0xFF145363)
+                                else Color(0xFF0D2A3A)
                             )
                             .border(
                                 width = if (isSelected || isDragging) 1.5.dp else 1.dp,
                                 color = if (isSelected) Color(0xFF00A99D)
                                 else if (isDragging) ApexPalette.NeonCyan
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(5.dp)
+                                shape = RoundedCornerShape(7.dp)
                             )
                             .pointerInput(clip, isLocked, msToDp, density.density) {
                                 if (!isLocked) {
@@ -1781,6 +1798,7 @@ private fun TimelineVideoLayerRow(
                             placeholderIconSize = 10.dp,
                             modifier = Modifier.fillMaxSize()
                         )
+                        Box(Modifier.fillMaxSize().background(Color(0xFF00C7D9).copy(alpha = 0.16f)))
                         Text(clip.name, color = Color.White, fontSize = 8.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.align(Alignment.BottomStart).padding(start = 13.dp, bottom = 2.dp)
@@ -1897,7 +1915,9 @@ private fun TimelineVideoLayerRow(
                     )
                 }
             }
-
+            Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
+                TimelineLaneIdentity("Overlay V${layerIndex + 1}", ApexPalette.NeonCyan)
+            }
         }
     }
 }
@@ -1985,12 +2005,12 @@ private fun TimelineTextLane(
                         .align(Alignment.TopStart)
                         .width(ovWidthDp)
                         .height(16.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF8E16C8), Color(0xFFC51DE9))))
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF5124A8), Color(0xFF7838D1))))
                         .border(
                             width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) Color.White else ApexPalette.NeonPink.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(4.dp)
+                            color = if (isSelected) Color.White else Color(0xFFAE8BFF).copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(7.dp)
                         )
                         .clickable {
                             if (ownerClipId != null) onSelectTextOverlay(ownerClipId, textOverlay.id)
@@ -2097,6 +2117,9 @@ private fun TimelineTextLane(
                     handle(isStart = true)
                     handle(isStart = false)
                 }
+            }
+            Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp).zIndex(5f)) {
+                TimelineLaneIdentity("Text", Color(0xFFAE8BFF))
             }
         }
     }
@@ -2360,7 +2383,7 @@ private fun TimelineVideoTrack(
                             onClipBoundsMeasured(index, pos.x, width)
                         }
                         .zIndex(if (isBeingDragged) 100f else 1f)
-                        .shadow(if (isSelected || isMultiSelected) 7.dp else 0.dp, RoundedCornerShape(5.dp))
+                        .shadow(if (isSelected || isMultiSelected) 7.dp else 0.dp, RoundedCornerShape(7.dp))
                         .graphicsLayer {
                             if (isBeingDragged) {
                                 translationX = dragAccumulatedOffsetPx
@@ -2370,19 +2393,19 @@ private fun TimelineVideoTrack(
                                 alpha = 0.92f
                             }
                         }
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(7.dp))
                         .background(
                             if (isMultiSelected) Color(0xFF28231B)
-                            else if (isSelected) Color(0xFF151C31)
-                            else Color(0xFF111A2B)
+                            else if (isSelected) Color(0xFF103442)
+                            else Color(0xFF0D2636)
                         )
                         .border(
                             width = if (isBeingDragged) 2.5.dp else if (isSelected || isMultiSelected) 2.dp else 1.dp,
                             color = if (isBeingDragged) ApexPalette.NeonCyan
                             else if (isMultiSelected) ApexPalette.NeonAmber
                             else if (isSelected) ApexPalette.NeonCyan
-                            else Color(0xFF34425B),
-                            shape = RoundedCornerShape(4.dp)
+                            else Color(0xFF178B9B).copy(alpha = 0.75f),
+                            shape = RoundedCornerShape(7.dp)
                         )
                         .pointerInput(clip.id, isSelected) {
                             // Direct finger-drag reorder for the SELECTED clip (no long-press
@@ -2432,6 +2455,13 @@ private fun TimelineVideoTrack(
                         filmstripFrames = filmstripFrames,
                         placeholderIconSize = 14.dp,
                         modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.horizontalGradient(
+                                listOf(Color(0xFF00C7D9).copy(alpha = 0.14f), Color(0xFF123D59).copy(alpha = 0.08f))
+                            )
+                        )
                     )
 
                     // Persisted source-time looks are visible as colored, labeled range
@@ -2732,6 +2762,9 @@ private fun TimelineVideoTrack(
                 )
             }
         }
+        Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 3.dp).zIndex(5f)) {
+            TimelineLaneIdentity("Video", ApexPalette.NeonCyan)
+        }
     }
 }
 
@@ -2791,17 +2824,17 @@ private fun TimelineStickerLane(
                         .align(Alignment.TopStart)
                         .width(segWidthDp)
                         .height(20.dp)
-                        .clip(RoundedCornerShape(5.dp))
+                        .clip(RoundedCornerShape(7.dp))
                         .background(
                             Brush.horizontalGradient(
-                                if (isSelected) listOf(Color(0xFF713FC2), Color(0xFFB83891))
-                                else listOf(Color(0xFF352064), Color(0xFF63275F))
+                                if (isSelected) listOf(Color(0xFF5434BD), Color(0xFF7251DB))
+                                else listOf(Color(0xFF292460), Color(0xFF49328F))
                             )
                         )
                         .border(
                             width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) Color.White else Color(0xFFF472B6).copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(5.dp)
+                            color = if (isSelected) Color.White else Color(0xFF45D5C5).copy(alpha = 0.75f),
+                            shape = RoundedCornerShape(7.dp)
                         )
                         .clickable { onSelectSticker(sticker.id) }
                         .padding(horizontal = 6.dp),
@@ -2848,7 +2881,7 @@ private fun TimelineStickerLane(
                             onMoveStickerKeyframe(sticker.id, kfId, newTimeMs)
                         },
                         onAddAtPlayhead = { onToggleStickerKeyframeAtPlayhead(sticker.id) },
-                        accentColor = Color(0xFFF472B6),
+                        accentColor = Color(0xFF45D5C5),
                         showLaneBackground = false,
                         markerTagPrefix = "sticker-${sticker.id}",
                         modifier = Modifier
@@ -2857,6 +2890,9 @@ private fun TimelineStickerLane(
                     )
                 }
             }
+        }
+        Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
+            TimelineLaneIdentity("Stickers", Color(0xFFA88CFF))
         }
     }
 }
@@ -2988,6 +3024,9 @@ private fun TimelineFxTrack(
                 }
             }
         }
+        Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
+            TimelineLaneIdentity("FX", Color(0xFF42B9FF))
+        }
     }
 }
 
@@ -2999,12 +3038,12 @@ private fun FxSegment(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(RoundedCornerShape(7.dp))
             .background(
                 Brush.horizontalGradient(
                     listOf(
-                        Color(0xFF1766A6).copy(alpha = 0.72f),
-                        ApexPalette.NeonCyan.copy(alpha = 0.24f)
+                        Color(0xFF5124A8).copy(alpha = 0.88f),
+                        Color(0xFF147B84).copy(alpha = 0.72f)
                     )
                 )
             )
@@ -3166,7 +3205,7 @@ private fun AudioTrackLaneRow(
     onTrim: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = if (track.kind != AudioTrack.Kind.MUSIC) Color(0xFF55B7D8) else Color(0xFF26D7C8)
+    val accent = if (track.kind != AudioTrack.Kind.MUSIC) Color(0xFF26D7C8) else Color(0xFFA17AFF)
     val density = LocalDensity.current
     var transientDxPx by remember(track.id) { mutableFloatStateOf(0f) }
     var gestureMode by remember(track.id) { mutableStateOf(AudioBlockGesture.NONE) }
@@ -3193,7 +3232,7 @@ private fun AudioTrackLaneRow(
     val displayedSpanMs = (previewTrimEnd - previewTrimStart).coerceAtLeast(250L)
     val displayedWidth = maxOf((displayedSpanMs * msToDp).dp, 42.dp)
 
-    Box(modifier = modifier.height(40.dp)) {
+    Box(modifier = modifier.height(30.dp)) {
         Box(
             modifier = Modifier
                 .offset(x = (previewStart * msToDp).dp)
@@ -3267,6 +3306,9 @@ private fun AudioTrackLaneRow(
             }
             Box(Modifier.align(Alignment.CenterStart).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
             Box(Modifier.align(Alignment.CenterEnd).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
+        }
+        Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
+            TimelineLaneIdentity(if (track.kind == AudioTrack.Kind.MUSIC) "Music" else "Audio", accent)
         }
     }
 }

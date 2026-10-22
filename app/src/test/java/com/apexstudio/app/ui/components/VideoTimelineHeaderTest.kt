@@ -49,6 +49,8 @@ class VideoTimelineHeaderTest {
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
         compose.onNodeWithTag("timeline-add-media", useUnmergedTree = true).assertIsDisplayed().performClick()
+        compose.onNodeWithText("Video").assertIsDisplayed()
+        compose.onNodeWithText("Music").assertIsDisplayed()
         compose.onNodeWithText("V1").assertDoesNotExist()
         compose.onNodeWithText("A1").assertDoesNotExist()
         compose.onNodeWithText("♫").assertDoesNotExist()

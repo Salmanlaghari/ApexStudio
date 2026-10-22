@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
@@ -25,7 +26,7 @@ class PhaseZeroToolbarTest {
             testToolbar(ToolbarSelectionKind.NONE, calls)
         }
 
-        composeRule.onNodeWithText("More").performScrollTo().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Add Image").performScrollTo().performClick()
         composeRule.onNodeWithText("Add Video").performScrollTo().performClick()
 
@@ -69,9 +70,9 @@ class PhaseZeroToolbarTest {
         }
 
         listOf("Text", "FX", "Stickers", "Filters").forEach { label ->
-            composeRule.onNodeWithText(label).performScrollTo().performClick()
+            composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
         }
-        composeRule.onNodeWithText("More").performScrollTo().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         listOf("Music", "Enhance", "Templates", "Canvas", "Subtitles").forEach { label ->
             composeRule.onNodeWithText(label).performScrollTo().performClick()
         }
@@ -85,7 +86,7 @@ class PhaseZeroToolbarTest {
     @Test fun `global Enhance and video Adjust use independent callbacks`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
-        composeRule.onNodeWithText("More").performScrollTo().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         assertEquals(1, calls["enhance"] ?: 0)
@@ -99,7 +100,7 @@ class PhaseZeroToolbarTest {
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var quickEnhance = 0
         composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
-        composeRule.onNodeWithText("More").performScrollTo().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
@@ -110,11 +111,11 @@ class PhaseZeroToolbarTest {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.NONE, calls) }
         listOf("Media", "Audio", "FX", "Filters").forEach {
-            composeRule.onNodeWithText(it).performScrollTo().performClick()
+            composeRule.onNodeWithText(it).assertIsDisplayed().performClick()
         }
-        composeRule.onNodeWithText("Overlay").performScrollTo().performClick()
+        composeRule.onNodeWithText("Overlay").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Image").performClick()
-        composeRule.onNodeWithText("Overlay").performScrollTo().performClick()
+        composeRule.onNodeWithText("Overlay").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Video").performClick()
         listOf("media", "device-audio", "effects", "filters", "add-image", "add-video").forEach {
             assertEquals(it, 1, calls[it] ?: 0)

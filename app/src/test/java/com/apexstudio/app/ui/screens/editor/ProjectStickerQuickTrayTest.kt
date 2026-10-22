@@ -32,6 +32,6 @@ class ProjectStickerQuickTrayTest {
     @Test fun emptyProjectDoesNotGetFakeReferenceStickersOrTrayControls() {
         compose.setContent { ProjectStickerQuickTray(emptyList(), null, {}, {}) }
         compose.onNodeWithContentDescription("Close project sticker tray").assertDoesNotExist()
-        assertTrue(LOCKED_EDITOR_PREVIEW_ASPECT > 1.3f && LOCKED_EDITOR_PREVIEW_ASPECT < 1.4f)
+        assertEquals("Approved landscape viewport", 16f / 9f, LOCKED_EDITOR_PREVIEW_ASPECT, 0.0001f)
     }
 }

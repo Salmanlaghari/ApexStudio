@@ -51,7 +51,7 @@ import org.robolectric.annotation.GraphicsMode
  * never a user screenshot or project background.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w375dp-h830dp")
+@Config(sdk = [34], qualifiers = "w375dp-h667dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LockedEditorVisualRenderTest {
     @Test
@@ -64,7 +64,7 @@ class LockedEditorVisualRenderTest {
             output,
             roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record),
             roborazziComposeOptions = RoborazziComposeOptions {
-                addOption(RoborazziComposeSizeOption(widthDp = 375, heightDp = 830))
+                addOption(RoborazziComposeSizeOption(widthDp = 375, heightDp = 667))
             }
         ) {
             LockedEditorVisualFixture(geometry)
@@ -73,7 +73,7 @@ class LockedEditorVisualRenderTest {
         // Use ratios/tolerances rather than relying on a density-specific raw pixel size.
         val preview = requireNotNull(geometry.preview) { "Preview did not receive layout" }
         val previewRatio = preview.width / preview.height
-        assertEquals("Preview should retain the locked landscape ~1.36 ratio", 1.36f, previewRatio, 0.04f)
+        assertEquals("Preview should match the approved 16:9 landscape frame", 16f / 9f, previewRatio, 0.04f)
 
         val timeline = requireNotNull(geometry.timeline) { "Timeline did not receive layout" }
         assertTrue("Timeline should have a compact viewport, not a second title/header row", timeline.height in 180f..380f)
@@ -175,7 +175,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp)
+                .padding(horizontal = 4.dp)
                 .aspectRatio(LOCKED_EDITOR_PREVIEW_ASPECT)
                 .onGloballyPositioned { geometry.preview = it.toRectPx() }
         ) {
@@ -196,7 +196,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         )
 
         Box(
-            Modifier.fillMaxWidth().height(40.dp),
+            Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             SelectedVideoKeyframeControl(

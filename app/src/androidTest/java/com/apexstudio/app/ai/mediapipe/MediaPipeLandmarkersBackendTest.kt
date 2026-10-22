@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 @RunWith(AndroidJUnit4::class)
 class MediaPipeLandmarkersBackendTest {
     @Test
-    fun `bundled face pose and hand models run inference and detectors close safely`() = runBlocking {
+    fun bundledFacePoseAndHandModelsRunInferenceAndDetectorsCloseSafely() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
         try {

@@ -7,9 +7,9 @@ import org.junit.Test
 class EditorLayoutMetricsTest {
     @Test
     fun brandedChromeUsesComfortableHeaderAndTransportDimensions() {
-        assertEquals(48.dp, EditorLayoutMetrics.TopBarHeight)
-        assertEquals(10.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
-        assertEquals(56.dp, EditorLayoutMetrics.PlaybackBarHeight)
+        assertEquals(40.dp, EditorLayoutMetrics.TopBarHeight)
+        assertEquals(8.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
+        assertEquals(44.dp, EditorLayoutMetrics.PlaybackBarHeight)
         assertEquals(48.dp, EditorLayoutMetrics.TimelineActionHeight)
     }
 }

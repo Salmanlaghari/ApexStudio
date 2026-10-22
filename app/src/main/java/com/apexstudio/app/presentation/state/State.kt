@@ -74,6 +74,9 @@ data class EditorState(
     val speedPanelOpen: Boolean = false,
     // Set to true while the Keyframe Animation bottom sheet is open.
     val keyframePanelOpen: Boolean = false,
+    // Ephemeral editor UI context: opens the manual keyframe panel at a
+    // selected video property. This is intentionally not part of Project.
+    val keyframePropertyFilter: String? = null,
     // Real-time FX (VHS, Glitch, Grain, …). activeFxId == null means
     // no FX; intensity is the 0..1 slider exposed in the FX panel.
     // fxSpeed (0.1–4x) drives the animation rate of time-based

@@ -544,10 +544,16 @@ fun ContextualBottomToolbar(
         }
         ToolbarBarRow(
             items = mainItems.map(::routed),
-            surfaceColor = Color(0xFF0C1421),
+            surfaceColor = ApexPalette.BgBase,
             itemWidth = 37.dp,
             compact = true,
-            barHeight = 66.dp
+            selectedLabel = when (selectionKind) {
+                ToolbarSelectionKind.TEXT -> "Text"
+                ToolbarSelectionKind.STICKER -> "Stickers"
+                ToolbarSelectionKind.AUDIO -> "Audio"
+                else -> null
+            },
+            barHeight = 64.dp
         )
         AnimatedVisibility(
             visible = showMoreTools,
@@ -579,6 +585,7 @@ private fun ToolbarBarRow(
     leadingContent: @Composable (RowScope.() -> Unit)? = null,
     itemWidth: androidx.compose.ui.unit.Dp = 66.dp,
     compact: Boolean = false,
+    selectedLabel: String? = null,
     barHeight: androidx.compose.ui.unit.Dp = 46.dp
 ) {
     Box(
@@ -602,23 +609,30 @@ private fun ToolbarBarRow(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .horizontalScroll(rememberScrollState()),
+                        .then(if (compact) Modifier else Modifier.horizontalScroll(rememberScrollState())),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     items.forEach { item ->
+                        val itemTint = if (item.label == selectedLabel) ApexPalette.NeonPurple else item.tint
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .width(itemWidth)
+                                .then(if (compact) Modifier.weight(1f) else Modifier.width(itemWidth))
                                 .fillMaxHeight()
+                                .padding(horizontal = if (compact) 1.dp else 0.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (item.label == selectedLabel) ApexPalette.NeonPurple.copy(alpha = 0.20f) else Color.Transparent)
+                                .border(if (item.label == selectedLabel) 1.dp else 0.dp,
+                                    if (item.label == selectedLabel) ApexPalette.NeonPurple.copy(alpha = 0.5f) else Color.Transparent,
+                                    RoundedCornerShape(9.dp))
                                 .clickable(onClick = item.onClick)
                         ) {
                             if (item.glyph != null) {
                                 // Mockup text glyph (e.g. the bold "T" for the Text tab).
                                 Text(
                                     text = item.glyph,
-                                    color = item.tint,
+                                    color = itemTint,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier.size(20.dp),
@@ -628,7 +642,7 @@ private fun ToolbarBarRow(
                                 Icon(
                                     imageVector = item.icon!!,
                                     contentDescription = item.label,
-                                    tint = item.tint,
+                                    tint = itemTint,
                                     modifier = Modifier
                                         .size(if (compact) 21.dp else 19.dp)
                                         .graphicsLayer { rotationZ = item.iconRotationDeg }
@@ -637,7 +651,7 @@ private fun ToolbarBarRow(
                             Spacer(Modifier.height(if (compact) 2.dp else 1.dp))
                             Text(
                                 text = item.label,
-                                color = item.tint,
+                                color = itemTint,
                                 fontSize = if (compact) 9.sp else 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
@@ -648,7 +662,7 @@ private fun ToolbarBarRow(
                 }
                 // Edge fades (no touch handling — gestures pass
                 // through to the scrollable Row below).
-                Box(
+                if (!compact) Box(
                     Modifier.align(Alignment.CenterStart)
                         .width(20.dp).fillMaxHeight()
                         .background(
@@ -657,7 +671,7 @@ private fun ToolbarBarRow(
                             )
                         )
                 )
-                Box(
+                if (!compact) Box(
                     Modifier.align(Alignment.CenterEnd)
                         .width(20.dp).fillMaxHeight()
                         .background(

@@ -89,12 +89,12 @@ fun TopAppBarSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
-            ApexStudioMark(Modifier.size(32.dp))
-            Spacer(Modifier.width(7.dp))
+            ApexStudioMark(Modifier.size(25.dp))
+            Spacer(Modifier.width(5.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 145.dp)) {
-                Text("Apex", color = EditorPalette.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                Text("Apex", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, softWrap = false)
-                Text("Studio", color = EditorPalette.NeonPurple, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                Text("Studio", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
         }
@@ -102,7 +102,7 @@ fun TopAppBarSection(
         Box {
             Row(
                 modifier = Modifier
-                    .height(32.dp)
+                    .height(30.dp)
                     .widthIn(min = 72.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
@@ -149,7 +149,7 @@ fun TopAppBarSection(
 
         Row(
             modifier = Modifier
-                .height(34.dp)
+                .height(30.dp)
                 .widthIn(min = 78.dp)
                 .clip(RoundedCornerShape(9.dp))
                 .background(EditorPalette.GradientPrimary)
@@ -173,25 +173,21 @@ private fun ApexStudioMark(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.width
         val h = size.height
-        val outer = Path().apply {
-            moveTo(w * .5f, h * .04f)
-            lineTo(w * .98f, h * .94f)
-            lineTo(w * .02f, h * .94f)
-            close()
+        // Open, rounded play-ribbon mark from the approved editor branding.
+        val ribbon = Path().apply {
+            moveTo(w * .28f, h * .10f)
+            lineTo(w * .89f, h * .45f)
+            quadraticTo(w * .98f, h * .50f, w * .89f, h * .56f)
+            lineTo(w * .30f, h * .91f)
+            lineTo(w * .30f, h * .47f)
         }
-        drawPath(outer, Brush.linearGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple)), style = Fill)
-        val cutout = Path().apply {
-            moveTo(w * .5f, h * .37f)
-            lineTo(w * .69f, h * .77f)
-            lineTo(w * .31f, h * .77f)
-            close()
-        }
-        drawPath(cutout, EditorPalette.BgBase, style = Fill)
-        drawLine(
-            brush = Brush.horizontalGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple)),
-            start = androidx.compose.ui.geometry.Offset(w * .37f, h * .84f),
-            end = androidx.compose.ui.geometry.Offset(w * .63f, h * .84f),
-            strokeWidth = h * .055f
-        )
+        drawPath(ribbon, Brush.linearGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple,
+            EditorPalette.NeonPink)), style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = w * .13f, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        drawLine(EditorPalette.NeonCyan,
+            start = androidx.compose.ui.geometry.Offset(w * .08f, h * .21f),
+            end = androidx.compose.ui.geometry.Offset(w * .08f, h * .79f),
+            strokeWidth = w * .12f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }

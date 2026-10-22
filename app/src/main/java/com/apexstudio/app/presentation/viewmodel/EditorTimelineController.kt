@@ -455,7 +455,16 @@ fun EditorViewModel.pasteKeyframe(clipId: String, source: Keyframe, timeMs: Long
 
 
 fun EditorViewModel.setKeyframePanelOpen(open: Boolean) =
-    _state.update { it.copy(keyframePanelOpen = open) }
+    _state.update { it.copy(keyframePanelOpen = open, keyframePropertyFilter = if (open) it.keyframePropertyFilter else null) }
+
+/** Opens the actual horizontally-scrolling manual keyframe editor on one property. */
+fun EditorViewModel.openKeyframePropertyPanel(property: String) {
+    require(property in setOf("POSITION", "SCALE", "ROTATION", "OPACITY"))
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = property) }
+}
+
+fun EditorViewModel.openKeyframeAnimationPanel() =
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = null) }
 
 
 fun EditorViewModel.toggleKeyframeAtPlayhead() {

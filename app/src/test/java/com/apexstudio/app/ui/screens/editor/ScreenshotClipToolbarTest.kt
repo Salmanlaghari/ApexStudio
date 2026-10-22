@@ -1,6 +1,11 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -19,6 +24,25 @@ import org.robolectric.annotation.Config
 class ScreenshotClipToolbarTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp-mdpi")
+    fun premiumDockFitsAllEightRealToolsWithoutHorizontalClippingAt320dp() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            Box(Modifier.width(320.dp)) { testToolbar(calls, selectionKind = ToolbarSelectionKind.NONE) }
+        }
+        val bounds = CONTEXTUAL_PRIMARY_TOOL_ORDER.map { label ->
+            composeRule.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        }
+        assertTrue(bounds.zipWithNext().all { (left, right) -> left.right <= right.left })
+        assertTrue("More must not be clipped at the right edge", bounds.last().right <= 320f)
+        listOf("Media" to "media", "Audio" to "device-audio", "Text" to "text",
+            "Stickers" to "stickers", "FX" to "effects", "Filters" to "filters").forEach { (label, action) ->
+            composeRule.onNodeWithText(label).performClick()
+            assertEquals("$label must keep its real callback", 1, calls[action])
+        }
+    }
 
     @Test
     fun `selected video shows the screenshot priority tools and keeps primary navigation visible`() {

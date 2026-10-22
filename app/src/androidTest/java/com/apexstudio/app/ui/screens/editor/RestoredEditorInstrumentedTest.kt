@@ -211,13 +211,24 @@ class RestoredEditorInstrumentedTest {
                 device.findObject(By.desc("Animation")).click()
                 val panelDeadline = System.currentTimeMillis() + 15_000L
                 while (!vm.state.value.keyframePanelOpen && System.currentTimeMillis() < panelDeadline) Thread.sleep(100L)
-                assertTrue("Lower Animation must retain animation cards", device.wait(Until.hasObject(By.text("Customized")), 15_000L))
+                assertTrue("Lower Animation must open its cards panel", vm.state.value.keyframePanelOpen)
+                assertTrue("Animation cards need their Close action", device.wait(Until.hasObject(By.desc("Close")), 15_000L))
+                val cardY = device.findObject(By.desc("Close")).visibleBounds.bottom +
+                    (80 * context.resources.displayMetrics.density).toInt()
+                repeat(12) {
+                    if (!device.hasObject(By.text("Customized")))
+                        device.swipe(device.displayWidth * 5 / 6, cardY,
+                            device.displayWidth / 6, cardY, 20)
+                }
+                assertTrue("Customized must remain reachable in animation cards", device.hasObject(By.text("Customized")))
                 device.findObject(By.text("Customized")).click()
                 assertTrue("Customized must open real Keyframe Studio", device.wait(Until.hasObject(By.text("Keyframe Studio")), 15_000L))
                 for (property in listOf("Position", "Scale", "Rotation", "Opacity")) {
                     assertTrue("Animation inspector must retain $property", device.hasObject(By.text(property)))
                 }
-                device.findObject(By.desc("Close")).click()
+                device.findObject(By.desc("Close")).click() // manual inspector returns to cards
+                assertTrue(device.wait(Until.hasObject(By.text("Customized")), 10_000L))
+                device.findObject(By.desc("Close")).click() // close cards, returning to the timeline
                 device.waitForIdle(1_000L)
                 val seenLayers = mutableSetOf<String>()
                 val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects")

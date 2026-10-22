@@ -232,3 +232,22 @@ internal data class KeyframeAnimationClock(
         }
     }
 }
+
+/**
+ * Media3 adds an item's sequence offset to frame PTS before invoking its effects.
+ * The keyframe clock expects elapsed time from the already-trimmed item start,
+ * so remove only that sequence offset (not the source trim start).
+ */
+internal fun itemLocalPresentationTimeUs(
+    compositionTimeUs: Long,
+    itemTimelineStartMs: Long
+): Long {
+    val nonNegativeStartMs = itemTimelineStartMs.coerceAtLeast(0L)
+    val itemStartUs = if (nonNegativeStartMs > Long.MAX_VALUE / 1_000L) {
+        Long.MAX_VALUE
+    } else {
+        nonNegativeStartMs * 1_000L
+    }
+    val safeCompositionTimeUs = compositionTimeUs.coerceAtLeast(itemStartUs)
+    return safeCompositionTimeUs - itemStartUs
+}

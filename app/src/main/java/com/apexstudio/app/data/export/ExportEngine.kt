@@ -485,7 +485,15 @@ class ExportEngine(private val context: Context) {
                             if (!clip.keyframes.isEmpty()) {
                                 add(com.apexstudio.app.data.animation.KeyframeAnimationEffect(
                                     trackProvider = { clip.keyframes },
-                                    timeMsAtPresentationTimeUs = keyframeClock::projectTimeMs
+                                    // Composition effects see PTS with this item's sequence offset;
+                                    // projectTimeMs expects an item-local, trim-relative timestamp.
+                                    timeMsAtPresentationTimeUs = { compositionTimeUs ->
+                                        keyframeClock.projectTimeMs(
+                                            com.apexstudio.app.data.animation.itemLocalPresentationTimeUs(
+                                                compositionTimeUs, entry.timelineStartMs
+                                            )
+                                        )
+                                    }
                                 ).buildEffects().first())
                             }
                             speedPair?.second?.let(::add)

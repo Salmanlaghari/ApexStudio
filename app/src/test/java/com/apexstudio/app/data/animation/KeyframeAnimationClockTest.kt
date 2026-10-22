@@ -50,4 +50,42 @@ class KeyframeAnimationClockTest {
 
         assertEquals(5_000L, clock.projectTimeMs(9_000_000L))
     }
+
+    @Test
+    fun `later sequence timestamp is localized before trimmed constant speed mapping`() {
+        val itemStartMs = 5_000L
+        val clock = KeyframeAnimationClock(
+            trimStartMs = 1_200L,
+            trimEndMs = 5_200L,
+            timelineStartMs = itemStartMs,
+            clipSpeed = 2f,
+            speedPoints = emptyList()
+        )
+
+        // Media3's composition PTS includes the 5-second preceding item; the
+        // effect's local clock starts at zero at this item's clipped start.
+        val localPtsUs = itemLocalPresentationTimeUs(6_000_000L, itemStartMs)
+        assertEquals(1_000_000L, localPtsUs)
+        assertEquals(5_500L, clock.projectTimeMs(localPtsUs))
+        assertNotEquals(5_500L, clock.projectTimeMs(6_000_000L))
+    }
+
+    @Test
+    fun `later sequence timestamp is localized before trimmed variable speed mapping`() {
+        val itemStartMs = 8_000L
+        val points = listOf(SpeedPoint(0f, 0.5f), SpeedPoint(0.5f, 2f), SpeedPoint(1f, 1f))
+        val clock = KeyframeAnimationClock(
+            trimStartMs = 2_000L,
+            trimEndMs = 8_000L,
+            timelineStartMs = itemStartMs,
+            clipSpeed = 3f,
+            speedPoints = points
+        )
+
+        val localPtsUs = itemLocalPresentationTimeUs(10_000_000L, itemStartMs)
+        val expectedOutputOffsetMs = SpeedCurveMath.sourceToOutputMs(2_000L, 6_000L, points)
+        assertEquals(2_000_000L, localPtsUs)
+        assertEquals(itemStartMs + expectedOutputOffsetMs, clock.projectTimeMs(localPtsUs))
+        assertNotEquals(itemStartMs + expectedOutputOffsetMs, clock.projectTimeMs(10_000_000L))
+    }
 }

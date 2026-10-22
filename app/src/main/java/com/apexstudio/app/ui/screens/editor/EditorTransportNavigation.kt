@@ -19,8 +19,17 @@ internal fun timelinePreviewClip(clips: List<MediaClip>, projectTimeMs: Long): M
 /** A text/sticker/audio selection must not edit the video left selected underneath it. */
 internal fun selectedKeyframeVideo(state: EditorState): MediaClip? {
     if (state.selectedTextOverlayId != null || state.selectedStickerId != null || state.selectedAudioTrackId != null) return null
-    return state.project?.clips?.firstOrNull {
+    val clips = state.project?.clips.orEmpty()
+    val selected = clips.firstOrNull {
         it.id == state.selectedClipId && (it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY)
+    } ?: return null
+    if (selected.trackIndex in state.hiddenVideoLayers) return null
+    return selected.takeIf {
+        if (it.type == ClipType.OVERLAY) it.isOverlayActiveAt(state.playerPositionMs)
+        else timelinePreviewClip(clips, state.playerPositionMs)?.id == it.id &&
+            state.playerPositionMs < clips.filter { clip ->
+                clip.trackIndex == 0 && (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
+            }.sumOf { clip -> clip.effectiveDurationMs().coerceAtLeast(0L) }
     }
 }
 

@@ -464,13 +464,10 @@ private fun EditorScreenContent(
                 // Dimensions belong to the previously decoded item until the
                 // new player's onVideoSizeChanged callback arrives.
                 vm.setVideoSize(0, 0)
-                player.setMediaItem(mediaItem)
-                player.prepare()
                 // Rebinding after a cross-clip seek must retain the requested
                 // project position, not jump back to the source trim head.
-                player.seekTo(com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(
-                    state.project?.clips.orEmpty(), clip, vm.playerPositionFlow.value))
-                player.playWhenReady = state.isPlaying
+                bindEditorPreviewItem(player, mediaItem, clip, state.project?.clips.orEmpty(),
+                    vm.playerPositionFlow.value, state.isPlaying)
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -478,7 +475,7 @@ private fun EditorScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.speedMultiplier) {
+    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.id, mainPreviewClip?.speedMultiplier) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             val speed = com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
@@ -620,15 +617,12 @@ private fun EditorScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks) {
+    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks, mainPreviewClip?.id) {
         val tracks = state.project?.audioTracks ?: emptyList()
         audioPlaybackManager.sync(state.isPlaying, vm.playerPositionFlow.value, tracks)
         val player = exoPlayer ?: return@LaunchedEffect
         if (state.isPlaying) {
-            if (player.playbackState == Player.STATE_ENDED) {
-                player.seekTo(mainPreviewClip?.trimStartMs ?: 0L)
-            }
-            player.play()
+            resumeEditorPreview(player, state.project?.clips.orEmpty(), vm.playerPositionFlow.value)
         } else {
             player.pause()
         }

@@ -919,6 +919,13 @@ private fun FadeSliderRow(
     }
 }
 
+internal fun prepareMainMediaPickerLaunch(vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel) {
+    vm.clearPendingReplace()
+    vm.setPendingAddAsOverlay(false)
+    vm.setPendingAddAsAudio(false)
+    vm.setPendingAddToLayer(null)
+}
+
 /**
  * Extracted bottom-toolbar section for EditorScreen (keeps the EditorScreen
  * composable under the JVM 64KB method limit). Always renders the
@@ -950,9 +957,7 @@ fun EditorBottomToolbarSection(
     onBeforeToolAction: () -> Unit = {},
     // Main-timeline media picker; EditorScreen may override when it owns the route.
     onMedia: () -> Unit = {
-        vm.setPendingAddAsOverlay(false)
-        vm.setPendingAddAsAudio(false)
-        vm.setPendingAddToLayer(null)
+        prepareMainMediaPickerLaunch(vm)
         mediaPicker.pickMultipleMedia.launch(
             androidx.activity.result.PickVisualMediaRequest(
                 androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo

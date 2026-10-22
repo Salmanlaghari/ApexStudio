@@ -2,6 +2,14 @@
 
 This follow-up starts from merged PR #172 (`f4ce16d6621e368668ce9ab73ca0fe9213eaf219`). The owner's agreed, locked **51303.png** purple/cyan design is the visual authority. **51301.jpg is the rejected current-app screenshot, not a target.** An earlier local interpretation reversed these; it is superseded by this implementation. **Do not merge until the owner tests the exact supplied APK and explicitly approves.**
 
+## Review corrections and exact-build checks
+
+The review follow-up fixes five specific behaviors: composition-offset normalization before mapping later items' keyframe timestamps; clearing a canceled replacement before a fresh Media import; resetting an item's constant preview speed before playback; restarting the project clocks at zero when Play is pressed at the project end; and restricting video keyframe controls to the selected, visible layer active under the playhead. The last rule applies to both the portrait transport and landscape inspector. Regression tests exercise these policies; host Player API tests are not decoder or encoder certification.
+
+The earlier failed landscape run used an emulator APK whose embedded identity was `5629191`, not the intended `a0a3226`. That run is **not** evidence that the intended build passed or failed its landscape behavior. The replacement runner, `scripts/run-editor-instrumentation.py`, refuses dirty checkouts and stale APK identities, installs with `adb install -r` (no uninstall/data clearing), pulls the installed base APK and verifies its SHA-256 before running tests. It requires an explicit nonzero passing test count and records device details and commands. Build both app and instrumentation APKs from the same clean commit before using it; pass an output directory outside the source tree. A test APK hash is recorded, not a claim of physical-device testing.
+
+The software-only QA emulator has exhibited slow installation and system-app ANRs. A build or compiled test APK alone does not establish installed runtime success. Consult the supplied exact-head provenance for the actual latest result; do not infer a pass from CI's green build checks or CodeRabbit's status. The PR remains draft/unmerged, fresh review must cover the pushed head, and the owner's physical-device test and explicit approval remain required.
+
 ## Layout and real controls
 
 The editor uses a deep navy canvas, branded gradient ApexStudio header, outlined resolution control and luminous cyan-to-purple Export. The normal timeline starts at its ruler, not a full-width TIMELINE/Add Clip header. Selected clips have purple/cyan emphasis; real text/sticker/FX/audio layers use the locked design's colored tracks. It remains content-bounded: no fabricated empty support lanes, identity/eye gutter or full-width SEC row. Keyframe markers stay centered in their real tracks.

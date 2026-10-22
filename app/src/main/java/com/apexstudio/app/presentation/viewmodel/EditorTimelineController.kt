@@ -18,6 +18,11 @@ private const val POSITION_STATE_SYNC_MIN_INTERVAL_MS = 100L
 fun EditorViewModel.togglePlay() = setPlaying(!_state.value.isPlaying)
 
 fun EditorViewModel.setPlaying(v: Boolean) {
+    // Replay is a project seek, not a seek to the last selected source's trim head.
+    // Reset both clocks before observers start the video and placed-audio players.
+    if (v && !_state.value.isPlaying && _state.value.durationMs > 0L && livePlayheadMs() >= _state.value.durationMs) {
+        seekTo(0L)
+    }
     _state.update { it.copy(isPlaying = v) }
     // Pausing: flush the live position into the state mirror so every
     // state reader (timecode, trim panel, split) sees the exact frame

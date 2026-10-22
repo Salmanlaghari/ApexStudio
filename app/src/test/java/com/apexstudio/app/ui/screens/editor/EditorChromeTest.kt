@@ -34,14 +34,13 @@ class EditorChromeTest {
         compose.runOnIdle { assertEquals(1, backCount) }
     }
 
-    @Test fun logoTapOpensBuildIdentityAndHeaderHasNoFitChipOrProjectTitleBar() {
+    @Test fun logoTapOpensBuildIdentityAndHeaderKeepsPreviewModeWithoutProjectTitleBar() {
         compose.setContent { TopAppBarSection(title = "A long project name that must not become a title bar") }
         compose.onNodeWithContentDescription("ApexStudio build identity. Project A long project name that must not become a title bar")
             .performClick()
         compose.onNodeWithText("Installed build").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
-        assertTrue(compose.onAllNodesWithText("FIT").fetchSemanticsNodes().isEmpty())
-        assertTrue(compose.onAllNodesWithText("COVER").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithContentDescription("Preview mode: Fit").assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         compose.onNodeWithText("1080P").assertIsDisplayed()
     }

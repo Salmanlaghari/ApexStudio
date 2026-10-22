@@ -136,7 +136,6 @@ private fun EditorScreenContent(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
-    val landscapeEditor = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
@@ -867,7 +866,9 @@ private fun EditorScreenContent(
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
         AdaptiveEditorWorkspace(
-            landscape = landscapeEditor,
+            // PR169/170's preview-first stacked shell is the editor default;
+            // adaptive landscape remains available to explicit workspace hosts.
+            landscape = false,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
@@ -884,7 +885,7 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
-            fitAvailableHeight = landscapeEditor,
+            fitAvailableHeight = false,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
@@ -894,7 +895,7 @@ private fun EditorScreenContent(
             timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
-                compactLandscape = landscapeEditor,
+                compactLandscape = false,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,

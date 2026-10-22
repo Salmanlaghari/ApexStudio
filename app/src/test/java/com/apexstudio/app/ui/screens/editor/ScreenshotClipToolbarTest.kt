@@ -12,8 +12,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -68,15 +66,13 @@ class ScreenshotClipToolbarTest {
         composeRule.onNodeWithText("Keyframe").performScrollTo()
         assertTrue(composeRule.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot.left <
             composeRule.onNodeWithText("Keyframe").fetchSemanticsNode().boundsInRoot.left)
-        // Global actions live on the adjacent Tools page, reachable by swipe
-        // or its persistent tab; they are intentionally not stacked below Clip.
-        composeRule.onNodeWithText("Tools").assertIsDisplayed().performClick()
+        // Historical layout keeps all eight global tools visible below the
+        // selected-item row, without Clip/Tools pager tabs.
         listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More")
             .forEach { label ->
-                assertTrue("Primary navigation retains $label",
+                assertTrue("Persistent global dock retains $label",
                     composeRule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty())
             }
-        composeRule.onNodeWithText("Clip").performClick()
 
         listOf(
             "Split" to "split",
@@ -101,7 +97,7 @@ class ScreenshotClipToolbarTest {
                 assertEquals("$label callback", 1, calls[action] ?: 0)
             }
 
-        composeRule.onNodeWithText("More tools").performClick()
+        composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("Camera").assertDoesNotExist()
         composeRule.onNodeWithText("Lenses").assertDoesNotExist()
         composeRule.onNodeWithText("Transition").performScrollTo().assertExists()
@@ -116,7 +112,8 @@ class ScreenshotClipToolbarTest {
         }
 
         composeRule.onNodeWithText("Speed").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Editing and export notes").performClick()
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithContentDescription("Editing and export notes").performScrollTo().performClick()
         composeRule.onNodeWithText("Overlay speed editing is not available yet; use Properties for overlay volume.").assertExists()
         composeRule.onNodeWithText("Got it").performClick()
         composeRule.onNodeWithText("Volume").performScrollTo().performClick()
@@ -134,7 +131,8 @@ class ScreenshotClipToolbarTest {
         listOf("Fade", "Beats", "Volume", "Mute").forEach { label ->
             composeRule.onNodeWithText(label).assertDoesNotExist()
         }
-        composeRule.onNodeWithContentDescription("Editing and export notes").performClick()
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithContentDescription("Editing and export notes").performScrollTo().performClick()
         composeRule.onNodeWithText("Fade, Beats, Mute, and Volume are available for project audio tracks only.").assertExists()
         composeRule.onNodeWithText("Got it").performClick()
         listOf("Trim" to "trim", "Replace" to "replace", "Delete" to "delete").forEach { (label, action) ->
@@ -147,25 +145,27 @@ class ScreenshotClipToolbarTest {
         assertEquals(0, calls["track-mute"] ?: 0)
     }
 
-    @Test fun selectedActionsRemainAvailableThroughTheClipTabEvenWhenToolsIsInitialPage() {
+    @Test fun selectedActionsAndGlobalDockAreBothVisibleWithoutTabs() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls, showSelectionToolsInitially = false) }
-        composeRule.onNodeWithText("Split").assertDoesNotExist()
-        composeRule.onNodeWithText("Clip").performClick()
+        composeRule.onNodeWithText("Split").assertIsDisplayed()
+        composeRule.onNodeWithText("Media").assertIsDisplayed()
         composeRule.onNodeWithText("Split").performScrollTo().performClick()
         assertEquals(1, calls["split"])
+        composeRule.onNodeWithText("Clip").assertDoesNotExist()
+        composeRule.onNodeWithText("Tools").assertDoesNotExist()
     }
 
-    @Test fun horizontalSwipeRevealsNextWorkspaceAndTabsProvideTapNavigation() {
+    @Test fun MoreExpansionKeepsGlobalDockPresentAndSelectionRowStackedAboveIt() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls) }
-        composeRule.onNodeWithText("Tools").performClick()
-        composeRule.onNodeWithTag("editor_feature_pager").performTouchInput { swipeLeft() }
-        composeRule.onNodeWithText("Music").assertIsDisplayed()
-        composeRule.onNodeWithText("Music").assertIsDisplayed()
-        composeRule.onNodeWithText("Clip").performClick()
-        composeRule.onNodeWithText("Split").performScrollTo().performClick()
-        assertEquals(1, calls["split"] ?: 0)
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithText("Music").performScrollTo().assertExists()
+        composeRule.onNodeWithText("Split").assertExists()
+        composeRule.onNodeWithText("Media").assertIsDisplayed()
+        composeRule.onNodeWithTag("editor_global_toolbar").assertExists()
+        composeRule.onNodeWithTag("editor_clip_toolbar").assertExists()
+        composeRule.onNodeWithTag("editor_more_toolbar").assertExists()
     }
 
     @Composable

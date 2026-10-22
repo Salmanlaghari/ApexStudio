@@ -9,7 +9,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.ui.components.BuildIdentity
 import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.theme.EditorPalette
 
@@ -89,14 +92,45 @@ fun TopAppBarSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
-            ApexStudioMark(Modifier.size(25.dp))
-            Spacer(Modifier.width(5.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(max = 145.dp)) {
-                Text("Apex", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 1, softWrap = false)
-                Text("Studio", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back to projects",
+                tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(22.dp).clickable(onClick = onBack, role = Role.Button)
+            )
+            Spacer(Modifier.width(7.dp))
+            Column(modifier = Modifier.widthIn(max = 110.dp)) {
+                Text("ApexStudio", color = EditorPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                Text("Build ${BuildIdentity.shortCommit}", color = EditorPalette.NeonCyan, fontSize = 8.sp,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
+        }
+
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(7.dp))
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
+                .clickable(onClick = onToggleCoverMode, role = Role.Button)
+                .semantics { contentDescription = "Preview mode: ${if (isCoverMode) "Cover" else "Fit"}" }
+                .padding(horizontal = 7.dp, vertical = 5.dp)
+        ) {
+            Text(if (isCoverMode) "COVER" else "FIT", color = EditorPalette.TextPrimary,
+                fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        }
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
+                .clickable(onClick = onFullscreenToggle, role = Role.Button)
+                .semantics { contentDescription = "Fullscreen preview" },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Fullscreen, contentDescription = null, tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(17.dp))
         }
 
         Box {

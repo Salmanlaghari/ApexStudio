@@ -65,15 +65,15 @@ class ScreenshotEditorCompositionTest {
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
         compose.onNodeWithText("Keyframe").assertIsDisplayed()
         compose.onNodeWithText("Animation").assertIsDisplayed()
-        compose.onNodeWithText("TIMELINE").assertDoesNotExist()
-        compose.onNodeWithText("Add Clip").assertDoesNotExist()
+        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
+        compose.onNodeWithText("Add Clip").assertIsDisplayed()
         val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
         val animation = compose.onNodeWithContentDescription("Edit video keyframe animation").fetchSemanticsNode().boundsInRoot
         val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("Keyframe and Animation must share the row above timeline", keyframe.bottom <= header.top && animation.bottom <= header.top)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
-        assertEquals("Filmstrip must remain compact", 36f, track.height, 1f)
+        assertEquals("Restored V1 filmstrip keeps its historical 64dp height", 64f, track.height, 1f)
         compose.onNodeWithContentDescription("Add keyframe").performClick()
         compose.runOnIdle {
             assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size)
@@ -97,7 +97,7 @@ class ScreenshotEditorCompositionTest {
                 EditorTransportSection(vm.state.value, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = { requested = it })
             }
         }
-        compose.onNodeWithTag("timeline-add-media").performClick()
+        compose.onNodeWithContentDescription("Add video media").performClick()
         compose.runOnIdle {
             assertEquals(com.apexstudio.app.domain.model.ClipType.VIDEO, requested)
             assertEquals(listOf(shortClip), vm.state.value.project!!.clips)

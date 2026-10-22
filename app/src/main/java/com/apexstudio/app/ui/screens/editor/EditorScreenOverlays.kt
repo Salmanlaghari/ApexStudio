@@ -1294,22 +1294,21 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // yielding essentially all available height to the timeline.
             .then(when {
                 isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
-                isTimelineFocusMode -> Modifier.weight(editorPreviewLayoutWeight(true))
-                else -> Modifier.aspectRatio(LOCKED_EDITOR_PREVIEW_ASPECT)
+                else -> Modifier.weight(editorPreviewLayoutWeight(isTimelineFocusMode))
             })
             .padding(
-                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 6.dp,
+                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 12.dp,
                 vertical = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 4.dp
             ),
         contentAlignment = Alignment.TopCenter
     ) {
-        // Keep the approved landscape outer chrome, but fit the entire
+        // Keep the historical flexible preview frame, but fit the entire
         // composition (player AND normalized overlays) to the output frame.
         // Source FIT remains FIT inside that same frame, never a different box.
         PreviewContentCanvas(
             mediaAspectRatio = compositionAspectRatio,
             isCoverMode = false,
-            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color.Black)
+            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp)).background(Color.Black)
         ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
@@ -1696,6 +1695,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             onOpenScale = { vm.openKeyframePropertyPanel("SCALE") },
             onOpenRotation = { vm.openKeyframePropertyPanel("ROTATION") },
             onOpenOpacity = { vm.openKeyframePropertyPanel("OPACITY") },
+            onPreviousFrame = { vm.stepFrame(false); seekPlayerAndState(vm.livePlayheadMs()) },
+            onNextFrame = { vm.stepFrame(true); seekPlayerAndState(vm.livePlayheadMs()) },
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -1704,7 +1705,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // selected-video strip where it would steal width from its controls.
     CenteredTimelineWorkspace(
         contentHeight = com.apexstudio.app.ui.components.compactTimelineHeight(state) + 26.dp,
-        isFocused = isTimelineFocusMode || compactLandscape
+        isFocused = isTimelineFocusMode || compactLandscape,
+        layoutWeight = timelineTrackLayoutWeight(isTimelineFocusMode)
     ) {
     Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
         if (compactLandscape) {

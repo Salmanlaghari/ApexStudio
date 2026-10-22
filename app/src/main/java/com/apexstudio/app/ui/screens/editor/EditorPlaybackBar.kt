@@ -7,6 +7,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
@@ -54,7 +57,10 @@ fun PlaybackControlBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.PlaybackBarHeight)
-            .padding(horizontal = 4.dp),
+            .clip(RoundedCornerShape(EditorLayoutMetrics.PlaybackCornerRadius))
+            .background(Color(0xFF101722))
+            .border(1.dp, Color(0xFF273447), RoundedCornerShape(EditorLayoutMetrics.PlaybackCornerRadius))
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -106,8 +112,8 @@ private fun TransportIconButton(
             .size(width = 38.dp, height = 40.dp)
             .padding(2.dp)
             .clip(RoundedCornerShape(8.dp))
-            .then(if (prominent) Modifier.background(EditorPalette.GradientGlass)
-                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp)) else Modifier)
+            .then(if (prominent) Modifier.background(EditorPalette.NeonCyan)
+                .border(1.dp, EditorPalette.NeonCyan, RoundedCornerShape(8.dp)) else Modifier)
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -115,8 +121,12 @@ private fun TransportIconButton(
         Icon(
             imageVector = imageVector,
             contentDescription = null,
-            tint = if (enabled) EditorPalette.TextPrimary else EditorPalette.TextMuted,
-            modifier = Modifier.size(if (prominent) 27.dp else 23.dp)
+            tint = when {
+                !enabled -> EditorPalette.TextMuted
+                prominent -> EditorPalette.BgDeep
+                else -> EditorPalette.TextPrimary
+            },
+            modifier = Modifier.size(if (prominent) 25.dp else 23.dp)
         )
     }
 }
@@ -131,54 +141,41 @@ internal fun SelectedVideoKeyframeControl(
     onOpenScale: () -> Unit = {},
     onOpenRotation: () -> Unit = {},
     onOpenOpacity: () -> Unit = {},
+    onPreviousFrame: (() -> Unit)? = null,
+    onNextFrame: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    Column(
-        modifier = modifier.fillMaxWidth().clip(shape)
-            .background(EditorPalette.BgElevated)
-            .border(1.dp, EditorPalette.BorderGlass, shape)
-            .padding(horizontal = 7.dp, vertical = 5.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+    // Historical single-row transport: keep the preview/timeline space, with
+    // newer property shortcuts reachable horizontally rather than a second card.
+    Row(
+        modifier = modifier.fillMaxWidth().height(44.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(Modifier.fillMaxWidth().height(31.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.clip(RoundedCornerShape(7.dp))
-                    .background(EditorPalette.NeonCyan.copy(alpha = .16f))
-                    .border(1.dp, EditorPalette.NeonCyan.copy(alpha = .55f), RoundedCornerShape(7.dp))
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                    .semantics { contentDescription = "Selected type: Video" }
-            ) {
-                Text("Video", color = EditorPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.width(8.dp))
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                KeyframeDiamondAddButton(hasKeyframeAtPlayhead, true, onToggleKeyframe)
-                Text("Keyframe", color = EditorPalette.TextPrimary, fontSize = 11.sp,
-                    modifier = Modifier.clickable(onClick = onToggleKeyframe, role = Role.Button))
-            }
-            Row(
-                Modifier.height(30.dp).clip(RoundedCornerShape(7.dp))
-                    .clickable(onClick = onOpenAnimation, role = Role.Button)
-                    .semantics { contentDescription = "Edit video keyframe animation" }
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Link, null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(17.dp))
-                Text("Animation", color = EditorPalette.TextSecondary, fontSize = 10.sp,
-                    modifier = Modifier.padding(start = 3.dp))
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KeyframeDiamondAddButton(hasKeyframeAtPlayhead, true, onToggleKeyframe)
+            Text("Keyframe", color = EditorPalette.TextPrimary, fontSize = 11.sp,
+                modifier = Modifier.clickable(onClick = onToggleKeyframe, role = Role.Button))
         }
         Row(
-            Modifier.fillMaxWidth().height(30.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            Modifier.height(40.dp).clip(RoundedCornerShape(7.dp))
+                .clickable(onClick = onOpenAnimation, role = Role.Button)
+                .semantics { contentDescription = "Edit video keyframe animation" }
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            SelectedVideoPropertyButton("Position", onOpenPosition, Modifier.weight(1f))
-            SelectedVideoPropertyButton("Scale", onOpenScale, Modifier.weight(1f))
-            SelectedVideoPropertyButton("Rotation", onOpenRotation, Modifier.weight(1f))
-            SelectedVideoPropertyButton("Opacity", onOpenOpacity, Modifier.weight(1f))
+            Icon(Icons.Default.Link, null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(17.dp))
+            Text("Animation", color = EditorPalette.TextSecondary, fontSize = 11.sp,
+                modifier = Modifier.padding(start = 3.dp))
         }
+        SelectedVideoPropertyButton("Position", onOpenPosition, Modifier.width(72.dp).height(36.dp))
+        SelectedVideoPropertyButton("Scale", onOpenScale, Modifier.width(64.dp).height(36.dp))
+        SelectedVideoPropertyButton("Rotation", onOpenRotation, Modifier.width(72.dp).height(36.dp))
+        SelectedVideoPropertyButton("Opacity", onOpenOpacity, Modifier.width(72.dp).height(36.dp))
+        onPreviousFrame?.let { SelectedVideoPropertyButton("−1f", it, Modifier.width(56.dp).height(36.dp)) }
+        onNextFrame?.let { SelectedVideoPropertyButton("+1f", it, Modifier.width(56.dp).height(36.dp)) }
     }
 }
 

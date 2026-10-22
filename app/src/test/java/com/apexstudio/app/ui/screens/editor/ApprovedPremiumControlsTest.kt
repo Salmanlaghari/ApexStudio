@@ -3,11 +3,14 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
@@ -24,7 +27,7 @@ import org.robolectric.annotation.Config
 class ApprovedPremiumControlsTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun selectedVideoStripFits320dpAndRoutesEachControlToRealAction() {
+    @Test fun selectedVideoStripScrollsWithin320dpAndRoutesEachControlToRealAction() {
         val actions = mutableListOf<String>()
         compose.setContent {
             Column(Modifier.requiredSize(320.dp, 108.dp)) {
@@ -40,17 +43,20 @@ class ApprovedPremiumControlsTest {
                 )
             }
         }
-        compose.onNodeWithContentDescription("Selected type: Video").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add keyframe").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Edit video keyframe animation").assertIsDisplayed()
-        listOf("Position", "Scale", "Rotation", "Opacity").forEach { label ->
+        compose.onNodeWithContentDescription("Add keyframe").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Edit video keyframe animation").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Open Position keyframe controls").assertIsDisplayed().performClick()
+
+        // Newer properties remain real, reachable controls, but scroll into view
+        // rather than growing a second row that steals preview/timeline space.
+        compose.onNode(hasScrollAction()).performTouchInput { swipeLeft() }
+        listOf("Scale", "Rotation", "Opacity").forEach { label ->
             compose.onNodeWithContentDescription("Open $label keyframe controls").assertIsDisplayed()
         }
         val opacityBounds = compose.onNodeWithContentDescription("Open Opacity keyframe controls").fetchSemanticsNode().boundsInRoot
         assertTrue("The final property control stays within the 320dp editor width", opacityBounds.left >= 0f && opacityBounds.right <= 320f)
-        listOf("Add keyframe", "Edit video keyframe animation", "Open Position keyframe controls",
-            "Open Scale keyframe controls", "Open Rotation keyframe controls", "Open Opacity keyframe controls").forEach {
-            compose.onNodeWithContentDescription(it).performClick()
+        listOf("Scale", "Rotation", "Opacity").forEach { label ->
+            compose.onNodeWithContentDescription("Open $label keyframe controls").performClick()
         }
         compose.runOnIdle { assertEquals(listOf("keyframe", "animation", "position", "scale", "rotation", "opacity"), actions) }
     }

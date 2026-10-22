@@ -7,8 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -86,15 +84,16 @@ class PhaseZeroToolbarTest {
         ).forEach { action -> assertEquals("$action callback", 1, calls[action] ?: 0) }
     }
 
-    @Test fun `global Enhance and video Adjust use independent callbacks`() {
+    @Test fun `global Enhance and video Adjust use independent callbacks in stacked dock`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
-        composeRule.onNodeWithText("More tools").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
-        composeRule.onNodeWithText("Clip").performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         assertEquals(1, calls["enhance"] ?: 0)
         assertEquals(1, calls["adjust"] ?: 0)
+        composeRule.onNodeWithTag("editor_global_toolbar").assertExists()
+        composeRule.onNodeWithTag("editor_clip_toolbar").assertExists()
     }
 
     @Test fun `editor wrapper keeps quick Enhance separate from actual Adjust panel`() {
@@ -104,23 +103,36 @@ class PhaseZeroToolbarTest {
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var quickEnhance = 0
         composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
-        composeRule.onNodeWithText("More tools").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
-        composeRule.onNodeWithText("Clip").performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
     }
 
     @Test
-    fun `horizontal swipe reveals More actions and tabs navigate back to primary tools`() {
+    fun `onBeforeToolAction is retained for selected global More and secondary actions`() {
+        val calls = mutableMapOf<String, Int>()
+        var beforeCount = 0
+        composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) { beforeCount++ } }
+        composeRule.onNodeWithText("Trim").performScrollTo().performClick()
+        composeRule.onNodeWithText("Media").performClick()
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithText("Music").performScrollTo().performClick()
+        assertEquals(4, beforeCount)
+        assertEquals(1, calls["trim"] ?: 0)
+        assertEquals(1, calls["media"] ?: 0)
+        assertEquals(1, calls["music"] ?: 0)
+    }
+
+    @Test
+    fun `More expands a scrollable secondary row while primary dock stays visible`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.NONE, calls) }
 
-        composeRule.onNodeWithTag("editor_feature_pager").performTouchInput { swipeLeft() }
-        composeRule.onNodeWithText("Music").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Music").performScrollTo().performClick()
         assertEquals(1, calls["music"] ?: 0)
-        composeRule.onNodeWithText("Tools").performClick()
         composeRule.onNodeWithText("Text").assertIsDisplayed().performClick()
         assertEquals(1, calls["text"] ?: 0)
     }
@@ -144,7 +156,8 @@ class PhaseZeroToolbarTest {
     @Composable
     private fun testToolbar(
         selectionKind: ToolbarSelectionKind,
-        calls: MutableMap<String, Int>
+        calls: MutableMap<String, Int>,
+        beforeAction: () -> Unit = {}
     ) {
         fun count(name: String) {
             calls[name] = (calls[name] ?: 0) + 1
@@ -202,7 +215,8 @@ class PhaseZeroToolbarTest {
             onTransition = { count("transition") },
             onToggleLayerVisibility = { count("layer-visibility") },
             onToggleLayerLock = { count("layer-lock") },
-            onToggleTrackMute = { count("track-mute") }
+            onToggleTrackMute = { count("track-mute") },
+            onBeforeToolAction = beforeAction
         )
     }
 }

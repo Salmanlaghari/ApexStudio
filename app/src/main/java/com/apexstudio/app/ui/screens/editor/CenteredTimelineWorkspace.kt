@@ -21,10 +21,11 @@ import androidx.compose.ui.unit.Dp
 internal fun ColumnScope.CenteredTimelineWorkspace(
     contentHeight: Dp,
     isFocused: Boolean,
+    layoutWeight: Float = 1f,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Box(
-        modifier = Modifier.fillMaxWidth().weight(1f),
+        modifier = Modifier.fillMaxWidth().weight(layoutWeight),
         contentAlignment = Alignment.Center
     ) {
         Column(

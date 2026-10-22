@@ -151,6 +151,13 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
+internal const val TIMELINE_HEADER_HEIGHT_DP = 44
+internal const val OVERLAY_LAYER_HEIGHT_DP = 60
+internal const val OVERLAY_FILMSTRIP_HEIGHT_DP = 52
+internal const val OVERLAY_CLIP_HEIGHT_DP = 42
+internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
+internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
+
 /** Timeline scale is expressed in dp/ms, while pointer drag deltas are physical px. */
 internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Float): Float =
     sourceDeltaMs.toFloat() * msToDp * density
@@ -162,18 +169,14 @@ internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float):
     } else 0L
 }
 
-/** V1 is a compact fixed-height lane; viewport slack must never inflate its filmstrip. */
+/** V1 retains the historical, visually dominant filmstrip height. */
 @Suppress("UNUSED_PARAMETER")
 internal fun mainVideoLaneHeight(
     availableTimelineHeightDp: Float,
     hasMainVideo: Boolean,
     supportingLanesHeightDp: Float = 0f,
     hasWaveformStrip: Boolean = false,
-): Dp {
-    // Keep legacy parameters source-compatible, but viewport slack, waveform
-    // presence, and supporting rows must never change V1's compact geometry.
-    return if (hasMainVideo) 36.dp else 0.dp
-}
+): Dp = if (hasMainVideo) 64.dp else 0.dp
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
 internal fun compactTimelineHeight(state: EditorState): Dp {
@@ -205,21 +208,21 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     val voiceRows = project?.audioTracks.orEmpty().count { it.kind != AudioTrack.Kind.MUSIC }
     val hasWaveform = state.audioWaveform.isNotEmpty() && hasMain
 
-    // A compact ruler sits directly on the main filmstrip; only real tracks
-    // add height below it. Values mirror VideoTimeline's rendered geometry.
-    var height = 20
-    if (hasMain) height += 36
+    // Keep this estimate in lockstep with the rendered header, ruler, and
+    // historical portrait timeline rows below.
+    var height = TIMELINE_HEADER_HEIGHT_DP + 36
+    if (hasMain) height += 10 + 64
     if (hasWaveform) height += 10 + 12
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
-    if (supportRows > 0) height += 4
-    height += overlayLayers * (28 + 4)
-    if (hasText) height += textRowCount * (28 + 4)
-    if (hasStickers) height += stickerRowCount * (28 + 4)
-    if (hasFx) height += 28 + 4
-    height += musicRows * 36 + if (musicRows > 0) 4 else 0
-    height += voiceRows * 36 + if (voiceRows > 0) 4 else 0
+    if (supportRows > 0) height += 10
+    height += overlayLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
+    if (hasText) height += textRowCount * 40 + 10
+    if (hasStickers) height += stickerRowCount * 40 + 10
+    if (hasFx) height += 40 + 10
+    height += musicRows * AUDIO_LANE_ROW_HEIGHT_DP + if (musicRows > 0) 10 else 0
+    height += voiceRows * AUDIO_LANE_ROW_HEIGHT_DP + if (voiceRows > 0) 10 else 0
     return height.dp
 }
 
@@ -588,7 +591,7 @@ fun VideoTimeline(
     }
     val hasMainVideo = videoClips.isNotEmpty()
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
-    val overlayLayerHeight = 28.dp
+    val overlayLayerHeight = OVERLAY_LAYER_HEIGHT_DP.dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -632,7 +635,7 @@ fun VideoTimeline(
     // audio track count so every populated row remains tappable.
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
-    val rulerHeight = 20.dp
+    val rulerHeight = 36.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -641,14 +644,14 @@ fun VideoTimeline(
     // and broke on any track at exactly the boundary).
     val musicTracks = remember(audioTracks) { audioTracks.filter { it.kind == AudioTrack.Kind.MUSIC } }
     val voiceTracks = remember(audioTracks) { audioTracks.filter { it.kind != AudioTrack.Kind.MUSIC } }
-    // Lane heights grow 36dp per extra row (one AudioTrackLaneRow each) so
+    // Lane heights grow 46dp per extra row (one AudioTrackLaneRow each) so
     // every track stays visible; the outer vertical scroll handles overflow.
-    val a1Height = (musicTracks.size * 36).dp
-    val a2Height = (voiceTracks.size * 36).dp
-    // Supporting lanes keep their own compact heights; V1 remains fixed at 36dp.
-    val textLaneHeight = timelineLaneRowCount(textLaneRows) * 28
-    val stickerLaneHeight = timelineLaneRowCount(stickerLaneRows) * 28
-    val fxLaneHeight = 28
+    val a1Height = (musicTracks.size * AUDIO_LANE_ROW_HEIGHT_DP).dp
+    val a2Height = (voiceTracks.size * AUDIO_LANE_ROW_HEIGHT_DP).dp
+    // Supporting rows use generous touch-friendly heights beneath the dominant V1 filmstrip.
+    val textLaneHeight = timelineLaneRowCount(textLaneRows) * 40
+    val stickerLaneHeight = timelineLaneRowCount(stickerLaneRows) * 40
+    val fxLaneHeight = 40
     // Same "something applied" test the FX lane itself uses for
     // its segments — the lane renders only when this is true.
     val hasFx = !activeFilterId.isNullOrBlank() || !activeFxId.isNullOrBlank() ||
@@ -656,26 +659,26 @@ fun VideoTimeline(
     val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty()
     val waveformStripHeight = 12
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
-        .sumOf { overlayLayerHeight.value.toInt() + 4 }
-    val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 4 else 0
-    val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 4 else 0
-    val fxLaneTotal = if (hasFx) fxLaneHeight + 4 else 0
-    val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 4 else 0
-    val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 4 else 0
-    val v1Height = if (hasMainVideo) 36.dp else 0.dp
-    // Ruler and filmstrip meet edge-to-edge. The actual source waveform is
+        .sumOf { overlayLayerHeight.value.toInt() + 10 }
+    val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
+    val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 10 else 0
+    val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
+    val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
+    val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
+    val v1Height = if (hasMainVideo) 64.dp else 0.dp
+    // Keep the ruler, breathing room, and dominant filmstrip together. The actual source waveform is
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
-        v1Height.value.toInt() +
+        (if (hasMainVideo) 10 + v1Height.value.toInt() else 0) +
         (if (showWaveformStrip) 10 + waveformStripHeight else 0)
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
         fxLaneTotal + a1Total + a2Total
     val timelineTotalDp = fixedHeaderHeight +
-        (if (supportRowsTotal > 0) 4 else 0) +
+        (if (supportRowsTotal > 0) 10 else 0) +
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // Single deep-navy workspace; no title/action header or identity gutter.
+    // Deep-navy timeline viewport below the restored title/action header, with no identity gutter.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
             .background(Color(0xFF080D18))
@@ -685,6 +688,50 @@ fun VideoTimeline(
         // rather than letting a pinned V1 consume the whole track viewport.
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(TIMELINE_HEADER_HEIGHT_DP.dp)
+                .background(Color(0xFF151F2D)).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(4.dp, 14.dp).background(Color(0xFF39D9D0), RoundedCornerShape(2.dp)))
+            Text("TIMELINE", color = Color(0xFFE7EDF6), fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+            Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF8C9AAF),
+                fontSize = 10.sp, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 10.dp).testTag("timeline-duration"))
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = {
+                coroutineScope.launch {
+                    val positionPx = with(density) { (playheadMsProvider() * msToDp).dp.toPx() }
+                    scrollState.scrollTo((positionPx - scrollState.viewportSize / 2f).roundToInt().coerceAtLeast(0))
+                }
+            }, modifier = Modifier.size(44.dp).testTag("timeline-reveal-playhead")) {
+                Icon(Icons.Default.CenterFocusStrong, "Reveal playhead", tint = Color(0xFF8C9AAF), modifier = Modifier.size(19.dp))
+            }
+            IconButton(onClick = {
+                multiSelectMode = !multiSelectMode
+                if (!multiSelectMode) multiSelectedIds = emptySet()
+            }, modifier = Modifier.size(44.dp).testTag("timeline-multiselect")) {
+                Icon(Icons.Default.DoneAll,
+                    if (multiSelectMode) "Exit multi-select" else "Select multiple clips",
+                    tint = if (multiSelectMode) Color(0xFF39D9D0) else Color(0xFF8C9AAF),
+                    modifier = Modifier.size(20.dp))
+            }
+            Row(
+                modifier = Modifier
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF39D9D0).copy(alpha = 0.12f))
+                    .clickable { onAddMedia(ClipType.VIDEO) }
+                    .padding(horizontal = 9.dp)
+                    .testTag("timeline-add-media"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Add, "Add Clip", tint = Color(0xFF39D9D0), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Clip", color = Color(0xFF39D9D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
         Box(Modifier.fillMaxWidth().weight(1f)) {
         // --- TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(
@@ -795,6 +842,8 @@ fun VideoTimeline(
                                     .height(rulerHeight)
                                     .testTag("timeline-ruler")
                             )
+
+                            if (hasMainVideo) Spacer(Modifier.height(10.dp))
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
                             // layer 0 only). Keep its timing model untouched;
@@ -936,8 +985,8 @@ fun VideoTimeline(
                                 // 4dp gap between the pinned V1 row and
                                 // the first scrolling row (was the
                                 // Column's spacedBy before the split).
-                                .padding(top = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                .padding(top = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
 
                             // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
@@ -1684,14 +1733,15 @@ private fun TimelineVideoLayerRow(
     // local state during the drag so a trim never spams undo entries).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
-    // Readable overlay filmstrip with its own name and keyframe strip.
-    // Compact 28dp content row keeps every populated layer visible without
-    // reserving a tall empty strip between tracks.
+    // Readable historical overlay filmstrip with its own name and keyframe
+    // strip. Four dp of vertical inset leaves a 52dp filmstrip inside the
+    // allocated 60dp lane.
     // The row renders ONLY when the layer holds clips (the caller
     // never passes an empty layer), so there is no empty branch.
     Column(
         modifier = modifier
             .background(if (isHidden) Color(0xFF111827) else Color(0xFF0A1B2D))
+            .padding(vertical = 4.dp)
     ) {
         if (isHidden) {
             Text(
@@ -1704,7 +1754,7 @@ private fun TimelineVideoLayerRow(
         }
 
         // Filmstrip plus keyframe strip, sharing the lane rail geometry.
-        Box(modifier = Modifier.fillMaxWidth().height(28.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 // Speed-ramped clips occupy their OUTPUT length.
@@ -1729,7 +1779,7 @@ private fun TimelineVideoLayerRow(
                     modifier = Modifier
                         .offset(x = clipOffsetDp)
                         .width(clipWidthDp)
-                        .height(28.dp)
+                        .height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -1738,7 +1788,7 @@ private fun TimelineVideoLayerRow(
                                 IntOffset(trimStartDxPx.roundToInt(), 0)
                             }
                             .width(liveChipWidthDp.coerceAtLeast(24.dp))
-                            .height(22.dp)
+                            .height(OVERLAY_CLIP_HEIGHT_DP.dp)
                             .testTag("timeline-overlay-clip-${clip.id}")
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(7.dp))
@@ -3274,7 +3324,7 @@ private fun AudioTrackLaneRow(
     val displayedSpanMs = (previewTrimEnd - previewTrimStart).coerceAtLeast(250L)
     val displayedWidth = maxOf((displayedSpanMs * msToDp).dp, 42.dp)
 
-    Box(modifier = modifier.height(30.dp)) {
+    Box(modifier = modifier.height(AUDIO_TRACK_ITEM_HEIGHT_DP.dp)) {
         Box(
             modifier = Modifier
                 .offset(x = (previewStart * msToDp).dp)

@@ -124,7 +124,8 @@ class CenteredTimelineWorkspaceTest {
         assertEquals("bottom dock remains flush with the root bottom", root.bottom, dock.bottom, 1f)
         assertTrue("ruler and main track remain between property controls and dock",
             propertyBottom <= ruler.top && track.bottom <= dock.top)
-        val timelineCenter = (ruler.top + track.bottom) / 2f
+        val restoredHeaderHeight = 44f * compose.density.density
+        val timelineCenter = (ruler.top - restoredHeaderHeight + track.bottom) / 2f
         val availableCenter = (propertyBottom + dock.top) / 2f
         assertEquals("real ruler/track workspace is vertically centered", availableCenter, timelineCenter, 25f)
     }

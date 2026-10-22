@@ -59,7 +59,7 @@ class TimelineFocusModeControlTest {
         val normalTimelineHeight = paneHeight("timeline-pane")
         assertTrue("normal preview should have useful height", normalPreviewHeight > 100f)
         assertTrue("default mobile editing should prioritize the timeline", normalTimelineHeight > normalPreviewHeight)
-        assertTrue("default timeline should be a useful working area", normalTimelineHeight > 300f)
+        assertTrue("default timeline should retain a substantial working area", normalTimelineHeight > 280f)
 
         compose.onNodeWithContentDescription("Expand timeline to full height").performClick()
 

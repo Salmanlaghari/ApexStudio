@@ -207,11 +207,11 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
-            .background(Color.Black)
-            .border(0.5.dp, ApexPalette.BorderGlass.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }

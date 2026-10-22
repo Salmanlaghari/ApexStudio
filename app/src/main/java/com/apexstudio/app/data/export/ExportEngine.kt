@@ -1755,6 +1755,15 @@ class ExportEngine(private val context: Context) {
         _exportState.value = ExportProgressState()
     }
 
+    /** Dedicated comparison engines must stop and drain their writer before deleting owned outputs. */
+    internal suspend fun cancelProjectExportAndAwait() {
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
+            val writer = synchronized(projectRunLock) { projectExportJob }
+            cancelExport()
+            writer?.join()
+        }
+    }
+
     fun release() {
         cancelExport()
     }

@@ -60,6 +60,7 @@ import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.presentation.viewmodel.colorStudioTimelineExportBlocker
 import com.apexstudio.app.presentation.viewmodel.startColorStudioTimelineExport
+import com.apexstudio.app.presentation.viewmodel.captureColorTimelineExportSnapshot
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -107,6 +108,9 @@ fun ColorStudioScreen(
     val context = LocalContext.current
     val state by vm.state.collectAsStateWithLifecycle()
     val exportUi by vm.export.collectAsStateWithLifecycle()
+    val audioState by vm.audio.collectAsStateWithLifecycle()
+    var timelineComparison by rememberSaveable(projectId) { mutableStateOf(true) }
+    var comparisonBusy by remember { mutableStateOf(false) }
     val candidates = remember(state.project?.clips) { ColorMediaIO.selectedSources(state.project?.clips.orEmpty()) }
     val initiallySelected = candidates.firstOrNull { it.id == state.selectedClipId } ?: candidates.firstOrNull()
     var chosenClipId by rememberSaveable(projectId) { mutableStateOf(initiallySelected?.id) }
@@ -125,6 +129,9 @@ fun ColorStudioScreen(
     var completedOutputGrade by remember { mutableStateOf<ColorStudioGrade?>(null) }
     var requestedTimelineGrade by remember { mutableStateOf<ColorStudioGrade?>(null) }
     var timelineOutputBaseline by remember { mutableStateOf<String?>(null) }
+    val timelineSnapshot = remember(state, audioState, exportUi.settings, exportUi.isExporting, grade) {
+        runCatching { vm.captureColorTimelineExportSnapshot(grade) }
+    }
     var exportJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(exportRequest) {
@@ -135,9 +142,9 @@ fun ColorStudioScreen(
 
     val sourceUri = clip?.let(ColorMediaIO::sourceUri)
     var processingError by remember(sourceUri, frameTime, grade) { mutableStateOf<String?>(null) }
-    val frameResult by produceState<Result<SourceFrame>?>(null, sourceUri, frameTime, clip?.type) {
+    val frameResult by produceState<Result<SourceFrame>?>(null, sourceUri, frameTime, clip?.type, timelineComparison) {
         value = null
-        if (clip != null && sourceUri != null) {
+        if (!timelineComparison && clip != null && sourceUri != null) {
             delay(90)
             value = try {
                 Result.success(withContext(Dispatchers.IO) {
@@ -196,14 +203,28 @@ fun ColorStudioScreen(
                     }
                 }
             } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(enabled = !comparisonBusy, onClick = { timelineComparison = true }) {
+                        Text("Project timeline", color = if (timelineComparison) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
+                    }
+                    TextButton(enabled = !comparisonBusy, onClick = { timelineComparison = false }) {
+                        Text("Selected source", color = if (!timelineComparison) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
+                    }
+                }
+                if (timelineComparison) {
+                    ColorTimelineComparisonPanel(timelineSnapshot.getOrNull(), timelineSnapshot.exceptionOrNull()?.message,
+                        split, { split = it.coerceIn(0f, 1f) }, embedded, { comparisonBusy = it },
+                        previewModifier = Modifier.fillMaxWidth().weight(1f))
+                } else {
                 BeforeAfterPreview(sourceFrame?.bitmap, gradedFrame, split, { split = it.coerceIn(0f, 1f) },
-                    if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth(),
+                    if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth().weight(1f),
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
                 Text("This Before/After is the selected source frame only, not a full-timeline preview.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                }
                 LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp), horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    item {
+                    if (!timelineComparison) item {
                         Column(Modifier.width(246.dp).height(138.dp).clip(RoundedCornerShape(14.dp))
                             .background(ApexPalette.BgSurface).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
                             .padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -279,7 +300,7 @@ fun ColorStudioScreen(
                         clip?.type == ClipType.VIDEO -> "Export the entire selected source video as a separate MP4 with the same trilinear LUT. This does not apply project trims, speed changes, effects, overlays or composition. SDR 8-bit video up to 4K and 30 minutes only; HDR, unknown color transfer or unverified pixel formats are refused."
                         else -> "Select an existing project image or video first."
                     })
-                    Text("Timeline grading renders the supported project composition to a separate MP4. Originals and saved project edits remain unchanged. The selected-frame Before/After above is not a full-composition comparison.",
+                    Text("Timeline grading renders the supported project composition to a separate MP4. In Project timeline mode, Render Before / After compares two complete rendered snapshots; Share compared MP4 sends that exact After file. Selected source mode compares only one source frame. Originals and saved project edits remain unchanged.",
                         color = ApexPalette.TextSecondary, fontSize = 11.sp)
                     if (timelineBlocker != null) {
                         Text("Timeline export unavailable: $timelineBlocker", color = ApexPalette.NeonPink, fontSize = 11.sp)
@@ -297,12 +318,11 @@ fun ColorStudioScreen(
                             color = ApexPalette.NeonCyan, fontSize = 11.sp)
                     }
                     TextButton(
-                        enabled = timelineBlocker == null && !exportBusy && !exportUi.isExporting,
+                        enabled = timelineBlocker == null && !exportBusy && !exportUi.isExporting && !comparisonBusy,
                         onClick = {
                             val exportGrade = grade
-                            val timelineVideos = state.project?.clips.orEmpty().filter {
-                                it.trackIndex == 0 && it.type == ClipType.VIDEO
-                            }
+                            val captured = timelineSnapshot.getOrNull() ?: return@TextButton
+                            val timelineVideos = captured.clips
                             timelinePreflight = true
                             exportBusy = true
                             exportJob = scope.launch {
@@ -318,7 +338,7 @@ fun ColorStudioScreen(
                                     timelinePreflight = false
                                     timelineOutputBaseline = exportUi.outputUri
                                     requestedTimelineGrade = exportGrade
-                                    vm.startColorStudioTimelineExport(exportGrade)
+                                    vm.startColorStudioTimelineExport(captured)
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
                                 } catch (failure: Throwable) {
@@ -337,7 +357,7 @@ fun ColorStudioScreen(
                 val selected = clip
                 val reusableOutput = completedOutput?.takeIf { it.isFile && it.length() > 0L &&
                     completedOutputClipId == selected?.id && completedOutputGrade == grade }
-                if (!exportBusy && !exportUi.isExporting && selected != null && selected.type in setOf(ClipType.IMAGE, ClipType.VIDEO) &&
+                if (!exportBusy && !comparisonBusy && !exportUi.isExporting && selected != null && selected.type in setOf(ClipType.IMAGE, ClipType.VIDEO) &&
                     (reusableOutput != null || (sourceFrame != null && gradedFrame != null))) TextButton(onClick = {
                     val exportClip = selected
                     val exportGrade = grade // immutable snapshot: later UI edits cannot alter this export
@@ -416,7 +436,7 @@ private fun ColorStudioGrade.withCurve(channel: String, transform: (List<Float>)
 }
 
 @Composable
-private fun BeforeAfterPreview(before: Bitmap?, after: Bitmap?, split: Float, onSplit: (Float) -> Unit,
+internal fun BeforeAfterPreview(before: Bitmap?, after: Bitmap?, split: Float, onSplit: (Float) -> Unit,
     ratio: Float, modifier: Modifier = Modifier, loading: Boolean, error: String?) {
     val currentSplit by rememberUpdatedState(split)
     val currentOnSplit by rememberUpdatedState(onSplit)

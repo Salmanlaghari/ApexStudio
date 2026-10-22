@@ -49,11 +49,14 @@ fun EditorViewModel.applyProjectVideoTemplate(
     projectId: String,
     expectedClip: MediaClip,
     templateId: String,
+    allowUnselectedMainTrackTarget: Boolean = false,
 ): Boolean = synchronized(this) {
     val recipe = ProjectVideoPresets.videoTemplate(templateId) ?: return@synchronized false
     val effect = ProjectVideoPresets.effect(recipe.effectId) ?: return@synchronized false
     val title = ProjectVideoPresets.textTemplate(recipe.textTemplateId) ?: return@synchronized false
-    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(
+        projectId, expectedClip, requireSelectedClip = !allowUnselectedMainTrackTarget,
+    ) ?: return@synchronized false
     val overlay = title.createTextOverlay()
 
     pushUndo()
@@ -85,10 +88,11 @@ fun EditorViewModel.applyProjectVideoEffect(
 private fun EditorViewModel.validatedVideoPresetTarget(
     expectedProjectId: String,
     expectedClip: MediaClip,
+    requireSelectedClip: Boolean = true,
 ): MediaClip? {
     val snapshot = state.value
     val project = snapshot.project ?: return null
-    if (project.id != expectedProjectId || snapshot.selectedClipId != expectedClip.id) return null
+    if (project.id != expectedProjectId || (requireSelectedClip && snapshot.selectedClipId != expectedClip.id)) return null
     val current = project.clips.firstOrNull { it.id == expectedClip.id } ?: return null
     if (current != expectedClip || current.type != ClipType.VIDEO || current.trackIndex != 0) return null
     if (current.uri.isBlank() || current.durationMs <= 0L) return null

@@ -2,10 +2,13 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -86,8 +89,9 @@ class PhaseZeroToolbarTest {
     @Test fun `global Enhance and video Adjust use independent callbacks`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
-        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("More tools").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.onNodeWithText("Clip").performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         assertEquals(1, calls["enhance"] ?: 0)
         assertEquals(1, calls["adjust"] ?: 0)
@@ -100,11 +104,25 @@ class PhaseZeroToolbarTest {
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var quickEnhance = 0
         composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
-        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("More tools").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
+        composeRule.onNodeWithText("Clip").performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
         composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
+    }
+
+    @Test
+    fun `horizontal swipe reveals More actions and tabs navigate back to primary tools`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(ToolbarSelectionKind.NONE, calls) }
+
+        composeRule.onNodeWithTag("editor_feature_pager").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Music").assertIsDisplayed().performClick()
+        assertEquals(1, calls["music"] ?: 0)
+        composeRule.onNodeWithText("Tools").performClick()
+        composeRule.onNodeWithText("Text").assertIsDisplayed().performClick()
+        assertEquals(1, calls["text"] ?: 0)
     }
 
     @Test fun approvedPrimaryDockAndOverlayChoicesDispatchRealRoutes() {

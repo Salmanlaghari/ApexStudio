@@ -1419,9 +1419,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         }
 
         val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
-        val textOwner = selectedClip?.takeIf { it.type == ClipType.OVERLAY && it.isOverlayActiveAt(state.playerPositionMs) }
-            ?: mainPreviewClip
-        val textOverlays = textOwner?.textOverlays ?: emptyList()
+        val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
         val faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip)
 
         // Layer names belong on their timeline clips, not in a HUD over media.
@@ -1550,10 +1548,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             isCoverMode = false,
             modifier = Modifier.fillMaxSize()
         ) {
+            // Main and PiP titles retain their own clip-relative clocks. Selecting
+            // PiP must not replace the main video's template text layer.
+            val wordingOwners: List<MediaClip?> = textOwners.ifEmpty { listOf(null) }
+            wordingOwners.forEachIndexed { index, textOwner ->
             ScreenWordingObjects(
-                stickers = stickers,
-                textOverlays = textOverlays,
-                coverText = state.coverText,
+                stickers = if (index == 0) stickers else emptyList(),
+                textOverlays = textOwner?.textOverlays.orEmpty(),
+                coverText = if (index == 0) state.coverText else "",
                 coverTextStyle = state.coverTextStyle,
                 selectedTextOverlayId = state.selectedTextOverlayId,
                 currentTimeMs = state.currentTimeMs,
@@ -1594,6 +1596,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 onCutoutSticker = { id, shape -> vm.setStickerCutout(id, shape) },
                 modifier = Modifier.fillMaxSize()
             )
+            }
         }
 
         val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }

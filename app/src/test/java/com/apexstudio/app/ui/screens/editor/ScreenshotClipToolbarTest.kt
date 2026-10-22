@@ -7,9 +7,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -64,12 +68,15 @@ class ScreenshotClipToolbarTest {
         composeRule.onNodeWithText("Keyframe").performScrollTo()
         assertTrue(composeRule.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot.left <
             composeRule.onNodeWithText("Keyframe").fetchSemanticsNode().boundsInRoot.left)
+        // Global actions live on the adjacent Tools page, reachable by swipe
+        // or its persistent tab; they are intentionally not stacked below Clip.
+        composeRule.onNodeWithText("Tools").assertIsDisplayed().performClick()
         listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More")
             .forEach { label ->
-                // Filters also legitimately appears among the clip extras.
                 assertTrue("Primary navigation retains $label",
                     composeRule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty())
             }
+        composeRule.onNodeWithText("Clip").performClick()
 
         listOf(
             "Split" to "split",
@@ -94,7 +101,7 @@ class ScreenshotClipToolbarTest {
                 assertEquals("$label callback", 1, calls[action] ?: 0)
             }
 
-        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithText("More tools").performClick()
         composeRule.onNodeWithText("Camera").assertDoesNotExist()
         composeRule.onNodeWithText("Lenses").assertDoesNotExist()
         composeRule.onNodeWithText("Transition").performScrollTo().assertExists()
@@ -109,8 +116,9 @@ class ScreenshotClipToolbarTest {
         }
 
         composeRule.onNodeWithText("Speed").assertDoesNotExist()
-        composeRule.onNodeWithText("Overlay speed editing is not available yet; use Properties for overlay volume.")
-            .assertExists()
+        composeRule.onNodeWithContentDescription("Editing and export notes").performClick()
+        composeRule.onNodeWithText("Overlay speed editing is not available yet; use Properties for overlay volume.").assertExists()
+        composeRule.onNodeWithText("Got it").performClick()
         composeRule.onNodeWithText("Volume").performScrollTo().performClick()
         assertEquals(1, calls["overlay-props"] ?: 0)
         assertEquals(0, calls["volume"] ?: 0)
@@ -126,8 +134,9 @@ class ScreenshotClipToolbarTest {
         listOf("Fade", "Beats", "Volume", "Mute").forEach { label ->
             composeRule.onNodeWithText(label).assertDoesNotExist()
         }
-        composeRule.onNodeWithText("Fade, Beats, Mute, and Volume are available for project audio tracks only.")
-            .assertExists()
+        composeRule.onNodeWithContentDescription("Editing and export notes").performClick()
+        composeRule.onNodeWithText("Fade, Beats, Mute, and Volume are available for project audio tracks only.").assertExists()
+        composeRule.onNodeWithText("Got it").performClick()
         listOf("Trim" to "trim", "Replace" to "replace", "Delete" to "delete").forEach { (label, action) ->
             composeRule.onNodeWithText(label).performScrollTo().performClick()
             assertEquals("$label remains a real clip action", 1, calls[action] ?: 0)
@@ -138,13 +147,25 @@ class ScreenshotClipToolbarTest {
         assertEquals(0, calls["track-mute"] ?: 0)
     }
 
-    @Test fun lockedDockDoesNotReintroduceRejectedClipBarUntilMoreIsOpened() {
+    @Test fun selectedActionsRemainAvailableThroughTheClipTabEvenWhenToolsIsInitialPage() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls, showSelectionToolsInitially = false) }
         composeRule.onNodeWithText("Split").assertDoesNotExist()
-        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNodeWithText("Clip").performClick()
         composeRule.onNodeWithText("Split").performScrollTo().performClick()
         assertEquals(1, calls["split"])
+    }
+
+    @Test fun horizontalSwipeRevealsNextWorkspaceAndTabsProvideTapNavigation() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(calls) }
+        composeRule.onNodeWithText("Tools").performClick()
+        composeRule.onNodeWithTag("editor_feature_pager").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Music").assertIsDisplayed()
+        composeRule.onNodeWithText("Music").assertIsDisplayed()
+        composeRule.onNodeWithText("Clip").performClick()
+        composeRule.onNodeWithText("Split").performScrollTo().performClick()
+        assertEquals(1, calls["split"] ?: 0)
     }
 
     @Composable

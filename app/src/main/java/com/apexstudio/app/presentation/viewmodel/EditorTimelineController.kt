@@ -18,13 +18,19 @@ private const val POSITION_STATE_SYNC_MIN_INTERVAL_MS = 100L
 fun EditorViewModel.togglePlay() = setPlaying(!_state.value.isPlaying)
 
 fun EditorViewModel.setPlaying(v: Boolean) {
+    // Replay is a project seek, not a seek to the last selected source's trim head.
+    // Reset both clocks before observers start the video and placed-audio players.
+    if (v && !_state.value.isPlaying && _state.value.durationMs > 0L && livePlayheadMs() >= _state.value.durationMs) {
+        seekTo(0L)
+    }
     _state.update { it.copy(isPlaying = v) }
     // Pausing: flush the live position into the state mirror so every
     // state reader (timecode, trim panel, split) sees the exact frame
     // playback stopped on, not a up-to-100ms-stale mirror.
     if (!v) {
-        val live = livePlayheadMs()
+        val live = livePlayheadMs().coerceIn(0L, _state.value.durationMs.coerceAtLeast(0L))
         lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
+        _playerPosition.value = live
         _state.update { it.copy(playerPositionMs = live, currentTimeMs = live) }
     }
 }
@@ -41,11 +47,16 @@ fun EditorViewModel.seekTo(ms: Long) {
 }
 
 fun EditorViewModel.stepFrame(forward: Boolean) {
+    // Stop playback before moving the playhead: otherwise the player loop
+    // can immediately replace the frame we just stepped to.
+    setPlaying(false)
     // Step from the LIVE playhead: the state mirror can lag it by up to
     // 100ms, and stepping from the stale mirror would jump backwards.
-    val step = 33L
     val base = livePlayheadMs()
-    val next = if (forward) base + step else (base - step).coerceAtLeast(0)
+    val state = _state.value
+    val duration = state.durationMs.coerceAtLeast(0L)
+    val fps = state.project?.fps?.takeIf { it > 0 } ?: 60
+    val next = TimelineFrameMath.step(base, forward, fps, duration)
     _playerPosition.value = next
     lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
     _state.update { it.copy(currentTimeMs = next, playerPositionMs = next) }
@@ -287,6 +298,9 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
             scale = transform.scale,
             rotationDeg = transform.rotationDeg,
             opacity = transform.opacity,
+            volume = transform.volume,
+            effectIntensity = transform.effectIntensity,
+            filterIntensity = transform.filterIntensity,
             // Pin the current effective saturation (1f when nothing
             // pins it) so a later saturation pin interpolates from
             // the value the clip actually had at this keyframe
@@ -305,7 +319,11 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
  * - A keyframe within 150ms of [timeMs] is UPDATED in place — only
  *   the changed parameter moves (all other fields, including the
  *   saturation pin, are preserved). No new keyframe, no undo entry
- *   (drag streams call this repeatedly).
+ *   (drag streams call this repeatedly). This is an intentional gesture
+ *   sampling window (not a frame-duration estimate): pinch-while-playing
+ *   relies on it to avoid creating a keyframe on every playback frame.
+ *   Keep it separate from frame stepping unless the gesture sampling policy
+ *   is changed as well.
  * - Otherwise, if the track is non-empty, a NEW keyframe is inserted
  *   at [timeMs] (other fields = interpolated values at [timeMs],
  *   saturation pins the current effective factor) with one undo entry.
@@ -432,12 +450,36 @@ fun EditorViewModel.removeKeyframe(clipId: String, keyframeId: String) {
 
 
 fun EditorViewModel.clearKeyframes(clipId: String) {
+    if (_state.value.project?.clips?.none { it.id == clipId && it.keyframes.keyframes.isNotEmpty() } != false) return
+    pushUndo()
     updateClip(clipId) { it.copy(keyframes = KeyframeTrack()) }
+}
+
+/** Paste a pin as a single undoable edit, replacing only an exact-time collision. */
+fun EditorViewModel.pasteKeyframe(clipId: String, source: Keyframe, timeMs: Long) {
+    val project = _state.value.project ?: return
+    if (project.clips.none { it.id == clipId }) return
+    val targetTime = timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    pushUndo()
+    updateClip(clipId) { clip ->
+        val existing = clip.keyframes.keyframes.firstOrNull { it.timeMs == targetTime }
+        val pasted = source.copy(id = existing?.id ?: java.util.UUID.randomUUID().toString(), timeMs = targetTime)
+        clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.timeMs != targetTime } + pasted).sorted())
+    }
 }
 
 
 fun EditorViewModel.setKeyframePanelOpen(open: Boolean) =
-    _state.update { it.copy(keyframePanelOpen = open) }
+    _state.update { it.copy(keyframePanelOpen = open, keyframePropertyFilter = if (open) it.keyframePropertyFilter else null) }
+
+/** Opens the actual horizontally-scrolling manual keyframe editor on one property. */
+fun EditorViewModel.openKeyframePropertyPanel(property: String) {
+    require(property in setOf("POSITION", "SCALE", "ROTATION", "OPACITY"))
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = property) }
+}
+
+fun EditorViewModel.openKeyframeAnimationPanel() =
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = null) }
 
 
 fun EditorViewModel.toggleKeyframeAtPlayhead() {
@@ -451,6 +493,72 @@ fun EditorViewModel.toggleKeyframeAtPlayhead() {
         val currentTransform = clip.keyframes.interpolateAt(playheadMs)
         addKeyframe(clipId, playheadMs, currentTransform)
     }
+}
+
+/** Project-frame identity for APIs used by the frame-precise inspector. */
+private fun EditorViewModel.projectFrameIndex(timeMs: Long): Long {
+    val fps = _state.value.project?.fps?.takeIf { it > 0 } ?: 60
+    return kotlin.math.round(timeMs.toDouble() * fps / 1_000.0).toLong()
+}
+
+private fun EditorViewModel.projectFrameTimeMs(frameIndex: Long): Long {
+    val state = _state.value
+    val fps = state.project?.fps?.takeIf { it > 0 } ?: 60
+    return TimelineFrameMath.frameTimeMs(frameIndex.coerceAtLeast(0L), fps)
+        .coerceAtMost(state.durationMs.coerceAtLeast(0L))
+}
+
+/**
+ * Toggle a keyframe at the live playhead using project-frame identity.
+ * Unlike [toggleKeyframeAtPlayhead], this deliberately does not use the
+ * legacy 150ms touch-gesture tolerance.
+ */
+fun EditorViewModel.toggleFrameKeyframeAtPlayheadFor(clipId: String): Boolean {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
+    val playheadMs = livePlayheadMs()
+    val frame = projectFrameIndex(playheadMs)
+    val existing = clip.keyframes.keyframes.firstOrNull { projectFrameIndex(it.timeMs) == frame }
+    if (existing != null) {
+        removeKeyframe(clipId, existing.id)
+    } else {
+        val frameTimeMs = projectFrameTimeMs(frame)
+        addKeyframe(clipId, frameTimeMs, clip.keyframes.interpolateAt(frameTimeMs))
+    }
+    return true
+}
+
+/**
+ * Set one parameter on the keyframe for [timeMs]'s project frame, or add
+ * one sampled from the current transform when that frame has no keyframe.
+ * This frame-exact path is separate from the legacy 150ms gesture upsert.
+ */
+fun EditorViewModel.upsertFrameKeyframeParam(
+    clipId: String,
+    timeMs: Long,
+    param: KeyframeParam,
+    value: Float
+): Boolean {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
+    val frame = projectFrameIndex(timeMs)
+    val existing = clip.keyframes.keyframes.firstOrNull { projectFrameIndex(it.timeMs) == frame }
+    if (existing != null) {
+        if (existing.withParam(param, value) != existing) {
+            pushUndo()
+            updateKeyframe(clipId, existing.id) { it.withParam(param, value) }
+        }
+        return true
+    }
+
+    // addKeyframe owns the discrete undo entry and samples/pins every other
+    // transform value; updateKeyframe then changes only the requested field.
+    val frameTimeMs = projectFrameTimeMs(frame)
+    val sampled = clip.keyframes.interpolateAt(frameTimeMs)
+    addKeyframe(clipId, frameTimeMs, sampled)
+    val inserted = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+        ?.keyframes?.keyframes?.firstOrNull { it.timeMs == frameTimeMs }
+        ?: return false
+    updateKeyframe(clipId, inserted.id) { it.withParam(param, value) }
+    return true
 }
 
 
@@ -537,6 +645,33 @@ fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
     persistProject()
 }
 
+
+fun EditorViewModel.applyConfiguredAnimationPreset(
+    preset: com.apexstudio.app.data.animation.AnimationPresetType,
+    mode: com.apexstudio.app.data.animation.AnimationPresetMode,
+    durationMs: Long,
+    intensity: Float
+): Boolean {
+    val state = _state.value
+    val project = state.project ?: return false
+    val clip = state.keyframeAnchor() ?: return false
+    val span = clip.effectiveDurationMs().coerceAtLeast(1L)
+    val requested = durationMs.coerceIn(
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MIN_DURATION_MS,
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MAX_DURATION_MS)
+    val actualDuration = minOf(requested, span)
+    val clipStart = SpeedCurveMath.timelineStartMsForClip(project.clips, clip)
+    val start = if (mode == com.apexstudio.app.data.animation.AnimationPresetMode.OUT)
+        clipStart + span - actualDuration else clipStart
+    val generated = com.apexstudio.app.data.animation.AnimationPresetOptions.createTrack(
+        preset, mode, requested, intensity.takeIf { it.isFinite() } ?: 1f)
+    val track = KeyframeTrack(generated.keyframes.map { pin ->
+        pin.copy(timeMs = start + (pin.timeMs.toDouble() / requested * actualDuration).toLong())
+    }).sorted()
+    pushUndo()
+    updateClip(clip.id) { it.copy(keyframes = track) }
+    return true
+}
 
 fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return

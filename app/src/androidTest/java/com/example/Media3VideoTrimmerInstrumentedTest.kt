@@ -21,7 +21,7 @@ import java.io.File
 class Media3VideoTrimmerInstrumentedTest {
 
     @Test
-    fun `trims a real sample video to the requested interval`() = runBlocking {
+    fun trimsARealSampleVideoToTheRequestedInterval() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val sourceUri = withTimeout(120_000L) {
             SampleVideoGenerator.getOrCreateSampleVideo(context)

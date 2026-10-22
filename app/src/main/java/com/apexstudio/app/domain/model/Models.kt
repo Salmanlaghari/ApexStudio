@@ -75,6 +75,11 @@ object WorkspaceEffectPresets {
     const val HEARTS = "hearts"
     const val HEARTBEAT = "heartbeat"
     const val ICE = "ice"
+    const val VFX_CHROMATIC_SPLIT = "vfx_chromatic_split"
+    const val VFX_SCAN_GLITCH = "vfx_scan_glitch"
+    const val VFX_LIGHT_LEAK = "vfx_light_leak"
+    const val VFX_VIGNETTE = "vfx_vignette"
+    const val VFX_EDGE_GLOW = "vfx_edge_glow"
 
     // Original, offline color looks (not LUT downloads or third-party presets).
     const val FILTER_SOFT_WARM = "filter_soft_warm"
@@ -93,14 +98,15 @@ object WorkspaceEffectPresets {
     /** These are lightweight GLSL looks, not neural filters, face tracking, or imported art. */
     val all: Set<String> = setOf(
         MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3, CARTOON, BUBBLE, HEARTS, HEARTBEAT, ICE,
+        VFX_CHROMATIC_SPLIT, VFX_SCAN_GLITCH, VFX_LIGHT_LEAK, VFX_VIGNETTE, VFX_EDGE_GLOW,
         FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
         FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
-    )
+    ) + WorkspaceFilterPresetAdditions.ids
 
     val filterIds: Set<String> = setOf(
         FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
         FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
-    )
+    ) + WorkspaceFilterPresetAdditions.ids
 
     fun label(id: String): String = when (id) {
         MONO -> "Monochrome"
@@ -113,6 +119,11 @@ object WorkspaceEffectPresets {
         HEARTS -> "Hearts · procedural"
         HEARTBEAT -> "Heartbeat pulse"
         ICE -> "Ice · cool tint"
+        VFX_CHROMATIC_SPLIT -> "Chromatic split"
+        VFX_SCAN_GLITCH -> "Scan glitch"
+        VFX_LIGHT_LEAK -> "Light leak"
+        VFX_VIGNETTE -> "Vignette"
+        VFX_EDGE_GLOW -> "Edge glow"
         FILTER_SOFT_WARM -> "Soft Warm"
         FILTER_COOL -> "Cool Air"
         FILTER_FADED -> "Faded Film"
@@ -125,7 +136,7 @@ object WorkspaceEffectPresets {
         FILTER_BW_CONTRAST -> "Bold Mono"
         FILTER_SEPIA -> "Sepia Wash"
         FILTER_LAVENDER -> "Lavender"
-        else -> "Unknown effect"
+        else -> WorkspaceFilterPresetAdditions.find(id)?.preset?.label ?: "Unknown effect"
     }
 }
 
@@ -146,7 +157,7 @@ object WorkspaceFilterPresets {
         WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_BW_CONTRAST, "Bold Mono", "High-contrast black and white", 0xFF616773),
         WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_SEPIA, "Sepia Wash", "Classic reddish-brown monochrome tint", 0xFFB77C4F),
         WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_LAVENDER, "Lavender", "Cool violet highlights and shadows", 0xFF9A8DE0)
-    )
+    ) + WorkspaceFilterPresetAdditions.presets
     fun find(id: String): WorkspaceFilterPreset? = all.firstOrNull { it.id == id }
 }
 
@@ -543,9 +554,20 @@ data class TextOverlay(
     val highlightStartUtf16: Int? = null,
     val highlightEndUtf16: Int? = null,
     val highlightSourceFingerprint: String? = null,
-    val highlightColorArgb: Long = 0xFFFFFF00L
+    val highlightColorArgb: Long = 0xFFFFFF00L,
+    // Optional animation timing window on the clip-output timeline. Segmented
+    // overlays share a logical window that may extend beyond their local window.
+    val animationWindowStartMs: Long? = null,
+    val animationWindowEndMs: Long? = null,
+    // Non-null only for explicitly linked cross-clip text layers. Legacy overlays
+    // with colliding IDs remain independent when this is null.
+    val projectTextLayerId: String? = null,
+    // Legacy karaoke generators persist inclusive end frames. New segmented
+    // project-clock windows opt into conventional half-open [start, end) ranges.
+    val rangeEndExclusive: Boolean = false
 ) {
-    fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+    fun isActiveAt(timeMs: Long): Boolean =
+        timeMs >= startMs && if (rangeEndExclusive) timeMs < endMs else timeMs <= endMs
 
     /**
      * The mask to render at [timeMs]: the static [mask] with its

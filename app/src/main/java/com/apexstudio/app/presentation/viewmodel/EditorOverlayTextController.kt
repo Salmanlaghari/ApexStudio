@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
+import com.apexstudio.app.data.export.ProjectTextOverlayTimeline
 import kotlinx.coroutines.flow.update
 
 
@@ -77,6 +78,20 @@ fun EditorViewModel.selectTextOverlay(id: String?) = _state.update {
 }
 
 
+private data class TextOverlayOwner(val clip: MediaClip, val overlay: TextOverlay)
+
+/** Resolve owner by explicit clip first; only non-null group IDs link across clips. */
+private fun resolveTextOverlayOwner(clips: List<MediaClip>, clipId: String?, overlayId: String): TextOverlayOwner? {
+    if (overlayId.isBlank()) return null
+    val requested = clipId?.let { id -> clips.firstOrNull { it.id == id && it.textOverlays.any { ov -> ov.id == overlayId } } }
+    requested?.let { owner -> return TextOverlayOwner(owner, owner.textOverlays.first { it.id == overlayId }) }
+    clips.asSequence().flatMap { clip -> clip.textOverlays.asSequence().map { clip to it } }
+        .firstOrNull { (_, overlay) -> overlay.id == overlayId && overlay.projectTextLayerId != null }
+        ?.let { (clip, overlay) -> return TextOverlayOwner(clip, overlay) }
+    clips.forEach { clip -> clip.textOverlays.firstOrNull { it.id == overlayId }?.let { return TextOverlayOwner(clip, it) } }
+    return null
+}
+
 fun EditorViewModel.addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.35f) {
     if (_state.value.project?.clips?.none { it.id == clipId } != false) return
     pushUndo()
@@ -92,16 +107,35 @@ fun EditorViewModel.setTextOverlayAnimation(clipId: String, overlayId: String, a
     updateTextOverlay(clipId, overlayId) { it.copy(animationType = animationType, animationDurationMs = durationMs) }
 
 
-fun EditorViewModel.updateTextOverlay(clipId: String, overlayId: String, transform: (com.apexstudio.app.domain.model.TextOverlay) -> com.apexstudio.app.domain.model.TextOverlay) {
-    updateClip(clipId) { clip ->
-        clip.copy(
-            textOverlays = clip.textOverlays.map {
-                if (it.id == overlayId) transform(it) else it
-            }
-        )
+fun EditorViewModel.updateTextOverlay(
+    clipId: String,
+    overlayId: String,
+    persist: Boolean = true,
+    transform: (com.apexstudio.app.domain.model.TextOverlay) -> com.apexstudio.app.domain.model.TextOverlay
+) {
+    var found = false
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        val target = resolveTextOverlayOwner(project.clips, clipId, overlayId) ?: return@update state
+        val groupId = target.overlay.projectTextLayerId
+        val updatedClips = project.clips.map { clip ->
+            if (groupId != null) {
+                clip.copy(textOverlays = clip.textOverlays.map { overlay ->
+                    if (overlay.projectTextLayerId == groupId) {
+                        found = true
+                        transform(overlay)
+                    } else overlay
+                })
+            } else if (clip.id == target.clip.id) {
+                clip.copy(textOverlays = clip.textOverlays.map { overlay ->
+                    if (overlay.id == overlayId) { found = true; transform(overlay) } else overlay
+                })
+            } else clip
+        }
+        if (found) state.copy(project = project.copy(clips = updatedClips)) else state
     }
+    if (persist && found) persistProject()
 }
-
 
 fun EditorViewModel.moveTextOverlay(
     clipId: String,
@@ -110,16 +144,10 @@ fun EditorViewModel.moveTextOverlay(
     dy: Float,
     persist: Boolean = true
 ) {
-    updateClip(clipId, persist = persist) { clip ->
-        clip.copy(
-            textOverlays = clip.textOverlays.map {
-                if (it.id == overlayId) {
-                    it.copy(
-                        x = (it.x + dx).coerceIn(0.04f, 0.96f),
-                        y = (it.y + dy).coerceIn(0.06f, 0.94f)
-                    )
-                } else it
-            }
+    updateTextOverlay(clipId, overlayId, persist = persist) {
+        it.copy(
+            x = (it.x + dx).coerceIn(0.04f, 0.96f),
+            y = (it.y + dy).coerceIn(0.06f, 0.94f)
         )
     }
 }
@@ -184,18 +212,28 @@ fun EditorViewModel.setTextOverlayGradient(clipId: String, overlayId: String, gr
 
 
 fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val target = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
-    val newId = "txt_${System.currentTimeMillis()}"
-    val duplicated = target.copy(
-        id = newId,
-        x = (target.x + 0.05f).coerceIn(0.1f, 0.9f),
-        y = (target.y + 0.05f).coerceIn(0.1f, 0.9f)
-    )
-    updateClip(clipId) { it.copy(textOverlays = it.textOverlays + duplicated) }
-    _state.update { it.copy(selectedTextOverlayId = newId) }
+    val project = _state.value.project ?: return
+    val target = resolveTextOverlayOwner(project.clips, clipId, overlayId) ?: return
+    val source = target.overlay
+    val newId = "txt_${java.util.UUID.randomUUID()}"
+    val newGroupId = source.projectTextLayerId?.let { java.util.UUID.randomUUID().toString() }
+    pushUndo()
+    _state.update { state ->
+        val current = state.project ?: return@update state
+        state.copy(project = current.copy(clips = current.clips.map { owner ->
+            val copies = owner.textOverlays.filter { overlay ->
+                if (source.projectTextLayerId != null) overlay.projectTextLayerId == source.projectTextLayerId
+                else owner.id == target.clip.id && overlay.id == overlayId
+            }.map { overlay ->
+                overlay.copy(id = newId, projectTextLayerId = newGroupId,
+                    x = (overlay.x + 0.05f).coerceIn(0.1f, 0.9f),
+                    y = (overlay.y + 0.05f).coerceIn(0.1f, 0.9f))
+            }
+            owner.copy(textOverlays = owner.textOverlays + copies)
+        }), selectedTextOverlayId = newId)
+    }
+    persistProject()
 }
-
 
 fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
     updateTextOverlay(clipId, overlayId) { preset.applyTo(it) }
@@ -215,25 +253,25 @@ fun EditorViewModel.applyTextDesignMotion(
         ?.takeIf { it == preset } ?: return@synchronized
     if (canonical.applyTo(target) == target) return@synchronized
     pushUndo()
-    updateClip(clipId) { currentClip ->
-        currentClip.copy(textOverlays = currentClip.textOverlays.map { current ->
-            if (current.id == overlayId) canonical.applyTo(current) else current
-        })
-    }
+    updateTextOverlay(clipId, overlayId) { canonical.applyTo(it) }
 }
 
 fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    if (clip.textOverlays.none { it.id == overlayId }) return
+    val project = _state.value.project ?: return
+    val target = resolveTextOverlayOwner(project.clips, clipId, overlayId) ?: return
+    val groupId = target.overlay.projectTextLayerId
     pushUndo()
-    updateClip(clipId) { clip ->
-        clip.copy(textOverlays = clip.textOverlays.filterNot { it.id == overlayId })
+    _state.update { state ->
+        val current = state.project ?: return@update state
+        state.copy(project = current.copy(clips = current.clips.map { owner ->
+            owner.copy(textOverlays = owner.textOverlays.filterNot { overlay ->
+                if (groupId != null) overlay.projectTextLayerId == groupId
+                else owner.id == target.clip.id && overlay.id == overlayId
+            })
+        }), selectedTextOverlayId = state.selectedTextOverlayId.takeUnless { it == overlayId })
     }
-    if (_state.value.selectedTextOverlayId == overlayId) {
-        _state.update { it.copy(selectedTextOverlayId = null) }
-    }
+    persistProject()
 }
-
 
 fun EditorViewModel.selectSticker(id: String?) {
     // Single selection: picking a sticker clears a stale text selection
@@ -250,12 +288,106 @@ fun EditorViewModel.selectSticker(id: String?) {
 
 
 fun EditorViewModel.updateTextOverlayTiming(clipId: String, textId: String, startMs: Long, endMs: Long) {
-    updateClip(clipId) { clip ->
-        val updated = clip.textOverlays.map {
-            if (it.id == textId) it.copy(startMs = startMs, endMs = endMs) else it
+    val project = _state.value.project ?: return
+    val entry = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(project.clips)
+        .entries.firstOrNull { it.clip.id == clipId } ?: return
+    updateTextOverlayProjectRange(textId, entry.timelineStartMs + startMs, entry.timelineStartMs + endMs, ownerClipId = clipId)
+}
+
+
+/** Project-clock range shown by the text duration controls. */
+data class TextOverlayProjectRange(val startMs: Long, val endMs: Long) {
+    val durationMs: Long get() = endMs - startMs
+}
+
+/** Resolve the selected text's real owner, independently of the selected clip. */
+fun EditorViewModel.textOverlayOwnerClipId(overlayId: String): String? {
+    val project = _state.value.project ?: return null
+    val target = resolveTextOverlayOwner(project.clips, _state.value.selectedClipId, overlayId) ?: return null
+    return target.clip.id
+}
+
+/**
+ * Resolve the V1 owner used by the project-clock range. Non-V1 overlays with a
+ * colliding ID must not steal the range controls from the V1 text layer.
+ */
+fun EditorViewModel.textOverlayProjectOwnerClipId(overlayId: String): String? {
+    val state = _state.value
+    val project = state.project ?: return null
+    val timeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(project.clips)
+    val selectedOwner = state.selectedClipId?.let { selectedId ->
+        project.clips.firstOrNull { clip ->
+            clip.id == selectedId && clip.textOverlays.any { it.id == overlayId }
         }
-        clip.copy(textOverlays = updated)
     }
+    if (selectedOwner != null) {
+        return selectedOwner.id.takeIf { ownerId -> timeline.entries.any { it.clip.id == ownerId } }
+    }
+    return timeline.entries.asSequence()
+        .flatMap { entry -> entry.clip.textOverlays.asSequence().map { entry.clip to it } }
+        .firstOrNull { (_, overlay) -> overlay.id == overlayId && overlay.projectTextLayerId != null }
+        ?.first?.id
+        ?: timeline.entries.asSequence()
+            .flatMap { entry -> entry.clip.textOverlays.asSequence().map { entry.clip to it } }
+            .firstOrNull { (_, overlay) -> overlay.id == overlayId }
+            ?.first?.id
+}
+
+/** Read the selected overlay's actual absolute project range for UI controls. */
+fun EditorViewModel.textOverlayProjectRange(overlayId: String): TextOverlayProjectRange? {
+    val project = _state.value.project ?: return null
+    return ProjectTextOverlayTimeline.range(project.clips, overlayId, _state.value.selectedClipId)?.let {
+        TextOverlayProjectRange(it.startMs, it.endMs)
+    }
+}
+
+/**
+ * Set an overlay's absolute V1 project range. Existing per-clip TextOverlay
+ * records are segmented with the canonical composition timeline, keeping every
+ * persisted field and the existing preview/export render paths intact.
+ */
+fun EditorViewModel.updateTextOverlayProjectRange(
+    overlayId: String,
+    startMs: Long,
+    endMs: Long,
+    ownerClipId: String? = _state.value.selectedClipId
+) {
+    val state = _state.value
+    val project = state.project ?: return
+    val timeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(project.clips)
+    if (timeline.durationMs <= 0L) return
+    val target = resolveTextOverlayOwner(project.clips, ownerClipId, overlayId) ?: return
+    val original = target.overlay
+    if (timeline.entries.none { it.clip.id == target.clip.id }) return
+
+    // Clamp to the real timeline. Keep the interval non-empty without ever
+    // fabricating time beyond the existing composition duration.
+    val start = startMs.coerceAtLeast(0L).coerceAtMost(timeline.durationMs - 1L)
+    val end = endMs.coerceIn(start + 1L, timeline.durationMs)
+    val groupId = original.projectTextLayerId ?: java.util.UUID.randomUUID().toString()
+    val segments = ProjectTextOverlayTimeline.segments(project.clips, original.copy(projectTextLayerId = groupId), start, end)
+    if (segments.isEmpty()) return
+    val segmentsByClip = segments.groupBy { it.clipId }.mapValues { (_, values) -> values.map { it.overlay } }
+    val updatedClips = project.clips.map { clip ->
+        val withoutOverlay = clip.textOverlays.filterNot { overlay ->
+            if (original.projectTextLayerId != null) overlay.projectTextLayerId == original.projectTextLayerId
+            else clip.id == target.clip.id && overlay.id == overlayId
+        }
+        clip.copy(textOverlays = withoutOverlay + segmentsByClip[clip.id].orEmpty())
+    }
+    if (updatedClips == project.clips) return
+
+    pushUndo()
+    _state.update { current ->
+        val currentProject = current.project ?: return@update current
+        // Avoid applying a stale range over a project whose clip order changed
+        // between the synchronous read and state write.
+        if (currentProject != project) {
+            return@update current
+        }
+        current.copy(project = currentProject.copy(clips = updatedClips))
+    }
+    persistProject()
 }
 
 

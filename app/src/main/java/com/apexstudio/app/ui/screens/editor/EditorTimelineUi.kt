@@ -111,7 +111,8 @@ fun TimelineTrackArea(
     onMoveAudioTrack: (trackId: String, startTimeMs: Long) -> Unit = { _, _ -> },
     onTrimAudioTrack: (trackId: String, trimStartMs: Long, trimEndMs: Long, startTimeMs: Long) -> Unit = { _, _, _, _ -> },
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -342,10 +343,11 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // Preserve the compact dark timeline workspace; only editor chrome
-            // receives the restrained light-neutral treatment.
-            .background(Color(0xFF111720))
-            .padding(top = 2.dp, bottom = 4.dp),
+            // Height is content-bounded by compactTimelineHeight. Extra wrapper
+            // padding would clip the bottom six dp of the actual filmstrip.
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, EditorPalette.Divider, RoundedCornerShape(12.dp))
+            .background(EditorPalette.BgBase),
         verticalArrangement = Arrangement.Top
     ) {
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering
@@ -380,6 +382,7 @@ fun TimelineTrackArea(
             onMoveStickerKeyframe = onMoveStickerKeyframe,
             onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
             onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
+            onSetTextOverlayRange = onSetTextOverlayRange,
             onSelectAudioTrack = onSelectAudioTrack,
             onMoveAudioTrack = onMoveAudioTrack,
             onTrimAudioTrack = onTrimAudioTrack,

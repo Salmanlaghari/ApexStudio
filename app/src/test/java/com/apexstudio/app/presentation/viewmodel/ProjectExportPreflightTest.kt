@@ -51,10 +51,30 @@ class ProjectExportPreflightTest {
             stickers = listOf(StickerOverlay())))))
     }
 
+    @Test fun `persisted junction blocks export without legacy transition label or false fallback advice`() {
+        val saved = state.copy(project = state.project!!.copy(
+            transitions = listOf(ClipTransition(fromClipId = "v", toClipId = "next")),
+            lastTransitionType = null
+        ))
+        val reason = projectVisualScopeUnsupportedReason(saved)!!
+        assertTrue(reason.contains("Selected-clip export also does not render"))
+        assertFalse(reason.contains("Use selected-clip export to keep"))
+    }
+
     @Test fun `visible overlay blocks composition but hidden overlay stays hidden`() {
         val overlay = video.copy(id = "pip", type = ClipType.OVERLAY, trackIndex = 1)
         val withOverlay = state.copy(project = state.project!!.copy(clips = listOf(video, overlay)))
         assertNotNull(projectVisualScopeUnsupportedReason(withOverlay))
         assertNull(projectVisualScopeUnsupportedReason(withOverlay.copy(hiddenVideoLayers = setOf(1))))
+    }
+
+    @Test fun `restored non-main photo and video cannot be filtered out before export preflight`() {
+        for (type in listOf(ClipType.IMAGE, ClipType.VIDEO)) {
+            val other = video.copy(id = "other", type = type, trackIndex = 2)
+            val saved = state.copy(project = state.project!!.copy(clips = listOf(video, other)))
+            assertTrue(projectVisualScopeUnsupportedReason(saved)!!.contains("cannot be omitted"))
+            assertNull(projectVisualScopeUnsupportedReason(saved.copy(hiddenVideoLayers = setOf(2))))
+            assertEquals(listOf(video, other), saved.project!!.clips)
+        }
     }
 }

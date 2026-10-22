@@ -5,19 +5,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -27,80 +24,105 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
-import kotlinx.coroutines.launch
 
-private data class SampleMediaItem(
-    val id: String,
-    val name: String,
-    val durationMs: Long,
-    val type: ClipType,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
-)
+private val MEDIA_LIBRARY_CATEGORIES = listOf("All", "Videos", "Photos", "Audio")
 
-private val SAMPLE_MEDIA_LIBRARY = listOf(
-    SampleMediaItem("1", "Cinematic_Broll_01.mp4", 12_000L, ClipType.VIDEO, Icons.Default.Movie),
-    SampleMediaItem("2", "Urban_Street_Night.mp4", 18_000L, ClipType.VIDEO, Icons.Default.Movie),
-    SampleMediaItem("3", "Sunset_Beach_4K.mp4", 15_000L, ClipType.VIDEO, Icons.Default.Movie),
-    SampleMediaItem("4", "Drone_Mountain_View.mp4", 22_000L, ClipType.VIDEO, Icons.Default.Movie),
-    SampleMediaItem("5", "Portrait_Model_Shoot.jpg", 5_000L, ClipType.IMAGE, Icons.Default.Photo),
-    SampleMediaItem("6", "Background_Music_Track.mp3", 120_000L, ClipType.AUDIO, Icons.Default.MusicNote),
-    SampleMediaItem("7", "Cyberpunk_Synthwave.mp3", 180_000L, ClipType.AUDIO, Icons.Default.MusicNote),
-    SampleMediaItem("8", "Transition_Whoosh_SFX.wav", 2_000L, ClipType.SFX, Icons.Default.MusicNote)
-)
+internal enum class MediaLibraryBrowseSource { VIDEO, PHOTOS, OVERLAY, AUDIO }
 
+/** Filter only actual media supplied by the caller; never synthesize sample URIs. */
+internal fun filterMediaLibraryItems(
+    items: List<MediaMetadata>,
+    category: String,
+    query: String
+): List<MediaMetadata> = items.filter { item ->
+    val categoryMatches = when (category) {
+        "Videos" -> item.type == ClipType.VIDEO || item.type == ClipType.OVERLAY
+        "Photos" -> item.type == ClipType.IMAGE
+        "Audio" -> item.type == ClipType.AUDIO || item.type == ClipType.SFX
+        else -> true
+    }
+    categoryMatches && (query.isBlank() || item.name.contains(query.trim(), ignoreCase = true) ||
+        item.uri.contains(query.trim(), ignoreCase = true))
+}
+
+internal fun dispatchMediaLibraryBrowse(
+    source: MediaLibraryBrowseSource,
+    onBrowseVideo: () -> Unit,
+    onBrowsePhotos: () -> Unit,
+    onBrowseOverlay: () -> Unit,
+    onBrowseAudio: () -> Unit
+) {
+    when (source) {
+        MediaLibraryBrowseSource.VIDEO -> onBrowseVideo()
+        MediaLibraryBrowseSource.PHOTOS -> onBrowsePhotos()
+        MediaLibraryBrowseSource.OVERLAY -> onBrowseOverlay()
+        MediaLibraryBrowseSource.AUDIO -> onBrowseAudio()
+    }
+}
+
+internal fun importMediaLibraryItem(
+    item: MediaMetadata,
+    onImportMedia: (List<MediaMetadata>) -> Unit,
+    onClose: () -> Unit
+) {
+    onImportMedia(listOf(item))
+    onClose()
+}
+
+/**
+ * Compact project-media browser. Header, search, categories and source actions stay pinned;
+ * the actual project assets scroll horizontally below them. The legacy system-picker callback
+ * remains as the default for every source for callers that have not supplied specialized actions.
+ */
 @Composable
 fun MediaLibrarySheet(
     onImportMedia: (List<MediaMetadata>) -> Unit,
     onOpenSystemPicker: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Actual indexed/project media supplied by the host. Empty by default; no demo files are shown. */
+    libraryItems: List<MediaMetadata> = emptyList(),
+    onBrowseVideo: () -> Unit = onOpenSystemPicker,
+    onBrowsePhotos: () -> Unit = onOpenSystemPicker,
+    onBrowseOverlay: () -> Unit = onOpenSystemPicker,
+    onBrowseAudio: () -> Unit = onOpenSystemPicker
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var selectedCategory by remember { mutableStateOf("Videos") }
+    var selectedCategory by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
-    val categories = listOf("Videos", "Photos", "Audio", "Recent", "Favorites")
-
-    val filteredItems = remember(selectedCategory, searchQuery) {
-        SAMPLE_MEDIA_LIBRARY.filter { item ->
-            val catMatch = when (selectedCategory) {
-                "Videos" -> item.type == ClipType.VIDEO
-                "Photos" -> item.type == ClipType.IMAGE
-                "Audio" -> item.type == ClipType.AUDIO || item.type == ClipType.SFX
-                else -> true
-            }
-            val searchMatch = searchQuery.isBlank() || item.name.contains(searchQuery, ignoreCase = true)
-            catMatch && searchMatch
-        }
+    val filteredItems = remember(libraryItems, selectedCategory, searchQuery) {
+        filterMediaLibraryItems(libraryItems, selectedCategory, searchQuery)
     }
+    val browseActions = listOf(
+        "Video" to MediaLibraryBrowseSource.VIDEO,
+        "Photos" to MediaLibraryBrowseSource.PHOTOS,
+        "Overlay" to MediaLibraryBrowseSource.OVERLAY,
+        "Audio" to MediaLibraryBrowseSource.AUDIO
+    )
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.75f)
+            .heightIn(max = 300.dp)
+            .defaultMinSize(minHeight = 250.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "Media Library",
-                color = ApexPalette.TextPrimary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Media Library", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Box(
                 modifier = Modifier
                     .size(30.dp)
@@ -113,17 +135,13 @@ fun MediaLibrarySheet(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
-
-        // Search Bar
+        Spacer(Modifier.height(5.dp))
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search media assets...", color = ApexPalette.TextTertiary, fontSize = 12.sp) },
+            placeholder = { Text("Search media...", color = ApexPalette.TextTertiary, fontSize = 12.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(18.dp)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(10.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = ApexPalette.NeonCyan,
@@ -136,118 +154,118 @@ fun MediaLibrarySheet(
             singleLine = true
         )
 
-        Spacer(Modifier.height(10.dp))
-
-        // Categories
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            items(categories, key = { it }) { cat ->
-                val isSelected = cat == selectedCategory
+        Spacer(Modifier.height(5.dp))
+        LazyRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(MEDIA_LIBRARY_CATEGORIES, key = { it }) { category ->
+                val selected = category == selectedCategory
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                        .border(1.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
-                        .clickable { selectedCategory = cat }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+                        .border(1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable { selectedCategory = category }
+                        .padding(horizontal = 12.dp, vertical = 5.dp)
                 ) {
-                    Text(
-                        cat,
-                        color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text(category, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(5.dp))
+        LazyRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(browseActions, key = { it.second.name }) { (label, source) ->
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ApexPalette.NeonCyan.copy(alpha = 0.12f))
+                        .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            dispatchMediaLibraryBrowse(source, onBrowseVideo, onBrowsePhotos, onBrowseOverlay, onBrowseAudio)
+                        }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(14.dp))
+                    Text("Browse $label", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
 
-        // Option to open system storage picker
+        Spacer(Modifier.height(7.dp))
+        if (filteredItems.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    if (libraryItems.isEmpty()) "No media in this project yet" else "No matching media",
+                    color = ApexPalette.TextPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(3.dp))
+                Text("Browse your device to select real media.", color = ApexPalette.TextSecondary, fontSize = 11.sp)
+            }
+        } else {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                contentPadding = PaddingValues(bottom = 2.dp)
+            ) {
+                items(filteredItems, key = { it.uri }) { item ->
+                    MediaLibraryCard(item = item, onClick = { importMediaLibraryItem(item, onImportMedia, onClose) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaLibraryCard(item: MediaMetadata, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(112.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(10.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(7.dp)
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
-                .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(10.dp))
-                .clickable {
-                    onOpenSystemPicker()
-                    onClose()
-                }
-                .padding(10.dp),
+                .weight(1f)
+                .clip(RoundedCornerShape(7.dp))
+                .background(ApexPalette.BgElevated),
             contentAlignment = Alignment.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(16.dp))
-                Text("Browse Device Files & Storage", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (item.type == ClipType.IMAGE) {
+                AsyncImage(
+                    model = item.uri,
+                    contentDescription = item.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                val icon = if (item.type == ClipType.AUDIO || item.type == ClipType.SFX) Icons.Default.MusicNote else Icons.Default.VideoLibrary
+                Icon(icon, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(27.dp))
             }
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Grid of Media Items
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(filteredItems, key = { it.id }) { item ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(ApexPalette.BgBase)
-                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                        .clickable {
-                            scope.launch {
-                                val sampleUri = try {
-                                    com.apexstudio.app.data.media.SampleVideoGenerator.getOrCreateSampleVideo(context)
-                                } catch (_: Exception) { "" }
-                                val meta = MediaMetadata(
-                                    uri = sampleUri,
-                                    name = item.name,
-                                    durationMs = item.durationMs,
-                                    width = 1920,
-                                    height = 1080,
-                                    fps = 30,
-                                    type = item.type
-                                )
-                                onImportMedia(listOf(meta))
-                            }
-                            onClose()
-                        }
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(ApexPalette.BgElevated),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(item.icon, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(20.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                item.name,
-                                color = ApexPalette.TextPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Text(
-                                "${item.durationMs / 1000}s",
-                                color = ApexPalette.TextSecondary,
-                                fontSize = 9.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        Spacer(Modifier.height(5.dp))
+        Text(item.name, color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(
+            when (item.type) {
+                ClipType.VIDEO -> "Video · ${item.durationMs / 1000}s"
+                ClipType.OVERLAY -> "Overlay · ${item.durationMs / 1000}s"
+                ClipType.IMAGE -> "Photo"
+                ClipType.AUDIO, ClipType.SFX -> "Audio · ${item.durationMs / 1000}s"
+            },
+            color = ApexPalette.TextSecondary,
+            fontSize = 9.sp,
+            maxLines = 1
+        )
     }
 }

@@ -77,11 +77,13 @@ class MediaPickerHelper(private val context: Context) {
     lateinit var pickAudioMedia: ActivityResultLauncher<String>
 
     @Composable
-    fun registerLaunchers() {
+    fun registerLaunchers(onCancelled: () -> Unit = {}) {
         pickMultipleMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia()
         ) { uris ->
-            if (uris != null) {
+            if (uris.isNullOrEmpty()) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
                         .filter {
@@ -93,11 +95,12 @@ class MediaPickerHelper(private val context: Context) {
                 }
             }
         }
-
         pickSingleMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetContent()
         ) { uri ->
-            if (uri != null) {
+            if (uri == null) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val meta = extractMetadata(uri)
                     if (meta != null) {
@@ -107,14 +110,15 @@ class MediaPickerHelper(private val context: Context) {
                 }
             }
         }
-
         // Phase E: audio-only picker. Reuses the same _pickedMedia flow
         // so the existing collect callback in EditorScreen needs no
         // changes — it just sees a list with ClipType.AUDIO metadata.
         pickAudioMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetMultipleContents()
         ) { uris ->
-            if (uris != null) {
+            if (uris.isNullOrEmpty()) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
                         .filter { it.type == com.apexstudio.app.domain.model.ClipType.AUDIO }
@@ -124,7 +128,6 @@ class MediaPickerHelper(private val context: Context) {
             }
         }
     }
-
     private fun extractMetadata(uri: Uri): MediaMetadata? {
         return try {
             CrashMarker.mark(context, "MediaPickerHelper.extractMetadata: $uri")

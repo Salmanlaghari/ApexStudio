@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -57,7 +58,8 @@ fun ExportScreen(
     vm: EditorViewModel = viewModel(
         key = projectId,
         factory = EditorViewModelFactory(projectId = projectId)
-    )
+    ),
+    embedded: Boolean = false
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val editorState by vm.state.collectAsStateWithLifecycle()
@@ -152,12 +154,165 @@ fun ExportScreen(
 
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ApexPalette.BgBase)
-            .statusBarsPadding()
-            .navigationBarsPadding()
+        modifier = if (embedded) {
+            Modifier.fillMaxWidth().background(ApexPalette.BgBase)
+        } else {
+            Modifier.fillMaxSize().background(ApexPalette.BgBase).statusBarsPadding().navigationBarsPadding()
+        }
     ) {
+        if (embedded) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(232.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GlassCard(modifier = Modifier.width(276.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("EXPORT SCOPE", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            androidx.compose.material3.IconButton(onClick = { if (export.isExporting) vm.cancelCurrentExport() else onBack() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close export controls", tint = ApexPalette.TextPrimary)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = !wholeProject, enabled = !export.isExporting, onClick = { wholeProject = false }, label = { Text("Selected clip") })
+                            FilterChip(selected = wholeProject, enabled = !export.isExporting, onClick = { wholeProject = true }, label = { Text("Whole project") })
+                        }
+                        Text(
+                            if (wholeProject) "Whole project: main timeline videos, global LUT, color and FX; hard cuts only. Photos, visible PiP, AR and advanced composition are unsupported."
+                            else "Selected clip: ${videoScope.baseClip?.let { com.apexstudio.app.util.TimeFormat.formatMs(videoScope.durationMs) } ?: "No exportable video selected"}. Source and edit limits are checked before export.",
+                            color = ApexPalette.TextSecondary, fontSize = 10.sp, maxLines = 4
+                        )
+                        (if (wholeProject) projectBlockReason else selectedBlockReason)?.let {
+                            Text(it, color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 3)
+                        }
+                        export.warning?.let { Text(it, color = ApexPalette.NeonCyan, fontSize = 10.sp, maxLines = 2) }
+                        if (wholeProject) {
+                            AudioExportWarning("Project scope retains every clip's trim.")
+                        } else {
+                            VideoExportScopeWarning(videoScope)
+                        }
+                    }
+                }
+
+                GlassCard(modifier = Modifier.width(278.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("VIDEO OUTPUT", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for ((label, sub) in listOf("720P" to "1280×720", "1080P" to "1920×1080", "1440P" to "2560×1440", "4K" to "3840×2160")) {
+                                CompactResolutionPill(label, sub, selectedResolution == label, !export.isExporting, { vm.updateExport { it.copy(resolution = label) } }, Modifier.weight(1f))
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for ((label, sub) in listOf("16:9" to "Landscape", "9:16" to "Portrait", "1:1" to "Square")) {
+                                CompactResolutionPill(label, sub, selectedAspect == label, !export.isExporting, { vm.updateExport { it.copy(aspectRatio = label) } }, Modifier.weight(1f))
+                            }
+                        }
+                        Text("MAX FPS • ${selectedFps.toInt()} fps", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (fps in listOf(24, 30, 60, 90, 120)) {
+                                CompactExportChoice("$fps", selectedFps.toInt() == fps, !export.isExporting) { vm.updateExport { it.copy(frameRate = fps) } }
+                            }
+                        }
+                        Text("FPS is an output ceiling; no frame interpolation.", color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
+                    }
+                }
+
+                GlassCard(modifier = Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("ENCODING", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("BITRATE • ${if (selectedBitrateMbps == 0) "Auto" else "$selectedBitrateMbps Mbps"}", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        for (options in listOf(listOf(0 to "Auto", 8 to "8", 12 to "12"), listOf(16 to "16", 24 to "24", 32 to "32"))) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                for ((mbps, label) in options) {
+                                    CompactExportChoice(if (mbps == 0) label else "$label Mbps", selectedBitrateMbps == mbps, !export.isExporting) {
+                                        vm.updateExport { it.copy(bitrateMbps = mbps) }
+                                    }
+                                }
+                            }
+                        }
+                        Text("QUALITY • AUTO BITRATE ONLY", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (quality in com.apexstudio.app.domain.model.ExportQuality.entries) {
+                                FilterChip(selected = export.settings.quality == quality, enabled = !export.isExporting && selectedBitrateMbps == 0,
+                                    onClick = { vm.updateExport { it.copy(quality = quality) } }, label = { Text(quality.label, fontSize = 10.sp) })
+                            }
+                        }
+                        Text("Fixed bitrate takes precedence over quality.", color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
+                        Text("Format: MP4 (H.264). MOV and GIF export are not supported.", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 2)
+                    }
+                }
+
+                GlassCard(modifier = Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("SIZE & PROGRESS", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GaugeArc(progress = if (export.isExporting || export.outputUri != null) export.progress else 0f, modifier = Modifier.size(42.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(exportProgressLabel(export.isExporting, export.progress) ?: "Estimated video payload", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+                                Text(if (export.outputUri != null) when (val measured = measuredOutputSize) {
+                                    is ActualOutputSize.Measured -> formatByteCount(measured.bytes)
+                                    is ActualOutputSize.Unavailable -> measured.reason
+                                    null -> "Reading completed file size…"
+                                } else payloadEstimate?.let { "≈ ${formatByteCount(it.videoBytes)}" } ?: "Unavailable",
+                                    color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                        Text("${selectedResolution} • $selectedAspect • ${selectedFps.toInt()} fps • ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • H.264 / MP4", color = ApexPalette.NeonCyan, fontSize = 9.sp, maxLines = 2)
+                        Text("Scope: ${if (wholeProject) "whole project" else "selected clip"} • ${com.apexstudio.app.util.TimeFormat.formatMs(renderedDurationMs)}. Estimate excludes audio/container overhead; completed bytes are measured.", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 3)
+                        export.error?.let { Text("Error: $it", color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 2) }
+                    }
+                }
+
+                GlassCard(modifier = Modifier.width(260.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("EXPORT & SHARE", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            androidx.compose.material3.Button(
+                                enabled = export.isExporting || canRequestVideoExport,
+                                onClick = requestVideoExport,
+                                modifier = Modifier.weight(1f).heightIn(min = 42.dp)
+                            ) {
+                                Icon(if (export.isExporting) Icons.Default.Close else Icons.Default.IosShare, contentDescription = null)
+                                Spacer(Modifier.width(5.dp))
+                                val exportActionLabel = when {
+                                    export.isExporting -> "Cancel • ${(export.progress * 100).toInt()}%"
+                                    !export.isExportEngineReady -> "Engine unavailable"
+                                    !wholeProject && videoScope.baseClip == null -> "Select a clip"
+                                    wholeProject && projectBlockReason != null -> "Project export blocked"
+                                    !wholeProject && selectedBlockReason != null -> "Clip export blocked"
+                                    else -> "Export ${if (wholeProject) "project" else "clip"} • ${selectedResolution}"
+                                }
+                                Text(exportActionLabel, maxLines = 1, fontSize = 11.sp)
+                            }
+                            androidx.compose.material3.IconButton(
+                                enabled = !export.isExporting && export.isExportEngineReady,
+                                onClick = { vm.startAudioExport() }
+                            ) {
+                                Icon(Icons.Default.AudioFile, contentDescription = "Export audio as AAC")
+                            }
+                        }
+                        if (export.outputUri != null) {
+                            OutlinedButton(enabled = !export.isExporting, onClick = {
+                                shareError = runCatching { shareCompletedExport(context, requireNotNull(export.outputUri)) }
+                                    .exceptionOrNull()?.let { it.message ?: "No sharing app is available. The export remains saved." }
+                            }, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp)) {
+                                Icon(Icons.Default.Share, contentDescription = null)
+                                Spacer(Modifier.width(5.dp))
+                                Text("Share completed export", maxLines = 1)
+                            }
+                        } else {
+                            Text("On-device video export • H.264 / MP4", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1)
+                        }
+                        shareError?.let { Text(it, color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 2) }
+                    }
+                }
+            }
+        } else {
         AppTopBar(
             title = "Export",
             subtitle = "ApexStudio • Export Settings",
@@ -706,6 +861,7 @@ fun ExportScreen(
             color = ApexPalette.TextSecondary,
             fontSize = 10.sp
         )
+        }
     }
 }
 
@@ -719,6 +875,50 @@ private fun SectionLabel(text: String) {
         letterSpacing = 1.2.sp,
         modifier = Modifier.padding(start = 4.dp, top = 2.dp)
     )
+}
+
+@Composable
+private fun CompactExportChoice(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.16f) else ApexPalette.BgElevated)
+            .border(1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(7.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun CompactResolutionPill(
+    label: String,
+    sub: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .height(42.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.15f) else ApexPalette.BgElevated)
+            .border(1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(label, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+        Text(sub, color = ApexPalette.TextTertiary, fontSize = 6.sp, maxLines = 1)
+    }
 }
 
 @Composable

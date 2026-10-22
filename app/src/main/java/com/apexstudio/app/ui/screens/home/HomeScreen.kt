@@ -8,14 +8,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +48,7 @@ import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -55,12 +62,19 @@ fun HomeScreen(
     val repo = remember { MediaRepository }
     val projectRepo = remember { ProjectRepository(context) }
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
+    var savedProjectIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var projectToRename by remember { mutableStateOf<Project?>(null) }
+    var projectToDelete by remember { mutableStateOf<Project?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
         // flowOn only moves upstream work; collect remains on the UI dispatcher,
         // so keep the synchronous legacy fallback off that callback as well.
         projectRepo.loadAll().flowOn(Dispatchers.IO).collect { saved ->
+            savedProjectIds = saved.mapTo(mutableSetOf()) { it.id }
             projects = resolveHomeProjects(saved, loadFallback = repo::loadProjects)
         }
     }
@@ -104,6 +118,7 @@ fun HomeScreen(
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
@@ -131,6 +146,12 @@ fun HomeScreen(
         }
 
         item {
+            ProjectsShortcut(projectCount = projects.size) {
+                scope.launch { listState.animateScrollToItem(PROJECTS_SECTION_INDEX) }
+            }
+        }
+
+        item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SectionLabel("Your Projects (${projects.size})")
                 Text("Pick up where you left off", color = ApexPalette.TextSecondary, fontSize = 12.sp)
@@ -148,11 +169,55 @@ fun HomeScreen(
             }
         }
 
-        items(projects, key = { it.id }) { p ->
-            ProjectRow(p, onOpen = { onProjectOpen(p.id) })
+        items(projects, key = { it.id }) { project ->
+            ProjectRow(
+                project = project,
+                onOpen = { onProjectOpen(project.id) },
+                onRename = {
+                    renameText = project.name
+                    projectToRename = project
+                },
+                onDelete = { projectToDelete = project },
+                canManage = project.id in savedProjectIds
+            )
         }
     }
+
+    projectToRename?.let { project ->
+        RenameProjectDialog(
+            projectName = renameText,
+            onNameChange = { renameText = it },
+            onDismiss = { projectToRename = null },
+            onConfirm = { enteredName ->
+                val newName = renameHomeProject(project, enteredName)?.name
+                if (newName != null) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            projectRepo.findById(project.id)?.let { stored ->
+                                projectRepo.saveProject(stored.copy(name = newName))
+                            }
+                        }
+                        projectToRename = null
+                    }
+                }
+            }
+        )
+    }
+    projectToDelete?.let { project ->
+        DeleteProjectDialog(
+            projectName = project.name,
+            onDismiss = { projectToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { projectRepo.deleteProject(project.id) }
+                    projectToDelete = null
+                }
+            }
+        )
+    }
 }
+
+private const val PROJECTS_SECTION_INDEX = 4
 
 @Composable
 internal fun DashboardHeader(onOpenSettings: () -> Unit) {
@@ -372,7 +437,82 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ProjectRow(p: Project, onOpen: () -> Unit) {
+internal fun ProjectsShortcut(projectCount: Int, onClick: () -> Unit) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("dashboard-projects-shortcut"),
+        cornerRadius = 16.dp,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text("Your Projects", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("$projectCount projects available", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
+            Text("View", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+internal fun renameHomeProject(project: Project, enteredName: String): Project? =
+    enteredName.trim().takeIf(String::isNotEmpty)?.let { project.copy(name = it) }
+
+@Composable
+internal fun RenameProjectDialog(
+    projectName: String,
+    onNameChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("home-rename-project-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("Rename project") },
+        text = {
+            OutlinedTextField(
+                value = TextFieldValue(
+                    text = projectName,
+                    selection = TextRange(projectName.length)
+                ),
+                onValueChange = { onNameChange(it.text) },
+                label = { Text("Project name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(projectName) }, enabled = projectName.trim().isNotEmpty()) {
+                Text("Save name")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun DeleteProjectDialog(
+    projectName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("home-delete-project-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("Delete project?") },
+        text = { Text("\"$projectName\" and its saved editing data will be deleted. This cannot be undone.") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Delete project") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun ProjectRow(
+    project: Project,
+    onOpen: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    canManage: Boolean = true
+) {
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,7 +542,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    p.name,
+                    project.name,
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
@@ -419,7 +559,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
-                        TimeFormat.msToShort(p.durationMs),
+                        TimeFormat.msToShort(project.durationMs),
                         color = ApexPalette.TextSecondary,
                         fontSize = 10.sp
                     )
@@ -439,7 +579,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        p.resolution,
+                        project.resolution,
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
@@ -447,11 +587,27 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "${p.fps}fps",
+                    "${project.fps}fps",
                     color = ApexPalette.NeonEmerald,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
+                if (canManage) {
+                    Row {
+                        IconButton(
+                            onClick = onRename,
+                            modifier = Modifier.size(40.dp).testTag("home-project-rename-${project.id}")
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename ${project.name}", tint = ApexPalette.TextSecondary)
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(40.dp).testTag("home-project-delete-${project.id}")
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${project.name}", tint = ApexPalette.TextSecondary)
+                        }
+                    }
+                }
             }
         }
     }

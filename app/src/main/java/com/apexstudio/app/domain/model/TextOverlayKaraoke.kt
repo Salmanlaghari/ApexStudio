@@ -6,10 +6,9 @@ import java.security.MessageDigest
 data class KaraokeHighlightRange(val startUtf16: Int, val endUtf16Exclusive: Int)
 
 object TextOverlayKaraoke {
-    /** Manual text stays editable outside its window; generated captions must not stack at once. */
+    /** Respect every layer's actual local window, including legacy inclusive end timestamps. */
     fun isVisibleForEditor(overlay: TextOverlay, clipOutputTimeMs: Long): Boolean =
-        (overlay.presetId != "caption_auto" && overlay.highlightSourceFingerprint == null) ||
-            overlay.isActiveAt(clipOutputTimeMs)
+        overlay.isActiveAt(clipOutputTimeMs)
 
     fun fingerprint(sourceText: String): String = MessageDigest.getInstance("SHA-256")
         .digest(sourceText.toByteArray(Charsets.UTF_8))

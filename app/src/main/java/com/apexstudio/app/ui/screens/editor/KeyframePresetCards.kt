@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,12 +14,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,118 +48,173 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.os.SystemClock
-import kotlinx.coroutines.delay
+import com.apexstudio.app.data.animation.AnimationPresetMode
+import com.apexstudio.app.data.animation.AnimationPresetOptions
 import com.apexstudio.app.data.animation.AnimationPresetType
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Visually-designed animation preset CARDS for the Keyframe Studio.
+ * Compact, horizontal animation preset picker. When [onApplyConfiguredPreset]
+ * is supplied, card taps only select a preset; the explicit Apply action sends
+ * its mode, duration and intensity to the caller. That callback should build
+ * [AnimationPresetOptions.createTrack] and attach that exact track to the clip,
+ * keeping live preview and export on the same keyframe path.
  *
- * Prince's brief: "manual sliders ki jagah ready-made animation CARDS banao —
- * user card tap kare, video par apply ho jaye. Cards visually designed hon
- * (template cards jaisa), sirf text chips nahi."
- *
- * Tapping a card applies real keyframe data to the selected clip via
- * [onApplyPreset] → same pipeline as before, so the animation plays in the
- * LIVE PREVIEW and in EXPORT (preview+export parity).
- *
- * The "Customized" card opens the existing manual KeyframePanel (sliders)
- * through [onOpenCustomized] — the manual panel is reachable ONLY from there.
+ * If the configured callback is absent, cards retain the previous instant-apply
+ * behavior via [onApplyPreset] and advanced controls are not shown.
  */
 @Composable
 fun KeyframePresetCards(
     onApplyPreset: (AnimationPresetType) -> Unit,
     onOpenCustomized: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    canApply: Boolean = true,
+    onApplyConfiguredPreset: ((AnimationPresetType, AnimationPresetMode, Long, Float) -> Unit)? = null
 ) {
+    val configured = onApplyConfiguredPreset != null
+    var mode by remember { mutableStateOf(AnimationPresetMode.IN) }
+    var selectedType by remember { mutableStateOf(AnimationPresetType.ZOOM_IN) }
+    var durationMs by remember { mutableLongStateOf(AnimationPresetOptions.DEFAULT_DURATION_MS) }
+    var intensity by remember { mutableStateOf(AnimationPresetOptions.DEFAULT_INTENSITY) }
     var lastApplied by remember { mutableStateOf<AnimationPresetType?>(null) }
     var lastApplyAtMs by remember { mutableLongStateOf(0L) }
     var lastApplyType by remember { mutableStateOf<AnimationPresetType?>(null) }
 
-    // The checkmark is a transient "just applied" confirmation, not a claim about
-    // current keyframe state — it auto-clears so it can never go stale when the
-    // manual panel edits keyframes behind the cards.
+    val visiblePresets = remember(mode, configured) {
+        if (configured) presetCardsFor(mode) else PRESET_CARD_DEFS
+    }
     LaunchedEffect(lastApplied) {
         if (lastApplied != null) {
             delay(1200)
             lastApplied = null
         }
     }
+    LaunchedEffect(mode) {
+        if (visiblePresets.none { it.type == selectedType }) {
+            selectedType = visiblePresets.firstOrNull()?.type ?: AnimationPresetType.ZOOM_IN
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(max = 300.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgElevated)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(14.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        // --- Header ---
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                imageVector = Icons.Default.Animation,
-                contentDescription = null,
-                tint = ApexPalette.NeonCyan,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
+        // The close affordance stays pinned above the horizontal card scroller.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Animation, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.width(7.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Animation Cards",
-                    color = ApexPalette.TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-                Text(
-                    text = "Tap a card — applies to the selected clip instantly",
-                    color = ApexPalette.TextTertiary,
-                    fontSize = 10.sp
-                )
+                Text("Animation", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
+                Text(if (canApply) "Replaces transform keys · fits clip · Undo restores" else "Select a video or photo layer first", color = ApexPalette.TextTertiary, fontSize = 10.sp, maxLines = 1)
             }
-            IconButton(onClick = onClose) {
+            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary, modifier = Modifier.size(20.dp))
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        if (configured) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                AnimationPresetMode.entries.forEach { option ->
+                    val selected = mode == option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f) else Color(0xFF171C2C))
+                            .border(1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+                            .clickable { mode = option },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(option.name.lowercase().replaceFirstChar { it.uppercase() }, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
 
-        // Adaptive grid: 3 columns in portrait, more in landscape — no frame issues.
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 104.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(340.dp),
-            contentPadding = PaddingValues(2.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().height(if (configured) 94.dp else 108.dp),
+            contentPadding = PaddingValues(end = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            items(PRESET_CARD_DEFS, key = { it.label }) { def ->
+            items(visiblePresets, key = { it.label }) { def ->
                 PresetCard(
                     def = def,
-                    applied = lastApplied == def.type,
+                    selected = if (configured) selectedType == def.type else lastApplied == def.type,
                     onClick = {
-                        // Debounce repeated taps of the SAME card (400ms) so rapid
-                        // taps can't spam the undo stack — but a DIFFERENT card
-                        // always applies immediately, never swallowed.
-                        val now = SystemClock.uptimeMillis()
-                        if (def.type == lastApplyType && now - lastApplyAtMs < 400L) return@PresetCard
-                        lastApplyAtMs = now
-                        lastApplyType = def.type
-                        onApplyPreset(def.type)
-                        lastApplied = def.type
+                        if (configured) {
+                            selectedType = def.type
+                        } else {
+                            val now = SystemClock.uptimeMillis()
+                            // Preserve the legacy same-card tap debounce.
+                            if (def.type == lastApplyType && now - lastApplyAtMs < 400L) return@PresetCard
+                            lastApplyAtMs = now
+                            lastApplyType = def.type
+                            onApplyPreset(def.type)
+                            lastApplied = def.type
+                        }
                     }
                 )
             }
-            item(key = "customized") {
-                CustomizedCard(onClick = onOpenCustomized)
+            item(key = "customized") { CustomizedCard(onClick = onOpenCustomized) }
+        }
+
+        if (configured) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Duration", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.weight(1f))
+                        Text("${durationMs} ms", color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Slider(
+                        value = durationMs.toFloat(),
+                        onValueChange = { durationMs = (it / 50f).toLong() * 50L },
+                        valueRange = AnimationPresetOptions.MIN_DURATION_MS.toFloat()..AnimationPresetOptions.MAX_DURATION_MS.toFloat(),
+                        modifier = Modifier.fillMaxWidth().height(32.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Intensity", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.weight(1f))
+                        Text("${(intensity * 100).toInt()}%", color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Slider(
+                        value = intensity,
+                        onValueChange = { intensity = it },
+                        valueRange = AnimationPresetOptions.MIN_INTENSITY..AnimationPresetOptions.MAX_INTENSITY,
+                        modifier = Modifier.fillMaxWidth().height(32.dp)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().height(30.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Brush.horizontalGradient(listOf(ApexPalette.NeonCyan, Color(0xFF6366F1))))
+                    .clickable(enabled = canApply) {
+                        onApplyConfiguredPreset?.invoke(selectedType, mode, durationMs, intensity)
+                        lastApplied = selectedType
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Apply ${presetLabel(selectedType)}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -186,141 +243,90 @@ private val PRESET_CARD_DEFS = listOf(
     PresetCardDef(AnimationPresetType.POP, "Pop", Color(0xFF22D3EE), Color(0xFF34D399)),
     PresetCardDef(AnimationPresetType.SPRING_IN, "Spring In", Color(0xFF34D399), Color(0xFF0EA5E9)),
     PresetCardDef(AnimationPresetType.SHAKE, "Shake", Color(0xFFF97316), Color(0xFFEF4444)),
+    PresetCardDef(AnimationPresetType.BLUR_IN, "Blur In", Color(0xFF06B6D4), Color(0xFF6366F1)),
+    PresetCardDef(AnimationPresetType.BLUR_OUT, "Blur Out", Color(0xFF6366F1), Color(0xFF0E7490)),
+    PresetCardDef(AnimationPresetType.ZOOM_FADE_IN, "Zoom + Fade", Color(0xFF8B5CF6), Color(0xFFEC4899)),
+    PresetCardDef(AnimationPresetType.ZOOM_FADE_OUT, "Zoom Fade Out", Color(0xFFEF4444), Color(0xFFA855F7)),
+    PresetCardDef(AnimationPresetType.SLIDE_BOUNCE_LEFT, "Bounce Left", Color(0xFF06B6D4), Color(0xFF0EA5E9)),
+    PresetCardDef(AnimationPresetType.SLIDE_BOUNCE_RIGHT, "Bounce Right", Color(0xFF0EA5E9), Color(0xFF22D3EE)),
+    PresetCardDef(AnimationPresetType.POP_FADE_IN, "Pop + Fade", Color(0xFF22D3EE), Color(0xFF34D399)),
+    PresetCardDef(AnimationPresetType.SPIN_ZOOM_IN, "Spin Zoom", Color(0xFF8B5CF6), Color(0xFF6366F1)),
+    PresetCardDef(AnimationPresetType.SLIDE_FADE_UP, "Rise + Fade", Color(0xFF8B5CF6), Color(0xFFEC4899))
 )
 
+private fun presetCardsFor(mode: AnimationPresetMode): List<PresetCardDef> {
+    val types = when (mode) {
+        AnimationPresetMode.IN -> setOf(
+            AnimationPresetType.ZOOM_IN, AnimationPresetType.SLIDE_LEFT, AnimationPresetType.SLIDE_RIGHT,
+            AnimationPresetType.SLIDE_UP, AnimationPresetType.SLIDE_DOWN, AnimationPresetType.FADE_IN,
+            AnimationPresetType.ROTATE, AnimationPresetType.BOUNCE, AnimationPresetType.POP,
+            AnimationPresetType.SPRING_IN, AnimationPresetType.BLUR_IN, AnimationPresetType.ZOOM_FADE_IN,
+            AnimationPresetType.SLIDE_BOUNCE_LEFT, AnimationPresetType.SLIDE_BOUNCE_RIGHT,
+            AnimationPresetType.POP_FADE_IN, AnimationPresetType.SPIN_ZOOM_IN, AnimationPresetType.SLIDE_FADE_UP
+        )
+        AnimationPresetMode.OUT -> setOf(
+            AnimationPresetType.ZOOM_OUT, AnimationPresetType.FADE_OUT, AnimationPresetType.BLUR_OUT,
+            AnimationPresetType.ZOOM_FADE_OUT
+        )
+        AnimationPresetMode.LOOP -> setOf(AnimationPresetType.PULSE, AnimationPresetType.SPIN, AnimationPresetType.SHAKE)
+    }
+    return PRESET_CARD_DEFS.filter { it.type in types }
+}
+
+private fun presetLabel(type: AnimationPresetType): String =
+    PRESET_CARD_DEFS.firstOrNull { it.type == type }?.label ?: type.displayName
+
 @Composable
-private fun PresetCard(
-    def: PresetCardDef,
-    applied: Boolean,
-    onClick: () -> Unit
-) {
+private fun PresetCard(def: PresetCardDef, selected: Boolean, onClick: () -> Unit) {
     Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                Brush.verticalGradient(listOf(def.start.copy(alpha = 0.28f), def.end.copy(alpha = 0.14f)))
-            )
-            .border(
-                width = if (applied) 2.dp else 1.dp,
-                color = if (applied) def.start else ApexPalette.BorderGlass,
-                shape = RoundedCornerShape(14.dp)
-            )
-            .clickable { onClick() }
-            .padding(8.dp),
+        modifier = Modifier.width(104.dp).height(86.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Brush.verticalGradient(listOf(def.start.copy(alpha = 0.28f), def.end.copy(alpha = 0.14f))))
+            .border(if (selected) 2.dp else 1.dp, if (selected) def.start else ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick).padding(5.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1.35f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.linearGradient(listOf(def.start, def.end))
-                ),
+            modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp))
+                .background(Brush.linearGradient(listOf(def.start, def.end))),
             contentAlignment = Alignment.Center
         ) {
-            // Soft glow disc behind the art
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(Color.White.copy(alpha = 0.14f), CircleShape)
-            )
-            Canvas(modifier = Modifier.size(72.dp)) {
-                drawPresetArt(def.type)
-            }
-            if (applied) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(18.dp)
-                        .background(Color.White, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(modifier = Modifier.size(10.dp)) {
-                        val w = size.width
-                        val path = Path().apply {
-                            moveTo(w * 0.2f, w * 0.52f)
-                            lineTo(w * 0.45f, w * 0.75f)
-                            lineTo(w * 0.82f, w * 0.28f)
-                        }
-                        drawPath(path, color = def.start, style = Stroke(width = 3f))
-                    }
-                }
+            Box(Modifier.size(48.dp).background(Color.White.copy(alpha = 0.14f), CircleShape))
+            Canvas(Modifier.size(58.dp)) { drawPresetArt(def.type) }
+            if (selected) {
+                Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(9.dp).background(Color.White, CircleShape))
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = def.label,
-            color = ApexPalette.TextPrimary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Spacer(Modifier.height(4.dp))
+        Text(def.label, color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
 private fun CustomizedCard(onClick: () -> Unit) {
     Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF161A2B))
-            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .padding(8.dp),
+        modifier = Modifier.width(104.dp).height(86.dp).clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF161A2B)).border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick).padding(5.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1.35f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.linearGradient(listOf(Color(0xFF164E63), Color(0xFF0E7490)))
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.size(72.dp)) {
-                // Sliders graphic: three horizontal lines with knobs
+        Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(listOf(Color(0xFF164E63), Color(0xFF0E7490)))), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(58.dp)) {
                 val w = size.width
                 val h = size.height
-                val rows = listOf(0.28f, 0.5f, 0.72f)
-                val knobX = listOf(0.62f, 0.32f, 0.5f)
-                rows.forEachIndexed { i, fy ->
+                listOf(0.28f, 0.5f, 0.72f).forEachIndexed { i, fy ->
                     val y = h * fy
-                    drawLine(
-                        color = ApexPalette.TextPrimary.copy(alpha = 0.45f),
-                        start = Offset(w * 0.16f, y),
-                        end = Offset(w * 0.84f, y),
-                        strokeWidth = 4f
-                    )
-                    val kx = w * knobX[i]
-                    drawLine(
-                        color = ApexPalette.TextPrimary,
-                        start = Offset(kx - w * 0.22f, y),
-                        end = Offset(kx, y),
-                        strokeWidth = 4f
-                    )
-                    drawCircle(color = ApexPalette.TextPrimary, radius = 9f, center = Offset(kx, y))
-                    drawCircle(color = Color(0xFF0E7490), radius = 4.5f, center = Offset(kx, y))
+                    val kx = w * listOf(0.62f, 0.32f, 0.5f)[i]
+                    drawLine(Color.White.copy(alpha = 0.5f), Offset(w * 0.16f, y), Offset(w * 0.84f, y), 4f)
+                    drawCircle(Color.White, 6f, Offset(kx, y))
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Customized",
-            color = ApexPalette.NeonCyan,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Spacer(Modifier.height(4.dp))
+        Text("Customized", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
-/**
- * Mini motion-graphic art per preset, drawn in white over the card gradient.
- * Each graphic hints at the actual animation (expanding box, motion trail,
- * circular arrow, bounce arc, ...).
- */
 private fun DrawScope.drawPresetArt(type: AnimationPresetType) {
     val w = size.width
     val h = size.height

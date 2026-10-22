@@ -15,6 +15,7 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.apexstudio.app.data.media.MediaUriResolver
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,14 +25,71 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Narrow lifecycle seam: production delegates to Media3, JVM tests can control each session. */
+internal interface TrimTransformerAdapter {
+    fun start(mediaItem: EditedMediaItem, path: String)
+    fun getProgress(progressHolder: ProgressHolder): Int
+    fun cancel()
+}
+
+internal interface TrimTransformerFactory {
+    fun create(context: Context, callback: TrimTransformerCallback): TrimTransformerAdapter
+}
+
+internal interface TrimTransformerCallback {
+    fun onCompleted()
+    fun onError(error: Throwable)
+}
+
+private object Media3TrimTransformerFactory : TrimTransformerFactory {
+    override fun create(context: Context, callback: TrimTransformerCallback): TrimTransformerAdapter {
+        val listener = object : Transformer.Listener {
+            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                callback.onCompleted()
+            }
+
+            override fun onError(
+                composition: Composition,
+                exportResult: ExportResult,
+                exportException: ExportException,
+            ) {
+                callback.onError(exportException)
+            }
+        }
+        val encoderSettings = VideoEncoderSettings.Builder()
+            .setBitrate(12_000_000)
+            .build()
+        val encoderFactory = DefaultEncoderFactory.Builder(context)
+            .setRequestedVideoEncoderSettings(encoderSettings)
+            .setEnableFallback(true)
+            .build()
+        val transformer = Transformer.Builder(context)
+            .setEncoderFactory(encoderFactory)
+            .addListener(listener)
+            .build()
+        return object : TrimTransformerAdapter {
+            override fun start(mediaItem: EditedMediaItem, path: String) = transformer.start(mediaItem, path)
+            override fun getProgress(progressHolder: ProgressHolder): Int = transformer.getProgress(progressHolder)
+            override fun cancel() = transformer.cancel()
+        }
+    }
+}
 
 /**
  * High-performance video trimming engine powered by AndroidX Media3 Transformer.
  * Allows users to extract frame-accurate trimmed video clips with custom start and end timestamps.
  */
-class Media3VideoTrimmer(private val context: Context) {
+class Media3VideoTrimmer internal constructor(
+    private val context: Context,
+    private val transformerFactory: TrimTransformerFactory,
+) {
+    constructor(context: Context) : this(context, Media3TrimTransformerFactory)
 
     companion object {
         private const val TAG = "Media3VideoTrimmer"
@@ -58,183 +116,189 @@ class Media3VideoTrimmer(private val context: Context) {
         data class Error(val message: String, val throwable: Throwable? = null) : TrimResult()
     }
 
-    private var activeTransformer: Transformer? = null
-    private var progressTrackingJob: Job? = null
+    private val applicationHandler = Handler(Looper.getMainLooper())
+    private val activeSessions = ConcurrentHashMap.newKeySet<TrimSession>()
 
-    /**
-     * Executes frame-accurate video trimming using Media3 Transformer.
-     * Emits [TrimResult.Progress] continuously, concluding with [TrimResult.Success] or [TrimResult.Error].
-     */
+    /** Executes trimming through a per-collection Media3 session. */
     fun trimVideo(request: TrimRequest): Flow<TrimResult> = callbackFlow {
         val startMs = request.startMs.coerceAtLeast(0L)
         val endMs = request.endMs
         val durationMs = endMs - startMs
-
         if (durationMs < MIN_CLIP_DURATION_MS) {
             trySend(TrimResult.Error("Trim duration too short: must be at least ${MIN_CLIP_DURATION_MS}ms (requested ${durationMs}ms)"))
             close()
             return@callbackFlow
         }
 
-        val resolvedUri = MediaUriResolver.resolvePlayableUri(context, request.inputUri)
-        val outputDir = File(context.filesDir, "trimmed_clips").apply { mkdirs() }
-        val fileName = request.outputFileName ?: "trim_${System.currentTimeMillis()}_${startMs}_${endMs}.mp4"
-        val outputFile = File(outputDir, fileName)
+        // URI lookup and MediaItem preparation can fail too; report those as flow errors.
+        val prepared = try {
+            val resolvedUri = MediaUriResolver.resolvePlayableUri(context, request.inputUri)
+            val outputDir = File(context.filesDir, "trimmed_clips")
+            // Another flow can create the shared directory between our check and mkdirs.
+            if (!outputDir.isDirectory && !outputDir.mkdirs() && !outputDir.isDirectory) {
+                throw IllegalStateException("Unable to create trim output directory: $outputDir")
+            }
+            val fileName = request.outputFileName ?: "trim_${UUID.randomUUID()}_${startMs}_${endMs}.mp4"
+            val outputFile = File(outputDir, fileName)
+            check(!outputFile.exists()) { "Trim output already exists; choose a new output filename." }
+            val clippingConfig = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(startMs)
+                .setEndPositionMs(endMs)
+                .setStartsAtKeyFrame(false)
+                .build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(resolvedUri)
+                .setClippingConfiguration(clippingConfig)
+                .build()
+            val editedMediaItem = EditedMediaItem.Builder(mediaItem)
+                .setRemoveAudio(false)
+                .setRemoveVideo(false)
+                .build()
+            Triple(resolvedUri, outputFile, editedMediaItem)
+        } catch (e: Exception) {
+            trySend(TrimResult.Error("Unable to prepare video trim: ${e.message ?: "unknown error"}", e))
+            close()
+            return@callbackFlow
+        }
+        val (resolvedUri, outputFile, editedMediaItem) = prepared
+        // Never remove a pre-existing destination as failure cleanup; only our newly-created partial output.
+        val outputExistedBeforeTrim = outputFile.exists()
 
-        // Setup MediaItem with Media3 ClippingConfiguration
-        val clippingConfig = MediaItem.ClippingConfiguration.Builder()
-            .setStartPositionMs(startMs)
-            .setEndPositionMs(endMs)
-            .setStartsAtKeyFrame(false) // Frame-accurate cut
-            .build()
+        val session = TrimSession(
+            onRemoved = { activeSessions.remove(it) },
+            onCancelled = { close() },
+            cleanupPartialOutput = {
+                if (!outputExistedBeforeTrim && outputFile.exists()) outputFile.delete()
+            },
+        )
+        activeSessions.add(session)
 
-        val mediaItem = MediaItem.Builder()
-            .setUri(resolvedUri)
-            .setClippingConfiguration(clippingConfig)
-            .build()
-
-        val editedMediaItem = EditedMediaItem.Builder(mediaItem)
-            .setRemoveAudio(false)
-            .setRemoveVideo(false)
-            .build()
-
-        val transformerListener = object : Transformer.Listener {
-            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                progressTrackingJob?.cancel()
-                val outUri = Uri.fromFile(outputFile).toString()
-                Log.i(TAG, "Media3 Transformer trim complete -> $outUri (duration: ${durationMs}ms)")
-                trySend(TrimResult.Progress(1f))
-                trySend(
-                    TrimResult.Success(
-                        outputUri = outUri,
-                        durationMs = durationMs,
-                        startMs = startMs,
-                        endMs = endMs,
-                        clipId = request.clipId
-                    )
-                )
-                close()
+        val transformerCallback = object : TrimTransformerCallback {
+            override fun onCompleted() {
+                applicationHandler.post {
+                    if (!session.finish()) return@post
+                    if (!outputFile.isFile || outputFile.length() == 0L) {
+                        session.cleanupFailedOutput()
+                        trySend(TrimResult.Error("Media3 Transformer completed without producing a readable output file"))
+                        close()
+                        return@post
+                    }
+                    val outUri = Uri.fromFile(outputFile).toString()
+                    Log.i(TAG, "Media3 Transformer trim complete -> $outUri (duration: ${durationMs}ms)")
+                    trySend(TrimResult.Progress(1f))
+                    trySend(TrimResult.Success(outUri, durationMs, startMs, endMs, request.clipId))
+                    close()
+                }
             }
 
-            override fun onError(
-                composition: Composition,
-                exportResult: ExportResult,
-                exportException: ExportException
-            ) {
-                progressTrackingJob?.cancel()
-                Log.e(TAG, "Media3 Transformer trim error", exportException)
-                // Fallback mechanism: if hardware codec fails in headless/emulator/test, create simulated trimmed file
-                if (!outputFile.exists() || outputFile.length() == 0L) {
-                    try {
-                        createFallbackTrimmedFile(resolvedUri, outputFile, startMs, endMs)
-                        val outUri = Uri.fromFile(outputFile).toString()
-                        trySend(TrimResult.Progress(1f))
-                        trySend(
-                            TrimResult.Success(
-                                outputUri = outUri,
-                                durationMs = durationMs,
-                                startMs = startMs,
-                                endMs = endMs,
-                                clipId = request.clipId
-                            )
-                        )
-                        close()
-                        return
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Fallback trim also failed: ${e.message}")
-                    }
+            override fun onError(error: Throwable) {
+                applicationHandler.post {
+                    if (!session.failOnApplicationLooper()) return@post
+                    Log.e(TAG, "Media3 Transformer trim error", error)
+                    trySend(TrimResult.Error(error.message ?: "Trimming failed via Media3 Transformer", error))
+                    close()
                 }
-                trySend(TrimResult.Error(exportException.message ?: "Trimming failed via Media3 Transformer", exportException))
-                close()
             }
         }
 
         try {
-            val encoderSettings = VideoEncoderSettings.Builder()
-                .setBitrate(12_000_000)
-                .build()
-
-            val encoderFactory = DefaultEncoderFactory.Builder(context)
-                .setRequestedVideoEncoderSettings(encoderSettings)
-                .setEnableFallback(true)
-                .build()
-
-            val transformer = Transformer.Builder(context)
-                .setEncoderFactory(encoderFactory)
-                .addListener(transformerListener)
-                .build()
-
-            activeTransformer = transformer
-
-            // Start progress polling
-            val progressHolder = ProgressHolder()
-            progressTrackingJob = CoroutineScope(Dispatchers.IO).launch {
-                while (isActive) {
-                    delay(80L)
-                    val pState = transformer.getProgress(progressHolder)
-                    if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
-                        val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
-                        trySend(TrimResult.Progress(p))
+            withContext(Dispatchers.Main.immediate) {
+                if (!session.isTerminal) {
+                    val transformer = transformerFactory.create(context, transformerCallback)
+                    session.transformer = transformer
+                    if (session.isTerminal) {
+                        session.cancelTransformerOnApplicationLooper()
+                    } else {
+                        val progressHolder = ProgressHolder()
+                        session.progressJob = CoroutineScope(Dispatchers.Main.immediate).launch {
+                            while (isActive && !session.isTerminal) {
+                                delay(80L)
+                                if (session.isTerminal) break
+                                val state = try {
+                                    transformer.getProgress(progressHolder)
+                                } catch (failure: Exception) {
+                                    transformerCallback.onError(failure)
+                                    break
+                                }
+                                if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                                    val progress = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
+                                    trySend(TrimResult.Progress(progress))
+                                }
+                            }
+                        }
+                        transformer.start(editedMediaItem, outputFile.absolutePath)
                     }
                 }
             }
-
-            // Start Transformer
-            transformer.start(editedMediaItem, outputFile.absolutePath)
+        } catch (e: CancellationException) {
+            session.cancel()
+            throw e
         } catch (e: Exception) {
-            progressTrackingJob?.cancel()
-            Log.e(TAG, "Failed to start Media3 Transformer", e)
-            try {
-                createFallbackTrimmedFile(resolvedUri, outputFile, startMs, endMs)
-                val outUri = Uri.fromFile(outputFile).toString()
-                trySend(TrimResult.Progress(1f))
-                trySend(
-                    TrimResult.Success(
-                        outputUri = outUri,
-                        durationMs = durationMs,
-                        startMs = startMs,
-                        endMs = endMs,
-                        clipId = request.clipId
-                    )
-                )
-                close()
-            } catch (fallbackError: Exception) {
-                trySend(TrimResult.Error("Media3 Transformer initiation failed: ${e.message}", e))
+            val reported = withContext(Dispatchers.Main.immediate) { session.failOnApplicationLooper() }
+            if (reported) {
+                Log.e(TAG, "Failed to start Media3 Transformer for $resolvedUri", e)
+                trySend(TrimResult.Error("Media3 Transformer initiation failed: ${e.message ?: "unknown error"}", e))
                 close()
             }
         }
 
-        awaitClose {
-            progressTrackingJob?.cancel()
-            try {
-                activeTransformer?.cancel()
-            } catch (ignored: Exception) {}
-            activeTransformer = null
-        }
+        awaitClose { session.cancel() }
     }
 
     fun cancelActiveTrim() {
-        progressTrackingJob?.cancel()
-        try {
-            activeTransformer?.cancel()
-        } catch (ignored: Exception) {}
-        activeTransformer = null
+        // Each flow owns its own Transformer; cancellation never accidentally targets a sibling trim.
+        activeSessions.toList().forEach { it.cancel() }
     }
 
-    private fun createFallbackTrimmedFile(inputUri: Uri, outputFile: File, startMs: Long, endMs: Long) {
-        if (inputUri.scheme == "file") {
-            val sourceFile = File(inputUri.path ?: "")
-            if (sourceFile.exists()) {
-                sourceFile.copyTo(outputFile, overwrite = true)
-                return
-            }
+    private inner class TrimSession(
+        private val onRemoved: (TrimSession) -> Unit,
+        private val onCancelled: () -> Unit,
+        private val cleanupPartialOutput: () -> Unit,
+    ) {
+        private val terminal = AtomicBoolean(false)
+        @Volatile var transformer: TrimTransformerAdapter? = null
+        @Volatile var progressJob: Job? = null
+
+        val isTerminal: Boolean get() = terminal.get()
+
+        fun finish(): Boolean {
+            if (!terminal.compareAndSet(false, true)) return false
+            progressJob?.cancel()
+            transformer = null
+            onRemoved(this)
+            return true
         }
-        context.contentResolver.openInputStream(inputUri)?.use { input ->
-            FileOutputStream(outputFile).use { output ->
-                input.copyTo(output)
+
+        fun failOnApplicationLooper(): Boolean {
+            if (!terminal.compareAndSet(false, true)) return false
+            progressJob?.cancel()
+            cancelTransformerOnApplicationLooper()
+            cleanupPartialOutput()
+            return true
+        }
+
+        fun cleanupFailedOutput() {
+            cleanupPartialOutput()
+        }
+
+        fun cancel() {
+            if (!terminal.compareAndSet(false, true)) return
+            progressJob?.cancel()
+            onCancelled()
+            applicationHandler.post { cancelTransformerOnApplicationLooper() }
+        }
+
+        fun cancelTransformerOnApplicationLooper() {
+            progressJob?.cancel()
+            try {
+                transformer?.cancel()
+            } catch (ignored: Exception) {
+                // Cancellation is best-effort; the session is already terminal.
+            } finally {
+                transformer = null
+                cleanupPartialOutput()
+                onRemoved(this)
             }
-        } ?: run {
-            outputFile.writeText("MP4_TRIMMED_${startMs}_${endMs}")
         }
     }
 }

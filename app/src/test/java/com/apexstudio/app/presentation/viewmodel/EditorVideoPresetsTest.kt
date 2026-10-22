@@ -92,22 +92,49 @@ class EditorVideoPresetsTest {
     }
 
     @Test
-    fun `fixed video template applies title and effect with one undo snapshot`() {
-        val vm = editor()
+    fun `fixed video template preserves trim and speed adds styled full-window title and one undo restores original`() {
+        val source = videoClip(trimStartMs = 2_000L, trimEndMs = 8_000L).copy(speedMultiplier = 2.5f)
+        val vm = editor(source)
         val before = vm.state.value.project!!
         val captured = before.clips.first()
         val recipe = ProjectVideoPresets.videoTemplates.first()
         val effect = ProjectVideoPresets.effect(recipe.effectId)!!
-        val title = ProjectVideoPresets.textTemplate(recipe.textTemplateId)!!.createTextOverlay()
+        val template = ProjectVideoPresets.textTemplate(recipe.textTemplateId)!!
+        val expectedTitle = template.createTextOverlay()
 
         assertTrue(vm.applyProjectVideoTemplate(before.id, captured, recipe.id))
         val changed = vm.state.value.project!!
         val edited = changed.clips.first()
         assertEquals(effect.id, edited.projectVideoEffectId)
-        assertEquals(listOf(title.text), edited.textOverlays.map { it.text })
-        assertEquals(title.presetId, edited.textOverlays.single().presetId)
+        assertEquals(source.trimStartMs, edited.trimStartMs)
+        assertEquals(source.trimEndMs, edited.trimEndMs)
+        assertEquals(source.speedMultiplier, edited.speedMultiplier, 0f)
+        val title = edited.textOverlays.single()
+        assertEquals(expectedTitle.text, title.text)
+        assertEquals(expectedTitle.presetId, title.presetId)
+        assertEquals(expectedTitle.sizeScale, title.sizeScale, 0f)
+        assertEquals(expectedTitle.colorArgb, title.colorArgb)
+        assertEquals(expectedTitle.fontFamily, title.fontFamily)
+        assertEquals(expectedTitle.isBold, title.isBold)
+        assertEquals(expectedTitle.isItalic, title.isItalic)
+        assertEquals(expectedTitle.strokeColorArgb, title.strokeColorArgb)
+        assertEquals(expectedTitle.bgArgb, title.bgArgb)
+        assertEquals(expectedTitle.x, title.x, 0f)
+        assertEquals(expectedTitle.y, title.y, 0f)
+        assertEquals(0L, title.startMs)
+        assertEquals(Long.MAX_VALUE, title.endMs)
+        assertEquals(expectedTitle.animationType, title.animationType)
+        assertEquals(expectedTitle.animationDurationMs, title.animationDurationMs)
+        assertEquals(expectedTitle.rangeEndExclusive, title.rangeEndExclusive)
+        assertTrue(title.isActiveAt(0L))
+        assertTrue(title.isActiveAt(source.trimEndMs))
+        assertEquals(title.id, vm.state.value.selectedTextOverlayId)
         assertEquals(before, vm.undoStack.single().project)
         assertNotNull(ProjectVideoPresets.colorEffect(edited.projectVideoEffectId))
+
+        vm.undo()
+        assertEquals(before, vm.state.value.project)
+        assertTrue(vm.undoStack.isEmpty())
     }
 
     @Test

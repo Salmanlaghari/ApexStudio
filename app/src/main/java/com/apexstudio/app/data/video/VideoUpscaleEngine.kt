@@ -28,9 +28,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.UUID
+import java.util.concurrent.BlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 
 /** Bounded, offline x3 ESPCN video renderer. This is learned upscaling, not 4K restoration. */
@@ -51,6 +53,18 @@ object VideoUpscaleEngine {
     private const val IMAGE_DEADLINE_MS = 10_000L
     private const val TAG = "VideoUpscaleEngine"
     private val dispatcher = Executors.newSingleThreadExecutor { r -> Thread(r, "VideoUpscale").apply { isDaemon = true } }.asCoroutineDispatcher()
+
+    /** Apply backpressure instead of silently losing frames when model inference is slower than decode. */
+    internal fun <T> enqueueFrameWithoutDropping(
+        queue: BlockingQueue<T>,
+        frame: T,
+        stopping: AtomicBoolean
+    ): Boolean {
+        while (!stopping.get()) {
+            if (queue.offer(frame, 100, TimeUnit.MILLISECONDS)) return true
+        }
+        return false
+    }
 
     data class SourceInfo(val width: Int, val height: Int, val durationMs: Long, val rotation: Int, val frameRate: Int, val durationUs: Long = durationMs * 1000L) {
         val outputWidth: Int get() = (if (rotation == 90 || rotation == 270) height else width) * SCALE
@@ -144,6 +158,7 @@ object VideoUpscaleEngine {
         var reader: android.media.ImageReader? = null
         var frameThread: HandlerThread? = null
         var pendingImages: LinkedBlockingQueue<Image>? = null
+        val stoppingFrameListener = AtomicBoolean(false)
         var modelSession: ai.onnxruntime.OrtSession? = null
         var published = false
         try {
@@ -158,15 +173,25 @@ object VideoUpscaleEngine {
 
             val imageQueue = LinkedBlockingQueue<Image>(2)
             pendingImages = imageQueue
-            val imgReader = android.media.ImageReader.newInstance(info.width, info.height, ImageFormat.YUV_420_888, 2)
+            // One image may be consumed by inference, two wait in the queue, and the listener may
+            // hold one while waiting for queue space. Backpressure the decoder rather than dropping.
+            val imgReader = android.media.ImageReader.newInstance(info.width, info.height, ImageFormat.YUV_420_888, 4)
             reader = imgReader
             val thread = HandlerThread("VideoUpscaleFrames").apply { start() }
             frameThread = thread
             imgReader.setOnImageAvailableListener({ r ->
+                var image: Image? = null
                 try {
-                    val image = r.acquireNextImage()
-                    if (image != null && !imageQueue.offer(image)) image.close()
-                } catch (_: Exception) { }
+                    image = r.acquireNextImage()
+                    if (image != null && enqueueFrameWithoutDropping(imageQueue, image!!, stoppingFrameListener)) image = null
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                } catch (_: Exception) {
+                    // Reader shutdown may race a callback; the main processing path detects any
+                    // missing frame and fails rather than publishing a silently incomplete video.
+                } finally {
+                    image?.close()
+                }
             }, Handler(thread.looper))
 
             val dec = MediaCodec.createDecoderByType(mime).also { decoder = it }
@@ -372,6 +397,7 @@ object VideoUpscaleEngine {
             throw cancelled
         } finally {
             if (!published) tmp.delete()
+            stoppingFrameListener.set(true)
             try { decoder?.stop() } catch (_: Exception) { }
             try { decoder?.release() } catch (_: Exception) { }
             try { encoder?.stop() } catch (_: Exception) { }

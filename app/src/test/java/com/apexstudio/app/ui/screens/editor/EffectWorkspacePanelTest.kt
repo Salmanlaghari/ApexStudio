@@ -28,6 +28,11 @@ class EffectWorkspacePanelTest {
     private fun editor() = EditorViewModel().also { vm ->
         vm._state.value = vm.state.value.copy(project = Project("project", "Project", 2_000L, clips = listOf(clip)), selectedClipId = clip.id)
     }
+    private fun showPresets() = compose.onNodeWithTag("workspace-presets-card").performScrollTo()
+    private fun choosePreset(label: String) {
+        showPresets()
+        compose.onNodeWithText(label).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+    }
 
     @Test fun `source time maps live or fallback project playhead and clamps to clip trim`() {
         val previous = MediaClip("previous", "Previous", "file:///previous.mp4", 500L, trimEndMs = 500L)
@@ -47,7 +52,7 @@ class EffectWorkspacePanelTest {
                 EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, { closed++ })
             }
         }
-        compose.onNodeWithText("Monochrome").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        choosePreset("Monochrome")
         compose.runOnIdle {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertFalse(vm.state.value.canUndo)
@@ -61,6 +66,25 @@ class EffectWorkspacePanelTest {
         }
     }
 
+    @Test fun `intensity slider is reflected in preview and saved effect`() {
+        val vm = editor()
+        val previews = mutableListOf<MediaClip>()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, {})
+            }
+        }
+        choosePreset("Warm")
+        compose.onNodeWithTag("workspace-tuning-card").performScrollTo()
+        compose.onNodeWithTag("workspace-effect-intensity").performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(0.35f) }
+        compose.runOnIdle { assertEquals(0.35f, previews.last().workspaceEffects.single().intensity, 0.02f) }
+        compose.onNodeWithTag("workspace-apply").performClick()
+        compose.runOnIdle {
+            assertEquals(0.35f, vm.state.value.project!!.clips.single().workspaceEffects.single().intensity, 0.02f)
+        }
+    }
+
     @Test fun `split preview undo and cancel do not touch project history`() {
         val vm = editor()
         val previews = mutableListOf<MediaClip>()
@@ -70,9 +94,11 @@ class EffectWorkspacePanelTest {
                 EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, { closed++ })
             }
         }
+        showPresets()
         compose.onNodeWithText("Split screen").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText("2 tiles").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals("split2", previews.last().workspaceEffects.single().id) }
+        compose.onNodeWithTag("workspace-source-range").performScrollTo()
         compose.onNodeWithContentDescription("Undo effect preview").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(clip, previews.last()) }
         compose.onNodeWithText("Cancel").performSemanticsAction(SemanticsActions.OnClick) { it() }
@@ -99,7 +125,7 @@ class EffectWorkspacePanelTest {
         vm._state.value = vm.state.value.copy(playerPositionMs = 500L, currentTimeMs = 500L)
         compose.runOnIdle { }
         compose.onNodeWithTag("workspace-play-range-control").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
-        compose.onNodeWithText("Monochrome").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        choosePreset("Monochrome")
         compose.runOnIdle {
             val effect = previews.last().workspaceEffects.single()
             assertEquals(400L, effect.startMs)
@@ -115,7 +141,7 @@ class EffectWorkspacePanelTest {
                 EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
             }
         }
-        compose.onNodeWithText("Monochrome").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        choosePreset("Monochrome")
         compose.runOnIdle { vm.setPlayerError("Shader unavailable") }
         compose.onNodeWithText("Apply").assertIsNotEnabled()
         compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
@@ -134,7 +160,8 @@ class EffectWorkspacePanelTest {
             }
         }
         compose.runOnIdle { vm.setPlayerPosition(400L, forceStateSync = true) }
-        compose.onNodeWithText("Monochrome").performTouchInput { longClick(durationMillis = 700L) }
+        showPresets()
+        compose.onNodeWithText("Monochrome").performScrollTo().performTouchInput { longClick(durationMillis = 700L) }
         compose.runOnIdle {
             val effect = previews.last().workspaceEffects.single()
             assertTrue(effect.startMs <= 400L)

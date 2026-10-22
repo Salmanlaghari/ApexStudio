@@ -74,12 +74,14 @@ fun EditorScreen(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
+    entryWorkspace: String = "edit",
+    onCloseWorkspace: () -> Unit = {},
     vm: EditorViewModel = viewModel(
         key = projectId,
         factory = EditorViewModelFactory(projectId = projectId)
     )
 ) {
-    EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm)
+    EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm, entryWorkspace, onCloseWorkspace)
 }
 
 @Composable
@@ -89,7 +91,9 @@ private fun EditorScreenContent(
     onExport: () -> Unit,
     onColor: () -> Unit,
     onAudio: () -> Unit,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    entryWorkspace: String,
+    onCloseWorkspace: () -> Unit
 ) {
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()
@@ -97,6 +101,11 @@ private fun EditorScreenContent(
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     val state = workspacePreviewState(savedState, workspacePreview)
+    val isColorWorkspace = entryWorkspace == "color"
+    val isExportWorkspace = entryWorkspace == "export"
+    val previewPlaybackSuspended = isColorWorkspace || isExportWorkspace
+    var colorExportRequest by remember(projectId, isColorWorkspace) { mutableIntStateOf(0) }
+    val colorSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val workspacePreviewActive by rememberUpdatedState(workspaceTarget != null)
     val dismissWorkspace: () -> Unit = {
         vm.setPlaying(false)
@@ -105,6 +114,17 @@ private fun EditorScreenContent(
         workspaceIsFilters = false
     }
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
+    LaunchedEffect(entryWorkspace) {
+        if (entryWorkspace != "edit") {
+            dismissWorkspace()
+            if (vm.state.value.isFullscreenPreview) vm.toggleFullscreenPreview()
+        }
+        if (entryWorkspace == "audio") vm.openAudioMixer()
+    }
+    BackHandler(enabled = entryWorkspace != "edit") {
+        if (entryWorkspace == "audio") vm.closeAudioMixer()
+        onCloseWorkspace()
+    }
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
@@ -116,6 +136,7 @@ private fun EditorScreenContent(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
+    val landscapeEditor = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
@@ -234,7 +255,7 @@ private fun EditorScreenContent(
         uri?.let { vm.setBackgroundReplaceImageUri(it.toString()) }
     }
 
-    mediaPicker.registerLaunchers()
+    mediaPicker.registerLaunchers(onCancelled = { vm.clearPendingReplace() })
 
     // Make bundled OFL text fonts available to the preview + export renderers.
     LaunchedEffect(Unit) {
@@ -262,7 +283,15 @@ private fun EditorScreenContent(
             }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(previewPlaybackSuspended) {
+        if (previewPlaybackSuspended) {
+            vm.setPlaying(false)
+            exoPlayer?.let { vm.unregisterMainPlayerForAudioEffects(it); it.release() }
+            exoPlayer = null
+            overlayPlayer?.release()
+            overlayPlayer = null
+            return@LaunchedEffect
+        }
         try {
             // The RenderersFactory wires the shared denoise processor
             // into the player's audio sink (Media3 1.5.0 has no
@@ -279,7 +308,20 @@ private fun EditorScreenContent(
                     vm.setPlayerReady(ready)
                     vm.setBuffering(playbackState == Player.STATE_BUFFERING)
                     if (playbackState == Player.STATE_ENDED) {
-                        vm.setPlaying(false)
+                        // A source ending is not the end of a multi-clip project.
+                        // Advance the project clock; the timeline resolver binds the next item.
+                        val live = vm.state.value
+                        val clips = live.project?.clips.orEmpty()
+                        val ended = clips.firstOrNull { it.id == player.currentMediaItem?.mediaId }
+                        if (!workspacePreviewActive && ended != null) {
+                            val end = com.apexstudio.app.domain.model.SpeedCurveMath.timelineStartMsForClip(clips, ended) + ended.effectiveDurationMs()
+                            val next = timelinePreviewClip(clips, end)
+                            if (next != null && next.id != ended.id) vm.setPlayerPosition(end, forceStateSync = true)
+                            else {
+                                vm.setPlayerPosition(end, forceStateSync = true)
+                                if (end >= live.durationMs) vm.setPlaying(false)
+                            }
+                        } else vm.setPlaying(false)
                     }
                 }
                 override fun onPlayerError(error: PlaybackException) {
@@ -328,7 +370,8 @@ private fun EditorScreenContent(
 
     // Overlay PiP player: muted, no controller — the preview section binds
     // it to the active video overlay clip (trimmed range, looping).
-    LaunchedEffect(Unit) {
+    LaunchedEffect(previewPlaybackSuspended) {
+        if (previewPlaybackSuspended) return@LaunchedEffect
         try {
             val player = ExoPlayer.Builder(context).build()
             player.volume = 0f
@@ -345,8 +388,8 @@ private fun EditorScreenContent(
     }
     // Overlay selection is an editing target, not a new source for the
     // background/V1 preview player (which has its own dedicated PiP player).
-    val mainPreviewClip = remember(state.project?.clips, state.selectedClipId) {
-        resolveMainPreviewClip(state.project?.clips.orEmpty(), state.selectedClipId)
+    val mainPreviewClip = remember(state.project?.clips, state.playerPositionMs) {
+        timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
     }
 
     // Overlay media-kind probe — SINGLE source of truth for every
@@ -421,11 +464,10 @@ private fun EditorScreenContent(
                 // Dimensions belong to the previously decoded item until the
                 // new player's onVideoSizeChanged callback arrives.
                 vm.setVideoSize(0, 0)
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                // The player reads source time, while the editor starts at
-                // this clip's retained source head (not media-file time zero).
-                player.seekTo(clip.trimStartMs.coerceAtLeast(0L))
+                // Rebinding after a cross-clip seek must retain the requested
+                // project position, not jump back to the source trim head.
+                bindEditorPreviewItem(player, mediaItem, clip, state.project?.clips.orEmpty(),
+                    vm.playerPositionFlow.value, state.isPlaying)
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -433,7 +475,7 @@ private fun EditorScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.speedMultiplier) {
+    LaunchedEffect(exoPlayer, state.playbackSpeed, mainPreviewClip?.id, mainPreviewClip?.speedMultiplier) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             val speed = com.apexstudio.app.domain.model.SpeedCurveMath.sanitizeConstantSpeed(
@@ -551,7 +593,13 @@ private fun EditorScreenContent(
                 val trackRef = arrayOf(selectedKeyframes)
                 add(
                     com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                        trackProvider = { trackRef[0] }
+                        trackProvider = { trackRef[0] },
+                        timeMsAtPresentationTimeUs = { timeUs ->
+                            mainPreviewClip?.let { clip ->
+                                com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                                    state.project?.clips.orEmpty(), clip, timeUs / 1_000L)
+                            } ?: timeUs / 1_000L
+                        }
                     ).buildEffects().first()
                 )
             }
@@ -569,15 +617,12 @@ private fun EditorScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks) {
+    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks, mainPreviewClip?.id) {
         val tracks = state.project?.audioTracks ?: emptyList()
         audioPlaybackManager.sync(state.isPlaying, vm.playerPositionFlow.value, tracks)
         val player = exoPlayer ?: return@LaunchedEffect
         if (state.isPlaying) {
-            if (player.playbackState == Player.STATE_ENDED) {
-                player.seekTo(0)
-            }
-            player.play()
+            resumeEditorPreview(player, state.project?.clips.orEmpty(), vm.playerPositionFlow.value)
         } else {
             player.pause()
         }
@@ -624,7 +669,26 @@ private fun EditorScreenContent(
                     ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
                 val curveClip = timedClip
                     ?.takeIf { it.hasSpeedCurve() }
-                val newPos = if (player != null) {
+                // A cross-clip seek updates the project clock before the new
+                // media item is bound. Never overwrite it with the old source.
+                if (timedClip != null && (player?.currentMediaItem?.mediaId != timedClip.id ||
+                        timelinePreviewClip(state.project?.clips.orEmpty(), vm.playerPositionFlow.value)?.id != timedClip.id)) {
+                    delay(33)
+                    continue
+                }
+                val mainEnd = state.project?.clips.orEmpty().filter {
+                    it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+                }.sumOf { it.effectiveDurationMs().coerceAtLeast(0L) }
+                val inProjectTail = vm.playerPositionFlow.value >= mainEnd && totalDur > mainEnd
+                val newPos = if (inProjectTail) {
+                    // V1 is finished, but placed audio/overlays can keep the
+                    // project alive. Do not read a frozen/ended source clock.
+                    if (player?.playWhenReady == true) {
+                        player.pause()
+                        timedClip?.let { player.seekTo((it.trimEndMs - 1L).coerceAtLeast(it.trimStartMs)) }
+                    }
+                    vm.playerPositionFlow.value + delta
+                } else if (player != null && timedClip != null) {
                     val rawPos = player.currentPosition
                     if (curveClip != null) {
                         // Variable speed (PR-E): the player reports SOURCE
@@ -681,15 +745,15 @@ private fun EditorScreenContent(
                 }
 
                 if (newPos >= totalDur) {
-                    // Seamless loop back to 0 for continuous professional timeline playback
-                    vm.setPlayerPosition(0L, forceStateSync = true)
-                    exoPlayer?.seekTo(mainPreviewClip?.trimStartMs?.coerceAtLeast(0L) ?: 0L)
+                    vm.setPlayerPosition(totalDur, forceStateSync = true)
+                    vm.setPlaying(false)
                     val tracks = state.project?.audioTracks ?: emptyList()
-                    audioPlaybackManager.sync(true, 0L, tracks)
+                    audioPlaybackManager.sync(false, totalDur, tracks)
                     lastAudioSyncAt = now
-                    lastAudioSyncPos = 0L
+                    lastAudioSyncPos = totalDur
                 } else {
-                    vm.setPlayerPosition(newPos)
+                    val crossedBoundary = timelinePreviewClip(state.project?.clips.orEmpty(), newPos)?.id != mainPreviewClip?.id
+                    vm.setPlayerPosition(newPos, forceStateSync = crossedBoundary)
                     // Drift-correction only: sync audio when 250ms elapsed
                     // or the position jumped (seek/loop), never every tick.
                     val tracks = state.project?.audioTracks ?: emptyList()
@@ -714,27 +778,13 @@ private fun EditorScreenContent(
     ) {
         { targetMs ->
             val clamped = targetMs.coerceIn(0L, state.durationMs.coerceAtLeast(1L))
-            // Variable speed (PR-E): the playhead is OUTPUT (timeline)
-            // time; the player seeks in SOURCE time. Map through the
-            // curve when the target lands inside the selected clip's
-            // span; outside the span keep the legacy direct seek.
-            val curveClip = mainPreviewClip
-                ?.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.VIDEO }
-            val playerTarget = if (curveClip != null) {
-                val clips = state.project?.clips ?: emptyList()
-                val clipStart = com.apexstudio.app.domain.model.SpeedCurveMath
-                    .timelineStartMsForClip(clips, curveClip)
-                val outDur = curveClip.effectiveDurationMs()
-                if (clamped in clipStart..(clipStart + outDur)) {
-                    com.apexstudio.app.domain.model.ClipTimeMapping
-                        .sourceAtProjectTime(clips, curveClip, clamped)
-                } else {
-                    clamped
-                }
-            } else {
-                clamped
+            val clips = state.project?.clips.orEmpty()
+            val targetClip = timelinePreviewClip(clips, clamped)
+            // Same-source seek is immediate; cross-source seeks are completed
+            // by the binding effect using the exact requested project time.
+            if (targetClip?.type == ClipType.VIDEO && exoPlayer?.currentMediaItem?.mediaId == targetClip.id) {
+                exoPlayer?.seekTo(com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(clips, targetClip, clamped))
             }
-            exoPlayer?.seekTo(playerTarget)
             audioPlaybackManager.seekTo(clamped)
             vm.seekTo(clamped)
         }
@@ -762,9 +812,10 @@ private fun EditorScreenContent(
             .navigationBarsPadding()
             .background(ApexPalette.BgBase)
     ) {
-        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
+        if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
                 title = state.project?.name ?: "Untitled project",
+                projectId = projectId,
                 canUndo = state.canUndo,
                 canRedo = state.canRedo,
                 resolution = state.selectedResolution,
@@ -772,11 +823,13 @@ private fun EditorScreenContent(
                 isCoverMode = isCoverMode,
                 onToggleCoverMode = { isCoverMode = toggleCoverFitMode(isCoverMode) },
                 onFullscreenToggle = { vm.toggleFullscreenPreview() },
-                onBack = onBack,
+                onBack = if (entryWorkspace == "edit") onBack else onCloseWorkspace,
                 onUndo = { vm.undo() },
                 onRedo = { vm.redo() },
                 onHelp = { vm.openHelpDialog() },
-                onExport = onExport
+                onExport = { if (isColorWorkspace) colorExportRequest++ else onExport() },
+                exportEnabled = !isExportWorkspace,
+                resolutionEnabled = !previewPlaybackSuspended
             )
 
         }
@@ -802,6 +855,22 @@ private fun EditorScreenContent(
             }
         }
 
+        if (isColorWorkspace) {
+            colorSaveableState.SaveableStateProvider("color:$projectId") {
+            com.apexstudio.app.ui.screens.colortools.ColorStudioScreen(
+                projectId = projectId, onBack = onCloseWorkspace, onExport = onExport,
+                embedded = true, modifier = Modifier.weight(1f), vm = vm,
+                exportRequest = colorExportRequest
+            )
+            }
+        } else if (isExportWorkspace) {
+            EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
+        } else {
+        AdaptiveEditorWorkspace(
+            landscape = landscapeEditor,
+            focused = isTimelineFocusMode,
+            fullscreen = state.isFullscreenPreview,
+            preview = {
         EditorPreviewSection(
             state = state,
             vm = vm,
@@ -815,14 +884,17 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
+            fitAvailableHeight = landscapeEditor,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth
         )
-
-        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null) {
+            },
+            timeline = {
+        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
+                compactLandscape = landscapeEditor,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,
@@ -852,33 +924,18 @@ private fun EditorScreenContent(
                     }
                 }
             )
+        }
 
-            // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
-            // to keep this composable under the JVM 64KB method limit.
-            EditorBottomToolbarSection(
-                state = state,
-                vm = vm,
-                mediaPicker = mediaPicker,
-                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
-                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
-                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
-                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
-                onChallenge = { showLocalChallenge = true },
-                onNext = onExport,
-                onAi = { showAiPanel = true },
-                onDraw = {
-                    if (mainPreviewClip != null) {
-                        isDrawingMode = !isDrawingMode
-                        showVideoDrawingTools = isDrawingMode
-                    }
-                },
-                onCrop = { showCropPanel = true },
-                onDeviceAudio = importPhoneMusic
+            },
+            inspector = { LandscapeVideoInspector(state, vm) }
+        )
+        }
+
+        if (isExportWorkspace) {
+            com.apexstudio.app.ui.screens.export.ExportScreen(
+                projectId = projectId, onBack = onCloseWorkspace, onExport = onCloseWorkspace,
+                vm = vm, embedded = true
             )
-            if (localAudioImporting) {
-                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
-            }
         }
         workspaceTarget?.let { captured ->
             ClipEffectWorkspaceHost(
@@ -899,6 +956,36 @@ private fun EditorScreenContent(
                 onTogglePlayback = { vm.togglePlay() },
                 onDismiss = dismissWorkspace
             )
+        }
+        if (editorChromeVisible(state.isFullscreenPreview)) {
+            // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
+            // to keep this composable under the JVM 64KB method limit.
+            EditorBottomToolbarSection(
+                state = state,
+                vm = vm,
+                mediaPicker = mediaPicker,
+                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
+                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
+                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
+                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
+                onChallenge = { showLocalChallenge = true },
+                onNext = onExport,
+                onColorWorkspace = onColor,
+                onBeforeToolAction = { if (entryWorkspace != "edit") onCloseWorkspace() },
+                onAi = { showAiPanel = true },
+                onDraw = {
+                    if (mainPreviewClip != null) {
+                        isDrawingMode = !isDrawingMode
+                        showVideoDrawingTools = isDrawingMode
+                    }
+                },
+                onCrop = { showCropPanel = true },
+                onDeviceAudio = importPhoneMusic
+            )
+            if (localAudioImporting) {
+                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
+            }
         }
     }
 
@@ -1013,9 +1100,7 @@ private fun EditorScreenContent(
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
     VoiceRecorderOverlay(state = state, vm = vm)
-    CameraCaptureOverlay(state = state, vm = vm)
     ArFilterPanelOverlay(state = state, vm = vm)
-    LensesPanelOverlay(state = state, vm = vm)
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     MaskPanelOverlay(state = state, vm = vm)

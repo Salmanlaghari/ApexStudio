@@ -69,7 +69,6 @@ fun RightToolRail(
         RailItem(Icons.Default.Add, "Add", onAdd)
         RailItem(Icons.Default.MusicNote, "Audio", onAudio)
         RailItem(Icons.Default.Mic, "Record", onRecord)
-        RailItem(Icons.Default.CameraAlt, "Camera", onCamera)
     }
 }
 

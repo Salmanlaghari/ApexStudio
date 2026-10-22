@@ -3,6 +3,8 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
+import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.*
@@ -182,6 +184,11 @@ fun EditorViewModel.startExport(
             videoDrawingClipId = selected?.id,
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
+            keyframeTimelineStartMs = selected?.let { clip ->
+                com.apexstudio.app.domain.model.SpeedCurveMath.timelineStartMsForClip(
+                    s.project?.clips.orEmpty(), clip
+                )
+            } ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
             // Per-clip Volume tool: the clip's own gain multiplies the
             // global audio volume, so what the user hears in the preview
@@ -544,6 +551,8 @@ internal fun buildPhotoExportConfig(
         // IMAGE timeline ignores legacy constant speed; retain its curve.
         clipSpeed = 1f,
         speedPoints = clip.speedPoints,
+        keyframeTimelineStartMs = com.apexstudio.app.domain.model.SpeedCurveMath
+            .timelineStartMsForClip(s.project?.clips.orEmpty(), clip),
         // Shape mask (Mask tool) on the photo clip.
         mask = clip.mask,
         keyframes = clip.keyframes,
@@ -558,9 +567,10 @@ internal fun buildPhotoExportConfig(
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,
-        // Trim is baked into the still-video duration.
+        // The generated still-video is zero-based, but its duration remains the
+        // retained source span used as the speed-curve/keyframe mapping domain.
         trimStartMs = 0L,
-        trimEndMs = 0L,
+        trimEndMs = photoExportSourceDurationMs(clip),
         // Stills carry no audio.
         pitchSemitones = 0f,
         volume = 1f,
@@ -575,4 +585,90 @@ internal fun buildPhotoExportConfig(
         transitionGlId = transitionGlIdPhoto,
         transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
     )
+}
+
+/** A snapshot-scoped Color Studio grade export; it never mutates or replaces project media. */
+fun EditorViewModel.startColorStudioTimelineExport(grade: ColorStudioGrade) {
+    if (_export.value.isExporting) return
+    val snapshot = try { captureColorTimelineExportSnapshot(grade) } catch (failure: IllegalArgumentException) {
+        _export.update { it.copy(error = failure.message, outputUri = null, warning = null) }
+        return
+    }
+    startColorStudioTimelineExport(snapshot)
+}
+
+/** Use exactly the plan whose sources were checked, even if controls changed during that check. */
+internal fun EditorViewModel.startColorStudioTimelineExport(snapshot: ColorTimelineExportSnapshot) {
+    if (_export.value.isExporting) return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null, warning = null) }
+    engine.startProjectExport(snapshot.clips, snapshot.config,
+        "apex_studio_color_graded_timeline_${java.util.UUID.randomUUID()}.mp4")
+}
+
+/** Same eligibility explanation used by the action, safe to show before the user starts a render. */
+fun EditorViewModel.colorStudioTimelineExportBlocker(grade: ColorStudioGrade): String? {
+    val snapshot = _state.value
+    val audioSnapshot = _audio.value
+    val settings = _export.value.settings
+    val filterPreset = resolveColorGradeGlobalFilter(snapshot)
+    return colorStudioTimelineExportBlocker(grade, snapshot, audioSnapshot, settings, filterPreset)
+}
+
+private fun colorStudioTimelineExportBlocker(
+    grade: ColorStudioGrade,
+    snapshot: EditorState,
+    audio: AudioStudioState,
+    settings: ExportSettings,
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset?
+): String? {
+    projectVisualScopeUnsupportedReason(snapshot)?.let { return it }
+    if (snapshot.activeFilterId != null && filterPreset == null) {
+        return "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
+    }
+    if (snapshot.activeFxId != null && com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null) {
+        return "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
+    }
+    val config = buildProjectExportConfig(snapshot, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+    return projectCompositionUnsupportedReason(projectMainExportClips(snapshot), config)
+}
+
+private fun EditorViewModel.resolveColorGradeGlobalFilter(state: EditorState): com.apexstudio.app.data.filter.FilterPreset? {
+    val filterId = state.activeFilterId ?: return null
+    val ctx = context ?: return null
+    return try {
+        com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest.filters.firstOrNull { it.id == filterId }
+    } catch (_: Exception) { null }
+}
+
+/** One immutable plan shared by rendered timeline comparison and graded timeline export. */
+internal data class ColorTimelineExportSnapshot(
+    val clips: List<MediaClip>,
+    val config: ExportEngine.ExportConfig
+)
+
+/** Capture eligibility and all render inputs together; never re-read a live project after preflight. */
+internal fun buildColorTimelineExportSnapshot(
+    state: EditorState,
+    audio: AudioStudioState,
+    settings: ExportSettings,
+    grade: ColorStudioGrade,
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
+): ColorTimelineExportSnapshot {
+    val reason = colorStudioTimelineExportBlocker(grade, state, audio, settings, filterPreset)
+    require(reason == null) { reason ?: "Timeline Color rendering is unavailable." }
+    return ColorTimelineExportSnapshot(
+        projectMainExportClips(state).toList(),
+        buildProjectExportConfig(state, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+    )
+}
+
+internal fun EditorViewModel.captureColorTimelineExportSnapshot(grade: ColorStudioGrade): ColorTimelineExportSnapshot {
+    check(!_export.value.isExporting) { "Wait for the current export to finish before rendering a comparison." }
+    val state = _state.value
+    return buildColorTimelineExportSnapshot(state, _audio.value, _export.value.settings, grade,
+        resolveColorGradeGlobalFilter(state))
 }

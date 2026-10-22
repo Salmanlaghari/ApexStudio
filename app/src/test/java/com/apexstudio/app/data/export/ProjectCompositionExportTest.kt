@@ -2,6 +2,8 @@ package com.apexstudio.app.data.export
 
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
@@ -11,6 +13,8 @@ import com.apexstudio.app.domain.model.VideoDrawingPoint
 import com.apexstudio.app.domain.model.VideoDrawingStroke
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.color.ColorWheelVector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -55,6 +59,21 @@ class ProjectCompositionExportTest {
     }
 
     @Test
+    fun `project export accepts clip keyframes but still rejects export wide keyframes`() {
+        val animated = clip().copy(
+            speedMultiplier = 2f,
+            keyframes = KeyframeTrack(listOf(Keyframe.identity(timeMs = 1_000L)))
+        )
+
+        assertNull(projectCompositionUnsupportedReason(listOf(animated), ExportEngine.ExportConfig()))
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(keyframes = KeyframeTrack(
+                listOf(Keyframe.identity(timeMs = 1_000L))
+            ))
+        )!!.contains("global keyframes"))
+    }
+
+    @Test
     fun `empty project and non video or non main track media are rejected explicitly`() {
         assertTrue(projectCompositionUnsupportedReason(emptyList(), ExportEngine.ExportConfig())!!.contains("at least one"))
         assertTrue(projectCompositionUnsupportedReason(listOf(clip(type = ClipType.IMAGE)), ExportEngine.ExportConfig())!!.contains("photo"))
@@ -88,6 +107,21 @@ class ProjectCompositionExportTest {
             emoji.sizeScale,
             0f
         )
+    }
+
+    @Test
+    fun `spanning manual text keyframes block while preset motion and local pins stay eligible`() {
+        val source = clip()
+        val localEnd = source.trimEndMs - source.trimStartMs
+        val title = TextOverlay(id = "spanning", text = "Across cuts", startMs = 0L, endMs = localEnd,
+            animationType = "PULSE", animationWindowStartMs = 0L, animationWindowEndMs = localEnd + 1_000L)
+        assertNull(projectCompositionUnsupportedReason(listOf(source.copy(textOverlays = listOf(title))), ExportEngine.ExportConfig()))
+        val pinned = title.copy(keyframes = com.apexstudio.app.domain.model.KeyframeTrack(listOf(
+            com.apexstudio.app.domain.model.Keyframe(id = "pin", timeMs = 100L))))
+        assertTrue(projectCompositionUnsupportedReason(listOf(source.copy(textOverlays = listOf(pinned))),
+            ExportEngine.ExportConfig())!!.contains("manual transform or mask keyframes"))
+        val local = pinned.copy(animationWindowEndMs = localEnd)
+        assertNull(projectCompositionUnsupportedReason(listOf(source.copy(textOverlays = listOf(local))), ExportEngine.ExportConfig()))
     }
 
     @Test
@@ -194,5 +228,22 @@ class ProjectCompositionExportTest {
         assertNull(projectCompositionUnsupportedReason(
             listOf(clip().copy(workspaceEffects = listOf(effect))), ExportEngine.ExportConfig()
         ))
+    }
+
+    @Test
+    fun `Color Studio grade runs through eligible project composition but malformed values block export`() {
+        val grade = ColorStudioGrade(brightness = 0.1f, contrast = 1.2f,
+            shadows = ColorWheelVector(0.2f, -0.3f))
+        assertNull(projectCompositionUnsupportedReason(
+            listOf(clip(), clip("second")), ExportEngine.ExportConfig(colorStudioGrade = grade)
+        ))
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(colorStudioGrade = grade.copy(brightness = Float.NaN))
+        )!!.contains("invalid Color Studio grade"))
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(colorStudioGrade = grade.copy(
+                highlights = ColorWheelVector(2f, 0f)
+            ))
+        )!!.contains("invalid Color Studio grade"))
     }
 }

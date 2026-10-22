@@ -1,6 +1,9 @@
 package com.apexstudio.app.data.text
 
 import com.apexstudio.app.domain.model.TextOverlay
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -166,5 +169,29 @@ class TextAnimEngineTest {
         assertEquals(null, o.gradientStartArgb)
         assertEquals("NONE", o.outroAnimationType)
         assertEquals(600L, o.outroAnimationDurationMs)
+        assertEquals(null, o.animationWindowStartMs)
+        assertEquals(null, o.animationWindowEndMs)
+    }
+
+    @Test
+    fun `animation window fields default on legacy JSON and round trip when present`() {
+        val legacy = Json.decodeFromString<TextOverlay>("""{"id":"legacy","text":"Old"}""")
+        assertEquals(null, legacy.animationWindowStartMs)
+        assertEquals(null, legacy.animationWindowEndMs)
+
+        val current = legacy.copy(animationWindowStartMs = -250L, animationWindowEndMs = 400L)
+        assertEquals(current, Json.decodeFromString<TextOverlay>(Json.encodeToString(current)))
+    }
+
+    @Test
+    fun `overlay activity window is half open when explicitly opted in`() {
+        val o = overlay(startMs = 100L, endMs = 200L).copy(rangeEndExclusive = true)
+        assertFalse(o.isActiveAt(99L))
+        assertTrue(o.isActiveAt(100L))
+        assertTrue(o.isActiveAt(199L))
+        assertFalse(o.isActiveAt(200L))
+        val legacy = TextOverlay(id = "legacy-window", startMs = 100L, endMs = 200L)
+        assertFalse(legacy.rangeEndExclusive)
+        assertTrue(legacy.isActiveAt(200L))
     }
 }

@@ -13,6 +13,7 @@ import androidx.media3.effect.GlShaderProgram
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.WorkspaceFilterPresetAdditions
 import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.domain.model.isActiveAtSourceTime
 
@@ -78,6 +79,10 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                 program.setFloatUniform("uContrast", effect.contrast.takeIf { it.isFinite() }?.coerceIn(0.5f, 1.5f) ?: 1f)
                 program.setFloatUniform("uSaturation", effect.saturation.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f)
                 program.setFloatUniform("uKind", kindFor(effect.id).toFloat())
+                val presetParameters = WorkspaceFilterPresetAdditions.find(effect.id)?.parameters
+                program.setFloatsUniform("uGain", presetParameters?.let { floatArrayOf(it.gainR, it.gainG, it.gainB) } ?: floatArrayOf(1f, 1f, 1f))
+                program.setFloatsUniform("uOffset", presetParameters?.let { floatArrayOf(it.offsetR, it.offsetG, it.offsetB) } ?: floatArrayOf(0f, 0f, 0f))
+                program.setFloatsUniform("uTone", presetParameters?.let { floatArrayOf(it.contrast, it.saturation, it.gamma) } ?: floatArrayOf(1f, 1f, 1f))
                 val elapsedMs = if (sourceTimeMs >= effect.startMs) sourceTimeMs - effect.startMs else 0L
                 program.setFloatUniform("uElapsed", (elapsedMs.coerceAtMost(86_400_000L) / 1_000f))
                 program.setFloatsUniform("uTexel", floatArrayOf(1f / width, 1f / height))
@@ -98,7 +103,7 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
     companion object {
         private const val TEXTURE_POOL_CAPACITY = 4
 
-        private fun kindFor(id: String): Int = when (id) {
+        internal fun kindFor(id: String): Int = when (id) {
             WorkspaceEffectPresets.MONO -> 0
             WorkspaceEffectPresets.WARM -> 1
             WorkspaceEffectPresets.PIXELATE -> 2
@@ -121,7 +126,15 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             WorkspaceEffectPresets.FILTER_BW_CONTRAST -> 19
             WorkspaceEffectPresets.FILTER_SEPIA -> 20
             WorkspaceEffectPresets.FILTER_LAVENDER -> 21
-            else -> -1
+            else -> when {
+                WorkspaceFilterPresetAdditions.find(id) != null -> 22
+                id == "vfx_chromatic_split" -> 23
+                id == "vfx_scan_glitch" -> 24
+                id == "vfx_light_leak" -> 25
+                id == "vfx_vignette" -> 26
+                id == "vfx_edge_glow" -> 27
+                else -> -1
+            }
         }
 
         private val VERTEX_SHADER = """
@@ -149,6 +162,9 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
             uniform float uElapsed;
             uniform float uAspect;
             uniform vec2 uTexel;
+            uniform vec3 uGain;
+            uniform vec3 uOffset;
+            uniform vec3 uTone;
 
             float hash21(vec2 p) {
                 p = fract(p * vec2(123.34, 456.21));
@@ -273,6 +289,41 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                     effected = vec3(gray) * vec3(1.12, 0.91, 0.70) + vec3(0.025, 0.012, 0.0);
                 } else if (uKind < 21.5) {
                     effected = original.rgb * vec3(0.98, 0.91, 1.08) + vec3(0.018, 0.012, 0.035);
+                } else if (uKind < 22.5) {
+                    // Preset controls are intentionally data-driven; order is saturation, contrast,
+                    // channel gain/offset, then gamma so tuples remain meaningful and composable.
+                    float presetLuma = dot(original.rgb, vec3(0.299, 0.587, 0.114));
+                    vec3 preset = mix(vec3(presetLuma), original.rgb, uTone.y);
+                    preset = (preset - 0.5) * uTone.x + 0.5;
+                    preset = preset * uGain + uOffset;
+                    effected = pow(max(preset, vec3(0.0)), vec3(1.0 / max(uTone.z, 0.05)));
+                } else if (uKind < 23.5) {
+                    vec2 shift = vec2(uTexel.x * (2.0 + 5.0 * uIntensity), 0.0);
+                    vec3 split = vec3(texture2D(uTexSampler, clamp(vTextureCoord + shift, 0.0, 1.0)).r,
+                        original.g, texture2D(uTexSampler, clamp(vTextureCoord - shift, 0.0, 1.0)).b);
+                    effected = split;
+                } else if (uKind < 24.5) {
+                    float band = step(0.70, fract(vTextureCoord.y * 18.0 + uElapsed * 2.7));
+                    float burst = step(0.72, hash21(vec2(floor(uElapsed * 7.0), floor(vTextureCoord.y * 32.0))));
+                    float active = band * burst * uIntensity;
+                    vec2 displaced = clamp(vTextureCoord + vec2((hash21(vec2(uElapsed, floor(vTextureCoord.y * 32.0))) - 0.5) * 0.10 * active, 0.0), 0.0, 1.0);
+                    effected = texture2D(uTexSampler, displaced).rgb;
+                    effected.r = mix(effected.r, texture2D(uTexSampler, clamp(displaced + vec2(uTexel.x * 2.0, 0.0), 0.0, 1.0)).r, active * 0.7);
+                } else if (uKind < 25.5) {
+                    float sweep = 0.5 + 0.5 * sin(uElapsed * 0.42 + vTextureCoord.x * 3.2 - vTextureCoord.y * 1.8);
+                    float leak = smoothstep(0.25, 0.95, sweep) * (1.0 - smoothstep(0.15, 0.75, length(vTextureCoord - vec2(0.08, 0.82))));
+                    effected = original.rgb + vec3(1.0, 0.42, 0.12) * leak * 0.78;
+                } else if (uKind < 26.5) {
+                    float radius = length((vTextureCoord - 0.5) * vec2(uAspect, 1.0));
+                    float shade = 1.0 - smoothstep(0.22, 0.82, radius);
+                    effected = original.rgb * mix(0.35, 1.0, shade);
+                } else if (uKind < 27.5) {
+                    vec3 north = texture2D(uTexSampler, clamp(vTextureCoord + vec2(0.0, uTexel.y), 0.0, 1.0)).rgb;
+                    vec3 east = texture2D(uTexSampler, clamp(vTextureCoord + vec2(uTexel.x, 0.0), 0.0, 1.0)).rgb;
+                    vec3 south = texture2D(uTexSampler, clamp(vTextureCoord - vec2(0.0, uTexel.y), 0.0, 1.0)).rgb;
+                    vec3 west = texture2D(uTexSampler, clamp(vTextureCoord - vec2(uTexel.x, 0.0), 0.0, 1.0)).rgb;
+                    float edge = clamp((length(original.rgb - north) + length(original.rgb - east) + length(original.rgb - south) + length(original.rgb - west)) * 1.8, 0.0, 1.0);
+                    effected = original.rgb + vec3(0.22, 0.62, 1.0) * smoothstep(0.10, 0.65, edge) * 0.9;
                 } else {
                     effected = original.rgb;
                 }

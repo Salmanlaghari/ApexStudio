@@ -24,16 +24,21 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     if (project.stickers.isNotEmpty()) {
         return "Whole-project export does not yet render project stickers. Use selected-clip export to keep those edits."
     }
-    if (project.lastTransitionType != null || state.lastTransitionType != null) {
-        return "Whole-project export currently uses hard cuts, not transitions. Use selected-clip export to keep transition effects."
+    if (project.transitions.isNotEmpty() || project.lastTransitionType != null || state.lastTransitionType != null) {
+        return "Whole-project export uses hard cuts, not boundary transitions. Selected-clip export also does not render clip-junction transitions. Remove the saved transition choice before whole-project export."
     }
     if (project.clips.any {
             it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
         }) {
-        return "Whole-project export does not yet composite visible PiP layers. Use selected-clip export to keep those layers."
+        return "Whole-project export cannot render visible PiP layers, so it is blocked; nothing is skipped. " +
+            "To export the main track only, return to the editor and explicitly hide/remove PiP. " +
+            "Selected source compares/exports one original source, not the PiP composition."
     }
-    if (project.clips.any { it.type == ClipType.VIDEO && it.trackIndex != 0 && it.trackIndex !in state.hiddenVideoLayers }) {
-        return "Whole-project export supports only the main video track."
+    if (project.clips.any {
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) &&
+                it.trackIndex != 0 && it.trackIndex !in state.hiddenVideoLayers
+        }) {
+        return "Whole-project export supports only the main video track. Visible video or photo clips on other tracks cannot be omitted."
     }
     return null
 }

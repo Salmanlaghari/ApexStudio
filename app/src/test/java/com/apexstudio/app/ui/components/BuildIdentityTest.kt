@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.components
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -24,7 +25,7 @@ class BuildIdentityTest {
 
     @Test fun editorBadgeOpensInstalledBuildDialog() {
         compose.setContent { TopAppBarSection() }
-        compose.onNodeWithText("Build ${BuildIdentity.shortCommit}").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("ApexStudio build identity. Project ApexStudio").assertIsDisplayed().performClick()
         compose.onNodeWithText("Installed build").assertIsDisplayed()
         compose.onNodeWithText(BuildIdentity.description).assertIsDisplayed()
         compose.onNodeWithText("Copy build info").performClick()

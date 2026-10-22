@@ -1,21 +1,19 @@
 package com.apexstudio.app.ui.screens.editor
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -23,7 +21,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -33,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.domain.model.ClipType
@@ -44,13 +50,31 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
  * CapCut-style contextual bottom toolbar.
  *
  * The tool set follows the current selection, exactly like CapCut:
- * - Nothing selected → global tools (Text, Stickers, Effects, Filters, AR Face, Adjust)
+ * - Nothing selected → primary tools (Media, Audio, Text, Overlay, Stickers, FX, Filters, More)
  * - Video clip selected → clip tools (Keyframe, Adjust, Replace, Speed, Animation, Delete)
  * - Audio selected → audio tools (Fade, Replace, Beats, Volume, Delete)
  *
  * A collapse chevron as the first item deselects and returns to global tools.
  */
 enum class ToolbarSelectionKind { NONE, VIDEO, AUDIO, PHOTO, TEXT, STICKER }
+
+/** Approved, always-visible global tool order. Kept explicit for UI regression tests. */
+internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
+    "Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"
+)
+
+/** Screenshot-priority actions shown first in the selected-video scroll row. */
+internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
+    "Split", "Trim", "Speed", "Volume", "Keyframe"
+)
+
+/** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
+internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
+    "Music", "Enhance", "Color", "Templates", "Canvas",
+    "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
+    "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History"
+)
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
     val project = state.project ?: return ToolbarSelectionKind.NONE
@@ -183,6 +207,11 @@ fun ContextualBottomToolbar(
     // True when the selected clip is an overlay (PiP) clip. The VIDEO
     // clip bar then also shows the "Properties" entry.
     isOverlaySelected: Boolean = false,
+    // AUDIO can resolve from either an audio track or a legacy audio clip.
+    // Track-only actions are unavailable for the latter.
+    isLegacyAudioClipSelected: Boolean = false,
+    // The locked editor shows only its eight-item dock until More is opened.
+    showSelectionToolsInitially: Boolean = true,
     // Audio-bar actions (previously the AUDIO_A1 quick-actions row).
     onAudioMix: () -> Unit,
     onRecord: () -> Unit,
@@ -223,32 +252,54 @@ fun ContextualBottomToolbar(
     onCaptions: () -> Unit = onText,
     onTemplates: () -> Unit = onEditPack,
     onChallenge: () -> Unit = onText,
-    onNext: () -> Unit = {}
+    onNext: () -> Unit = {},
+    // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
+    onMedia: () -> Unit = {},
+    onColorWorkspace: () -> Unit = onAdjust,
+    onBeforeToolAction: () -> Unit = {}
 ) {
-    // One always-visible, horizontally scrollable row: put the high-frequency
-    // mobile editing actions first, then retain the complete legacy tool set
-    // behind them in the same row (rather than adding a second, tall toolbar).
-    // Enhance has its independent quick-preset route; Templates opens the shipped
-    // one-tap transmission preset browser; Canvas is the real crop-mode route.
+    var showOverlayChoices by remember { mutableStateOf(false) }
+    var showToolbarNotes by remember { mutableStateOf(false) }
+    val hasSelection = selectionKind != ToolbarSelectionKind.NONE
+    val pageCount = if (hasSelection) 3 else 2
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { pageCount })
+    val coroutineScope = rememberCoroutineScope()
+    // Selected-item actions are initially in view. Tabs expose the global and
+    // More workspaces without adding another stacked tool strip.
+    LaunchedEffect(selectionKind, showSelectionToolsInitially) {
+        pagerState.animateScrollToPage(if (hasSelection && showSelectionToolsInitially) 0 else if (hasSelection) 1 else 0)
+    }
     val mainItems: List<CtxToolItem> = listOf(
+        CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
+        CtxToolItem("Audio", Icons.Outlined.MusicNote, tint = ApexPalette.TextPrimary, onClick = onDeviceAudio),
+        CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
+        CtxToolItem("Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary, onClick = { showOverlayChoices = true }),
+        CtxToolItem("Stickers", Icons.Outlined.SentimentSatisfiedAlt, tint = ApexPalette.TextPrimary, onClick = onStickers),
+        CtxToolItem("FX", Icons.Outlined.AutoAwesome, tint = ApexPalette.TextPrimary, onClick = onEffects),
+        CtxToolItem("Filters", Icons.Outlined.FilterNone, tint = ApexPalette.TextPrimary, onClick = onFilters),
+        CtxToolItem(
+            "More", Icons.Outlined.MoreHoriz,
+            tint = ApexPalette.TextPrimary,
+            onClick = { coroutineScope.launch { pagerState.animateScrollToPage(if (hasSelection) 2 else 1) } }
+        )
+    )
+
+    // Supported tools formerly shown in the main scrolling row. Keep each wired
+    // to its existing route; nothing is represented by a placeholder action.
+    val secondaryItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
-            CtxToolItem("Text", glyph = "T", tint = ApexPalette.NeonCyan, onClick = onText),
             CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
+            CtxToolItem("Color", Icons.Default.Palette, onClick = onColorWorkspace),
             CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
-            CtxToolItem("Effects", Icons.Default.AutoAwesome, onClick = onEffects),
-            CtxToolItem("Stickers", Icons.Default.StickyNote2, onClick = onStickers),
             CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),
             CtxToolItem("Subtitles", Icons.Default.Subtitles, onClick = onCaptions),
             CtxToolItem("Next", Icons.Default.Share, onClick = onNext),
-            CtxToolItem("Filters", Icons.Default.FilterVintage, onClick = onFilters),
 
             // Additional supported tools remain available after the quick set.
             CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.NeonPink, onClick = onDraw),
             CtxToolItem("AI", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
             CtxToolItem("AR Face", Icons.Default.FaceRetouchingNatural, onClick = onArFace),
-            CtxToolItem("Lenses", Icons.Default.Face, onClick = onLenses),
-            CtxToolItem("Camera", Icons.Default.PhotoCamera, onClick = onCamera),
             CtxToolItem("Chroma Key", Icons.Default.Colorize, onClick = onChromaKey),
             // Bug 4: Mask is a TOP-LEVEL tool, reachable straight from the
             // main bottom bar rather than buried under the selected-clip
@@ -274,78 +325,124 @@ fun ContextualBottomToolbar(
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory)
     )
+    check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
+    check(secondaryItems.map { it.label } == CONTEXTUAL_MORE_TOOL_ORDER)
+
+    if (showOverlayChoices) {
+        AlertDialog(
+            onDismissRequest = { showOverlayChoices = false },
+            title = { Text("Add overlay") },
+            text = { Text("Choose an image or video to place over your project.") },
+            confirmButton = {
+                Text(
+                    "Image",
+                    modifier = Modifier.clickable {
+                        showOverlayChoices = false
+                        onAddOverlayImage()
+                    }.padding(horizontal = 16.dp, vertical = 10.dp)
+                )
+            },
+            dismissButton = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Video",
+                        modifier = Modifier.clickable {
+                            showOverlayChoices = false
+                            onAddOverlayVideo()
+                        }.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    Text(
+                        "Cancel",
+                        modifier = Modifier.clickable { showOverlayChoices = false }
+                            .padding(horizontal = 8.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        )
+    }
 
     // Clip action bar: the merged union of the old contextual bar and the
     // old timeline quick-actions row — one entry per action, no duplicates.
     val clipItems: List<CtxToolItem> = when (selectionKind) {
-        ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
-            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
-            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+        ToolbarSelectionKind.VIDEO -> buildList {
+            add(CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit))
+            add(CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim))
+            // PiP playback reads speedPoints, whereas the generic Speed panel
+            // writes speedMultiplier. Hide the misleading control for overlays.
+            if (!isOverlaySelected) {
+                add(CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed))
+            }
+            add(CtxToolItem(
+                "Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onVolume
+            ))
             // Keyframe toggles a keyframe at the playhead (distinct action);
             // Animation opens the keyframe/animation panel.
-            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
-            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            add(CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe))
+            add(CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation))
             // Phase 2: Filters on video clips too — filters were unreachable
             // when a video clip was selected (main use case).
-            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
-            CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
-            CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust),
-            CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects),
-            CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask),
+            add(CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters))
+            add(CtxToolItem("Crop", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop))
+            add(CtxToolItem("Adjust", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onAdjust))
+            add(CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonCyan, onClick = onEffects))
+            add(CtxToolItem("Mask", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onMask))
             // PR-G: per-clip Background replace (MediaPipe person
             // segmentation) — blur / colour / image behind the person.
-            CtxToolItem("Background", Icons.Default.Person, tint = ApexPalette.NeonCyan, onClick = onBackground),
-            CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace),
-            CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
-        ).let { items ->
+            add(CtxToolItem("Background", Icons.Default.Person, tint = ApexPalette.NeonCyan, onClick = onBackground))
+            add(CtxToolItem("Replace", Icons.Default.Autorenew, tint = ApexPalette.NeonCyan, onClick = onReplace))
+            add(CtxToolItem("Duplicate", Icons.Default.ContentCopy, tint = ApexPalette.NeonCyan, onClick = onDuplicate))
+            add(CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete))
             // Overlay selected: the properties panel (opacity / blend /
             // mask / border / shadow / flip / volume / track /
             // keyframes) is the overlay's main editing surface — plus
             // Hide/Show and Lock/Unlock, relocated from the removed
             // left sidebar pills (they act on the clip's layer).
             if (isOverlaySelected) {
-                items + CtxToolItem(
+                add(CtxToolItem(
                     "Properties", Icons.Default.Tune,
                     tint = ApexPalette.NeonCyan, onClick = onOverlayProps
-                ) + CtxToolItem(
+                ))
+                add(CtxToolItem(
                     if (isLayerHidden) "Show" else "Hide",
-                    if (isLayerHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
                     tint = ApexPalette.NeonCyan, onClick = onToggleLayerVisibility
-                ) + CtxToolItem(
+                ))
+                add(CtxToolItem(
                     if (isLayerLocked) "Unlock" else "Lock",
                     if (isLayerLocked) Icons.Default.LockOpen else Icons.Default.Lock,
                     tint = ApexPalette.NeonCyan, onClick = onToggleLayerLock
-                )
-            } else items
+                ))
+            }
         }
-        ToolbarSelectionKind.AUDIO -> listOf(
-            CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
-            CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
-            CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade),
-            CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace),
-            CtxToolItem(
-                if (beatsAnalyzing) "Beats…" else "Beats",
-                Icons.Default.GraphicEq,
-                if (beatsActive) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
-                onBeats
-            ),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume),
-            CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix),
-            CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic),
-            CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio),
-            CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord),
-            // Mute/Unmute for the selected track, relocated from the
-            // removed left sidebar pills.
-            CtxToolItem(
-                if (isTrackMuted) "Unmute" else "Mute",
-                if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                onClick = onToggleTrackMute
-            ),
-            CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete)
-        )
+        ToolbarSelectionKind.AUDIO -> buildList {
+            add(CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit))
+            add(CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim))
+            if (!isLegacyAudioClipSelected) add(CtxToolItem("Fade", Icons.Default.Tune, onClick = onFade))
+            add(CtxToolItem("Replace", Icons.Default.SwapHoriz, onClick = onReplace))
+            if (!isLegacyAudioClipSelected) {
+                add(CtxToolItem(
+                    if (beatsAnalyzing) "Beats…" else "Beats",
+                    Icons.Default.GraphicEq,
+                    if (beatsActive) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                    onBeats
+                ))
+                add(CtxToolItem("Volume", Icons.Default.VolumeUp, onClick = onVolume))
+            }
+            add(CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix))
+            add(CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic))
+            add(CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio))
+            add(CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord))
+            if (!isLegacyAudioClipSelected) {
+                // Mute/Unmute affects project audio tracks only.
+                add(CtxToolItem(
+                    if (isTrackMuted) "Unmute" else "Mute",
+                    if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    onClick = onToggleTrackMute
+                ))
+            }
+            add(CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete))
+        }
         // Photo clip selected → real photo-editing tools (PR F).
         ToolbarSelectionKind.PHOTO -> listOf(
             CtxToolItem("Crop", Icons.Default.Crop, ApexPalette.NeonCyan, onPhotoCrop),
@@ -374,65 +471,103 @@ fun ContextualBottomToolbar(
         ToolbarSelectionKind.NONE -> emptyList()
     }
 
-    // Compact two-level editing dock:
-    // - Clip action bar (merged, one entry per action): only while a
-    //   clip/overlay/track is selected AND the editor is not playing.
-    //   Tapping a clip reveals it with a ~200ms slide/fade; tapping empty
-    //   timeline space (which clears the selection) or starting playback
-    //   hides it again. The old "Video clip selected" label row is gone —
-    //   the selection name shows as a small chip in the preview instead.
-    // - Main tool bar: always visible.
-    // Contextual actions sit above the global tool row; both retain their
-    // existing routes and horizontal scrolling behavior.
-    val showClipBar = selectionKind != ToolbarSelectionKind.NONE && !isPlaying
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(0xFF101722))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        AnimatedVisibility(
-            visible = showClipBar,
-            enter = fadeIn(animationSpec = tween(200)) +
-                slideInVertically(animationSpec = tween(200)) { it },
-            exit = fadeOut(animationSpec = tween(200)) +
-                slideOutVertically(animationSpec = tween(200)) { it }
-        ) {
-            ToolbarBarRow(
-                items = clipItems,
-                surfaceColor = Color(0xFF151F2D),
-                leadingContent = {
-                    // CapCut-style collapse chevron: deselects, hiding
-                    // this bar again.
-                    Box(
-                        modifier = Modifier
-                            .width(44.dp)
-                            .fillMaxHeight()
-                            .clickable(onClick = onCollapse),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Deselect",
-                            tint = Color(0xFF8C9AAF),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight(0.6f)
-                            .background(Color(0xFF273447))
-                    )
-                    // No filename chip here: it crowded the clip
-                    // bar's actions. The selected clip/track name now
-                    // shows as a small chip in the preview (bottom-left),
-                    // where it crowds nothing.
+    val selectionNotice = when {
+        selectionKind == ToolbarSelectionKind.AUDIO && isLegacyAudioClipSelected ->
+            "Fade, Beats, Mute, and Volume are available for project audio tracks only."
+        selectionKind == ToolbarSelectionKind.VIDEO && isOverlaySelected ->
+            "Overlay speed editing is not available yet; use Properties for overlay volume."
+        else -> null
+    }
+
+    // One bottom workspace: visible page tabs plus a single horizontally
+    // swipable action row. Context, primary, and More actions never stack.
+    fun routed(item: CtxToolItem) = item.copy(onClick = { onBeforeToolAction(); item.onClick() })
+    val clipPageIndex = if (hasSelection) 0 else -1
+    val toolsPageIndex = if (hasSelection) 1 else 0
+    val morePageIndex = if (hasSelection) 2 else 1
+    val clipPageItems = buildList {
+        add(CtxToolItem("Deselect", Icons.Default.KeyboardArrowDown, onClick = onCollapse))
+        addAll(clipItems)
+    }
+    val toolsItems = mainItems.map { item ->
+        if (item.label == "More") item.copy(onClick = { coroutineScope.launch { pagerState.animateScrollToPage(morePageIndex) } }) else item
+    }
+    val pageTabs = buildList {
+        if (hasSelection) add("Clip" to clipPageIndex)
+        add("Tools" to toolsPageIndex)
+        add("More tools" to morePageIndex)
+    }
+
+    if (showToolbarNotes) {
+        AlertDialog(
+            onDismissRequest = { showToolbarNotes = false },
+            title = { Text("Editing and export notes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (selectionNotice != null) Text(selectionNotice)
+                    Text("Whole-project export supports sequential main-track video. PiP, project stickers, transitions and other unsupported edits stop that route rather than being dropped. Selected-clip export is a different scope; review its limits on the export screen.")
                 }
-            )
+            },
+            confirmButton = {
+                Text("Got it", modifier = Modifier.clickable { showToolbarNotes = false }.padding(horizontal = 16.dp, vertical = 10.dp))
+            }
+        )
+    }
+
+    val landscapeDock = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val dockPageHeight = if (landscapeDock) 56.dp else 64.dp
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+            pageTabs.forEach { (label, page) ->
+                val selected = pagerState.currentPage == page
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.14f) else Color.Transparent)
+                        .clickable { coroutineScope.launch { pagerState.animateScrollToPage(page) } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Box(
+                modifier = Modifier.size(width = 38.dp, height = 32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { showToolbarNotes = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Outlined.Info, contentDescription = "Editing and export notes", tint = ApexPalette.TextSecondary, modifier = Modifier.size(19.dp))
+            }
         }
-        ToolbarBarRow(items = mainItems, surfaceColor = Color(0xFF101722))
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth().height(dockPageHeight).testTag("editor_feature_pager"),
+            userScrollEnabled = true
+        ) { page ->
+            when {
+                hasSelection && page == clipPageIndex -> ToolbarBarRow(
+                    items = clipPageItems.map(::routed), surfaceColor = Color(0xFF111A28),
+                    itemWidth = 58.dp, barHeight = dockPageHeight
+                )
+                page == toolsPageIndex -> ToolbarBarRow(
+                    items = toolsItems.map(::routed), surfaceColor = ApexPalette.BgBase,
+                    itemWidth = 37.dp, compact = true,
+                    selectedLabel = when (selectionKind) {
+                        ToolbarSelectionKind.TEXT -> "Text"
+                        ToolbarSelectionKind.STICKER -> "Stickers"
+                        ToolbarSelectionKind.AUDIO -> "Audio"
+                        else -> null
+                    }, barHeight = dockPageHeight
+                )
+                else -> ToolbarBarRow(
+                    items = secondaryItems.map(::routed), surfaceColor = Color(0xFF111A28),
+                    itemWidth = 58.dp, barHeight = dockPageHeight
+                )
+            }
+        }
     }
 }
 
@@ -446,14 +581,19 @@ private fun ToolbarBarRow(
     items: List<CtxToolItem>,
     surfaceColor: Color,
     modifier: Modifier = Modifier,
-    leadingContent: @Composable (RowScope.() -> Unit)? = null
+    leadingContent: @Composable (RowScope.() -> Unit)? = null,
+    itemWidth: androidx.compose.ui.unit.Dp = 66.dp,
+    compact: Boolean = false,
+    selectedLabel: String? = null,
+    barHeight: androidx.compose.ui.unit.Dp = 46.dp
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(surfaceColor)
-            .height(50.dp)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+            .height(barHeight)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -468,25 +608,31 @@ private fun ToolbarBarRow(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .horizontalScroll(rememberScrollState()),
+                        .then(if (compact) Modifier else Modifier.horizontalScroll(rememberScrollState())),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(Modifier.width(6.dp))
                     items.forEach { item ->
+                        val itemTint = if (item.label == selectedLabel) ApexPalette.NeonPurple else item.tint
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .width(66.dp)
+                                .then(if (compact) Modifier.weight(1f) else Modifier.width(itemWidth))
                                 .fillMaxHeight()
+                                .padding(horizontal = if (compact) 1.dp else 0.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (item.label == selectedLabel) ApexPalette.NeonPurple.copy(alpha = 0.20f) else Color.Transparent)
+                                .border(if (item.label == selectedLabel) 1.dp else 0.dp,
+                                    if (item.label == selectedLabel) ApexPalette.NeonPurple.copy(alpha = 0.5f) else Color.Transparent,
+                                    RoundedCornerShape(9.dp))
                                 .clickable(onClick = item.onClick)
                         ) {
                             if (item.glyph != null) {
                                 // Mockup text glyph (e.g. the bold "T" for the Text tab).
                                 Text(
                                     text = item.glyph,
-                                    color = item.tint,
-                                    fontSize = 18.sp,
+                                    color = itemTint,
+                                    fontSize = 17.sp,
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier.size(20.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -495,28 +641,27 @@ private fun ToolbarBarRow(
                                 Icon(
                                     imageVector = item.icon!!,
                                     contentDescription = item.label,
-                                    tint = item.tint,
+                                    tint = itemTint,
                                     modifier = Modifier
-                                        .size(19.dp)
+                                        .size(if (compact) 21.dp else 19.dp)
                                         .graphicsLayer { rotationZ = item.iconRotationDeg }
                                 )
                             }
-                            Spacer(Modifier.height(1.dp))
+                            Spacer(Modifier.height(if (compact) 2.dp else 1.dp))
                             Text(
                                 text = item.label,
-                                color = item.tint,
-                                fontSize = 10.sp,
+                                color = itemTint,
+                                fontSize = if (compact) 9.sp else 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 softWrap = false
                             )
                         }
                     }
-                    Spacer(Modifier.width(6.dp))
                 }
                 // Edge fades (no touch handling — gestures pass
                 // through to the scrollable Row below).
-                Box(
+                if (!compact) Box(
                     Modifier.align(Alignment.CenterStart)
                         .width(20.dp).fillMaxHeight()
                         .background(
@@ -525,7 +670,7 @@ private fun ToolbarBarRow(
                             )
                         )
                 )
-                Box(
+                if (!compact) Box(
                     Modifier.align(Alignment.CenterEnd)
                         .width(20.dp).fillMaxHeight()
                         .background(
@@ -774,6 +919,13 @@ private fun FadeSliderRow(
     }
 }
 
+internal fun prepareMainMediaPickerLaunch(vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel) {
+    vm.clearPendingReplace()
+    vm.setPendingAddAsOverlay(false)
+    vm.setPendingAddAsAudio(false)
+    vm.setPendingAddToLayer(null)
+}
+
 /**
  * Extracted bottom-toolbar section for EditorScreen (keeps the EditorScreen
  * composable under the JVM 64KB method limit). Always renders the
@@ -792,7 +944,6 @@ fun EditorBottomToolbarSection(
         mediaPicker.pickAudioMedia.launch("audio/*")
     },
     onCrop: () -> Unit = { vm.setCropMode(true) },
-    onCamera: () -> Unit = { vm.openCameraCapture() },
     onChromaKey: () -> Unit = { vm.openChromaKeyPanel() },
     // Optional override for hosts that own a dedicated effects workspace;
     // the default remains the real in-app FX panel route.
@@ -801,8 +952,20 @@ fun EditorBottomToolbarSection(
     onQuickTemplates: () -> Unit = { vm.openTransmissionTemplatesPanel() },
     onQuickFilters: () -> Unit = { vm.openFilterPanel() },
     onChallenge: () -> Unit = { vm.openTextPanel() },
-    onNext: () -> Unit = {}
+    onNext: () -> Unit = {},
+    onColorWorkspace: () -> Unit = { vm.openColorGradingLutPanel() },
+    onBeforeToolAction: () -> Unit = {},
+    // Main-timeline media picker; EditorScreen may override when it owns the route.
+    onMedia: () -> Unit = {
+        prepareMainMediaPickerLaunch(vm)
+        mediaPicker.pickMultipleMedia.launch(
+            androidx.activity.result.PickVisualMediaRequest(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
+            )
+        )
+    }
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
     val selectedAudioTrack =
         state.project?.audioTracks?.firstOrNull { it.id == state.selectedAudioTrackId }
@@ -816,11 +979,14 @@ fun EditorBottomToolbarSection(
     // hidden/locked.
     val selectedClip =
         state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val isLegacyAudioClipSelected = selectedClip?.type == ClipType.AUDIO || selectedClip?.type == ClipType.SFX
     val selectedOverlayLayer =
         selectedClip?.takeIf { it.type == ClipType.OVERLAY }?.trackIndex
             ?.takeIf { it in 1..9 }
     ContextualBottomToolbar(
         selectionKind = toolbarKind,
+        isLegacyAudioClipSelected = isLegacyAudioClipSelected,
+        showSelectionToolsInitially = false,
         isPlaying = state.isPlaying,
         // Transition: nearest V1 junction to the playhead (relocated
         // from the removed timeline tool row).
@@ -841,6 +1007,8 @@ fun EditorBottomToolbarSection(
                     }
                 }
                 best?.let { (fromId, toId) -> vm.openTransitionPicker(fromId, toId) }
+            } else {
+                android.widget.Toast.makeText(context, "Transitions need two main-track clips. Whole-project transition export is not supported yet.", android.widget.Toast.LENGTH_LONG).show()
             }
         },
         onToggleLayerVisibility = {
@@ -860,17 +1028,19 @@ fun EditorBottomToolbarSection(
         onEffects = onEffectsWorkspace,
         onStickers = { vm.openStickerPanel() },
         onArFace = { vm.openArFilterPanel() },
-        onLenses = { vm.openLensesPanel() },
+        onLenses = {}, // Legacy API only: the editor no longer exposes Camera Kit.
         onFilters = onQuickFilters,
         onCrop = onCrop,
         onAi = onAi,
         onDeviceAudio = onDeviceAudio,
-        onCamera = onCamera,
         onChromaKey = onChromaKey,
         onCaptions = { vm.openCaptionsPanel() },
         onTemplates = onQuickTemplates,
         onChallenge = onChallenge,
         onNext = onNext,
+        onMedia = onMedia,
+        onColorWorkspace = onColorWorkspace,
+        onBeforeToolAction = onBeforeToolAction,
         onAdjust = { vm.openAdjustmentsPanel() },
         onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at

@@ -123,7 +123,12 @@ class TimelineKeyframeLaneTest {
 
         assertCentered("timeline-keyframe-marker-main-main-main-kf", "timeline-keyframe-layer-main-main")
         assertCentered("timeline-keyframe-marker-overlay-overlay-overlay-kf", "timeline-keyframe-layer-overlay-overlay")
-        assertCentered("timeline-keyframe-marker-text-title-text-kf", "timeline-keyframe-layer-text-title")
+        // Masked text uses two vertically separate marker strips inside the
+        // compact 28dp lane; assert against the text-keyframe strip itself.
+        assertCentered(
+            "timeline-keyframe-marker-text-title-text-kf",
+            "timeline-keyframe-layer-text-markers-title",
+        )
         assertCentered("timeline-keyframe-marker-sticker-sticker-sticker-kf", "timeline-keyframe-layer-sticker-sticker")
         // The mask has a distinct 12dp sub-lane at the bottom of the text clip;
         // its diamond must be centered in that mask lane, not in the text markers' lane.

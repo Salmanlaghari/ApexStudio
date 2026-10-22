@@ -6,10 +6,10 @@ import org.junit.Test
 
 class EditorLayoutMetricsTest {
     @Test
-    fun compactChromeDimensionsRemainAtPr170Metrics() {
+    fun brandedChromeUsesComfortableHeaderAndTransportDimensions() {
         assertEquals(40.dp, EditorLayoutMetrics.TopBarHeight)
-        assertEquals(10.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
-        assertEquals(52.dp, EditorLayoutMetrics.PlaybackBarHeight)
+        assertEquals(8.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
+        assertEquals(44.dp, EditorLayoutMetrics.PlaybackBarHeight)
         assertEquals(48.dp, EditorLayoutMetrics.TimelineActionHeight)
     }
 }

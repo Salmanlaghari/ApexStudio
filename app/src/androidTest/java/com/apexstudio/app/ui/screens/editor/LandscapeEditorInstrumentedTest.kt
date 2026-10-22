@@ -45,13 +45,17 @@ class LandscapeEditorInstrumentedTest {
                         ApexTheme { EditorScreen(project.id, {}, {}, {}, {}, vm = vm) }
                     }
                 }
-                val panelAvailable = device.wait(Until.hasObject(By.text("Hide properties ›")), 60_000)
+                // A cold software-only emulator can have a focused window but a null
+                // accessibility root while Compose/JIT starts. Wait for the actual
+                // editor first; keep the independent panel/action assertions intact.
+                val editorReady = device.wait(Until.hasObject(By.desc("ApexStudio build identity. Project ${project.id}")), 180_000)
+                val panelAvailable = editorReady && device.wait(Until.hasObject(By.text("Hide properties ›")), 60_000)
                 val diagnostics = File(context.getExternalFilesDir(null), "landscape-runtime-diagnostics").apply { mkdirs() }
                 device.takeScreenshot(File(diagnostics, "panel-check.png"))
                 device.dumpWindowHierarchy(File(diagnostics, "panel-check.xml"))
                 scenario.onActivity { activity ->
                     File(diagnostics, "panel-check.txt").writeText(
-                        "panelAvailable=$panelAvailable\n" +
+                        "editorReady=$editorReady panelAvailable=$panelAvailable\n" +
                             "display=${device.displayWidth}x${device.displayHeight}\n" +
                             "configuration=${activity.resources.configuration}\n" +
                             "root=${activity.window.decorView.width}x${activity.window.decorView.height}\n" +
@@ -59,6 +63,7 @@ class LandscapeEditorInstrumentedTest {
                             "position=${vm.livePlayheadMs()} ready=${vm.state.value.isPlayerReady} error=${vm.state.value.playerError}\n"
                     )
                 }
+                assertTrue("Editor accessibility root unavailable during startup (see landscape-runtime-diagnostics)", editorReady)
                 assertTrue("Landscape properties panel unavailable (see landscape-runtime-diagnostics)", panelAvailable)
                 assertTrue("Must actually be landscape", device.displayWidth > device.displayHeight)
                 assertTrue("Frame-step control unavailable", device.wait(Until.hasObject(By.text("+1f")), 15_000))

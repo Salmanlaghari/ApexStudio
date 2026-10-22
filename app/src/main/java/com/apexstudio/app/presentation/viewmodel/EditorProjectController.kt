@@ -39,6 +39,10 @@ internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaCli
     return out
 }
 
+/** New main-track video imports start edge-to-edge; other media paths retain their defaults. */
+internal fun withImportedMainVideoFitDefault(clip: MediaClip): MediaClip =
+    if (clip.type == ClipType.VIDEO) clip.copy(videoFitMode = VideoFitMode.COVER) else clip
+
 
 internal fun EditorViewModel.loadProject() {
     viewModelScope.launch {
@@ -276,7 +280,10 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                     overlayVolume = if (isImage) 0f else 1f
                 )
             } else if (created != null) {
-                newClips += created
+                // Main-track videos start edge-to-edge in the composition frame.
+                // Overlay media keeps its own aspect/box behavior; saved projects
+                // retain their FIT default unless the user changes it.
+                newClips += withImportedMainVideoFitDefault(created)
             }
         }
         val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())

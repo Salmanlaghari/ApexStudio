@@ -25,7 +25,7 @@ class RestoreHistoricalTimelineTest {
 
     @Test
     fun normalModeKeepsThePreviewProminentAndTimelineAvailable() {
-        assertEquals(1f, editorPreviewLayoutWeight(isTimelineFocused = false), 0f)
+        assertEquals(1.15f, editorPreviewLayoutWeight(isTimelineFocused = false), 0f)
         assertEquals(1.2f, timelineTrackLayoutWeight(isTimelineFocused = false), 0f)
         assertEquals(0.001f, editorPreviewLayoutWeight(isTimelineFocused = true), 0f)
         assertEquals(3f, timelineTrackLayoutWeight(isTimelineFocused = true), 0f)

@@ -37,6 +37,7 @@ import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.VideoFitMode
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -151,7 +152,12 @@ private fun EditorScreenContent(
     var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
-    var isCoverMode by remember { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
+    // Main-video framing belongs to the clip, not a transient preview-only switch.
+    // Existing photo controls keep their prior preview behavior.
+    var nonVideoCoverMode by remember(projectId) { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
+    val framingVideo = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+        ?.takeIf { it.type == ClipType.VIDEO }
+    val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
     var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
@@ -820,7 +826,12 @@ private fun EditorScreenContent(
                 resolution = state.selectedResolution,
                 onSelectResolution = { vm.setSelectedResolution(it) },
                 isCoverMode = isCoverMode,
-                onToggleCoverMode = { isCoverMode = toggleCoverFitMode(isCoverMode) },
+                onToggleCoverMode = {
+                    val clip = framingVideo
+                    if (clip != null) vm.setVideoFitMode(clip.id,
+                        if (isCoverMode) VideoFitMode.FIT else VideoFitMode.COVER)
+                    else nonVideoCoverMode = toggleCoverFitMode(nonVideoCoverMode)
+                },
                 onFullscreenToggle = { vm.toggleFullscreenPreview() },
                 onBack = if (entryWorkspace == "edit") onBack else onCloseWorkspace,
                 onUndo = { vm.undo() },

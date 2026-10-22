@@ -6,6 +6,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
 
+/** How a main-track video is placed inside the fixed project composition frame. */
+@Serializable
+enum class VideoFitMode { FIT, COVER }
+
 /** Normalized top-left-origin crop window persisted with a video clip. */
 @Serializable
 data class VideoCropSettings(
@@ -305,7 +309,12 @@ data class MediaClip(
     val mask: VideoMask? = null,
     // Ranged deterministic workspace effects, using absolute source-media time.
     // Kept at the end so older positional MediaClip construction remains source-compatible.
-    val workspaceEffects: List<WorkspaceEffect> = emptyList()
+    val workspaceEffects: List<WorkspaceEffect> = emptyList(),
+    // Main-track video placement inside the project composition frame. FIT preserves
+    // the complete source image (legacy saved-project behavior); newly imported main
+    // videos explicitly start at COVER. Missing JSON fields therefore do not alter
+    // existing projects.
+    val videoFitMode: VideoFitMode = VideoFitMode.FIT
 ) {
     /**
      * True when this overlay clip (type == [ClipType.OVERLAY]) should be

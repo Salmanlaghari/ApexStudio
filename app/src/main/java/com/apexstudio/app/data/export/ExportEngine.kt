@@ -220,6 +220,9 @@ class ExportEngine(private val context: Context) {
         val aspectRatio: String = "16:9", // "16:9" | "9:16" | "1:1"
         /** Explicit photo canvas is already baked into the source frames. */
         val preserveInputAspectRatio: Boolean = false,
+        /** Selected main-video placement inside the fixed output composition frame. */
+        val videoFitMode: com.apexstudio.app.domain.model.VideoFitMode =
+            com.apexstudio.app.domain.model.VideoFitMode.COVER,
         val bitrateMbps: Int = 0, // 0 = auto (resolution-based default)
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
@@ -447,7 +450,7 @@ class ExportEngine(private val context: Context) {
                             com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                                 ?.let { add(it) }
                             addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(clip.workspaceEffects, entry.sourceStartMs))
-                            add(ProjectOutputSizeTransformation(outputWidth, outputHeight))
+                            add(ProjectOutputSizeTransformation(outputWidth, outputHeight, clip.videoFitMode))
                             if (config.filterPreset != null && config.filterIntensity > 0f) {
                                 add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
                             }

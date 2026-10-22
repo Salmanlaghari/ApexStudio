@@ -154,6 +154,7 @@ fun EditorViewModel.startExport(
             fps = fps,
             quality = quality,
             aspectRatio = aspectRatio,
+            videoFitMode = selected?.videoFitMode ?: com.apexstudio.app.domain.model.VideoFitMode.COVER,
             bitrateMbps = bitrateMbps,
             filterPreset = filterPreset,
             filterIntensity = s.filterIntensity,

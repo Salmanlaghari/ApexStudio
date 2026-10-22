@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -134,8 +135,10 @@ import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.domain.model.WorkspaceFilterPresets
+import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.ui.screens.editor.selectedKeyframeVideo as selectedKeyframeVideoForState
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -182,11 +185,9 @@ internal fun mainVideoLaneHeight(
 internal fun compactTimelineHeight(state: EditorState): Dp {
     val project = state.project
     val clips = project?.clips.orEmpty()
-    val hasMain = clips.any { it.trackIndex == 0 && it.type != ClipType.OVERLAY }
-    val overlayLayers = clips.asSequence()
-        .filter { it.type == ClipType.OVERLAY && it.trackIndex in 1..9 }
-        .map { it.trackIndex }.distinct().count()
     val layerIndex = TimelineLayerContentIndex.from(clips)
+    val hasMain = layerIndex.videoByLayer[0].orEmpty().any { it.type != ClipType.OVERLAY }
+    val overlayLayers = layerIndex.videoByLayer.keys.count { it in 1..9 }
     val textLayers = mapProjectTextLayers(
         clips,
         clips.flatMap { it.textOverlays },
@@ -394,6 +395,29 @@ fun VideoTimeline(
         else if (kotlin.math.abs(playheadMs - uiPlayheadMs) > 500L) uiPlayheadMs = playheadMs.coerceIn(0L, safeDurationMs)
     }
     val safePlayheadMs = uiPlayheadMs
+    val headerKeyframeClip = remember(
+        clips, selectedClipId, selectedTextOverlayId, selectedStickerId,
+        selectedAudioTrackId, hiddenVideoLayers, safePlayheadMs, safeDurationMs,
+    ) {
+        selectedKeyframeVideoForState(
+            EditorState(
+                project = Project(
+                    id = "timeline-header",
+                    name = "Timeline",
+                    durationMs = safeDurationMs,
+                    clips = clips,
+                ),
+                selectedClipId = selectedClipId,
+                selectedTextOverlayId = selectedTextOverlayId,
+                selectedStickerId = selectedStickerId,
+                selectedAudioTrackId = selectedAudioTrackId,
+                hiddenVideoLayers = hiddenVideoLayers,
+                playerPositionMs = safePlayheadMs,
+            ),
+        )
+    }
+    val headerHasKeyframe = headerKeyframeClip?.keyframes?.keyframes
+        ?.any { abs(it.timeMs - safePlayheadMs) <= 150L } == true
     // Playhead provider: reads the 10Hz-sampled position at CALL time
     // (drag end / draw phase), never during composition. Rows receive
     // this stable lambda instead of a Long, so playhead ticks never
@@ -690,16 +714,52 @@ fun VideoTimeline(
         Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().height(TIMELINE_HEADER_HEIGHT_DP.dp)
-                .background(Color(0xFF151F2D)).padding(horizontal = 10.dp),
+                .background(Color(0xFF151F2D)).padding(horizontal = 10.dp)
+                .testTag("timeline-header"),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(4.dp, 14.dp).background(Color(0xFF39D9D0), RoundedCornerShape(2.dp)))
-            Text("TIMELINE", color = Color(0xFFE7EDF6), fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
-            Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF8C9AAF),
-                fontSize = 10.sp, fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(start = 10.dp).testTag("timeline-duration"))
-            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("TIMELINE", color = Color(0xFFE7EDF6), fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(TimeFormat.msToShort(safeDurationMs), color = Color(0xFF8C9AAF),
+                    fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
+                    modifier = Modifier.testTag("timeline-duration"))
+            }
+            if (headerKeyframeClip != null) {
+                val description = if (headerHasKeyframe) "Remove keyframe" else "Add keyframe"
+                IconButton(
+                    onClick = { onToggleKeyframeAtPlayhead(headerKeyframeClip.id) },
+                    modifier = Modifier.size(44.dp).testTag("timeline-header-keyframe"),
+                ) {
+                    Canvas(Modifier.size(20.dp).semantics { contentDescription = description }) {
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        val radius = size.width / 2f - 2.dp.toPx()
+                        val diamond = Path().apply {
+                            moveTo(cx, cy - radius)
+                            lineTo(cx + radius, cy)
+                            lineTo(cx, cy + radius)
+                            lineTo(cx - radius, cy)
+                            close()
+                        }
+                        val tint = if (headerHasKeyframe) Color(0xFF39D9D0) else Color(0xFF8C9AAF)
+                        drawPath(diamond, tint, style = Stroke(width = 2.dp.toPx()))
+                        val mark = Path().apply {
+                            moveTo(cx - 3.dp.toPx(), cy)
+                            lineTo(cx + 3.dp.toPx(), cy)
+                            if (!headerHasKeyframe) {
+                                moveTo(cx, cy - 3.dp.toPx())
+                                lineTo(cx, cy + 3.dp.toPx())
+                            }
+                        }
+                        drawPath(mark, tint, style = Stroke(width = 1.5.dp.toPx()))
+                    }
+                }
+            }
             IconButton(onClick = {
                 coroutineScope.launch {
                     val positionPx = with(density) { (playheadMsProvider() * msToDp).dp.toPx() }
@@ -724,7 +784,7 @@ fun VideoTimeline(
                     .background(Color(0xFF39D9D0).copy(alpha = 0.12f))
                     .clickable { onAddMedia(ClipType.VIDEO) }
                     .padding(horizontal = 9.dp)
-                    .testTag("timeline-add-media"),
+                    .testTag("timeline-header-add-media"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Default.Add, "Add Clip", tint = Color(0xFF39D9D0), modifier = Modifier.size(18.dp))

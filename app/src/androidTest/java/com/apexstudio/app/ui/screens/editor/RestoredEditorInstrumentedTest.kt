@@ -143,27 +143,13 @@ class RestoredEditorInstrumentedTest {
                 assertTrue("Portrait timeline header is missing",
                     device.wait(Until.hasObject(By.desc("Expand timeline to full height")), 30_000L))
                 assertTrue("Bottom horizontal editing dock is missing", device.wait(Until.hasObject(By.desc("More")), 30_000L))
-                assertTrue("Horizontal keyframe control is missing", device.wait(Until.hasObject(By.desc("Add keyframe")), 10_000L))
-                assertTrue("Animation control is missing",
-                    device.wait(Until.hasObject(By.desc("Edit video keyframe animation")), 10_000L))
-                val keyframeRowY = device.findObject(By.desc("Add keyframe")).visibleBounds.centerY()
+                assertTrue("Contextual timeline keyframe is missing", device.wait(Until.hasObject(By.desc("Add keyframe")), 10_000L))
                 for (property in listOf("Position", "Scale", "Rotation", "Opacity")) {
-                    repeat(4) {
-                        if (!device.hasObject(By.desc("Open $property keyframe controls"))) {
-                            device.swipe(device.displayWidth * 4 / 5, keyframeRowY,
-                                device.displayWidth / 5, keyframeRowY, 30)
-                            device.waitForIdle(1_000L)
-                        }
-                    }
-                    assertTrue("$property keyframe shortcut is missing",
-                        device.wait(Until.hasObject(By.desc("Open $property keyframe controls")), 10_000L))
+                    assertTrue("Removed upper property strip must not return: $property",
+                        !device.hasObject(By.desc("Open $property keyframe controls")))
                 }
-                repeat(4) {
-                    device.swipe(device.displayWidth / 5, keyframeRowY,
-                        device.displayWidth * 4 / 5, keyframeRowY, 30)
-                }
-                assertTrue("Keyframe control must remain reachable after horizontal scrolling",
-                    device.wait(Until.hasObject(By.desc("Add keyframe")), 10_000L))
+                assertTrue("Removed upper animation action must not return",
+                    !device.hasObject(By.desc("Edit video keyframe animation")))
 
                 val topBar = device.findObject(By.desc("ApexStudio build identity. Project ${project.id}"))
                 val play = device.findObject(By.desc("Play playback"))
@@ -191,7 +177,7 @@ class RestoredEditorInstrumentedTest {
                 assertTrue("Camera entry must not return to the editor", !device.hasObject(By.text("Camera")))
                 assertTrue("Lenses entry must not return to the editor", !device.hasObject(By.text("Lenses")))
 
-                // Exercise the visible historical horizontal keyframe control, not a direct VM toggle.
+                // Exercise the compact contextual header action, not a direct VM toggle.
                 device.findObject(By.desc("Add keyframe")).click()
                 val keyframeDeadline = System.currentTimeMillis() + 5_000L
                 while (vm.state.value.project?.clips?.firstOrNull()?.keyframes?.keyframes.isNullOrEmpty() &&
@@ -199,6 +185,45 @@ class RestoredEditorInstrumentedTest {
                 ) {
                     Thread.sleep(100L)
                 }
+                val headerKeyframe = device.findObject(By.desc("Remove keyframe"))
+                assertNotNull("Header action must switch to remove after creating a pin", headerKeyframe)
+                assertTrue("Compact action belongs between timeline focus control and real tracks",
+                    headerKeyframe.visibleBounds.top >= timeline.visibleBounds.bottom &&
+                        headerKeyframe.visibleBounds.bottom < dock.visibleBounds.top)
+                // The lower selected-clip action is independent of the compact header icon.
+                assertTrue("Lower Keyframe action is missing", device.wait(Until.hasObject(By.desc("Keyframe")), 10_000L))
+                device.findObject(By.desc("Keyframe")).click()
+                device.waitForIdle(1_000L)
+                assertTrue("Lower Keyframe should remove the same real pin",
+                    vm.state.value.project!!.clips.first().keyframes.keyframes.isEmpty())
+                device.findObject(By.desc("Keyframe")).click()
+                device.waitForIdle(1_000L)
+                assertTrue("Lower Animation action is missing", device.wait(Until.hasObject(By.desc("Animation")), 10_000L))
+                device.findObject(By.desc("Animation")).click()
+                assertTrue("Lower Animation must open real Keyframe Studio", device.wait(Until.hasObject(By.text("Keyframe Studio")), 10_000L))
+                for (property in listOf("Position", "Scale", "Rotation", "Opacity")) {
+                    assertTrue("Animation inspector must retain $property", device.hasObject(By.text(property)))
+                }
+                device.findObject(By.desc("Close")).click()
+                device.waitForIdle(1_000L)
+                val seenLayers = mutableSetOf<String>()
+                val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects")
+                repeat(8) {
+                    expectedLayers.filterTo(seenLayers) { device.hasObject(By.desc(it)) }
+                    val lowerDock = device.findObject(By.desc("More"))
+                    device.swipe(device.displayWidth / 2, lowerDock.visibleBounds.top - 30,
+                        device.displayWidth / 2, timeline.visibleBounds.bottom + 120, 40)
+                    device.waitForIdle(500L)
+                }
+                assertTrue("All actual material rows must be reachable, found $seenLayers", seenLayers.containsAll(expectedLayers))
+                repeat(8) {
+                    val lowerDock = device.findObject(By.desc("More"))
+                    device.swipe(device.displayWidth / 2, timeline.visibleBounds.bottom + 120,
+                        device.displayWidth / 2, lowerDock.visibleBounds.top - 30, 40)
+                }
+                device.waitForIdle(1_000L)
+                device.takeScreenshot(screenshot)
+                device.dumpWindowHierarchy(hierarchy)
                 val restoredClip = vm.state.value.project!!.clips.first()
                 assertEquals("A real keyframe should be added to the selected video", 1,
                     restoredClip.keyframes.keyframes.size)

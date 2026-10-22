@@ -1128,7 +1128,7 @@ fun EditorBottomToolbarSection(
         },
         onSpeed = { vm.openSpeedPanel() },
         onVolume = { vm.openClipVolumeSheet() },
-        onAnimation = { vm.setKeyframePanelOpen(true) },
+        onAnimation = { vm.openKeyframeAnimationPanel() },
         onDelete = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO ->

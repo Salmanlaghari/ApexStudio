@@ -542,6 +542,7 @@ internal fun PreviewContentCanvas(
     mediaAspectRatio: Float?,
     isCoverMode: Boolean,
     modifier: Modifier = Modifier,
+    frameModifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
     BoxWithConstraints(modifier = modifier) {
@@ -553,13 +554,13 @@ internal fun PreviewContentCanvas(
             isCoverMode
         )
         if (bounds == null) {
-            Box(Modifier.fillMaxSize(), content = content)
+            Box(Modifier.fillMaxSize().then(frameModifier), content = content)
         } else {
             val x = with(density) { bounds.left.toDp() }
             val y = with(density) { bounds.top.toDp() }
             val width = with(density) { (bounds.right - bounds.left).toDp() }
             val height = with(density) { (bounds.bottom - bounds.top).toDp() }
-            Box(Modifier.offset(x, y).size(width, height), content = content)
+            Box(Modifier.offset(x, y).size(width, height).then(frameModifier), content = content)
         }
     }
 }

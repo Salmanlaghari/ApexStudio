@@ -10,6 +10,7 @@ import com.apexstudio.app.domain.model.SpeedCurve
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.domain.model.VideoFitMode
 import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.data.color.hasValidRenderParameters
 
@@ -171,7 +172,8 @@ internal fun projectEmojiStickerAsTextOverlay(sticker: StickerOverlay): TextOver
  */
 internal class ProjectOutputSizeTransformation(
     private val outputWidth: Int,
-    private val outputHeight: Int
+    private val outputHeight: Int,
+    private val fitMode: VideoFitMode = VideoFitMode.COVER
 ) : GlMatrixTransformation {
     private var scaleX = 1f
     private var scaleY = 1f
@@ -184,13 +186,9 @@ internal class ProjectOutputSizeTransformation(
         }
         val inputAspect = inputWidth.toFloat() / inputHeight
         val outputAspect = outputWidth.toFloat() / outputHeight
-        if (inputAspect > outputAspect) {
-            scaleX = inputAspect / outputAspect
-            scaleY = 1f
-        } else {
-            scaleX = 1f
-            scaleY = outputAspect / inputAspect
-        }
+        val scales = compositionFitScales(inputAspect, outputAspect, fitMode)
+        scaleX = scales.first
+        scaleY = scales.second
         return Size(outputWidth, outputHeight)
     }
 
@@ -200,4 +198,22 @@ internal class ProjectOutputSizeTransformation(
         0f, 0f, 1f, 0f,
         0f, 0f, 0f, 1f
     )
+}
+
+/** GL normalized-coordinate scales for placing an aspect-ratio source in a fixed output frame. */
+internal fun compositionFitScales(
+    sourceAspect: Float,
+    outputAspect: Float,
+    fitMode: VideoFitMode
+): Pair<Float, Float> {
+    if (!sourceAspect.isFinite() || sourceAspect <= 0f ||
+        !outputAspect.isFinite() || outputAspect <= 0f
+    ) return 1f to 1f
+    val sourceIsWider = sourceAspect > outputAspect
+    return when {
+        fitMode == VideoFitMode.COVER && sourceIsWider -> sourceAspect / outputAspect to 1f
+        fitMode == VideoFitMode.COVER -> 1f to outputAspect / sourceAspect
+        sourceIsWider -> 1f to outputAspect / sourceAspect
+        else -> sourceAspect / outputAspect to 1f
+    }
 }

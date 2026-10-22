@@ -19,7 +19,7 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /** Keep the preview substantial in normal portrait editing; focus mode can expand the timeline. */
 internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 0.001f else 1f
+    if (isTimelineFocused) 0.001f else 1.15f
 /** Normal mode keeps layered tracks usable without letting them dominate the preview. */
 internal fun timelineTrackLayoutWeight(isTimelineFocused: Boolean): Float =
     if (isTimelineFocused) 3f else 1.2f

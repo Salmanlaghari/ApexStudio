@@ -30,7 +30,9 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     if (project.clips.any {
             it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
         }) {
-        return "Whole-project export does not yet composite visible PiP layers. Use selected-clip export to keep those layers."
+        return "Whole-project export cannot render visible PiP layers, so it is blocked; nothing is skipped. " +
+            "To export the main track only, return to the editor and explicitly hide/remove PiP. " +
+            "Selected source compares/exports one original source, not the PiP composition."
     }
     if (project.clips.any {
             (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) &&

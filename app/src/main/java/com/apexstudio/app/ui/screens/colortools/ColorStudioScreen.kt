@@ -191,7 +191,8 @@ fun ColorStudioScreen(
         } else AppTopBar(title = "Color", subtitle = "ApexStudio • Color Grading", onBack = onBack,
             onExport = { exportMessage = null; exportDialog = true })
         Column(
-            Modifier.weight(1f).padding(horizontal = if (embedded) 6.dp else 12.dp, vertical = if (embedded) 4.dp else 8.dp),
+            Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .padding(horizontal = if (embedded) 6.dp else 12.dp, vertical = if (embedded) 4.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(if (embedded) 5.dp else 8.dp)
         ) {
             if (candidates.isEmpty()) {
@@ -214,10 +215,11 @@ fun ColorStudioScreen(
                 if (timelineComparison) {
                     ColorTimelineComparisonPanel(timelineSnapshot.getOrNull(), timelineSnapshot.exceptionOrNull()?.message,
                         split, { split = it.coerceIn(0f, 1f) }, embedded, { comparisonBusy = it },
-                        previewModifier = Modifier.fillMaxWidth().weight(1f))
+                        previewModifier = Modifier.fillMaxWidth(),
+                        onCompareSelectedSource = { timelineComparison = false })
                 } else {
                 BeforeAfterPreview(sourceFrame?.bitmap, gradedFrame, split, { split = it.coerceIn(0f, 1f) },
-                    if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth().weight(1f),
+                    if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth(),
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
                 Text("This Before/After is the selected source frame only, not a full-timeline preview.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
@@ -460,6 +462,9 @@ internal fun BeforeAfterPreview(before: Bitmap?, after: Bitmap?, split: Float, o
             modifier = Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(4.dp)).background(ApexPalette.BgGlass).padding(6.dp, 2.dp))
         Text("AFTER", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold,
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(4.dp)).background(ApexPalette.BgGlass).padding(6.dp, 2.dp))
+        // A drag handle over an error/empty state obscures the reason and
+        // falsely suggests that there are two rendered images to compare.
+        if (before != null && after != null && error == null) {
         Box(Modifier.fillMaxHeight().width(2.dp).align(Alignment.CenterStart)
             .offset(x = maxWidth * split.coerceIn(0f, 1f)).background(ApexPalette.NeonCyan))
         Box(Modifier.align(Alignment.CenterStart).offset(x = maxWidth * split.coerceIn(0f, 1f) - 18.dp)
@@ -473,6 +478,7 @@ internal fun BeforeAfterPreview(before: Bitmap?, after: Bitmap?, split: Float, o
         }.pointerInput(Unit) {
             detectTapGestures { currentOnSplit((it.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)) }
         })
+        }
         if (before != null && after == null && error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(26.dp), color = ApexPalette.NeonCyan, strokeWidth = 2.dp)
         if (before != null && error != null) Text(error, color = ApexPalette.NeonPink, fontSize = 10.sp,
             modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).clip(RoundedCornerShape(5.dp)).background(ApexPalette.BgGlass).padding(5.dp))

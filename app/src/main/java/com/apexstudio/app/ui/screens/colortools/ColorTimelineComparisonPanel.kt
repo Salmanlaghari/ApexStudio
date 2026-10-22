@@ -32,7 +32,8 @@ internal fun ColorTimelineComparisonPanel(
     onSplit: (Float) -> Unit,
     embedded: Boolean,
     onBusyChanged: (Boolean) -> Unit,
-    previewModifier: Modifier = Modifier.fillMaxWidth()
+    previewModifier: Modifier = Modifier.fillMaxWidth(),
+    onCompareSelectedSource: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -80,6 +81,11 @@ internal fun ColorTimelineComparisonPanel(
             else "Render the supported timeline to compare its complete Before and After."
         } else null
     )
+    if (blocker != null && onCompareSelectedSource != null) {
+        TextButton(onClick = onCompareSelectedSource) { Text("Compare selected source only") }
+        Text("Source-only comparison is not the project composition and excludes PiP layers. No project edits are changed.",
+            color = ApexPalette.TextSecondary, fontSize = 11.sp)
+    }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         TextButton(enabled = !busy && snapshot != null, onClick = {

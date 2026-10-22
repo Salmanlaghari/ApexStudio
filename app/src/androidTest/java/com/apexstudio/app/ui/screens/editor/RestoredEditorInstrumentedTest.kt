@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.apexstudio.app.MainActivity
@@ -34,6 +35,7 @@ class RestoredEditorInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
+        Configurator.getInstance().setWaitForIdleTimeout(500L)
         val source = File(context.cacheDir, "restored-editor-portrait-test-only.mp4")
         instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
             source.outputStream().use { output -> input.copyTo(output) }
@@ -193,14 +195,25 @@ class RestoredEditorInstrumentedTest {
                 // The lower selected-clip action is independent of the compact header icon.
                 assertTrue("Lower Keyframe action is missing", device.wait(Until.hasObject(By.desc("Keyframe")), 10_000L))
                 device.findObject(By.desc("Keyframe")).click()
-                device.waitForIdle(1_000L)
-                assertTrue("Lower Keyframe should remove the same real pin",
+                val removeDeadline = System.currentTimeMillis() + 15_000L
+                while (vm.state.value.project!!.clips.first().keyframes.keyframes.isNotEmpty() &&
+                    System.currentTimeMillis() < removeDeadline) Thread.sleep(100L)
+                assertTrue("Lower Keyframe should remove the same real pin; selected=${vm.state.value.selectedClipId}, pins=${vm.state.value.project!!.clips.first().keyframes.keyframes}, position=${vm.state.value.playerPositionMs}",
                     vm.state.value.project!!.clips.first().keyframes.keyframes.isEmpty())
                 device.findObject(By.desc("Keyframe")).click()
-                device.waitForIdle(1_000L)
+                val addDeadline = System.currentTimeMillis() + 15_000L
+                while (vm.state.value.project!!.clips.first().keyframes.keyframes.isEmpty() &&
+                    System.currentTimeMillis() < addDeadline) Thread.sleep(100L)
+                // The selected-clip row is horizontally scrollable on narrow phones.
+                val toolsY = device.findObject(By.desc("Keyframe")).visibleBounds.centerY()
+                device.swipe(device.displayWidth * 4 / 5, toolsY, device.displayWidth * 2 / 5, toolsY, 25)
                 assertTrue("Lower Animation action is missing", device.wait(Until.hasObject(By.desc("Animation")), 10_000L))
                 device.findObject(By.desc("Animation")).click()
-                assertTrue("Lower Animation must open real Keyframe Studio", device.wait(Until.hasObject(By.text("Keyframe Studio")), 10_000L))
+                val panelDeadline = System.currentTimeMillis() + 15_000L
+                while (!vm.state.value.keyframePanelOpen && System.currentTimeMillis() < panelDeadline) Thread.sleep(100L)
+                assertTrue("Lower Animation must retain animation cards", device.wait(Until.hasObject(By.text("Customized")), 15_000L))
+                device.findObject(By.text("Customized")).click()
+                assertTrue("Customized must open real Keyframe Studio", device.wait(Until.hasObject(By.text("Keyframe Studio")), 15_000L))
                 for (property in listOf("Position", "Scale", "Rotation", "Opacity")) {
                     assertTrue("Animation inspector must retain $property", device.hasObject(By.text(property)))
                 }

@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.apexstudio.app.MainActivity
@@ -33,6 +34,7 @@ class PreviewFitCoverInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
+        Configurator.getInstance().setWaitForIdleTimeout(500L)
         val diagnostics = File(context.getExternalFilesDir(null) ?: context.filesDir, "preview-fit-cover-diagnostics")
             .apply { mkdirs() }
         val fixtures = listOf(
@@ -66,13 +68,7 @@ class PreviewFitCoverInstrumentedTest {
                         clips = listOf(clip),
                         fps = 8
                     )
-                    val vm = EditorViewModel()
-                    vm._state.value = vm.state.value.copy(
-                        project = project,
-                        selectedClipId = clip.id,
-                        durationMs = durationMs
-                    )
-
+                    lateinit var vm: EditorViewModel
                     // Check the video stream itself, independently of Compose's viewport geometry.
                     val retriever = MediaMetadataRetriever()
                     val sourceSize = try {
@@ -90,6 +86,13 @@ class PreviewFitCoverInstrumentedTest {
 
                     ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
                         scenario.onActivity { activity ->
+                            // Construct on Main so init completes before installing fixture state.
+                            vm = EditorViewModel()
+                            vm._state.value = vm.state.value.copy(
+                                project = project,
+                                selectedClipId = clip.id,
+                                durationMs = durationMs
+                            )
                             activity.setContent {
                                 ApexTheme {
                                     EditorScreen(project.id, onBack = {}, onExport = {}, onColor = {}, onAudio = {}, vm = vm)
@@ -116,6 +119,7 @@ class PreviewFitCoverInstrumentedTest {
 
                         val fitLabel = "Preview mode: Fit"
                         val coverLabel = "Preview mode: Cover"
+                        assertEquals("Test project must survive VM initialization", project.id, vm.state.value.project?.id)
                         val initialMode = when {
                             device.hasObject(By.desc(fitLabel)) -> "Fit"
                             device.hasObject(By.desc(coverLabel)) -> "Cover"
@@ -137,8 +141,12 @@ class PreviewFitCoverInstrumentedTest {
                             vm.state.value.project!!.clips.single().videoFitMode)
                         capture(device, diagnostics, fixture.name, if (initialMode == "Fit") "Cover" else "Fit")
 
-                        // Toggling presentation mode must not rewrite the clip's source or time geometry.
+                        // Toggle back through the visible control and verify persisted round trip.
+                        device.findObject(By.desc(alternateLabel)).click()
+                        assertTrue("Fit/Cover must remain reversible",
+                            device.wait(Until.hasObject(By.desc(initialLabel)), 10_000L))
                         assertEquals(VideoFitMode.COVER, vm.state.value.project!!.clips.single().videoFitMode)
+                        // Toggling framing must not rewrite the source or time geometry.
                         val afterToggle = vm.state.value.project!!.clips.single()
                         assertEquals("Preview toggle rewrote ${fixture.name} source URI", uri, afterToggle.uri)
                         assertEquals("Preview toggle rewrote ${fixture.name} source duration", durationMs, afterToggle.durationMs)

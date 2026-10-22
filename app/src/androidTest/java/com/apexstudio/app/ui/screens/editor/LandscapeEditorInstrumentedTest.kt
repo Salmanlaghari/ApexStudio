@@ -45,7 +45,21 @@ class LandscapeEditorInstrumentedTest {
                         ApexTheme { EditorScreen(project.id, {}, {}, {}, {}, vm = vm) }
                     }
                 }
-                assertTrue("Landscape properties panel unavailable", device.wait(Until.hasObject(By.text("Hide properties ›")), 60_000))
+                val panelAvailable = device.wait(Until.hasObject(By.text("Hide properties ›")), 60_000)
+                val diagnostics = File(context.getExternalFilesDir(null), "landscape-runtime-diagnostics").apply { mkdirs() }
+                device.takeScreenshot(File(diagnostics, "panel-check.png"))
+                device.dumpWindowHierarchy(File(diagnostics, "panel-check.xml"))
+                scenario.onActivity { activity ->
+                    File(diagnostics, "panel-check.txt").writeText(
+                        "panelAvailable=$panelAvailable\n" +
+                            "display=${device.displayWidth}x${device.displayHeight}\n" +
+                            "configuration=${activity.resources.configuration}\n" +
+                            "root=${activity.window.decorView.width}x${activity.window.decorView.height}\n" +
+                            "project=${vm.state.value.project?.id} selected=${vm.state.value.selectedClipId}\n" +
+                            "position=${vm.livePlayheadMs()} ready=${vm.state.value.isPlayerReady} error=${vm.state.value.playerError}\n"
+                    )
+                }
+                assertTrue("Landscape properties panel unavailable (see landscape-runtime-diagnostics)", panelAvailable)
                 assertTrue("Must actually be landscape", device.displayWidth > device.displayHeight)
                 assertTrue("Frame-step control unavailable", device.wait(Until.hasObject(By.text("+1f")), 15_000))
                 assertTrue("Horizontal editing dock unavailable", device.wait(Until.hasObject(By.desc("More")), 15_000))

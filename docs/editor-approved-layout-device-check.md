@@ -10,6 +10,8 @@ The earlier failed landscape run used an emulator APK whose embedded identity wa
 
 The software-only QA emulator has exhibited slow installation and system-app ANRs. A build or compiled test APK alone does not establish installed runtime success. Consult the supplied exact-head provenance for the actual latest result; do not infer a pass from CI's green build checks or CodeRabbit's status. The PR remains draft/unmerged, fresh review must cover the pushed head, and the owner's physical-device test and explicit approval remain required.
 
+The subsequent SHA-verified installed `3c3fee9` run also failed the landscape-panel assertion; stale identity was therefore not the only problem. The test now retains its failure-time screen, accessibility hierarchy, actual window configuration and view-model state instead of discarding the visible failure during ActivityScenario teardown. A test-package-only Startup provider is removed to prevent the separately launched ActivityScenario helper from crashing on a class packaged only in the target APK. Neither diagnostic change is a claim that the editor's installed layout, decoder or export behavior has passed.
+
 ## Layout and real controls
 
 The editor uses a deep navy canvas, branded gradient ApexStudio header, outlined resolution control and luminous cyan-to-purple Export. The normal timeline starts at its ruler, not a full-width TIMELINE/Add Clip header. Selected clips have purple/cyan emphasis; real text/sticker/FX/audio layers use the locked design's colored tracks. It remains content-bounded: no fabricated empty support lanes, identity/eye gutter or full-width SEC row. Keyframe markers stay centered in their real tracks.

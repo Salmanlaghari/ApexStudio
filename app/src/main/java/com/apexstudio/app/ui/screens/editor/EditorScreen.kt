@@ -255,7 +255,7 @@ private fun EditorScreenContent(
         uri?.let { vm.setBackgroundReplaceImageUri(it.toString()) }
     }
 
-    mediaPicker.registerLaunchers()
+    mediaPicker.registerLaunchers(onCancelled = { vm.clearPendingReplace() })
 
     // Make bundled OFL text fonts available to the preview + export renderers.
     LaunchedEffect(Unit) {

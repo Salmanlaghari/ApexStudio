@@ -230,21 +230,27 @@ class RestoredEditorInstrumentedTest {
                 assertTrue(device.wait(Until.hasObject(By.text("Animation")), 10_000L))
                 device.findObject(By.desc("Close")).click() // close cards, returning to the timeline
                 device.waitForIdle(1_000L)
+                // Use the existing expanded workspace to inspect every real material row.
+                // Small normal viewports intentionally show a scrollable subset, not empty lanes.
+                device.findObject(By.desc("Expand timeline to full height")).click()
+                assertTrue(device.wait(Until.hasObject(By.desc("Restore preview and normal timeline layout")), 10_000L))
                 val trackBottom = device.findObject(By.desc("Animation")).visibleBounds.top - 40
-                val trackScrollStep = (30 * context.resources.displayMetrics.density).toInt()
+                val trackScrollStep = (100 * context.resources.displayMetrics.density).toInt()
                 val seenLayers = mutableSetOf<String>()
                 val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects")
-                repeat(8) {
+                for (attempt in 0 until 8) {
                     expectedLayers.filterTo(seenLayers) { device.hasObject(By.desc(it)) }
+                    if (seenLayers.containsAll(expectedLayers)) break
                     device.swipe(device.displayWidth / 2, trackBottom,
                         device.displayWidth / 2, trackBottom - trackScrollStep, 25)
-                    device.waitForIdle(500L)
                 }
                 assertTrue("All actual material rows must be reachable, found $seenLayers", seenLayers.containsAll(expectedLayers))
-                repeat(8) {
+                repeat(4) {
                     device.swipe(device.displayWidth / 2, trackBottom - trackScrollStep,
                         device.displayWidth / 2, trackBottom, 25)
                 }
+                device.findObject(By.desc("Restore preview and normal timeline layout")).click()
+                assertTrue(device.wait(Until.hasObject(By.desc("Expand timeline to full height")), 10_000L))
                 device.waitForIdle(1_000L)
                 device.takeScreenshot(screenshot)
                 device.dumpWindowHierarchy(hierarchy)

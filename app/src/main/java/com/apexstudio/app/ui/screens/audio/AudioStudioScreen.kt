@@ -140,21 +140,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            SectionLabel("AUDIO INTELLIGENCE")
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 14.dp
-            ) {
-                AudioIntelligenceControls(
-                    musicTrackId = state.tracks.firstOrNull()?.id,
-                    voiceTrackId = state.tracks.firstOrNull()?.id?.let { firstId ->
-                        state.tracks.firstOrNull { it.id != firstId }?.id
-                    },
-                    onNormalize = { trackId -> vm.normalizeTrackLoudness(trackId) },
-                    onAutoDuck = { musicId, voiceId -> vm.autoDuckMusicUnderVoice(musicId, voiceId) },
-                    onFitLength = { trackId -> vm.fitMusicToProjectLength(trackId) }
-                )
-            }
             SectionLabel("REAL-TIME EQ VISUALIZER")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -670,74 +655,6 @@ private fun ReverbPresetRow(selected: Int, onSelect: (Int) -> Unit) {
                 )
             }
         }
-    }
-}
-
-/**
- * On-device audio intelligence: loudness normalisation, auto-duck and
- * music-length fitting. Every action runs locally on decoded PCM — there is no
- * model download, no network call and no cloud processing.
- *
- * [musicTrackId] is the first audio track and [voiceTrackId] is the next
- * different one; that mirrors the A1/A2 music/voice lane split without
- * hard-coding a track kind.
- */
-@Composable
-private fun AudioIntelligenceControls(
-    musicTrackId: String?,
-    voiceTrackId: String?,
-    onNormalize: (String) -> Unit,
-    onAutoDuck: (String, String) -> Unit,
-    onFitLength: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Local analysis — no upload, no model download",
-            color = ApexPalette.TextTertiary,
-            fontSize = 10.sp
-        )
-        AudioIntelligenceRow(
-            title = "Normalize loudness",
-            subtitle = "Measures gated loudness and sets the fader near -16 LUFS",
-            enabled = musicTrackId != null
-        ) { musicTrackId?.let(onNormalize) }
-        AudioIntelligenceRow(
-            title = "Auto-duck music under voice",
-            subtitle = "Writes volume keyframes that dip the music where speech is loud",
-            enabled = musicTrackId != null && voiceTrackId != null
-        ) {
-            val music = musicTrackId
-            val voice = voiceTrackId
-            if (music != null && voice != null) onAutoDuck(music, voice)
-        }
-        AudioIntelligenceRow(
-            title = "Fit music to video length",
-            subtitle = "Picks a window that starts on a detected beat instead of cutting mid-bar",
-            enabled = musicTrackId != null
-        ) { musicTrackId?.let(onFitLength) }
-    }
-}
-
-@Composable
-private fun AudioIntelligenceRow(
-    title: String,
-    subtitle: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val titleColor = if (enabled) ApexPalette.TextPrimary else ApexPalette.TextTertiary
-    val accent = if (enabled) ApexPalette.NeonCyan else ApexPalette.TextTertiary
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(ApexPalette.BgElevated)
-            .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(title, color = titleColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(2.dp))
-        Text(subtitle, color = accent, fontSize = 9.sp, lineHeight = 12.sp)
     }
 }
 

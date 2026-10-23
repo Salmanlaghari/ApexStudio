@@ -65,14 +65,14 @@ class ScreenshotEditorCompositionTest {
         }
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
         listOf("Animation", "Position", "Scale", "Rotation", "Opacity").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
-        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
-        compose.onNodeWithText("Add Clip").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
         val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
         val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("Compact keyframe belongs to the existing timeline header", keyframe.bottom <= header.top && header.top - keyframe.top <= 44f)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
-        assertEquals("V1 filmstrip retains historical height", 64f, track.height, 1f)
+        assertEquals("V1 filmstrip uses the compact visual height", 52f, track.height, 1f)
         compose.onNodeWithContentDescription("Add keyframe").performClick()
         compose.runOnIdle {
             assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size)

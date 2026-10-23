@@ -77,7 +77,8 @@ class CenteredTimelineWorkspaceTest {
         assertEquals(340f, bounds("preview").height, 1f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
         assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertEquals("Only focus row, scrub line and existing header separate transport from ruler", focus.bottom + 46f, ruler.top, 1f)
+        assertEquals("Only scrub line and compact header separate focus control from ruler",
+            focus.bottom + 2f + com.apexstudio.app.ui.components.TIMELINE_HEADER_HEIGHT_DP, ruler.top, 1f)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -45,12 +46,14 @@ class VideoTimelineHeaderTest {
             )
         }
 
-        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
+        compose.onNodeWithText("Timeline").assertIsDisplayed()
         compose.onNodeWithTag("timeline-duration").assertExists()
-        compose.onNodeWithText("Add Clip").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertExists()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithText("Add Clip").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
-        compose.onNodeWithContentDescription("Add video media").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()
         compose.onNodeWithText("Video").assertIsDisplayed()
         compose.onNodeWithText("Music").assertIsDisplayed()
         compose.onNodeWithText("V1").assertDoesNotExist()

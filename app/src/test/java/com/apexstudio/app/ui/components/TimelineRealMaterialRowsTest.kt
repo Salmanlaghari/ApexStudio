@@ -36,7 +36,7 @@ class TimelineRealMaterialRowsTest {
         )
 
         assertEquals(emptyMap<Int, List<MediaClip>>(), TimelineLayerContentIndex.from(state.project!!.clips).videoByLayer)
-        assertEquals(80.dp, compactTimelineHeight(state))
+        assertEquals(68.dp, compactTimelineHeight(state))
     }
 
     @Test
@@ -51,7 +51,7 @@ class TimelineRealMaterialRowsTest {
 
         assertEquals(listOf(0, 3, 9), index.videoByLayer.keys.toList())
         // V1 image + two distinct populated supporting layers (V4 and clamped V10).
-        assertEquals(304.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
+        assertEquals(280.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
     }
 
     @Test
@@ -64,7 +64,7 @@ class TimelineRealMaterialRowsTest {
         val index = TimelineLayerContentIndex.from(clips)
 
         assertEquals(listOf(3, 9), index.videoByLayer.keys.toList())
-        assertEquals(230.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
+        assertEquals(218.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
     }
 
     @Test

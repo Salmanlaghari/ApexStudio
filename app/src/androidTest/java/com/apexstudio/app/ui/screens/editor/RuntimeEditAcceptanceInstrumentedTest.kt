@@ -41,7 +41,7 @@ import org.junit.runner.RunWith
 @UnstableApi
 class RuntimeEditAcceptanceInstrumentedTest {
     @Test
-    fun playbackSurvivesLiveEditsPausedPreviewChangesAndProcessedMp4Decodes() = runBlocking {
+    fun playbackSurvivesLiveEditsPausedPreviewChangesAndProcessedMp4Decodes(): Unit = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)

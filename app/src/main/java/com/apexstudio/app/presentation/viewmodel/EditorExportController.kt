@@ -96,6 +96,10 @@ fun EditorViewModel.startExport(
             Log.w("EditorViewModel", "Failed to load filter manifest for export", e)
         }
     }
+    // Match preview resolution, including user-imported LUTs that are not in the manifest.
+    if (filterPreset == null) {
+        filterPreset = s.customImportedLuts.firstOrNull { it.id == s.activeFilterId }
+    }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
     val unavailableVisual = selectedVisualEffectUnavailableReason(
         activeFilterId = s.activeFilterId,

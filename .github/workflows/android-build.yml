@@ -101,11 +101,24 @@ jobs:
 
       - name: Full JVM regression suite
         run: |
-          ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon
+          set -o pipefail
+          ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon 2>&1 | tee gradle-debug.log
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
           python3 -m unittest discover -s scripts/tests -p 'test_native_alignment.py'
           python3 -m unittest discover -s scripts/tests -p 'test_range_time_encoder.py'
 
+
+      - name: Publish build error digest
+        if: failure()
+        run: |
+          LOG=gradle-debug.log
+          { grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" 2>/dev/null || true; } | head -80 > ci-error-digest.txt
+          git config user.email "ci@github.local"
+          git config user.name "CI Log Bot"
+          git checkout -B session/ci-log-${{ github.run_id }}-debug
+          git add -f ci-error-digest.txt
+          git commit -m "CI error digest run ${{ github.run_id }}"
+          git push -f origin session/ci-log-${{ github.run_id }}-debug
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
       - name: Build lean arm64 debug APK and feature bundle
@@ -248,8 +261,22 @@ jobs:
           KEYSTORE_PATH: ${{ github.workspace }}/ci-release.keystore
           STORE_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
-        run: ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee gradle-release.log
 
+
+      - name: Publish build error digest
+        if: failure()
+        run: |
+          LOG=gradle-release.log
+          { grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" 2>/dev/null || true; } | head -80 > ci-error-digest.txt
+          git config user.email "ci@github.local"
+          git config user.name "CI Log Bot"
+          git checkout -B session/ci-log-${{ github.run_id }}-release
+          git add -f ci-error-digest.txt
+          git commit -m "CI error digest run ${{ github.run_id }}"
+          git push -f origin session/ci-log-${{ github.run_id }}-release
       - name: Check release native alignment (static only, all bundle modules)
         run: |
           python3 scripts/native-alignment.py app/build/outputs/apk/release/app-release.apk --output native-alignment-release-apk.json

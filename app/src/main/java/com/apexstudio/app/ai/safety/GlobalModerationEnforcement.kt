@@ -81,14 +81,7 @@ object GlobalModerationEnforcement {
         if (videoScope != null && action in videoScope.actions &&
             (sourceUri == null || sourceUri == videoScope.sourceUri)
         ) return
-        throw AiModelUnavailableException(
-            if (action in setOf(
-                    ProtectedAiAction.ONNX_BACKGROUND_REMOVAL,
-                    ProtectedAiAction.ONNX_UPSCALING,
-                    ProtectedAiAction.PORTRAIT_BACKGROUND_EFFECTS,
-                )
-            ) ImageAiScope.denialMessage(action) else statusMessage(action)
-        )
+        throw AiModelUnavailableException(statusMessage(action))
     }
 
     /** Internal capability: only wrap a decoded frame inside the validated video pipeline. */

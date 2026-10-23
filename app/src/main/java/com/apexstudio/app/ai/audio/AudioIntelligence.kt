@@ -211,7 +211,7 @@ object AudioIntelligence {
             val a = abs(s)
             if (a > peak) peak = a
         }
-        val rms = sqrt(sumSquares / pcm.size)
+        val rms = sqrt(sumSquares / pcm.size).toFloat()
         val rmsDbfs = toDb(rms)
         val peakDbfs = toDb(peak)
 
@@ -263,8 +263,8 @@ object AudioIntelligence {
         if (pcm.isEmpty()) return emptyList()
 
         val threshold = dbToLinear(thresholdDb)
-        val minSilenceSamples = (sampleRateHz * minSilenceMs / 1000f).toInt().coerceAtLeast(1)
-        val padding = (sampleRateHz * paddingMs / 1000f).toInt()
+        val minSilenceSamples = (sampleRateHz.toFloat() * minSilenceMs.toFloat() / 1000f).toInt().coerceAtLeast(1)
+        val padding = (sampleRateHz.toFloat() * paddingMs.toFloat() / 1000f).toInt()
 
         val active = BooleanArray(pcm.size)
         for (i in pcm.indices) active[i] = abs(pcm[i]) > threshold
@@ -317,7 +317,7 @@ object AudioIntelligence {
         if (music.isEmpty() || speech.isEmpty()) return emptyList()
 
         val blockMs = 20L
-        val block = max(1, (sampleRateHz * blockMs / 1000f).toInt())
+        val block = max(1, (sampleRateHz.toFloat() * blockMs.toFloat() / 1000f).toInt())
         val speechActive = BooleanArray((speech.size + block - 1) / block)
         val threshold = dbToLinear(speechThresholdDb)
         for (b in speechActive.indices) {
@@ -333,8 +333,8 @@ object AudioIntelligence {
 
         val points = mutableListOf<DuckPoint>()
         var gain = 1f
-        val attackPerBlock = blockMs.toFloat() / attackMs.coerceAtLeast(1)
-        val releasePerBlock = blockMs.toFloat() / releaseMs.coerceAtLeast(1)
+        val attackPerBlock = blockMs.toFloat() / attackMs.coerceAtLeast(1).toFloat()
+        val releasePerBlock = blockMs.toFloat() / releaseMs.coerceAtLeast(1).toFloat()
 
         var timeMs = 0L
         points.add(DuckPoint(0L, 1f))

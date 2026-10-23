@@ -35,7 +35,6 @@ object ImageAiScope {
      * True when [action] is currently authorised for [sourceUri] on this thread.
      * Consulted by [GlobalModerationEnforcement.requireApproved] before its video checks.
      */
-    @JvmStatic
     fun isAuthorised(action: ProtectedAiAction, sourceUri: String?): Boolean {
         val active = scope.get() ?: return false
         if (action !in active.actions) return false
@@ -43,7 +42,6 @@ object ImageAiScope {
     }
 
     /** Human-readable reason shown when an image action is attempted outside a valid scope. */
-    @JvmStatic
     fun denialMessage(action: ProtectedAiAction): String = when (action) {
         ProtectedAiAction.ONNX_BACKGROUND_REMOVAL ->
             "Background removal runs on an existing project image from the editor's image tools. No generated content, no prompts, no camera input."
@@ -59,7 +57,6 @@ object ImageAiScope {
      * Runs [process] with [action] authorised for exactly one still-image clip.
      * The caller must resolve [clip] from the active project's clip list first.
      */
-    @JvmStatic
     suspend fun <T> withExistingProjectImage(
         clip: MediaClip,
         action: ProtectedAiAction,

@@ -118,9 +118,8 @@ class MaskGlEffect private constructor(
             uniform float uAspect;   // frame width / height
             uniform float uShape;    // see contract above
             uniform float uRotation; // clockwise radians, y-down frame
-            // Two float arrays rather than one vec2[]: GlProgram only sets
-            // float arrays with glUniform1fv, and mixing in a vec2 array
-            // would make the whole call a GL_INVALID_OPERATION.
+            // Uploaded with GLES glUniform1fv after the common uniform bind:
+            // Media3 GlProgram's cached float storage holds only 16 values.
             uniform float uPolyX[32]; // polygon x, shape space
             uniform float uPolyY[32]; // polygon y, shape space
             uniform float uPolyN;     // incl. the closing duplicate
@@ -255,6 +254,10 @@ class MaskGlEffect private constructor(
 
         private val glProgram: GlProgram
         private var aspect: Float = 16f / 9f
+        private val polyX = FloatArray(POLY_POINTS)
+        private val polyY = FloatArray(POLY_POINTS)
+        private var polyXLocation = -1
+        private var polyYLocation = -1
 
         init {
             glProgram = try {
@@ -290,16 +293,13 @@ class MaskGlEffect private constructor(
             setAnimatedUniforms(mask)
             val polyPoints = MaskModel.outline(mask.shape, mask.drawPoints)
             val polyCount = minOf(polyPoints.size, POLY_POINTS)
-            val polyX = FloatArray(POLY_POINTS)
-            val polyY = FloatArray(POLY_POINTS)
             for (i in 0 until polyCount) {
                 polyX[i] = polyPoints[i].x
                 polyY[i] = polyPoints[i].y
             }
-            // GLES exposes array uniforms by their first element name. Media3's
-            // GlProgram indexes that exact active name; the bare array name is absent.
-            glProgram.setFloatsUniform("uPolyX[0]", polyX)
-            glProgram.setFloatsUniform("uPolyY[0]", polyY)
+            // Keep array values outside GlProgram: its cache is limited to mat4 (16 floats).
+            polyXLocation = glProgram.getUniformLocation("uPolyX[0]")
+            polyYLocation = glProgram.getUniformLocation("uPolyY[0]")
             glProgram.setFloatUniform("uPolyN", polyCount.toFloat())
             glProgram.setFloatUniform("uAspect", aspect)
         }
@@ -320,6 +320,9 @@ class MaskGlEffect private constructor(
                 setAnimatedUniforms(resolveMaskAtFrame(mask, presentationTimeUs, maskTimeMsProvider, timeMsAtPresentationTimeUs))
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.bindAttributesAndUniforms()
+                GLES20.glUniform1fv(polyXLocation, POLY_POINTS, polyX, 0)
+                GLES20.glUniform1fv(polyYLocation, POLY_POINTS, polyY, 0)
+                GlUtil.checkGlError()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
                 throw VideoFrameProcessingException(e, presentationTimeUs)

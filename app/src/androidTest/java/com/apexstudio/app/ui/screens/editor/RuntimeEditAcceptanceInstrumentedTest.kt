@@ -148,18 +148,18 @@ class RuntimeEditAcceptanceInstrumentedTest {
                     vm._state.value = current.copy(filterIntensity = 0f, fxIntensity = 0f,
                         project = current.project!!.copy(clips = listOf(clip)))
                 }
-                assertTrue("Zero-intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("0%")), 60_000L))
-                Thread.sleep(1_000L)
-                val baseline = capturePreview(device, context.packageName, File(diagnostics, "ungraded.png"))
+                val baseline = awaitPreview(device, context.packageName, File(diagnostics, "ungraded.png")) {
+                    saturatedPixelCount(it) > 300
+                }
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(filterIntensity = .85f) }
-                assertTrue("LUT intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("85%")), 60_000L))
-                Thread.sleep(1_000L)
-                val filtered = capturePreview(device, context.packageName, File(diagnostics, "filter-only.png"))
+                val filtered = awaitPreview(device, context.packageName, File(diagnostics, "filter-only.png")) {
+                    changedPixelCount(baseline, it) > 50
+                }
                 assertTrue("Paused LUT must change actual preview pixels", changedPixelCount(baseline, filtered) > 50)
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(fxIntensity = .8f) }
-                assertTrue("FX intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("80%")), 60_000L))
-                Thread.sleep(1_000L)
-                val withFx = capturePreview(device, context.packageName, File(diagnostics, "filter-and-fx.png"))
+                val withFx = awaitPreview(device, context.packageName, File(diagnostics, "filter-and-fx.png")) {
+                    changedPixelCount(filtered, it) > 50
+                }
                 assertTrue("Paused FX must change actual preview pixels", changedPixelCount(filtered, withFx) > 50)
                 baseline.recycle()
                 filtered.recycle()
@@ -274,6 +274,29 @@ class RuntimeEditAcceptanceInstrumentedTest {
             Thread.sleep(50L)
         }
         throw AssertionError("Preview transport did not advance past $afterMs ms; last=${vm.state.value.playerPositionMs}, error=${vm.state.value.playerError}")
+    }
+
+    private fun awaitPreview(device: UiDevice, packageName: String, destination: File, predicate: (Bitmap) -> Boolean): Bitmap {
+        val deadline = System.currentTimeMillis() + 60_000L
+        do {
+            val frame = capturePreview(device, packageName, destination)
+            if (predicate(frame)) return frame
+            frame.recycle()
+            Thread.sleep(1_000L)
+        } while (System.currentTimeMillis() < deadline)
+        throw AssertionError("Expected decoded preview pixels did not arrive: ${destination.name}")
+    }
+
+    private fun saturatedPixelCount(bitmap: Bitmap): Int {
+        var count = 0
+        for (y in 0 until bitmap.height step 4) for (x in 0 until bitmap.width step 4) {
+            val p = bitmap.getPixel(x, y)
+            val r = android.graphics.Color.red(p)
+            val g = android.graphics.Color.green(p)
+            val b = android.graphics.Color.blue(p)
+            if (maxOf(r, g, b) - minOf(r, g, b) > 80) count++
+        }
+        return count
     }
 
     private fun capturePreview(device: UiDevice, packageName: String, destination: File): Bitmap {

@@ -31,11 +31,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.fx.FxPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Bottom-sheet FX picker: "Original" + every real-time FX preset,
@@ -58,14 +59,14 @@ fun FxPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // Half height so the preview + playhead stay visible while an
-            // effect is applied; the overlay wrapper adds status/nav insets.
-            .fillMaxHeight(0.55f)
+            // Keep the preview visible; FX presets and categories are already horizontal.
+            .heightIn(max = 240.dp)
             .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
+            .testTag("fx-panel-root")
     ) {
         // Drag handle
         Box(
@@ -77,20 +78,15 @@ fun FxPanel(
         )
         Spacer(Modifier.height(8.dp))
 
-        // Scrollable content; the "Keyframe animation" row stays sticky
-        // at the bottom (outside this scroll container).
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
+        // Keep the title and Close action pinned while controls scroll inside
+        // the compact editor workspace.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 "FX",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 modifier = Modifier.weight(1f)
@@ -107,6 +103,14 @@ fun FxPanel(
             )
         }
         Spacer(Modifier.height(10.dp))
+
+        // Presets and controls are the only vertically scrollable area. The
+        // preset and category pickers themselves remain horizontal lists.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
 
         var activeCategory by remember { mutableStateOf("All") }
 
@@ -130,6 +134,7 @@ fun FxPanel(
                             RoundedCornerShape(10.dp)
                         )
                         .clickable { activeCategory = cat }
+                        .testTag("fx-category-${cat.lowercase().replace(" ", "-")}")
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
@@ -222,7 +227,7 @@ fun FxPanel(
             )
         }
 
-        } // end scrollable content
+        } // end scrollable controls
 
         if (onKeyframesClick != null) {
             Spacer(Modifier.height(4.dp))
@@ -350,6 +355,7 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     FxPreset.HUE_CYCLE, FxPreset.GRADIENT_SWEEP -> Icons.Default.Layers
 
     FxPreset.LIGHT_LEAK_SWEEP -> Icons.Default.CenterFocusWeak
+    else -> Icons.Default.Layers
 }
 
 private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
@@ -441,4 +447,6 @@ private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {
     FxPreset.PULSE_BEAT -> listOf(Color(0xFFFF5252), Color(0xFF880E4F))
     FxPreset.GRADIENT_SWEEP -> listOf(Color(0xFF00E5FF), Color(0xFFFF00FF))
     FxPreset.LIGHT_LEAK_SWEEP -> listOf(Color(0xFFFFB74D), Color(0xFFE65100))
+    else -> listOf(Color.hsv((preset.ordinal * 31 % 360).toFloat(), 0.65f, 0.9f),
+        Color.hsv((preset.ordinal * 31 + 60).rem(360).toFloat(), 0.8f, 0.45f))
 }

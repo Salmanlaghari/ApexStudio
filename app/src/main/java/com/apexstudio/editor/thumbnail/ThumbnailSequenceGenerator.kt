@@ -36,16 +36,21 @@ object ThumbnailSequenceGenerator {
 
     /**
      * Number of frames needed to cover [durationMs] at one per
-     * [intervalMs], clamped to [[MIN_FRAMES], [MAX_FRAMES]].
+     * [intervalMs], bounded by [[MIN_FRAMES], [MAX_FRAMES]] only for
+     * sub-second clips and long clips respectively.
      *
      * Uses ceiling division so 4_500 ms at 1_000 ms/frame yields 5
      * frames (never a truncated 4 that would drop the tail clip).
+     * Sub-second clips retain [MIN_FRAMES] so even very short media can
+     * form a recognizable strip; longer clips use the requested interval
+     * count without being inflated to the minimum.
      */
     fun sampleCount(durationMs: Long, intervalMs: Long = DEFAULT_INTERVAL_MS): Int {
-        if (durationMs <= 0L) return MIN_FRAMES
+        if (durationMs < DEFAULT_INTERVAL_MS) return MIN_FRAMES
         val step = intervalMs.coerceAtLeast(1L)
-        val raw = ((durationMs + step - 1L) / step).toInt()
-        return raw.coerceIn(MIN_FRAMES, MAX_FRAMES)
+        // Avoid duration + step - 1 overflow for very long clips.
+        val raw = 1L + (durationMs - 1L) / step
+        return raw.coerceAtMost(MAX_FRAMES.toLong()).toInt()
     }
 
     /**

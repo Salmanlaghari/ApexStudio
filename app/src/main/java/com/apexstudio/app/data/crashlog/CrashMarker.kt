@@ -13,7 +13,8 @@ import java.util.Locale
  * Native signals (SIGSEGV/SIGABRT) bypass the JVM UncaughtExceptionHandler, so
  * they cannot be caught in Kotlin. But if the process dies mid-operation, the
  * marker file remains. On the next launch [readAndConsume] returns the step the
- * previous run died in, which pinpoints the exact native crash location.
+ * previous run last recorded. This is context, not proof of a native crash or
+ * its exact location: OS memory kills and ordinary termination can leave it too.
  */
 object CrashMarker {
     private const val FILENAME = "crash_marker.txt"

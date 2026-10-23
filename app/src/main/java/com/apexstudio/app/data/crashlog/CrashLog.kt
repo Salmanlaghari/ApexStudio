@@ -28,7 +28,11 @@ data class CrashLog(
 
         fun clear(context: Context): Boolean {
             val f = File(context.filesDir, FILENAME)
-            return if (f.exists()) f.delete() else true
+            val trace = File(context.filesDir, ProcessExitDiagnostics.TRACE_FILENAME)
+            val logCleared = !f.exists() || f.delete()
+            val traceCleared = !trace.exists() || trace.delete()
+            File(context.cacheDir, "diagnostics/apexstudio-crash-evidence.zip").delete()
+            return logCleared && traceCleared
         }
     }
 }

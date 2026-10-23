@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -46,11 +49,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.presentation.state.AudioStudioState
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Audio mixer bottom sheet. Renders the three canonical track rows
@@ -81,6 +85,7 @@ fun AudioMixerPanel(
     onMute: (trackId: String) -> Unit,
     onSolo: (trackId: String) -> Unit,
     onTrim: (trackId: String, startMs: Long, endMs: Long) -> Unit,
+    onSplit: (trackId: String) -> Unit = {},
     onFadeIn: (trackId: String, ms: Long) -> Unit,
     onFadeOut: (trackId: String, ms: Long) -> Unit,
     onImportLocalAudio: () -> Unit = {},
@@ -102,11 +107,12 @@ fun AudioMixerPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 520.dp)
+            .heightIn(max = 260.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgElevated)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag("audio-mixer-panel-root")
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -127,68 +133,76 @@ fun AudioMixerPanel(
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary)
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Mix V1 audio, music and SFX with per-track faders, mute, fades and volume keyframes.",
-            color = ApexPalette.TextSecondary,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
 
-        // --- Top Quick-Access Buttons: Local Audio & Free Royalty Music (Immediately visible at top) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AddTrackButton(
-                label = "Local Audio",
-                icon = Icons.Default.FolderOpen,
-                accent = ApexPalette.NeonCyan,
-                modifier = Modifier.weight(1f),
-                onClick = onImportLocalAudio
-            )
-            AddTrackButton(
-                label = "Free Royalty Music",
-                icon = Icons.Default.GraphicEq,
-                accent = ApexPalette.NeonPurple,
-                modifier = Modifier.weight(1f),
-                onClick = onOpenRoyaltyFreeMusic
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        // Phase 4: live spectrum visualizer (vendored audio-visualizer-android).
-        MixerVisualizer(
-            audioSessionId = audioSessionId,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(14.dp))
-
-        // --- Original video audio row (synthetic, no track id) ---
-        AudioMixerRow(
-            label = "Original video audio",
-            icon = if (muteOriginalVideo) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-            volume = if (muteOriginalVideo) 0f else state.volume,
-            muted = muteOriginalVideo,
-            solo = false,
-            accent = ApexPalette.NeonPurple,
-            onVolume = { onMuteOriginal(it <= 0.001f) },
-            onMute = { onMuteOriginal(!muteOriginalVideo) },
-            onSolo = { /* no-op for the V1 row */ },
-            onRemove = null
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        // --- Per-track rows ---
-        LazyColumn(
+        // Keep the title and close action pinned. Every feature group is a
+        // horizontal card, so the editor preview is not displaced by a tall
+        // vertical list on portrait phones.
+        LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 280.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .height(190.dp)
+                .testTag("audio-mixer-panel-cards"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            item(key = "quick-controls") {
+                Column(
+                    modifier = Modifier
+                        .width(292.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AddTrackButton(
+                        label = "Local Audio",
+                        icon = Icons.Default.FolderOpen,
+                        accent = ApexPalette.NeonCyan,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onImportLocalAudio
+                    )
+                    AddTrackButton(
+                        label = "Free Royalty Music",
+                        icon = Icons.Default.GraphicEq,
+                        accent = ApexPalette.NeonPurple,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onOpenRoyaltyFreeMusic
+                    )
+                    AudioMixerRow(
+                        label = "Original video audio",
+                        icon = if (muteOriginalVideo) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                        volume = if (muteOriginalVideo) 0f else state.volume,
+                        muted = muteOriginalVideo,
+                        solo = false,
+                        accent = ApexPalette.NeonPurple,
+                        onVolume = { onMuteOriginal(it <= 0.001f) },
+                        onMute = { onMuteOriginal(!muteOriginalVideo) },
+                        onSolo = {},
+                        onRemove = null,
+                        showVolume = false,
+                        showSolo = false
+                    )
+                    Text(
+                        text = "Original gain is unavailable here; mute is supported.",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+            item(key = "visualizer") {
+                Column(
+                    modifier = Modifier
+                        .width(292.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    MixerVisualizer(audioSessionId = audioSessionId, modifier = Modifier.fillMaxWidth())
+                }
+            }
             items(state.tracks, key = { it.id }) { track ->
                 AudioTrackRow(
                     track = track,
@@ -203,6 +217,123 @@ fun AudioMixerPanel(
                     onRemoveVolumeKeyframe = { kfId -> onRemoveVolumeKeyframe(track.id, kfId) },
                     onSeekTo = onSeekTo
                 )
+            }
+            items(state.tracks, key = { "trim-${it.id}" }) { track ->
+                AudioSourceTrimCard(
+                    track = track,
+                    playheadMs = playheadMs,
+                    onTrim = { startMs, endMs -> onTrim(track.id, startMs, endMs) },
+                    onSplit = { onSplit(track.id) }
+                )
+            }
+        }
+    }
+}
+
+/** Valid, source-relative retained bounds; null means the source is too short to trim safely. */
+internal data class AudioSourceTrimBounds(val startMs: Long, val endMs: Long) {
+    val durationMs: Long get() = endMs - startMs
+}
+
+internal fun normalizedAudioSourceTrimBounds(
+    sourceDurationMs: Long,
+    startMs: Long,
+    endMs: Long,
+    minimumDurationMs: Long = 100L
+): AudioSourceTrimBounds? {
+    if (minimumDurationMs <= 0L || sourceDurationMs < minimumDurationMs) return null
+    val start = startMs.coerceIn(0L, sourceDurationMs - minimumDurationMs)
+    val end = endMs.coerceIn(start + minimumDurationMs, sourceDurationMs)
+    return AudioSourceTrimBounds(start, end)
+}
+
+/** The playhead is project time; splitting also requires at least 100 ms on each retained side. */
+internal fun canSplitAudioTrackAtPlayhead(track: AudioTrack, playheadMs: Long): Boolean {
+    val sourceEnd = track.sourceEndMs
+    val span = track.trimEndMs - track.trimStartMs
+    if (sourceEnd <= 0L || track.trimStartMs < 0L || track.trimEndMs > sourceEnd ||
+        track.startTimeMs < 0L || span < 200L || playheadMs < track.startTimeMs
+    ) return false
+    val elapsed = playheadMs - track.startTimeMs
+    return elapsed in 100L..(span - 100L)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioSourceTrimCard(
+    track: AudioTrack,
+    playheadMs: Long,
+    onTrim: (Long, Long) -> Unit,
+    onSplit: () -> Unit
+) {
+    val sourceDuration = track.sourceEndMs
+    val currentBounds = normalizedAudioSourceTrimBounds(sourceDuration, track.trimStartMs, track.trimEndMs)
+    var range by remember(track.id, sourceDuration, track.trimStartMs, track.trimEndMs) {
+        mutableStateOf(
+            currentBounds?.let { it.startMs.toFloat()..it.endMs.toFloat() } ?: (0f..0f)
+        )
+    }
+    val accent = ApexPalette.NeonCyan
+    Column(
+        modifier = Modifier
+            .width(292.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgBase)
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text("Source trim · ${track.name}", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (currentBounds == null) {
+            Text("Source duration: ${sourceDuration.coerceAtLeast(0L)} ms · Too short to trim safely",
+                color = ApexPalette.TextSecondary, fontSize = 11.sp)
+        } else {
+            Text(
+                "Source ${range.start.toLong()}–${range.endInclusive.toLong()} / ${sourceDuration} ms · Retained ${range.endInclusive.toLong() - range.start.toLong()} ms" +
+                    if (track.sourceDurationMs <= 0L) " (known legacy boundary)" else "",
+                color = ApexPalette.TextSecondary,
+                fontSize = 9.sp
+            )
+            val retainedDuration = (range.endInclusive - range.start).toLong().coerceAtLeast(0L)
+            val projectEnd = if (track.startTimeMs > Long.MAX_VALUE - retainedDuration) Long.MAX_VALUE
+                else track.startTimeMs + retainedDuration
+            Text(
+                "Project ${track.startTimeMs}–$projectEnd ms · Playhead $playheadMs ms (project)",
+                color = ApexPalette.TextSecondary,
+                fontSize = 9.sp
+            )
+            RangeSlider(
+                value = range,
+                onValueChange = { candidate ->
+                    if (candidate.endInclusive - candidate.start >= 100f) range = candidate
+                },
+                valueRange = 0f..sourceDuration.toFloat(),
+                onValueChangeFinished = {
+                    normalizedAudioSourceTrimBounds(sourceDuration, range.start.toLong(), range.endInclusive.toLong())
+                        ?.let { onTrim(it.startMs, it.endMs) }
+                },
+                modifier = Modifier.testTag("audio-track-trim-range-${track.id}")
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (track.sourceDurationMs > 0L) "Reset source" else "Reset known bounds",
+                    color = accent,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onTrim(0L, sourceDuration) }
+                        .testTag("audio-track-trim-reset-${track.id}")
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                )
+                Button(
+                    onClick = onSplit,
+                    enabled = canSplitAudioTrackAtPlayhead(track, playheadMs),
+                    modifier = Modifier.testTag("audio-track-split-${track.id}")
+                ) { Text("Split at playhead", fontSize = 11.sp) }
             }
         }
     }
@@ -219,7 +350,9 @@ private fun AudioMixerRow(
     onVolume: (Float) -> Unit,
     onMute: () -> Unit,
     onSolo: () -> Unit,
-    onRemove: (() -> Unit)?
+    onRemove: (() -> Unit)?,
+    showVolume: Boolean = true,
+    showSolo: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -234,16 +367,36 @@ private fun AudioMixerRow(
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(label, color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Slider(
-                value = if (muted) 0f else volume,
-                onValueChange = { onVolume(it) },
-                valueRange = 0f..1f,
-                colors = SliderDefaults.colors(
-                    thumbColor = accent,
-                    activeTrackColor = accent,
-                    inactiveTrackColor = ApexPalette.BorderGlass
+            if (showVolume) {
+                Slider(
+                    value = if (muted) 0f else volume,
+                    onValueChange = { onVolume(it) },
+                    valueRange = 0f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = accent,
+                        activeTrackColor = accent,
+                        inactiveTrackColor = ApexPalette.BorderGlass
+                    )
                 )
-            )
+            }
+        }
+        if (showSolo) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (solo) accent.copy(alpha = 0.2f) else Color.Transparent)
+                    .clickable(onClick = onSolo)
+                    .testTag("audio-track-solo")
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Solo",
+                    color = if (solo) accent else ApexPalette.TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
         IconButton(onClick = onMute) {
             Icon(
@@ -279,10 +432,10 @@ private fun AudioTrackRow(
         track.isMuted -> ApexPalette.TextTertiary
         else -> ApexPalette.NeonPurple
     }
-    val kindLabel = if (track.volume >= 0.99f) "SFX" else "Music"
+    val kindLabel = audioTrackKindLabel(track.kind)
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(292.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
@@ -384,6 +537,13 @@ private fun AudioTrackRow(
             }
         }
     }
+}
+
+/** Track identity is persisted in [AudioTrack.kind], not inferred from its current fader value. */
+internal fun audioTrackKindLabel(kind: AudioTrack.Kind): String = when (kind) {
+    AudioTrack.Kind.ORIGINAL_VIDEO -> "Original video"
+    AudioTrack.Kind.MUSIC -> "Music"
+    AudioTrack.Kind.SFX -> "Voiceover / SFX"
 }
 
 private fun formatVolumeKfTime(ms: Long): String {

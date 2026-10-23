@@ -1,14 +1,21 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -16,188 +23,205 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.components.BuildIdentity
+import com.apexstudio.app.ui.components.BuildIdentityDialog
+import com.apexstudio.app.ui.theme.EditorPalette
 
-// === 1. TOP APP BAR ===
-// COMPACT (Pro Phase 1): slim 40dp bar — small single-line title + small
-// Export button so the video preview gets maximum full view area.
+/** Branded editor header: identity is in the mark, while project details remain semantic. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TopAppBarSection(
+    title: String = "ApexStudio",
     canUndo: Boolean = false,
     canRedo: Boolean = false,
     resolution: String = "1080P",
     onSelectResolution: (String) -> Unit = {},
-    isCoverMode: Boolean = true,
+    isCoverMode: Boolean = DEFAULT_PREVIEW_COVER_MODE,
     onToggleCoverMode: () -> Unit = {},
     onFullscreenToggle: () -> Unit = {},
     onBack: () -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
     onHelp: () -> Unit = {},
-    onExport: () -> Unit = {}
+    onExport: () -> Unit = {},
+    projectId: String = "",
+    exportEnabled: Boolean = true,
+    resolutionEnabled: Boolean = true
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
+    var showBuildIdentity by remember { mutableStateOf(false) }
+    if (showBuildIdentity) {
+        BuildIdentityDialog(onDismiss = { showBuildIdentity = false })
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
-            .padding(horizontal = 10.dp),
+            .height(EditorLayoutMetrics.TopBarHeight)
+            .padding(horizontal = EditorLayoutMetrics.TopBarHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Left: back + compact single-line title
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = { showBuildIdentity = true },
+                    onLongClick = onBack
+                )
+                .semantics {
+                    contentDescription = "ApexStudio build identity. Project ${projectId.ifBlank { title }}"
+                    customActions = listOf(CustomAccessibilityAction("Back") {
+                        onBack()
+                        true
+                    })
+                },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.Start
         ) {
             Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Menu",
-                tint = Color.White,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clickable(onClick = onBack)
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back to projects",
+                tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(22.dp).clickable(onClick = onBack, role = Role.Button)
             )
-
-            Text(
-                text = "ApexStudio",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                maxLines = 1,
-                softWrap = false
-            )
+            Spacer(Modifier.width(7.dp))
+            Column(modifier = Modifier.widthIn(max = 110.dp)) {
+                Text("ApexStudio", color = EditorPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                Text("Build ${BuildIdentity.shortCommit}", color = EditorPalette.NeonCyan, fontSize = 8.sp,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+            }
         }
 
-        // Right side: compact controls + small Export button
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(7.dp))
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
+                .clickable(onClick = onToggleCoverMode, role = Role.Button)
+                .semantics { contentDescription = "Preview mode: ${if (isCoverMode) "Cover" else "Fit"}" }
+                .padding(horizontal = 7.dp, vertical = 5.dp)
         ) {
-            // Fit / Cover Mode Toggle Button
-            Box(
+            Text(if (isCoverMode) "COVER" else "FIT", color = EditorPalette.TextPrimary,
+                fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        }
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
+                .clickable(onClick = onFullscreenToggle, role = Role.Button)
+                .semantics { contentDescription = "Fullscreen preview" },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Fullscreen, contentDescription = null, tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(17.dp))
+        }
+
+        Box {
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(Color(0xFF1B1B26))
-                    .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
-                    .clickable(onClick = onToggleCoverMode)
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = if (isCoverMode) "COVER" else "FIT",
-                    color = Color(0xFFD1D5DB),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Fullscreen Preview Toggle
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color(0xFF1B1B26))
-                    .border(1.dp, Color(0xFF2E2E40), CircleShape)
-                    .clickable(onClick = onFullscreenToggle)
-                    .padding(5.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Fullscreen,
-                    contentDescription = "Fullscreen",
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-
-            // Resolution Dropdown
-            Box {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(Color(0xFF1B1B26))
-                        .border(1.dp, Color(0xFF2E2E40), RoundedCornerShape(7.dp))
-                        .clickable { showResolutionDropdown = true }
-                        .padding(horizontal = 7.dp, vertical = 4.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = resolution,
-                            color = Color(0xFFD1D5DB),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 10.sp
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Resolution",
-                            tint = Color(0xFF9CA3AF),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-
-                androidx.compose.material3.DropdownMenu(
-                    expanded = showResolutionDropdown,
-                    onDismissRequest = { showResolutionDropdown = false },
-                    modifier = Modifier.background(ApexPalette.BgElevated)
-                ) {
-                    listOf("720P", "1080P", "1440P", "4K").forEach { res ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = res,
-                                    color = if (res == resolution) Color(0xFF8B5CF6) else Color.White,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            },
-                            onClick = {
-                                onSelectResolution(res)
-                                showResolutionDropdown = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Compact Export Button
-            Box(
-                modifier = Modifier
+                    .height(30.dp)
+                    .widthIn(min = 72.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
-                        )
-                    )
-                    .clickable(onClick = onExport)
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
+                    .clickable(enabled = resolutionEnabled, onClick = { showResolutionDropdown = true }, role = Role.Button)
+                    .semantics {
+                        contentDescription = "Resolution: $resolution; preview ${if (isCoverMode) "cover" else "fit"}"
+                    }
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Upload,
-                        contentDescription = "Export",
-                        tint = Color.White,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "Export",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        softWrap = false
+                Text(resolution, color = EditorPalette.TextPrimary, fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp, maxLines = 1, softWrap = false)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = EditorPalette.TextSecondary,
+                    modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = showResolutionDropdown,
+                onDismissRequest = { showResolutionDropdown = false },
+                modifier = Modifier.background(EditorPalette.BgSurface)
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (isCoverMode) "Preview: Cover" else "Preview: Fit", color = EditorPalette.TextPrimary) },
+                    onClick = {
+                        onToggleCoverMode()
+                        showResolutionDropdown = false
+                    }
+                )
+                HorizontalDivider(color = EditorPalette.Divider)
+                listOf("720P", "1080P", "1440P", "4K").forEach { res ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(res, color = if (res == resolution) EditorPalette.NeonCyan else EditorPalette.TextPrimary,
+                                fontWeight = FontWeight.SemiBold)
+                        },
+                        onClick = {
+                            onSelectResolution(res)
+                            showResolutionDropdown = false
+                        }
                     )
                 }
             }
+        }
+
+        Row(
+            modifier = Modifier
+                .height(30.dp)
+                .widthIn(min = 78.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(EditorPalette.GradientPrimary)
+                .clickable(enabled = exportEnabled, onClick = onExport, role = Role.Button)
+                .semantics { contentDescription = "Export" }
+                .padding(horizontal = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(Icons.Default.Upload, contentDescription = null, tint = EditorPalette.TextPrimary,
+                modifier = Modifier.size(15.dp))
+            Text("Export", color = EditorPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
         }
     }
 }
 
+/** Small original Compose vector mark; no raster or remote branding dependency. */
+@Composable
+private fun ApexStudioMark(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        // Open, rounded play-ribbon mark from the approved editor branding.
+        val ribbon = Path().apply {
+            moveTo(w * .28f, h * .10f)
+            lineTo(w * .89f, h * .45f)
+            quadraticTo(w * .98f, h * .50f, w * .89f, h * .56f)
+            lineTo(w * .30f, h * .91f)
+            lineTo(w * .30f, h * .47f)
+        }
+        drawPath(ribbon, Brush.linearGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple,
+            EditorPalette.NeonPink)), style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = w * .13f, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        drawLine(EditorPalette.NeonCyan,
+            start = androidx.compose.ui.geometry.Offset(w * .08f, h * .21f),
+            end = androidx.compose.ui.geometry.Offset(w * .08f, h * .79f),
+            strokeWidth = w * .12f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    }
+}

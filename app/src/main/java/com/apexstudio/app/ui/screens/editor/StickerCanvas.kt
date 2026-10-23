@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
@@ -119,20 +120,9 @@ fun StickerCanvas(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Tap = hit-test stickers topmost-first: a hit selects
-                // that sticker, a miss deselects. Drags on a sticker are
-                // consumed by the item's transform detector, so they
-                // never arrive here as taps.
-                .pointerInput(activeStickers, selectedStickerId) {
-                    detectTapGestures(
-                        onTap = { pos ->
-                            val hit = activeStickers.asReversed().firstOrNull { s ->
-                                stickerHitTest(s, pos, canvasWpx, canvasHpx, currentTimeMs)
-                            }
-                            onSelectSticker(hit?.id)
-                        }
-                    )
-                }
+                // No full-viewport pointerInput: this canvas is a sibling
+                // above PiP/video. Even an unconsumed miss would prevent
+                // Compose from hit-testing the lower sibling.
         ) {
             for (sticker in activeStickers) {
                 key(sticker.id) {
@@ -143,6 +133,7 @@ fun StickerCanvas(
                         canvasWpx = canvasWpx,
                         canvasHpx = canvasHpx,
                         imageCache = imageCache,
+                        onSelectSticker = onSelectSticker,
                         onMoveSticker = onMoveSticker,
                         onScaleSticker = onScaleSticker,
                         onRotateSticker = onRotateSticker,
@@ -225,6 +216,7 @@ private fun StickerItem(
     canvasWpx: Float,
     canvasHpx: Float,
     imageCache: StickerImageCache,
+    onSelectSticker: (String?) -> Unit,
     onMoveSticker: (id: String, dx: Float, dy: Float, persist: Boolean) -> Unit,
     onScaleSticker: (id: String, scale: Float, persist: Boolean) -> Unit,
     onRotateSticker: (id: String, deltaDeg: Float, persist: Boolean) -> Unit,
@@ -275,6 +267,10 @@ private fun StickerItem(
             .graphicsLayer {
                 rotationZ = effRotation
                 alpha = effOpacity
+            }
+            .testTag("sticker-item-${sticker.id}")
+            .pointerInput(sticker.id, isSelected) {
+                detectTapGestures(onTap = { onSelectSticker(if (isSelected) null else sticker.id) })
             }
             .pointerInput(sticker.id) {
                 // detectTransformGestures has no end callback, so re-arm it

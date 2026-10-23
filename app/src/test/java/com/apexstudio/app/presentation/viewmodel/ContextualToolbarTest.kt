@@ -6,9 +6,17 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.ui.screens.editor.CONTEXTUAL_MORE_TOOL_ORDER
+import com.apexstudio.app.ui.screens.editor.CONTEXTUAL_PRIMARY_TOOL_ORDER
 import com.apexstudio.app.ui.screens.editor.ToolbarSelectionKind
+import com.apexstudio.app.ui.screens.editor.prepareMainMediaPickerLaunch
 import com.apexstudio.app.ui.screens.editor.resolveToolbarSelection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -62,6 +70,25 @@ class ContextualToolbarTest {
         selectedClipId = selectedClipId,
         selectedAudioTrackId = selectedAudioTrackId
     )
+
+    // --- Toolbar layout contract ---
+
+    @Test
+    fun `primary tools follow approved compact order`() {
+        assertEquals(
+            listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"),
+            CONTEXTUAL_PRIMARY_TOOL_ORDER
+        )
+    }
+
+    @Test
+    fun `More retains the supported secondary tool routes`() {
+        assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
+        assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
+            "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
+            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
+        )))
+    }
 
     // --- resolveToolbarSelection ---
 
@@ -227,6 +254,51 @@ class ContextualToolbarTest {
         assertEquals(1000L, replaced.trimStartMs)
         assertEquals(8000L, replaced.trimEndMs)
         assertNull(vm.state.value.pendingReplaceClipId)
+    }
+
+    @Test
+    fun `fresh Media pick clears canceled replace so production add route preserves existing clip`() {
+        val mainDispatcher = UnconfinedTestDispatcher()
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+            val original = videoClip().copy(uri = "file:///original.mp4")
+            val project = Project(id = "fresh-media-regression", name = "Media regression", durationMs = 10_000L, clips = listOf(original))
+            kotlinx.coroutines.runBlocking {
+                com.apexstudio.app.data.repository.ProjectRepository(context).saveProject(project)
+            }
+            val vm = EditorViewModel(context = context, projectId = project.id)
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeout(10_000L) {
+                    vm.state.first { it.project?.id == project.id }
+                }
+            }
+            vm.setPendingReplaceClip(original.id)
+
+            // This is the production preparation step used immediately before
+            // launching the default main-timeline Media picker.
+            prepareMainMediaPickerLaunch(vm)
+            assertNull(vm.state.value.pendingReplaceClipId)
+
+            val picked = MediaMetadata(
+                uri = "file:///fresh.jpg",
+                name = "fresh.jpg",
+                durationMs = 3000L,
+                width = 1280,
+                height = 720,
+                fps = 30,
+                type = ClipType.IMAGE
+            )
+            // The EditorScreen result collector's normal (non-replace) branch.
+            vm.onMediaPicked(listOf(picked), replace = false)
+
+            val clips = vm.state.value.project!!.clips
+            assertEquals(2, clips.size)
+            assertEquals(original.uri, clips.first { it.id == original.id }.uri)
+            assertTrue(clips.any { it.uri == picked.uri && it.id != original.id })
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

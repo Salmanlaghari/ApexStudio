@@ -14,17 +14,38 @@ import kotlinx.coroutines.launch
  */
 private const val POSITION_STATE_SYNC_MIN_INTERVAL_MS = 100L
 
+/** Persist the selected main-track clip's composition placement choice. */
+fun EditorViewModel.setVideoFitMode(clipId: String, mode: VideoFitMode) {
+    val project = _state.value.project ?: return
+    val clip = project.clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.type != ClipType.VIDEO || clip.videoFitMode == mode) return
+    pushUndo()
+    _state.update { state ->
+        val current = state.project ?: return@update state
+        state.copy(project = current.copy(clips = current.clips.map {
+            if (it.id == clipId) it.copy(videoFitMode = mode) else it
+        }))
+    }
+    persistProject()
+}
+
 
 fun EditorViewModel.togglePlay() = setPlaying(!_state.value.isPlaying)
 
 fun EditorViewModel.setPlaying(v: Boolean) {
+    // Replay is a project seek, not a seek to the last selected source's trim head.
+    // Reset both clocks before observers start the video and placed-audio players.
+    if (v && !_state.value.isPlaying && _state.value.durationMs > 0L && livePlayheadMs() >= _state.value.durationMs) {
+        seekTo(0L)
+    }
     _state.update { it.copy(isPlaying = v) }
     // Pausing: flush the live position into the state mirror so every
     // state reader (timecode, trim panel, split) sees the exact frame
     // playback stopped on, not a up-to-100ms-stale mirror.
     if (!v) {
-        val live = livePlayheadMs()
+        val live = livePlayheadMs().coerceIn(0L, _state.value.durationMs.coerceAtLeast(0L))
         lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
+        _playerPosition.value = live
         _state.update { it.copy(playerPositionMs = live, currentTimeMs = live) }
     }
 }
@@ -41,11 +62,16 @@ fun EditorViewModel.seekTo(ms: Long) {
 }
 
 fun EditorViewModel.stepFrame(forward: Boolean) {
+    // Stop playback before moving the playhead: otherwise the player loop
+    // can immediately replace the frame we just stepped to.
+    setPlaying(false)
     // Step from the LIVE playhead: the state mirror can lag it by up to
     // 100ms, and stepping from the stale mirror would jump backwards.
-    val step = 33L
     val base = livePlayheadMs()
-    val next = if (forward) base + step else (base - step).coerceAtLeast(0)
+    val state = _state.value
+    val duration = state.durationMs.coerceAtLeast(0L)
+    val fps = state.project?.fps?.takeIf { it > 0 } ?: 60
+    val next = TimelineFrameMath.step(base, forward, fps, duration)
     _playerPosition.value = next
     lastPositionStateSyncAtMs = android.os.SystemClock.uptimeMillis()
     _state.update { it.copy(currentTimeMs = next, playerPositionMs = next) }
@@ -262,7 +288,12 @@ internal fun EditorViewModel.updateClip(
 ) {
     _state.update { s ->
         val proj = s.project ?: return@update s
-        val newClips = proj.clips.map { if (it.id == clipId) transform(it) else it }
+        val newClips = proj.clips.map { original ->
+            if (original.id != clipId) original else {
+                val changed = transform(original)
+                if (changed.uri != original.uri) changed.copy(faceCropTrack = null) else changed
+            }
+        }
         s.copy(project = proj.copy(clips = newClips))
     }
     if (persist) persistProject()
@@ -282,6 +313,9 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
             scale = transform.scale,
             rotationDeg = transform.rotationDeg,
             opacity = transform.opacity,
+            volume = transform.volume,
+            effectIntensity = transform.effectIntensity,
+            filterIntensity = transform.filterIntensity,
             // Pin the current effective saturation (1f when nothing
             // pins it) so a later saturation pin interpolates from
             // the value the clip actually had at this keyframe
@@ -300,7 +334,11 @@ fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: Animate
  * - A keyframe within 150ms of [timeMs] is UPDATED in place — only
  *   the changed parameter moves (all other fields, including the
  *   saturation pin, are preserved). No new keyframe, no undo entry
- *   (drag streams call this repeatedly).
+ *   (drag streams call this repeatedly). This is an intentional gesture
+ *   sampling window (not a frame-duration estimate): pinch-while-playing
+ *   relies on it to avoid creating a keyframe on every playback frame.
+ *   Keep it separate from frame stepping unless the gesture sampling policy
+ *   is changed as well.
  * - Otherwise, if the track is non-empty, a NEW keyframe is inserted
  *   at [timeMs] (other fields = interpolated values at [timeMs],
  *   saturation pins the current effective factor) with one undo entry.
@@ -427,12 +465,36 @@ fun EditorViewModel.removeKeyframe(clipId: String, keyframeId: String) {
 
 
 fun EditorViewModel.clearKeyframes(clipId: String) {
+    if (_state.value.project?.clips?.none { it.id == clipId && it.keyframes.keyframes.isNotEmpty() } != false) return
+    pushUndo()
     updateClip(clipId) { it.copy(keyframes = KeyframeTrack()) }
+}
+
+/** Paste a pin as a single undoable edit, replacing only an exact-time collision. */
+fun EditorViewModel.pasteKeyframe(clipId: String, source: Keyframe, timeMs: Long) {
+    val project = _state.value.project ?: return
+    if (project.clips.none { it.id == clipId }) return
+    val targetTime = timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    pushUndo()
+    updateClip(clipId) { clip ->
+        val existing = clip.keyframes.keyframes.firstOrNull { it.timeMs == targetTime }
+        val pasted = source.copy(id = existing?.id ?: java.util.UUID.randomUUID().toString(), timeMs = targetTime)
+        clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.timeMs != targetTime } + pasted).sorted())
+    }
 }
 
 
 fun EditorViewModel.setKeyframePanelOpen(open: Boolean) =
-    _state.update { it.copy(keyframePanelOpen = open) }
+    _state.update { it.copy(keyframePanelOpen = open, keyframePropertyFilter = if (open) it.keyframePropertyFilter else null) }
+
+/** Opens the actual horizontally-scrolling manual keyframe editor on one property. */
+fun EditorViewModel.openKeyframePropertyPanel(property: String) {
+    require(property in setOf("POSITION", "SCALE", "ROTATION", "OPACITY"))
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = property) }
+}
+
+fun EditorViewModel.openKeyframeAnimationPanel() =
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = null) }
 
 
 fun EditorViewModel.toggleKeyframeAtPlayhead() {
@@ -446,6 +508,72 @@ fun EditorViewModel.toggleKeyframeAtPlayhead() {
         val currentTransform = clip.keyframes.interpolateAt(playheadMs)
         addKeyframe(clipId, playheadMs, currentTransform)
     }
+}
+
+/** Project-frame identity for APIs used by the frame-precise inspector. */
+private fun EditorViewModel.projectFrameIndex(timeMs: Long): Long {
+    val fps = _state.value.project?.fps?.takeIf { it > 0 } ?: 60
+    return kotlin.math.round(timeMs.toDouble() * fps / 1_000.0).toLong()
+}
+
+private fun EditorViewModel.projectFrameTimeMs(frameIndex: Long): Long {
+    val state = _state.value
+    val fps = state.project?.fps?.takeIf { it > 0 } ?: 60
+    return TimelineFrameMath.frameTimeMs(frameIndex.coerceAtLeast(0L), fps)
+        .coerceAtMost(state.durationMs.coerceAtLeast(0L))
+}
+
+/**
+ * Toggle a keyframe at the live playhead using project-frame identity.
+ * Unlike [toggleKeyframeAtPlayhead], this deliberately does not use the
+ * legacy 150ms touch-gesture tolerance.
+ */
+fun EditorViewModel.toggleFrameKeyframeAtPlayheadFor(clipId: String): Boolean {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
+    val playheadMs = livePlayheadMs()
+    val frame = projectFrameIndex(playheadMs)
+    val existing = clip.keyframes.keyframes.firstOrNull { projectFrameIndex(it.timeMs) == frame }
+    if (existing != null) {
+        removeKeyframe(clipId, existing.id)
+    } else {
+        val frameTimeMs = projectFrameTimeMs(frame)
+        addKeyframe(clipId, frameTimeMs, clip.keyframes.interpolateAt(frameTimeMs))
+    }
+    return true
+}
+
+/**
+ * Set one parameter on the keyframe for [timeMs]'s project frame, or add
+ * one sampled from the current transform when that frame has no keyframe.
+ * This frame-exact path is separate from the legacy 150ms gesture upsert.
+ */
+fun EditorViewModel.upsertFrameKeyframeParam(
+    clipId: String,
+    timeMs: Long,
+    param: KeyframeParam,
+    value: Float
+): Boolean {
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
+    val frame = projectFrameIndex(timeMs)
+    val existing = clip.keyframes.keyframes.firstOrNull { projectFrameIndex(it.timeMs) == frame }
+    if (existing != null) {
+        if (existing.withParam(param, value) != existing) {
+            pushUndo()
+            updateKeyframe(clipId, existing.id) { it.withParam(param, value) }
+        }
+        return true
+    }
+
+    // addKeyframe owns the discrete undo entry and samples/pins every other
+    // transform value; updateKeyframe then changes only the requested field.
+    val frameTimeMs = projectFrameTimeMs(frame)
+    val sampled = clip.keyframes.interpolateAt(frameTimeMs)
+    addKeyframe(clipId, frameTimeMs, sampled)
+    val inserted = _state.value.project?.clips?.firstOrNull { it.id == clipId }
+        ?.keyframes?.keyframes?.firstOrNull { it.timeMs == frameTimeMs }
+        ?: return false
+    updateKeyframe(clipId, inserted.id) { it.withParam(param, value) }
+    return true
 }
 
 
@@ -533,6 +661,33 @@ fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
 }
 
 
+fun EditorViewModel.applyConfiguredAnimationPreset(
+    preset: com.apexstudio.app.data.animation.AnimationPresetType,
+    mode: com.apexstudio.app.data.animation.AnimationPresetMode,
+    durationMs: Long,
+    intensity: Float
+): Boolean {
+    val state = _state.value
+    val project = state.project ?: return false
+    val clip = state.keyframeAnchor() ?: return false
+    val span = clip.effectiveDurationMs().coerceAtLeast(1L)
+    val requested = durationMs.coerceIn(
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MIN_DURATION_MS,
+        com.apexstudio.app.data.animation.AnimationPresetOptions.MAX_DURATION_MS)
+    val actualDuration = minOf(requested, span)
+    val clipStart = SpeedCurveMath.timelineStartMsForClip(project.clips, clip)
+    val start = if (mode == com.apexstudio.app.data.animation.AnimationPresetMode.OUT)
+        clipStart + span - actualDuration else clipStart
+    val generated = com.apexstudio.app.data.animation.AnimationPresetOptions.createTrack(
+        preset, mode, requested, intensity.takeIf { it.isFinite() } ?: 1f)
+    val track = KeyframeTrack(generated.keyframes.map { pin ->
+        pin.copy(timeMs = start + (pin.timeMs.toDouble() / requested * actualDuration).toLong())
+    }).sorted()
+    pushUndo()
+    updateClip(clip.id) { it.copy(keyframes = track) }
+    return true
+}
+
 fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animation.AnimationPresetType) {
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
     val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
@@ -554,27 +709,61 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
 }
 
 
+private fun EditorViewModel.undoSnapshot(): EditorUndoSnapshot? = _state.value.let { s ->
+    s.project?.let { EditorUndoSnapshot(it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers) }
+}
+
+private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
+    val duration = snapshot.project.durationMs.coerceAtLeast(0L)
+    val position = livePlayheadMs().coerceIn(0L, duration)
+    _playerPosition.value = position
+    _audio.update { it.copy(tracks = snapshot.project.audioTracks) }
+    _state.update { state ->
+        state.copy(
+            project = snapshot.project,
+            durationMs = duration,
+            playerPositionMs = position,
+            currentTimeMs = position,
+            hiddenVideoLayers = snapshot.hiddenVideoLayers,
+            lockedVideoLayers = snapshot.lockedVideoLayers,
+            extraVideoLayers = snapshot.extraVideoLayers,
+            selectedClipId = state.selectedClipId?.takeIf { id ->
+                snapshot.project.clips.any { it.id == id }
+            },
+            selectedOverlayClipId = state.selectedOverlayClipId?.takeIf { id ->
+                snapshot.project.clips.any { it.id == id && it.type == ClipType.OVERLAY }
+            },
+            selectedTextOverlayId = state.selectedTextOverlayId?.takeIf { id ->
+                snapshot.project.clips.any { clip -> clip.textOverlays.any { it.id == id } }
+            },
+            selectedStickerId = state.selectedStickerId?.takeIf { id ->
+                snapshot.project.stickers.any { it.id == id }
+            },
+            selectedAudioTrackId = state.selectedAudioTrackId?.takeIf { id ->
+                snapshot.project.audioTracks.any { it.id == id }
+            },
+            canUndo = undoStack.isNotEmpty(),
+            canRedo = redoStack.isNotEmpty(),
+        )
+    }
+    persistProject()
+}
+
 fun EditorViewModel.undo() = viewModelScope.launch {
-    val current = _state.value.project?.clips ?: return@launch
+    val current = undoSnapshot() ?: return@launch
     if (undoStack.isEmpty()) return@launch
     redoStack.addLast(current)
     val prev = undoStack.removeLast()
-    _state.update {
-        it.copy(project = it.project?.copy(clips = prev),
-            canUndo = undoStack.isNotEmpty(), canRedo = true)
-    }
+    restoreUndoSnapshot(prev)
 }
 
 
 fun EditorViewModel.redo() = viewModelScope.launch {
-    val current = _state.value.project?.clips ?: return@launch
+    val current = undoSnapshot() ?: return@launch
     if (redoStack.isEmpty()) return@launch
     undoStack.addLast(current)
     val next = redoStack.removeLast()
-    _state.update {
-        it.copy(project = it.project?.copy(clips = next),
-            canUndo = true, canRedo = redoStack.isNotEmpty())
-    }
+    restoreUndoSnapshot(next)
 }
 
 
@@ -619,6 +808,14 @@ private fun rippleOverlays(
 }
 
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
+    val source = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    if (source.durationMs <= 0L) return
+    val requestedStart = startMs.coerceIn(0L, (source.durationMs - 1L).coerceAtLeast(0L))
+    val requestedEnd = endMs.coerceIn(
+        requestedStart + minOf(100L, source.durationMs - requestedStart),
+        source.durationMs
+    )
+    if (requestedStart == source.trimStartMs && requestedEnd == source.trimEndMs) return
     pushUndo()
     // Clamp from the LIVE playhead (the state mirror can lag it by up
     // to 100ms) for the STATE mirror. The LIVE flow is clamped
@@ -636,30 +833,37 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
         val trimTarget = proj.clips.firstOrNull { it.id == clipId }
         var rippled = proj.clips
         if (trimTarget != null && isMainTrack(trimTarget)) {
-            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 100L).coerceAtLeast(0L))
+            val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 1L).coerceAtLeast(0L))
             // Guard the clamp: minOf keeps coerceIn's min <= max when
             // the clip is under 100ms (Kilo CRITICAL: IllegalArgumentException).
             val safeEnd = endMs.coerceIn(
-                minOf(safeStart + 100L, trimTarget.durationMs).coerceAtLeast(safeStart),
+                safeStart + minOf(100L, trimTarget.durationMs - safeStart),
                 trimTarget.durationMs
             )
             val oldDur = trimTarget.effectiveDurationMs()
-            val newDur = com.apexstudio.app.domain.model.SpeedCurveMath.effectiveDurationMs(
-                safeEnd - safeStart, trimTarget.speedPoints
-            )
+            val newDur = trimTarget.copy(trimStartMs = safeStart, trimEndMs = safeEnd).effectiveDurationMs()
             val anchor = v1StartBefore(proj.clips, clipId) + minOf(oldDur, newDur)
             rippled = rippleOverlays(proj.clips, anchor, newDur - oldDur)
         }
         val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
-                val safeStart = startMs.coerceIn(0L, (c.durationMs - 100L).coerceAtLeast(0L))
+                // Preserve a valid requested source in-point even when less than 100 ms
+                // remains. Pulling the opposite handle backward makes a tail trim jump.
+                val safeStart = startMs.coerceIn(0L, (c.durationMs - 1L).coerceAtLeast(0L))
                 val safeEnd = endMs.coerceIn(
-                    minOf(safeStart + 100L, c.durationMs).coerceAtLeast(safeStart),
+                    safeStart + minOf(100L, c.durationMs - safeStart),
                     c.durationMs
                 )
+                // Overlays use absolute timeline placement, so moving the
+                // source head either way also moves the left edge. V1 is
+                // laid out cumulatively and does not use this adjustment.
+                val overlayStartShift = overlayTimelineStartShift(c, safeStart, safeEnd)
                 c.copy(
                     trimStartMs = safeStart,
-                    trimEndMs = safeEnd
+                    trimEndMs = safeEnd,
+                    timelineOffsetMs = if (c.type == ClipType.OVERLAY) {
+                        (c.timelineOffsetMs + overlayStartShift).coerceAtLeast(0L)
+                    } else c.timelineOffsetMs
                 )
             } else c
         }
@@ -689,17 +893,25 @@ fun EditorViewModel.closeTrimPanel() = _state.update { it.copy(trimPanelOpen = f
 
 
 fun EditorViewModel.setTrimStartAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
     val newStart = playhead.coerceIn(0L, (clip.trimEndMs - 100L).coerceAtLeast(0L))
     trimClip(clipId, newStart, clip.trimEndMs)
 }
 
 
 fun EditorViewModel.setTrimEndAtPlayhead(clipId: String) {
-    val playhead = livePlayheadMs()
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val newEnd = playhead.coerceIn(clip.trimStartMs + 100L, clip.durationMs)
+    val clips = _state.value.project?.clips ?: return
+    val clip = clips.firstOrNull { it.id == clipId } ?: return
+    if (clip.durationMs <= 0L) return
+    val playhead = ClipTimeMapping.sourceAtProjectTime(clips, clip, livePlayheadMs())
+    // A valid short clip (or a restored in-point close to the source end) may have
+    // less than 100 ms remaining. Never construct a reversed coerceIn range.
+    val start = clip.trimStartMs.coerceIn(0L, clip.durationMs)
+    val minimumEnd = start + minOf(100L, clip.durationMs - start)
+    val newEnd = playhead.coerceIn(minimumEnd, clip.durationMs)
     trimClip(clipId, clip.trimStartMs, newEnd)
 }
 
@@ -770,7 +982,8 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                             uri = result.outputUri,
                             durationMs = result.durationMs,
                             trimStartMs = 0L,
-                            trimEndMs = result.durationMs
+                            trimEndMs = result.durationMs,
+                            faceCropTrack = null,
                         )
                         _state.update { s ->
                             val p = s.project ?: return@update s
@@ -849,8 +1062,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
         // offset + (sourceSplit - trimStart) — the old code kept the
         // original offset, so both halves overlapped exactly.
         val isOverlay = c.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+        val isMainVideo = c.trackIndex == 0 && c.type == ClipType.VIDEO
         val sourceSplit = if (isOverlay) {
             c.trimStartMs + (atMs - c.timelineOffsetMs)
+        } else if (isMainVideo) {
+            ClipTimeMapping.sourceAtProjectTime(p.clips, c, atMs)
         } else atMs
         val safeSplit = sourceSplit.coerceIn(c.trimStartMs + 100L, (c.trimEndMs - 100L).coerceAtLeast(c.trimStartMs + 100L))
 
@@ -859,7 +1075,9 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             id = "clip_${System.currentTimeMillis()}_split",
             trimStartMs = safeSplit,
             trimEndMs = originalEnd,
-            durationMs = originalEnd - safeSplit,
+            // Overlay and V1 trim bounds remain in source-time coordinates;
+            // retain the original source-duration ceiling for later trim edits.
+            durationMs = if (isOverlay || isMainVideo) c.durationMs else originalEnd - safeSplit,
             // Second half starts where the first half ends.
             timelineOffsetMs = if (isOverlay) {
                 c.timelineOffsetMs + (safeSplit - c.trimStartMs)
@@ -868,7 +1086,12 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
         val updatedClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
         for (clip in p.clips) {
             if (clip.id == clipId) {
-                updatedClips.add(clip.copy(trimEndMs = safeSplit, durationMs = safeSplit - clip.trimStartMs))
+                updatedClips.add(
+                    clip.copy(
+                        trimEndMs = safeSplit,
+                        durationMs = if (isOverlay || isMainVideo) clip.durationMs else safeSplit - clip.trimStartMs
+                    )
+                )
                 updatedClips.add(newClip)
             } else {
                 updatedClips.add(clip)
@@ -1088,7 +1311,9 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
 
 
 internal fun EditorViewModel.pushUndo() {
-    val current = _state.value.project?.clips ?: return
+    val state = _state.value
+    val project = state.project ?: return
+    val current = EditorUndoSnapshot(project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers)
     undoStack.addLast(current)
     if (undoStack.size > 50) undoStack.removeFirst()
     redoStack.clear()
@@ -1197,6 +1422,7 @@ const val MAX_VIDEO_LAYERS = 10
 /** Toggle a video layer's visibility (eye). Hidden layers are skipped in preview, export and timeline. */
 fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
     val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    pushUndo()
     _state.update { s ->
         val hidden = s.hiddenVideoLayers.toMutableSet()
         if (l in hidden) hidden.remove(l) else hidden.add(l)
@@ -1208,6 +1434,7 @@ fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
 /** Toggle a video layer's lock. Locked layers can't be edited until unlocked. */
 fun EditorViewModel.toggleVideoLayerLock(layer: Int) {
     val l = layer.coerceIn(0, MAX_VIDEO_LAYERS - 1)
+    pushUndo()
     _state.update { s ->
         val locked = s.lockedVideoLayers.toMutableSet()
         if (l in locked) locked.remove(l) else locked.add(l)
@@ -1344,6 +1571,10 @@ fun computeTimelineDurationMs(
         .filter { it.trackIndex != 0 }
         .maxOfOrNull { it.timelineOffsetMs + it.effectiveDurationMs() }
         ?: 0L
-    val audioMaxEndMs = audioTracks.maxOfOrNull { it.trimEndMs } ?: 0L
+    // Audio trim bounds are source coordinates. Its project end is the
+    // persisted placement plus the playable source span.
+    val audioMaxEndMs = audioTracks.maxOfOrNull {
+        it.startTimeMs.coerceAtLeast(0L) + (it.trimEndMs - it.trimStartMs).coerceAtLeast(0L)
+    } ?: 0L
     return maxOf(v1SequentialMs, overlayMaxEndMs, audioMaxEndMs).coerceAtLeast(1000L)
 }

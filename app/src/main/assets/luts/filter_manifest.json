@@ -1,6 +1,18 @@
 {
   "categories": [
     {
+      "id": "creator_essentials",
+      "name": "Creator Essentials",
+      "filters": [
+        "creator_clean",
+        "creator_peach",
+        "creator_travel",
+        "creator_matte",
+        "creator_night",
+        "creator_mono"
+      ]
+    },
+    {
       "id": "cinematic",
       "name": "Cinematic",
       "filters": [
@@ -133,9 +145,56 @@
         "synthwave_blue",
         "laser_grid"
       ]
+    },
+    {
+      "id": "original",
+      "name": "Original Looks",
+      "filters": [
+        "apex_aurora_soft",
+        "apex_copper_city",
+        "apex_botanical_film",
+        "apex_midnight_cyan",
+        "apex_pastel_lift"
+      ]
     }
   ],
   "filters": [
+    {
+      "id": "creator_clean",
+      "name": "Clean Studio",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_clean.cube"
+    },
+    {
+      "id": "creator_peach",
+      "name": "Peach Portrait",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_peach.cube"
+    },
+    {
+      "id": "creator_travel",
+      "name": "Travel Pop",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_travel.cube"
+    },
+    {
+      "id": "creator_matte",
+      "name": "Matte Story",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_matte.cube"
+    },
+    {
+      "id": "creator_night",
+      "name": "Night Editorial",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_night.cube"
+    },
+    {
+      "id": "creator_mono",
+      "name": "Soft Silver",
+      "category": "Creator Essentials",
+      "asset": "luts/creator_mono.cube"
+    },
     {
       "id": "teal_orange",
       "name": "Teal & Orange",
@@ -723,6 +782,36 @@
       "name": "Cine Natural",
       "category": "Cinematic",
       "asset": "luts/cine_natural.cube"
+    },
+    {
+      "id": "apex_aurora_soft",
+      "name": "Apex Aurora Soft",
+      "category": "Original",
+      "asset": "luts/apex_aurora_soft.cube"
+    },
+    {
+      "id": "apex_copper_city",
+      "name": "Apex Copper City",
+      "category": "Original",
+      "asset": "luts/apex_copper_city.cube"
+    },
+    {
+      "id": "apex_botanical_film",
+      "name": "Apex Botanical Film",
+      "category": "Original",
+      "asset": "luts/apex_botanical_film.cube"
+    },
+    {
+      "id": "apex_midnight_cyan",
+      "name": "Apex Midnight Cyan",
+      "category": "Original",
+      "asset": "luts/apex_midnight_cyan.cube"
+    },
+    {
+      "id": "apex_pastel_lift",
+      "name": "Apex Pastel Lift",
+      "category": "Original",
+      "asset": "luts/apex_pastel_lift.cube"
     }
   ]
 }

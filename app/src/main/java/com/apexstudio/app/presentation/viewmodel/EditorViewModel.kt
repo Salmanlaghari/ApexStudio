@@ -15,6 +15,10 @@ import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
+import com.apexstudio.app.ai.AiCancellationToken
+import com.apexstudio.app.data.aireport.AiContentReportReason
+import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.aireport.FileAiContentReportStore
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
@@ -23,6 +27,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** In-memory undo unit: preserve every project lane plus editor-only layer flags. */
+internal data class EditorUndoSnapshot(
+    val project: Project,
+    val hiddenVideoLayers: Set<Int>,
+    val lockedVideoLayers: Set<Int>,
+    val extraVideoLayers: Set<Int>,
+) : List<MediaClip> by project.clips
 
 
 class EditorViewModel(
@@ -33,6 +45,18 @@ class EditorViewModel(
 
     internal val _state = MutableStateFlow(EditorState())
     val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    private val aiContentReportController = AiContentReportController(
+        store = context?.let { FileAiContentReportStore(java.io.File(it.filesDir, "ai-content-reports")) },
+        scope = viewModelScope
+    )
+    val aiContentReportState: StateFlow<AiContentReportUiState> = aiContentReportController.state
+
+    fun submitAiContentReport(target: AiContentReportTarget?, reason: AiContentReportReason) {
+        aiContentReportController.submit(target, reason)
+    }
+
+    fun clearAiContentReportFeedback() = aiContentReportController.clearFeedback()
 
     /**
      * Auto-caption UI state (Whisper). Instance-scoped so it can't
@@ -47,6 +71,22 @@ class EditorViewModel(
      */
     internal var captionJob: Job? = null
 
+    /** Offline heuristic scene/trim/crop analysis; never a learned-model result. */
+    internal val _localAnalysis = MutableStateFlow(LocalAnalysisUiState())
+    val localAnalysis: StateFlow<LocalAnalysisUiState> = _localAnalysis.asStateFlow()
+    internal var localAnalysisJob: Job? = null
+    internal var localAnalysisToken: AiCancellationToken? = null
+
+    /** Sparse offline face-track suggestions are review-only and separate from protected AI actions. */
+    internal val _faceTrackReview = MutableStateFlow(FaceTrackReviewUiState())
+    val faceTrackReview: StateFlow<FaceTrackReviewUiState> = _faceTrackReview.asStateFlow()
+    internal var faceTrackReviewJob: Job? = null
+    internal var faceTrackReviewToken: AiCancellationToken? = null
+
+    internal val _gestureEditing = MutableStateFlow(GestureEditingUiState())
+    val gestureEditing: StateFlow<GestureEditingUiState> = _gestureEditing.asStateFlow()
+    internal var editorGestureSession: EditorGestureSession? = null
+
     /**
      * Background-replace UI state (MediaPipe person segmentation,
      * PR-G). Instance-scoped so it can't bleed between editors.
@@ -59,6 +99,14 @@ class EditorViewModel(
      * the user taps Cancel or leaves the editor.
      */
     internal var backgroundJob: Job? = null
+
+    /** Offline ESPCN render request; scoped to this editor and cancelled with its lifecycle. */
+    internal val _videoUpscaleUi = MutableStateFlow(VideoUpscaleUiState())
+    val videoUpscaleUi: StateFlow<VideoUpscaleUiState> = _videoUpscaleUi.asStateFlow()
+    internal var videoUpscaleJob: Job? = null
+
+    /** Captured on opening the recorder, independent of recording-time playback. */
+    internal var voiceOverStartMs: Long = 0L
 
     /**
      * Live playback position, updated on EVERY position tick (~30/s) by
@@ -86,6 +134,9 @@ class EditorViewModel(
 
     internal val _export = MutableStateFlow(ExportState())
     val export: StateFlow<ExportState> = _export.asStateFlow()
+
+    @Volatile internal var photoExportRun: Any? = null
+    internal var photoExportJob: Job? = null
 
     internal val _color = MutableStateFlow(ColorToolState())
     val color: StateFlow<ColorToolState> = _color.asStateFlow()
@@ -116,8 +167,8 @@ class EditorViewModel(
     internal val _thumbnails = MutableStateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>>(emptyMap())
     val thumbnails: StateFlow<Map<String, List<Pair<Long, android.graphics.Bitmap>>>> = _thumbnails.asStateFlow()
 
-    internal val undoStack = ArrayDeque<List<MediaClip>>()
-    internal val redoStack = ArrayDeque<List<MediaClip>>()
+    internal val undoStack = ArrayDeque<EditorUndoSnapshot>()
+    internal val redoStack = ArrayDeque<EditorUndoSnapshot>()
 
     // Overlay editing: one undo entry per gesture / slider drag.
     // Armed by the first live update of an interaction, disarmed when
@@ -154,7 +205,8 @@ class EditorViewModel(
                             isExporting = st.isExporting,
                             progress = st.progress,
                             outputUri = st.outputUri,
-                            error = st.error
+                            error = st.error,
+                            warning = st.warning
                         )
                     }
                 }
@@ -171,6 +223,12 @@ class EditorViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        localAnalysisToken?.cancel()
+        localAnalysisJob?.cancel()
+        faceTrackReviewToken?.cancel()
+        faceTrackReviewJob?.cancel()
+        videoUpscaleJob?.cancel()
+        endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()
         exportEngine?.release()

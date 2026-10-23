@@ -1,103 +1,194 @@
 package com.apexstudio.app.data.audio
 
 import android.content.Context
+import android.media.AudioFormat
+import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
-import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.roundToInt
+import java.util.concurrent.CancellationException
 
 /**
- * Extracts a video's audio track as 16 kHz mono float PCM in [-1, 1] —
- * the format on-device speech models (Whisper, …) expect.
+ * Extracts a video's audio track as 16 kHz mono float PCM in [-1, 1], suitable for
+ * on-device speech models. Compressed track packets are decoded through MediaCodec,
+ * then decoder PCM is downmixed and linearly resampled in bounded chunks.
  *
- * Extracted from the old Vosk caption engine (since replaced by Whisper).
- * Pipeline: MediaExtractor -> first audio track -> raw PCM frames ->
- * downmix to mono -> linear resample to 16 kHz.
- *
- * All work is synchronous; callers run it on Dispatchers.IO.
+ * Work is synchronous; callers should invoke from Dispatchers.IO. The final FloatArray
+ * is necessarily resident in memory, but intermediate PCM is streamed without boxing.
  */
 object PcmAudioExtractor {
-
     private const val TAG = "PcmAudioExtractor"
-    const val TARGET_RATE = 16000
+    const val TARGET_RATE = 16_000
+    private const val CODEC_TIMEOUT_US = 10_000L
+    private const val STALL_TIMEOUT_NS = 30_000_000_000L
+    /** Maximum supported output duration; bounds the returned float samples to 28.8 million. */
+    const val MAX_DURATION_SECONDS = 30 * 60
+    private const val MAX_OUTPUT_SAMPLES = TARGET_RATE * MAX_DURATION_SECONDS
 
     /**
-     * @return mono float samples at 16 kHz, or null when the clip has no
-     *   decodable audio (caller must surface that — never silently skip).
+     * @return mono float samples at 16 kHz, or null when there is no audio track or
+     *   decoding fails. Audio longer than [MAX_DURATION_SECONDS] is rejected.
+     *   Unsupported MediaCodec PCM output encodings throw
+     *   [UnsupportedPcmEncodingException] instead of being misinterpreted.
+     * @param checkCancelled invoked while feeding and draining the decoder; may
+     *   throw (for example, kotlinx.coroutines.ensureActive's CancellationException).
      */
-    fun extractMono16k(context: Context, uri: Uri): FloatArray? {
-        val (pcm16, srcRate, channels) = readTrackPcm(context, uri) ?: return null
-        if (pcm16.isEmpty()) return null
-        // Downmix to mono.
-        val mono = if (channels > 1) {
-            FloatArray(pcm16.size / channels) { i ->
-                var acc = 0f
-                for (c in 0 until channels) acc += pcm16[i * channels + c]
-                acc / channels
-            }
-        } else pcm16
-        // Resample to 16 kHz if needed (linear interpolation).
-        if (srcRate == TARGET_RATE) return mono
-        val ratio = TARGET_RATE.toDouble() / srcRate
-        val outLen = (mono.size * ratio).roundToInt().coerceAtLeast(1)
-        return FloatArray(outLen) { i ->
-            val pos = i / ratio
-            val i0 = pos.toInt().coerceIn(0, mono.size - 1)
-            val i1 = (i0 + 1).coerceIn(0, mono.size - 1)
-            val frac = (pos - i0).toFloat()
-            mono[i0] * (1 - frac) + mono[i1] * frac
-        }
-    }
-
-    private data class RawPcm(val samples: FloatArray, val rate: Int, val channels: Int)
-
-    private fun readTrackPcm(context: Context, uri: Uri): RawPcm? {
+    @JvmOverloads
+    fun extractMono16k(
+        context: Context,
+        uri: Uri,
+        checkCancelled: () -> Unit = {}
+    ): FloatArray? {
+        checkCancelled()
         val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
         try {
             extractor.setDataSource(context, uri, null)
-        } catch (e: Exception) {
-            Log.w(TAG, "setDataSource failed: $uri", e)
-            extractor.release()
-            return null
-        }
-        val trackIdx = (0 until extractor.trackCount).firstOrNull { i ->
-            extractor.getTrackFormat(i)
-                .getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-        }
-        if (trackIdx == null) {
-            Log.w(TAG, "no audio track in $uri")
-            extractor.release()
-            return null
-        }
-        val format = extractor.getTrackFormat(trackIdx)
-        val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        extractor.selectTrack(trackIdx)
-
-        val out = ArrayList<Float>(1 shl 20)
-        val buf = ByteBuffer.allocate(1 shl 16).order(ByteOrder.nativeOrder())
-        try {
-            while (true) {
-                buf.clear()
-                val n = extractor.readSampleData(buf, 0)
-                if (n <= 0) break
-                buf.flip()
-                val shorts = buf.asShortBuffer()
-                val arr = ShortArray(n / 2)
-                shorts.get(arr)
-                for (s in arr) out.add(s / 32768f)
-                extractor.advance()
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                    ?.startsWith("audio/") == true
+            } ?: run {
+                Log.w(TAG, "no audio track in $uri")
+                return null
             }
+            val trackFormat = extractor.getTrackFormat(trackIndex)
+            if (trackFormat.containsKey(MediaFormat.KEY_DURATION) &&
+                trackFormat.getLong(MediaFormat.KEY_DURATION) > MAX_DURATION_SECONDS * 1_000_000L
+            ) {
+                throw AudioDurationLimitException("Audio exceeds the $MAX_DURATION_SECONDS-second extraction limit")
+            }
+            val mime = trackFormat.getString(MediaFormat.KEY_MIME)
+                ?: throw IllegalArgumentException("Audio track has no MIME type")
+            extractor.selectTrack(trackIndex)
+
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(trackFormat, null, null, 0)
+            codec.start()
+            val output = FloatSampleBuffer()
+            val info = MediaCodec.BufferInfo()
+            var inputDone = false
+            var outputDone = false
+            var sampleRate = trackFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var channels = trackFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+            var resampler: StreamingLinearResampler? = null
+            var resamplerSourceRate = 0
+            var resamplerChannels = 0
+            var resamplerEncoding = 0
+            var lastProgressNs = System.nanoTime()
+            val emitSample: (Float) -> Unit = { sample ->
+                if (output.size >= MAX_OUTPUT_SAMPLES) {
+                    throw AudioDurationLimitException("Decoded audio exceeds the $MAX_DURATION_SECONDS-second extraction limit")
+                }
+                output.append(sample)
+            }
+
+            while (!outputDone) {
+                checkCancelled()
+                check(System.nanoTime() - lastProgressNs < STALL_TIMEOUT_NS) { "Audio decoder stalled without input/output progress" }
+                if (!inputDone) {
+                    val inputIndex = codec.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = codec.getInputBuffer(inputIndex)
+                            ?: throw IllegalStateException("Decoder returned a null input buffer")
+                        inputBuffer.clear()
+                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            val presentationTimeUs = extractor.sampleTime.coerceAtLeast(0L)
+                            codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
+                            extractor.advance()
+                        }
+                        lastProgressNs = System.nanoTime()
+                    }
+                }
+
+                checkCancelled()
+                val outputIndex = codec.dequeueOutputBuffer(info, CODEC_TIMEOUT_US)
+                when {
+                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        lastProgressNs = System.nanoTime()
+                        val format = codec.outputFormat
+                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        pcmEncoding = if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                            format.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                        } else {
+                            AudioFormat.ENCODING_PCM_16BIT
+                        }
+                        if (resampler != null &&
+                            (resamplerSourceRate != sampleRate || resamplerChannels != channels || resamplerEncoding != pcmEncoding)
+                        ) {
+                            throw IllegalStateException("Decoder PCM format changed during output")
+                        }
+                    }
+                    outputIndex >= 0 -> {
+                        lastProgressNs = System.nanoTime()
+                        try {
+                            if (info.size > 0) {
+                                val buffer = codec.getOutputBuffer(outputIndex)
+                                    ?: throw IllegalStateException("Decoder returned a null output buffer")
+                                val start = info.offset
+                                val endLong = start.toLong() + info.size.toLong()
+                                require(start >= 0 && endLong <= buffer.capacity().toLong()) {
+                                    "Invalid decoder output range: $start..$endLong/${buffer.capacity()}"
+                                }
+                                val chunk = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+                                chunk.clear()
+                                chunk.position(start)
+                                chunk.limit(endLong.toInt())
+                                if (resampler == null) {
+                                    require(sampleRate > 0 && channels > 0) {
+                                        "Decoder returned invalid PCM format: $sampleRate Hz, $channels channels"
+                                    }
+                                    resamplerSourceRate = sampleRate
+                                    resamplerChannels = channels
+                                    resamplerEncoding = pcmEncoding
+                                    resampler = StreamingLinearResampler(sampleRate, TARGET_RATE, emitSample)
+                                }
+                                PcmAudioProcessor.process(
+                                    chunk.slice().order(ByteOrder.LITTLE_ENDIAN),
+                                    pcmEncoding,
+                                    channels,
+                                    resampler
+                                )
+                            }
+                        } finally {
+                            codec.releaseOutputBuffer(outputIndex, false)
+                        }
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                    }
+                }
+            }
+            resampler?.finish()
+            return output.toFloatArray().takeIf { it.isNotEmpty() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (durationLimit: AudioDurationLimitException) {
+            throw durationLimit
+        } catch (unsupported: UnsupportedPcmEncodingException) {
+            Log.e(TAG, "Decoder returned unsupported PCM output for $uri", unsupported)
+            throw unsupported
         } catch (e: Exception) {
-            Log.w(TAG, "audio read failed", e)
-            extractor.release()
+            Log.w(TAG, "audio decode failed: $uri", e)
             return null
         } finally {
-            extractor.release()
+            try {
+                codec?.stop()
+            } catch (_: Exception) {
+                // stop() may fail if setup did not reach the started state.
+            }
+            try {
+                codec?.release()
+            } finally {
+                extractor.release()
+            }
         }
-        return RawPcm(out.toFloatArray(), sampleRate, channels)
     }
 }
+
+internal class AudioDurationLimitException(message: String) : IllegalArgumentException(message)

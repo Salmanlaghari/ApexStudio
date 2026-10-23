@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,9 +74,12 @@ fun TrimPanel(
         return
     }
 
-    val duration = clip.durationMs.coerceAtLeast(1000L)
-    val trimStart = clip.trimStartMs.coerceIn(0L, duration - 100L)
-    val trimEnd = clip.trimEndMs.coerceIn(trimStart + 100L, duration)
+    val duration = clip.durationMs.coerceAtLeast(0L)
+    val minimumTrimSpan = minOf(100L, duration)
+    val currentTrim = normalizeTrimRange(clip.trimStartMs, clip.trimEndMs, duration)
+        ?: normalizeTrimRange(0L, duration, duration)
+    val trimStart = currentTrim?.startMs ?: 0L
+    val trimEnd = currentTrim?.endMs ?: 0L
     val trimmedDuration = (trimEnd - trimStart).coerceAtLeast(0L)
 
     var replaceInTimeline by remember { mutableStateOf(true) }
@@ -85,12 +88,28 @@ fun TrimPanel(
     var inputError by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
+    fun applyTimestampInputs(errorMessage: String) {
+        focusManager.clearFocus()
+        val startMs = TimeFormat.parseTimeToMs(startInputText)
+        val endMs = TimeFormat.parseTimeToMs(endInputText)
+        val normalized = if (startMs != null && endMs != null) {
+            normalizeTrimRange(startMs, endMs, duration)
+        } else {
+            null
+        }
+        if (normalized != null) {
+            onTrimChange(normalized.startMs, normalized.endMs)
+        } else {
+            inputError = errorMessage
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             // Cap the height so the panel never draws under the status bar
             // on short phones; the overlay wrapper adds status/nav insets.
-            .fillMaxHeight(0.92f)
+            .heightIn(max = 300.dp)
             .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
             .background(
@@ -192,7 +211,7 @@ fun TrimPanel(
                     Text("START TIMESTAMP", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Text(
                         TimeFormat.formatMs(trimStart),
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -233,7 +252,7 @@ fun TrimPanel(
                     Text("END TIMESTAMP", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Text(
                         TimeFormat.formatMs(trimEnd),
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -311,7 +330,7 @@ fun TrimPanel(
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Media3 Transformer Trimming...",
-                            color = Color.White,
+                            color = ApexPalette.TextPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -426,14 +445,7 @@ fun TrimPanel(
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            focusManager.clearFocus()
-                            val s = TimeFormat.parseTimeToMs(startInputText)
-                            val e = TimeFormat.parseTimeToMs(endInputText)
-                            if (s != null && e != null && e > s) {
-                                onTrimChange(s.coerceIn(0L, duration - 100L), e.coerceIn(s + 100L, duration))
-                            } else {
-                                inputError = "Invalid timestamps! End must be greater than start."
-                            }
+                            applyTimestampInputs("Invalid timestamps! End must be greater than start.")
                         }
                     ),
                     modifier = Modifier
@@ -466,16 +478,7 @@ fun TrimPanel(
             ) {
                 Button(
                     onClick = {
-                        focusManager.clearFocus()
-                        val s = TimeFormat.parseTimeToMs(startInputText)
-                        val e = TimeFormat.parseTimeToMs(endInputText)
-                        if (s != null && e != null && e > s) {
-                            val safeS = s.coerceIn(0L, duration - 100L)
-                            val safeE = e.coerceIn(safeS + 100L, duration)
-                            onTrimChange(safeS, safeE)
-                        } else {
-                            inputError = "Invalid timestamps! Enter valid times (e.g. 00:01.50 or 1.5)."
-                        }
+                        applyTimestampInputs("Invalid timestamps! Enter valid times (e.g. 00:01.50 or 1.5).")
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = ApexPalette.NeonCyan.copy(alpha = 0.2f),
@@ -542,6 +545,7 @@ fun TrimPanel(
             trimStart = trimStart,
             trimEnd = trimEnd,
             duration = duration,
+            minimumTrimSpan = minimumTrimSpan,
             onTrimChange = onTrimChange
         )
 
@@ -566,10 +570,10 @@ fun TrimPanel(
             Slider(
                 value = trimStart.toFloat(),
                 onValueChange = { newStart ->
-                    val s = newStart.toLong().coerceIn(0L, trimEnd - 100L)
+                    val s = newStart.toLong().coerceIn(0L, trimEnd - minimumTrimSpan)
                     onTrimChange(s, trimEnd)
                 },
-                valueRange = 0f..(duration - 100L).toFloat(),
+                valueRange = 0f..(duration - minimumTrimSpan).toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,
@@ -588,8 +592,8 @@ fun TrimPanel(
             ) {
                 NudgeButton(label = "-1s", onClick = { onTrimChange((trimStart - 1000L).coerceAtLeast(0L), trimEnd) }, modifier = Modifier.weight(1f))
                 NudgeButton(label = "-0.1s", onClick = { onTrimChange((trimStart - 100L).coerceAtLeast(0L), trimEnd) }, modifier = Modifier.weight(1f))
-                NudgeButton(label = "+0.1s", onClick = { onTrimChange((trimStart + 100L).coerceAtMost(trimEnd - 100L), trimEnd) }, modifier = Modifier.weight(1f))
-                NudgeButton(label = "+1s", onClick = { onTrimChange((trimStart + 1000L).coerceAtMost(trimEnd - 100L), trimEnd) }, modifier = Modifier.weight(1f))
+                NudgeButton(label = "+0.1s", onClick = { onTrimChange((trimStart + 100L).coerceAtMost(trimEnd - minimumTrimSpan), trimEnd) }, modifier = Modifier.weight(1f))
+                NudgeButton(label = "+1s", onClick = { onTrimChange((trimStart + 1000L).coerceAtMost(trimEnd - minimumTrimSpan), trimEnd) }, modifier = Modifier.weight(1f))
             }
         }
 
@@ -614,10 +618,10 @@ fun TrimPanel(
             Slider(
                 value = trimEnd.toFloat(),
                 onValueChange = { newEnd ->
-                    val e = newEnd.toLong().coerceIn(trimStart + 100L, duration)
+                    val e = newEnd.toLong().coerceIn(trimStart + minimumTrimSpan, duration)
                     onTrimChange(trimStart, e)
                 },
-                valueRange = 100f..duration.toFloat(),
+                valueRange = minimumTrimSpan.toFloat()..duration.toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,
@@ -634,8 +638,8 @@ fun TrimPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                NudgeButton(label = "-1s", onClick = { onTrimChange(trimStart, (trimEnd - 1000L).coerceAtLeast(trimStart + 100L)) }, modifier = Modifier.weight(1f))
-                NudgeButton(label = "-0.1s", onClick = { onTrimChange(trimStart, (trimEnd - 100L).coerceAtLeast(trimStart + 100L)) }, modifier = Modifier.weight(1f))
+                NudgeButton(label = "-1s", onClick = { onTrimChange(trimStart, (trimEnd - 1000L).coerceAtLeast(trimStart + minimumTrimSpan)) }, modifier = Modifier.weight(1f))
+                NudgeButton(label = "-0.1s", onClick = { onTrimChange(trimStart, (trimEnd - 100L).coerceAtLeast(trimStart + minimumTrimSpan)) }, modifier = Modifier.weight(1f))
                 NudgeButton(label = "+0.1s", onClick = { onTrimChange(trimStart, (trimEnd + 100L).coerceAtMost(duration)) }, modifier = Modifier.weight(1f))
                 NudgeButton(label = "+1s", onClick = { onTrimChange(trimStart, (trimEnd + 1000L).coerceAtMost(duration)) }, modifier = Modifier.weight(1f))
             }
@@ -702,7 +706,7 @@ fun TrimPanel(
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "Media3 Transformer Cut",
-                                color = Color.White,
+                                color = ApexPalette.TextPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -903,6 +907,7 @@ private fun TrimFilmstrip(
     trimStart: Long,
     trimEnd: Long,
     duration: Long,
+    minimumTrimSpan: Long,
     onTrimChange: (Long, Long) -> Unit
 ) {
     val context = LocalContext.current
@@ -1026,8 +1031,8 @@ private fun TrimFilmstrip(
             RangeSlider(
                 value = trimStart.toFloat()..trimEnd.toFloat(),
                 onValueChange = { range ->
-                    val s = range.start.toLong().coerceIn(0L, trimEnd - 100L)
-                    val e = range.endInclusive.toLong().coerceIn(s + 100L, duration)
+                    val s = range.start.toLong().coerceIn(0L, trimEnd - minimumTrimSpan)
+                    val e = range.endInclusive.toLong().coerceIn(s + minimumTrimSpan, duration)
                     onTrimChange(s, e)
                 },
                 valueRange = 0f..duration.toFloat(),

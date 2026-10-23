@@ -21,11 +21,12 @@ class CameraKitConfigTest {
     }
 
     @Test
-    fun apiToken_isBlankWithoutConfiguration() {
-        // Unit tests run without SNAP_CAMERA_KIT_TOKEN configured; the token must never be
-        // hardcoded — BuildConfig carries whatever the build injected (empty here).
-        assertTrue(CameraKitConfig.apiToken.isBlank())
-        assertFalse(CameraKitConfig.isConfigured)
+    fun apiToken_usesBuildInjectedConfiguration() {
+        // CI may inject a repository secret; local/fork builds may leave it blank. Test the
+        // actual contract rather than assuming either environment. Boolean assertions deliberately
+        // avoid including token values in assertion output, XML reports or CI logs.
+        assertTrue(CameraKitConfig.apiToken == BuildConfig.SNAP_CAMERA_KIT_TOKEN)
+        assertEquals(BuildConfig.SNAP_CAMERA_KIT_TOKEN.isNotBlank(), CameraKitConfig.isConfigured)
     }
 
     @Test

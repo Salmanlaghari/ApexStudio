@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -19,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -64,7 +66,9 @@ fun PhotoClipPreview(
     settings: PhotoEditSettings,
     cropActive: Boolean,
     onCropChange: (PhotoCropRect) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCoverMode: Boolean = false,
+    onImageAspectRatioChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -114,7 +118,10 @@ fun PhotoClipPreview(
 
     // In crop mode the crop is withheld so the handles operate on the
     // full (rotated) photo.
-    val effectiveSettings = if (cropActive) settings.copy(crop = null) else settings
+    val effectiveSettings = if (cropActive) settings.copy(
+        crop = null,
+        canvas = com.apexstudio.app.domain.model.PhotoCanvasSettings()
+    ) else settings
     val activeLut = lutTexture.takeIf { lutFilterId == settings.filterId && settings.filterId != null }
     LaunchedEffect(rawBitmap, effectiveSettings, activeLut) {
         val src = rawBitmap
@@ -153,23 +160,23 @@ fun PhotoClipPreview(
         }
     }
 
-    // Photo display rect (Fit, centred) derived from layout size — the
-    // single source of truth for both drawing and drag hit-testing.
+    // Photo display rect derived from layout size — the single source of
+    // truth for drawing and crop drag hit-testing. Crop editing always
+    // uses Fit so the entire image and all crop handles remain reachable.
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val bmp = edited
-    val photoRect: Rect? = remember(bmp, canvasSize) {
-        if (bmp == null || canvasSize == IntSize.Zero) {
-            null
-        } else {
-            val scale = minOf(
-                canvasSize.width.toFloat() / bmp.width,
-                canvasSize.height.toFloat() / bmp.height
+    androidx.compose.runtime.SideEffect {
+        if (bmp != null && bmp.width > 0 && bmp.height > 0) {
+            onImageAspectRatioChange(bmp.width.toFloat() / bmp.height)
+        }
+    }
+    val photoRect = remember(bmp, canvasSize, isCoverMode, cropActive) {
+        bmp?.let {
+            photoDisplayRect(
+                IntSize(it.width, it.height), canvasSize,
+                isCoverMode = isCoverMode,
+                cropActive = cropActive
             )
-            val dw = bmp.width * scale
-            val dh = bmp.height * scale
-            val dx = (canvasSize.width - dw) / 2f
-            val dy = (canvasSize.height - dh) / 2f
-            Rect(dx, dy, dx + dw, dy + dh)
         }
     }
 
@@ -217,20 +224,39 @@ fun PhotoClipPreview(
         }
     } else if (settings.kenBurns && !cropActive && bmp != null) {
         val kbBitmap = bmp
-        AndroidView(
-            factory = { ctx ->
-                KenBurnsView(ctx).apply {
-                    setTransitionGenerator(
-                        RandomTransitionGenerator(
-                            8000L,
-                            android.view.animation.AccelerateDecelerateInterpolator()
-                        )
+        BoxWithConstraints(
+            modifier = modifier.fillMaxSize().clipToBounds(),
+            contentAlignment = Alignment.Center
+        ) {
+            val viewport = IntSize(
+                with(density) { maxWidth.roundToPx() },
+                with(density) { maxHeight.roundToPx() }
+            )
+            val rect = photoDisplayRect(
+                IntSize(kbBitmap.width, kbBitmap.height), viewport,
+                isCoverMode = isCoverMode,
+                cropActive = false
+            )
+            if (rect != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        KenBurnsView(ctx).apply {
+                            setTransitionGenerator(
+                                RandomTransitionGenerator(
+                                    8000L,
+                                    android.view.animation.AccelerateDecelerateInterpolator()
+                                )
+                            )
+                        }
+                    },
+                    update = { view -> view.setImageBitmap(kbBitmap) },
+                    modifier = Modifier.size(
+                        with(density) { rect.width.toDp() },
+                        with(density) { rect.height.toDp() }
                     )
-                }
-            },
-            update = { view -> view.setImageBitmap(kbBitmap) },
-            modifier = modifier.fillMaxSize()
-        )
+                )
+            }
+        }
     } else {
         Canvas(
             modifier = modifier
@@ -316,6 +342,31 @@ fun PhotoClipPreview(
             }
         }
     }
+}
+
+/**
+ * Centered photo bounds in preview pixels. Cover uses max scale (cropping
+ * overflow at the viewport); Fit uses min scale (letterboxing). Crop mode
+ * deliberately forces Fit regardless of the normal preview setting.
+ */
+internal fun photoDisplayRect(
+    imageSize: IntSize,
+    viewportSize: IntSize,
+    isCoverMode: Boolean,
+    cropActive: Boolean
+): Rect? {
+    if (imageSize.width <= 0 || imageSize.height <= 0 ||
+        viewportSize.width <= 0 || viewportSize.height <= 0
+    ) return null
+
+    val scaleX = viewportSize.width.toFloat() / imageSize.width
+    val scaleY = viewportSize.height.toFloat() / imageSize.height
+    val scale = if (isCoverMode && !cropActive) maxOf(scaleX, scaleY) else minOf(scaleX, scaleY)
+    val width = imageSize.width * scale
+    val height = imageSize.height * scale
+    val left = (viewportSize.width - width) / 2f
+    val top = (viewportSize.height - height) / 2f
+    return Rect(left, top, left + width, top + height)
 }
 
 private fun hitTestCorner(

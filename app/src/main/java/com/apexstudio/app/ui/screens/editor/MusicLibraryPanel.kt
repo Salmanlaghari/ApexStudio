@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apexstudio.app.data.music.MusicLibraryController
 import com.apexstudio.app.data.music.RemoteMusicTrack
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Phase 3: Free Music Library — proper browser UI over the existing

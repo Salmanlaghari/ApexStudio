@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
+import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.domain.model.AudioTrack
 import java.io.File
 import java.io.RandomAccessFile
@@ -16,6 +17,9 @@ import java.nio.ByteOrder
 import kotlin.math.floor
 import kotlin.math.min
 
+internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack> =
+    tracks.filter { AudioPlaybackMix.isEnabled(it, tracks) }
+
 /**
  * Mixes timeline music tracks into an exported video file.
  *
@@ -23,7 +27,7 @@ import kotlin.math.min
  * all its audio effects, but it cannot mix extra timeline audio tracks on top.
  * This mixer closes that gap: it decodes the exported file's audio plus every
  * unmuted [AudioTrack], mixes them in software (per-track volume, fade
- * in/out, each placed at its [AudioTrack.trimStartMs] timeline offset),
+ * in/out, each placed at its [AudioTrack.startTimeMs] timeline offset),
  * re-encodes to AAC and muxes with the video track copied bit-for-bit.
  *
  * Pipeline (all streaming, bounded memory):
@@ -79,10 +83,17 @@ object MusicExportMixer {
         context: Context,
         inputVideo: File,
         tracks: List<AudioTrack>,
-        outputVideo: File
+        outputVideo: File,
+        checkCancelled: () -> Unit = {}
     ): MixResult {
+        checkCancelled()
         require(inputVideo.exists()) { "Input video missing: ${inputVideo.absolutePath}" }
         outputVideo.parentFile?.mkdirs()
+        val enabledTracks = selectEnabledMusicTracks(tracks)
+        if (enabledTracks.isEmpty()) {
+            inputVideo.copyTo(outputVideo, overwrite = true)
+            return MixResult(outputVideo, 0, 0)
+        }
 
         // ---- 1. Probe input -------------------------------------------------
         val probe = MediaExtractor()
@@ -134,14 +145,17 @@ object MusicExportMixer {
         val placed = mutableListOf<PlacedTrack>()
         var skipped = 0
         try {
-            for (t in tracks) {
-                val playMs = t.trimEndMs - t.trimStartMs
-                if (playMs <= 0L) {
+            for (t in enabledTracks) {
+                checkCancelled()
+                val sourceTrim = ExportAudioTimelineMapping.sourceTrim(
+                    t.trimStartMs, t.trimEndMs, SAMPLE_RATE
+                )
+                if (sourceTrim.frameCount <= 0L) {
                     skipped++
                     continue
                 }
                 val decoder = try {
-                    TrackDecoder.openUri(context, t.uri)
+                    TrackDecoder.openUri(context, t.uri, sourceTrim.startMs)
                 } catch (e: Exception) {
                     Log.w(TAG, "Skipping undecodable music track: ${t.name}", e)
                     null
@@ -150,14 +164,15 @@ object MusicExportMixer {
                     skipped++
                     continue
                 }
-                val startFrame = (t.trimStartMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
+                val startFrame = ExportAudioTimelineMapping.millisToFrames(
+                    t.startTimeMs, SAMPLE_RATE
+                )
                 if (startFrame >= durationCapFrames) {
                     decoder.release()
                     skipped++
                     continue
                 }
-                val playFrames = (playMs * SAMPLE_RATE) / 1000L
-                placed.add(PlacedTrack(t, decoder, startFrame, playFrames))
+                placed.add(PlacedTrack(t, decoder, startFrame, sourceTrim.frameCount))
             }
 
             if (placed.isEmpty()) {
@@ -169,13 +184,13 @@ object MusicExportMixer {
             // ---- 3. Mix to a temporary WAV ----------------------------------
             val wavFile = File.createTempFile("apex_mix_", ".wav", outputVideo.parentFile)
             try {
-                renderMixWav(original, placed, durationCapFrames, wavFile)
+                renderMixWav(original, placed, durationCapFrames, wavFile, checkCancelled)
                 // ---- 4. WAV -> AAC ------------------------------------------
-                val encoded = transcodeWavToAac(wavFile)
+                val encoded = transcodeWavToAac(wavFile, checkCancelled)
                 // ---- 5. Mux video copy + mixed AAC --------------------------
                 muxVideoWithAudio(
                     inputVideo, videoTrackIdx, vFormat,
-                    encoded.frames, encoded.format, outputVideo
+                    encoded.frames, encoded.format, outputVideo, checkCancelled
                 )
             } finally {
                 wavFile.delete()
@@ -195,7 +210,8 @@ object MusicExportMixer {
         original: TrackDecoder?,
         placed: List<PlacedTrack>,
         durationCapFrames: Long,
-        wavFile: File
+        wavFile: File,
+        checkCancelled: () -> Unit
     ) {
         val mix = FloatArray(WINDOW_FRAMES * CHANNELS)
         val tmp = FloatArray(WINDOW_FRAMES * CHANNELS)
@@ -214,6 +230,7 @@ object MusicExportMixer {
             var totalFrames = 0L
 
             while (globalFrame < durationCapFrames) {
+                checkCancelled()
                 val frames = min(WINDOW_FRAMES.toLong(), durationCapFrames - globalFrame).toInt()
                 mix.fill(0f)
 
@@ -232,7 +249,8 @@ object MusicExportMixer {
                     val w0 = globalFrame
                     val w1 = globalFrame + frames
                     val s0 = maxOf(w0, p.startFrame)
-                    val s1 = minOf(w1, p.startFrame + p.playFrames)
+                    val endFrame = ExportAudioTimelineMapping.endFrame(p.startFrame, p.playFrames)
+                    val s1 = minOf(w1, endFrame)
                     if (s1 > s0) {
                         val need = (s1 - s0).toInt()
                         val n = p.decoder.readFrames(tmp, need)
@@ -260,7 +278,7 @@ object MusicExportMixer {
                             mix[idx + 1] += tmp[i * 2 + 1] * v
                         }
                     }
-                    if (w0 >= p.startFrame + p.playFrames || p.decoder.isEos()) {
+                    if (w0 >= endFrame || p.decoder.isEos()) {
                         p.done = true
                     }
                 }
@@ -313,7 +331,7 @@ object MusicExportMixer {
     // Pass 2: WAV -> AAC
     // ------------------------------------------------------------------
 
-    private fun transcodeWavToAac(wavFile: File): EncodedAudio {
+    private fun transcodeWavToAac(wavFile: File, checkCancelled: () -> Unit): EncodedAudio {
         val encFormat = MediaFormat.createAudioFormat(
             MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNELS
         )
@@ -324,103 +342,93 @@ object MusicExportMixer {
         encFormat.setInteger(MediaFormat.KEY_BIT_RATE, AAC_BITRATE)
         encFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 32 * 1024)
 
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        encoder.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
+        val encoder = setupWithCleanup(
+            resource = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC),
+            setup = {
+                it.configure(encFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                it.start()
+            },
+            cleanup = { it.release() }
+        )
         try {
             val frames = mutableListOf<EncodedFrame>()
             var outFormat: MediaFormat? = null
             val info = MediaCodec.BufferInfo()
-            // Derive every PTS from the cumulative frame count: per-chunk
-            // integer division would otherwise accumulate ~1µs of drift per
-            // chunk against the copied video track's original timestamps.
+            // Derive every PTS from cumulative frames, avoiding per-chunk drift.
             var totalFramesIn = 0L
             fun framePtsUs() = (totalFramesIn * 1_000_000L) / SAMPLE_RATE
 
             RandomAccessFile(wavFile, "r").use { raf ->
-                raf.seek(44) // skip WAV header
+                raf.seek(44)
                 var inputDone = false
                 val chunk = ByteArray(16 * 1024)
-                while (true) {
+                pumpCodecUntilOutputEos {
+                    checkCancelled()
+                    var progressed = false
                     if (!inputDone) {
                         val inIdx = encoder.dequeueInputBuffer(5000)
                         if (inIdx >= 0) {
-                            val ib = encoder.getInputBuffer(inIdx)
-                            if (ib == null || ib.remaining() < CHANNELS * 2) {
-                                // No usable input buffer right now; try again next lap.
-                                if (ib != null) {
-                                    encoder.queueInputBuffer(inIdx, 0, 0, framePtsUs(), 0)
-                                }
-                            } else {
-                                // Whole PCM frames only — a torn frame would
-                                // corrupt the encoder's pts bookkeeping.
-                                val want = min(chunk.size, ib.remaining()) / (CHANNELS * 2) * (CHANNELS * 2)
-                                val n = raf.read(chunk, 0, want)
-                                if (n <= 0) {
-                                    encoder.queueInputBuffer(
-                                        inIdx, 0, 0, framePtsUs(),
-                                        MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                                    )
-                                    inputDone = true
-                                } else {
-                                    ib.put(chunk, 0, n)
-                                    val framesIn = n / (CHANNELS * 2)
-                                    encoder.queueInputBuffer(inIdx, 0, n, framePtsUs(), 0)
-                                    totalFramesIn += framesIn
-                                }
+                            val ib = requireNotNull(encoder.getInputBuffer(inIdx)) {
+                                "AAC encoder returned no input buffer"
                             }
+                            ib.clear()
+                            check(ib.remaining() >= CHANNELS * 2) {
+                                "AAC encoder input buffer cannot hold a PCM frame"
+                            }
+                            val want = min(chunk.size, ib.remaining()) / (CHANNELS * 2) * (CHANNELS * 2)
+                            val n = raf.read(chunk, 0, want)
+                            if (n <= 0) {
+                                encoder.queueInputBuffer(
+                                    inIdx, 0, 0, framePtsUs(),
+                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                )
+                                inputDone = true
+                            } else {
+                                check(n % (CHANNELS * 2) == 0) { "Truncated PCM frame" }
+                                ib.put(chunk, 0, n)
+                                encoder.queueInputBuffer(inIdx, 0, n, framePtsUs(), 0)
+                                totalFramesIn += n / (CHANNELS * 2)
+                            }
+                            progressed = true
                         }
                     }
                     val outIdx = encoder.dequeueOutputBuffer(info, 8000)
+                    var outputEnded = false
                     when {
                         outIdx >= 0 -> {
-                            val ob = encoder.getOutputBuffer(outIdx)!!
-                            if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
-                                info.size > 0
-                            ) {
-                                val copy = ByteArray(info.size)
-                                ob.get(copy)
-                                frames.add(
-                                    EncodedFrame(copy, info.presentationTimeUs, info.flags)
-                                )
-                            }
-                            encoder.releaseOutputBuffer(outIdx, false)
-                            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break
-                        }
-                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
-                            outFormat = encoder.outputFormat
-                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER ->
-                            if (inputDone) {
-                                // Give the encoder a moment, then give up gracefully.
-                                Thread.sleep(10)
-                            }
-                    }
-                    if (inputDone && outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                        // Drain once more; encoders flush quickly after EOS.
-                        var drained = 0
-                        while (drained < 50) {
-                            val idx = encoder.dequeueOutputBuffer(info, 2000)
-                            if (idx >= 0) {
-                                val ob = encoder.getOutputBuffer(idx)!!
+                            try {
                                 if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
                                     info.size > 0
                                 ) {
-                                    val copy = ByteArray(info.size)
-                                    ob.get(copy)
                                     frames.add(
-                                        EncodedFrame(copy, info.presentationTimeUs, info.flags)
+                                        EncodedFrame(
+                                            copyEncodedOutput(
+                                                encoder.getOutputBuffer(outIdx), info.offset, info.size
+                                            ),
+                                            info.presentationTimeUs,
+                                            info.flags
+                                        )
                                     )
                                 }
-                                encoder.releaseOutputBuffer(idx, false)
-                                if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break
-                            } else break
-                            drained++
+                                outputEnded = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                                // Empty non-EOS output is not forward progress.
+                                progressed = progressed || info.size > 0 || outputEnded
+                            } finally {
+                                encoder.releaseOutputBuffer(outIdx, false)
+                            }
                         }
-                        break
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            outFormat = encoder.outputFormat
+                            progressed = true
+                        }
                     }
+                    CodecPumpStep(progressed, outputEnded)
                 }
             }
-            val fmt = outFormat ?: encFormat
+            // The encoder's actual format contains codec-specific AAC data.
+            // A requested input format is not a valid substitute for it.
+            val fmt = checkNotNull(outFormat) { "AAC encoder produced no output format" }
+            check(frames.isNotEmpty()) { "AAC encoder produced no audio samples" }
             return EncodedAudio(fmt, frames)
         } finally {
             runCatching { encoder.stop() }
@@ -438,7 +446,8 @@ object MusicExportMixer {
         videoFormat: MediaFormat,
         audioFrames: List<EncodedFrame>,
         audioFormat: MediaFormat,
-        outputVideo: File
+        outputVideo: File,
+        checkCancelled: () -> Unit
     ) {
         val vEx = MediaExtractor()
         vEx.setDataSource(inputVideo.absolutePath)
@@ -485,6 +494,7 @@ object MusicExportMixer {
 
             var videoAvail = readVideo()
             while (videoAvail || audioIdx < audioFrames.size) {
+                checkCancelled()
                 val a = audioFrames.getOrNull(audioIdx)
                 if (videoAvail && (a == null || vInfo.presentationTimeUs <= a.ptsUs)) {
                     writeVideo()
@@ -519,8 +529,11 @@ object MusicExportMixer {
         fadeOutMs: Long
     ): Float {
         if (playFrames <= 0L) return 0f
-        val fadeInFrames = (fadeInMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
-        val fadeOutFrames = (fadeOutMs.coerceAtLeast(0L) * SAMPLE_RATE) / 1000L
+        // Durations come from persisted project data; multiplying arbitrary
+        // Long milliseconds by the sample rate can wrap and silently disable
+        // a fade. Use the same saturating conversion as timeline placement.
+        val fadeInFrames = ExportAudioTimelineMapping.millisToFrames(fadeInMs, SAMPLE_RATE)
+        val fadeOutFrames = ExportAudioTimelineMapping.millisToFrames(fadeOutMs, SAMPLE_RATE)
         var e = 1f
         if (fadeInFrames > 0 && posFrames < fadeInFrames) {
             e = min(e, posFrames.toFloat() / fadeInFrames)
@@ -540,18 +553,17 @@ object MusicExportMixer {
      */
     private class TrackDecoder private constructor(
         private val extractor: MediaExtractor,
-        private val decoder: MediaCodec
+        private val decoder: MediaCodec,
+        private val sourceStartUs: Long
     ) {
         private val info = MediaCodec.BufferInfo()
         private var inputDone = false
         private var outputDone = false
         private var inSampleRate = SAMPLE_RATE
         private var inChannels = CHANNELS
-        private var inPcm16 = true
+        private var pcmEncoding = 2
 
-        private var pending = FloatArray(8192 * CHANNELS)
-        private var pendingFrames = 0
-        private var pendingPos = 0
+        private val pending = ExportPcmQueue(CHANNELS)
 
         // Linear-resample state (carried across decoder output buffers).
         private var rsPos = 0.0
@@ -567,11 +579,11 @@ object MusicExportMixer {
                     ex.release()
                     throw e
                 }
-                return openSelected(ex, audioTrackIndex)
+                return openSelected(ex, audioTrackIndex, 0L)
             }
 
             /** Opens the first audio track of a path / file:// / content:// URI. */
-            fun openUri(context: Context, uri: String): TrackDecoder {
+            fun openUri(context: Context, uri: String, sourceStartMs: Long): TrackDecoder {
                 val ex = MediaExtractor()
                 try {
                     val clean = uri.removePrefix("file://")
@@ -596,20 +608,31 @@ object MusicExportMixer {
                     ex.release()
                     throw IllegalArgumentException("No audio track in $uri")
                 }
-                return openSelected(ex, audioIdx)
+                return openSelected(ex, audioIdx, ExportAudioTimelineMapping.millisToMicros(sourceStartMs))
             }
 
-            private fun openSelected(ex: MediaExtractor, idx: Int): TrackDecoder {
+            private fun openSelected(ex: MediaExtractor, idx: Int, sourceStartUs: Long): TrackDecoder {
                 try {
                     val format = ex.getTrackFormat(idx)
                     val mime = format.getString(MediaFormat.KEY_MIME)
                         ?: throw IllegalArgumentException("Missing MIME")
                     ex.selectTrack(idx)
+                    // Seek near the source in-point, then discard decoded
+                    // preroll by presentation timestamp in convertAndAppend.
+                    if (sourceStartUs > 0L) {
+                        ex.seekTo(sourceStartUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    }
                     val dec = MediaCodec.createDecoderByType(mime)
-                    dec.configure(format, null, null, 0)
-                    dec.start()
-                    return TrackDecoder(ex, dec)
-                } catch (e: Exception) {
+                    setupWithCleanup(
+                        resource = dec,
+                        setup = {
+                            it.configure(format, null, null, 0)
+                            it.start()
+                        },
+                        cleanup = { it.release() }
+                    )
+                    return TrackDecoder(ex, dec, sourceStartUs)
+                } catch (e: Throwable) {
                     ex.release()
                     throw e
                 }
@@ -620,17 +643,13 @@ object MusicExportMixer {
         fun readFrames(out: FloatArray, frames: Int): Int {
             var written = 0
             while (written < frames) {
-                if (pendingPos >= pendingFrames && !fillPending()) break
-                val avail = pendingFrames - pendingPos
-                val n = min(avail, frames - written)
-                System.arraycopy(pending, pendingPos * CHANNELS, out, written * CHANNELS, n * CHANNELS)
-                pendingPos += n
-                written += n
+                if (pending.isEmpty && !fillPending()) break
+                written += pending.read(out, written, frames - written)
             }
             return written
         }
 
-        fun isEos(): Boolean = outputDone && pendingPos >= pendingFrames
+        fun isEos(): Boolean = outputDone && pending.isEmpty
 
         fun release() {
             runCatching { decoder.stop() }
@@ -648,19 +667,22 @@ object MusicExportMixer {
                     .takeIf { it > 0 } ?: CHANNELS
             }
             // "pcm-encoding" string key avoids the API-28+ constant; 2 = 16-bit.
-            inPcm16 = format.getInteger("pcm-encoding", 2) != 3
+            pcmEncoding = format.getInteger("pcm-encoding", 2)
+            ExportPcmSamples.bytesPerSample(pcmEncoding)
         }
 
         /** Decodes the next output buffer into [pending]. False when drained. */
         private fun fillPending(): Boolean {
-            val before = pendingFrames
-            while (pendingFrames == before) {
+            pending.prepareAppend(0)
+            val watchdog = ExportCodecWatchdog()
+            while (pending.isEmpty && !outputDone) {
                 if (!inputDone) {
                     val inIdx = decoder.dequeueInputBuffer(2000)
                     if (inIdx >= 0) {
                         val ib = decoder.getInputBuffer(inIdx)
                         if (ib == null) {
                             decoder.queueInputBuffer(inIdx, 0, 0, 0L, 0)
+                            watchdog.progressed()
                         } else {
                             val n = extractor.readSampleData(ib, 0)
                             if (n < 0) {
@@ -669,36 +691,53 @@ object MusicExportMixer {
                                     MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                 )
                                 inputDone = true
+                                watchdog.progressed()
                             } else {
                                 decoder.queueInputBuffer(inIdx, 0, n, extractor.sampleTime, 0)
                                 extractor.advance()
+                                watchdog.progressed()
                             }
                         }
                     }
                 }
-                val outIdx = decoder.dequeueOutputBuffer(info, 8000)
+                watchdog.throwIfTimedOut()
+                val outIdx = decoder.dequeueOutputBuffer(
+                    info,
+                    min(8000L, watchdog.remainingMs() * 1000L).coerceAtLeast(1L)
+                )
                 when {
                     outIdx >= 0 -> {
-                        val ob = decoder.getOutputBuffer(outIdx)
-                        if (ob != null && info.size > 0) {
-                            updateFormat(decoder.outputFormat)
-                            convertAndAppend(ob, info.size)
+                        watchdog.progressed()
+                        try {
+                            val ob = decoder.getOutputBuffer(outIdx)
+                            if (ob != null && info.size > 0) {
+                                updateFormat(decoder.outputFormat)
+                                convertAndAppend(
+                                    ExportPcmSamples.window(ob, info.offset, info.size),
+                                    info.size, info.presentationTimeUs
+                                )
+                            }
+                        } finally {
+                            decoder.releaseOutputBuffer(outIdx, false)
                         }
-                        decoder.releaseOutputBuffer(outIdx, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                             outputDone = true
-                            return pendingFrames > before
+                            return !pending.isEmpty
                         }
                     }
-                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         updateFormat(decoder.outputFormat)
+                        watchdog.progressed()
+                    }
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (inputDone) return pendingFrames > before
+                        // EOS on input is not EOS on output. The codec may still
+                        // have delayed samples to emit, so wait for an actual
+                        // output EOS, failing only after sustained inactivity.
+                        watchdog.throwIfTimedOut()
                     }
                 }
-                if (outputDone) return pendingFrames > before
             }
-            return true
+            return !pending.isEmpty
         }
 
         private fun nativeSample(le: ByteBuffer, size: Int, frame: Int, ch: Int): Float {
@@ -707,13 +746,10 @@ object MusicExportMixer {
                 ch < inChannels -> ch
                 else -> 0
             }
-            return if (inPcm16) {
-                val idx = (frame * inChannels + srcCh) * 2
-                if (idx + 1 >= size) 0f else le.getShort(idx) / 32768f
-            } else {
-                val idx = (frame * inChannels + srcCh) * 4
-                if (idx + 3 >= size) 0f else le.getFloat(idx).coerceIn(-1f, 1f)
-            }
+            val sample = frame * inChannels + srcCh
+            val bytes = ExportPcmSamples.bytesPerSample(pcmEncoding)
+            return if (sample.toLong() * bytes + bytes > size) 0f
+                else ExportPcmSamples.sample(le, sample, pcmEncoding)
         }
 
         /**
@@ -722,15 +758,15 @@ object MusicExportMixer {
          * native rate differs. Resample state ([rsPos]/[rsCarry]) carries
          * across buffers so there are no clicks at buffer boundaries.
          */
-        private fun convertAndAppend(ob: ByteBuffer, size: Int) {
+        private fun convertAndAppend(ob: ByteBuffer, size: Int, presentationTimeUs: Long) {
             val le = ob.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            val bytesPerSample = if (inPcm16) 2 else 4
+            val bytesPerSample = ExportPcmSamples.bytesPerSample(pcmEncoding)
             val frames = size / bytesPerSample / inChannels.coerceAtLeast(1)
             if (frames <= 0) return
             val step = inSampleRate.toDouble() / SAMPLE_RATE
             // Upper bound on output frames for this buffer.
             val maxOut = ((frames + 1) / step).toInt() + 2
-            ensurePendingCapacity(pendingFrames + maxOut)
+            pending.prepareAppend(maxOut)
 
             fun s(idx: Int, ch: Int): Float =
                 if (idx < 0) rsCarry[ch] else nativeSample(le, size, idx, ch)
@@ -740,25 +776,21 @@ object MusicExportMixer {
                 val i = floor(rsPos).toInt()
                 if (i + 1 >= frames) break
                 val frac = (rsPos - i).toFloat()
-                for (c in 0 until CHANNELS) {
-                    val s0 = s(i, c)
-                    val s1 = s(i + 1, c)
-                    pending[(pendingFrames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
+                val outputTimeUs = presentationTimeUs + ((rsPos * 1_000_000.0) / inSampleRate).toLong()
+                if (outputTimeUs >= sourceStartUs) {
+                    for (c in 0 until CHANNELS) {
+                        val s0 = s(i, c)
+                        val s1 = s(i + 1, c)
+                        pending.samples[(pending.frames + f) * CHANNELS + c] = s0 + (s1 - s0) * frac
+                    }
+                    f++
                 }
-                f++
                 rsPos += step
             }
             // Carry the last input frame and rebase the position for the next buffer.
             for (c in 0 until CHANNELS) rsCarry[c] = nativeSample(le, size, frames - 1, c)
             rsPos -= frames
-            pendingFrames += f
-        }
-
-        private fun ensurePendingCapacity(needed: Int) {
-            if (pending.size >= needed * CHANNELS) return
-            var newSize = pending.size * 2
-            while (newSize < needed * CHANNELS) newSize *= 2
-            pending = pending.copyOf(newSize)
+            pending.appended(f)
         }
     }
 }

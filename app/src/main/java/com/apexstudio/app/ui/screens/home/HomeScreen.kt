@@ -1,6 +1,5 @@
 package com.apexstudio.app.ui.screens.home
 
-import android.content.Context
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -8,14 +7,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,26 +27,27 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashMarker
-import com.apexstudio.app.data.media.MediaUriResolver
-import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
-import com.apexstudio.app.data.template.TimelineTemplateManager
-import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
-import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
-import com.apexstudio.app.ui.components.templates.TemplateArtHeader
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -54,34 +59,32 @@ fun HomeScreen(
     onExport: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val repo = remember { MediaRepository }
     val projectRepo = remember { ProjectRepository(context) }
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
-    var templates by remember { mutableStateOf<List<TransmissionTemplate>>(emptyList()) }
-    var selectedCategory by remember { mutableStateOf("All") }
-    var pendingTemplateForVideo by remember { mutableStateOf<TransmissionTemplate?>(null) }
+    var savedProjectIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var projectToRename by remember { mutableStateOf<Project?>(null) }
+    var projectToDelete by remember { mutableStateOf<Project?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        val saved = projectRepo.loadAllNow()
-        projects = if (saved.isNotEmpty()) saved else repo.loadProjects()
-
-        withContext(Dispatchers.IO) {
-            val mgr = TimelineTemplateManager(context)
-            val loadedTemplates = mgr.loadTransmissionTemplates()
-            templates = loadedTemplates
+        // DataStore read/JSON decoding must not block the first mobile frame.
+        // flowOn only moves upstream work; collect remains on the UI dispatcher,
+        // so keep the synchronous legacy fallback off that callback as well.
+        projectRepo.loadAll().flowOn(Dispatchers.IO).collect { saved ->
+            savedProjectIds = saved.mapTo(mutableSetOf()) { it.id }
+            projects = resolveHomeProjects(saved, loadFallback = repo::loadProjects)
         }
     }
 
     val mediaPicker = remember { MediaPickerHelper(context) }
-    var pickedMedia by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }
-
     mediaPicker.registerLaunchers()
 
     LaunchedEffect(Unit) {
         mediaPicker.pickedMedia.collect { metadataList ->
             if (metadataList.isNotEmpty()) {
-                pickedMedia = metadataList
                 val clips = metadataList.map { meta ->
                     MediaClip(
                         id = UUID.randomUUID().toString(),
@@ -91,444 +94,253 @@ fun HomeScreen(
                         trimStartMs = 0L,
                         trimEndMs = meta.durationMs,
                         thumbnail = null,
-                        trackIndex = if (meta.type == ClipType.VIDEO) 0 else 1,
+                        trackIndex = if (meta.type == ClipType.VIDEO || meta.type == ClipType.IMAGE) 0 else 1,
                         type = meta.type
                     )
                 }
-                val chosenTemplate = pendingTemplateForVideo
-                val projectName = if (chosenTemplate != null) {
-                    "${chosenTemplate.name} • ${metadataList.first().name.substringBeforeLast('.')}"
-                } else {
-                    metadataList.first().name.substringBeforeLast('.')
-                }
-
-                val newProject = repo.createProject(
-                    name = projectName,
-                    clips = clips
-                ).let { p ->
-                    if (chosenTemplate != null) {
-                        p.copy(
-                            lastTransmissionTemplateId = chosenTemplate.id,
-                            lastTransitionType = chosenTemplate.transitionType,
-                            lastTransitionDurationMs = chosenTemplate.transitionDurationMs
-                        )
-                    } else p
-                }
+                val projectName = metadataList.first().name.substringBeforeLast('.')
+                val newProject = repo.createProject(name = projectName, clips = clips)
 
                 projectRepo.saveProject(newProject)
-                projects = projectRepo.loadAllNow()
-                pendingTemplateForVideo = null
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
                 onProjectOpen(newProject.id)
             }
         }
     }
 
-    fun launchVideoPickerForTemplate(template: TransmissionTemplate) {
-        pendingTemplateForVideo = template
-        mediaPicker.pickMultipleMedia.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-        )
-    }
-
-    fun applyTemplateToQuickDemo(template: TransmissionTemplate) {
-        scope.launch {
-            val sampleUri = withContext(Dispatchers.IO) {
-                MediaUriResolver.getFallbackSampleUri(context)
-            }
-            val demoClip = MediaClip(
-                id = UUID.randomUUID().toString(),
-                name = "${template.name} Demo.mp4",
-                uri = sampleUri.toString(),
-                durationMs = 14000L,
-                trimStartMs = 0L,
-                trimEndMs = 14000L,
-                thumbnail = null,
-                trackIndex = 0,
-                type = ClipType.VIDEO
-            )
-            val demoProject = repo.createProject(
-                name = "${template.name} (Quick Demo)",
-                clips = listOf(demoClip)
-            ).copy(
-                lastTransmissionTemplateId = template.id,
-                lastTransitionType = template.transitionType,
-                lastTransitionDurationMs = template.transitionDurationMs
-            )
-            projectRepo.saveProject(demoProject)
-            projects = projectRepo.loadAllNow()
-            CrashMarker.mark(context, "HomeScreen: opening quick demo project ${demoProject.id}")
-            onProjectOpen(demoProject.id)
-        }
-    }
-
-    val categories = listOf("All", "Viral Reels", "8K Cinema", "Cyberpunk", "Retro Film", "Speed & Drill", "Lo-Fi Cozy", "Vogue Glam")
-
-    val filteredTemplates = remember(templates, selectedCategory) {
-        if (selectedCategory == "All") {
-            templates
+    fun openEditorFor(mediaType: ClipType) {
+        val pickerType = if (mediaType == ClipType.IMAGE) {
+            ActivityResultContracts.PickVisualMedia.ImageOnly
         } else {
-            templates.filter { t ->
-                when (selectedCategory) {
-                    "Viral Reels" -> t.aspectRatio == "9:16" || t.tags.contains("viral")
-                    "8K Cinema" -> t.tags.contains("cinematic") || t.resolution == "4K" || t.id.contains("cinema")
-                    "Cyberpunk" -> t.tags.contains("cyberpunk") || t.tags.contains("neon") || t.tags.contains("matrix")
-                    "Retro Film" -> t.tags.contains("vintage") || t.tags.contains("film") || t.tags.contains("retro")
-                    "Speed & Drill" -> t.tags.contains("fast") || t.tags.contains("drill") || t.tags.contains("action") || t.isSlowMotion
-                    "Lo-Fi Cozy" -> t.tags.contains("lo-fi") || t.tags.contains("calm") || t.tags.contains("chillhop") || t.tags.contains("cozy")
-                    "Vogue Glam" -> t.tags.contains("beauty") || t.tags.contains("glam") || t.tags.contains("vogue") || t.tags.contains("rose-gold")
-                    else -> true
-                }
-            }
+            ActivityResultContracts.PickVisualMedia.VideoOnly
         }
+        mediaPicker.pickMultipleMedia.launch(PickVisualMediaRequest(pickerType))
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            AppTopBar(
-                title = "ApexStudio",
-                subtitle = "Cinematic Editor • 8K HDR NLE",
-                onHome = { /* already on home */ },
-                onExport = onExport,
-                onSettings = onOpenSettings
-            )
+            DashboardHeader(onOpenSettings = onOpenSettings)
         }
 
         item {
             NewProjectHero(
                 enabled = true,
-                onCreate = {
-                    pendingTemplateForVideo = null
-                    mediaPicker.pickMultipleMedia.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                    )
-                },
-                onAddMedia = { /* handled via onCreate */ }
+                onCreate = { openEditorFor(ClipType.VIDEO) }
+            )
+        }
+        item {
+            DashboardEditorEntries(
+                onImageEditing = { openEditorFor(ClipType.IMAGE) },
+                onVideoEditor = { openEditorFor(ClipType.VIDEO) }
             )
         }
 
-        // 30+ REAL TEMPLATES SECTION (CLICK-TO-READY)
         item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "🔥 30+ Click-To-Ready Templates",
-                                color = ApexPalette.TextPrimary,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 15.sp
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(ApexPalette.NeonCyan.copy(alpha = 0.2f))
-                                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("${templates.size} READY", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Black)
+            ProjectsShortcut(projectCount = projects.size) {
+                scope.launch { listState.animateScrollToItem(PROJECTS_SECTION_INDEX) }
+            }
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SectionLabel("Your Projects (${projects.size})")
+                Text("Pick up where you left off", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
+        }
+        if (projects.isEmpty()) {
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Your next story starts here", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("Choose a video or photo above. Your original media stays unchanged.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+
+        items(projects, key = { it.id }) { project ->
+            ProjectRow(
+                project = project,
+                onOpen = { onProjectOpen(project.id) },
+                onRename = {
+                    renameText = project.name
+                    projectToRename = project
+                },
+                onDelete = { projectToDelete = project },
+                canManage = project.id in savedProjectIds
+            )
+        }
+    }
+
+    projectToRename?.let { project ->
+        RenameProjectDialog(
+            projectName = renameText,
+            onNameChange = { renameText = it },
+            onDismiss = { projectToRename = null },
+            onConfirm = { enteredName ->
+                val newName = renameHomeProject(project, enteredName)?.name
+                if (newName != null) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            projectRepo.findById(project.id)?.let { stored ->
+                                projectRepo.saveProject(stored.copy(name = newName))
                             }
                         }
-                        Text(
-                            "Royalty-Free Music • Auto Filter & FX • Beat Sync • Apply in Seconds",
-                            color = ApexPalette.TextSecondary,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // Category filter pills
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(categories) { cat ->
-                        val isSelected = cat == selectedCategory
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.25f)
-                                    else ApexPalette.BgElevated
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) ApexPalette.NeonCyan
-                                    else ApexPalette.BorderGlass,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable { selectedCategory = cat }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                cat,
-                                color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // Horizontal Carousel of rich ready-to-use template cards
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(filteredTemplates) { tpl ->
-                        DashboardTemplateCard(
-                            template = tpl,
-                            onApplyVideo = { launchVideoPickerForTemplate(tpl) },
-                            onQuickDemo = { applyTemplateToQuickDemo(tpl) }
-                        )
+                        projectToRename = null
                     }
                 }
             }
-        }
-
-        item {
-            SectionLabel("Your Projects (${projects.size})")
-        }
-
-        items(projects) { p ->
-            ProjectRow(p, onOpen = { onProjectOpen(p.id) })
-        }
+        )
+    }
+    projectToDelete?.let { project ->
+        DeleteProjectDialog(
+            projectName = project.name,
+            onDismiss = { projectToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { projectRepo.deleteProject(project.id) }
+                    projectToDelete = null
+                }
+            }
+        )
     }
 }
 
-@Composable
-private fun DashboardTemplateCard(
-    template: TransmissionTemplate,
-    onApplyVideo: () -> Unit,
-    onQuickDemo: () -> Unit
-) {
-    val accentColor = Color(template.previewAccentArgb.toULong().toLong())
+private const val PROJECTS_SECTION_INDEX = 4
 
-    Box(
-        modifier = Modifier
-            .width(220.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(ApexPalette.BgSurface.copy(alpha = 0.97f))
-            .border(
-                1.dp,
-                Brush.linearGradient(
-                    listOf(accentColor.copy(alpha = 0.6f), ApexPalette.BorderGlass)
-                ),
-                RoundedCornerShape(16.dp)
-            )
+@Composable
+internal fun DashboardHeader(onOpenSettings: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("dashboard-header"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column {
-            // Distinct animated preview artwork: unique layout geometry
-            // per template (not just an accent tint), with the template
-            // name overlaid at its designed placement.
-            TemplateArtHeader(
-                template = template,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(104.dp)
-            )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("YOUR CREATIVE SPACE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("ApexStudio", color = ApexPalette.TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Make every frame yours.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
+        }
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                .background(ApexPalette.BgElevated).testTag("dashboard-settings")
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = ApexPalette.TextPrimary)
+        }
+    }
+}
 
-            Column(modifier = Modifier.padding(12.dp)) {
-            // Header: resolution + aspect ratio + speed badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        "${template.resolution} • ${template.fps}fps",
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+/**
+ * Prefer persisted projects, falling back to bundled/demo projects for first run.
+ * [loadFallback] is synchronous and may do work, so always execute it off the
+ * caller (HomeScreen's collector) dispatcher.
+ */
+internal suspend fun resolveHomeProjects(
+    savedProjects: List<Project>,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    loadFallback: () -> List<Project>,
+): List<Project> = if (savedProjects.isNotEmpty()) {
+    savedProjects
+} else {
+    withContext(ioDispatcher) { loadFallback() }
+}
 
-                if (template.playbackSpeed != 1.0f) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ApexPalette.NeonEmerald.copy(alpha = 0.85f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            template.speedLabel.ifBlank { "${template.playbackSpeed}x" },
-                            color = Color.Black,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-                } else {
-                    Text(
-                        template.aspectRatio,
-                        color = ApexPalette.TextTertiary,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+@Composable
+internal fun DashboardEditorEntries(
+    onImageEditing: () -> Unit,
+    onVideoEditor: () -> Unit
+) {
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 380.dp * fontScale) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onVideoEditor
+                )
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Template Title
-            Text(
-                template.name,
-                color = ApexPalette.TextPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-
-            Spacer(Modifier.height(3.dp))
-
-            // Short Description
-            Text(
-                template.description,
-                color = ApexPalette.TextSecondary,
-                fontSize = 9.sp,
-                maxLines = 2,
-                lineHeight = 12.sp
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // Background Royalty Music Badge
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-            ) {
-                Text("🎵", fontSize = 10.sp)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        template.musicTitle.ifBlank { "Original Synth Beat" },
-                        color = ApexPalette.NeonCyan,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        "${template.musicGenre} • ${template.bpm} BPM Beat Drop",
-                        color = ApexPalette.TextTertiary,
-                        fontSize = 8.sp,
-                        maxLines = 1
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // Specs badges: Filter + FX + Transition
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(ApexPalette.BgElevated)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Text("🎨 ${template.filterId}", color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1)
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(ApexPalette.BgElevated)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Text("⚡ ${template.fxPresetId}", color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1)
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            // Action Buttons: 1-Click Apply to User Video & Quick Demo
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // Primary: Add User Video (Instant Apply)
-                Box(
-                    modifier = Modifier
-                        .weight(1.3f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(accentColor, ApexPalette.NeonCyan)
-                            )
-                        )
-                        .clickable(onClick = onApplyVideo)
-                        .padding(vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(Icons.Default.VideoCall, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
-                        Text(
-                            "Add Video",
-                            color = Color.Black,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-                }
-
-                // Secondary: Quick Demo (1-Second Instant Test)
-                Box(
-                    modifier = Modifier
-                        .weight(0.9f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(ApexPalette.BgElevated)
-                        .border(0.8.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onQuickDemo)
-                        .padding(vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Demo",
-                        color = ApexPalette.TextPrimary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardEditorEntry(
+                    title = "Image Editing Session",
+                    subtitle = "Choose a photo to edit",
+                    icon = Icons.Default.Image,
+                    testTag = "dashboard-image-editing-session",
+                    modifier = Modifier.weight(1f),
+                    onClick = onImageEditing
+                )
+                DashboardEditorEntry(
+                    title = "Video Editor",
+                    subtitle = "Choose a video to edit",
+                    icon = Icons.Default.Movie,
+                    testTag = "dashboard-video-editor",
+                    modifier = Modifier.weight(1f),
+                    onClick = onVideoEditor
+                )
             }
         }
     }
 }
 
 @Composable
-private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: () -> Unit) {
+private fun DashboardEditorEntry(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    testTag: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    GlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag(testTag),
+        cornerRadius = 20.dp,
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(subtitle, color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .heightIn(min = 164.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -540,11 +352,12 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: (
             )
             .border(
                 width = 1.dp,
-                color = ApexPalette.NeonCyan.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(16.dp)
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(24.dp)
             )
             .clickable(enabled = enabled, onClick = onCreate)
-            .padding(14.dp)
+            .testTag("dashboard-new-project")
+            .padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -554,7 +367,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: (
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                ApexPalette.NeonCyan.copy(alpha = 0.3f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
                                 Color.Transparent
                             )
                         )
@@ -567,7 +380,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: (
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                                listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
                             )
                         ),
                     contentAlignment = Alignment.Center
@@ -583,23 +396,23 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit, onAddMedia: (
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Blank Cinematic Project",
+                    "New Video Project",
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp
+                    fontSize = 22.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "8K • HDR • 240 fps NLE Engine",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 10.5.sp,
+                    "EDIT • LAYER • CREATE",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "Start fresh or select 30+ ready-made templates below",
+                    "Choose your clips. Shape your story.",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 9.5.sp
+                    fontSize = 13.sp
                 )
             }
             Icon(
@@ -624,7 +437,82 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ProjectRow(p: Project, onOpen: () -> Unit) {
+internal fun ProjectsShortcut(projectCount: Int, onClick: () -> Unit) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("dashboard-projects-shortcut"),
+        cornerRadius = 16.dp,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text("Your Projects", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("$projectCount projects available", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            }
+            Text("View", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+internal fun renameHomeProject(project: Project, enteredName: String): Project? =
+    enteredName.trim().takeIf(String::isNotEmpty)?.let { project.copy(name = it) }
+
+@Composable
+internal fun RenameProjectDialog(
+    projectName: String,
+    onNameChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("home-rename-project-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("Rename project") },
+        text = {
+            OutlinedTextField(
+                value = TextFieldValue(
+                    text = projectName,
+                    selection = TextRange(projectName.length)
+                ),
+                onValueChange = { onNameChange(it.text) },
+                label = { Text("Project name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(projectName) }, enabled = projectName.trim().isNotEmpty()) {
+                Text("Save name")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun DeleteProjectDialog(
+    projectName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("home-delete-project-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("Delete project?") },
+        text = { Text("\"$projectName\" and its saved editing data will be deleted. This cannot be undone.") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Delete project") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun ProjectRow(
+    project: Project,
+    onOpen: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    canManage: Boolean = true
+) {
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -639,7 +527,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.linearGradient(
-                            listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan)
+                            listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.primary)
                         )
                     ),
                 contentAlignment = Alignment.Center
@@ -654,11 +542,12 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    p.name,
+                    project.name,
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    maxLines = 1
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -670,7 +559,7 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
-                        TimeFormat.msToShort(p.durationMs),
+                        TimeFormat.msToShort(project.durationMs),
                         color = ApexPalette.TextSecondary,
                         fontSize = 10.sp
                     )
@@ -684,25 +573,41 @@ private fun ProjectRow(p: Project, onOpen: () -> Unit) {
                         .background(ApexPalette.BgElevated)
                         .border(
                             1.dp,
-                            ApexPalette.NeonCyan.copy(alpha = 0.4f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                             RoundedCornerShape(6.dp)
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        p.resolution,
-                        color = ApexPalette.NeonCyan,
+                        project.resolution,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "${p.fps}fps",
+                    "${project.fps}fps",
                     color = ApexPalette.NeonEmerald,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
+                if (canManage) {
+                    Row {
+                        IconButton(
+                            onClick = onRename,
+                            modifier = Modifier.size(40.dp).testTag("home-project-rename-${project.id}")
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename ${project.name}", tint = ApexPalette.TextSecondary)
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(40.dp).testTag("home-project-delete-${project.id}")
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${project.name}", tint = ApexPalette.TextSecondary)
+                        }
+                    }
+                }
             }
         }
     }

@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.*
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +140,7 @@ fun TransitionPickerSheet(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Video Transitions",
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -154,6 +154,12 @@ fun TransitionPickerSheet(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(top = 2.dp)
+                )
+                Text(
+                    "Panel preview only: boundary transitions are not rendered in main timeline playback or whole-project export. Apply saves the choice, but that export route stays blocked until the transition is removed.",
+                    color = ApexPalette.Warning,
+                    fontSize = 10.sp,
+                    modifier = Modifier.widthIn(max = 280.dp).padding(top = 4.dp)
                 )
             }
 
@@ -344,7 +350,7 @@ fun TransitionPickerSheet(
                             ) {
                                 Text(
                                     trans.tag,
-                                    color = Color.White,
+                                    color = ApexPalette.TextPrimary,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -364,7 +370,7 @@ fun TransitionPickerSheet(
                         // Name
                         Text(
                             text = trans.name,
-                            color = Color.White,
+                            color = ApexPalette.TextPrimary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1
@@ -392,7 +398,7 @@ fun TransitionPickerSheet(
             ) {
                 Text(
                     "Transition Duration",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -601,11 +607,11 @@ private fun TransitionLivePreview(
                     if (p < 0.5f) {
                         val flash = p * 2f
                         drawClipA()
-                        drawRect(color = Color.White, alpha = flash)
+                        drawRect(color = ApexPalette.TextPrimary, alpha = flash)
                     } else {
                         val flash = (1f - (p - 0.5f) * 2f)
                         drawClipB()
-                        drawRect(color = Color.White, alpha = flash)
+                        drawRect(color = ApexPalette.TextPrimary, alpha = flash)
                     }
                 }
 
@@ -768,7 +774,7 @@ private fun TransitionLivePreview(
                         for (i in 0 until 7) {
                             val y = h * (i + 1) / 8f
                             drawLine(
-                                color = Color.White.copy(alpha = 0.08f * blurAmt),
+                                color = ApexPalette.TextPrimary.copy(alpha = 0.08f * blurAmt),
                                 start = Offset(0f, y),
                                 end = Offset(w, y),
                                 strokeWidth = 2f + 6f * blurAmt

@@ -2,7 +2,9 @@ package com.apexstudio.app.data.picker
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -75,11 +77,13 @@ class MediaPickerHelper(private val context: Context) {
     lateinit var pickAudioMedia: ActivityResultLauncher<String>
 
     @Composable
-    fun registerLaunchers() {
+    fun registerLaunchers(onCancelled: () -> Unit = {}) {
         pickMultipleMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia()
         ) { uris ->
-            if (uris != null) {
+            if (uris.isNullOrEmpty()) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
                         .filter {
@@ -91,11 +95,12 @@ class MediaPickerHelper(private val context: Context) {
                 }
             }
         }
-
         pickSingleMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetContent()
         ) { uri ->
-            if (uri != null) {
+            if (uri == null) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val meta = extractMetadata(uri)
                     if (meta != null) {
@@ -105,14 +110,15 @@ class MediaPickerHelper(private val context: Context) {
                 }
             }
         }
-
         // Phase E: audio-only picker. Reuses the same _pickedMedia flow
         // so the existing collect callback in EditorScreen needs no
         // changes — it just sees a list with ClipType.AUDIO metadata.
         pickAudioMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetMultipleContents()
         ) { uris ->
-            if (uris != null) {
+            if (uris.isNullOrEmpty()) {
+                onCancelled()
+            } else {
                 CoroutineScope(Dispatchers.IO).launch {
                     val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
                         .filter { it.type == com.apexstudio.app.domain.model.ClipType.AUDIO }
@@ -122,10 +128,31 @@ class MediaPickerHelper(private val context: Context) {
             }
         }
     }
-
     private fun extractMetadata(uri: Uri): MediaMetadata? {
         return try {
             CrashMarker.mark(context, "MediaPickerHelper.extractMetadata: $uri")
+            // Generic document/photo providers often expose only the
+            // OpenableColumns contract, not MediaStore's video columns. Do
+            // not send still images through either MediaStore's duration
+            // query or MediaMetadataRetriever (which cannot read JPEG/PNG).
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+            if (mimeType.startsWith("image/")) {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+                val image = MediaMetadata(
+                    uri = uri.toString(),
+                    name = getFileName(uri),
+                    durationMs = DEFAULT_IMAGE_DURATION_MS,
+                    width = options.outWidth.coerceAtLeast(0),
+                    height = options.outHeight.coerceAtLeast(0),
+                    fps = 30,
+                    type = ClipType.IMAGE
+                )
+                CrashMarker.clear(context)
+                return image
+            }
             // Prefer MediaStore (pure Java, no native codec path). MediaMetadataRetriever
             // (stagefright) is a known native-crash source on some devices/videos and its
             // crash bypasses try/catch, killing the whole process at "confirm" time.
@@ -142,7 +169,6 @@ class MediaPickerHelper(private val context: Context) {
             val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
             val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()?.toInt() ?: 30
             val name = getFileName(uri)
-            val mimeType = context.contentResolver.getType(uri) ?: ""
             retriever.release()
             val type = classifyClipType(mimeType)
             CrashMarker.clear(context)
@@ -185,17 +211,25 @@ class MediaPickerHelper(private val context: Context) {
     }
 
     private fun getFileName(uri: Uri): String {
-        var name = "media_${UUID.randomUUID()}"
-        val cursor = context.contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                if (nameIdx >= 0) {
-                    name = it.getString(nameIdx)
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) {
+                        cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
                 }
             }
+        } catch (_: Exception) {
+            // Some providers omit even the optional display-name column.
         }
-        return name
+        return uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: "media_${UUID.randomUUID()}"
     }
 
     fun toMediaClip(metadata: MediaMetadata, trackIndex: Int = 0): MediaClip {

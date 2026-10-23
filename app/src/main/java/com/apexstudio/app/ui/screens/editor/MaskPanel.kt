@@ -1,58 +1,59 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.domain.model.MaskKeyframe
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPreset
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
-import com.apexstudio.app.domain.model.MaskKeyframe
-import com.apexstudio.app.domain.model.MaskPreset
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
- * Mask tool bottom sheet (CapCut-style Mask).
- *
- * Shape picker (rectangle / circle / linear wipe), feather + opacity
- * sliders, invert toggle, and remove. The mask itself is positioned
- * and sized by dragging directly on the preview while this panel is
- * open ([MaskPreviewOverlay] edit mode).
- *
- * Every control here is live: [onUpdate] receives the new [VideoMask]
- * and the caller persists it.
+ * Compact, mobile-first mask editor. Presets and shape thumbnails are horizontal
+ * browsing strips; selecting one immediately sends a complete mask through
+ * [onUpdate], so the caller's preview and export stay on the same model path.
+ * Opening the sheet is read-only. No tracking or face detection is implied.
  */
 @Composable
 fun MaskPanel(
     mask: VideoMask?,
     onUpdate: (VideoMask?) -> Unit,
     onClose: () -> Unit,
-    // Clip-relative playhead, the stamp point for the KEYFRAME control:
-    // add bakes the current geometry at exactly this position so the
-    // mask animates in preview and on export (resolveMaskAt).
     keyframeTimeMs: Long = 0L,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
-    // NOTE: there is intentionally no `?: VideoMask.default()` fallback
-    // here. When the mask is null (removed), the panel shows the
-    // no-mask state below; every control below reads `mask` directly so
-    // a slider touch can never resurrect a removed mask.
+    var fineTuneExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -60,324 +61,238 @@ fun MaskPanel(
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(Color(0xFF141420))
             .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(16.dp)
-            .verticalScroll(scrollState)
+            .heightIn(max = 380.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Crop,
-                    contentDescription = null,
-                    tint = ApexPalette.NeonCyan,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = "Mask",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            IconButton(onClick = onClose) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = Color.White.copy(alpha = 0.7f)
-                )
+            Text("Mask", color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Close mask", tint = Color.White.copy(alpha = 0.75f))
             }
         }
 
+        // Recipes are deliberately first, so common one-tap looks are not
+        // buried beneath sliders. Applying a recipe is an explicit replacement.
+        Text("PRESETS", color = ApexPalette.TextPrimary.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Drag on the preview to move • drag the handle to resize",
-            color = Color.White.copy(alpha = 0.55f),
-            fontSize = 11.sp
-        )
-        Spacer(Modifier.height(14.dp))
-
-        // Shape picker
-        Text("SHAPE", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        // Ten chips no longer fit one row once the labels are longer than
-        // a glyph ("Blur Faces"), so shapes are laid out three per row:
-        // every mode keeps a readable label and stays tappable without a
-        // horizontal scroll. Behaviour is unchanged - tapping a shape with
-        // no mask creates one, with a mask switches it; the mask param
-        // (never a synthesized default) stays the source of truth.
-        MaskShape.entries.chunked(3).forEach { rowShapes ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                rowShapes.forEach { shape ->
-                    val selected = mask?.shape == shape
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                                else Color(0xFF1C1C2E)
-                            )
-                            .border(
-                                1.5.dp,
-                                if (selected) ApexPalette.NeonCyan else Color.Transparent,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { onUpdate((mask ?: VideoMask.default()).copy(shape = shape)) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = shape.label,
-                            color = if (selected) ApexPalette.NeonCyan else Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            MaskPreset.ALL.forEach { preset ->
+                val selected = mask?.presetId == preset.id
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f) else Color(0xFF1C1C2E))
+                        .border(1.dp, if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable { onUpdate(preset.apply()) }
+                        .padding(horizontal = 11.dp, vertical = 8.dp)
+                ) {
+                    Text(preset.label, color = if (selected) MaterialTheme.colorScheme.secondary else ApexPalette.TextPrimary.copy(alpha = 0.82f), fontSize = 11.sp, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(6.dp))
         }
 
-        // Sliders + invert only exist when there IS a mask. When the mask
-        // was removed these controls are hidden (with a hint instead), so
-        // touching a slider can never resurrect a removed mask.
-        val activeMask = mask
-        if (activeMask != null) {
-        Spacer(Modifier.height(16.dp))
-
-        // Feather slider
-        MaskSliderRow(
-            label = "Feather",
-            valueLabel = "${(activeMask.feather * 100).toInt()}%",
-            value = activeMask.feather,
-            onValueChange = { onUpdate(activeMask.copy(feather = it)) }
-        )
-        Spacer(Modifier.height(10.dp))
-
-        // Opacity slider
-        MaskSliderRow(
-            label = "Opacity",
-            valueLabel = "${(activeMask.opacity * 100).toInt()}%",
-            value = activeMask.opacity,
-            onValueChange = { onUpdate(activeMask.copy(opacity = it)) }
-        )
-        Spacer(Modifier.height(14.dp))
-
-        // Invert toggle
+        Spacer(Modifier.height(11.dp))
+        Text("SHAPE", color = ApexPalette.TextPrimary.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF1C1C2E))
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .semantics { contentDescription = "Horizontal mask shape strip" }
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            MaskShape.entries.forEach { shape ->
+                val selected = mask?.shape == shape
+                Column(
+                    modifier = Modifier
+                        .width(68.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1C1C2E))
+                        .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable {
+                            val next = MaskModel.selectShape(shape, mask, keyframeTimeMs)
+                            onUpdate(next)
+                        }
+                        .semantics { contentDescription = "Mask shape ${shape.label}" }
+                        .padding(horizontal = 6.dp, vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    MaskShapePreview(shape, Modifier.size(width = 34.dp, height = 26.dp))
+                    Text(
+                        shape.label,
+                        color = if (selected) MaterialTheme.colorScheme.primary else ApexPalette.TextPrimary.copy(alpha = 0.8f),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        if (mask == null) {
+            Spacer(Modifier.height(9.dp))
+            Text("Choose a preset or shape to add a centered mask.", color = ApexPalette.TextPrimary.copy(alpha = 0.56f), fontSize = 11.sp)
+        }
+
+        Spacer(Modifier.height(9.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text("Invert mask", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Keep everything outside the shape",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 10.sp
-                )
-            }
-            Switch(
-                checked = activeMask.invert,
-                onCheckedChange = { onUpdate(activeMask.copy(invert = it)) },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = ApexPalette.NeonCyan,
-                    checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
-                )
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // Rotation: the shape spins about its own centre, independent of
-        // feather/opacity so a nudge on one slider can never move another.
-        MaskSliderRow(
-            label = "Rotation",
-            valueLabel = "${activeMask.rotationDeg.toInt()}°",
-            value = ((activeMask.rotationDeg + 180f) / 360f).coerceIn(0f, 1f),
-            onValueChange = { onUpdate(activeMask.copy(rotationDeg = it.coerceIn(0f, 1f) * 360f - 180f)) }
-        )
-        Spacer(Modifier.height(14.dp))
-
-        // Presets ship a COMPLETE look - shape, extent, feather, rotation
-        // and inversion together - so one tap reproduces it rather than
-        // editing five settings by hand. Choosing one overwrites every
-        // geometry field (documented on MaskPreset.apply), which is what
-        // users expect from a recipe.
-        Text(
-            "PRESETS",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(8.dp))
-        MaskPreset.ALL.chunked(3).forEach { rowPresets ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                rowPresets.forEach { preset ->
-                    val active = activeMask.presetId == preset.id
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (active) ApexPalette.NeonPink.copy(alpha = 0.18f)
-                                else Color(0xFF1C1C2E)
-                            )
-                            .border(
-                                1.dp,
-                                if (active) ApexPalette.NeonPink else Color.Transparent,
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clickable {
-                                onUpdate(preset.apply().copy(presetId = preset.id))
-                            }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = preset.label,
-                            color = if (active) ApexPalette.NeonPink else Color.White.copy(alpha = 0.75f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+            if (mask != null) {
+                val active = mask
+                val stamped = active.maskKeyframes.any { it.timeMs == keyframeTimeMs }
+                OutlinedButton(
+                    onClick = {
+                        val stamp = MaskKeyframe(
+                            id = "mask-$keyframeTimeMs", timeMs = keyframeTimeMs,
+                            centerX = active.centerX, centerY = active.centerY,
+                            sizeX = active.sizeX, sizeY = active.sizeY,
+                            rotationDeg = active.rotationDeg, feather = active.feather,
+                            opacity = active.opacity, invert = active.invert
                         )
-                    }
+                        onUpdate(active.copy(maskKeyframes = (active.maskKeyframes.filterNot { it.timeMs == keyframeTimeMs } + stamp).sortedBy { it.timeMs }))
+                    },
+                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) { Text(if (stamped) "Update key" else "Add key", fontSize = 11.sp, maxLines = 1) }
+
+                if (active.maskKeyframes.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = { onUpdate(active.copy(maskKeyframes = emptyList())) },
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+                    ) { Text("Clear keys ${active.maskKeyframes.size}", fontSize = 11.sp, maxLines = 1) }
                 }
-            }
-            Spacer(Modifier.height(6.dp))
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // KEYFRAME ANIMATION: the eighth control in the task's list.
-        // "Add mask key" freezes the CURRENT geometry at the playhead, so
-        // the mask can be moved / resized / rotated / faded over time;
-        // resolveMaskAt() interpolates between stamps on preview and on
-        // export. Stamps already existing at this exact time are replaced
-        // (move a handle and re-press = adjust that key, not a second one).
-        val keyframes = activeMask.maskKeyframes
-        val stamped = keyframes.any { it.timeMs == keyframeTimeMs }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Button(
-                onClick = {
-                    val stamp = MaskKeyframe(
-                        id = "mask-$keyframeTimeMs",
-                        timeMs = keyframeTimeMs,
-                        centerX = activeMask.centerX,
-                        centerY = activeMask.centerY,
-                        sizeX = activeMask.sizeX,
-                        sizeY = activeMask.sizeY,
-                        rotationDeg = activeMask.rotationDeg,
-                        feather = activeMask.feather,
-                        opacity = activeMask.opacity,
-                        invert = activeMask.invert
-                    )
-                    onUpdate(
-                        activeMask.copy(
-                            maskKeyframes = (keyframes.filterNot { it.timeMs == keyframeTimeMs } + stamp)
-                                .sortedBy { it.timeMs }
-                        )
-                    )
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF103640)),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(
-                    text = if (stamped) "Update mask key" else "Add mask key",
-                    color = ApexPalette.NeonCyan,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            if (keyframes.isNotEmpty()) {
-                Button(
-                    onClick = { onUpdate(activeMask.copy(maskKeyframes = emptyList())) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A1520)),
-                    shape = RoundedCornerShape(10.dp)
+                OutlinedButton(
+                    onClick = { onUpdate(null) },
+                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
                 ) {
-                    Text(
-                        text = "Clear keys (${keyframes.size})",
-                        color = ApexPalette.NeonPink,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Remove", fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
-        } else {
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "No mask on this clip — pick a shape above to add one.",
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 12.sp
-            )
-        }
 
-        Spacer(Modifier.height(16.dp))
-
-        // Remove mask
         if (mask != null) {
-            Button(
-                onClick = { onUpdate(null) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A1520)),
-                shape = RoundedCornerShape(12.dp)
+            Spacer(Modifier.height(7.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1C1C2E))
+                    .clickable { fineTuneExpanded = !fineTuneExpanded }
+                    .padding(horizontal = 11.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = null,
-                    tint = ApexPalette.NeonPink,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Remove mask", color = ApexPalette.NeonPink, fontSize = 13.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                    Text("Fine-tune", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Text(if (fineTuneExpanded) "−" else "+", color = MaterialTheme.colorScheme.primary, fontSize = 17.sp)
+            }
+
+            if (fineTuneExpanded) {
+                Spacer(Modifier.height(9.dp))
+                MaskSliderRow("Feather", "${(mask.feather * 100).toInt()}%", mask.feather) { onUpdate(mask.copy(feather = it, presetId = null)) }
+                MaskSliderRow("Opacity", "${(mask.opacity * 100).toInt()}%", mask.opacity) { onUpdate(mask.copy(opacity = it, presetId = null)) }
+                MaskSliderRow("Rotation", "${mask.rotationDeg.toInt()}°", ((mask.rotationDeg + 180f) / 360f).coerceIn(0f, 1f)) {
+                    onUpdate(mask.copy(rotationDeg = it * 360f - 180f, presetId = null))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Invert mask", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Keep everything outside the shape", color = ApexPalette.TextPrimary.copy(alpha = 0.56f), fontSize = 10.sp)
+                    }
+                    Switch(
+                        checked = mask.invert,
+                        onCheckedChange = { onUpdate(mask.copy(invert = it, presetId = null)) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary, checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MaskSliderRow(
-    label: String,
-    valueLabel: String,
-    value: Float,
-    onValueChange: (Float) -> Unit
-) {
+private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
+    val accent = MaterialTheme.colorScheme.primary
+    Canvas(modifier.semantics { contentDescription = "${shape.label} mask preview" }) {
+        val w = size.width
+        val h = size.height
+        val stroke = Stroke(width = 1.8.dp.toPx())
+        val color = accent
+        val inset = 2.dp.toPx()
+        when (shape) {
+            MaskShape.RECTANGLE -> drawRect(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
+            MaskShape.ELLIPSE, MaskShape.CIRCLE -> drawOval(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
+            MaskShape.LINEAR -> {
+                drawRect(Color.White.copy(alpha = 0.12f), Offset(inset, inset), Size(w - inset * 2, h - inset * 2))
+                drawLine(color, Offset(w * 0.52f, inset), Offset(w * 0.52f, h - inset), strokeWidth = 2.dp.toPx())
+                drawLine(color.copy(alpha = 0.35f), Offset(w * 0.35f, inset), Offset(w * 0.35f, h - inset), strokeWidth = 1.dp.toPx())
+            }
+            MaskShape.MIRROR -> {
+                drawLine(color, Offset(w / 2f, inset), Offset(w / 2f, h - inset), strokeWidth = 2.dp.toPx())
+                drawLine(color, Offset(inset, inset), Offset(w / 2f, h / 2f), strokeWidth = 1.5.dp.toPx())
+                drawLine(color, Offset(w - inset, inset), Offset(w / 2f, h / 2f), strokeWidth = 1.5.dp.toPx())
+            }
+            MaskShape.BLUR_FACE -> {
+                drawOval(color.copy(alpha = 0.3f), Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
+                drawCircle(color, radius = 2.dp.toPx(), center = Offset(w * 0.36f, h * 0.42f))
+                drawCircle(color, radius = 2.dp.toPx(), center = Offset(w * 0.64f, h * 0.42f))
+                drawLine(color, Offset(w * 0.38f, h * 0.67f), Offset(w * 0.62f, h * 0.67f), strokeWidth = 1.5.dp.toPx())
+            }
+            else -> {
+                val points = MaskModel.outline(shape)
+                if (points.isNotEmpty()) {
+                    val path = Path().apply {
+                        points.forEachIndexed { i, p ->
+                            val x = w / 2f + p.x * (w - inset * 2) / 2f
+                            val y = h / 2f + p.y * (h - inset * 2) / 2f
+                            if (i == 0) moveTo(x, y) else lineTo(x, y)
+                        }
+                        close()
+                    }
+                    drawPath(path, color, style = stroke)
+                } else {
+                    drawLine(color, Offset(inset, h - inset), Offset(w - inset, inset), strokeWidth = 2.dp.toPx())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaskSliderRow(label: String, valueLabel: String, value: Float, onValueChange: (Float) -> Unit) {
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(valueLabel, color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(valueLabel, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Slider(
             value = value,
             onValueChange = onValueChange,
             valueRange = 0f..1f,
-            colors = SliderDefaults.colors(
-                thumbColor = ApexPalette.NeonCyan,
-                activeTrackColor = ApexPalette.NeonCyan
-            )
+            modifier = Modifier.height(38.dp),
+            colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary)
         )
     }
 }

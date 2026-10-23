@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Offline asset verification and focused AI/editor regressions; not the unrestricted full suite.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+python3 scripts/verify-ai-models.py
+python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+./gradlew :app:testDebugUnitTest --no-daemon --max-workers="${GRADLE_TEST_WORKERS:-2}" \
+  --tests 'com.apexstudio.app.ai.*' \
+  --tests '*AiToolsCatalogTest' \
+  --tests '*LocalAnalysisReviewVisibilityTest' \
+  --tests '*EditorLocalAnalysisTest' \
+  --tests '*EditorFaceTrackReviewTest' \
+  --tests '*EditorFaceCropApplyTest' \
+  --tests '*EditorGestureControllerTest' \
+  --tests '*FaceCropTrackTest' \
+  --tests '*FaceCropGlEffectTest' \
+  --tests '*EditorWordCaptionTest' \
+  --tests '*TextSpriteRendererKaraokeTest' \
+  --tests '*CaptionExportBatchTest' \
+  --tests '*TextOverlayFramePlannerTest' \
+  --tests '*TextOverlayBatchRasterTest' \
+  --tests '*WhisperCaptionBoundsTest' \
+  --tests '*EditorCaptionReliabilityTest' \
+  --tests '*EditorBackgroundControllerTest' \
+  --tests '*EditorBackgroundHistoryTest' \
+  --tests '*BackgroundOutputPublicationTest' \
+  --tests '*WhisperInferenceReliabilityTest' \
+  --tests '*WhisperBundledModelCancellationTest' \
+  --tests '*WhisperModelIntegrityTest' \
+  --tests '*WhisperTokenDecodingTest' \
+  --tests '*PcmAudioProcessorTest' \
+  --tests '*AudioTrackEnvelopeAudioProcessorTest' \
+  --tests '*EditorTrimPositionTest' \
+  --tests '*EditorTimelineSnappingTest' \
+  --tests '*TimelineRipplePreservationTest' \
+  --tests '*TimelineTrimScaleTest' \
+  --tests '*MainTimelineTrimGestureTest' \
+  --tests '*TimelineClipGestureTest' \
+  --tests '*ExportAudioSourceConfigTest' \
+  --tests '*VideoExportAudioProcessorsTest' \
+  --tests '*ExportApplicationThreadTest' \
+  --tests '*AudioExportSourceProbeTest' \
+  --tests '*ExportVideoEffectLayersTest' \
+  --tests '*ProjectTimingModelVersionTest' \
+  --tests '*ProjectCompositionTimelineTest' \
+  --tests '*ProjectCompositionExportTest' \
+  --tests '*EditorProjectExportControllerTest' \
+  --tests '*ProjectExportPreflightTest' \
+  --tests '*PhotoExportConfigTest' \
+  --tests '*ImagePackReviewRegressionTest' \
+  --tests '*PreviewLayerTouchRoutingTest' \
+  --tests '*ProjectVideoPresets*Test' \
+  --tests '*EditorVideoPresets*Test' \
+  --tests '*VideoUpscale*Test' \
+  --tests '*EditorVideoUpscale*Test' \
+  --tests '*AiToolsPanelTest' \
+  --tests '*ModelDownloadsDialogTest' \
+  --tests '*EditorPreviewControlsRegressionTest' \
+  --tests '*PhotoPreviewGeometryTest' \
+  --tests '*CameraKitDeliveryRouteTest' \
+  --tests '*PhotoVideoEncoderTest' \
+  --tests '*TrimRangeNormalizationTest' \
+  --tests '*EditorAudioExportSourcesTest' \
+  --tests '*EditorOverlayAudioExportSourcesTest' \
+  --tests '*OverlayAudio*Test' \
+  --tests '*StandaloneAudioCompositionTest' \
+  --tests '*AudioTrackPlacementTest' \
+  --tests '*AudioPlaybackPositionTest' \
+  --tests '*AudioPlaybackMixTest' \
+  --tests '*LocalAudioImportPolicyTest' \
+  --tests '*LocalAudioImportDeliveryTest' \
+  --tests '*AudioMixerPanelTest' \
+  --tests '*MusicExportMixerTest' \
+  --tests '*AudioMixExportNoticeTest' \
+  --tests '*ExportCodecGuardTest' \
+  --tests '*VideoExportScopeTest' \
+  --tests '*ExportCodecPumpTest' \
+  --tests '*AudioExportWarningTest' \
+  --tests '*ExportPcmBufferTest' \
+  --tests '*VoiceRecordingTimingTest' \
+  --tests 'com.apexstudio.app.domain.model.ModelsTest' \
+  --tests '*OverlayClipTest' \
+  --tests '*OverlayEditorRefreshTest' \
+  --tests '*ClipTimeMappingTest' \
+  --tests '*SpeedCurveMathTest' \
+  --tests '*OverlayFrameSelectionPolicyTest' \
+  --tests '*TextPanelModerationTest' \
+  --tests '*OverlaySplitTrimTest' \
+  --tests '*OverlayPropertiesSafetyTest' \
+  --tests '*PipOverlayCanvasTest' \
+  --tests '*OverlayCropGeometryTest' \
+  --tests '*OverlayImageDecoderTest' \
+  --tests '*ManualCropEditorTest' \
+  --tests '*ManualCropPanelTest' \
+  --tests '*CropSourceDimensionsTest' \
+  --tests '*EditorManualCropTest' \
+  --tests '*VideoCropPresetTest' \
+  --tests '*VideoCropGlEffectTest' \
+  --tests '*ModernFxShadersTest' \
+  --tests '*LutAssetIntegrityTest'
+./gradlew :feature:camerakit:testDebugUnitTest --no-daemon --max-workers="${GRADLE_TEST_WORKERS:-2}" \
+  --tests '*CameraKitConfigTest'

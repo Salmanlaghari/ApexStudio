@@ -36,7 +36,7 @@ import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.ar.ArFilterPreset
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.domain.model.ClipType
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.io.File
 
 @Composable
@@ -196,7 +196,7 @@ fun CameraCapturePanel(
                 modifier = Modifier.padding(bottom = 6.dp)
             ) {
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(13.dp))
-                Text("AR / AI Filters (Live Preview)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("AR / AI Filters (Live Preview)", color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
 
             LazyRow(
@@ -209,8 +209,8 @@ fun CameraCapturePanel(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (isNone) ApexPalette.NeonCyan.copy(alpha = 0.25f) else Color(0xFF161624))
-                            .border(1.dp, if (isNone) ApexPalette.NeonCyan else Color(0xFF262638), RoundedCornerShape(10.dp))
+                            .background(if (isNone) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
+                            .border(1.dp, if (isNone) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
                             .clickable {
                                 activeArId = null
                                 onSelectArFilter(null)
@@ -219,8 +219,8 @@ fun CameraCapturePanel(
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Default.Block, contentDescription = null, tint = if (isNone) ApexPalette.NeonCyan else Color(0xFF9CA3AF), modifier = Modifier.size(12.dp))
-                            Text("Original", color = if (isNone) Color.White else Color(0xFF9CA3AF), fontSize = 11.sp)
+                            Icon(Icons.Default.Block, contentDescription = null, tint = if (isNone) ApexPalette.NeonCyan else ApexPalette.TextSecondary, modifier = Modifier.size(12.dp))
+                            Text("Original", color = ApexPalette.TextPrimary, fontSize = 11.sp)
                         }
                     }
                 }
@@ -231,8 +231,8 @@ fun CameraCapturePanel(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSel) col.copy(alpha = 0.35f) else Color(0xFF161624))
-                            .border(1.dp, if (isSel) col else Color(0xFF262638), RoundedCornerShape(10.dp))
+                            .background(if (isSel) col.copy(alpha = 0.35f) else ApexPalette.BgElevated)
+                            .border(1.dp, if (isSel) col else ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
                             .clickable {
                                 activeArId = item.id
                                 onSelectArFilter(item.id)
@@ -242,7 +242,7 @@ fun CameraCapturePanel(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = col, modifier = Modifier.size(12.dp))
-                            Text(item.title, color = if (isSel) Color.White else Color(0xFFD1D5DB), fontSize = 11.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                            Text(item.title, color = if (isSel) Color.White else ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
                         }
                     }
                 }

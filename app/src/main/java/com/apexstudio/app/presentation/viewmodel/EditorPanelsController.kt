@@ -22,23 +22,40 @@ fun EditorViewModel.resetAllAdjustments() {
 }
 
 
-fun EditorViewModel.openVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = true) }
+fun EditorViewModel.openVoiceRecorder() {
+    // Keep the position from the moment recording is requested, rather than
+    // wherever playback happens to be when the saved file returns.
+    voiceOverStartMs = livePlayheadMs().coerceAtLeast(0L)
+    _state.update { it.copy(voiceRecorderOpen = true) }
+}
 
 fun EditorViewModel.closeVoiceRecorder() = _state.update { it.copy(voiceRecorderOpen = false) }
 
 fun EditorViewModel.addVoiceOverTrack(uri: String, durationMs: Long, name: String) {
+    if (durationMs <= 0L) return
+    if (_state.value.project == null) return
     val newTrack = AudioTrack(
         id = java.util.UUID.randomUUID().toString(),
         name = name,
         uri = uri,
         volume = 1f,
         trimEndMs = durationMs,
-        kind = AudioTrack.Kind.SFX
+        kind = AudioTrack.Kind.SFX,
+        startTimeMs = voiceOverStartMs.coerceAtLeast(0L),
+        sourceDurationMs = durationMs
     )
     _state.update { st ->
-        val proj = st.project ?: return@update st
-        val updatedTracks = proj.audioTracks + newTrack
-        st.copy(project = proj.copy(audioTracks = updatedTracks))
+        val currentProject = st.project ?: return@update st
+        val updatedTracks = currentProject.audioTracks + newTrack
+        // Duration uses the playable span (trimEnd - trimStart), not the
+        // source out-point. Keep the project's persisted duration in sync
+        // with the editor mirror so reopening the draft retains the same end.
+        val duration = computeTimelineDurationMs(currentProject.clips, updatedTracks)
+        st.copy(
+            project = currentProject.copy(audioTracks = updatedTracks, durationMs = duration),
+            durationMs = duration,
+            selectedAudioTrackId = newTrack.id
+        )
     }
     // Keep the mixer list in sync (the old code added the voiceover
     // only to the project list, so it never appeared in the mixer)

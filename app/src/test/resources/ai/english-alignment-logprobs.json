@@ -1,0 +1,14 @@
+{
+  "modelSha256": "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22",
+  "audioSha256": "12f8eae82f20ce6725b5afbb04805a0d9f4e1b6e3d35598c545882c3fdb878cf",
+  "logProbSha256": "6974579a7cc2f5e9af8d7baba50dadda2bcd4bb14709e02e849e9595b867f341",
+  "frames": 292,
+  "vocabularySize": 32,
+  "frameStrideMs": 20,
+  "firstFrameCenterMs": 12,
+  "transcript": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+  "durationMs": 5855,
+  "provenance": "LibriSpeech dev-clean 1272-128104-0000, CC-BY-4.0; see androidTest/assets/audio/README.md",
+  "recordingRuntime": "onnxruntime CPU 1.31.0; numpy 2.5.3",
+  "greedyTranscript": "MISTER CRILKER IS THE APOSTLE OF MIDDLE CLASSES AN WE ARE GLAD TO WELCOME HIS GOSPEL"
+}

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -40,6 +41,7 @@ fun NeonGradientBackground(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val themeColors = MaterialTheme.colorScheme
     Box(
         modifier = modifier
             .background(
@@ -59,7 +61,7 @@ fun NeonGradientBackground(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            ApexPalette.NeonPurple.copy(alpha = 0.18f),
+                            themeColors.secondary.copy(alpha = 0.18f),
                             Color.Transparent
                         ),
                         radius = 900f
@@ -72,7 +74,7 @@ fun NeonGradientBackground(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            ApexPalette.NeonCyan.copy(alpha = 0.10f),
+                            themeColors.primary.copy(alpha = 0.10f),
                             Color.Transparent
                         ),
                         radius = 1100f

@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,11 +31,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropGlEffect
+import com.apexstudio.app.data.effect.FaceCropRenderConfig
 import com.apexstudio.app.domain.model.StickerOverlay
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.VideoDrawingTool
+import com.apexstudio.app.domain.model.VideoDrawingStroke
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 
 // === 2. VIDEO PREVIEW AREA ===
+internal const val DEFAULT_PREVIEW_COVER_MODE = false
+internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 16f / 9f
+
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
@@ -60,7 +72,7 @@ fun VideoPreviewArea(
     // Keyframe upsert for canvas gestures while the selected overlay
     // has keyframes (gesture edits the keyframe, not pip base values).
     onUpsertOverlayKeyframe: ((id: String, timeMs: Long, x: Float, y: Float, scale: Float, rotationDeg: Float, opacity: Float, persist: Boolean) -> Unit)? = null,
-    isCoverMode: Boolean = true,
+    isCoverMode: Boolean = DEFAULT_PREVIEW_COVER_MODE,
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
     activeFilterId: String? = null,
     filterIntensity: Float = 1.0f,
@@ -121,9 +133,72 @@ fun VideoPreviewArea(
     photoClip: MediaClip? = null,
     photoCropActive: Boolean = false,
     onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
+    videoWidth: Int = 0,
+    videoHeight: Int = 0,
+    drawingLayers: List<VideoDrawingLayer> = emptyList(),
+    drawingClipId: String? = null,
+    drawingEnabled: Boolean = false,
+    drawingTool: VideoDrawingTool = VideoDrawingTool.BRUSH,
+    drawingColorArgb: Long = 0xFFFF3B82L,
+    drawingBrushWidth: Float = VideoDrawingStroke.DEFAULT_WIDTH,
+    onDrawingLayerChange: (VideoDrawingLayer) -> Unit = {},
+    // Main-track video crop; IMAGE clips use photoClip.photoEdit.crop instead.
+    videoCrop: VideoCropSettings? = null,
+    faceCropConfig: FaceCropRenderConfig? = null,
+    projectVideoEffectId: String? = null,
+    workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+    onEffectPreviewFailure: (String) -> Unit = {},
+    compositionAspectRatio: Float = LOCKED_EDITOR_PREVIEW_ASPECT,
     modifier: Modifier = Modifier
 ) {
-    val currentResizeMode = if (isCoverMode) {
+    // Fixed project-video effects run on decoded pixels with the same matrix and
+    // shader as export, not the approximate legacy Compose filter overlay.
+    val workspaceEffectBinding = remember(workspaceEffects) {
+        workspaceEffectPreviewBinding(workspaceEffects)
+    }
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        try {
+            if (photoClip == null) {
+                val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
+                player.setVideoEffects(listOfNotNull(
+                    dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
+                    com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
+                    *workspaceEffectBinding.renderEffects.toTypedArray()
+                ))
+                if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
+                // Replacing a video-effect chain while paused does not guarantee Media3
+                // redraws the already-presented frame. Seek to the same source position
+                // to invalidate that frame; never move the project playhead or auto-play.
+                else if (!player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY) {
+                    player.seekTo(player.currentPosition.coerceAtLeast(0L))
+                }
+            } else player.setVideoEffects(emptyList())
+        } catch (error: Exception) {
+            onEffectPreviewFailure(error.message ?: "This device cannot preview this video effect.")
+        }
+    }
+    var photoAspectRatio by remember(photoClip?.id) { mutableStateOf<Float?>(null) }
+    val mediaAspectRatio = when {
+        photoClip != null -> photoAspectRatio
+        else -> previewContentAspect(
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
+            effectOutputAspect = faceCropConfig?.track?.outputAspectRatio
+                ?: videoCropOutputAspect(videoWidth, videoHeight,
+                    exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f, videoCrop)
+        )
+    }
+    // Photo crop handles and dynamic face output force FIT regardless of COVER.
+    val contentCoverMode = if (photoClip != null) isCoverMode && !photoCropActive
+        else faceCropConfig == null && isCoverMode
+    val mediaContentModifier = Modifier.fillMaxSize().clipToPreviewContent(mediaAspectRatio, contentCoverMode)
+
+    // Dynamic face output already has its exact target aspect; never zoom-crop it a second time.
+    val currentResizeMode = if (faceCropConfig != null) {
+        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    } else if (isCoverMode) {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     } else {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -132,9 +207,11 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
+            // This is only the letterbox/frame surface around media. The
+            // PlayerView/PhotoClipPreview content is not recolored or masked.
             .background(ApexPalette.BgBase)
-            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(24.dp))
+            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }
@@ -171,7 +248,9 @@ fun VideoPreviewArea(
                     settings = photoClip.photoEdit,
                     cropActive = photoCropActive,
                     onCropChange = { onPhotoCropRectChange?.invoke(it) },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    isCoverMode = isCoverMode,
+                    onImageAspectRatioChange = { photoAspectRatio = it }
                 )
             } else if (exoPlayer != null) {
                 AndroidView(
@@ -191,13 +270,8 @@ fun VideoPreviewArea(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Placeholder video frame thumbnail render
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
-                        )
-                    )
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Video preview unavailable", color = ApexPalette.TextSecondary, fontSize = 12.sp)
                 }
             }
 
@@ -209,7 +283,7 @@ fun VideoPreviewArea(
                 saturationMultiplier = keyframedSaturationFactor,
                 compareMode = lutCompareMode,
                 splitPosition = lutCompareSplitPosition,
-                modifier = Modifier.fillMaxSize()
+                modifier = mediaContentModifier
             )
 
             // Live Real-Time GPUImage Filter & Stylistic Effects Overlay
@@ -217,14 +291,14 @@ fun VideoPreviewArea(
                 config = gpuFilterConfig,
                 compareMode = gpuFilterCompareMode,
                 splitPosition = gpuFilterSplitPosition,
-                modifier = Modifier.fillMaxSize()
+                modifier = mediaContentModifier
             )
 
             // Real-time 3D Chroma Key Live Overlay
             if (chromaKeySettings.enabled) {
                 ChromaKeyPreviewOverlay(
                     settings = chromaKeySettings,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = mediaContentModifier
                 )
             }
 
@@ -234,7 +308,7 @@ fun VideoPreviewArea(
                     fxId = activeFxId,
                     intensity = fxIntensity,
                     isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = mediaContentModifier,
                     speed = fxSpeed
                 )
             }
@@ -246,145 +320,99 @@ fun VideoPreviewArea(
                     intensity = arFilterIntensity,
                     customText = arFilterCustomText,
                     isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = mediaContentModifier
                 )
             }
 
             // Shape mask (Mask tool): darken everything outside the mask
             // shape so the kept region is visible; drag to move/resize
             // while the mask panel is open.
-            MaskPreviewOverlay(
-                mask = mask,
-                editMode = maskEditMode,
-                onCenterChangeLive = onMaskCenterLive,
-                onCenterChangeFinished = onMaskCenterFinished,
-                onSizeChangeLive = onMaskSizeLive,
-                onSizeChangeFinished = onMaskSizeFinished,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // Plain timecode pill, top-left inside the preview. (Was "REC • …"
-        // with a red dot — REC implies recording; this is playback/editing.)
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Text(
-                text = "${TimeFormat.msToShort(currentTimeMs)} / ${TimeFormat.msToShort(durationMs)}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
-        }
-
-        // Small filename chip, bottom-left inside the preview
-        // (free corner — mirrors the time pill / HDR badge style).
-        // Shown only when something is selected and not playing.
-        if (selectionFileLabel != null && !isPlaying) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp)
-                    .widthIn(max = 150.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = selectionFileLabel,
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            PreviewContentCanvas(mediaAspectRatio, contentCoverMode) {
+                MaskPreviewOverlay(
+                    mask = mask,
+                    editMode = maskEditMode,
+                    onCenterChangeLive = onMaskCenterLive,
+                    onCenterChangeFinished = onMaskCenterFinished,
+                    onSizeChangeLive = onMaskSizeLive,
+                    onSizeChangeFinished = onMaskSizeFinished,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
-        }
 
-        // Mockup: "HDR" badge, bottom-right inside the preview.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black.copy(alpha = 0.55f))
-                .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = "HDR",
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
+        // Drawings are constrained to the same centered FIT bounds as the
+        // actual media (or the full viewport in COVER mode). Coordinates
+        // therefore remain frame-normalized and never include letterbox bars.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val bounds = previewContentBounds(
+                with(density) { maxWidth.toPx() },
+                with(density) { maxHeight.toPx() },
+                mediaAspectRatio,
+                contentCoverMode
             )
-        }
-
-        // Keyframe HUD Badge when active transform is non-identity
-        if (animatedTransform != com.apexstudio.app.domain.model.AnimatedTransform.Identity) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.75f))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .graphicsLayer { rotationZ = 45f }
-                            .background(ApexPalette.NeonCyan)
+            if (bounds != null) {
+                val x = with(density) { bounds.left.toDp() }
+                val y = with(density) { bounds.top.toDp() }
+                val width = with(density) { (bounds.right - bounds.left).toDp() }
+                val height = with(density) { (bounds.bottom - bounds.top).toDp() }
+                val emptyLayer = remember(drawingClipId) { VideoDrawingLayer(clipId = drawingClipId) }
+                val storedLayer = drawingLayers.lastOrNull { it.clipId == drawingClipId }
+                val layerToEdit = storedLayer ?: emptyLayer
+                Box(Modifier.offset(x, y).size(width, height)) {
+                    VideoDrawingArtwork(
+                        layers = if (drawingEnabled && storedLayer != null)
+                            drawingLayers.filterNot { it.id == storedLayer.id }
+                        else drawingLayers,
+                        clipId = drawingClipId,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Text(
-                        text = "KF: ${String.format(java.util.Locale.US, "%.2fx", animatedTransform.scale)} | ${animatedTransform.rotationDeg.toInt()}° | ${(animatedTransform.opacity * 100).toInt()}%",
-                        color = ApexPalette.NeonCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
+                    if (drawingEnabled) {
+                        VideoDrawingCanvas(
+                            layer = layerToEdit,
+                            onLayerChange = onDrawingLayerChange,
+                            modifier = Modifier.fillMaxSize(),
+                            enabled = true,
+                            tool = drawingTool,
+                            colorArgb = drawingColorArgb,
+                            brushWidth = drawingBrushWidth
+                        )
+                    }
                 }
             }
         }
+    }
 
+        // Playback time is in the transport row; no filename/time/keyframe HUD covers the media.
+        // Keyframe values stay in their editing panel; never cover the video with a debug HUD.
         // Interactive PiP overlay canvas (video / image overlays on the V2
         // track): tap to select, drag to move, pinch to scale/rotate,
         // delete + resize handles on the selection. Replaces the old
         // fixed bottom-end box, which could not be edited at all.
         if (overlayClips.isNotEmpty()) {
-            PipOverlayCanvas(
-                overlayClips = overlayClips,
-                selectedOverlayClipId = selectedOverlayClipId,
-                currentTimeMs = currentTimeMs,
-                overlayPlayer = overlayPlayer,
-                overlayPlayerClipId = overlayPlayerClipId,
-                overlayIsVideo = overlayIsVideo,
-                onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
-                onMoveOverlayClip = { id, dx, dy, persist ->
-                    onMoveOverlayClip?.invoke(id, dx, dy, persist)
-                },
-                onScaleOverlayClip = { id, scale, persist ->
-                    onScaleOverlayClip?.invoke(id, scale, persist)
-                },
-                onRotateOverlayClip = { id, deltaDeg, persist ->
-                    onRotateOverlayClip?.invoke(id, deltaDeg, persist)
-                },
-                onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
-                onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
-                onUpsertOverlayKeyframe = onUpsertOverlayKeyframe,
-                modifier = Modifier.fillMaxSize()
-            )
+            PreviewContentCanvas(compositionAspectRatio, isCoverMode = false) {
+                PipOverlayCanvas(
+                    overlayClips = overlayClips,
+                    selectedOverlayClipId = selectedOverlayClipId,
+                    currentTimeMs = currentTimeMs,
+                    overlayPlayer = overlayPlayer,
+                    overlayPlayerClipId = overlayPlayerClipId,
+                    overlayIsVideo = overlayIsVideo,
+                    onSelectOverlayClip = { onSelectOverlayClip?.invoke(it) },
+                    onMoveOverlayClip = { id, dx, dy, persist ->
+                        onMoveOverlayClip?.invoke(id, dx, dy, persist)
+                    },
+                    onScaleOverlayClip = { id, scale, persist ->
+                        onScaleOverlayClip?.invoke(id, scale, persist)
+                    },
+                    onRotateOverlayClip = { id, deltaDeg, persist ->
+                        onRotateOverlayClip?.invoke(id, deltaDeg, persist)
+                    },
+                    onOverlayGestureEnd = { onOverlayGestureEnd?.invoke(it) },
+                    onRemoveOverlayClip = { onRemoveOverlayClip?.invoke(it) },
+                    onUpsertOverlayKeyframe = onUpsertOverlayKeyframe,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         if (playerError != null) {
@@ -440,3 +468,109 @@ fun VideoPreviewArea(
     }
 }
 
+
+
+internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float): Float? =
+    (width.toFloat() * pixelAspect / height.toFloat())
+        .takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
+
+/**
+ * Aspect ratio of pixels actually presented by the preview. A dynamic face crop
+ * changes Media3's effect output size while Player.videoSize can still describe
+ * the decoded source; use the effect's fixed output aspect for overlay clipping.
+ */
+internal fun previewContentAspect(
+    videoWidth: Int,
+    videoHeight: Int,
+    pixelAspect: Float,
+    effectOutputAspect: Float? = null
+): Float? = effectOutputAspect?.takeIf { it.isFinite() && it > 0f }
+    ?: displayedVideoAspect(videoWidth, videoHeight, pixelAspect)
+
+/** Aspect of the frame emitted by the manual crop shader, not its uncropped input. */
+internal fun videoCropOutputAspect(
+    videoWidth: Int,
+    videoHeight: Int,
+    pixelAspect: Float,
+    crop: VideoCropSettings?
+): Float? {
+    val sourceAspect = displayedVideoAspect(videoWidth, videoHeight, pixelAspect) ?: return null
+    if (crop == null || crop.isFullFrame) return null
+    val safeCrop = crop.sanitized()
+    return (sourceAspect * safeCrop.width / safeCrop.height)
+        .takeIf { it.isFinite() && it > 0f }
+}
+
+internal data class PreviewContentBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/** Centered media frame for FIT; COVER fills the viewport because the player zoom-crops it. */
+internal fun previewContentBounds(
+    viewportWidth: Float,
+    viewportHeight: Float,
+    mediaAspectRatio: Float?,
+    isCoverMode: Boolean
+): PreviewContentBounds? {
+    if (viewportWidth <= 0f || viewportHeight <= 0f) return null
+    val aspect = mediaAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: return null
+    if (isCoverMode) return PreviewContentBounds(0f, 0f, viewportWidth, viewportHeight)
+    val viewportAspect = viewportWidth / viewportHeight
+    return if (viewportAspect > aspect) {
+        val width = viewportHeight * aspect
+        val left = (viewportWidth - width) / 2f
+        PreviewContentBounds(left, 0f, left + width, viewportHeight)
+    } else {
+        val height = viewportWidth / aspect
+        val top = (viewportHeight - height) / 2f
+        PreviewContentBounds(0f, top, viewportWidth, top + height)
+    }
+}
+
+/** Output-frame aspect selected in export settings; the editor chrome stays 16:9. */
+internal fun previewCompositionAspect(aspectRatio: String): Float = when (aspectRatio) {
+    "9:16" -> 9f / 16f
+    "1:1" -> 1f
+    else -> 16f / 9f
+}
+
+/**
+ * Constrains frame-normalized interactive overlays to the pixels occupied by
+ * the source/output frame. FIT letterboxes are excluded; COVER remains full
+ * viewport because the player zoom-crops the source to fill it.
+ */
+@Composable
+internal fun PreviewContentCanvas(
+    mediaAspectRatio: Float?,
+    isCoverMode: Boolean,
+    modifier: Modifier = Modifier,
+    frameModifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val bounds = previewContentBounds(
+            with(density) { maxWidth.toPx() },
+            with(density) { maxHeight.toPx() },
+            mediaAspectRatio,
+            isCoverMode
+        )
+        if (bounds == null) {
+            Box(Modifier.fillMaxSize().then(frameModifier), content = content)
+        } else {
+            val x = with(density) { bounds.left.toDp() }
+            val y = with(density) { bounds.top.toDp() }
+            val width = with(density) { (bounds.right - bounds.left).toDp() }
+            val height = with(density) { (bounds.bottom - bounds.top).toDp() }
+            Box(Modifier.offset(x, y).size(width, height).then(frameModifier), content = content)
+        }
+    }
+}
+
+private fun Modifier.clipToPreviewContent(mediaAspectRatio: Float?, isCoverMode: Boolean): Modifier =
+    drawWithContent {
+        val bounds = previewContentBounds(size.width, size.height, mediaAspectRatio, isCoverMode)
+        if (bounds == null) {
+            drawContent()
+        } else {
+            clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) { this@drawWithContent.drawContent() }
+        }
+    }

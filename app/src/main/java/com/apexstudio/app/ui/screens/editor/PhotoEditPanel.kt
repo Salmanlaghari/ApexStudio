@@ -54,7 +54,7 @@ import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.presentation.state.PhotoEditTab
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -81,7 +81,8 @@ fun PhotoEditPanel(
     onKenBurns: (Boolean) -> Unit = {},
     onResetAll: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCanvasChange: (com.apexstudio.app.domain.model.PhotoCanvasSettings) -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -98,7 +99,7 @@ fun PhotoEditPanel(
         ) {
             Text(
                 "Edit Photo",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -131,6 +132,7 @@ fun PhotoEditPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -138,7 +140,6 @@ fun PhotoEditPanel(
                 val selected = t == tab
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else Color(0xFF1E1E2E))
                         .border(
@@ -147,7 +148,7 @@ fun PhotoEditPanel(
                             RoundedCornerShape(10.dp)
                         )
                         .clickable { onTabChange(t) }
-                        .padding(vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -186,6 +187,7 @@ fun PhotoEditPanel(
                 kenBurns = settings.kenBurns,
                 onKenBurns = onKenBurns
             )
+            PhotoEditTab.CANVAS -> PhotoCanvasPanel(settings.canvas, onCanvasChange)
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -231,7 +233,7 @@ private fun PhotoCropTab(
                 ) {
                     Text(
                         if (id == "free") "Free" else id,
-                        color = if (selected) ApexPalette.NeonCyan else Color.White,
+                        color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
@@ -296,7 +298,7 @@ private fun PhotoAdjustTab(
             ) {
                 Text(
                     item.label,
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 12.sp,
                     modifier = Modifier.width(84.dp)
                 )
@@ -425,7 +427,7 @@ private fun PhotoFiltersTab(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 8.dp)
             ) {
-                Text("Intensity", color = Color.White, fontSize = 12.sp, modifier = Modifier.width(84.dp))
+                Text("Intensity", color = ApexPalette.TextPrimary, fontSize = 12.sp, modifier = Modifier.width(84.dp))
                 Slider(
                     value = settings.filterIntensity,
                     onValueChange = onFilterIntensity,
@@ -568,7 +570,7 @@ private fun PhotoRotateButton(
     ) {
         Icon(
             icon, label,
-            tint = if (active) ApexPalette.NeonCyan else Color.White,
+            tint = if (active) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
             modifier = Modifier.size(26.dp)
         )
         Spacer(Modifier.height(4.dp))
@@ -610,7 +612,7 @@ private fun PhotoMotionTab(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Ken Burns effect",
-                    color = Color.White,
+                    color = ApexPalette.TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )

@@ -150,7 +150,7 @@ class JamendoMusicApi(
         const val CACHE_TTL_MS = 24L * 60 * 60 * 1000
 
         fun isFresh(cachedAtMs: Long, nowMs: Long): Boolean =
-            cachedAtMs > 0 && (nowMs - cachedAtMs) < CACHE_TTL_MS
+            cachedAtMs > 0 && cachedAtMs <= nowMs && (nowMs - cachedAtMs) < CACHE_TTL_MS
 
         /**
          * Pure, unit-testable mapping of a Jamendo `/tracks` JSON payload to

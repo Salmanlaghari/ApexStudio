@@ -17,6 +17,11 @@ import java.util.Locale
 class ApexApp : Application() {
     val isDebug: Boolean = true
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        com.google.android.play.core.splitcompat.SplitCompat.install(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -24,29 +29,8 @@ class ApexApp : Application() {
         // initialize() handles its own exceptions internally.
         FilterManifest.initialize(this)
 
-        // If the previous run died (native signal bypasses the JVM handler), the
-        // CrashMarker file still holds the last operation it was performing.
-        // Surface it as a crash log so the diagnostics screen can show the exact step.
+        // A leftover breadcrumb is useful context, but cannot prove a native crash.
         val marker = CrashMarker.readAndConsume(this)
-        if (marker != null) {
-            val existing = CrashLog.read(this)
-            if (!existing.exists || existing.content.isBlank()) {
-                try {
-                    val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                    val msg = buildString {
-                        appendLine("Timestamp: $ts")
-                        appendLine("Thread: <process died before a stack could be captured>")
-                        appendLine()
-                        appendLine("Likely NATIVE crash at step: $marker")
-                        appendLine("(Native signals bypass Thread.setDefaultUncaughtExceptionHandler,")
-                        appendLine("so no JVM stack was captured. Reproduce and check adb logcat for")
-                        appendLine("the 'Fatal signal' line / tombstone for the precise library & backtrace.)")
-                    }
-                    File(filesDir, CrashLog.FILENAME).writeText(msg)
-                } catch (_: Throwable) {
-                }
-            }
-        }
 
         val default = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -68,5 +52,11 @@ class ApexApp : Application() {
             }
             default?.uncaughtException(thread, throwable)
         }
+
+        // OS history/trace reads must not delay the first editor frame.
+        Thread({
+            runCatching { com.apexstudio.app.data.crashlog.ProcessExitDiagnostics.collect(this, marker) }
+                .onFailure { Log.w("ApexCrash", "Previous-exit evidence unavailable", it) }
+        }, "previous-exit-diagnostics").apply { isDaemon = true }.start()
     }
 }

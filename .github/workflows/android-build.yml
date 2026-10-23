@@ -56,7 +56,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest'
+          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest ndk;28.2.13676358 cmake;3.22.1'
 
       - name: Accept SDK licenses
         run: |
@@ -84,26 +84,76 @@ jobs:
       - name: Run Lint
         run: ./gradlew lintDebug --no-daemon || true
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+      - name: Verify offline AI model integrity
+        run: |
+          python3 scripts/verify-ai-models.py
+          python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
 
-      - name: Build release APK (unsigned)
-        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon || true
+      - name: Host GLES workspace shader pixel regression (not Android)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libgles2 libgl1-mesa-dri
+          python3 -m pip install numpy PyOpenGL
+          python3 scripts/verify-workspace-shaders.py
+          python3 scripts/verify-keyframe-shaders.py
+
+      - name: Full JVM regression suite
+        run: |
+          ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon
+          python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_native_alignment.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_range_time_encoder.py'
+
+      - name: Compile Android instrumentation tests
+        run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
+      - name: Build lean arm64 debug APK and feature bundle
+        run: ./gradlew :app:assembleDebug :app:bundleDebug -PapexPhoneBuild=true --stacktrace --no-daemon
+
+      - name: Check debug native ELF and APK ZIP alignment (static only)
+        run: |
+          python3 scripts/native-alignment.py app/build/outputs/apk/debug/app-debug.apk --output app/build/outputs/apk/debug/native-alignment-apk.json
+          python3 scripts/native-alignment.py app/build/outputs/bundle/debug/app-debug.aab --output app/build/outputs/bundle/debug/native-alignment-aab.json
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Verify and identify debug APK
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "APK_SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
+          python3 scripts/apk-provenance.py app/build/outputs/apk/debug/app-debug.apk \
+            --commit "$SHA" --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            --output app/build/outputs/apk/debug/build-provenance.json
+          python3 scripts/verify-range-time-encoder.py app/build/outputs/apk/debug/app-debug.apk --output app/build/outputs/apk/debug/range-time-encoder.json
+          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/apexstudio-debug-$SHA.apk"
+          echo "### Device-test APK — $SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'arm64 phone APK: optional AI weights are downloaded explicitly; Camera Kit needs Play feature delivery. Debug AAB is for bundle inspection, not Play upload.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Compare the editor Build badge / Settings > About with build-provenance.json before testing.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'If installation reports a signature conflict, stop and preserve projects; do not uninstall blindly.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: apexstudio-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          name: apexstudio-debug-${{ env.APK_SOURCE_SHA }}-run-${{ github.run_id }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/build-provenance.json
+            app/build/outputs/apk/debug/native-alignment-apk.json
+            app/build/outputs/apk/debug/range-time-encoder.json
+            app/build/outputs/bundle/debug/*.aab
+            app/build/outputs/bundle/debug/native-alignment-aab.json
+          if-no-files-found: error
           retention-days: 14
 
-      - name: Upload release APK
-        if: success()
+      - name: Upload interaction test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apexstudio-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: phase0-test-results-${{ github.run_id }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            feature/camerakit/build/reports/tests/testDebugUnitTest/
+            feature/camerakit/build/test-results/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -158,7 +208,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest'
+          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest ndk;28.2.13676358 cmake;3.22.1'
 
       - name: Accept SDK licenses
         run: |
@@ -199,6 +249,12 @@ jobs:
           KEY_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
         run: ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon
 
+      - name: Check release native alignment (static only, all bundle modules)
+        run: |
+          python3 scripts/native-alignment.py app/build/outputs/apk/release/app-release.apk --output native-alignment-release-apk.json
+          python3 scripts/native-alignment.py app/build/outputs/bundle/release/app-release.aab --output native-alignment-release-aab.json
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 app/build/outputs/apk/release/app-release.apk
+
       - name: Size report (release APK + AAB)
         run: |
           # Kilo WARNING (ls | head -1): deterministic paths — the release
@@ -213,30 +269,26 @@ jobs:
           python3 scripts/size-report.py "$APK" "release arm64 APK" | tee size-report-apk.txt
           python3 scripts/size-report.py "$AAB" "release AAB (arm64)" | tee size-report-aab.txt
 
-      - name: Estimated arm64 download size (bundletool, best-effort)
+      - name: Validate bundle configuration and generated splits (static only)
         run: |
-          set +e
-          curl -sL -o bundletool.jar \
-            https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
-          if [ ! -s bundletool.jar ]; then echo "bundletool download failed, skipping"; exit 0; fi
-          # Kilo WARNING: verify integrity before executing the downloaded
-          # jar (supply-chain risk). SHA-256 pinned for bundletool 1.18.1
-          # (official GitHub release asset, verified 2026-10-14). A
-          # mismatch is a hard failure: never run an unverified binary.
-          echo "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c  bundletool.jar" | sha256sum -c -
-          if [ $? -ne 0 ]; then echo "bundletool checksum MISMATCH, refusing to run"; exit 1; fi
-          cat > /tmp/device-spec.json <<'JSON'
-          {"supportedAbis": ["arm64-v8a"], "supportedLocales": ["en"],
-           "screenDensity": 640, "sdkVersion": 34}
-          JSON
-          # Kilo WARNING: bundletool output was suppressed (>/dev/null),
-          # hiding diagnostics. Keep it visible so failures are diagnosable.
+          set -euo pipefail
+          curl --fail --location --retry 3 -o bundletool.jar \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          # Pinned to the SHA-256 digest published on the official release asset.
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool.jar" | sha256sum -c -
+          java -jar bundletool.jar dump config --bundle="$AAB" > bundletool-config.json
+          grep -q PAGE_ALIGNMENT_16K bundletool-config.json
           java -jar bundletool.jar build-apks --bundle="$AAB" --output=/tmp/app.apks \
             --ks=ci-release.keystore --ks-pass=pass:"$CI_KEYSTORE_PASSWORD" \
             --ks-key-alias=upload --key-pass=pass:"$CI_KEYSTORE_PASSWORD"
+          python3 scripts/native-alignment.py /tmp/app.apks --output native-alignment-release-splits.json
+          cat > /tmp/device-spec.json <<'JSON'
+          {"supportedAbis": ["arm64-v8a"], "supportedLocales": ["en"],
+           "screenDensity": 640, "sdkVersion": 35}
+          JSON
           java -jar bundletool.jar get-size total --apks=/tmp/app.apks \
             --device-spec=/tmp/device-spec.json | tee bundletool-download-size.txt
-          echo "bundletool exit: $?"
+          echo 'Static local split checks passed; Play delivery and 16 KB runtime/device testing remain required.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release AAB
         uses: actions/upload-artifact@v4
@@ -263,7 +315,7 @@ jobs:
             size-report-apk.txt
             size-report-aab.txt
             bundletool-download-size.txt
+            native-alignment-release-*.json
+            bundletool-config.json
           if-no-files-found: ignore
           retention-days: 14
-
-

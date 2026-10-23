@@ -49,7 +49,8 @@ fun ScreenWordingObjects(
     onRemoveSticker: ((String) -> Unit)? = null,
     onCropSticker: ((String, Float, Float, Float, Float) -> Unit)? = null,
     onCutoutSticker: ((String, String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    captionTimeMs: Long = currentTimeMs,
 ) {
     BoxWithConstraints(modifier = modifier) {
         val screenW = maxWidth
@@ -81,7 +82,7 @@ fun ScreenWordingObjects(
                 isSelected = isSelected,
                 containerWidth = screenW,
                 containerHeight = screenH,
-                currentTimeMs = currentTimeMs,
+                currentTimeMs = captionTimeMs,
                 isPlaying = isPlaying,
                 onSelect = { onSelectTextOverlay?.invoke(overlay.id) },
                 onPositionChange = { newX, newY ->

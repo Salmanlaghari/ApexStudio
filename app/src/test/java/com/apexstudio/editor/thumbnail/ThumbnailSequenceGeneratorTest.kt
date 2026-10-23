@@ -46,6 +46,7 @@ class ThumbnailSequenceGeneratorTest {
     fun `very long clips are clamped to MAX_FRAMES`() {
         assertEquals(ThumbnailSequenceGenerator.MAX_FRAMES, ThumbnailSequenceGenerator.sampleCount(10_000_000L))
         assertTrue(ThumbnailSequenceGenerator.sampleCount(10_000_000L) <= ThumbnailSequenceGenerator.MAX_FRAMES)
+        assertEquals(ThumbnailSequenceGenerator.MAX_FRAMES, ThumbnailSequenceGenerator.sampleCount(Long.MAX_VALUE))
     }
 
     @Test

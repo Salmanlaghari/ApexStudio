@@ -6,9 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -49,8 +52,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +69,9 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
+import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlin.math.atan2
@@ -78,6 +86,17 @@ import kotlin.math.roundToInt
  * a 16:9 box. The export GL effect uses the same per-clip aspect.
  */
 const val PIP_BOX_ASPECT = 16f / 9f
+
+/** Use the same TextureView-backed player surface as the main preview. */
+internal fun createOverlayPlayerView(
+    context: android.content.Context,
+    player: ExoPlayer?
+): PlayerView = (android.view.LayoutInflater.from(context)
+    .inflate(com.apexstudio.app.R.layout.view_player, null) as PlayerView).apply {
+    useController = false
+    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+    this.player = player
+}
 
 /**
  * Effective (resolved) overlay transform at a moment in time.
@@ -160,35 +179,17 @@ fun PipOverlayCanvas(
 
         val activeClips = overlayClips.filter { it.isOverlayActiveAt(currentTimeMs) }
         val selectedId = selectedOverlayClipId
+        val playerClip = activeClips.firstOrNull { it.id == overlayPlayerClipId }
+        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop) {
+            overlayPlayer?.setVideoEffects(
+                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop))
+            )
+        }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                // Tap = hit-test overlays topmost-first. A hit selects
-                // (tap again deselects); a miss deselects but consumes
-                // nothing so the preview's onTapVideo still fires.
-                .pointerInput(activeClips, selectedId) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        val hit = activeClips.asReversed().firstOrNull { clip ->
-                            pipHitTest(clip, down.position, canvasWpx, canvasHpx, currentTimeMs)
-                        }
-                        if (hit != null) {
-                            // Consume only the up: the down must stay
-                            // unconsumed so the item's own transform
-                            // detector can start a drag from it. A consumed
-                            // up still suppresses the preview's onTapVideo.
-                            val up = waitForUpOrCancellation()
-                            up?.consume()
-                            if (up != null) {
-                                onSelectOverlayClip(
-                                    if (hit.id == selectedId) null else hit.id
-                                )
-                            }
-                        }
-                    }
-                }
-        ) {
+        // Do not put pointerInput on this full-size parent: Compose hit-tests
+        // only the top sibling, so even an unconsumed miss would shield the V1
+        // preview. Each overlay item owns its own tap/transform recognition.
+        Box(modifier = Modifier.fillMaxSize()) {
             for (clip in activeClips) {
                 key(clip.id) {
                     PipOverlayItem(
@@ -203,6 +204,7 @@ fun PipOverlayCanvas(
                         onMoveOverlayClip = onMoveOverlayClip,
                         onScaleOverlayClip = onScaleOverlayClip,
                         onRotateOverlayClip = onRotateOverlayClip,
+                        onSelectOverlayClip = onSelectOverlayClip,
                         onOverlayGestureEnd = onOverlayGestureEnd,
                         onRemoveOverlayClip = onRemoveOverlayClip,
                         onUpsertOverlayKeyframe = onUpsertOverlayKeyframe
@@ -213,38 +215,29 @@ fun PipOverlayCanvas(
     }
 }
 
-/** Generous finger hit test against the (possibly rotated) overlay box. */
-private fun pipHitTest(
-    clip: MediaClip,
-    pos: Offset,
-    canvasWpx: Float,
-    canvasHpx: Float,
-    timeMs: Long
-): Boolean {
-    val eff = effectiveOverlayTransform(clip, timeMs)
-    val (boxW, boxH) = pipBoxSizePx(clip, canvasWpx, eff.scale)
-    val cx = eff.x.coerceIn(0f, 1f) * canvasWpx
-    val cy = eff.y.coerceIn(0f, 1f) * canvasHpx
-    // Inverse-rotate the tap into the overlay's local frame
-    // (rotationZ is clockwise-positive in screen coords).
-    val rad = Math.toRadians(eff.rotationDeg.toDouble())
-    val c = cos(rad).toFloat()
-    val s = sin(rad).toFloat()
-    val dx = pos.x - cx
-    val dy = pos.y - cy
-    val lx = dx * c + dy * s
-    val ly = -dx * s + dy * c
-    val slop = 16f
-    return kotlin.math.abs(lx) <= boxW / 2f + slop &&
-            kotlin.math.abs(ly) <= boxH / 2f + slop
-}
-
 private fun pipBoxSizePx(clip: MediaClip, canvasWpx: Float, scale: Float): Pair<Float, Float> {
     val w = canvasWpx * scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX)
-    // Intrinsic media aspect — never the legacy forced 16:9 (a portrait
-    // photo keeps its portrait box). Matches the export GL effect.
-    val aspect = clip.overlayAspect.takeIf { it > 0f } ?: PIP_BOX_ASPECT
+    // Preserve the selected crop's aspect, not the original uncropped source. Otherwise a square
+    // crop of a landscape overlay is stretched back into a landscape box. Export uses this too.
+    val aspect = croppedOverlayAspect(clip.overlayAspect, clip.videoCrop)
     return w to (w / aspect)
+}
+
+/** Handle rectangles match the control layout, expressed in item-local pixels. */
+private fun pipHandleLocalHitTest(
+    pos: Offset,
+    boxW: Float,
+    boxH: Float,
+    density: Float
+): Boolean {
+    fun inside(left: Float, top: Float, right: Float, bottom: Float) =
+        pos.x in left..right && pos.y in top..bottom
+
+    return inside(boxW - 32f * density, 6f * density, boxW - 6f * density, 32f * density) ||
+            inside((boxW - 28f * density) / 2f, 6f * density,
+                (boxW + 28f * density) / 2f, 34f * density) ||
+            inside(boxW - 38f * density, boxH - 38f * density,
+                boxW - 6f * density, boxH - 6f * density)
 }
 
 private fun OverlayBlend.toComposeBlendMode(): BlendMode = when (this) {
@@ -267,6 +260,7 @@ private fun PipOverlayItem(
     onMoveOverlayClip: (id: String, dx: Float, dy: Float, persist: Boolean) -> Unit,
     onScaleOverlayClip: (id: String, scale: Float, persist: Boolean) -> Unit,
     onRotateOverlayClip: (id: String, deltaDeg: Float, persist: Boolean) -> Unit,
+    onSelectOverlayClip: (String?) -> Unit,
     onOverlayGestureEnd: (id: String) -> Unit,
     onRemoveOverlayClip: (String) -> Unit,
     onUpsertOverlayKeyframe: ((id: String, timeMs: Long, x: Float, y: Float, scale: Float, rotationDeg: Float, opacity: Float, persist: Boolean) -> Unit)?
@@ -274,6 +268,13 @@ private fun PipOverlayItem(
     val density = LocalDensity.current
     val latest by rememberUpdatedState(clip)
     val latestTimeMs by rememberUpdatedState(currentTimeMs)
+    val latestIsSelected by rememberUpdatedState(isSelected)
+    val latestOnSelect by rememberUpdatedState(onSelectOverlayClip)
+    val latestOnMove by rememberUpdatedState(onMoveOverlayClip)
+    val latestOnScale by rememberUpdatedState(onScaleOverlayClip)
+    val latestOnRotate by rememberUpdatedState(onRotateOverlayClip)
+    val latestOnGestureEnd by rememberUpdatedState(onOverlayGestureEnd)
+    val latestOnUpsertKeyframe by rememberUpdatedState(onUpsertOverlayKeyframe)
     val eff = effectiveOverlayTransform(clip, currentTimeMs)
     // NOTE: the gesture helpers below run in long-lived pointerInput
     // coroutines — they must NOT capture hasKeyframes from composition
@@ -296,41 +297,41 @@ private fun PipOverlayItem(
     }
     fun moveBy(dx: Float, dy: Float, persist: Boolean) {
         val c = latest
-        if (latest.keyframes.keyframes.isNotEmpty() && onUpsertOverlayKeyframe != null) {
+        if (latest.keyframes.keyframes.isNotEmpty() && latestOnUpsertKeyframe != null) {
             val e = effectiveOverlayTransform(c, latestTimeMs)
-            onUpsertOverlayKeyframe(
+            latestOnUpsertKeyframe?.invoke(
                 c.id, upsertTimeMs(),
                 (e.x + dx).coerceIn(0f, 1f), (e.y + dy).coerceIn(0f, 1f),
                 e.scale, e.rotationDeg, e.opacity, persist
             )
         } else {
-            onMoveOverlayClip(c.id, dx, dy, persist)
+            latestOnMove(c.id, dx, dy, persist)
         }
     }
     fun scaleTo(scale: Float, persist: Boolean) {
         val c = latest
-        if (latest.keyframes.keyframes.isNotEmpty() && onUpsertOverlayKeyframe != null) {
+        if (latest.keyframes.keyframes.isNotEmpty() && latestOnUpsertKeyframe != null) {
             val e = effectiveOverlayTransform(c, latestTimeMs)
-            onUpsertOverlayKeyframe(
+            latestOnUpsertKeyframe?.invoke(
                 c.id, upsertTimeMs(),
                 e.x, e.y,
                 scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX),
                 e.rotationDeg, e.opacity, persist
             )
         } else {
-            onScaleOverlayClip(c.id, scale, persist)
+            latestOnScale(c.id, scale, persist)
         }
     }
     fun rotateBy(deltaDeg: Float, persist: Boolean) {
         val c = latest
-        if (latest.keyframes.keyframes.isNotEmpty() && onUpsertOverlayKeyframe != null) {
+        if (latest.keyframes.keyframes.isNotEmpty() && latestOnUpsertKeyframe != null) {
             val e = effectiveOverlayTransform(c, latestTimeMs)
-            onUpsertOverlayKeyframe(
+            latestOnUpsertKeyframe?.invoke(
                 c.id, upsertTimeMs(),
                 e.x, e.y, e.scale, e.rotationDeg + deltaDeg, e.opacity, persist
             )
         } else {
-            onRotateOverlayClip(c.id, deltaDeg, persist)
+            latestOnRotate(c.id, deltaDeg, persist)
         }
     }
 
@@ -352,43 +353,95 @@ private fun PipOverlayItem(
                     (cyPx - boxHpx / 2f).roundToInt()
                 )
             }
-            .graphicsLayer {
+                .graphicsLayer {
                 rotationZ = eff.rotationDeg
                 alpha = eff.opacity.coerceIn(0f, 1f)
             }
-            .pointerInput(clip.id) {
-                // detectTransformGestures has no end callback: re-arm in a
-                // loop and persist once per completed gesture.
-                while (true) {
+            .testTag("pip-overlay-item-${clip.id}")
+            // Preview orientation/window resizing changes normalized drag coordinates.
+            // Restart only for viewport changes, not each live clip transform update.
+            .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
+                // detectTransformGestures never returns after a pointer-up;
+                // wrapping it in finally only saved on disposal. Track each
+                // gesture explicitly so a completed drag/pinch saves once and
+                // the next interaction gets its own undo entry.
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial
+                    )
+                    val startedOnHandle = latestIsSelected &&
+                            pipHandleLocalHitTest(
+                                down.position, size.width.toFloat(), size.height.toFloat(), density.density
+                            )
                     var gestureActive = false
+                    var pastTouchSlop = false
+                    var accumulatedZoom = 1f
+                    var accumulatedRotation = 0f
+                    var accumulatedPan = Offset.Zero
                     try {
-                        detectTransformGestures { _, pan, zoom, rotation ->
-                            gestureActive = true
-                            val c = latest
-                            if (pan != Offset.Zero) {
-                                moveBy(pan.x / canvasWpx, pan.y / canvasHpx, false)
+                        do {
+                            // Observe/claim before descendants in the Main
+                            // pass. In particular, a video overlay's native
+                            // PlayerView can consume AndroidView touch events;
+                            // reading only Main made selected video PiPs inert.
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val cancelled = event.changes.any { it.isConsumed }
+                            val up = event.changes.firstOrNull {
+                                it.id == down.id && !it.pressed
                             }
-                            if (zoom != 1f) {
-                                val e = effectiveOverlayTransform(c, latestTimeMs)
-                                scaleTo(
-                                    (e.scale * zoom).coerceIn(
-                                        MediaClipPipScale.MIN,
-                                        MediaClipPipScale.MAX
-                                    ),
-                                    false
+                            if (!cancelled && up != null && event.changes.none { it.pressed } &&
+                                !gestureActive && !startedOnHandle
+                            ) {
+                                // Item-local taps select/deselect; consuming
+                                // this up prevents the preview's screen-control
+                                // tap from firing. Misses never enter this node.
+                                up.consume()
+                                latestOnSelect(
+                                    if (latestIsSelected) null else latest.id
                                 )
                             }
-                            if (rotation != 0f) {
-                                // Same convention as the sticker canvas:
-                                // detectTransformGestures reports rotation in
-                                // the same clockwise-positive sense as
-                                // graphicsLayer rotationZ.
-                                rotateBy(rotation, false)
+                            if (!cancelled && !startedOnHandle) {
+                                val pan = event.calculatePan()
+                                val zoom = event.calculateZoom()
+                                val rotation = event.calculateRotation()
+                                if (!pastTouchSlop) {
+                                    accumulatedZoom *= zoom
+                                    accumulatedRotation += rotation
+                                    accumulatedPan += pan
+                                    val radius = event.calculateCentroidSize(useCurrent = false)
+                                    val zoomMotion = kotlin.math.abs(1f - accumulatedZoom) * radius
+                                    val rotationMotion = kotlin.math.abs(accumulatedRotation) *
+                                        kotlin.math.PI.toFloat() * radius / 180f
+                                    pastTouchSlop = maxOf(
+                                        zoomMotion, rotationMotion, accumulatedPan.getDistance()
+                                    ) > viewConfiguration.touchSlop
+                                }
+                                if (pastTouchSlop) {
+                                    if (!gestureActive) {
+                                        gestureActive = true
+                                        // Select when the gesture becomes an
+                                        // edit, before move callbacks reach the
+                                        // controller.
+                                        if (!latestIsSelected) latestOnSelect(latest.id)
+                                    }
+                                    if (pan != Offset.Zero) {
+                                        moveBy(pan.x / canvasWpx, pan.y / canvasHpx, false)
+                                    }
+                                    if (zoom != 1f) {
+                                        val e = effectiveOverlayTransform(latest, latestTimeMs)
+                                        scaleTo(e.scale * zoom, false)
+                                    }
+                                    if (rotation != 0f) rotateBy(rotation, false)
+                                    event.changes.forEach {
+                                        if (it.positionChanged()) it.consume()
+                                    }
+                                }
                             }
-                        }
+                        } while (!cancelled && event.changes.any { it.pressed })
                     } finally {
                         if (gestureActive) {
-                            onOverlayGestureEnd(latest.id)
+                            latestOnGestureEnd(latest.id)
                         }
                     }
                 }
@@ -477,13 +530,11 @@ private fun PipOverlayItem(
                 isVideo == true && overlayPlayer != null &&
                         overlayPlayerClipId == clip.id -> {
                     AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                player = overlayPlayer
-                            }
-                        },
+                        // A default PlayerView creates a SurfaceView, which
+                        // is outside Compose's transformed/clipped layers and
+                        // obscures overlay gestures. The shared layout uses a
+                        // TextureView, matching the main preview renderer.
+                        factory = { ctx -> createOverlayPlayerView(ctx, overlayPlayer) },
                         update = { view -> view.player = overlayPlayer },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -593,7 +644,13 @@ private fun PipOverlayItem(
                                 // (computeGeometry: pipH = pipW /
                                 // aspect). FillBounds == export mapping.
                                 contentScale = ContentScale.FillBounds,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().graphicsLayer {
+                                    val crop = clip.videoCrop.sanitized()
+                                    scaleX = 1f / crop.width
+                                    scaleY = 1f / crop.height
+                                    translationX = (0.5f - (crop.left + crop.right) * 0.5f) * size.width * scaleX
+                                    translationY = (0.5f - (crop.top + crop.bottom) * 0.5f) * size.height * scaleY
+                                },
                                 onError = {
                                     android.util.Log.w(
                                         "PipOverlayCanvas",
@@ -666,7 +723,7 @@ private fun PipOverlayItem(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var prevAngle: Float? = null
                         val handleHalfPx = with(density) { 14.dp.toPx() }
                         // Box centre in handle-local coords, computed
@@ -702,8 +759,8 @@ private fun PipOverlayItem(
                                     if (delta != 0f) rotateBy(delta, false)
                                 }
                             },
-                            onDragEnd = { onOverlayGestureEnd(latest.id) },
-                            onDragCancel = { onOverlayGestureEnd(latest.id) }
+                            onDragEnd = { latestOnGestureEnd(latest.id) },
+                            onDragCancel = { latestOnGestureEnd(latest.id) }
                         )
                     },
                 contentAlignment = Alignment.Center
@@ -723,9 +780,10 @@ private fun PipOverlayItem(
                     .align(Alignment.BottomEnd)
                     .offset(x = (-6).dp, y = (-6).dp)
                     .size(32.dp)
+                    .testTag("pip-overlay-resize-${clip.id}")
                     .clip(CircleShape)
                     .background(ApexPalette.NeonCyan)
-                    .pointerInput(clip.id) {
+                    .pointerInput(clip.id, canvasWpx, canvasHpx, density) {
                         var startScale = 1f
                         var acc = 0f
                         var baseSide = 1f
@@ -749,8 +807,8 @@ private fun PipOverlayItem(
                                     false
                                 )
                             },
-                            onDragEnd = { onOverlayGestureEnd(latest.id) },
-                            onDragCancel = { onOverlayGestureEnd(latest.id) }
+                            onDragEnd = { latestOnGestureEnd(latest.id) },
+                            onDragCancel = { latestOnGestureEnd(latest.id) }
                         )
                     },
                 contentAlignment = Alignment.Center

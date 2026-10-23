@@ -19,54 +19,42 @@ import com.apexstudio.app.data.text.TextSpriteRenderer
 import com.apexstudio.app.domain.model.TextOverlay
 
 /**
- * Bakes one [TextOverlay] into the exported video.
+ * Bakes timed text overlays into the exported video. All captions active on a
+ * frame are rendered, in list order, into one full-frame transparent sprite;
+ * the effect then composites that sprite in a single GL pass.
  *
- * The caption is rasterised onto a transparent sprite whose aspect
- * ratio matches the source video (so normalised caption coordinates
- * line up 1:1 with the frame), uploaded as a second GL texture and
- * alpha-composited over every frame. Because the editor preview uses
- * the same [TextSpriteRenderer] geometry, the exported caption sits
- * at exactly the position and size the user dragged it to on screen.
+ * Only the current active-set sprite is retained. In particular, construction
+ * does not rasterize or upload captions that occur later in the project, which
+ * keeps word-by-word karaoke exports bounded by the current frame rather than
+ * by the total number of words.
  *
- * Animated captions (intro presets, outros, loops) are re-rasterised
- * through [TextAnimEngine] whenever the animation state changes
- * between frames, so the MP4 bakes exactly what the live preview
- * showed. Static captions keep the old single-upload fast path.
- *
- * Keyframed text (moving/animated via the timeline diamond strip) is
- * baked the same way: [TextAnimEngine.fullState] merges the keyframe
- * interpolation into the sprite state, so the export moves exactly
- * like the preview.
- *
- * Multiple captions = multiple effect instances appended to the
- * effect chain (each composites its own sprite on top of the output
- * of the previous one).
+ * The single-overlay constructor remains available for existing callers.
  */
 @UnstableApi
 class TextOverlayGlEffect(
-    private val context: Context,
-    private val overlay: TextOverlay,
+    context: Context,
+    private val overlays: List<TextOverlay>,
     private val aspectRatio: Float
 ) : GlEffect {
 
+    /** Backwards-compatible API for the original one-caption effect. */
+    constructor(context: Context, overlay: TextOverlay, aspectRatio: Float) :
+        this(context, listOf(overlay), aspectRatio)
+
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        // Make sure bundled OFL fonts resolve inside the renderer.
         TextFontRegistry.init(context)
-        return TextOverlayShaderProgram(context, overlay, aspectRatio, useHdr)
+        return TextOverlayShaderProgram(overlays, aspectRatio, useHdr)
     }
 
     @UnstableApi
     private class TextOverlayShaderProgram(
-        context: Context,
-        private val overlay: TextOverlay,
+        private val overlays: List<TextOverlay>,
         private val aspectRatio: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
-
         private val glProgram: GlProgram
-        private val overlayTexId: IntArray = intArrayOf(0)
-        private val animated: Boolean = TextAnimEngine.isAnimated(overlay)
-        private var lastStateKey: Any? = null
+        private val overlayTexId = intArrayOf(0)
+        private var cachedKey: List<TextOverlayFramePlanner.OverlayVisualKey>? = null
 
         init {
             glProgram = try {
@@ -79,8 +67,7 @@ class TextOverlayGlEffect(
                 GlUtil.getNormalizedCoordinateBounds(),
                 GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
             )
-            val identity = GlUtil.create4x4IdentityMatrix()
-            glProgram.setFloatsUniform("uTransformationMatrix", identity)
+            glProgram.setFloatsUniform("uTransformationMatrix", GlUtil.create4x4IdentityMatrix())
             val texMatrix = floatArrayOf(
                 0.5f, 0f, 0f, 0f,
                 0f, 0.5f, 0f, 0f,
@@ -88,98 +75,85 @@ class TextOverlayGlEffect(
                 0.5f, 0.5f, 0f, 1f
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
-
-            // Rasterise + upload the caption sprite (best effort — a
-            // blank caption or upload failure leaves overlayTexId = 0
-            // and drawFrame falls back to a video pass-through).
-            // Static captions upload once here; animated ones upload
-            // per animation-state change in drawFrame.
-            if (!overlay.text.isBlank() && !animated) {
-                try {
-                    uploadSprite(overlay, aspectRatio, timeMs = null)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Text overlay sprite upload failed (${overlay.text})", e)
-                }
-            }
+            // Deliberately no sprite/bitmap/texture allocation here: the first
+            // upload happens only when at least one timed overlay is active.
         }
 
-        private fun spriteSize(aspect: Float): Pair<Int, Int> {
-            // Sprite canvas: same aspect as the video, long edge
-            // capped so a 4K source doesn't need a 33 MB texture just
-            // to place a caption. Font size / position are normalised
-            // against the canvas so the composition is resolution
-            // independent.
-            val longEdge = 1600
-            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
-        }
-
-        private fun uploadSprite(overlay: TextOverlay, aspect: Float, timeMs: Long?) {
-            val (w, h) = spriteSize(aspect)
-            val states = if (timeMs != null) {
-                // Full state = intro/outro animation + keyframe track, so
-                // keyframed (moving) text bakes exactly what the preview showed.
-                mapOf(overlay.id to TextAnimEngine.fullState(overlay, timeMs, forExport = true))
-            } else {
-                emptyMap()
+        /** Replaces the sole cached texture with a sprite for the active overlays. */
+        private fun uploadActiveSprite(plan: TextOverlayFramePlanner.Plan, timeMs: Long) {
+            val (width, height) = TextOverlaySpriteSize.forAspect(aspectRatio)
+            val states = plan.overlays.associate { overlay ->
+                overlay.id to TextAnimEngine.fullState(overlay, timeMs, forExport = true)
             }
-            // Mask evaluated at the frame time (animated path) or the
-            // static mask (single-upload path) — the sprite renderer
-            // clips the overlay to it in frame space.
-            val masks = if (timeMs != null) {
-                overlay.effectiveMaskAt(timeMs)?.let { mapOf(overlay.id to it) } ?: emptyMap()
-            } else {
-                overlay.mask?.let { mapOf(overlay.id to it) } ?: emptyMap()
-            }
-            val bitmap = TextSpriteRenderer.render(listOf(overlay), w, h, states = states, masks = masks)
-            val tex = IntArray(1)
+            val masks = plan.overlays.mapNotNull { overlay ->
+                overlay.effectiveMaskAt(timeMs)?.let { overlay.id to it }
+            }.toMap()
+            val bitmap = TextSpriteRenderer.render(
+                overlays = plan.overlays,
+                width = width,
+                height = height,
+                states = states,
+                masks = masks
+            )
+            val newTexture = intArrayOf(0)
             try {
-                // Drop the previous frame's texture before uploading
-                // the new animation state.
-                if (overlayTexId[0] != 0) {
-                    GLES20.glDeleteTextures(1, overlayTexId, 0)
-                    overlayTexId[0] = 0
-                }
-                GLES20.glGenTextures(1, tex, 0)
-                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+                // Do not keep textures for inactive captions/windows. There is
+                // at most one cached texture for the entire overlay list.
+                deleteCachedTexture()
+                GLES20.glGenTextures(1, newTexture, 0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, newTexture[0])
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
                 GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
                 GlUtil.checkGlError()
-                overlayTexId[0] = tex[0]
+                overlayTexId[0] = newTexture[0]
+                newTexture[0] = 0
             } finally {
                 bitmap.recycle()
+                if (newTexture[0] != 0) GLES20.glDeleteTextures(1, newTexture, 0)
             }
         }
 
-        override fun configure(inputWidth: Int, inputHeight: Int): Size {
-            return Size(inputWidth, inputHeight)
+        private fun deleteCachedTexture() {
+            if (overlayTexId[0] != 0) {
+                GLES20.glDeleteTextures(1, overlayTexId, 0)
+                overlayTexId[0] = 0
+            }
         }
+
+        override fun configure(inputWidth: Int, inputHeight: Int): Size = Size(inputWidth, inputHeight)
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
-                glProgram.use()
-                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
-                val inWindow = timeMs >= overlay.startMs && timeMs <= overlay.endMs
-                // Animated captions: re-rasterise only when the
-                // animation state actually changed since last frame.
-                if (animated && inWindow && !overlay.text.isBlank()) {
+                val plan = TextOverlayFramePlanner.plan(overlays, timeMs)
+                if (plan.overlays.isEmpty()) {
+                    deleteCachedTexture()
+                    cachedKey = null
+                } else if (plan.cacheKey != cachedKey) {
                     try {
-                        val key = TextAnimEngine.stateKeyFull(overlay, timeMs)
-                        if (key != lastStateKey) {
-                            uploadSprite(overlay, aspectRatio, timeMs)
-                            lastStateKey = key
-                        }
+                        uploadActiveSprite(plan, timeMs)
+                        cachedKey = plan.cacheKey
                     } catch (e: Exception) {
-                        Log.w(TAG, "Text overlay animation frame failed (${overlay.text})", e)
+                        // A failed render/upload must not display pixels from a
+                        // previous timestamp or retain its full-frame sprite.
+                        deleteCachedTexture()
+                        cachedKey = null
+                        throw VideoFrameProcessingException("Text/caption render failed at ${timeMs}ms; export stopped rather than omitting the edit", e)
                     }
                 }
-                val isVisible = (overlayTexId[0] != 0) && inWindow
-                val overlayId = if (isVisible) overlayTexId[0] else inputTexId
-                glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)
+
+                glProgram.use()
+                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
+                val hasCurrentSprite = plan.cacheKey != null && cachedKey == plan.cacheKey && overlayTexId[0] != 0
+                glProgram.setSamplerTexIdUniform(
+                    "uOverlaySampler",
+                    if (hasCurrentSprite) overlayTexId[0] else 0,
+                    1
+                )
+                glProgram.setFloatsUniform("uOverlayEnabled", floatArrayOf(if (hasCurrentSprite) 1f else 0f))
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
@@ -189,10 +163,9 @@ class TextOverlayGlEffect(
 
         override fun release() {
             super.release()
-            if (overlayTexId[0] != 0) {
-                GLES20.glDeleteTextures(1, overlayTexId, 0)
-                overlayTexId[0] = 0
-            }
+            deleteCachedTexture()
+            cachedKey = null
+            glProgram.delete()
         }
     }
 
@@ -216,12 +189,18 @@ class TextOverlayGlEffect(
             varying vec2 vTextureCoord;
             uniform sampler2D uTexSampler;
             uniform sampler2D uOverlaySampler;
+            uniform float uOverlayEnabled;
             void main() {
                 vec4 video = texture2D(uTexSampler, vTextureCoord);
-                vec4 caption = texture2D(uOverlaySampler, vTextureCoord);
-                // Straight alpha blend of the caption sprite.
-                vec3 outRgb = caption.rgb * caption.a + video.rgb * (1.0 - caption.a);
-                gl_FragColor = vec4(outRgb, video.a);
+                if (uOverlayEnabled > 0.5) {
+                    vec4 caption = texture2D(uOverlaySampler, vTextureCoord);
+                    // Android Canvas/ARGB_8888 sprites upload premultiplied RGB.
+                    // Multiplying by alpha again darkens translucent text/masks.
+                    vec3 outRgb = caption.rgb + video.rgb * (1.0 - caption.a);
+                    gl_FragColor = vec4(outRgb, video.a);
+                } else {
+                    gl_FragColor = video;
+                }
             }
         """.trimIndent()
     }

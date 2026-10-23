@@ -6,6 +6,170 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
 
+/** How a main-track video is placed inside the fixed project composition frame. */
+@Serializable
+enum class VideoFitMode { FIT, COVER }
+
+/** Normalized top-left-origin crop window persisted with a video clip. */
+@Serializable
+data class VideoCropSettings(
+    val left: Float = 0f,
+    val top: Float = 0f,
+    val right: Float = 1f,
+    val bottom: Float = 1f,
+    /** One of the ids in VideoCropPreset; "free" is the default. */
+    val presetId: String = "free"
+) {
+    val width: Float get() = (right - left).coerceAtLeast(0.01f)
+    val height: Float get() = (bottom - top).coerceAtLeast(0.01f)
+    val isFullFrame: Boolean
+        get() = left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
+
+    fun sanitized(): VideoCropSettings {
+        // NaN survives coerceIn and would poison GL transforms, overlay bounds and hit testing.
+        // Restore malformed geometry as an untouched frame, not an invisible layer.
+        if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) {
+            return VideoCropSettings()
+        }
+        val l = left.coerceIn(0f, 0.99f)
+        val t = top.coerceIn(0f, 0.99f)
+        val r = right.coerceIn(l + 0.01f, 1f)
+        val b = bottom.coerceIn(t + 0.01f, 1f)
+        return copy(left = l, top = t, right = r, bottom = b)
+    }
+}
+
+/** One deterministic visual effect applied over an absolute source-media time range. */
+@Serializable
+data class WorkspaceEffect(
+    /** Stable preset id from [WorkspaceEffectPresets]. */
+    val id: String,
+    /** Inclusive absolute source timestamp in milliseconds. */
+    val startMs: Long,
+    /** Exclusive absolute source timestamp in milliseconds. */
+    val endMs: Long,
+    /** Blend/strength amount, clamped to 0..1 by the renderer. */
+    val intensity: Float = 1f,
+    /** Exposure correction in stops; zero preserves every legacy saved effect. */
+    val exposure: Float = 0f,
+    /** Contrast multiplier; one is the neutral setting. */
+    val contrast: Float = 1f,
+    /** Saturation multiplier; one is the neutral setting. */
+    val saturation: Float = 1f
+)
+
+/** Strict persisted-value validation shared by apply and export preflights. */
+fun WorkspaceEffect.hasValidParameters(durationMs: Long? = null): Boolean =
+    id in WorkspaceEffectPresets.all &&
+        startMs >= 0L && endMs > startMs && (durationMs == null || endMs <= durationMs) &&
+        intensity.isFinite() && intensity in 0f..1f &&
+        exposure.isFinite() && exposure in -2f..2f &&
+        contrast.isFinite() && contrast in 0.5f..1.5f &&
+        saturation.isFinite() && saturation in 0f..2f
+
+/** Preset ids supported by the shared preview/export GL renderer. */
+object WorkspaceEffectPresets {
+    const val MONO = "mono"
+    const val WARM = "warm"
+    const val PIXELATE = "pixelate"
+    const val SPLIT_2 = "split2"
+    const val SPLIT_3 = "split3"
+    const val CARTOON = "cartoon"
+    const val BUBBLE = "bubble"
+    const val HEARTS = "hearts"
+    const val HEARTBEAT = "heartbeat"
+    const val ICE = "ice"
+    const val VFX_CHROMATIC_SPLIT = "vfx_chromatic_split"
+    const val VFX_SCAN_GLITCH = "vfx_scan_glitch"
+    const val VFX_LIGHT_LEAK = "vfx_light_leak"
+    const val VFX_VIGNETTE = "vfx_vignette"
+    const val VFX_EDGE_GLOW = "vfx_edge_glow"
+
+    // Original, offline color looks (not LUT downloads or third-party presets).
+    const val FILTER_SOFT_WARM = "filter_soft_warm"
+    const val FILTER_COOL = "filter_cool"
+    const val FILTER_FADED = "filter_faded"
+    const val FILTER_AMBER = "filter_amber"
+    const val FILTER_ROSE = "filter_rose"
+    const val FILTER_MINT = "filter_mint"
+    const val FILTER_TEAL_ORANGE = "filter_teal_orange"
+    const val FILTER_CRISP = "filter_crisp"
+    const val FILTER_MATTE = "filter_matte"
+    const val FILTER_BW_CONTRAST = "filter_bw_contrast"
+    const val FILTER_SEPIA = "filter_sepia"
+    const val FILTER_LAVENDER = "filter_lavender"
+
+    /** These are lightweight GLSL looks, not neural filters, face tracking, or imported art. */
+    val all: Set<String> = setOf(
+        MONO, WARM, PIXELATE, SPLIT_2, SPLIT_3, CARTOON, BUBBLE, HEARTS, HEARTBEAT, ICE,
+        VFX_CHROMATIC_SPLIT, VFX_SCAN_GLITCH, VFX_LIGHT_LEAK, VFX_VIGNETTE, VFX_EDGE_GLOW,
+        FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
+        FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
+    ) + WorkspaceFilterPresetAdditions.ids
+
+    val filterIds: Set<String> = setOf(
+        FILTER_SOFT_WARM, FILTER_COOL, FILTER_FADED, FILTER_AMBER, FILTER_ROSE, FILTER_MINT,
+        FILTER_TEAL_ORANGE, FILTER_CRISP, FILTER_MATTE, FILTER_BW_CONTRAST, FILTER_SEPIA, FILTER_LAVENDER
+    ) + WorkspaceFilterPresetAdditions.ids
+
+    fun label(id: String): String = when (id) {
+        MONO -> "Monochrome"
+        WARM -> "Warm"
+        PIXELATE -> "Pixelate"
+        SPLIT_2 -> "2 tiles"
+        SPLIT_3 -> "3 tiles"
+        CARTOON -> "Cartoon · posterized"
+        BUBBLE -> "Bubble lens"
+        HEARTS -> "Hearts · procedural"
+        HEARTBEAT -> "Heartbeat pulse"
+        ICE -> "Ice · cool tint"
+        VFX_CHROMATIC_SPLIT -> "Chromatic split"
+        VFX_SCAN_GLITCH -> "Scan glitch"
+        VFX_LIGHT_LEAK -> "Light leak"
+        VFX_VIGNETTE -> "Vignette"
+        VFX_EDGE_GLOW -> "Edge glow"
+        FILTER_SOFT_WARM -> "Soft Warm"
+        FILTER_COOL -> "Cool Air"
+        FILTER_FADED -> "Faded Film"
+        FILTER_AMBER -> "Amber Glow"
+        FILTER_ROSE -> "Rose Light"
+        FILTER_MINT -> "Mint Haze"
+        FILTER_TEAL_ORANGE -> "Teal / Ember"
+        FILTER_CRISP -> "Crisp Color"
+        FILTER_MATTE -> "Matte Fade"
+        FILTER_BW_CONTRAST -> "Bold Mono"
+        FILTER_SEPIA -> "Sepia Wash"
+        FILTER_LAVENDER -> "Lavender"
+        else -> WorkspaceFilterPresetAdditions.find(id)?.preset?.label ?: "Unknown effect"
+    }
+}
+
+/** UI metadata for the original shader-based filter looks. Colors are decorative swatches only. */
+data class WorkspaceFilterPreset(val id: String, val label: String, val description: String, val swatchArgb: Long)
+
+object WorkspaceFilterPresets {
+    val all: List<WorkspaceFilterPreset> = listOf(
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_SOFT_WARM, "Soft Warm", "Gentle warmth with lifted highlights", 0xFFFFB77A),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_COOL, "Cool Air", "Blue-cyan shadows and clean whites", 0xFF77C8E8),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_FADED, "Faded Film", "Muted color and lifted black point", 0xFFD9B986),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_AMBER, "Amber Glow", "Golden amber wash", 0xFFFFA83D),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_ROSE, "Rose Light", "Soft rosy highlights", 0xFFE884A5),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_MINT, "Mint Haze", "Subtle green-cyan tint", 0xFF77D0B3),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_TEAL_ORANGE, "Teal / Ember", "Cool shadows with warm highlights", 0xFF3AB9A7),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_CRISP, "Crisp Color", "Moderate saturation and contrast lift", 0xFF5D9FE8),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_MATTE, "Matte Fade", "Soft contrast with a matte black floor", 0xFFB8A7CE),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_BW_CONTRAST, "Bold Mono", "High-contrast black and white", 0xFF616773),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_SEPIA, "Sepia Wash", "Classic reddish-brown monochrome tint", 0xFFB77C4F),
+        WorkspaceFilterPreset(WorkspaceEffectPresets.FILTER_LAVENDER, "Lavender", "Cool violet highlights and shadows", 0xFF9A8DE0)
+    ) + WorkspaceFilterPresetAdditions.presets
+    fun find(id: String): WorkspaceFilterPreset? = all.firstOrNull { it.id == id }
+}
+
+/** Pure half-open range check shared by preview/export and regression tests. */
+fun WorkspaceEffect.isActiveAtSourceTime(sourceTimeMs: Long): Boolean =
+    startMs >= 0L && endMs > startMs && sourceTimeMs >= startMs && sourceTimeMs < endMs &&
+        hasValidParameters() && intensity > 0f
+
 @Serializable
 data class MediaClip(
     val id: String,
@@ -76,6 +240,15 @@ data class MediaClip(
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    // Optional fixed, deterministic project-video effect. The preset id is resolved by
+    // ProjectVideoPresets in both preview and export; null preserves legacy rendering.
+    val projectVideoEffectId: String? = null,
+    // Per-clip normalized video crop. Absent in older project JSON; the
+    // full-frame default preserves their prior preview/export behavior.
+    val videoCrop: VideoCropSettings = VideoCropSettings(),
+    // Offline face-reframe crop samples in absolute source-media time.
+    // Null for existing projects; this geometry is persisted for explicit editor integration.
+    val faceCropTrack: FaceCropTrack? = null,
     // PiP overlay transform — only meaningful when type == ClipType.OVERLAY.
     // The live preview (PipOverlayCanvas) and the export (PipOverlayGlEffect)
     // resolve these against the same frame geometry, so what you drag on
@@ -133,7 +306,15 @@ data class MediaClip(
     // export bakes the same mask via MaskGlEffect (V1) or
     // PipOverlayGlEffect (V2 overlay). Backwards-compatible: older
     // project JSONs without this field deserialise as null.
-    val mask: VideoMask? = null
+    val mask: VideoMask? = null,
+    // Ranged deterministic workspace effects, using absolute source-media time.
+    // Kept at the end so older positional MediaClip construction remains source-compatible.
+    val workspaceEffects: List<WorkspaceEffect> = emptyList(),
+    // Main-track video placement inside the project composition frame. FIT preserves
+    // the complete source image (legacy saved-project behavior); newly imported main
+    // videos explicitly start at COVER. Missing JSON fields therefore do not alter
+    // existing projects.
+    val videoFitMode: VideoFitMode = VideoFitMode.FIT
 ) {
     /**
      * True when this overlay clip (type == [ClipType.OVERLAY]) should be
@@ -144,9 +325,11 @@ data class MediaClip(
      */
     fun isOverlayActiveAt(timeMs: Long): Boolean {
         if (type != ClipType.OVERLAY) return false
-        val trimmedMs = (trimEndMs - trimStartMs).coerceAtLeast(0L)
-        val endMs = if (trimEndMs == Long.MAX_VALUE) Long.MAX_VALUE
-        else timelineOffsetMs + trimmedMs
+        val trimmedMs = if (hasSpeedCurve()) overlayTimelineDurationMs() else
+            (trimEndMs - trimStartMs).coerceAtLeast(0L)
+        val endMs = if ((trimEndMs == Long.MAX_VALUE && !hasSpeedCurve()) ||
+            (trimmedMs > 0L && timelineOffsetMs > Long.MAX_VALUE - trimmedMs)
+        ) Long.MAX_VALUE else timelineOffsetMs + trimmedMs
         return timeMs in timelineOffsetMs until endMs
     }
 
@@ -154,16 +337,36 @@ data class MediaClip(
     fun hasSpeedCurve(): Boolean = speedPoints.size >= 2
 
     /**
-     * The clip's length on the timeline (output time). Without a speed
-     * curve this is just the trimmed span. With a curve it is the
-     * integral of 1/speed over the trimmed span — a 0.5x clip plays
-     * twice as long, a 2x clip half as long. Deliberately does NOT
-     * account for the constant [speedMultiplier]: the timeline never
-     * has (pre-PR-E behaviour), and changing that would alter every
-     * existing project with a non-1x constant speed.
+     * Clip length in output/project time. Main-track video duration follows
+     * the same constant or variable speed mapping used by the preview/export;
+     * other media keeps its existing trim-based duration semantics.
      */
-    fun effectiveDurationMs(): Long =
+    fun effectiveDurationMs(): Long = if (trackIndex == 0 && type == ClipType.VIDEO) {
+        ClipTimeMapping.mainClipDurationMs(this)
+    } else {
         SpeedCurveMath.effectiveDurationMs(trimEndMs - trimStartMs, speedPoints)
+    }
+
+    /** Timeline duration of an overlay's trimmed source under its variable-speed curve. */
+    fun overlayTimelineDurationMs(): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.timelineDurationMs(span, speedPoints)
+    }
+
+    /** Source-relative offset corresponding to elapsed output time on this overlay. */
+    fun overlaySourceOffsetMs(outputMs: Long): Long {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.sourceOffsetMs(outputMs, span, speedPoints)
+    }
+
+    /** Instantaneous source playback rate at elapsed output time on this overlay. */
+    fun overlaySpeedAtOutputMs(outputMs: Long): Float {
+        val end = if (trimEndMs == Long.MAX_VALUE) durationMs else trimEndMs
+        val span = (end - trimStartMs).coerceAtLeast(0L)
+        return OverlayTimeMapping.speedAtOutputMs(outputMs, span, speedPoints)
+    }
 }
 
 /**
@@ -239,7 +442,9 @@ data class PhotoEditSettings(
      * Apache-2.0). When true the photo gently zooms/pans in preview and
      * the export bakes the motion into the still-video.
      */
-    val kenBurns: Boolean = false
+    val kenBurns: Boolean = false,
+    /** Applied after photo filters so the background is never colour graded. */
+    val canvas: PhotoCanvasSettings = PhotoCanvasSettings()
 ) {
     val normalizedRotationSteps: Int
         get() = ((rotationSteps % 4) + 4) % 4
@@ -250,7 +455,9 @@ data class PhotoEditSettings(
                 filterId == null &&
                 normalizedRotationSteps == 0 &&
                 !flipHorizontal &&
-                !flipVertical
+                !flipVertical &&
+                !kenBurns &&
+                canvas.isOriginal
 
     companion object {
         /** Aspect presets offered by the Crop tool (id → width/height). Null ratio = free. */
@@ -350,9 +557,26 @@ data class TextOverlay(
     val mask: VideoMask? = null,
     // Keyframes animating the mask centre over time (travelling wipe).
     // Empty = the mask stays at its static [mask] centre.
-    val maskKeyframes: List<TextMaskKeyframe> = emptyList()
+    val maskKeyframes: List<TextMaskKeyframe> = emptyList(),
+    // Optional static karaoke span. The source fingerprint prevents stale offsets
+    // from highlighting unrelated text after a manual caption edit.
+    val highlightStartUtf16: Int? = null,
+    val highlightEndUtf16: Int? = null,
+    val highlightSourceFingerprint: String? = null,
+    val highlightColorArgb: Long = 0xFFFFFF00L,
+    // Optional animation timing window on the clip-output timeline. Segmented
+    // overlays share a logical window that may extend beyond their local window.
+    val animationWindowStartMs: Long? = null,
+    val animationWindowEndMs: Long? = null,
+    // Non-null only for explicitly linked cross-clip text layers. Legacy overlays
+    // with colliding IDs remain independent when this is null.
+    val projectTextLayerId: String? = null,
+    // Legacy karaoke generators persist inclusive end frames. New segmented
+    // project-clock windows opt into conventional half-open [start, end) ranges.
+    val rangeEndExclusive: Boolean = false
 ) {
-    fun isActiveAt(timeMs: Long): Boolean = timeMs in startMs..endMs
+    fun isActiveAt(timeMs: Long): Boolean =
+        timeMs >= startMs && if (rangeEndExclusive) timeMs < endMs else timeMs <= endMs
 
     /**
      * The mask to render at [timeMs]: the static [mask] with its
@@ -728,6 +952,8 @@ data class Project(
     val lastTransitionDurationMs: Long = 500L,
     val transitions: List<ClipTransition> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
+    /** Freehand artwork over video; default-empty for legacy project JSON. */
+    val videoDrawings: List<VideoDrawingLayer> = emptyList(),
     val coverFrameMs: Long? = null,
     val coverCustomUri: String? = null,
     /**
@@ -747,8 +973,33 @@ data class Project(
      * Phase 3: user-visible draft label, e.g. "Draft" vs "Project".
      * Pure metadata for the History/Drafts UI.
      */
-    val isDraft: Boolean = false
-)
+    val isDraft: Boolean = false,
+    /**
+     * Version of the main-track timing semantics used when this project was
+     * created. Missing in older project JSON, so legacy projects decode as 0.
+     * Keep legacy versions unchanged on save: their absolute overlay/music
+     * placements are intentionally not rewritten during migration.
+     */
+    val timingModelVersion: Int = 0
+) {
+    /** Conservative warning predicate for legacy projects affected by speed-based duration. */
+    fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {
+        if (timingModelVersion >= CURRENT_TIMING_MODEL_VERSION) return false
+        val hasNonNormalMainVideo = clips.any { clip ->
+            clip.trackIndex == 0 && clip.type == ClipType.VIDEO &&
+                (kotlin.math.abs(clip.speedMultiplier - 1f) > 0.0001f ||
+                    clip.speedPoints.size >= 2)
+        }
+        val hasIndependentPlacements = clips.any { it.type == ClipType.OVERLAY } ||
+            audioTracks.isNotEmpty()
+        return hasNonNormalMainVideo && hasIndependentPlacements
+    }
+
+    companion object {
+        /** Current main-video output duration behavior: trim span / constant speed. */
+        const val CURRENT_TIMING_MODEL_VERSION: Int = 1
+    }
+}
 
 /**
  * One volume keyframe on an [AudioTrack]: an absolute volume value
@@ -782,6 +1033,10 @@ data class AudioTrack(
     // Per-track trim + fade (all in ms, relative to the source media).
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
+    /** Timeline placement in project time; independent of source trim. */
+    val startTimeMs: Long = 0L,
+    /** Original source length; 0 means legacy data only knows trimEndMs. */
+    val sourceDurationMs: Long = 0L,
     val fadeInMs: Long = 0L,
     val fadeOutMs: Long = 0L,
     /**
@@ -800,9 +1055,9 @@ data class AudioTrack(
     @Serializable
     enum class Kind { ORIGINAL_VIDEO, MUSIC, SFX }
 
-    /** Approximate source duration if known, else 0. */
-    val sourceDurationMs: Long
-        get() = trimEndMs
+    /** Full source boundary, falling back to the pre-field trim end. */
+    val sourceEndMs: Long
+        get() = sourceDurationMs.takeIf { it > 0L } ?: trimEndMs
 
     /** Per-track volume multiplier in 0..1, with mute applied. */
     fun effectiveVolume(): Float = if (isMuted) 0f else volume.coerceIn(0f, 1f)
@@ -1121,8 +1376,27 @@ data class LutPreset(
     val thumbnail: String
 )
 
+/** Canonical resolution values accepted by the editor and export pipeline. */
+object ExportResolution {
+    val supported: List<String> = listOf("720P", "1080P", "1440P", "4K")
+
+    /**
+     * Convert current and historical UI labels to a supported output preset.
+     * Older builds exposed 8K although device encoder support was not checked;
+     * map it down to the supported 4K ceiling rather than silently requesting 8K.
+     */
+    fun canonical(value: String?): String = when {
+        value.isNullOrBlank() -> "1080P"
+        value.contains("8k", ignoreCase = true) || value.contains("4320") -> "4K"
+        value.contains("4k", ignoreCase = true) || value.contains("2160") -> "4K"
+        value.contains("1440") -> "1440P"
+        value.contains("720") -> "720P"
+        else -> "1080P"
+    }
+}
+
 data class ExportSettings(
-    val resolution: String = "8K Ultra HD",
+    val resolution: String = "1080P",
     val frameRate: Int = 60,
     val quality: ExportQuality = ExportQuality.HIGH,
     val estimatedSizeGb: Float = 1.8f,

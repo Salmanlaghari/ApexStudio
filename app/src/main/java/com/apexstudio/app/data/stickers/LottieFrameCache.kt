@@ -16,7 +16,8 @@ import com.airbnb.lottie.LottieDrawable
  *
  * Frames are rendered once per asset at a modest size and cached in an LRU;
  * the GL effect picks frames by presentation time and re-uploads only when
- * the frame index changes.
+ * the frame index changes. Eviction drops only the cache's reference: a GL
+ * effect may still be using the returned strip, so frames are left for GC.
  */
 object LottieFrameCache {
 
@@ -25,22 +26,16 @@ object LottieFrameCache {
     /** Frames pre-rendered per animation (enough for smooth short loops). */
     const val FRAME_COUNT = 24
 
+    /** Retain up to four animation strips; cache size is measured in frames. */
+    private const val CACHED_ANIMATION_COUNT = 4
+
     /** Render size of each frame (square; sprite renderer handles placement). */
     const val FRAME_SIZE = 256
 
-    private val cache = object : LruCache<String, List<Bitmap>>(4) {
+    private val cache = object : LruCache<String, List<Bitmap>>(FRAME_COUNT * CACHED_ANIMATION_COUNT) {
         override fun sizeOf(key: String, value: List<Bitmap>): Int {
             // ~256KB per frame.
             return value.size
-        }
-
-        override fun entryRemoved(
-            evicted: Boolean,
-            key: String,
-            oldValue: List<Bitmap>,
-            newValue: List<Bitmap>?
-        ) {
-            oldValue.forEach { if (!it.isRecycled) it.recycle() }
         }
     }
 

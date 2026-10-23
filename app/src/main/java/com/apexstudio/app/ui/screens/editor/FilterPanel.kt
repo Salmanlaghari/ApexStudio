@@ -28,12 +28,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterEngine
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -73,7 +74,7 @@ fun FilterPanel(
         ) {
             Text(
                 "Filters",
-                color = Color.White,
+                color = ApexPalette.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -112,6 +113,7 @@ fun FilterPanel(
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { onCategoryChange(c.id) }
+                        .testTag("filter-category-${c.id}")
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
@@ -173,9 +175,9 @@ fun FilterPanel(
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,
-                    inactiveTrackColor = ApexPalette.BorderGlass
+                inactiveTrackColor = ApexPalette.BorderGlass
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).testTag("filter-panel-intensity")
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -203,6 +205,7 @@ private fun FilterChip(
             .width(68.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
+            .testTag("filter-chip-${filterId ?: "original"}")
             .padding(vertical = 2.dp)
     ) {
         Box(
@@ -268,7 +271,7 @@ private fun FilterChip(
             )
             Text(
                 label,
-                color = if (selected) ApexPalette.NeonCyan else Color.White,
+                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                 fontSize = 8.sp,
                 lineHeight = 9.sp,
                 fontWeight = FontWeight.Bold,

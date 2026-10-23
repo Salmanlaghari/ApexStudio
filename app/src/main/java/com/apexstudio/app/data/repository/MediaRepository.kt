@@ -64,7 +64,8 @@ object MediaRepository {
             resolution = "4K",
             fps = 60,
             clips = clips,
-            audioTracks = emptyList()
+            audioTracks = emptyList(),
+            timingModelVersion = Project.CURRENT_TIMING_MODEL_VERSION
         )
         dynamicProjects.add(project)
         return project

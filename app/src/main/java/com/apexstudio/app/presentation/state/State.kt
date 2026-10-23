@@ -50,7 +50,7 @@ data class EditorState(
     val filterPanelOpen: Boolean = false,
     val activeFilterId: String? = null,
     val filterIntensity: Float = 1.0f,
-    val filterCategory: String = "cinematic",
+    val filterCategory: String = DEFAULT_FILTER_CATEGORY_ID,
     // GPUImage Real-Time Video Filtering Interface state
     val gpuFilterPanelOpen: Boolean = false,
     val activeGpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
@@ -74,6 +74,9 @@ data class EditorState(
     val speedPanelOpen: Boolean = false,
     // Set to true while the Keyframe Animation bottom sheet is open.
     val keyframePanelOpen: Boolean = false,
+    // Ephemeral editor UI context: opens the manual keyframe panel at a
+    // selected video property. This is intentionally not part of Project.
+    val keyframePropertyFilter: String? = null,
     // Real-time FX (VHS, Glitch, Grain, …). activeFxId == null means
     // no FX; intensity is the 0..1 slider exposed in the FX panel.
     // fxSpeed (0.1–4x) drives the animation rate of time-based
@@ -97,6 +100,7 @@ data class EditorState(
     // sheet is up; selectedTextOverlayId points at the caption being
     // edited / dragged on the preview.
     val textPanelOpen: Boolean = false,
+    val textPanelStartsOnCaptions: Boolean = false,
     val selectedTextOverlayId: String? = null,
     // Set to true while the Trim & Set Points bottom sheet is open.
     val trimPanelOpen: Boolean = false,
@@ -239,6 +243,9 @@ data class EditorState(
     val audioFadeSheetOpen: Boolean = false
 ) {
     companion object {
+        /** Manifest category id selected when a new editor state is created. */
+        const val DEFAULT_FILTER_CATEGORY_ID = "creator_essentials"
+
         // Equality on data classes with FloatArray doesn't compare the
         // array contents; EditorViewModel never updates audioWaveform
         // after init, so this is safe to leave to the default.
@@ -307,7 +314,8 @@ enum class PhotoEditTab(val label: String) {
     ADJUST("Adjust"),
     FILTERS("Filters"),
     ROTATE("Rotate"),
-    MOTION("Motion")
+    MOTION("Motion"),
+    CANVAS("Canvas")
 }
 
 data class ExportState(
@@ -316,7 +324,8 @@ data class ExportState(
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,
-    val isExportEngineReady: Boolean = false
+    val isExportEngineReady: Boolean = false,
+    val warning: String? = null
 )
 
 data class ColorToolState(

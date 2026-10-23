@@ -71,7 +71,11 @@ class ThumbnailStripLru<K : Any, V : Any>(val maxSize: Int) {
     }
 
     /** Like [get] but does not touch the recency counters or ordering. */
-    fun peek(key: K): V? = synchronized(this) { map[key] }
+    fun peek(key: K): V? = synchronized(this) {
+        // LinkedHashMap[key] promotes an entry when accessOrder is enabled.
+        // Walk the entries instead so inspection is genuinely non-mutating.
+        map.entries.firstOrNull { it.key == key }?.value
+    }
 
     /**
      * Insert or replace [key], evicting eldest-first until [maxSize] is

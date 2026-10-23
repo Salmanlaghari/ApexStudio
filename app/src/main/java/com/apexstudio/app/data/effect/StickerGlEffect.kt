@@ -70,8 +70,7 @@ class StickerGlEffect(
                 try {
                     LottieFrameCache.frames(context, sticker.assetPath!!)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Lottie frames unavailable", e)
-                    null
+                    throw VideoFrameProcessingException("Animated sticker asset is unavailable; export stopped rather than omitting it", e)
                 }
             } else null
         private var lottieW = 0
@@ -104,9 +103,8 @@ class StickerGlEffect(
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
 
-            // Rasterise + upload the sticker sprite (best effort — a
-            // missing PNG or upload failure leaves overlayTexId = 0
-            // and drawFrame falls back to a video pass-through).
+            // Fail closed: a missing asset or GPU failure must not produce a
+            // successful export with this selected sticker silently omitted.
             lastKeyframeStateKey = keyframeStateKey(sticker)
             val path = sticker.assetPath
             if (!path.isNullOrBlank()) {
@@ -124,7 +122,7 @@ class StickerGlEffect(
                         uploadSprite(context, sticker, path, aspectRatio)
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Sticker sprite upload failed ($path)", e)
+                    throw VideoFrameProcessingException("Sticker asset could not be rendered ($path); export stopped rather than omitting it", e)
                 }
             }
         }
@@ -140,11 +138,11 @@ class StickerGlEffect(
             // to place a sticker. Position / size are normalised
             // against the canvas so the composition is resolution
             // independent.
-            val longEdge = 1600
-            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            val (w, h) = if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+            val (w, h) = StickerSpriteSize.forAspect(aspect)
 
-            val bitmap = StickerImageCache(context).get(assetPath)
+            val bitmap = requireNotNull(StickerImageCache(context).get(assetPath)) {
+                "Sticker asset is missing or cannot be decoded: $assetPath"
+            }
             val sprite = StickerSpriteRenderer.render(bitmap, sticker, w, h)
             val tex = IntArray(1)
             try {
@@ -171,9 +169,7 @@ class StickerGlEffect(
 
         /** Sprite canvas size for the current video aspect (shared PNG/Lottie). */
         private fun spriteSize(aspect: Float): Pair<Int, Int> {
-            val longEdge = 1600
-            val shortEdge = (longEdge / aspect.coerceIn(0.2f, 5f)).toInt().coerceAtLeast(1)
-            return if (aspect >= 1f) longEdge to shortEdge else shortEdge to longEdge
+            return StickerSpriteSize.forAspect(aspect)
         }
 
         private fun uploadLottieFrame(frame: android.graphics.Bitmap, eff: StickerOverlay = sticker) {
@@ -260,7 +256,7 @@ class StickerGlEffect(
                         }
                         lastKeyframeStateKey = kfKey
                     } catch (e: Exception) {
-                        Log.w(TAG, "Sticker keyframe frame failed", e)
+                        throw VideoFrameProcessingException("Sticker animation failed; export stopped rather than freezing it", e)
                     }
                 }
                 // Phase 4: animated Lottie sticker — advance frames by time.
@@ -315,8 +311,8 @@ class StickerGlEffect(
             void main() {
                 vec4 video = texture2D(uTexSampler, vTextureCoord);
                 vec4 sticker = texture2D(uOverlaySampler, vTextureCoord);
-                // Straight alpha blend of the sticker sprite.
-                vec3 outRgb = sticker.rgb * sticker.a + video.rgb * (1.0 - sticker.a);
+                // Canvas ARGB_8888 uploads premultiplied RGB. Do not multiply alpha twice.
+                vec3 outRgb = sticker.rgb + video.rgb * (1.0 - sticker.a);
                 gl_FragColor = vec4(outRgb, video.a);
             }
         """.trimIndent()

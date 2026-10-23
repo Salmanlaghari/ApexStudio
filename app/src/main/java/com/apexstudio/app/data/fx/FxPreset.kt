@@ -111,7 +111,59 @@ enum class FxPreset(
     HUE_CYCLE("hue_cycle", "Hue Cycle", "Animated", isAnimated = true, defaultSpeed = 1f),
     PULSE_BEAT("pulse_beat", "Pulse Beat", "Animated", isAnimated = true, defaultSpeed = 1f),
     GRADIENT_SWEEP("gradient_sweep", "Gradient Sweep", "Animated", isAnimated = true, defaultSpeed = 1f),
-    LIGHT_LEAK_SWEEP("light_leak_sweep", "Light Leak Sweep", "Animated", isAnimated = true, defaultSpeed = 1f);
+    LIGHT_LEAK_SWEEP("light_leak_sweep", "Light Leak Sweep", "Animated", isAnimated = true, defaultSpeed = 1f),
+
+    // Original Creator Pack profiles: new shader families and parameter/tint/geometry variants.
+    CREATOR_PRISM_AURORA("creator_prism_aurora", "Aurora Prism", "Creator Pack"),
+    CREATOR_PRISM_CANDY("creator_prism_candy", "Candy Prism", "Creator Pack"),
+    CREATOR_PRISM_COPPER("creator_prism_copper", "Copper Prism", "Creator Pack"),
+    CREATOR_PRISM_ARCTIC("creator_prism_arctic", "Arctic Prism", "Creator Pack"),
+    CREATOR_PRISM_ROSE("creator_prism_rose", "Rose Prism", "Creator Pack"),
+    CREATOR_TONE_PEACH("creator_tone_peach", "Peach Split Tone", "Creator Pack"),
+    CREATOR_TONE_TEAL("creator_tone_teal", "Teal Split Tone", "Creator Pack"),
+    CREATOR_TONE_VIOLET("creator_tone_violet", "Violet Split Tone", "Creator Pack"),
+    CREATOR_TONE_SUNSET("creator_tone_sunset", "Sunset Split Tone", "Creator Pack"),
+    CREATOR_TONE_MINT("creator_tone_mint", "Mint Split Tone", "Creator Pack"),
+    CREATOR_RIPPLE_LAGOON("creator_ripple_lagoon", "Lagoon Ripple", "Creator Pack", true, 0.8f),
+    CREATOR_RIPPLE_HEAT("creator_ripple_heat", "Heat Ripple", "Creator Pack", true, 1.2f),
+    CREATOR_RIPPLE_MOON("creator_ripple_moon", "Moon Ripple", "Creator Pack", true, 0.65f),
+    CREATOR_RIPPLE_RAIN("creator_ripple_rain", "Rain Ripple", "Creator Pack", true, 1.4f),
+    CREATOR_RIPPLE_GLASS("creator_ripple_glass", "Glass Ripple", "Creator Pack", true, 0.95f),
+    CREATOR_MOSAIC_MICRO("creator_mosaic_micro", "Micro Mosaic", "Creator Pack"),
+    CREATOR_MOSAIC_TILES("creator_mosaic_tiles", "Gallery Tiles", "Creator Pack"),
+    CREATOR_MOSAIC_DIAMOND("creator_mosaic_diamond", "Diamond Mosaic", "Creator Pack"),
+    CREATOR_MOSAIC_BOLD("creator_mosaic_bold", "Bold Mosaic", "Creator Pack"),
+    CREATOR_MOSAIC_SOFT("creator_mosaic_soft", "Soft Mosaic", "Creator Pack"),
+    CREATOR_CRT_AMBER("creator_crt_amber", "Amber CRT", "Creator Pack", true, 0.8f),
+    CREATOR_CRT_CYAN("creator_crt_cyan", "Cyan CRT", "Creator Pack", true, 1.1f),
+    CREATOR_CRT_GREEN("creator_crt_green", "Green CRT", "Creator Pack", true, 0.7f),
+    CREATOR_CRT_MAGENTA("creator_crt_magenta", "Magenta CRT", "Creator Pack", true, 1.3f),
+    CREATOR_CRT_MONO("creator_crt_mono", "Mono CRT", "Creator Pack", true, 0.9f),
+    CREATOR_HALATION_HONEY("creator_halation_honey", "Honey Halation", "Creator Pack"),
+    CREATOR_HALATION_BERRY("creator_halation_berry", "Berry Halation", "Creator Pack"),
+    CREATOR_HALATION_ICE("creator_halation_ice", "Ice Halation", "Creator Pack"),
+    CREATOR_HALATION_CORAL("creator_halation_coral", "Coral Halation", "Creator Pack"),
+    CREATOR_HALATION_LILAC("creator_halation_lilac", "Lilac Halation", "Creator Pack"),
+    CREATOR_INK_POP("creator_ink_pop", "Pop Ink", "Creator Pack"),
+    CREATOR_INK_NEWSPRINT("creator_ink_newsprint", "Newsprint", "Creator Pack"),
+    CREATOR_INK_RISO("creator_ink_riso", "Riso Ink", "Creator Pack"),
+    CREATOR_INK_POSTER("creator_ink_poster", "Poster Ink", "Creator Pack"),
+    CREATOR_INK_PASTEL("creator_ink_pastel", "Pastel Ink", "Creator Pack"),
+    CREATOR_MIRROR_QUAD("creator_mirror_quad", "Quad Mirror", "Creator Pack"),
+    CREATOR_MIRROR_HEX("creator_mirror_hex", "Hex Mirror", "Creator Pack"),
+    CREATOR_MIRROR_RADIAL("creator_mirror_radial", "Radial Mirror", "Creator Pack"),
+    CREATOR_MIRROR_KALEIDO("creator_mirror_kaleido", "Kaleido Mirror", "Creator Pack"),
+    CREATOR_MIRROR_FAN("creator_mirror_fan", "Fan Mirror", "Creator Pack"),
+    CREATOR_GLITCH_TANGERINE("creator_glitch_tangerine", "Tangerine Signal", "Creator Pack", true, 0.9f),
+    CREATOR_GLITCH_COBALT("creator_glitch_cobalt", "Cobalt Signal", "Creator Pack", true, 1.2f),
+    CREATOR_GLITCH_LIME("creator_glitch_lime", "Lime Signal", "Creator Pack", true, 0.75f),
+    CREATOR_GLITCH_PLUM("creator_glitch_plum", "Plum Signal", "Creator Pack", true, 1.35f),
+    CREATOR_GLITCH_SILVER("creator_glitch_silver", "Silver Signal", "Creator Pack", true, 1f),
+    CREATOR_STREAK_ORBIT("creator_streak_orbit", "Orbit Streak", "Creator Pack", true, 0.8f),
+    CREATOR_STREAK_RUSH("creator_streak_rush", "Rush Streak", "Creator Pack", true, 1.3f),
+    CREATOR_STREAK_DREAM("creator_streak_dream", "Dream Streak", "Creator Pack", true, 0.6f),
+    CREATOR_STREAK_SOLAR("creator_streak_solar", "Solar Streak", "Creator Pack", true, 1.1f),
+    CREATOR_STREAK_TWILIGHT("creator_streak_twilight", "Twilight Streak", "Creator Pack", true, 0.9f);
 
     companion object {
         fun byId(id: String?): FxPreset? = values().firstOrNull { it.id == id }
@@ -124,7 +176,8 @@ enum class FxPreset(
             "Glitch & Digital",
             "Retro & Film",
             "Blur & Motion",
-            "Stylize & Art"
+            "Stylize & Art",
+            "Creator Pack"
         )
     }
 }

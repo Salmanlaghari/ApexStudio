@@ -22,6 +22,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 
+/** Always release a recording resource, even when stopping an uninitialized recorder fails. */
+internal fun <T> stopAndReleaseSafely(resource: T?, stop: (T) -> Unit, release: (T) -> Unit) {
+    if (resource == null) return
+    runCatching { stop(resource) }
+    runCatching { release(resource) }
+}
+
 data class AudioEQState(
     val lowGain: Short = 0,
     val midGain: Short = 0,
@@ -64,7 +71,7 @@ class AudioEngine(private val context: Context) {
     private var bassBoost: BassBoost? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
-    private var isRecording = false
+    @Volatile private var isRecording = false
 
     private val _waveformData = MutableStateFlow(FloatArray(0))
     val waveformData: StateFlow<FloatArray> = _waveformData
@@ -231,6 +238,7 @@ class AudioEngine(private val context: Context) {
             Log.w("AudioEngine", "RECORD_AUDIO permission not granted; skipping microphone recording")
             return
         }
+        var recorder: AudioRecord? = null
         try {
             val minBufferSize = AudioRecord.getMinBufferSize(
                 sampleRate,
@@ -241,20 +249,24 @@ class AudioEngine(private val context: Context) {
                 Log.e("AudioEngine", "Invalid AudioRecord buffer size: $minBufferSize")
                 return
             }
-            audioRecord = AudioRecord(
+            val createdRecorder = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
                 minBufferSize * 2
             )
-            audioRecord?.startRecording()
+            recorder = createdRecorder
+            check(createdRecorder.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord failed to initialize" }
+            createdRecorder.startRecording()
+            audioRecord = createdRecorder
             isRecording = true
+            val activeRecorder = createdRecorder
             recordingJob = CoroutineScope(Dispatchers.IO).launch {
                 val bufferSize = minBufferSize
                 val buffer = ShortArray(bufferSize)
                 while (isRecording) {
-                    val read = audioRecord?.read(buffer, 0, bufferSize) ?: 0
+                    val read = activeRecorder.read(buffer, 0, bufferSize)
                     if (read > 0) {
                         val samples = FloatArray(read)
                         for (i in 0 until read) {
@@ -266,6 +278,15 @@ class AudioEngine(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
+            isRecording = false
+            recordingJob?.cancel()
+            recordingJob = null
+            audioRecord = null
+            stopAndReleaseSafely(
+                recorder,
+                stop = { if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop() },
+                release = AudioRecord::release
+            )
             Log.e("AudioEngine", "Failed to start recording", e)
         }
     }
@@ -273,9 +294,14 @@ class AudioEngine(private val context: Context) {
     fun stopRecording() {
         isRecording = false
         recordingJob?.cancel()
-        audioRecord?.stop()
-        audioRecord?.release()
+        recordingJob = null
+        val recorder = audioRecord
         audioRecord = null
+        stopAndReleaseSafely(
+            recorder,
+            stop = { if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop() },
+            release = AudioRecord::release
+        )
     }
 
     fun getSupportedEQBands(): Int = equalizer?.numberOfBands?.toInt() ?: 0

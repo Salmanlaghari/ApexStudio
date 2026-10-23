@@ -13,15 +13,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.NeonGradientBackground
-import com.apexstudio.app.camerakit.LensesScreen
-import com.apexstudio.app.ui.screens.audio.AudioStudioScreen
-import com.apexstudio.app.ui.screens.colortools.ColorStudioScreen
+import com.apexstudio.app.camerakit.CameraKitDeliveryRoute
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
 import com.apexstudio.app.ui.screens.editor.EditorScreen
-import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
+
+/** Select a workspace; editor-owned workspaces release preview codecs before exporting. */
+internal fun apexContentTab(currentTab: String, showExportSettings: Boolean): String =
+    if (showExportSettings) "export" else currentTab
 
 @Composable
 fun ApexRoot() {
@@ -49,7 +50,7 @@ fun ApexRoot() {
                     is Overlay.Packs -> PacksScreen(
                         onBack = { overlay = Overlay.Settings }
                     )
-                    else -> when (currentTab) {
+                    else -> when (apexContentTab(currentTab, showExportSettings)) {
                         "home" -> HomeScreen(
                             onProjectOpen = { id ->
                                 projectId = id
@@ -57,44 +58,25 @@ fun ApexRoot() {
                             },
                             onOpenSettings = { overlay = Overlay.Settings }
                         )
-                        "edit" -> EditorScreen(
+                        "edit", "color", "audio", "export" -> EditorScreen(
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "home" },
                             onExport = { showExportSettings = true },
                             onColor = { currentTab = "color" },
-                            onAudio = { currentTab = "audio" }
+                            onAudio = { currentTab = "audio" },
+                            entryWorkspace = apexContentTab(currentTab, showExportSettings),
+                            onCloseWorkspace = { showExportSettings = false; currentTab = "edit" }
                         )
-                        "color" -> ColorStudioScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
-                        )
-                        "audio" -> AudioStudioScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
-                        )
-                        "lenses" -> LensesScreen(
+                        "lenses" -> CameraKitDeliveryRoute(
                             onBack = { currentTab = "home" }
-                        )
-                        "export" -> ExportScreen(
-                            projectId = projectId ?: "p1",
-                            onBack = { currentTab = "edit" },
-                            onExport = { showExportSettings = true }
                         )
                     }
                 }
             }
         }
 
-        if (showExportSettings) {
-            ExportScreen(
-                projectId = projectId ?: "p1",
-                onBack = { showExportSettings = false },
-                onExport = { showExportSettings = false }
-            )
-        } else {
-            if (overlay == null && currentTab != "export" && currentTab != "edit") {
+        if (!showExportSettings) {
+            if (overlay == null && currentTab !in setOf("export", "edit", "color", "audio")) {
                 BottomNavBar(
                     current = currentTab,
                     onSelect = { tab ->

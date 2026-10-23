@@ -1,4 +1,7 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import com.apexstudio.buildlogic.StripGpuImageDecoderTransform
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+import org.gradle.api.attributes.Usage
 import java.util.Properties
 
 plugins {
@@ -13,6 +16,59 @@ plugins {
   // Baseline Profile (editor smoothness): registers the
   // generateReleaseBaselineProfile task used by BaselineProfileGenerator.
   alias(libs.plugins.androidx.baselineprofile)
+}
+
+// Identify the checked-out tree, including CI's synthetic PR merge commit.
+val sourceCommit = providers.exec {
+  workingDir(rootProject.projectDir)
+  commandLine("git", "rev-parse", "HEAD")
+  isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }.get()
+val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
+  .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
+val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
+fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+// Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
+// ESPCN model stays bundled for bounded, offline video upscaling. Use
+// -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
+val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
+  .map(String::toBoolean).orElse(false)
+val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
+val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  from(layout.projectDirectory.dir("src/main/assets"))
+  if (!includeBundledAiModels.get()) {
+    exclude(
+      "models/mediapipe/*.task", "models/mediapipe/*.tflite",
+      "models/whisper/*.onnx", "models/whisper/*.txt",
+      "models/alignment/*.onnx",
+      "models/background_removal/*.onnx"
+    )
+  }
+  into(stagedAssets)
+}
+val stagedDebugAssets = layout.buildDirectory.dir("generated/debugRuntimeAssets")
+val stageDebugRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  from(layout.projectDirectory.dir("src/debug/assets"))
+  if (!includeBundledAiModels.get()) exclude("models/style_transfer/*.onnx")
+  into(stagedDebugAssets)
+}
+val identityAssets = layout.buildDirectory.dir("generated/buildIdentityAssets")
+val generateBuildIdentity by tasks.registering {
+  // Capture plain values now; the task action must not capture this script.
+  val output = identityAssets.get().file("build-identity.properties").asFile
+  val identityText = "commit=$sourceCommit\nref=$sourceRef\nrun=$buildRun\n"
+  inputs.property("commit", sourceCommit)
+  inputs.property("ref", sourceRef)
+  inputs.property("run", buildRun)
+  outputs.dir(identityAssets)
+  doLast {
+    output.parentFile.mkdirs()
+    output.writeText(identityText)
+  }
+}
+tasks.named("preBuild").configure { dependsOn(generateBuildIdentity, stageRuntimeAssets) }
+tasks.matching { it.name == "preDebugBuild" || it.name == "mergeDebugAssets" }.configureEach {
+  dependsOn(stageDebugRuntimeAssets)
 }
 
 // Royalty-free music library (Jamendo API): the free client ID is read from the
@@ -32,6 +88,8 @@ fun musicApiKey(name: String): String {
 android {
   namespace = "com.apexstudio.app"
   compileSdk = 36
+  // Camera Kit is downloaded only after explicit user action through Play.
+  dynamicFeatures += setOf(":feature:camerakit")
 
   defaultConfig {
     applicationId = "com.apexstudio.app"
@@ -43,10 +101,15 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
 
+    buildConfigField("String", "SOURCE_COMMIT", buildString(sourceCommit))
+    buildConfigField("String", "SOURCE_REF", buildString(sourceRef))
+    buildConfigField("String", "BUILD_RUN", buildString(buildRun))
     // Royalty-free music library: free Jamendo API client ID (empty = offline mode).
     buildConfigField("String", "JAMENDO_CLIENT_ID", "\"${musicApiKey("JAMENDO_CLIENT_ID")}\"")
   }
 
+  sourceSets.getByName("main").assets.setSrcDirs(listOf(stagedAssets, identityAssets))
+  sourceSets.getByName("debug").assets.setSrcDirs(listOf(stagedDebugAssets))
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
@@ -82,7 +145,10 @@ android {
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")
       ndk {
-        abiFilters += listOf("arm64-v8a", "x86_64")
+        // Phone delivery omits emulator-only native copies; ordinary debug
+        // builds retain x86_64 for local/emulator development.
+        abiFilters += if (providers.gradleProperty("apexPhoneBuild").orNull == "true")
+          listOf("arm64-v8a") else listOf("arm64-v8a", "x86_64")
       }
     }
   }
@@ -105,6 +171,9 @@ android {
   packaging {
     resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     jniLibs {
+      // Compress native libraries in downloadable APKs. Android extracts them
+      // at install time; installed storage is larger than the APK download.
+      useLegacyPackaging = true
       // FFmpegKit and other native libs both provide libc++_shared.so — pick first to avoid duplicate packaging conflict.
       pickFirsts += listOf(
         "**/libc++_shared.so",
@@ -126,6 +195,34 @@ secrets {
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
+// Keep the upstream GPUImage AAR's APIs/resources, but replace only its bundled
+// 4KB-aligned yuv-decoder JNI binaries with the local 16KB-aligned rebuild.
+dependencies.registerTransform(StripGpuImageDecoderTransform::class.java) {
+  from.attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "aar")
+  to.attribute(
+    ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+    StripGpuImageDecoderTransform.OUTPUT_ARTIFACT_TYPE
+  )
+}
+val gpuImageAarConfiguration = configurations.create("gpuImageAar") {
+  isCanBeConsumed = false
+  isCanBeResolved = true
+  isTransitive = false
+  attributes.attribute(
+    Usage.USAGE_ATTRIBUTE,
+    objects.named(Usage::class.java, Usage.JAVA_RUNTIME)
+  )
+}
+dependencies.add(gpuImageAarConfiguration.name, "jp.co.cyberagent.android:gpuimage:2.1.0")
+val gpuImageWithoutDecoder = gpuImageAarConfiguration.incoming.artifactView {
+  attributes {
+    attribute(
+      ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+      StripGpuImageDecoderTransform.OUTPUT_ARTIFACT_TYPE
+    )
+  }
+}.files
+
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
@@ -146,6 +243,11 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.coil.compose)
 
+  // Local gesture camera: CameraX preview + lifecycle-bound frame analysis.
+  implementation("androidx.camera:camera-camera2:1.4.1")
+  implementation("androidx.camera:camera-lifecycle:1.4.1")
+  implementation("androidx.camera:camera-view:1.4.1")
+
   // Media3 & Video/Audio Processing
   implementation("androidx.media3:media3-exoplayer:1.5.0")
   implementation("androidx.media3:media3-ui:1.5.0")
@@ -155,25 +257,36 @@ dependencies {
   implementation("androidx.media3:media3-session:1.5.0")
   implementation("androidx.media3:media3-datasource:1.5.0")
 
-  // Camera Kit SDK lives in :feature:camerakit (see that module's
-  // build.gradle.kts) — the app must not import the SDK directly, so the
-  // DFM follow-up (dynamic-feature + on-demand download) is mechanical.
-  implementation(project(":feature:camerakit"))
+  // SplitInstall API for the Camera Kit Play on-demand feature.
+  implementation(libs.play.feature.delivery)
+  // Only the manifest-visible legal window theme lives in base. Camera Kit
+  // SDK classes/native libraries remain in the on-demand feature.
+  implementation("androidx.appcompat:appcompat:1.7.0")
 
   // FFmpeg (Hybrid Engine — handles operations Media3 cannot)
-  // Full build includes libx264, libmp3lame, and concat protocol support.
-  implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7") // FFmpegKit retired Jan 2025, binaries removed from Maven Central Apr 2025 — using maintained fork (same API)
+  // Non-GPL full build includes OpenH264 (not libx264), libmp3lame and concat support.
+  // Maintained fork; this is a major-version/group change from the former
+  // com.arthenica:ffmpeg-kit-full 6.0-2 coordinate. Do not infer source/API
+  // compatibility from the artifact replacement; validate FFmpeg call sites.
+  implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
   implementation("com.arthenica:smart-exception-java:0.2.1")
 
   // GStreamer (Hybrid Engine PR #2 — pipeline-based real-time effects & streaming)
   implementation("org.freedesktop.gstreamer:gst1-java-core:1.4.0") {
     exclude(group = "net.java.dev.jna", module = "jna")
   }
-  implementation("net.java.dev.jna:jna:5.14.0@aar")
+  // JNA >= 5.17 fixes Android 16 KB calls/RELRO boundaries; keep the Android AAR.
+  implementation(libs.jna) {
+    artifact {
+      type = "aar"
+      extension = "aar"
+    }
+  }
 
   // Serialization & Data
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-  implementation("jp.co.cyberagent.android:gpuimage:2.1.0")
+  implementation(files(gpuImageWithoutDecoder))
+  implementation(project(":gpuimage-native"))
   implementation("com.google.mlkit:face-detection:16.1.7")
   // NOTE: ML Kit segmentation-selfie was removed (app-size work): it had zero
   // imports — all person segmentation goes through MediaPipe Tasks Vision
@@ -191,6 +304,9 @@ dependencies {
   // artifact, no NDK/JNI of our own. Model (~103MB in 3 file packs)
   // downloads on first use via PackManager, NOT bundled in the APK.
   implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
+
+  // On-device inference only; reviewed model files are required separately.
+  implementation("org.tensorflow:tensorflow-lite:2.17.0")
 
   // PR-G: MediaPipe Tasks Vision for per-clip background replace
   // (person segmentation) — https://github.com/google-ai-edge/mediapipe
@@ -212,9 +328,11 @@ dependencies {
   androidTestImplementation(libs.androidx.benchmark.macro.junit4)
   androidTestImplementation(libs.androidx.uiautomator)
   androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.core)
   // Explicit: BaselineProfileGenerator imports InstrumentationRegistry
-  // from here (do not rely on the transitive copy).
-  androidTestImplementation(libs.androidx.test.platform)
+  // from the monitor artifact (do not rely on the transitive copy).
+  androidTestImplementation(libs.androidx.test.monitor)
+  androidTestImplementation(libs.androidx.test.runner)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

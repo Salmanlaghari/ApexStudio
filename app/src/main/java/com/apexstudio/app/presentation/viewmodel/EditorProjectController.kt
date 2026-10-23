@@ -39,6 +39,10 @@ internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaCli
     return out
 }
 
+/** New main-track video imports start edge-to-edge; other media paths retain their defaults. */
+internal fun withImportedMainVideoFitDefault(clip: MediaClip): MediaClip =
+    if (clip.type == ClipType.VIDEO) clip.copy(videoFitMode = VideoFitMode.COVER) else clip
+
 
 internal fun EditorViewModel.loadProject() {
     viewModelScope.launch {
@@ -46,8 +50,7 @@ internal fun EditorViewModel.loadProject() {
         // MediaRepository stub. The two stay in sync because every
         // mutation auto-saves back to DataStore.
         val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
-        val p = projectId?.let { id -> projects.firstOrNull { it.id == id } }
-            ?: projects.firstOrNull()
+        val p = resolveEditorProject(projects, projectId)
         if (p == null) {
             _state.update { it.copy(project = null, durationMs = 0L) }
             return@launch
@@ -62,9 +65,11 @@ internal fun EditorViewModel.loadProject() {
         val validClips = p.clips.map { clip ->
             if (ctx != null) {
                 val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
-                clip.copy(uri = resolvedUri)
+                // Resolution can substitute a sample for a lost source. Never transfer measured
+                // face coordinates to different media; a changed alias safely requires re-analysis.
+                clip.copy(uri = resolvedUri, faceCropTrack = clip.faceCropTrack.takeIf { resolvedUri == clip.uri })
             } else if (clip.uri.startsWith("asset://") || clip.uri.isBlank() || !clip.uri.contains("/")) {
-                if (sampleUri != null) clip.copy(uri = sampleUri) else clip
+                if (sampleUri != null) clip.copy(uri = sampleUri, faceCropTrack = null) else clip
             } else clip
         }
         val effectiveClips = if (validClips.isEmpty() && sampleUri != null) {
@@ -94,7 +99,9 @@ internal fun EditorViewModel.loadProject() {
                 durationMs = updatedP.durationMs,
                 canUndo = false, canRedo = false,
                 selectedClipId = it.selectedClipId ?: firstClipId,
-                isPlaying = firstClipId != null
+                // Loading a project establishes its initial playhead; it
+                // must not start playback before the user presses Play.
+                isPlaying = false
             )
         }
 
@@ -273,7 +280,10 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                     overlayVolume = if (isImage) 0f else 1f
                 )
             } else if (created != null) {
-                newClips += created
+                // Main-track videos start edge-to-edge in the composition frame.
+                // Overlay media keeps its own aspect/box behavior; saved projects
+                // retain their FIT default unless the user changes it.
+                newClips += withImportedMainVideoFitDefault(created)
             }
         }
         val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())

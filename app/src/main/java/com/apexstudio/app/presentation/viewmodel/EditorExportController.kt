@@ -3,12 +3,15 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
+import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
@@ -16,15 +19,37 @@ import java.io.File
 
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
 
-fun EditorViewModel.setSelectedResolution(res: String) = _state.update { it.copy(selectedResolution = res) }
+fun EditorViewModel.setSelectedResolution(res: String) {
+    updateExport { it.copy(resolution = ExportResolution.canonical(res)) }
+}
 
 fun EditorViewModel.toggleFullscreenPreview() = _state.update { it.copy(isFullscreenPreview = !it.isFullscreenPreview) }
 
 
 fun EditorViewModel.updateExport(upd: (ExportSettings) -> ExportSettings) {
-    _export.update { it.copy(settings = upd(it.settings)) }
+    var canonicalResolution = "1080P"
+    _export.update { current ->
+        val updated = upd(current.settings)
+        canonicalResolution = ExportResolution.canonical(updated.resolution)
+        current.copy(settings = updated.copy(resolution = canonicalResolution))
+    }
+    _state.update { state ->
+        if (state.selectedResolution == canonicalResolution) state
+        else state.copy(selectedResolution = canonicalResolution)
+    }
 }
 
+/** Canvas selection is not an export source: an overlay remains a composited layer. */
+internal fun resolveExportBaseClip(state: EditorState): MediaClip? {
+    val mainClips = state.project?.clips?.filter {
+        it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+    } ?: return null
+    return mainClips.firstOrNull { it.id == state.selectedClipId } ?: mainClips.firstOrNull()
+}
+
+/** Global art and this source clip's art only; another clip's drawings never leak into export. */
+internal fun selectedExportDrawings(state: EditorState, clipId: String?): List<VideoDrawingLayer> =
+    state.project?.videoDrawings.orEmpty().filter { it.clipId == null || it.clipId == clipId }
 
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
@@ -34,18 +59,34 @@ fun EditorViewModel.startExport(
     aspectRatio: String = _export.value.settings.aspectRatio,
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
+    if (_export.value.isExporting) return
+    val resolvedResolution = ExportResolution.canonical(resolution)
     val s = _state.value
-    val selected = s.project?.clips?.firstOrNull { it.id == s.selectedClipId }
-        ?: s.project?.clips?.firstOrNull()
+    val selected = resolveExportBaseClip(s)
+    val scopeReason = selectedVideoExportUnsupportedReason(s)
+    if (scopeReason != null) {
+        _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
+        return
+    }
+    val settingsReason = videoExportSettingsUnsupportedReason(
+        resolvedResolution, fps, quality, aspectRatio, bitrateMbps
+    )
+    if (settingsReason != null) {
+        _export.update { it.copy(error = settingsReason, outputUri = null, warning = null) }
+        return
+    }
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
-        startPhotoExport(selected, resolution, fps, quality)
+        startPhotoExport(selected, resolvedResolution, fps, quality, aspectRatio, bitrateMbps)
         return
     }
     val inputUri = selected?.uri ?: return
-    val engine = exportEngine ?: return
-    _export.update { it.copy(isExporting = true, progress = 0f) }
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
     if (s.activeFilterId != null && context != null) {
@@ -71,6 +112,7 @@ fun EditorViewModel.startExport(
                 offsetMs = ov.timelineOffsetMs,
                 trimStartMs = ov.trimStartMs,
                 trimEndMs = ov.trimEndMs,
+                speedPoints = ov.speedPoints,
                 // The overlay's canvas transform — preview and export
                 // resolve the same numbers against the frame geometry.
                 widthFraction = ov.pipScale,
@@ -90,7 +132,8 @@ fun EditorViewModel.startExport(
                 shadow = ov.overlayShadow,
                 flipH = ov.overlayFlipH,
                 flipV = ov.overlayFlipV,
-                keyframes = ov.keyframes.keyframes
+                keyframes = ov.keyframes.keyframes,
+                videoCrop = ov.videoCrop
             )
         }
     // Transition: apply the project's chosen transition type in the export
@@ -107,14 +150,19 @@ fun EditorViewModel.startExport(
     engine.startExport(
         inputUri,
         ExportEngine.ExportConfig(
-            resolution = resolution,
+            resolution = resolvedResolution,
             fps = fps,
             quality = quality,
             aspectRatio = aspectRatio,
+            videoFitMode = selected?.videoFitMode ?: com.apexstudio.app.domain.model.VideoFitMode.COVER,
             bitrateMbps = bitrateMbps,
             filterPreset = filterPreset,
             filterIntensity = s.filterIntensity,
             adjustments = s.adjustments,
+            projectVideoEffectId = selected?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
+            workspaceEffects = selected?.workspaceEffects.orEmpty(),
+            videoCrop = selected?.videoCrop,
+            faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,
@@ -133,8 +181,15 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             stickers = stickers,
+            videoDrawings = selectedExportDrawings(s, selected?.id),
+            videoDrawingClipId = selected?.id,
             trimStartMs = selected?.trimStartMs ?: 0L,
             trimEndMs = selected?.trimEndMs ?: 0L,
+            keyframeTimelineStartMs = selected?.let { clip ->
+                com.apexstudio.app.domain.model.SpeedCurveMath.timelineStartMsForClip(
+                    s.project?.clips.orEmpty(), clip
+                )
+            } ?: 0L,
             pitchSemitones = audioSt.pitchSemitones,
             // Per-clip Volume tool: the clip's own gain multiplies the
             // global audio volume, so what the user hears in the preview
@@ -150,6 +205,9 @@ fun EditorViewModel.startExport(
             echoEnabled = audioSt.echoEnabled,
             bassBoostEnabled = audioSt.bassBoostEnabled,
             bassBoostStrength = audioSt.bassBoostStrength,
+            overlayAudioSources = buildOverlayAudioExportSources(
+                s.project?.clips.orEmpty(), s.hiddenVideoLayers
+            ),
             pipOverlays = pipOverlays,
             transitionType = transitionType,
             transitionGlId = transitionGlId,
@@ -159,7 +217,9 @@ fun EditorViewModel.startExport(
             // imports) over the exported audio — see MusicExportMixer.
             // project.audioTracks is the same list the live preview plays,
             // so the export matches what the user hears.
-            musicMixTracks = (s.project?.audioTracks ?: emptyList()).filter { !it.isMuted }
+            musicMixTracks = (s.project?.audioTracks ?: emptyList()).let { tracks ->
+                tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+            }
         )
     )
 }
@@ -175,60 +235,127 @@ fun EditorViewModel.setExportOutputUri(uri: String?) = _export.update { it.copy(
 fun EditorViewModel.setExportError(error: String?) = _export.update { it.copy(error = error) }
 
 
+/** PiP audio is mixed once, independently of the selected V1 clip and added music. */
+internal fun buildOverlayAudioExportSources(
+    clips: List<MediaClip>,
+    hiddenVideoLayers: Set<Int> = emptySet()
+): List<ExportEngine.AudioExportSource> = buildAudioExportSources(
+    clips.filter { it.type == ClipType.OVERLAY }, emptyList(), hiddenVideoLayers
+)
+
 /**
- * Exports the project's audio as a standalone AAC (.m4a) file: every
- * timeline clip's audio plus all unmuted extra audio tracks (music /
- * voiceover), concatenated in timeline order. Reuses the audio pipeline
- * (pitch, volume, speed) from the video export.
+ * Maps canonical project audio to the standalone export timeline. Main video
+ * clip audio follows editor clip order; video-backed overlay clips and extra
+ * tracks retain their absolute timeline placement. Media3 mixes the resulting
+ * parallel source sequences.
+ */
+internal fun buildAudioExportSources(
+    clips: List<MediaClip>,
+    audioTracks: List<AudioTrack>,
+    hiddenVideoLayers: Set<Int> = emptySet()
+): List<ExportEngine.AudioExportSource> = buildList {
+    var clipTimelinePositionMs = 0L
+    clips.forEach { clip ->
+        val mainVisual = clip.trackIndex == 0 &&
+            (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
+        val audibleOverlay = clip.type == ClipType.OVERLAY &&
+            clip.trackIndex !in hiddenVideoLayers && clip.overlayVolume.isFinite() &&
+            clip.overlayVolume > 0f
+        if (clip.type == ClipType.VIDEO || audibleOverlay) add(
+            ExportEngine.AudioExportSource(
+                uri = clip.uri,
+                trimStartMs = clip.trimStartMs,
+                trimEndMs = clip.trimEndMs,
+                // Overlay audio is independent of V1 and follows the same
+                // project-time offset as its visual layer.
+                timelinePositionMs = if (clip.type == ClipType.OVERLAY || clip.trackIndex != 0) {
+                    clip.timelineOffsetMs.coerceAtLeast(0L)
+                } else {
+                    clipTimelinePositionMs
+                },
+                speedPoints = clip.speedPoints,
+                // Visual overlays currently use curves or native 1x playback,
+                // not the V1-only legacy constant speed multiplier.
+                constantSpeedOverride = if (audibleOverlay) 1f else clip.speedMultiplier,
+                sourceGain = if (audibleOverlay) clip.overlayVolume else clip.volume,
+                denoiseEnabled = clip.denoiseEnabled,
+                denoiseStrength = clip.denoiseStrength
+            )
+        )
+        if (mainVisual) {
+            // Still images consume V1 time even though they have no audio.
+            // Absolute overlay placement must never advance the V1 cursor.
+            val durationMs = clip.effectiveDurationMs().coerceAtLeast(0L)
+            clipTimelinePositionMs = if (clipTimelinePositionMs > Long.MAX_VALUE - durationMs) {
+                Long.MAX_VALUE
+            } else {
+                clipTimelinePositionMs + durationMs
+            }
+        }
+    }
+    audioTracks.filter {
+        com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, audioTracks)
+    }.forEach { track ->
+        add(
+            ExportEngine.AudioExportSource(
+                uri = track.uri,
+                trimStartMs = track.trimStartMs,
+                trimEndMs = track.trimEndMs,
+                timelinePositionMs = track.startTimeMs.coerceAtLeast(0L),
+                // Music and voiceover remain at their native playback rate.
+                constantSpeedOverride = 1f,
+                // Track gain/keyframes are absolute and applied by the final
+                // sample-accurate processor; sourceGain remains unity to avoid
+                // multiplying the scalar volume twice or distorting keyframes.
+                sourceGain = 1f,
+                trackVolume = track.volume,
+                trackFadeInMs = track.fadeInMs,
+                trackFadeOutMs = track.fadeOutMs,
+                trackVolumeKeyframes = track.volumeKeyframes
+            )
+        )
+    }
+}
+
+/**
+ * Exports a standalone AAC timeline mix. Main video clip audio is placed in
+ * editor clip order, overlay video audio and unmuted canonical project audio
+ * tracks use their timeline offsets; each source keeps its own trim/speed and
+ * standalone tracks retain their fade and absolute volume automation settings.
  */
 fun EditorViewModel.startAudioExport(
     outputFileName: String = "apex_studio_audio.m4a"
 ) {
+    if (_export.value.isExporting) return
     val s = _state.value
-    val engine = exportEngine ?: return
-    _export.update { it.copy(isExporting = true, progress = 0f) }
-
-    val audioSt = _audio.value
-    val clips = s.project?.clips?.filter { it.type == ClipType.VIDEO } ?: emptyList()
-    // Every audio source in the project: all video clips in timeline order,
-    // then any unmuted extra audio tracks (music / voiceover).
-    val sources = buildList {
-        clips.forEach { clip ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = clip.uri,
-                    trimStartMs = clip.trimStartMs,
-                    trimEndMs = clip.trimEndMs,
-                    // Per-clip variable speed curve (PR-E).
-                    speedPoints = clip.speedPoints,
-                    // Per-clip Clean Voice: the same denoise setting the
-                    // preview and the video export use for this clip.
-                    denoiseEnabled = clip.denoiseEnabled,
-                    denoiseStrength = clip.denoiseStrength
-                )
-            )
-        }
-        audioSt.tracks.filter { !it.isMuted }.forEach { track ->
-            add(
-                ExportEngine.AudioExportSource(
-                    uri = track.uri,
-                    trimStartMs = track.trimStartMs,
-                    trimEndMs = track.trimEndMs
-                )
-            )
-        }
-    }
-    if (sources.isEmpty()) {
-        _export.update { it.copy(isExporting = false, progress = 0f) }
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    val speed = clips.firstOrNull()?.speedMultiplier ?: s.playbackSpeed
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
+
+    val audioSt = _audio.value
+    // project.audioTracks is canonical; audio-studio's cached track list can lag.
+    val project = s.project
+    val sources = buildAudioExportSources(
+        project?.clips.orEmpty(),
+        project?.audioTracks.orEmpty(),
+        s.hiddenVideoLayers
+    )
+    if (sources.isEmpty()) {
+        _export.update {
+            it.copy(isExporting = false, progress = 0f, error = "No audio sources are available to export.")
+        }
+        return
+    }
     engine.startAudioExport(
         sources,
         ExportEngine.ExportConfig(
             pitchSemitones = audioSt.pitchSemitones,
             volume = if (audioSt.isMuted) 0f else audioSt.volume,
-            clipSpeed = speed
+            // Retain the old global fallback for any source created by a
+            // legacy caller without a constantSpeedOverride.
+            clipSpeed = s.playbackSpeed
         ),
         outputFileName
     )
@@ -251,9 +378,15 @@ fun EditorViewModel.startPhotoExport(
     clip: MediaClip,
     resolution: String,
     fps: Int,
-    quality: String
+    quality: String,
+    aspectRatio: String = _export.value.settings.aspectRatio,
+    bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
-    val engine = exportEngine ?: return
+    if (_export.value.isExporting) return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
     // Derive the photo still-video resolution from the user-selected export
     // quality. Capped at 4K: 8K intermediates (7680px, ~600MB transient)
     // risk OOM and exceed MediaCodec H.264 limits on most devices.
@@ -261,143 +394,282 @@ fun EditorViewModel.startPhotoExport(
         resolution.contains("4320") || resolution.contains("8k", ignoreCase = true) -> 3840
         resolution.contains("4k", ignoreCase = true) || resolution.contains("2160") -> 3840
         resolution.contains("1440") -> 2560
+        resolution.contains("720") -> 1280
         else -> 1920 // 1080p and below
     }
-    val ctx = context ?: return
+    val ctx = context ?: run {
+        _export.update { it.copy(error = "Photo export is unavailable without an application context.", outputUri = null) }
+        return
+    }
+    // Freeze project layers and settings before the asynchronous photo encoding.
+    val snapshot = _state.value
+    val config = buildPhotoExportConfig(snapshot, clip, resolution, fps, quality, aspectRatio, bitrateMbps)
+    val run = Any()
+    photoExportRun = run
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
-    viewModelScope.launch(Dispatchers.IO) {
+    photoExportJob = viewModelScope.launch(Dispatchers.IO) {
         var tempVideo: File? = null
         try {
+            val trimmedMs = photoExportSourceDurationMs(clip)
             val bitmap = PhotoEditRenderer.renderEdited(ctx, clip.uri, clip.photoEdit, maxDim = photoMaxDim)
                 ?: throw IllegalStateException("Could not decode photo: ${clip.name}")
-            val trimmedMs = if (clip.trimEndMs > clip.trimStartMs) {
-                clip.trimEndMs - clip.trimStartMs
-            } else {
-                clip.durationMs
-            }
             // Phase 4: Ken Burns motion bakes into the still-video when enabled.
-            tempVideo = PhotoVideoEncoder.encodeStillImage(
-                ctx, bitmap, trimmedMs, kenBurns = clip.photoEdit.kenBurns
-            ) ?: throw IllegalStateException("Could not encode photo video")
             try {
+                tempVideo = PhotoVideoEncoder.encodeStillImage(
+                    ctx, bitmap, trimmedMs, kenBurns = clip.photoEdit.kenBurns
+                ) ?: throw IllegalStateException("Could not encode photo video")
+            } finally {
                 bitmap.recycle()
-            } catch (_: Exception) {
             }
 
-            val s = _state.value
-            val stickers = (s.project?.stickers ?: emptyList()) + clip.stickers
-            val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
-                .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
-                          it.trackIndex !in s.hiddenVideoLayers }
-                .map { ov ->
-                    ExportEngine.PipOverlayConfig(
-                        uri = ov.uri,
-                        offsetMs = ov.timelineOffsetMs,
-                        trimStartMs = ov.trimStartMs,
-                        trimEndMs = ov.trimEndMs,
-                        // The overlay's canvas transform — preview and
-                        // export resolve the same numbers against the
-                        // frame geometry.
-                        widthFraction = ov.pipScale,
-                        centerX = ov.pipX,
-                        centerY = ov.pipY,
-                        rotationDeg = ov.pipRotationDeg,
-                        // BASE opacity only: the effect multiplies the
-                        // keyframe-interpolated opacity per frame.
-                        opacity = ov.pipOpacity.coerceIn(0f, 1f),
-                        // Shape mask (Mask tool) on the overlay clip.
-                        mask = ov.mask,
-                        // Properties panel + intrinsic aspect + keyframes.
-                        aspect = ov.overlayAspect,
-                        blendMode = ov.overlayBlend.glId,
-                        borderWidth = ov.overlayBorderWidth,
-                        borderColor = ov.overlayBorderColor,
-                        shadow = ov.overlayShadow,
-                        flipH = ov.overlayFlipH,
-                        flipV = ov.overlayFlipV,
-                        keyframes = ov.keyframes.keyframes
-                    )
-                }
-            // Phase 4: gl-transitions shaders ride as transitionGlId.
-            val lastTransitionIdPhoto = s.project?.lastTransitionType
-            val transitionGlIdPhoto = lastTransitionIdPhoto
-                ?.takeIf { it.startsWith(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX) }
-                ?.removePrefix(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX)
-            val transitionType = lastTransitionIdPhoto?.takeIf { transitionGlIdPhoto == null }?.let { typeStr ->
-                com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
+            val previousEngineState = engine.exportState.value
+            kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+                coroutineContext.ensureActive()
+                if (photoExportRun !== run) throw kotlinx.coroutines.CancellationException("Photo export cancelled")
+                engine.startExport(android.net.Uri.fromFile(tempVideo).toString(), config)
             }
-            engine.startExport(
-                android.net.Uri.fromFile(tempVideo).toString(),
-                ExportEngine.ExportConfig(
-                    resolution = resolution,
-                    fps = fps,
-                    quality = quality,
-                    // Photo edits are baked into the frames already.
-                    filterPreset = null,
-                    filterIntensity = 0f,
-                    adjustments = VideoAdjustments(),
-                    cropRect = null,
-                    clipSpeed = clip.speedMultiplier,
-                    // Shape mask (Mask tool) on the photo clip.
-                    mask = clip.mask,
-                    keyframes = clip.keyframes,
-                    fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
-                    fxIntensity = s.fxIntensity,
-                    // AR Face parity on the photo path too.
-                    arFilterId = s.activeArFilterId,
-                    arFilterIntensity = s.arFilterIntensity,
-                    arFilterCustomText = s.arFilterCustomText,
-                    textOverlays = clip.textOverlays,
-                    stickers = stickers,
-                    // Trim is baked into the still-video duration.
-                    trimStartMs = 0L,
-                    trimEndMs = 0L,
-                    // Stills carry no audio.
-                    pitchSemitones = 0f,
-                    volume = 1f,
-                    pipOverlays = pipOverlays,
-                    transitionType = transitionType,
-                    transitionGlId = transitionGlIdPhoto,
-                    transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
-                )
-            )
             // Wait for the export to terminate with a proper timeout (30 min cap
             // so a stuck export can't leak the file or the coroutine).
-            // Also break if the export already finished (error/success) before
-            // we observed it active — handles fast-failing exports.
+            // Ignore the preceding export's completion: startExport dispatches
+            // asynchronously, so its old output/error can still be visible here.
             val completed = kotlinx.coroutines.withTimeoutOrNull(30L * 60L * 1000L) {
-                var sawActive = false
-                while (true) {
-                    val st = engine.exportState.value
-                    if (st.isExporting) {
-                        sawActive = true
-                    } else if (sawActive) {
-                        break
-                    } else if (st.error != null || st.outputUri != null) {
-                        // Finished (or failed) before we ever saw it active.
-                        break
-                    }
-                    delay(500)
+                engine.exportState.first { current ->
+                    isNewPhotoExportTerminal(previousEngineState, current)
                 }
                 true
             }
             if (completed == null) {
                 Log.w("EditorViewModel", "Photo export timed out after 30 min; cancelling")
-                try {
+                kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
                     engine.cancelExport()
-                } catch (_: Exception) {
                 }
                 throw IllegalStateException("Photo export timed out")
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
+                if (photoExportRun === run) engine.cancelExport()
+            }
+            throw cancelled
         } catch (e: Exception) {
             Log.e("EditorViewModel", "Photo export failed", e)
-            _export.update { it.copy(isExporting = false, error = e.message) }
+            if (photoExportRun === run) _export.update { it.copy(isExporting = false, error = e.message) }
         } finally {
             try {
                 tempVideo?.delete()
             } catch (_: Exception) {
             }
+            if (photoExportRun === run) {
+                photoExportRun = null
+                photoExportJob = null
+            }
         }
     }
+}
+
+internal fun isNewPhotoExportTerminal(
+    previous: ExportEngine.ExportProgressState,
+    current: ExportEngine.ExportProgressState
+): Boolean = current !== previous && !current.isExporting
+
+/** Retained source time before the IMAGE variable-speed export processor. */
+internal fun photoExportSourceDurationMs(clip: MediaClip): Long {
+    require(clip.durationMs > 0L) { "Photo duration must be positive" }
+    val start = clip.trimStartMs.coerceAtLeast(0L)
+    val end = when (clip.trimEndMs) {
+        0L, Long.MAX_VALUE -> clip.durationMs
+        else -> minOf(clip.trimEndMs, clip.durationMs)
+    }
+    require(end > start) { "Photo trim has no retained frames" }
+    return end - start
+}
+
+/** Pure snapshot mapping shared by photo export and host regressions. */
+internal fun buildPhotoExportConfig(
+    s: EditorState,
+    clip: MediaClip,
+    resolution: String,
+    fps: Int,
+    quality: String,
+    aspectRatio: String,
+    bitrateMbps: Int
+): ExportEngine.ExportConfig {
+    val stickers = (s.project?.stickers ?: emptyList()) + clip.stickers
+    val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
+        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
+                  it.trackIndex !in s.hiddenVideoLayers }
+        .map { ov ->
+            ExportEngine.PipOverlayConfig(
+                uri = ov.uri,
+                offsetMs = ov.timelineOffsetMs,
+                trimStartMs = ov.trimStartMs,
+                trimEndMs = ov.trimEndMs,
+                speedPoints = ov.speedPoints,
+                // The overlay's canvas transform — preview and
+                // export resolve the same numbers against the
+                // frame geometry.
+                widthFraction = ov.pipScale,
+                centerX = ov.pipX,
+                centerY = ov.pipY,
+                rotationDeg = ov.pipRotationDeg,
+                // BASE opacity only: the effect multiplies the
+                // keyframe-interpolated opacity per frame.
+                opacity = ov.pipOpacity.coerceIn(0f, 1f),
+                // Shape mask (Mask tool) on the overlay clip.
+                mask = ov.mask,
+                // Properties panel + intrinsic aspect + keyframes.
+                aspect = ov.overlayAspect,
+                blendMode = ov.overlayBlend.glId,
+                borderWidth = ov.overlayBorderWidth,
+                borderColor = ov.overlayBorderColor,
+                shadow = ov.overlayShadow,
+                flipH = ov.overlayFlipH,
+                flipV = ov.overlayFlipV,
+                keyframes = ov.keyframes.keyframes,
+                videoCrop = ov.videoCrop
+            )
+        }
+    // Phase 4: gl-transitions shaders ride as transitionGlId.
+    val lastTransitionIdPhoto = s.project?.lastTransitionType
+    val transitionGlIdPhoto = lastTransitionIdPhoto
+        ?.takeIf { it.startsWith(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX) }
+        ?.removePrefix(com.apexstudio.app.data.gl.GlTransitionAdapterEffect.ID_PREFIX)
+    val transitionType = lastTransitionIdPhoto?.takeIf { transitionGlIdPhoto == null }?.let { typeStr ->
+        com.apexstudio.app.data.gl.TransitionEngine.Companion.TransitionType.fromId(typeStr)
+    }
+    return ExportEngine.ExportConfig(
+        resolution = resolution,
+        fps = fps,
+        quality = quality,
+        aspectRatio = aspectRatio,
+        preserveInputAspectRatio = !clip.photoEdit.canvas.isOriginal,
+        bitrateMbps = bitrateMbps,
+        // Photo edits are baked into the frames already.
+        filterPreset = null,
+        filterIntensity = 0f,
+        adjustments = VideoAdjustments(),
+        cropRect = null,
+        // IMAGE timeline ignores legacy constant speed; retain its curve.
+        clipSpeed = 1f,
+        speedPoints = clip.speedPoints,
+        keyframeTimelineStartMs = com.apexstudio.app.domain.model.SpeedCurveMath
+            .timelineStartMsForClip(s.project?.clips.orEmpty(), clip),
+        // Shape mask (Mask tool) on the photo clip.
+        mask = clip.mask,
+        keyframes = clip.keyframes,
+        fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
+        fxIntensity = s.fxIntensity,
+        fxSpeed = s.fxSpeed,
+        // AR Face parity on the photo path too.
+        arFilterId = s.activeArFilterId,
+        arFilterIntensity = s.arFilterIntensity,
+        arFilterCustomText = s.arFilterCustomText,
+        textOverlays = clip.textOverlays,
+        stickers = stickers,
+        videoDrawings = selectedExportDrawings(s, clip.id),
+        videoDrawingClipId = clip.id,
+        // The generated still-video is zero-based, but its duration remains the
+        // retained source span used as the speed-curve/keyframe mapping domain.
+        trimStartMs = 0L,
+        trimEndMs = photoExportSourceDurationMs(clip),
+        // Stills carry no audio.
+        pitchSemitones = 0f,
+        volume = 1f,
+        pipOverlays = pipOverlays,
+        overlayAudioSources = buildOverlayAudioExportSources(
+            s.project?.clips.orEmpty(), s.hiddenVideoLayers
+        ),
+        musicMixTracks = s.project?.audioTracks.orEmpty().let { tracks ->
+            tracks.filter { com.apexstudio.app.data.engine.AudioPlaybackMix.isEnabled(it, tracks) }
+        },
+        transitionType = transitionType,
+        transitionGlId = transitionGlIdPhoto,
+        transitionDurationMs = s.project?.lastTransitionDurationMs ?: 500L
+    )
+}
+
+/** A snapshot-scoped Color Studio grade export; it never mutates or replaces project media. */
+fun EditorViewModel.startColorStudioTimelineExport(grade: ColorStudioGrade) {
+    if (_export.value.isExporting) return
+    val snapshot = try { captureColorTimelineExportSnapshot(grade) } catch (failure: IllegalArgumentException) {
+        _export.update { it.copy(error = failure.message, outputUri = null, warning = null) }
+        return
+    }
+    startColorStudioTimelineExport(snapshot)
+}
+
+/** Use exactly the plan whose sources were checked, even if controls changed during that check. */
+internal fun EditorViewModel.startColorStudioTimelineExport(snapshot: ColorTimelineExportSnapshot) {
+    if (_export.value.isExporting) return
+    val engine = exportEngine ?: run {
+        _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null, warning = null) }
+    engine.startProjectExport(snapshot.clips, snapshot.config,
+        "apex_studio_color_graded_timeline_${java.util.UUID.randomUUID()}.mp4")
+}
+
+/** Same eligibility explanation used by the action, safe to show before the user starts a render. */
+fun EditorViewModel.colorStudioTimelineExportBlocker(grade: ColorStudioGrade): String? {
+    val snapshot = _state.value
+    val audioSnapshot = _audio.value
+    val settings = _export.value.settings
+    val filterPreset = resolveColorGradeGlobalFilter(snapshot)
+    return colorStudioTimelineExportBlocker(grade, snapshot, audioSnapshot, settings, filterPreset)
+}
+
+private fun colorStudioTimelineExportBlocker(
+    grade: ColorStudioGrade,
+    snapshot: EditorState,
+    audio: AudioStudioState,
+    settings: ExportSettings,
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset?
+): String? {
+    projectVisualScopeUnsupportedReason(snapshot)?.let { return it }
+    if (snapshot.activeFilterId != null && filterPreset == null) {
+        return "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
+    }
+    if (snapshot.activeFxId != null && com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null) {
+        return "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
+    }
+    val config = buildProjectExportConfig(snapshot, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+    return projectCompositionUnsupportedReason(projectMainExportClips(snapshot), config)
+}
+
+private fun EditorViewModel.resolveColorGradeGlobalFilter(state: EditorState): com.apexstudio.app.data.filter.FilterPreset? {
+    val filterId = state.activeFilterId ?: return null
+    val ctx = context ?: return null
+    return try {
+        com.apexstudio.app.data.filter.LutFilterEngine(ctx).manifest.filters.firstOrNull { it.id == filterId }
+    } catch (_: Exception) { null }
+}
+
+/** One immutable plan shared by rendered timeline comparison and graded timeline export. */
+internal data class ColorTimelineExportSnapshot(
+    val clips: List<MediaClip>,
+    val config: ExportEngine.ExportConfig
+)
+
+/** Capture eligibility and all render inputs together; never re-read a live project after preflight. */
+internal fun buildColorTimelineExportSnapshot(
+    state: EditorState,
+    audio: AudioStudioState,
+    settings: ExportSettings,
+    grade: ColorStudioGrade,
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
+): ColorTimelineExportSnapshot {
+    val reason = colorStudioTimelineExportBlocker(grade, state, audio, settings, filterPreset)
+    require(reason == null) { reason ?: "Timeline Color rendering is unavailable." }
+    return ColorTimelineExportSnapshot(
+        projectMainExportClips(state).toList(),
+        buildProjectExportConfig(state, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+    )
+}
+
+internal fun EditorViewModel.captureColorTimelineExportSnapshot(grade: ColorStudioGrade): ColorTimelineExportSnapshot {
+    check(!_export.value.isExporting) { "Wait for the current export to finish before rendering a comparison." }
+    val state = _state.value
+    return buildColorTimelineExportSnapshot(state, _audio.value, _export.value.settings, grade,
+        resolveColorGradeGlobalFilter(state))
 }

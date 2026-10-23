@@ -52,7 +52,7 @@ import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.GpuImageLutEngine
 import com.apexstudio.app.presentation.state.LutGalleryViewMode
 import com.apexstudio.app.presentation.state.LutTargetTrack
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.launch
 
 /**
@@ -177,7 +177,7 @@ fun ColorGradingLutPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "Color Grading & Filters",
-                            color = Color.White,
+                            color = ApexPalette.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
@@ -274,7 +274,7 @@ fun ColorGradingLutPanel(
                 Icon(
                     Icons.Default.Compare,
                     contentDescription = "Compare Before/After",
-                    tint = if (compareMode) ApexPalette.NeonCyan else Color.White,
+                    tint = if (compareMode) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -426,7 +426,7 @@ fun ColorGradingLutPanel(
                 ) {
                     Text(
                         "Split Comparison (Left: Original | Right: Graded)",
-                        color = Color.White,
+                        color = ApexPalette.TextPrimary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -872,7 +872,7 @@ private fun LutGalleryGridCard(
             ) {
                 Text(
                     preset.category.take(8),
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = ApexPalette.TextPrimary.copy(alpha = 0.85f),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -892,7 +892,7 @@ private fun LutGalleryGridCard(
                 Icon(
                     if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
                     contentDescription = "Favorite",
-                    tint = if (favorite) ApexPalette.NeonAmber else Color.White.copy(alpha = 0.7f),
+                    tint = if (favorite) ApexPalette.NeonAmber else ApexPalette.TextPrimary.copy(alpha = 0.7f),
                     modifier = Modifier.size(11.dp)
                 )
             }
@@ -936,7 +936,7 @@ private fun LutGalleryGridCard(
         ) {
             Text(
                 text = preset.name,
-                color = if (selected) ApexPalette.NeonCyan else Color.White,
+                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                 fontSize = 9.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
@@ -1002,7 +1002,7 @@ private fun RawVideoGridCard(
             ) {
                 Text(
                     "RAW",
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = ApexPalette.TextPrimary.copy(alpha = 0.85f),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1036,7 +1036,7 @@ private fun RawVideoGridCard(
         ) {
             Text(
                 "Original",
-                color = if (selected) ApexPalette.NeonCyan else Color.White,
+                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                 fontSize = 9.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
@@ -1102,7 +1102,7 @@ private fun RawVideoTile(
             ) {
                 Text(
                     "Original",
-                    color = if (selected) ApexPalette.NeonCyan else Color.White,
+                    color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
@@ -1205,7 +1205,7 @@ private fun LutPresetCard(
                 Icon(
                     if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
                     contentDescription = "Favorite",
-                    tint = if (favorite) ApexPalette.NeonAmber else Color.White.copy(alpha = 0.7f),
+                    tint = if (favorite) ApexPalette.NeonAmber else ApexPalette.TextPrimary.copy(alpha = 0.7f),
                     modifier = Modifier.size(12.dp)
                 )
             }
@@ -1244,7 +1244,7 @@ private fun LutPresetCard(
             ) {
                 Text(
                     preset.name,
-                    color = if (selected) ApexPalette.NeonCyan else Color.White,
+                    color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
                     fontSize = 8.sp,
                     lineHeight = 9.sp,
                     fontWeight = FontWeight.Bold,

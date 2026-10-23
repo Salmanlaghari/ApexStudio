@@ -51,8 +51,8 @@ object TimelineThumbnailCache {
     }
     private val diskWriteLock = Any()
 
-    private fun cacheKey(uri: String, timeMs: Long, w: Int, h: Int): String =
-        "$uri|$timeMs|${w}x$h"
+    private fun cacheKey(clip: com.apexstudio.app.domain.model.MediaClip, timeMs: Long, w: Int, h: Int): TimelineThumbnailCacheKey =
+        TimelineThumbnailCacheKey.from(clip, timeMs, w, h)
 
     private fun diskFile(context: Context, key: String): File {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -78,24 +78,30 @@ object TimelineThumbnailCache {
         // different source frame, and a clip-relative key would return
         // the old trim's frame. Same source frame -> same entry, so a
         // re-trim to an overlapping range reuses cached frames.
-        val key = cacheKey(clip.uri, clip.trimStartMs + keyMs, w, h)
+        val keyData = cacheKey(clip, keyMs, w, h)
+        val key = keyData.toString()
         synchronized(memoryCache) { memoryCache.get(key) }?.let { return@withContext it }
 
         // Disk hit: decode + promote to memory.
         val file = diskFile(context, key)
         if (file.exists()) {
             try {
-                BitmapFactory.decodeFile(file.absolutePath)?.let { bmp ->
+                val cached = BitmapFactory.decodeFile(file.absolutePath)
+                if (cached != null) {
+                    val bmp = cached
                     synchronized(memoryCache) { memoryCache.put(key, bmp) }
                     return@withContext bmp
                 }
+                // A truncated/stale JPEG must not be retried on every scroll pass.
+                file.delete()
             } catch (e: Exception) {
                 Log.w(TAG, "disk frame decode failed, re-extracting", e)
+                file.delete()
             }
         }
 
         ensureActive()
-        val bmp = extractFrame(context, clip, keyMs, w, h) ?: return@withContext null
+        val bmp = extractFrame(context, clip, keyData.sourceTimeMs, w, h) ?: return@withContext null
         ensureActive()
         synchronized(memoryCache) { memoryCache.put(key, bmp) }
         try {
@@ -109,30 +115,54 @@ object TimelineThumbnailCache {
     private suspend fun extractFrame(
         context: Context,
         clip: com.apexstudio.app.domain.model.MediaClip,
-        keyMs: Long,
+        sourceTimeMs: Long,
         w: Int,
         h: Int
     ): Bitmap? {
-        val type = clip.type
-        // Still-image clips (and image-backed overlays) decode via the
-        // still loader — MediaMetadataRetriever can't reliably pull
-        // frames from a JPEG, and the loader applies the clip's photo
-        // edits for WYSIWYG thumbnails.
+        // IMAGE and image-backed OVERLAY clips share the same edit pipeline
+        // as the preview/export. If the URI is actually video, a failed photo
+        // decode falls through to MediaMetadataRetriever below.
+        return imageFirstFallback(
+            clip.type,
+            imageDecode = {
+                try {
+                    com.apexstudio.app.data.photoedit.PhotoEditRenderer.renderEdited(
+                        context, clip.uri, clip.photoEdit, maxDim = maxOf(w, h)
+                    )?.let { scaled(it, w, h) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "photo frame decode failed for ${clip.uri}", e)
+                    null
+                }
+            },
+            videoDecode = { extractVideoFrame(context, clip, sourceTimeMs, w, h) },
+        )
+    }
+
+    /**
+     * Try the photo renderer for stills and overlays before the video retriever.
+     * Kept as a small seam so both overlay-image selection and video fallback
+     * behavior can be tested without platform codec dependencies.
+     */
+    internal suspend fun <T> imageFirstFallback(
+        type: com.apexstudio.app.domain.model.ClipType,
+        imageDecode: suspend () -> T?,
+        videoDecode: suspend () -> T?,
+    ): T? {
         if (type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
             type == com.apexstudio.app.domain.model.ClipType.OVERLAY
         ) {
-            try {
-                val photo = com.apexstudio.app.data.photoedit.PhotoEditRenderer.loadBitmap(
-                    context, clip.uri, maxDim = maxOf(w, h)
-                )
-                if (photo != null) return scaled(photo, w, h)
-            } catch (e: Exception) {
-                Log.w(TAG, "photo frame decode failed for ${clip.uri}", e)
-            }
-            // IMAGE falls through to the retriever as a second chance
-            // (it can decode a still as a frame on many devices);
-            // OVERLAY falls through too (video-backed overlays).
+            imageDecode()?.let { return it }
         }
+        return videoDecode()
+    }
+
+    private suspend fun extractVideoFrame(
+        context: Context,
+        clip: com.apexstudio.app.domain.model.MediaClip,
+        sourceTimeMs: Long,
+        w: Int,
+        h: Int,
+    ): Bitmap? {
         val retriever = MediaMetadataRetriever()
         try {
             val effectiveUri = if (clip.uri.startsWith("asset://") || clip.uri.isBlank()) {
@@ -150,7 +180,8 @@ object TimelineThumbnailCache {
             } else {
                 retriever.setDataSource(context, parsed)
             }
-            val timeUs = (clip.trimStartMs + keyMs).coerceAtLeast(0L) * 1000L
+            val timeUs = if (sourceTimeMs > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE
+                else sourceTimeMs * 1_000L
             val frame = try {
                 retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.getFrameAtTime(timeUs)

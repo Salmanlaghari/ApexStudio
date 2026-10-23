@@ -16,7 +16,9 @@ import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
-import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
+import com.apexstudio.app.ai.safety.ProtectedAiAction
+import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.google.mediapipe.framework.image.BitmapExtractor
@@ -59,12 +61,10 @@ import kotlin.coroutines.coroutineContext
  * export read the *same pixels by construction*: the preview
  * plays the processed file, and the export exports it.
  *
- * ## Model delivery (PR-C "Blake")
- * The segmentation model (~244 KB) downloads on demand via
- * [PackManager] and is never bundled in the APK. It is loaded
- * into MediaPipe with `BaseOptions.setModelAssetBuffer` (a
- * `ByteBuffer`), which is what lets a PackManager-downloaded
- * file — not an asset — feed the segmenter.
+ * ## Model delivery
+ * The official ~244 KB selfie-segmentation model is bundled in the APK.
+ * [modelFile] materializes it into app-private storage after checking
+ * its pinned SHA-256; processing has no model download or network path.
  *
  * ## Honest limits (NOT VERIFIED on-device — see PR description)
  * - CPU delegate only: the GPU delegate has a history of wrong
@@ -82,7 +82,7 @@ object BackgroundReplaceEngine {
 
     private const val TAG = "BgReplaceEngine"
 
-    /** PackManager id for the MediaPipe selfie-segmentation model. */
+    /** Retained for pack-metadata compatibility; the engine no longer downloads a model pack. */
     const val PACK_ID = "mediapipe-selfie-segmenter"
 
     /** On-disk model file name (URL basename — see `DownloadEngine.fileNameFor`). */
@@ -111,13 +111,14 @@ object BackgroundReplaceEngine {
         Thread(r, "BgReplace").apply { isDaemon = true }
     }.asCoroutineDispatcher()
 
-    /** The downloaded model file, or null when not downloaded yet. */
-    fun modelFile(context: Context): File =
-        File(PackManager.packDir(context, PACK_ID), MODEL_FILE)
+    /** Verified app-private copy of the bundled model; available without a network connection. */
+    fun modelFile(context: Context): File = BundledMediaPipeModels.modelFile(
+        context, BundledMediaPipeModels.Model.SELFIE_SEGMENTER
+    )
 
-    /** True when the model pack is installed with the file on disk. */
+    /** Materialize and verify the packaged model off the UI thread. */
     suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
-        PackManager.isDownloaded(context, PACK_ID) && modelFile(context).exists()
+        runCatching { modelFile(context).isFile }.getOrDefault(false)
     }
 
     /**
@@ -143,25 +144,11 @@ object BackgroundReplaceEngine {
     }
 
     /**
-     * Delete a processed file, but ONLY inside the `bg_replace` dir —
-     * never delete an arbitrary path (the clip's [uri] could be a
-     * user file when no processing has happened).
-     */
-    fun deleteProcessedFile(file: File) {
-        try {
-            if (file.parentFile?.name == "bg_replace" && file.exists()) file.delete()
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not delete processed file ${file.name}", e)
-        }
-    }
-
-    /**
      * Process [sourceUri] with [settings] into [outputFile].
-     * Writes to `<output>.tmp` and renames on success, so a
-     * cancelled / failed run never leaves a half-written file
-     * behind at the output path. The caller must delete the
-     * output on cancellation if it created a temp file — this
-     * function deletes the temp itself on any failure.
+     * Writes to a unique temporary sibling and renames on success,
+     * so a cancelled / failed run never leaves a half-written file
+     * behind at the output path. Existing output files are never
+     * deleted or overwritten: clip history may still reference them.
      *
      * @param onProgress 0..1, throttled to ~4 emissions/second.
      * @throws Exception with a user-readable message on failure.
@@ -173,19 +160,20 @@ object BackgroundReplaceEngine {
         outputFile: File,
         onProgress: (Float) -> Unit = {}
     ): File = withContext(processingDispatcher) {
+        // Do not load the segmenter, decode media, or create an output while moderation is unavailable.
+        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT, sourceUri)
         val safe = settings.sanitized()
         val appContext = context.applicationContext
         val model = modelFile(appContext)
-        if (!model.exists()) throw IllegalStateException("Segmentation model not downloaded yet.")
+        if (!model.isFile) throw IllegalStateException("Bundled segmentation model is unavailable.")
         if (safe.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
             safe.imageUri.isNullOrBlank()
         ) {
             throw IllegalArgumentException("Pick a background image first.")
         }
 
-        val tmp = File(outputFile.parentFile, outputFile.name + ".tmp")
-        tmp.delete()
-        outputFile.delete()
+        outputFile.parentFile?.mkdirs()
+        val tmp = File(outputFile.parentFile, outputFile.name + ".${java.util.UUID.randomUUID()}.tmp")
 
         var segmenter: ImageSegmenter? = null
         var extractor: MediaExtractor? = null
@@ -526,10 +514,8 @@ object BackgroundReplaceEngine {
             if (!tmp.exists() || tmp.length() == 0L) {
                 throw IllegalStateException("Encoding produced an empty file.")
             }
-            if (!tmp.renameTo(outputFile)) {
-                throw IllegalStateException("Could not save the processed video.")
-            }
-            outputFile
+            coroutineContext.ensureActive()
+            publishBackgroundOutput(tmp, outputFile)
         } catch (e: Exception) {
             // Never leave a half-written temp file behind.
             try { tmp.delete() } catch (_: Exception) {}

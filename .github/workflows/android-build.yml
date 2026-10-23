@@ -112,13 +112,12 @@ jobs:
         if: failure()
         run: |
           LOG=gradle-debug.log
-          { grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" 2>/dev/null || true; } | head -80 > ci-error-digest.txt
-          git config user.email "ci@github.local"
-          git config user.name "CI Log Bot"
-          git checkout -B session/ci-log-${{ github.run_id }}-debug
-          git add -f ci-error-digest.txt
-          git commit -m "CI error digest run ${{ github.run_id }}"
-          git push -f origin session/ci-log-${{ github.run_id }}-debug
+          if [ -f "$LOG" ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" \
+              | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+          else
+            echo "::error::gradle log $LOG not found"
+          fi
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
       - name: Build lean arm64 debug APK and feature bundle
@@ -270,13 +269,12 @@ jobs:
         if: failure()
         run: |
           LOG=gradle-release.log
-          { grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" 2>/dev/null || true; } | head -80 > ci-error-digest.txt
-          git config user.email "ci@github.local"
-          git config user.name "CI Log Bot"
-          git checkout -B session/ci-log-${{ github.run_id }}-release
-          git add -f ci-error-digest.txt
-          git commit -m "CI error digest run ${{ github.run_id }}"
-          git push -f origin session/ci-log-${{ github.run_id }}-release
+          if [ -f "$LOG" ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" \
+              | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+          else
+            echo "::error::gradle log $LOG not found"
+          fi
       - name: Check release native alignment (static only, all bundle modules)
         run: |
           python3 scripts/native-alignment.py app/build/outputs/apk/release/app-release.apk --output native-alignment-release-apk.json

@@ -106,7 +106,16 @@ class FxGlEffect(
         }
 
         override fun release() {
-            super.release()
+            try {
+                super.release()
+            } finally {
+                // The base class owns the texture pool, not this linked shader program.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                }
+            }
         }
     }
 

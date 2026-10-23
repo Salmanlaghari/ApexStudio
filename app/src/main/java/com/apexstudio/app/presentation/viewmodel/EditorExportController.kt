@@ -86,7 +86,6 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
     if (s.activeFilterId != null && context != null) {
@@ -98,6 +97,18 @@ fun EditorViewModel.startExport(
         }
     }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
+    val unavailableVisual = selectedVisualEffectUnavailableReason(
+        activeFilterId = s.activeFilterId,
+        filterIntensity = s.filterIntensity,
+        filterPresetAvailable = filterPreset != null,
+        activeFxId = s.activeFxId,
+        fxIntensity = s.fxIntensity
+    )
+    if (unavailableVisual != null) {
+        _export.update { it.copy(isExporting = false, error = unavailableVisual, outputUri = null, warning = null) }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value

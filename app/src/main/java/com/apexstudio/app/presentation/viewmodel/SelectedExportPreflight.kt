@@ -24,3 +24,20 @@ internal fun selectedVideoExportUnsupportedReason(state: EditorState): String? {
     }
     return null
 }
+
+/** Do not report a successful export after silently dropping an active global look. */
+internal fun selectedVisualEffectUnavailableReason(
+    activeFilterId: String?,
+    filterIntensity: Float,
+    filterPresetAvailable: Boolean,
+    activeFxId: String?,
+    fxIntensity: Float
+): String? {
+    if (activeFilterId != null && filterIntensity > 0f && !filterPresetAvailable) {
+        return "The selected global filter is unavailable for export. Reapply the filter before exporting."
+    }
+    if (activeFxId != null && fxIntensity > 0f && com.apexstudio.app.data.fx.FxPreset.byId(activeFxId) == null) {
+        return "The selected global FX is unavailable for export. Reapply the effect before exporting."
+    }
+    return null
+}

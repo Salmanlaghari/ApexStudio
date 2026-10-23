@@ -31,6 +31,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.resolveMaskAt
 import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropGlEffect
@@ -41,6 +42,7 @@ import com.apexstudio.app.domain.model.VideoDrawingTool
 import com.apexstudio.app.domain.model.VideoDrawingStroke
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
+import java.util.concurrent.atomic.AtomicLong
 
 // === 2. VIDEO PREVIEW AREA ===
 internal const val DEFAULT_PREVIEW_COVER_MODE = false
@@ -156,16 +158,30 @@ fun VideoPreviewArea(
     val workspaceEffectBinding = remember(workspaceEffects) {
         workspaceEffectPreviewBinding(workspaceEffects)
     }
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
+    val editorGradeEffects = LocalEditorPreviewEffects.current
+    // The Media3 effect graph stays stable across playhead ticks. Its mask
+    // resolver reads this atomic clock once for every decoded frame, so animated
+    // geometry follows playback without replacing the graph.
+    val previewMaskTimeMs = remember { AtomicLong(currentTimeMs.coerceAtLeast(0L)) }
+    SideEffect { previewMaskTimeMs.set(currentTimeMs.coerceAtLeast(0L)) }
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, editorGradeEffects, mask, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
-                player.setVideoEffects(listOfNotNull(
+                val geometryAndWorkspaceEffects = listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
-                ))
+                ) + listOfNotNull(
+                    com.apexstudio.app.data.effect.MaskGlEffect.fromMask(
+                        mask,
+                        maskTimeMsProvider = previewMaskTimeMs::get
+                    )
+                )
+                player.setVideoEffects(
+                    mergeEditorPreviewEffects(geometryAndWorkspaceEffects, editorGradeEffects)
+                )
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
                 // Replacing a video-effect chain while paused does not guarantee Media3
                 // redraws the already-presented frame. Seek to the same source position
@@ -219,7 +235,10 @@ fun VideoPreviewArea(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Video Clip Layer with Keyframe Animations (Scale, Rotation, Opacity, Position)
+        // Keyframe animation is already in the Media3 graph for video. Keep the
+        // legacy Compose transform only for still photos, whose player graph is
+        // intentionally empty.
+        val composeTransform = composeTransformForPreview(photoClip != null, animatedTransform)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -232,12 +251,12 @@ fun VideoPreviewArea(
                     }
                 }
                 .graphicsLayer {
-                    scaleX = animatedTransform.scale
-                    scaleY = animatedTransform.scale
-                    rotationZ = animatedTransform.rotationDeg
-                    alpha = animatedTransform.opacity.coerceIn(0f, 1f)
-                    translationX = animatedTransform.translateX * size.width * 0.5f
-                    translationY = animatedTransform.translateY * size.height * 0.5f
+                    scaleX = composeTransform.scale
+                    scaleY = composeTransform.scale
+                    rotationZ = composeTransform.rotationDeg
+                    alpha = composeTransform.opacity.coerceIn(0f, 1f)
+                    translationX = composeTransform.translateX * size.width * 0.5f
+                    translationY = composeTransform.translateY * size.height * 0.5f
                 }
         ) {
             // Photo clip (PR F): still image rendered with its edits via
@@ -276,11 +295,14 @@ fun VideoPreviewArea(
             }
 
             // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
-            FilterPreviewOverlay(
+            if (shouldRenderComposeGrade(photoClip != null, lutCompareMode)) FilterPreviewOverlay(
                 filterId = activeFilterId,
                 intensity = filterIntensity,
                 adjustments = adjustments,
-                saturationMultiplier = keyframedSaturationFactor,
+                // During explicit LUT compare, the legacy overlay is a deliberate
+                // fallback because the existing LUT GL shader has no before/split
+                // mode. Per-clip saturation remains in the video GL keyframe stage.
+                saturationMultiplier = if (photoClip != null) keyframedSaturationFactor else 1f,
                 compareMode = lutCompareMode,
                 splitPosition = lutCompareSplitPosition,
                 modifier = mediaContentModifier
@@ -303,7 +325,7 @@ fun VideoPreviewArea(
             }
 
             // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
-            if (activeFxId != null && fxIntensity > 0f) {
+            if (shouldRenderComposeFx(photoClip != null) && activeFxId != null && fxIntensity > 0f) {
                 FxPreviewOverlay(
                     fxId = activeFxId,
                     intensity = fxIntensity,
@@ -329,8 +351,9 @@ fun VideoPreviewArea(
             // while the mask panel is open.
             PreviewContentCanvas(mediaAspectRatio, contentCoverMode) {
                 MaskPreviewOverlay(
-                    mask = mask,
+                    mask = mask?.resolveMaskAt(currentTimeMs),
                     editMode = maskEditMode,
+                    renderScrim = photoClip != null,
                     onCenterChangeLive = onMaskCenterLive,
                     onCenterChangeFinished = onMaskCenterFinished,
                     onSizeChangeLive = onMaskSizeLive,
@@ -455,7 +478,7 @@ fun VideoPreviewArea(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Reload Sample Video",
+                                text = "Retry Video",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold

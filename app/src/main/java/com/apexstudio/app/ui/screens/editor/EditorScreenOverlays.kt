@@ -60,6 +60,7 @@ import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.resolveMaskAt
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.clipLayerAnchor
@@ -950,8 +951,10 @@ fun MaskPanelOverlay(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color.Transparent)
-            .clickable { vm.closeMaskPanel() },
+            // Keep the preview hit-testable while the mask sheet is open:
+            // the overlay is visually transparent outside its child, and a
+            // full-screen clickable backdrop would swallow mask-handle drags.
+            .background(Color.Transparent),
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
@@ -1496,19 +1499,30 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Overlay (V2 PiP) clips preview their mask as a hard clip on
             // the PiP box itself, so the main-frame scrim is restricted to
             // non-overlay clips.
+            // Keep the keyframe track intact for per-decoded-frame GL
+            // resolution; VideoPreviewArea separately resolves the edit outline
+            // at this playhead for the handles and path.
             mask = mainPreviewClip?.mask,
             maskEditMode = state.maskPanelOpen && currentSelectedClip?.id == mainPreviewClip?.id,
             onMaskCenterLive = { x, y ->
-                currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = false) }
+                currentSelectedClip?.id?.let {
+                    vm.setMaskCenter(it, x, y, persist = false, atMs = state.playerPositionMs)
+                }
             },
             onMaskCenterFinished = { x, y ->
-                currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = true) }
+                currentSelectedClip?.id?.let {
+                    vm.setMaskCenter(it, x, y, persist = true, atMs = state.playerPositionMs)
+                }
             },
             onMaskSizeLive = { sx, sy ->
-                currentSelectedClip?.id?.let { vm.setMaskSize(it, sx, sy, persist = false) }
+                currentSelectedClip?.id?.let {
+                    vm.setMaskSize(it, sx, sy, persist = false, atMs = state.playerPositionMs)
+                }
             },
             onMaskSizeFinished = { sx, sy ->
-                currentSelectedClip?.id?.let { vm.setMaskSize(it, sx, sy, persist = true) }
+                currentSelectedClip?.id?.let {
+                    vm.setMaskSize(it, sx, sy, persist = true, atMs = state.playerPositionMs)
+                }
             },
             // Only V1 images replace the background preview. Image overlays
             // are rendered independently in PipOverlayCanvas via Coil.

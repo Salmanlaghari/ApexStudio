@@ -83,15 +83,15 @@ class FxGlEffect(
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
                 glProgram.use()
-                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-                glProgram.setFloatUniform("uIntensity", intensity)
-                glProgram.setFloatUniform("uTime", presentationTimeUs / 1_000_000f)
-                // Only animated presets declare uSpeed; setting it on other
-                // shaders would hit a missing-uniform lookup.
-                if (preset.isAnimated) {
-                    glProgram.setFloatUniform("uSpeed", speed)
+                if (glProgram.getUniformLocation("uTexSampler") >= 0) {
+                    glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 }
-                glProgram.setFloatsUniform(
+                // Static/preset-specific shaders optimize unused common uniforms away.
+                // A required-name lookup then throws even though compilation succeeded.
+                glProgram.setFloatsUniformIfPresent("uIntensity", floatArrayOf(intensity))
+                glProgram.setFloatsUniformIfPresent("uTime", floatArrayOf(presentationTimeUs / 1_000_000f))
+                glProgram.setFloatsUniformIfPresent("uSpeed", floatArrayOf(speed))
+                glProgram.setFloatsUniformIfPresent(
                     "uTexel",
                     floatArrayOf(
                         1f / inputWidth.coerceAtLeast(1),
@@ -106,7 +106,16 @@ class FxGlEffect(
         }
 
         override fun release() {
-            super.release()
+            try {
+                super.release()
+            } finally {
+                // The base class owns the texture pool, not this linked shader program.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                }
+            }
         }
     }
 

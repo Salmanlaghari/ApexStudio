@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import android.graphics.BlurMaskFilter
 import com.apexstudio.app.domain.model.MaskShape
@@ -241,6 +242,8 @@ fun MaskPreviewOverlay(
     onCenterChangeFinished: (x: Float, y: Float) -> Unit = { _, _ -> },
     onSizeChangeLive: (sx: Float, sy: Float) -> Unit = { _, _ -> },
     onSizeChangeFinished: (sx: Float, sy: Float) -> Unit = { _, _ -> },
+    /** False when the media graph has already applied the mask to video pixels. */
+    renderScrim: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (mask == null || !mask.enabled) return
@@ -250,6 +253,10 @@ fun MaskPreviewOverlay(
     // (putting `mask` in the pointerInput keys would cancel the drag
     // on every state update).
     val latestMask by rememberUpdatedState(mask)
+    val latestCenterChangeLive by rememberUpdatedState(onCenterChangeLive)
+    val latestCenterChangeFinished by rememberUpdatedState(onCenterChangeFinished)
+    val latestSizeChangeLive by rememberUpdatedState(onSizeChangeLive)
+    val latestSizeChangeFinished by rememberUpdatedState(onSizeChangeFinished)
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
 
@@ -269,45 +276,57 @@ fun MaskPreviewOverlay(
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            .testTag("mask-preview-overlay")
             .onSizeChanged {
                 canvasW = it.width.toFloat()
                 canvasH = it.height.toFloat()
             }
             .then(
                 if (editMode) {
-                    Modifier.pointerInput(canvasW, canvasH) {
+                    Modifier.pointerInput(canvasW, canvasH, editMode) {
                         var resizing = false
+                        var dragCenterX = latestMask.centerX
+                        var dragCenterY = latestMask.centerY
+                        var dragSizeX = latestMask.sizeX
+                        var dragSizeY = latestMask.sizeY
                         detectDragGestures(
                             onDragStart = { offset ->
+                                val m = latestMask
+                                dragCenterX = m.centerX
+                                dragCenterY = m.centerY
+                                dragSizeX = m.sizeX
+                                dragSizeY = m.sizeY
                                 resizing = (offset - handlePos()).getDistance() < 56f
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                                val m = latestMask
                                 if (canvasW <= 0f || canvasH <= 0f) return@detectDragGestures
                                 if (resizing) {
-                                    val c = Offset(m.centerX * canvasW, m.centerY * canvasH)
+                                    val c = Offset(dragCenterX * canvasW, dragCenterY * canvasH)
                                     val before = (change.position - dragAmount - c).getDistance()
                                     val after = (change.position - c).getDistance()
                                     val scale =
                                         if (before > 1f) (after / before).coerceIn(0.5f, 2f) else 1f
-                                    onSizeChangeLive(
-                                        (m.sizeX * scale).coerceIn(0.05f, 1f),
-                                        (m.sizeY * scale).coerceIn(0.05f, 1f)
-                                    )
+                                    dragSizeX = (dragSizeX * scale).coerceIn(0.05f, 1f)
+                                    dragSizeY = (dragSizeY * scale).coerceIn(0.05f, 1f)
+                                    latestSizeChangeLive(dragSizeX, dragSizeY)
                                 } else {
-                                    onCenterChangeLive(
-                                        ((m.centerX * canvasW + dragAmount.x) / canvasW).coerceIn(0f, 1f),
-                                        ((m.centerY * canvasH + dragAmount.y) / canvasH).coerceIn(0f, 1f)
-                                    )
+                                    dragCenterX = (dragCenterX + dragAmount.x / canvasW).coerceIn(0f, 1f)
+                                    dragCenterY = (dragCenterY + dragAmount.y / canvasH).coerceIn(0f, 1f)
+                                    latestCenterChangeLive(dragCenterX, dragCenterY)
                                 }
                             },
                             onDragEnd = {
-                                val m = latestMask
-                                if (resizing) onSizeChangeFinished(m.sizeX, m.sizeY)
-                                else onCenterChangeFinished(m.centerX, m.centerY)
+                                if (resizing) latestSizeChangeFinished(dragSizeX, dragSizeY)
+                                else latestCenterChangeFinished(dragCenterX, dragCenterY)
                             },
-                            onDragCancel = { }
+                            // A live drag has already changed the in-memory project. Persist
+                            // the final value even if a parent gesture or recomposition
+                            // cancels the pointer stream before a normal release.
+                            onDragCancel = {
+                                if (resizing) latestSizeChangeFinished(dragSizeX, dragSizeY)
+                                else latestCenterChangeFinished(dragCenterX, dragCenterY)
+                            }
                         )
                     }
                 } else Modifier
@@ -372,6 +391,19 @@ fun MaskPreviewOverlay(
                     }
                 }
             }
+        }
+
+        // Video frames are already masked by MaskGlEffect. Keep the outline,
+        // hit target and resize affordance, but never dim that rendered image a
+        // second time. Photos still use the Compose scrim path below.
+        if (!renderScrim) {
+            if (editMode) {
+                drawPath(shapePath(), ApexPalette.NeonCyan, style = Stroke(width = 2.dp.toPx()))
+                val hp = handlePos()
+                drawCircle(ApexPalette.NeonCyan, radius = 9.dp.toPx(), center = hp)
+                drawCircle(Color.Black, radius = 9.dp.toPx(), center = hp, style = Stroke(width = 2.dp.toPx()))
+            }
+            return@Canvas
         }
 
         val steps = 6

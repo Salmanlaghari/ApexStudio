@@ -298,11 +298,11 @@ private fun EditorScreenContent(
             return@LaunchedEffect
         }
         try {
-            // The RenderersFactory wires the shared denoise processor
-            // into the player's audio sink (Media3 1.5.0 has no
-            // Player.setAudioEffects — the sink is the only hook).
+            // Install an effect-capable playback graph at renderer creation time.
+            // Media3 1.5.0's default video sink throws UnsupportedOperationException
+            // from setVideoEffects; dynamic effects must be backed by this graph.
             val renderersFactory =
-                com.apexstudio.app.data.audio.DenoiseRenderersFactory(context) {
+                EffectPreviewRenderersFactory(context) {
                     denoiseProcessor
                 }
             val player = ExoPlayer.Builder(context, renderersFactory).build()
@@ -339,7 +339,11 @@ private fun EditorScreenContent(
                     }
                     try {
                         player.prepare()
-                        if (state.isPlaying) {
+                        // The listener lives for the player's lifetime, so the Compose
+                        // `state` captured when it was installed may predate the error.
+                        // Read the current VM value to avoid leaving a recovered player
+                        // paused after a transient runtime decoder/load error.
+                        if (vm.state.value.isPlaying) {
                             player.play()
                         }
                     } catch (ex: Exception) {
@@ -539,14 +543,24 @@ private fun EditorScreenContent(
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
+        state.lutCompareMode,
+        state.lutCompareSplitPosition,
         selectedKeyframes
     ) {
         buildList<androidx.media3.common.Effect> {
+            // Preview comparison is performed on the decoded frame by the
+            // same LUT shader as export; no Compose color approximation.
             if (activePreset != null && state.filterIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity,
-                        intensityProvider = { state.filterIntensity }
+                        intensityProvider = { state.filterIntensity },
+                        comparisonMode = if (state.lutCompareMode) {
+                            com.apexstudio.app.data.filter.LutComparisonMode.SPLIT
+                        } else {
+                            com.apexstudio.app.data.filter.LutComparisonMode.AFTER
+                        },
+                        splitPosition = state.lutCompareSplitPosition
                     )
                 )
             }
@@ -611,9 +625,8 @@ private fun EditorScreenContent(
         }
     }
 
-    // Live preview effects and filters are rendered in real-time by FilterPreviewOverlay
-    // and FxPreviewOverlay with Compose hardware acceleration, preventing ExoPlayer
-    // GL pipeline crashes and surface detachment on Android devices.
+    // Actual video filter/adjustment/FX and keyframe rendering runs in the
+    // effect-capable Media3 graph. Compose remains the photo grading path.
 
     val audioPlaybackManager = remember { com.apexstudio.app.data.engine.AudioPlaybackManager(context) }
     DisposableEffect(Unit) {
@@ -883,6 +896,7 @@ private fun EditorScreenContent(
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
+        CompositionLocalProvider(LocalEditorPreviewEffects provides currentEffects) {
         EditorPreviewSection(
             state = state,
             vm = vm,
@@ -902,6 +916,7 @@ private fun EditorScreenContent(
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth
         )
+        }
             },
             timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {

@@ -34,4 +34,42 @@ class SelectedExportPreflightTest {
     @Test fun unsupportedVideoTracksAreNotSilentlyOmitted() {
         assertTrue(selectedVideoExportUnsupportedReason(state(listOf(video("extra", track = 2))))!!.contains("outside V1"))
     }
+
+    @Test fun activeFilterUnavailableToExportIsBlockedInsteadOfSilentlyDropped() {
+        val reason = selectedVisualEffectUnavailableReason(
+            activeFilterId = "missing-lut",
+            filterIntensity = 0.7f,
+            filterPresetAvailable = false,
+            activeFxId = null,
+            fxIntensity = 0f
+        )
+
+        assertTrue(reason!!.contains("filter is unavailable"))
+    }
+
+    @Test fun activeUnknownFxIsBlockedButDisabledOrResolvedLooksRemainAllowed() {
+        val missingFx = selectedVisualEffectUnavailableReason(
+            activeFilterId = null,
+            filterIntensity = 0f,
+            filterPresetAvailable = false,
+            activeFxId = "missing-fx",
+            fxIntensity = 0.6f
+        )
+        assertTrue(missingFx!!.contains("FX is unavailable"))
+
+        assertNull(selectedVisualEffectUnavailableReason(
+            activeFilterId = "missing-lut",
+            filterIntensity = 0f,
+            filterPresetAvailable = false,
+            activeFxId = "missing-fx",
+            fxIntensity = 0f
+        ))
+        assertNull(selectedVisualEffectUnavailableReason(
+            activeFilterId = "resolved-lut",
+            filterIntensity = 0.6f,
+            filterPresetAvailable = true,
+            activeFxId = com.apexstudio.app.data.fx.FxPreset.GLITCH.id,
+            fxIntensity = 0.4f
+        ))
+    }
 }

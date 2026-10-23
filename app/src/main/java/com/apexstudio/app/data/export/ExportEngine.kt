@@ -858,7 +858,10 @@ class ExportEngine(private val context: Context) {
                 // right after geometry, before any colour work, so the
                 // mask matches what MaskPreviewOverlay showed in the
                 // editor. Null/enabled-off = no-op.
-                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(config.mask)
+                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(
+                    config.mask,
+                    timeMsAtPresentationTimeUs = keyframeClockFor(config)::projectTimeMs
+                )
                     ?.let { videoEffects.add(it) }
 
                 // 2. Color Filter (3D LUT) & Video Adjustments
@@ -1622,6 +1625,7 @@ class ExportEngine(private val context: Context) {
                 exportException: ExportException
             ) {
                 if (nonProjectRun !== run || !finishTransformerRun(active)) return
+                Log.e("ExportEngine", "Video transformer failed (${exportException.errorCodeName})", exportException)
                 diagnostics?.stage(
                     "video_transformer_failed",
                     "errorCode=${exportException.errorCodeName} errorType=${exportException.cause?.javaClass?.simpleName} " +

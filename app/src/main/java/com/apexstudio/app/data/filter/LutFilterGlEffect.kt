@@ -19,6 +19,24 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 
+/** How the LUT stage presents its source and graded pixels during comparison. */
+enum class LutComparisonMode(internal val shaderValue: Float) {
+    AFTER(0f),
+    BEFORE(1f),
+    SPLIT(2f),
+}
+
+/** Shader-equivalent comparison predicate, exposed for focused mode tests. */
+internal fun isOriginalLutComparisonPixel(
+    mode: LutComparisonMode,
+    textureX: Float,
+    splitPosition: Float,
+): Boolean = when (mode) {
+    LutComparisonMode.BEFORE -> true
+    LutComparisonMode.AFTER -> false
+    LutComparisonMode.SPLIT -> textureX < splitPosition.coerceIn(0f, 1f)
+}
+
 /**
  * Real-time 3D LUT colour filter wired into the Media3 GL pipeline.
  *
@@ -41,11 +59,16 @@ class LutFilterGlEffect(
     private val preset: FilterPreset?,
     private val intensity: Float = 1f,
     private val intensityProvider: (() -> Float)? = null,
-    private val preloaded: LutTexture? = null
+    private val preloaded: LutTexture? = null,
+    private val comparisonMode: LutComparisonMode = LutComparisonMode.AFTER,
+    private val splitPosition: Float = 0.5f,
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, preloaded, useHdr)
+        return LutShaderProgram(
+            context, preset, intensity.coerceIn(0f, 1f), intensityProvider, preloaded,
+            comparisonMode, splitPosition.coerceIn(0f, 1f), useHdr
+        )
     }
 
     @UnstableApi
@@ -55,6 +78,8 @@ class LutFilterGlEffect(
         private val intensity: Float,
         private val intensityProvider: (() -> Float)?,
         preloaded: LutTexture?,
+        private val comparisonMode: LutComparisonMode,
+        private val splitPosition: Float,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -92,6 +117,8 @@ class LutFilterGlEffect(
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
             glProgram.setFloatUniform("uIntensity", intensity)
+            glProgram.setFloatUniform("uCompareMode", comparisonMode.shaderValue)
+            glProgram.setFloatUniform("uSplitPosition", splitPosition)
 
             if (preloaded != null) {
                 // Hot path: caller already parsed + packed the LUT on
@@ -178,6 +205,8 @@ class LutFilterGlEffect(
                 glProgram.setFloatUniform("uLutSize", lutSize.toFloat())
                 val currentIntensity = intensityProvider?.invoke()?.coerceIn(0f, 1f) ?: intensity
                 glProgram.setFloatUniform("uIntensity", currentIntensity)
+                glProgram.setFloatUniform("uCompareMode", comparisonMode.shaderValue)
+                glProgram.setFloatUniform("uSplitPosition", splitPosition)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
@@ -186,10 +215,21 @@ class LutFilterGlEffect(
         }
 
         override fun release() {
-            super.release()
-            if (lutTexId[0] != 0) {
-                GLES20.glDeleteTextures(1, lutTexId, 0)
-                lutTexId[0] = 0
+            try {
+                super.release()
+            } finally {
+                try {
+                    if (lutTexId[0] != 0) {
+                        GLES20.glDeleteTextures(1, lutTexId, 0)
+                        lutTexId[0] = 0
+                    }
+                } finally {
+                    try {
+                        glProgram.delete()
+                    } catch (e: GlUtil.GlException) {
+                        throw VideoFrameProcessingException(e)
+                    }
+                }
             }
         }
     }
@@ -228,6 +268,9 @@ class LutFilterGlEffect(
             uniform sampler2D uLutSampler;
             uniform float uLutSize;
             uniform float uIntensity;
+            // 0 = after (normal/export default), 1 = before, 2 = split.
+            uniform float uCompareMode;
+            uniform float uSplitPosition;
             void main() {
                 vec4 color = texture2D(uTexSampler, vTextureCoord);
                 // 3D LUT lookup via 2D strip texture.
@@ -248,7 +291,15 @@ class LutFilterGlEffect(
                 vec3 lo = texture2D(uLutSampler, vec2(xLow, yCoord)).rgb;
                 vec3 hi = texture2D(uLutSampler, vec2(xHigh, yCoord)).rgb;
                 vec3 graded = mix(lo, hi, bT);
-                vec3 outRgb = mix(color.rgb, graded, uIntensity);
+                vec3 afterRgb = mix(color.rgb, graded, uIntensity);
+                // Match the legacy compare contract without a Compose
+                // recoloring overlay: left is untouched source, right is LUT.
+                vec3 outRgb = afterRgb;
+                if (uCompareMode > 0.5 && uCompareMode < 1.5) {
+                    outRgb = color.rgb;
+                } else if (uCompareMode > 1.5 && vTextureCoord.x < uSplitPosition) {
+                    outRgb = color.rgb;
+                }
                 gl_FragColor = vec4(outRgb, color.a);
             }
         """.trimIndent()

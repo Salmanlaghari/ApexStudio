@@ -183,11 +183,15 @@ fun VideoPreviewArea(
                     mergeEditorPreviewEffects(geometryAndWorkspaceEffects, editorGradeEffects)
                 )
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
-                // Replacing a video-effect chain while paused does not guarantee Media3
-                // redraws the already-presented frame. Seek to the same source position
-                // to invalidate that frame; never move the project playhead or auto-play.
+                // A same-position seek can reuse the already-rendered buffer, leaving
+                // paused edits invisible. Re-prepare the retained item at the exact
+                // source position so the new graph receives a freshly decoded frame.
+                // Playing edits keep the live stream; paused edits never auto-play.
                 else if (!player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY) {
-                    player.seekTo(player.currentPosition.coerceAtLeast(0L))
+                    val retainedPositionMs = player.currentPosition.coerceAtLeast(0L)
+                    player.stop()
+                    player.seekTo(retainedPositionMs)
+                    player.prepare()
                 }
             } else player.setVideoEffects(emptyList())
         } catch (error: Exception) {

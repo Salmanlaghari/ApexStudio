@@ -163,13 +163,14 @@ class RuntimeEditAcceptanceInstrumentedTest {
                 assertTrue("Paused FX must change actual preview pixels", changedPixelCount(filtered, withFx) > 50)
                 baseline.recycle()
                 filtered.recycle()
-                withFx.recycle()
                 instrumentation.runOnMainSync {
                     val current = vm.state.value
                     vm._state.value = current.copy(project = current.project!!.copy(clips = listOf(clip.copy(mask = startingMask))))
                 }
-                Thread.sleep(1_000L)
-                previewA = capturePreview(device, context.packageName, screenshotA)
+                previewA = awaitPreview(device, context.packageName, screenshotA) {
+                    changedPixelCount(withFx, it) > 150
+                }
+                withFx.recycle()
 
                 // Change the visible mask geometry and intensities with transport paused.
                 instrumentation.runOnMainSync {
@@ -183,7 +184,9 @@ class RuntimeEditAcceptanceInstrumentedTest {
                 }
                 device.waitForIdle(750L)
                 Thread.sleep(350L)
-                previewB = capturePreview(device, context.packageName, screenshotB)
+                previewB = awaitPreview(device, context.packageName, screenshotB) {
+                    changedPixelCount(previewA!!, it) > 150
+                }
                 val changed = changedPixelCount(previewA!!, previewB!!)
                 assertTrue(
                     "Paused preview must visibly update after filter/FX/mask changes; changed pixels=$changed",
@@ -197,12 +200,14 @@ class RuntimeEditAcceptanceInstrumentedTest {
 
                 // Keep the actual bottom panel open while dragging the preview mask body.
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(maskPanelOpen = true) }
-                Thread.sleep(1_000L)
+                assertTrue("Mask panel must be composed before its preview gesture is tested", device.wait(Until.hasObject(By.text("Mask")), 30_000L))
                 val bounds = requireNotNull(device.findObject(By.desc("Video preview frame"))).visibleBounds
                 val x = bounds.left + (bounds.width() * editedMask.centerX).toInt()
                 val y = bounds.top + (bounds.height() * editedMask.centerY).toInt()
                 device.swipe(x, y, x + bounds.width() / 8, y, 20)
-                Thread.sleep(750L)
+                val dragDeadline = System.currentTimeMillis() + 15_000L
+                while (vm.state.value.project!!.clips.single().mask!!.centerX <= editedMask.centerX + .02f &&
+                    System.currentTimeMillis() < dragDeadline) Thread.sleep(100L)
                 val dragged = vm.state.value.project!!.clips.single().mask!!
                 assertTrue("Open mask panel must not intercept preview body drag", dragged.centerX > editedMask.centerX + .02f)
                 device.takeScreenshot(File(diagnostics, "mask-panel-drag.png"))

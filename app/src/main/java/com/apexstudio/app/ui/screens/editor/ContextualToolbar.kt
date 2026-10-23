@@ -168,6 +168,8 @@ fun ContextualBottomToolbar(
     onSpeed: () -> Unit,
     onVolume: () -> Unit,
     onAnimation: () -> Unit,
+    // Keyframe = insert/toggle a diamond at the playhead; Animation = open the keyframe/animation panel.
+    onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
     onDelete: () -> Unit,
     // PR-G: per-clip Background replace (MediaPipe person segmentation).
     onBackground: () -> Unit,

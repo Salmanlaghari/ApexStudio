@@ -1297,20 +1297,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
                 else -> Modifier.weight(editorPreviewLayoutWeight(isTimelineFocusMode))
             })
-            // The stage now reaches directly from the app bar to transport.
-            // Its border surrounds the entire available preview, not just the
-            // aspect-fitted image; FIT and all overlay coordinates stay intact.
-            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
-            .background(Color.Black)
-            .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
-                Modifier.border(
-                    1.dp,
-                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-                        Color(0xFF3B6978), Color(0xFF202C42), Color(0xFF60517C)
-                    )),
-                    RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)
-                ))
-            .semantics { contentDescription = "Editor preview stage" },
+            .padding(
+                horizontal = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 12.dp,
+                vertical = if (isFullscreenPreview || isTimelineFocusMode) 0.dp else 4.dp
+            ),
         contentAlignment = Alignment.TopCenter
     ) {
         // Keep the historical flexible preview frame, but fit the entire
@@ -1320,7 +1310,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             mediaAspectRatio = compositionAspectRatio,
             isCoverMode = false,
             modifier = Modifier.fillMaxSize(),
-            frameModifier = Modifier.background(Color.Black)
+            frameModifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color.Black)
         ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
@@ -1438,7 +1428,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
 
         VideoPreviewArea(
             selectionFileLabel = null,
-            showFrame = false,
             exoPlayer = exoPlayer,
             videoWidth = state.videoWidth,
             videoHeight = state.videoHeight,
@@ -1810,6 +1799,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onSetTextOverlayRange = { ownerId, overlayId, start, end ->
             vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
         },
+        // Editing-assist modes. The logic already lived in
+        // EditorAudioController but only landscape exposed one of the three;
+        // the timeline overflow menu now reaches all of them.
+        onToggleMagneticSnapping = { vm.toggleMagneticSnapping() },
+        onToggleSnapToBeat = { vm.toggleSnapToBeat() },
+        onToggleRippleEdit = { vm.toggleRippleEdit() },
         onSelectSticker = { vm.selectSticker(it) },
         // Reset FX clears the whole lane: FX + LUT filter + adjustments.
         onClearFx = {

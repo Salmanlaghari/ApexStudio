@@ -111,7 +111,6 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -152,27 +151,12 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-internal const val TIMELINE_HEADER_HEIGHT_DP = 40
-internal const val TIMELINE_RULER_HEIGHT_DP = 28
-internal const val MAIN_VIDEO_LANE_HEIGHT_DP = 52
+internal const val TIMELINE_HEADER_HEIGHT_DP = 44
 internal const val OVERLAY_LAYER_HEIGHT_DP = 60
 internal const val OVERLAY_FILMSTRIP_HEIGHT_DP = 52
 internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
-
-private fun Modifier.timelineHeaderActionSurface(tint: Color): Modifier {
-    val shape = RoundedCornerShape(11.dp)
-    return size(40.dp)
-        .shadow(3.dp, shape)
-        .clip(shape)
-        .background(
-            Brush.linearGradient(
-                listOf(tint.copy(alpha = 0.18f), tint.copy(alpha = 0.07f)),
-            ),
-        )
-        .border(1.dp, tint.copy(alpha = 0.26f), shape)
-}
 
 /** Timeline scale is expressed in dp/ms, while pointer drag deltas are physical px. */
 internal fun sourceTrimDeltaToPx(sourceDeltaMs: Long, msToDp: Float, density: Float): Float =
@@ -192,7 +176,7 @@ internal fun mainVideoLaneHeight(
     hasMainVideo: Boolean,
     supportingLanesHeightDp: Float = 0f,
     hasWaveformStrip: Boolean = false,
-): Dp = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
+): Dp = if (hasMainVideo) 64.dp else 0.dp
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
 internal fun compactTimelineHeight(state: EditorState): Dp {
@@ -224,8 +208,8 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
 
     // Keep this estimate in lockstep with the rendered header, ruler, and
     // historical portrait timeline rows below.
-    var height = TIMELINE_HEADER_HEIGHT_DP + TIMELINE_RULER_HEIGHT_DP
-    if (hasMain) height += 10 + MAIN_VIDEO_LANE_HEIGHT_DP
+    var height = TIMELINE_HEADER_HEIGHT_DP + 36
+    if (hasMain) height += 10 + 64
     if (hasWaveform) height += 10 + 12
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
@@ -255,125 +239,6 @@ private fun TimelineLaneIdentity(label: String, accent: Color) {
             .border(0.75.dp, accent.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp)
     )
-}
-
-/** Compact single-row header; all actions remain wired to the existing callbacks. */
-@Composable
-private fun CompactTimelineHeader(
-    durationMs: Long,
-    headerKeyframeClip: MediaClip?,
-    playheadMs: Long,
-    onToggleKeyframe: (String) -> Unit,
-    onRevealPlayhead: () -> Unit,
-    multiSelectMode: Boolean,
-    onToggleMultiSelect: () -> Unit,
-    onAddMedia: () -> Unit,
-) {
-    val hasKeyframe = headerKeyframeClip?.keyframes?.keyframes
-        ?.any { abs(it.timeMs - playheadMs) <= 150L } == true
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(TIMELINE_HEADER_HEIGHT_DP.dp)
-            .background(Brush.verticalGradient(listOf(Color(0xFF182235), Color(0xFF101622))))
-            .padding(horizontal = 8.dp)
-            .testTag("timeline-header"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(width = 3.dp, height = 22.dp)
-                .background(Brush.verticalGradient(listOf(Color(0xFF43E6DC), Color(0xFF8A74FF))), RoundedCornerShape(2.dp))
-        )
-        Text(
-            text = "Timeline",
-            style = TextStyle(
-                brush = Brush.linearGradient(listOf(Color(0xFF72E9DE), Color(0xFFAB8AFF))),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            ),
-            maxLines = 1,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-        Text(
-            text = TimeFormat.msToShort(durationMs),
-            color = Color(0xFF8998B3),
-            fontSize = 9.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            modifier = Modifier.weight(1f).padding(start = 7.dp).testTag("timeline-duration"),
-        )
-        if (headerKeyframeClip != null) {
-            IconButton(
-                onClick = { onToggleKeyframe(headerKeyframeClip.id) },
-                modifier = Modifier.timelineHeaderActionSurface(Color(0xFF59DED7))
-                    .testTag("timeline-header-keyframe"),
-            ) {
-                Canvas(Modifier.size(19.dp).semantics {
-                    contentDescription = if (hasKeyframe) "Remove keyframe" else "Add keyframe"
-                }) {
-                    val cx = size.width / 2f
-                    val cy = size.height / 2f
-                    val radius = size.width / 2f - 2.dp.toPx()
-                    val diamond = Path().apply {
-                        moveTo(cx, cy - radius)
-                        lineTo(cx + radius, cy)
-                        lineTo(cx, cy + radius)
-                        lineTo(cx - radius, cy)
-                        close()
-                    }
-                    drawPath(diamond, Color(0xFF37DCD4).copy(alpha = 0.14f))
-                    drawPath(
-                        diamond,
-                        Brush.linearGradient(listOf(Color(0xFF62E8DF), Color(0xFF9A82FF))),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
-                    )
-                    val mark = Path().apply {
-                        moveTo(cx - 3.dp.toPx(), cy)
-                        lineTo(cx + 3.dp.toPx(), cy)
-                        if (!hasKeyframe) {
-                            moveTo(cx, cy - 3.dp.toPx())
-                            lineTo(cx, cy + 3.dp.toPx())
-                        }
-                    }
-                    drawPath(mark, Color(0xFFB7FFF8), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
-                }
-            }
-        }
-        IconButton(
-            onClick = onRevealPlayhead,
-            modifier = Modifier.timelineHeaderActionSurface(Color(0xFF9B86FF))
-                .testTag("timeline-reveal-playhead"),
-        ) {
-            Icon(Icons.Default.CenterFocusStrong, "Reveal playhead", tint = Color(0xFF9A91FF), modifier = Modifier.size(19.dp))
-        }
-        IconButton(
-            onClick = onToggleMultiSelect,
-            modifier = Modifier.timelineHeaderActionSurface(
-                if (multiSelectMode) Color(0xFF59DED7) else Color(0xFF8A9AB3),
-            ).testTag("timeline-multiselect"),
-        ) {
-            Icon(
-                Icons.Default.DoneAll,
-                if (multiSelectMode) "Exit multi-select" else "Select multiple clips",
-            tint = if (multiSelectMode) Color(0xFF67E5DD) else Color(0xFFB1BDD1),
-                modifier = Modifier.size(19.dp),
-            )
-        }
-        IconButton(
-            onClick = onAddMedia,
-            modifier = Modifier
-                .size(40.dp)
-                .shadow(4.dp, RoundedCornerShape(11.dp))
-                .clip(RoundedCornerShape(11.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF38DCCE), Color(0xFF796EEA))))
-                .border(1.dp, Color(0xFFA8FFF5).copy(alpha = 0.75f), RoundedCornerShape(11.dp))
-                .semantics { contentDescription = "Add clip" }
-                .testTag("timeline-header-add-media"),
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFF5FFFF), modifier = Modifier.size(23.dp))
-        }
-    }
 }
 
 /**
@@ -425,6 +290,14 @@ fun VideoTimeline(
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
     snapToBeat: Boolean = false,
+    // Editing-assist modes. The snapping/ripple logic lives in
+    // EditorAudioController; these flags and callbacks only surface it in the
+    // timeline overflow menu so the modes are reachable outside landscape.
+    magneticSnapping: Boolean = true,
+    rippleEditEnabled: Boolean = false,
+    onToggleMagneticSnapping: () -> Unit = {},
+    onToggleSnapToBeat: () -> Unit = {},
+    onToggleRippleEdit: () -> Unit = {},
     // Lazy filmstrip frames: (clipId, clip-relative ms) -> bitmap.
     // Only the visible window is ever held (see TimelineTrackArea);
     // lanes look frames up by exact key with a nearest-earlier fallback.
@@ -772,7 +645,7 @@ fun VideoTimeline(
     // audio track count so every populated row remains tappable.
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
-    val rulerHeight = TIMELINE_RULER_HEIGHT_DP.dp
+    val rulerHeight = 36.dp
     // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
@@ -802,7 +675,7 @@ fun VideoTimeline(
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
-    val v1Height = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
+    val v1Height = if (hasMainVideo) 64.dp else 0.dp
     // Keep the ruler, breathing room, and dominant filmstrip together. The actual source waveform is
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
@@ -829,7 +702,7 @@ fun VideoTimeline(
         // rather than letting a pinned V1 consume the whole track viewport.
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
-        CompactTimelineHeader(
+        TimelineHeader(
             durationMs = safeDurationMs,
             headerKeyframeClip = headerKeyframeClip,
             playheadMs = safePlayheadMs,
@@ -898,6 +771,17 @@ fun VideoTimeline(
                     interactionSource = remember { MutableInteractionSource() }
                 ) { onDeselect() }
         ) {
+            // Draw only visible grid lines. Scroll is read during drawing, not
+            // composition, so panning does not rebuild every thumbnail row.
+            Canvas(Modifier.fillMaxSize()) {
+                val step = secondWidthDp.toPx()
+                val offset = scrollState.value.toFloat() % step
+                var x = -offset
+                while (x <= size.width) {
+                    drawLine(Color(0xFF1A2639), Offset(x, rulerHeight.toPx()), Offset(x, size.height), 1.dp.toPx())
+                    x += step
+                }
+            }
             Column(modifier = Modifier.fillMaxSize().then(
                 if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier
             )) {
@@ -1403,6 +1287,30 @@ fun VideoTimeline(
                         }.testTag("timeline-multiselect").padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) { Text(if (multiSelectMode) "Exit multi-select" else "Select multiple clips", color = Color(0xFFE4EDF7), fontSize = 12.sp) }
+                    TimelineToggleRow(
+                        label = "Magnetic snapping",
+                        enabled = magneticSnapping,
+                        testTag = "timeline-toggle-magnetic-snap"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleMagneticSnapping()
+                    }
+                    TimelineToggleRow(
+                        label = "Snap to beat",
+                        enabled = snapToBeat,
+                        testTag = "timeline-toggle-snap-beat"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleSnapToBeat()
+                    }
+                    TimelineToggleRow(
+                        label = "Ripple edit",
+                        enabled = rippleEditEnabled,
+                        testTag = "timeline-toggle-ripple"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleRippleEdit()
+                    }
                 }
             }
 
@@ -1471,6 +1379,9 @@ fun VideoTimeline(
     scrollState: ScrollState = rememberScrollState(),
     vScrollState: ScrollState = rememberScrollState(),
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onToggleMagneticSnapping: () -> Unit = {},
+    onToggleSnapToBeat: () -> Unit = {},
+    onToggleRippleEdit: () -> Unit = {},
 ) {
     val clips = state.project?.clips ?: emptyList()
     val audioTracks = state.project?.audioTracks ?: emptyList()
@@ -1508,6 +1419,11 @@ fun VideoTimeline(
         audioWaveform = state.audioWaveform,
         beatMarkersMs = state.beatMarkersMs,
         snapToBeat = state.snapToBeat,
+        magneticSnapping = state.magneticSnapping,
+        rippleEditEnabled = state.rippleEditEnabled,
+        onToggleMagneticSnapping = onToggleMagneticSnapping,
+        onToggleSnapToBeat = onToggleSnapToBeat,
+        onToggleRippleEdit = onToggleRippleEdit,
         onScrub = onScrub,
         onSelectClip = { onSelectClip(it) },
         onDeselect = onDeselect,
@@ -3860,5 +3776,36 @@ private fun TimelineTransitionJunctionBadge(
                 )
             }
         }
+    }
+}
+
+/**
+ * One row of the timeline overflow menu with an on/off state.
+ *
+ * The label carries the state ("On"/"Off") instead of a separate switch so the
+ * row stays a 12.sp single-line target inside the narrow menu.
+ */
+@Composable
+private fun TimelineToggleRow(
+    label: String,
+    enabled: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .testTag(testTag)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = Color(0xFFE4EDF7), fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(
+            if (enabled) "On" else "Off",
+            color = if (enabled) ApexPalette.NeonCyan else Color(0xFF7C8AA0),
+            fontSize = 11.sp
+        )
     }
 }

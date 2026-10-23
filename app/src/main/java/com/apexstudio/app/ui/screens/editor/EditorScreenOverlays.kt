@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1709,6 +1710,27 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
                 tint = ApexPalette.TextSecondary, modifier = Modifier.padding(start = 2.dp).size(14.dp))
         }
     }
+
+    // Reference mockup: thin horizontal scrub line above the timeline —
+    // red played portion on a dark track. Purely a position mirror.
+    run {
+        val totalMs = state.durationMs.coerceAtLeast(1L)
+        val frac = (state.playerPositionMs.toFloat() / totalMs).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(Color(0xFF2A2A2A))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(frac)
+                    .height(2.dp)
+                    .background(Color(0xFFFF3B30))
+            )
+        }
+    }
+
 
     // The timeline area is just the timeline: the Adjust chips row
     // and the duplicate tool rows were removed (their functions live

@@ -507,7 +507,7 @@ fun ContextualBottomToolbar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF101722))
+            .background(Color.Black)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -582,10 +582,9 @@ private fun ToolbarBarRow(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(surfaceColor)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
             .height(barHeight)
+            .background(Color.Black)
+            .padding(horizontal = 4.dp)
     ) {
         val targetWidth = if (compact) (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth) else itemWidth
         Row(
@@ -659,7 +658,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(surfaceColor, Color.Transparent)
+                                listOf(Color.Black, Color.Transparent)
                             )
                         )
                 )
@@ -668,7 +667,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(Color.Transparent, surfaceColor)
+                                listOf(Color.Transparent, Color.Black)
                             )
                         )
                 )

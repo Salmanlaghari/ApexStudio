@@ -57,9 +57,7 @@ fun PlaybackControlBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.PlaybackBarHeight)
-            .clip(RoundedCornerShape(EditorLayoutMetrics.PlaybackCornerRadius))
-            .background(Color(0xFF101722))
-            .border(1.dp, Color(0xFF273447), RoundedCornerShape(EditorLayoutMetrics.PlaybackCornerRadius))
+            .background(Color.Black)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -347,7 +347,7 @@ fun TimelineTrackArea(
             // padding would clip the bottom six dp of the actual filmstrip.
             .clip(RoundedCornerShape(12.dp))
             .border(1.dp, EditorPalette.Divider, RoundedCornerShape(12.dp))
-            .background(EditorPalette.BgBase),
+            .background(Color.Black),
         verticalArrangement = Arrangement.Top
     ) {
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering

@@ -815,7 +815,7 @@ private fun EditorScreenContent(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(ApexPalette.BgBase)
+            .background(Color.Black)
     ) {
         if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(

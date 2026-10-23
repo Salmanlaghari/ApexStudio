@@ -680,11 +680,15 @@ fun VideoTimeline(
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // Deep-navy timeline viewport below the restored title/action header, with no identity gutter.
+    // No left sidebar: the timeline canvas uses the FULL screen
+    // width. The old sidebar pills (V1 / OVL1 / FX / A1 / A2 +
+    // buttons) are gone; hide/lock/mute now live in the contextual
+    // bar of the selected clip/track. Pure-black viewport below the
+    // restored title/action header, with no identity gutter.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
-            .background(Color(0xFF080D18))
-            .border(1.dp, Color(0xFF202A3D))
+            .background(Color.Black)
+            .border(1.dp, Color(0xFF141414))
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.

@@ -1,11 +1,8 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -14,9 +11,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -24,16 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.ApexPalette
-
-// === 3. PLAYBACK CONTROL BAR (mockup transport row) ===
-// Layout matches the approved mockup exactly:
-// Left: Undo (dim when unavailable) + Redo (cyan when available).
-// Center: BIG circular play button with blue gradient.
-// Right of play: keyframe diamond with "+" badge — ALWAYS visible in the
-// new layout (tapping with no clip selected is a safe no-op; the call site
-// null-checks the clip). Far right: fullscreen corners icon.
-// No time counter and no prev/next buttons here: the time pill lives inside
-// the preview ("00:20 / 00:25") per the mockup.
+// === 3. PLAYBACK CONTROL BAR (reference mockup transport row) ===
+// Layout matches the reference design:
+// Left: Undo + Redo (dim white when unavailable).
+// Center: skip-prev / play / skip-next trio, plain white icons.
+// Right: keyframe diamond with "+" badge (safe no-op with no clip
+// selected) + fullscreen corners icon.
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,
@@ -41,6 +31,8 @@ fun PlaybackControlBar(
     canRedo: Boolean = false,
     hasKeyframeAtPlayhead: Boolean = false,
     onTogglePlay: () -> Unit = {},
+    onSkipPrevious: () -> Unit = {},
+    onSkipNext: () -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
     onToggleKeyframe: () -> Unit = {},
@@ -49,75 +41,80 @@ fun PlaybackControlBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp)
-            .padding(horizontal = 24.dp),
+            .height(64.dp)
+            .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Undo + Redo
+        // Left: Undo + Redo (dim white when unavailable)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(28.dp)
+            horizontalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.Undo,
                 contentDescription = "Undo",
-                tint = if (canUndo) ApexPalette.NeonCyan else Color(0xFF4B5563),
+                tint = if (canUndo) Color.White else Color(0xFF4B5563),
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .clickable(enabled = canUndo, onClick = onUndo)
             )
-
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.Redo,
                 contentDescription = "Redo",
-                tint = if (canRedo) ApexPalette.NeonCyan else Color(0xFF4B5563),
+                tint = if (canRedo) Color.White else Color(0xFF4B5563),
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .clickable(enabled = canRedo, onClick = onRedo)
             )
         }
 
-        // Center: BIG blue-gradient play button (mockup)
-        Box(
-            modifier = Modifier
-                .size(58.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(ApexPalette.NeonCyan, ApexPalette.NeonCyanGlow),
-                        start = Offset(0f, 0f),
-                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                    )
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
-                .clickable(onClick = onTogglePlay),
-            contentAlignment = Alignment.Center
+        // Center: skip-prev / play / skip-next (mockup transport trio)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(36.dp)
         ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.SkipPrevious,
+                contentDescription = "Previous",
+                tint = Color.White,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable(onClick = onSkipPrevious)
+            )
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = Color.White,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier
+                    .size(34.dp)
+                    .clickable(onClick = onTogglePlay)
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.SkipNext,
+                contentDescription = "Next",
+                tint = Color.White,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable(onClick = onSkipNext)
             )
         }
 
-        // Right: keyframe diamond+ (always visible) + fullscreen
+        // Right: keyframe diamond+ + fullscreen
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(28.dp)
+            horizontalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             KeyframeDiamondAddButton(
                 hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
                 onClick = onToggleKeyframe
             )
-
             Icon(
                 imageVector = Icons.Default.Fullscreen,
                 contentDescription = "Fullscreen",
                 tint = Color.White,
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .clickable(onClick = onFullscreenToggle)
             )
         }

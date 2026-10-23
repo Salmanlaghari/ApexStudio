@@ -658,7 +658,7 @@ fun EditorScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color(0xFF0A0A0F))
+            .background(Color.Black)
     ) {
         TopAppBarSection(
             canUndo = state.canUndo,

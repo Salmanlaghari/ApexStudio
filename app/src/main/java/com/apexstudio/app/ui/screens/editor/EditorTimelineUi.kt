@@ -357,7 +357,7 @@ fun TimelineTrackArea(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF08080E))
+            .background(Color.Black)
             .padding(top = 2.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Top
     ) {

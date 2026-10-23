@@ -355,7 +355,7 @@ fun ContextualBottomToolbar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0C0C14))
+            .background(Color.Black)
     ) {
         AnimatedVisibility(
             visible = showClipBar,
@@ -414,10 +414,9 @@ private fun ToolbarBarRow(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(ApexPalette.BgElevated)
-            .height(58.dp)
+            .height(62.dp)
+            .background(Color.Black)
+            .padding(horizontal = 4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -485,7 +484,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(ApexPalette.BgElevated, Color.Transparent)
+                                listOf(Color.Black, Color.Transparent)
                             )
                         )
                 )
@@ -494,7 +493,7 @@ private fun ToolbarBarRow(
                         .width(20.dp).fillMaxHeight()
                         .background(
                             Brush.horizontalGradient(
-                                listOf(Color.Transparent, ApexPalette.BgElevated)
+                                listOf(Color.Transparent, Color.Black)
                             )
                         )
                 )

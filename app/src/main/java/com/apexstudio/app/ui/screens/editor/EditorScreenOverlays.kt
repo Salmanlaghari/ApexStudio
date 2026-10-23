@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1544,12 +1545,34 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     val hasKeyframeAtPlayhead =
         kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
 
+    // Mockup transport trio: skip-prev / skip-next jump between V1
+    // clip boundaries (clamped to 0 / end at the edges).
+    val skipBounds = remember(state.project) {
+        val v1 = state.project?.clips?.filter {
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) && it.trackIndex == 0
+        } ?: emptyList()
+        var acc = 0L
+        val bounds = mutableListOf(0L)
+        for (c in v1) { acc += c.effectiveDurationMs(); bounds.add(acc) }
+        bounds
+    }
+
     PlaybackControlBar(
         isPlaying = state.isPlaying,
         canUndo = state.canUndo,
         canRedo = state.canRedo,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
         onTogglePlay = { vm.togglePlay() },
+        onSkipPrevious = {
+            val prev = skipBounds.filter { it < state.playerPositionMs - 150L }
+                .maxOrNull() ?: 0L
+            seekPlayerAndState(prev)
+        },
+        onSkipNext = {
+            val next = skipBounds.filter { it > state.playerPositionMs + 150L }
+                .minOrNull() ?: (skipBounds.maxOrNull() ?: 0L)
+            seekPlayerAndState(next)
+        },
         onUndo = { vm.undo() },
         onRedo = { vm.redo() },
         onToggleKeyframe = {
@@ -1557,6 +1580,27 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         },
         onFullscreenToggle = { vm.toggleFullscreenPreview() }
     )
+
+    // Reference mockup: thin horizontal scrub line above the timeline —
+    // red played portion on a dark track. Purely a position mirror.
+    run {
+        val totalMs = state.durationMs.coerceAtLeast(1L)
+        val frac = (state.playerPositionMs.toFloat() / totalMs).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(Color(0xFF2A2A2A))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(frac)
+                    .height(2.dp)
+                    .background(Color(0xFFFF3B30))
+            )
+        }
+    }
+
 
     // The timeline area is just the timeline: the Adjust chips row
     // and the duplicate tool rows were removed (their functions live

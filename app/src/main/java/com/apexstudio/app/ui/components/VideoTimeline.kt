@@ -566,8 +566,8 @@ fun VideoTimeline(
             // section below grows, tracks stay top-aligned. (Only called
             // from TimelineTrackArea with weight(1f), so this is safe.)
             .fillMaxHeight()
-            .background(Color(0xFF090B10))
-            .border(1.dp, Color(0xFF171B26))
+            .background(Color.Black)
+            .border(1.dp, Color(0xFF141414))
     ) {
         // --- TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(

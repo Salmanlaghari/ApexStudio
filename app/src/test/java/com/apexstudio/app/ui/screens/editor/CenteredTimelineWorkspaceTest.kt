@@ -77,7 +77,7 @@ class CenteredTimelineWorkspaceTest {
         assertEquals(340f, bounds("preview").height, 1f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
         assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertEquals("Only focus row and existing header separate transport from ruler", focus.bottom + 44f, ruler.top, 1f)
+        assertEquals("Only focus row, scrub line and existing header separate transport from ruler", focus.bottom + 46f, ruler.top, 1f)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

@@ -45,12 +45,14 @@ class VideoTimelineHeaderTest {
             )
         }
 
-        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
+        compose.onNodeWithText("Timeline").assertIsDisplayed()
         compose.onNodeWithTag("timeline-duration").assertExists()
-        compose.onNodeWithText("Add Clip").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertExists()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithText("Add Clip").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
-        compose.onNodeWithContentDescription("Add video media").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()
         compose.onNodeWithText("Video").assertIsDisplayed()
         compose.onNodeWithText("Music").assertIsDisplayed()
         compose.onNodeWithText("V1").assertDoesNotExist()

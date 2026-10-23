@@ -33,13 +33,14 @@ class RestoreHistoricalTimelineTest {
 
     @Test
     fun timelineKeepsHistoricalRulerV1AndSupportingLayerHeights() {
-        assertEquals(44, TIMELINE_HEADER_HEIGHT_DP)
+        assertEquals(40, TIMELINE_HEADER_HEIGHT_DP)
+        assertEquals(28, TIMELINE_RULER_HEIGHT_DP)
         assertEquals(60, OVERLAY_LAYER_HEIGHT_DP)
         assertEquals(52, OVERLAY_FILMSTRIP_HEIGHT_DP)
         assertEquals(42, OVERLAY_CLIP_HEIGHT_DP)
         assertEquals(46, AUDIO_LANE_ROW_HEIGHT_DP)
         assertEquals(40, AUDIO_TRACK_ITEM_HEIGHT_DP)
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
+        assertEquals(52.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
         assertEquals(0.dp, mainVideoLaneHeight(720f, hasMainVideo = false))
 
         val empty = EditorState()
@@ -54,8 +55,8 @@ class RestoreHistoricalTimelineTest {
                 clips = listOf(clip("main"), clip("overlay", ClipType.OVERLAY, trackIndex = 1)),
             ),
         )
-        assertEquals(80.dp, compactTimelineHeight(empty))
-        assertEquals(154.dp, compactTimelineHeight(main))
-        assertEquals(234.dp, compactTimelineHeight(withOverlay))
+        assertEquals(68.dp, compactTimelineHeight(empty))
+        assertEquals(130.dp, compactTimelineHeight(main))
+        assertEquals(210.dp, compactTimelineHeight(withOverlay))
     }
 }

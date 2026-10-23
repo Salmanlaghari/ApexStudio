@@ -149,6 +149,7 @@ fun VideoPreviewArea(
     workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
     onEffectPreviewFailure: (String) -> Unit = {},
     compositionAspectRatio: Float = LOCKED_EDITOR_PREVIEW_ASPECT,
+    showFrame: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     // Fixed project-video effects run on decoded pixels with the same matrix and
@@ -207,11 +208,12 @@ fun VideoPreviewArea(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
+            .then(if (showFrame) Modifier.clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)) else Modifier)
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
             .background(ApexPalette.BgBase)
-            .border(1.dp, Color(0xFF1C2333), RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
+            .then(if (showFrame) Modifier.border(1.dp, Color(0xFF1C2333),
+                RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)) else Modifier)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }

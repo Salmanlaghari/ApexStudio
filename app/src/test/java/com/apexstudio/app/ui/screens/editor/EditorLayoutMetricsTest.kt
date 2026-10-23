@@ -12,4 +12,9 @@ class EditorLayoutMetricsTest {
         assertEquals(52.dp, EditorLayoutMetrics.PlaybackBarHeight)
         assertEquals(48.dp, EditorLayoutMetrics.TimelineActionHeight)
     }
+
+    @Test
+    fun expandedPreviewKeepsASubtleBoundedFrame() {
+        assertEquals(10.dp, EditorLayoutMetrics.PreviewCornerRadius)
+    }
 }

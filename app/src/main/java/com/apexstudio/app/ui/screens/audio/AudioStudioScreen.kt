@@ -35,6 +35,8 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.AudioWaveform
+import com.apexstudio.app.ui.components.RealAudioWaveform
+import com.apexstudio.app.data.audio.TrackWaveformCache
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -80,21 +82,22 @@ fun AudioStudioScreen(
                 cornerRadius = 14.dp
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
-                    listOf(
-                        Triple("Vocals", 7L, ApexPalette.NeonEmerald),
-                        Triple("Beats", 13L, ApexPalette.NeonCyan),
-                        Triple("SFX", 23L, ApexPalette.NeonPurple),
-                        Triple("Music", 31L, ApexPalette.NeonPink)
-                    ).forEachIndexed { idx, (name, seed, color) ->
-                        WaveformTrackRow(
-                            name = name,
-                            seed = seed,
-                            color = color,
-                            state = state,
-                            onMute = { vm.toggleMuteEngine() },
-                            onSolo = { vm.toggleSoloEngine() }
+                    if (state.tracks.isEmpty()) {
+                        Text(
+                            "No audio tracks yet. Add music or a voiceover from the editor timeline.",
+                            color = ApexPalette.TextTertiary,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
                         )
-                        if (idx < 3) Spacer(Modifier.height(6.dp))
+                    } else {
+                        state.tracks.forEachIndexed { idx, track ->
+                            RealAudioTrackRow(
+                                track = track,
+                                onMute = { vm.toggleAudioTrackMute(track.id) },
+                                onSolo = { vm.toggleAudioTrackSolo(track.id) }
+                            )
+                            if (idx < state.tracks.lastIndex) Spacer(Modifier.height(6.dp))
+                        }
                     }
                 }
             }
@@ -328,115 +331,6 @@ private fun SectionLabel(text: String) {
     )
 }
 
-@Composable
-private fun WaveformTrackRow(
-    name: String,
-    seed: Long,
-    color: Color,
-    state: com.apexstudio.app.presentation.state.AudioStudioState,
-    onMute: () -> Unit,
-    onSolo: () -> Unit
-) {
-    val isMuted = state.isMuted && seed == 7L
-    val isSolo = state.isSolo
-    val width = 600
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .width(60.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(4.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
-                .padding(2.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                name,
-                color = color,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 9.sp,
-                maxLines = 1
-            )
-        }
-        Spacer(Modifier.width(3.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(34.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(ApexPalette.BgBase)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
-                .padding(2.dp)
-        ) {
-            AudioWaveform(
-                seed = seed,
-                modifier = Modifier.fillMaxSize(),
-                color = if (isMuted) ApexPalette.TextTertiary else color,
-                secondaryColor = color.copy(alpha = 0.3f),
-                progress = 0.4f,
-                samples = 100
-            )
-        }
-        Spacer(Modifier.width(3.dp))
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(
-                        if (isMuted) ApexPalette.NeonPink.copy(alpha = 0.18f)
-                        else ApexPalette.BgElevated
-                    )
-                    .border(
-                        1.dp,
-                        if (isMuted) ApexPalette.NeonPink else ApexPalette.BorderGlass,
-                        RoundedCornerShape(3.dp)
-                    )
-                    .clickable { onMute() }
-                    .padding(horizontal = 5.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    "M",
-                    color = if (isMuted) ApexPalette.NeonPink else ApexPalette.TextSecondary,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(
-                        if (isSolo) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                        else ApexPalette.BgElevated
-                    )
-                    .border(
-                        1.dp,
-                        if (isSolo) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                        RoundedCornerShape(3.dp)
-                    )
-                    .clickable { onSolo() }
-                    .padding(horizontal = 5.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    "S",
-                    color = if (isSolo) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun MixerChannel(
@@ -761,5 +655,131 @@ private fun ReverbPresetRow(selected: Int, onSelect: (Int) -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * One project audio track with its **real** decoded waveform.
+ *
+ * Replaces the previous fixed four-row demo list ("Vocals/Beats/SFX/Music")
+ * that drew a synthetic seeded waveform and routed Mute/Solo to a single
+ * engine-wide toggle — it never showed the project's actual tracks. This row
+ * reads [AudioTrack] from the project, loads amplitude buckets through
+ * [TrackWaveformCache] (decoded once, cached per uri+trim) and renders them
+ * with [RealAudioWaveform]. When a track cannot be decoded the row still
+ * renders with a flat waveform rather than disappearing.
+ */
+@Composable
+private fun RealAudioTrackRow(
+    track: com.apexstudio.app.domain.model.AudioTrack,
+    onMute: () -> Unit,
+    onSolo: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val color = when (track.kind) {
+        com.apexstudio.app.domain.model.AudioTrack.Kind.MUSIC -> ApexPalette.NeonPink
+        com.apexstudio.app.domain.model.AudioTrack.Kind.SFX -> ApexPalette.NeonPurple
+        else -> ApexPalette.NeonEmerald
+    }
+
+    var samples by remember(track.uri, track.trimStartMs, track.trimEndMs) {
+        mutableStateOf(
+            com.apexstudio.app.data.audio.TrackWaveformCache.peek(
+                track.uri, track.trimStartMs, track.trimEndMs
+            ) ?: FloatArray(0)
+        )
+    }
+    LaunchedEffect(track.uri, track.trimStartMs, track.trimEndMs) {
+        if (samples.isEmpty()) {
+            samples = com.apexstudio.app.data.audio.TrackWaveformCache.get(
+                context, track.uri, track.trimStartMs, track.trimEndMs
+            ) ?: FloatArray(0)
+        }
+    }
+
+    val dim = track.isMuted
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(60.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                .padding(2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                track.name,
+                color = if (dim) ApexPalette.TextTertiary else color,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 9.sp,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.width(3.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(34.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgBase)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                .padding(2.dp)
+        ) {
+            if (samples.isEmpty()) {
+                // Not decoded yet (or undecodable): keep the slot instead of
+                // flashing a fake waveform that looks like real audio.
+                Box(Modifier.fillMaxSize().background(ApexPalette.BgElevated))
+            } else {
+                RealAudioWaveform(
+                    samples = samples,
+                    modifier = Modifier.fillMaxSize(),
+                    color = if (dim) ApexPalette.TextTertiary else color
+                )
+            }
+        }
+        Spacer(Modifier.width(3.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AudioTrackToggleChip(
+                label = "M",
+                active = track.isMuted,
+                activeColor = ApexPalette.NeonPink,
+                onClick = onMute
+            )
+            Spacer(Modifier.height(2.dp))
+            AudioTrackToggleChip(
+                label = "S",
+                active = track.isSolo,
+                activeColor = ApexPalette.NeonCyan,
+                onClick = onSolo
+            )
+        }
+    }
+}
+
+@Composable
+private fun AudioTrackToggleChip(
+    label: String,
+    active: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(16.dp)
+            .clip(CircleShape)
+            .background(if (active) activeColor else ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = ApexPalette.TextPrimary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
 }

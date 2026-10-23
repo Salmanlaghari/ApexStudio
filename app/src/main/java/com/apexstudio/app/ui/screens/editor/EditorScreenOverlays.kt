@@ -1810,6 +1810,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onSetTextOverlayRange = { ownerId, overlayId, start, end ->
             vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
         },
+        // Editing-assist modes. The logic already lived in
+        // EditorAudioController but only landscape exposed one of the three;
+        // the timeline overflow menu now reaches all of them.
+        onToggleMagneticSnapping = { vm.toggleMagneticSnapping() },
+        onToggleSnapToBeat = { vm.toggleSnapToBeat() },
+        onToggleRippleEdit = { vm.toggleRippleEdit() },
         onSelectSticker = { vm.selectSticker(it) },
         // Reset FX clears the whole lane: FX + LUT filter + adjustments.
         onClearFx = {

@@ -4,8 +4,12 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.apexstudio.app.ai.audio.AudioIntelligence
+import com.apexstudio.app.data.audio.PcmAudioExtractor
 
 
 fun EditorViewModel.openAudioMixer() = _state.update { it.copy(audioMixerOpen = true) }
@@ -742,4 +746,116 @@ fun computeBeatGrid(envelope: FloatArray, durationMs: Long): List<Long> {
         t += beatIntervalMs
     }
     return beats.distinct().sorted()
+}
+
+
+// ---------------------------------------------------------------------------
+// Audio intelligence — on-device deterministic DSP (ai/audio/AudioIntelligence).
+//
+// These fill the gap left by the energy-envelope beat grid above: beat
+// detection finds *where* the hits are, but nothing in the project measured
+// loudness, ducked music under speech, or trimmed a music bed to fit the
+// video. All three run on PCM the app already decodes, so they add no model
+// bytes, no network call and no licensing surface.
+// ---------------------------------------------------------------------------
+
+private const val AUDIO_INTELLIGENCE_TAG = "EditorAudioIntelligence"
+
+/** `PcmAudioExtractor` always resamples to 16 kHz mono; every analysis below is mono. */
+private const val AUDIO_INTELLIGENCE_RATE_HZ = PcmAudioExtractor.TARGET_RATE
+
+/** Resolves a track from the project; mixer-only tracks are not analysable (no project copy). */
+private fun EditorState.findAudioTrack(trackId: String): AudioTrack? =
+    project?.audioTracks?.firstOrNull { it.id == trackId }
+
+private suspend fun decodeTrackPcm(context: android.content.Context, uriString: String): FloatArray? {
+    if (uriString.isBlank()) return null
+    val uri = android.net.Uri.parse(uriString)
+    return withContext(Dispatchers.IO) {
+        runCatching { PcmAudioExtractor.extractMono16k(context, uri) }.getOrNull()
+    }
+}
+
+/**
+ * Measures the track's gated loudness and sets its fader so it lands near
+ * -16 LUFS. [AudioIntelligence.measureLoudness] returns a gain that is already
+ * clamped, and the fader is clamped again to 0..1 so a very quiet source can
+ * never push the slider past unity.
+ */
+fun EditorViewModel.normalizeTrackLoudness(trackId: String) {
+    val ctx = context ?: return
+    val track = _state.value.findAudioTrack(trackId) ?: return
+    viewModelScope.launch {
+        val pcm = decodeTrackPcm(ctx, track.uri) ?: return@launch
+        val result = withContext(Dispatchers.Default) {
+            AudioIntelligence.measureLoudness(pcm, AUDIO_INTELLIGENCE_RATE_HZ)
+        }
+        val target = (track.volume * result.suggestedGain).coerceIn(0f, 1f)
+        setAudioTrackVolume(trackId, target)
+        Log.i(
+            AUDIO_INTELLIGENCE_TAG,
+            "normalize $trackId: ${result.gatedLufs} LUFS, gain ${result.suggestedGain}, fader ${track.volume} -> $target"
+        )
+    }
+}
+
+/**
+ * Writes a volume-keyframe envelope on the music track that dips under speech.
+ *
+ * The envelope is [AudioIntelligence.autoDuckPlan] scaled by the track's own
+ * fader, so a track sat at 0.5 ducks to a quarter of *its* level rather than
+ * jumping to an absolute value. Existing keyframes are replaced — this is a
+ * generated envelope, not a hand-edited one, and it is one undo step.
+ */
+fun EditorViewModel.autoDuckMusicUnderVoice(musicTrackId: String, voiceTrackId: String) {
+    if (musicTrackId == voiceTrackId) return
+    val ctx = context ?: return
+    val music = _state.value.findAudioTrack(musicTrackId) ?: return
+    val voice = _state.value.findAudioTrack(voiceTrackId) ?: return
+    viewModelScope.launch {
+        val musicPcm = decodeTrackPcm(ctx, music.uri) ?: return@launch
+        val voicePcm = decodeTrackPcm(ctx, voice.uri) ?: return@launch
+        val points = withContext(Dispatchers.Default) {
+            AudioIntelligence.autoDuckPlan(musicPcm, voicePcm, AUDIO_INTELLIGENCE_RATE_HZ)
+        }
+        if (points.isEmpty()) return@launch
+        pushUndo()
+        updateAudioTrackBoth(musicTrackId) { track ->
+            track.copy(
+                volumeKeyframes = points.map { point ->
+                    VolumeKeyframe(
+                        id = java.util.UUID.randomUUID().toString(),
+                        timeMs = point.timeMs,
+                        volume = (point.gain * track.volume).coerceIn(0f, 1f)
+                    )
+                }.sortedBy { it.timeMs }
+            )
+        }
+        Log.i(AUDIO_INTELLIGENCE_TAG, "auto-duck $musicTrackId under $voiceTrackId: ${points.size} points")
+    }
+}
+
+/**
+ * Trims a music bed so its length matches the project, choosing an offset that
+ * starts on a detected onset instead of hard-cutting mid-bar.
+ */
+fun EditorViewModel.fitMusicToProjectLength(trackId: String) {
+    val ctx = context ?: return
+    val track = _state.value.findAudioTrack(trackId) ?: return
+    val targetMs = _state.value.durationMs
+    if (targetMs <= 0L) return
+    viewModelScope.launch {
+        val pcm = decodeTrackPcm(ctx, track.uri) ?: return@launch
+        val window: AudioIntelligence.FitWindow = withContext(Dispatchers.Default) {
+            val beats = AudioIntelligence.detectBeats(pcm, AUDIO_INTELLIGENCE_RATE_HZ)
+            val targetSamples = (targetMs.toFloat() / 1000f * AUDIO_INTELLIGENCE_RATE_HZ).toInt()
+            AudioIntelligence.fitToDuration(pcm, AUDIO_INTELLIGENCE_RATE_HZ, targetSamples, beats.beats)
+        }
+        if (window.endSampleExclusive <= window.startSample) return@launch
+        val startMs = (window.startSample.toFloat() / AUDIO_INTELLIGENCE_RATE_HZ * 1000f).toLong()
+        val endMs = (window.endSampleExclusive.toFloat() / AUDIO_INTELLIGENCE_RATE_HZ * 1000f).toLong()
+        pushUndo()
+        updateAudioTrackBoth(trackId) { t -> t.copy(trimStartMs = startMs, trimEndMs = endMs) }
+        Log.i(AUDIO_INTELLIGENCE_TAG, "fit $trackId to ${targetMs}ms: trim ${startMs}..${endMs}ms")
+    }
 }

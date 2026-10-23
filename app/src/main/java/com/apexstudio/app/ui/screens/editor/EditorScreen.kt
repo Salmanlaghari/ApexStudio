@@ -989,6 +989,47 @@ private fun EditorScreenContent(
                     if (mainPreviewClip != null) {
                         isDrawingMode = !isDrawingMode
                         showVideoDrawingTools = isDrawingMode
+                    } else {
+                        // Before: this did nothing silently when no clip was selected,
+                        // which is exactly the "button doesn't work" users reported.
+                        android.widget.Toast.makeText(
+                            context,
+                            "Draw: select a video clip on the timeline first",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                onToggleKeyframe = {
+                    val clip = mainPreviewClip ?: selectedWorkspaceVideo(
+                        state.project, state.selectedClipId
+                    )
+                    if (clip != null) {
+                        vm.toggleKeyframeAtPlayhead()
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Keyframe: select a clip first, then move the playhead",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                onOverlay = {
+                    if ((state.project?.clips?.any {
+                        it.type == ClipType.VIDEO || it.type == ClipType.IMAGE
+                    } == true)) {
+                        vm.setPendingAddAsOverlay(true)
+                        vm.setPendingAddAsAudio(false)
+                        prepareMainMediaPickerLaunch(vm)
+                        mediaPicker.pickMultipleMedia.launch(
+                            androidx.activity.result.contract.ActivityResultContracts
+                                .PickVisualMedia.ImageAndVideo
+                        )
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Overlay: add a video/image first, then add overlay on top",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 onCrop = { showCropPanel = true },

@@ -113,10 +113,12 @@ jobs:
         run: |
           LOG=gradle-debug.log
           if [ -f "$LOG" ]; then
-            grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" \
-              | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+            { grep -E "^e: |Execution failed|What went wrong" -A4 "$LOG" | head -30; \
+               grep -E "FAILED$" -A4 "$LOG" | head -30; } \
+              | awk '{ printf "%s ~ ", $0 }' > digest.txt
+            echo "::error::$(cat digest.txt | cut -c1-3000)"
           else
-            echo "::error::gradle log $LOG not found"
+            echo "::error::gradle log gradle-debug.log not found"
           fi
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
@@ -270,10 +272,12 @@ jobs:
         run: |
           LOG=gradle-release.log
           if [ -f "$LOG" ]; then
-            grep -E "^e: |error:|FAILURE:|What went wrong|Execution failed|FAILED" "$LOG" \
-              | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+            { grep -E "^e: |Execution failed|What went wrong" -A4 "$LOG" | head -30; \
+               grep -E "FAILED$" -A4 "$LOG" | head -30; } \
+              | awk '{ printf "%s ~ ", $0 }' > digest.txt
+            echo "::error::$(cat digest.txt | cut -c1-3000)"
           else
-            echo "::error::gradle log $LOG not found"
+            echo "::error::gradle log gradle-release.log not found"
           fi
       - name: Check release native alignment (static only, all bundle modules)
         run: |

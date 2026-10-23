@@ -1625,6 +1625,7 @@ class ExportEngine(private val context: Context) {
                 exportException: ExportException
             ) {
                 if (nonProjectRun !== run || !finishTransformerRun(active)) return
+                Log.e("ExportEngine", "Video transformer failed (${exportException.errorCodeName})", exportException)
                 diagnostics?.stage(
                     "video_transformer_failed",
                     "errorCode=${exportException.errorCodeName} errorType=${exportException.cause?.javaClass?.simpleName} " +

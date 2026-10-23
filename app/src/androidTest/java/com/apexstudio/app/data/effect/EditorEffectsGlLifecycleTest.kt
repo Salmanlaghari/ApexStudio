@@ -57,21 +57,40 @@ class EditorEffectsGlLifecycleTest {
     }
 
     private fun repeatSixTimes(label: String, createShader: () -> BaseGlShaderProgram) {
-        repeat(6) { iteration ->
-            val shader = createShader()
-            shader.configure(640, 480)
-            val current = IntArray(1)
-            GLES20.glGetIntegerv(GLES20.GL_CURRENT_PROGRAM, current, 0)
-            val programId = current[0]
-            try {
-                assertTrue("A linked $label program must exist", programId != 0 && GLES20.glIsProgram(programId))
-            } finally {
-                shader.release()
+        val texture = IntArray(1)
+        GLES20.glGenTextures(1, texture, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        val pixels = java.nio.ByteBuffer.allocateDirect(4 * 4 * 4).apply {
+            put(ByteArray(4 * 4 * 4) { 127.toByte() })
+            position(0)
+        }
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, 4, 4, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+        try {
+            repeat(6) { iteration ->
+                val shader = createShader()
+                var programId = 0
+                try {
+                    shader.configure(4, 4)
+                    shader.drawFrame(texture[0], 500_000L)
+                    GlUtil.checkGlError()
+                    val current = IntArray(1)
+                    GLES20.glGetIntegerv(GLES20.GL_CURRENT_PROGRAM, current, 0)
+                    programId = current[0]
+                    assertTrue("A linked $label program must exist", programId != 0 && GLES20.glIsProgram(programId))
+                } finally {
+                    shader.release()
+                }
+                // A deleted current program remains alive until GLES unbinds it.
+                GLES20.glUseProgram(0)
+                GlUtil.checkGlError()
+                assertFalse("$label program leaked after release, iteration $iteration", GLES20.glIsProgram(programId))
             }
-            // A deleted current program remains alive until GLES unbinds it.
-            GLES20.glUseProgram(0)
-            GlUtil.checkGlError()
-            assertFalse("$label program leaked after release, iteration $iteration", GLES20.glIsProgram(programId))
+        } finally {
+            GLES20.glDeleteTextures(1, texture, 0)
         }
     }
 }

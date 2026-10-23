@@ -40,7 +40,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '8.11.1'
 
       - name: Cache Gradle and Android dependencies
         uses: actions/cache@v4
@@ -71,7 +71,7 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: |
           if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
           fi
           chmod +x gradlew
 
@@ -87,6 +87,7 @@ jobs:
       - name: Verify offline AI model integrity
         run: |
           python3 scripts/verify-ai-models.py
+          python3 scripts/verify-free-ai-policy.py --report
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
           python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
 
@@ -192,7 +193,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '8.11.1'
 
       - name: Cache Gradle and Android dependencies
         uses: actions/cache@v4
@@ -223,7 +224,7 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: |
           if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
           fi
           chmod +x gradlew
 

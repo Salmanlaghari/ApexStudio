@@ -278,6 +278,7 @@ fun VideoPreviewArea(
                             .inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView
                         pv.apply {
                             useController = false
+                            contentDescription = "Video preview frame"
                             resizeMode = currentResizeMode
                             player = exoPlayer
                         }

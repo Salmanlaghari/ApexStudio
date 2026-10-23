@@ -59,12 +59,12 @@ class RuntimeEditAcceptanceInstrumentedTest {
         var previewB: Bitmap? = null
         val engine = ExportEngine(context)
         try {
-            instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
+            instrumentation.context.assets.open("premium_editor/runtime_color_chart.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
             }
             FilterManifest.initialize(context)
-            val filter = requireNotNull(FilterManifest.presetById("golden_hour")) {
-                "Bundled golden_hour LUT must be available to both preview and export"
+            val filter = requireNotNull(FilterManifest.presetById("noir_classic")) {
+                "Bundled noir_classic LUT must be available to both preview and export"
             }
             val fx = requireNotNull(FxPreset.byId("vignette"))
             val sourceUri = Uri.fromFile(source).toString()
@@ -148,13 +148,16 @@ class RuntimeEditAcceptanceInstrumentedTest {
                     vm._state.value = current.copy(filterIntensity = 0f, fxIntensity = 0f,
                         project = current.project!!.copy(clips = listOf(clip)))
                 }
+                assertTrue("Zero-intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("0%")), 60_000L))
                 Thread.sleep(1_000L)
                 val baseline = capturePreview(device, context.packageName, File(diagnostics, "ungraded.png"))
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(filterIntensity = .85f) }
+                assertTrue("LUT intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("85%")), 60_000L))
                 Thread.sleep(1_000L)
                 val filtered = capturePreview(device, context.packageName, File(diagnostics, "filter-only.png"))
                 assertTrue("Paused LUT must change actual preview pixels", changedPixelCount(baseline, filtered) > 50)
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(fxIntensity = .8f) }
+                assertTrue("FX intensity edit must reach the composed UI", device.wait(Until.hasObject(By.textContains("80%")), 60_000L))
                 Thread.sleep(1_000L)
                 val withFx = capturePreview(device, context.packageName, File(diagnostics, "filter-and-fx.png"))
                 assertTrue("Paused FX must change actual preview pixels", changedPixelCount(filtered, withFx) > 50)
@@ -195,7 +198,7 @@ class RuntimeEditAcceptanceInstrumentedTest {
                 // Keep the actual bottom panel open while dragging the preview mask body.
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(maskPanelOpen = true) }
                 Thread.sleep(1_000L)
-                val bounds = requireNotNull(device.findObject(By.res(context.packageName, "player_view"))).visibleBounds
+                val bounds = requireNotNull(device.findObject(By.desc("Video preview frame"))).visibleBounds
                 val x = bounds.left + (bounds.width() * editedMask.centerX).toInt()
                 val y = bounds.top + (bounds.height() * editedMask.centerY).toInt()
                 device.swipe(x, y, x + bounds.width() / 8, y, 20)
@@ -278,13 +281,10 @@ class RuntimeEditAcceptanceInstrumentedTest {
         assertTrue("Could not capture editor preview screenshot", device.takeScreenshot(destination))
         val whole = BitmapFactory.decodeFile(destination.absolutePath)
             ?: throw AssertionError("Screenshot could not be decoded: ${destination.absolutePath}")
-        val playerBounds = device.findObject(By.res(packageName, "player_view"))?.visibleBounds
-        val crop = (playerBounds ?: Rect(
-            whole.width / 8,
-            whole.height / 8,
-            whole.width * 7 / 8,
-            whole.height * 5 / 8
-        )).let { bounds ->
+        val playerBounds = requireNotNull(device.findObject(By.desc("Video preview frame"))) {
+            "Actual video preview bounds must be available; UI pixels cannot substitute for video pixels"
+        }.visibleBounds
+        val crop = playerBounds.let { bounds ->
             Rect(
                 bounds.left.coerceIn(0, whole.width - 1),
                 bounds.top.coerceIn(0, whole.height - 1),

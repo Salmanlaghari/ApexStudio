@@ -296,8 +296,10 @@ class MaskGlEffect private constructor(
                 polyX[i] = polyPoints[i].x
                 polyY[i] = polyPoints[i].y
             }
-            glProgram.setFloatsUniform("uPolyX", polyX)
-            glProgram.setFloatsUniform("uPolyY", polyY)
+            // GLES exposes array uniforms by their first element name. Media3's
+            // GlProgram indexes that exact active name; the bare array name is absent.
+            glProgram.setFloatsUniform("uPolyX[0]", polyX)
+            glProgram.setFloatsUniform("uPolyY[0]", polyY)
             glProgram.setFloatUniform("uPolyN", polyCount.toFloat())
             glProgram.setFloatUniform("uAspect", aspect)
         }

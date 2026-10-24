@@ -72,6 +72,9 @@ object GlobalModerationEnforcement {
 
     fun requireApproved(action: ProtectedAiAction, sourceUri: String? = null) {
         if (action == ProtectedAiAction.ONNX_UPSCALING && (videoUpscaleDepth.get() ?: 0) > 0) return
+        // Still-image processing of an imported project IMAGE clip. Same fail-closed contract:
+        // thread-local, URI-bound, and limited to actions the image scope explicitly listed.
+        if (ImageAiScope.isAuthorised(action, sourceUri)) return
         val videoScope = existingVideoScope.get()
         // A missing URI is allowed only for nested model construction/inference helpers after the
         // scoped processor has checked the exact source URI at its own entry point.

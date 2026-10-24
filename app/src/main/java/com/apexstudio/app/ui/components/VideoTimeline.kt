@@ -438,6 +438,13 @@ fun VideoTimeline(
     snapToBeat: Boolean = false,
     magneticSnapping: Boolean = true,
     sharedSnapTimes: Set<Long> = emptySet(),
+    // Editing-assist modes. The snapping/ripple logic lives in
+    // EditorAudioController; these flags and callbacks only surface it in the
+    // timeline overflow menu so the modes are reachable outside landscape.
+    rippleEditEnabled: Boolean = false,
+    onToggleMagneticSnapping: () -> Unit = {},
+    onToggleSnapToBeat: () -> Unit = {},
+    onToggleRippleEdit: () -> Unit = {},
     // Lazy filmstrip frames: (clipId, clip-relative ms) -> bitmap.
     // Only the visible window is ever held (see TimelineTrackArea);
     // lanes look frames up by exact key with a nearest-earlier fallback.
@@ -1440,6 +1447,30 @@ fun VideoTimeline(
                         }.testTag("timeline-multiselect").padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) { Text(if (multiSelectMode) "Exit multi-select" else "Select multiple clips", color = Color(0xFFE4EDF7), fontSize = 12.sp) }
+                    TimelineToggleRow(
+                        label = "Magnetic snapping",
+                        enabled = magneticSnapping,
+                        testTag = "timeline-toggle-magnetic-snap"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleMagneticSnapping()
+                    }
+                    TimelineToggleRow(
+                        label = "Snap to beat",
+                        enabled = snapToBeat,
+                        testTag = "timeline-toggle-snap-beat"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleSnapToBeat()
+                    }
+                    TimelineToggleRow(
+                        label = "Ripple edit",
+                        enabled = rippleEditEnabled,
+                        testTag = "timeline-toggle-ripple"
+                    ) {
+                        timelineOptionsExpanded = false
+                        onToggleRippleEdit()
+                    }
                 }
             }
 
@@ -1512,6 +1543,9 @@ fun VideoTimeline(
     scrollState: ScrollState = rememberScrollState(),
     vScrollState: ScrollState = rememberScrollState(),
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onToggleMagneticSnapping: () -> Unit = {},
+    onToggleSnapToBeat: () -> Unit = {},
+    onToggleRippleEdit: () -> Unit = {},
 ) {
     val project = state.project
     val sharedSnapTimes = remember(project?.timeline) { project?.timeline?.collectAllTimecodes().orEmpty() }
@@ -1561,6 +1595,10 @@ fun VideoTimeline(
         snapToBeat = state.snapToBeat,
         magneticSnapping = state.magneticSnapping,
         sharedSnapTimes = sharedSnapTimes,
+        rippleEditEnabled = state.rippleEditEnabled,
+        onToggleMagneticSnapping = onToggleMagneticSnapping,
+        onToggleSnapToBeat = onToggleSnapToBeat,
+        onToggleRippleEdit = onToggleRippleEdit,
         onScrub = onScrub,
         onSelectClip = { onSelectClip(it) },
         onDeselect = onDeselect,
@@ -3953,5 +3991,36 @@ private fun TimelineTransitionJunctionBadge(
                 )
             }
         }
+    }
+}
+
+/**
+ * One row of the timeline overflow menu with an on/off state.
+ *
+ * The label carries the state ("On"/"Off") instead of a separate switch so the
+ * row stays a 12.sp single-line target inside the narrow menu.
+ */
+@Composable
+private fun TimelineToggleRow(
+    label: String,
+    enabled: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .testTag(testTag)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = Color(0xFFE4EDF7), fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(
+            if (enabled) "On" else "Off",
+            color = if (enabled) ApexPalette.NeonCyan else Color(0xFF7C8AA0),
+            fontSize = 11.sp
+        )
     }
 }

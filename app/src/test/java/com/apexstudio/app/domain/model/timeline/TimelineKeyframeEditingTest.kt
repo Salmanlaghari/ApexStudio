@@ -265,7 +265,11 @@ class TimelineKeyframeEditingTest {
         val shape = added.mask as Mask.Shape
         val stroke = added.drawingLayer!!.strokes.single()
 
-        assertEquals(RectF(0.1f, 0.1f, 0.7f, 0.7f), shape.keyframes.single { it.timeMs == 500L }.value)
+        val sampledRect = shape.keyframes.single { it.timeMs == 500L }.value
+        assertEquals(0.1f, sampledRect.left, 0.0001f)
+        assertEquals(0.1f, sampledRect.top, 0.0001f)
+        assertEquals(0.7f, sampledRect.right, 0.0001f)
+        assertEquals(0.7f, sampledRect.bottom, 0.0001f)
         assertEquals(0.5f, added.drawingLayer.globalAlphaKeyframes.single { it.timeMs == 500L }.value, 0f)
         assertEquals(0.5f, stroke.alphaKeyframes.single { it.timeMs == 500L }.value, 0f)
         assertEquals(XY(0.5f, 0.5f), stroke.transform.positionKeyframes.single { it.timeMs == 500L }.value)

@@ -243,7 +243,6 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithText("Delete").performClick()
 
         composeRule.runOnIdle { assertEquals(setOf("main-a", "main-b"), deleted.value) }
-        composeRule.onNodeWithText("Done").performClick()
         composeRule.onNodeWithTag("timeline-overflow").performClick()
         composeRule.onNodeWithText("Select multiple clips").assertExists()
     }

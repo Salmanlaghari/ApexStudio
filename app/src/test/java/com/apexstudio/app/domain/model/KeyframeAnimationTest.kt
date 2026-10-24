@@ -146,4 +146,35 @@ class KeyframeAnimationTest {
         assertEquals(0.875f, t.effectIntensity, 0.01f)
         assertEquals(0.75f, t.filterIntensity, 0.01f)
     }
+
+    @Test
+    fun `legacy adapter preserves incoming hold curve behavior on exact key time`() {
+        val track = KeyframeTrack(
+            listOf(
+                Keyframe(id = "a", timeMs = 0L, translateX = 0f),
+                Keyframe(id = "b", timeMs = 1_000L, translateX = 10f, curve = KeyframeCurve.HOLD),
+                Keyframe(id = "c", timeMs = 2_000L, translateX = 20f, curve = KeyframeCurve.LINEAR)
+            )
+        )
+
+        assertEquals(0f, track.interpolateAt(999L).translateX, 0f)
+        assertEquals(0f, track.interpolateAt(1_000L).translateX, 0f)
+        assertEquals(10f, track.interpolateAt(1_001L).translateX, 0.02f)
+        assertEquals(15f, track.interpolateAt(1_500L).translateX, 0.02f)
+    }
+
+    @Test
+    fun `legacy adapter retains stable first duplicate at exact time and last after it`() {
+        val track = KeyframeTrack(
+            listOf(
+                Keyframe(id = "a", timeMs = 0L, translateX = 0f),
+                Keyframe(id = "first", timeMs = 1_000L, translateX = 10f),
+                Keyframe(id = "last", timeMs = 1_000L, translateX = 20f),
+                Keyframe(id = "z", timeMs = 2_000L, translateX = 30f)
+            )
+        )
+
+        assertEquals(10f, track.interpolateAt(1_000L).translateX, 0f)
+        assertEquals(20.01f, track.interpolateAt(1_001L).translateX, 0.02f)
+    }
 }

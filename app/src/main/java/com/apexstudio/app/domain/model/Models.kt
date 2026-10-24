@@ -5,6 +5,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
+import com.apexstudio.app.domain.model.timeline.FloatType
+import com.apexstudio.app.domain.model.timeline.Interpolator
+import com.apexstudio.app.domain.model.timeline.Timeline
 
 /** How a main-track video is placed inside the fixed project composition frame. */
 @Serializable
@@ -980,7 +983,9 @@ data class Project(
      * Keep legacy versions unchanged on save: their absolute overlay/music
      * placements are intentionally not rewritten during migration.
      */
-    val timingModelVersion: Int = 0
+    val timingModelVersion: Int = 0,
+    /** Shared sealed-track timeline; empty by default for existing saved projects. */
+    val timeline: Timeline = Timeline()
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {
@@ -1207,6 +1212,27 @@ data class KeyframeTrack(
 
     fun sorted(): KeyframeTrack = copy(keyframes = keyframes.sortedBy { it.timeMs })
 
+    // KeyframeTrack is sampled for every preview/export frame. Sort once per immutable track rather
+    // than allocating and sorting on the render hot path.
+    private val orderedKeyframes: List<Keyframe> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        keyframes.sortedBy { it.timeMs }
+    }
+    private val saturationKeyframes: List<Keyframe> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        orderedKeyframes.filter { it.saturation != null }
+    }
+
+    private fun floatAt(timeMs: Long, valueOf: (Keyframe) -> Float): Float =
+        Interpolator.valueAt(
+            keys = orderedKeyframes,
+            nowMs = timeMs,
+            type = FloatType,
+            timeMsOf = { it.timeMs },
+            valueOf = valueOf,
+            // The legacy format assigns a segment's curve to its incoming (later) keyframe.
+            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next.curve).toFloat() },
+            exactMatchUsesPriorSegment = true
+        )
+
     /**
      * Return the animated transform at [timeMs] (interpolated from
      * the surrounding keyframes). When no keyframes exist, returns
@@ -1216,48 +1242,21 @@ data class KeyframeTrack(
      */
     fun interpolateAt(timeMs: Long): AnimatedTransform {
         if (keyframes.isEmpty()) return AnimatedTransform.Identity
-        val sorted = keyframes.sortedBy { it.timeMs }
-        val base = if (timeMs <= sorted.first().timeMs) {
-            val k = sorted.first()
-            AnimatedTransform(
-                translateX = k.translateX,
-                translateY = k.translateY,
-                scale = k.scale,
-                rotationDeg = k.rotationDeg,
-                opacity = k.opacity,
-                volume = k.volume,
-                effectIntensity = k.effectIntensity,
-                filterIntensity = k.filterIntensity
-            )
-        } else if (timeMs >= sorted.last().timeMs) {
-            val k = sorted.last()
-            AnimatedTransform(
-                translateX = k.translateX,
-                translateY = k.translateY,
-                scale = k.scale,
-                rotationDeg = k.rotationDeg,
-                opacity = k.opacity,
-                volume = k.volume,
-                effectIntensity = k.effectIntensity,
-                filterIntensity = k.filterIntensity
-            )
-        } else {
-            var pair: AnimatedTransform? = null
-            for (i in 0 until sorted.size - 1) {
-                val a = sorted[i]
-                val b = sorted[i + 1]
-                if (timeMs in a.timeMs..b.timeMs) {
-                    pair = interpolatePair(a, b, timeMs)
-                    break
-                }
-            }
-            pair ?: AnimatedTransform.Identity
-        }
         // Saturation interpolates over its own pinned subsequence
         // (keyframes with a non-null saturation), not over the
         // bracketing pair — a scale-only keyframe must not reset the
         // saturation ramp. Null = nothing pins saturation.
-        return base.copy(saturation = interpolateSaturation(timeMs))
+        return AnimatedTransform(
+            translateX = floatAt(timeMs) { it.translateX },
+            translateY = floatAt(timeMs) { it.translateY },
+            scale = floatAt(timeMs) { it.scale },
+            rotationDeg = floatAt(timeMs) { it.rotationDeg },
+            opacity = floatAt(timeMs) { it.opacity },
+            volume = floatAt(timeMs) { it.volume },
+            effectIntensity = floatAt(timeMs) { it.effectIntensity },
+            filterIntensity = floatAt(timeMs) { it.filterIntensity },
+            saturation = interpolateSaturation(timeMs)
+        )
     }
 
     /**
@@ -1275,21 +1274,19 @@ data class KeyframeTrack(
      *   scale-only keyframe preserves — never resets — the ramp.
      */
     private fun interpolateSaturation(timeMs: Long): Float? {
-        val pinned = keyframes.filter { it.saturation != null }.sortedBy { it.timeMs }
+        val pinned = saturationKeyframes
         if (pinned.isEmpty()) return null
         if (timeMs < pinned.first().timeMs) return 1f
         if (timeMs >= pinned.last().timeMs) return pinned.last().saturation
-        for (i in 0 until pinned.size - 1) {
-            val a = pinned[i]
-            val b = pinned[i + 1]
-            if (timeMs in a.timeMs..b.timeMs) {
-                val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
-                val raw = ((timeMs - a.timeMs).toDouble() / span.toDouble()).coerceIn(0.0, 1.0)
-                val eased = ease(raw, b.curve)
-                return lerp(a.saturation!!, b.saturation!!, eased)
-            }
-        }
-        return null
+        return Interpolator.valueAt(
+            keys = pinned,
+            nowMs = timeMs,
+            type = FloatType,
+            timeMsOf = { it.timeMs },
+            valueOf = { requireNotNull(it.saturation) },
+            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next.curve).toFloat() },
+            exactMatchUsesPriorSegment = true
+        )
     }
 
     /** True when at least one keyframe pins a saturation value. */
@@ -1304,22 +1301,6 @@ data class KeyframeTrack(
      */
     fun saturationFactorAt(timeMs: Long): Float =
         interpolateAt(timeMs).saturation ?: 1f
-
-    private fun interpolatePair(a: Keyframe, b: Keyframe, t: Long): AnimatedTransform {
-        val span = (b.timeMs - a.timeMs).coerceAtLeast(1L)
-        val raw = ((t - a.timeMs).toDouble() / span.toDouble()).coerceIn(0.0, 1.0)
-        val eased = ease(raw, b.curve)
-        return AnimatedTransform(
-            translateX = lerp(a.translateX, b.translateX, eased),
-            translateY = lerp(a.translateY, b.translateY, eased),
-            scale = lerp(a.scale, b.scale, eased),
-            rotationDeg = lerp(a.rotationDeg, b.rotationDeg, eased),
-            opacity = lerp(a.opacity, b.opacity, eased),
-            volume = lerp(a.volume, b.volume, eased),
-            effectIntensity = lerp(a.effectIntensity, b.effectIntensity, eased),
-            filterIntensity = lerp(a.filterIntensity, b.filterIntensity, eased)
-        )
-    }
 
     private fun ease(t: Double, curve: KeyframeCurve): Double = when (curve) {
         KeyframeCurve.LINEAR -> t

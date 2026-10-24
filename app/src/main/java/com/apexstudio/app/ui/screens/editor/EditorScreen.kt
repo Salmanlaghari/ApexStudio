@@ -1021,8 +1021,10 @@ private fun EditorScreenContent(
                         vm.setPendingAddAsAudio(false)
                         prepareMainMediaPickerLaunch(vm)
                         mediaPicker.pickMultipleMedia.launch(
-                            androidx.activity.result.contract.ActivityResultContracts
-                                .PickVisualMedia.ImageAndVideo
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts
+                                    .PickVisualMedia.ImageAndVideo
+                            )
                         )
                     } else {
                         android.widget.Toast.makeText(

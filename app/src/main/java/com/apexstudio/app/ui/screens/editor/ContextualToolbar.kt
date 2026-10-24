@@ -258,6 +258,7 @@ fun ContextualBottomToolbar(
     onNext: () -> Unit = {},
     // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
     onMedia: () -> Unit = {},
+    onOverlay: (() -> Unit)? = null,
     onColorWorkspace: () -> Unit = onAdjust,
     onBeforeToolAction: () -> Unit = {}
 ) {
@@ -269,7 +270,10 @@ fun ContextualBottomToolbar(
         CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
         CtxToolItem("Audio", Icons.Outlined.MusicNote, tint = ApexPalette.TextPrimary, onClick = onDeviceAudio),
         CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
-        CtxToolItem("Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary, onClick = { showOverlayChoices = true }),
+        CtxToolItem(
+            "Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary,
+            onClick = { if (onOverlay != null) onOverlay() else showOverlayChoices = true }
+        ),
         CtxToolItem("Stickers", Icons.Outlined.SentimentSatisfiedAlt, tint = ApexPalette.TextPrimary, onClick = onStickers),
         CtxToolItem("FX", Icons.Outlined.AutoAwesome, tint = ApexPalette.TextPrimary, onClick = onEffects),
         CtxToolItem("Filters", Icons.Outlined.FilterNone, tint = ApexPalette.TextPrimary, onClick = onFilters),
@@ -930,6 +934,7 @@ fun EditorBottomToolbarSection(
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
     onAi: () -> Unit = {},
     onDraw: () -> Unit = {},
+    onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
     onDeviceAudio: () -> Unit = {
         vm.setPendingAddAsOverlay(false)
         vm.setPendingAddAsAudio(true)
@@ -955,7 +960,8 @@ fun EditorBottomToolbarSection(
                 androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
             )
         )
-    }
+    },
+    onOverlay: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
@@ -1031,6 +1037,7 @@ fun EditorBottomToolbarSection(
         onChallenge = onChallenge,
         onNext = onNext,
         onMedia = onMedia,
+        onOverlay = onOverlay,
         onColorWorkspace = onColorWorkspace,
         onBeforeToolAction = onBeforeToolAction,
         onAdjust = { vm.openAdjustmentsPanel() },
@@ -1174,7 +1181,7 @@ fun EditorBottomToolbarSection(
         onTrim = { vm.openTrimPanel() },
         onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
-        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+        onToggleKeyframe = onToggleKeyframe,
         onAudioMix = { vm.openAudioMixer() },
         onRecord = { vm.openVoiceRecorder() },
         onRoyaltyMusic = { vm.openRoyaltyMusicDialog() },

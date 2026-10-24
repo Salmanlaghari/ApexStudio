@@ -29,7 +29,8 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 // Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
-// ESPCN model stays bundled for bounded, offline video upscaling. Use
+// ESPCN model and the 3.8 MB checksum-pinned face landmarker stay bundled for offline
+// still-photo enhancement/cropping; no model download is required at runtime. Use
 // -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
@@ -38,7 +39,9 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
   from(layout.projectDirectory.dir("src/main/assets"))
   if (!includeBundledAiModels.get()) {
     exclude(
-      "models/mediapipe/*.task", "models/mediapipe/*.tflite",
+      "models/mediapipe/mediapipe-hand-landmarker.task",
+      "models/mediapipe/mediapipe-pose-landmarker.task",
+      "models/mediapipe/selfie_segmenter.tflite",
       "models/whisper/*.onnx", "models/whisper/*.txt",
       "models/alignment/*.onnx",
       "models/background_removal/*.onnx"

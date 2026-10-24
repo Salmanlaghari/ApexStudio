@@ -6,7 +6,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
 
-/** Legacy backend actions. Only explicitly integrated, video-only workflows may authorize one. */
+/** Protected backends authorize only explicitly integrated, source-scoped editor workflows. */
 enum class ProtectedAiAction(val displayName: String) {
     WHISPER_CAPTIONS("Whisper caption generation"),
     WORD_ALIGNMENT("acoustic word alignment"),
@@ -27,12 +27,12 @@ data class ModerationReadiness(
 )
 
 /**
- * Existing-project video scope, not an invented Google Play all-frame moderation requirement.
+ * Explicit existing-project media scope, not an invented Google Play all-frame moderation requirement.
  * https://support.google.com/googleplay/android-developer/answer/13985936
  *
  * Play's generative-content policy does not explicitly require offline frame-by-frame classifiers
  * for non-generative local editing. No classifier approval is claimed here. The old generic APIs
- * still cannot process arbitrary still images, prompts, camera inputs or generate new content.
+ * still cannot process arbitrary images, prompts, camera inputs or generate new content.
  * The bounded video-upscale pipeline authorizes only its scoped frame inference, after
  * validating the selected project VIDEO and decoding it. Permission never survives that call,
  * leaks to unrelated coroutines/threads, or permits another model/action. Readiness is NOT a global unlock switch.
@@ -45,22 +45,23 @@ object GlobalModerationEnforcement {
     val readiness = ModerationReadiness(
         approved = false,
         requiredCategories = emptySet(),
-        message = "Only explicitly wired existing-project video tools are available. " +
-            "No prompts, still-image AI, live camera AI, or image/video generation. " +
+        message = "Only explicitly wired existing-project media tools are available. " +
+            "Photo AI Enhance is limited to selected project images; video actions require selected project videos. " +
+            "No prompts, live camera AI, or image/video generation. " +
             "Google Play policy does not impose a blanket offline all-frame classifier on these local effects.",
     )
 
     fun statusMessage(action: ProtectedAiAction): String = when (action) {
         ProtectedAiAction.ONNX_UPSCALING ->
-            "Use AI Video Upscale on a supported existing project video. Standalone still-image inference is unavailable."
+            "Still-photo ESPCN upscaling is available only from Photo AI Enhance for an existing project image; video-frame upscaling uses its own selected-video action."
         ProtectedAiAction.WHISPER_CAPTIONS ->
             "Whisper captioning is available only from the editor's Auto Captions action for a selected existing project video."
         ProtectedAiAction.WORD_ALIGNMENT ->
             "English word alignment is available only as an opt-in caption mode for the selected existing project video; unsupported or low-confidence intervals are rejected."
         ProtectedAiAction.FACE_TRACK_REVIEW ->
-            "Sampled local face review is available only for a selected existing project video; it does not apply edits. Project export rejects face-crop tracks."
+            "Sampled local face review is available only for a selected existing project video; it does not apply edits."
         ProtectedAiAction.FACE_AWARE_REFRAME ->
-            "Automatic face reframe application is unavailable: current project export explicitly rejects face-crop tracks. Use the manual crop tool; local sampled face review remains available."
+            "Still-photo face crop is available from Photo AI Enhance for an existing project image. Automatic video face-track application remains restricted to its reviewed editor workflow."
         ProtectedAiAction.BACKGROUND_REPLACEMENT ->
             "Background compositing is available only from the editor for a selected existing project video; replacement images must already be in the project."
         ProtectedAiAction.ONNX_STYLE_TRANSFER ->

@@ -1258,6 +1258,7 @@ private fun PhotoEditSheet(
     tab: com.apexstudio.app.presentation.state.PhotoEditTab,
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel
 ) {
+    val photoAiState by vm.photoAiEnhanceUi.collectAsStateWithLifecycle()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1288,6 +1289,11 @@ private fun PhotoEditSheet(
                 onAutoEnhance = { vm.applyPhotoAutoEnhance(photoEditClip.id) },
                 onDenoise = { vm.applyPhotoDenoise(photoEditClip.id) },
                 onSharpen = { vm.applyPhotoSharpen(photoEditClip.id) },
+                onPhotoUpscale = { vm.applyPhotoAiUpscale(photoEditClip.id) },
+                onFaceCrop = { vm.applyPhotoFaceCrop(photoEditClip.id) },
+                onStabilize = { enabled -> vm.setPhotoStabilize(photoEditClip.id, enabled) },
+                photoAiState = photoAiState,
+                onCancelPhotoAi = { vm.cancelPhotoAiEnhance() },
                 onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
                 onClose = { vm.closePhotoEditPanel() }
             )

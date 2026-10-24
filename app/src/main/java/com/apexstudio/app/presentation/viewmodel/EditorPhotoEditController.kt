@@ -103,6 +103,13 @@ fun EditorViewModel.togglePhotoFlipHorizontal(clipId: String) =
 fun EditorViewModel.togglePhotoFlipVertical(clipId: String) =
     updatePhotoEdit(clipId) { it.copy(flipVertical = !it.flipVertical) }
 
+/** Enable a small-angle, single-image auto-level correction and matching safe crop. */
+fun EditorViewModel.applyPhotoStabilize(clipId: String) =
+    updatePhotoEdit(clipId) { it.copy(stabilizePhoto = true) }
+
+fun EditorViewModel.setPhotoStabilize(clipId: String, enabled: Boolean) =
+    updatePhotoEdit(clipId) { it.copy(stabilizePhoto = enabled) }
+
 /** Clear every photo edit on the clip back to the untouched photo. */
 fun EditorViewModel.resetPhotoEdits(clipId: String) =
     updatePhotoEdit(clipId) { PhotoEditSettings() }

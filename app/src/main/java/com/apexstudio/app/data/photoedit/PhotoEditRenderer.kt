@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * CPU photo-editing pipeline shared by the live preview and the export.
  *
  * Render order (identical in both so the preview is WYSIWYG):
- *   decode (+EXIF orientation) → rotate/flip → crop → denoise → sharpen →
+ *   decode (+EXIF orientation) → persisted AI-upscaled source → rotate/flip → auto-level → crop → denoise → sharpen →
  *   colour adjustments (ColorMatrix) → LUT filter (real .cube data).
  *
  * The preview calls [renderEdited] with a small [maxDim] (fast,
@@ -181,6 +181,47 @@ object PhotoEditRenderer {
         }
     }
 
+    /** Read EXIF-oriented source dimensions without allocating a full-resolution bitmap. */
+    suspend fun readImageDimensions(context: Context, uriString: String): Pair<Int, Int>? =
+        withContext(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(uriString)
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                openStream(context, uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                val width = options.outWidth
+                val height = options.outHeight
+                if (width <= 0 || height <= 0) return@withContext null
+                val orientation = readExifOrientation(context, uri)
+                if (orientation in setOf(
+                        ExifInterface.ORIENTATION_TRANSPOSE,
+                        ExifInterface.ORIENTATION_ROTATE_90,
+                        ExifInterface.ORIENTATION_TRANSVERSE,
+                        ExifInterface.ORIENTATION_ROTATE_270
+                    )) height to width else width to height
+            } catch (e: Exception) {
+                Log.w(TAG, "readImageDimensions failed for $uriString", e)
+                null
+            }
+        }
+
+    /** Use a persisted app-private AI result only while it exists; otherwise retain the original source. */
+    fun resolveSourceUri(context: Context, originalUri: String, settings: PhotoEditSettings): String {
+        val enhanced = settings.aiUpscaledImageUri ?: return originalUri
+        val parsed = Uri.parse(enhanced)
+        val path = when (parsed.scheme) {
+            "file" -> parsed.path
+            null, "" -> enhanced
+            else -> null
+        } ?: return originalUri
+        return try {
+            val allowedDirectory = File(context.filesDir, "photo_ai_upscale").canonicalFile
+            val file = File(path).canonicalFile
+            if (file.parentFile == allowedDirectory && file.isFile && file.length() > 0L) enhanced else originalUri
+        } catch (_: Exception) {
+            originalUri
+        }
+    }
+
     private fun openStream(context: Context, uri: Uri): java.io.InputStream? {
         return try {
             when (uri.scheme) {
@@ -242,7 +283,8 @@ object PhotoEditRenderer {
         maxDim: Int = 1280,
         lutLoader: (suspend (FilterPreset) -> LutTexture?)? = null
     ): Bitmap? = withContext(Dispatchers.Default) {
-        val src = loadBitmap(context, uriString, maxDim) ?: return@withContext null
+        val effectiveUri = resolveSourceUri(context, uriString, settings)
+        val src = loadBitmap(context, effectiveUri, maxDim) ?: return@withContext null
         try {
             var lutTexture: LutTexture? = null
             val filterId = settings.filterId
@@ -290,7 +332,10 @@ object PhotoEditRenderer {
         }
         // 1. Rotate / flip (crop coords are defined in this space).
         advance(applyRotateFlip(cur, settings.normalizedRotationSteps, settings.flipHorizontal, settings.flipVertical))
-        // 2. Crop.
+        // 2. Static-image auto-level. A still has no temporal motion; this only
+        // corrects a small camera-roll angle when a dominant edge is reliable.
+        if (settings.stabilizePhoto) advance(applyStabilization(cur))
+        // 3. Crop.
         val crop = settings.crop
         if (crop != null && !crop.isFullFrame()) {
             advance(applyCrop(cur, crop))
@@ -351,6 +396,69 @@ object PhotoEditRenderer {
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         canvas.drawBitmap(src, m, paint)
         return out
+    }
+
+    /**
+     * Prepare pixels in the post-rotate/flip/auto-level coordinate space in which crop rects are
+     * stored. The caller retains ownership of [src] and owns the result when it is a different bitmap.
+     */
+    fun prepareForCropAnalysis(src: Bitmap, settings: PhotoEditSettings): Bitmap {
+        var current = applyRotateFlip(
+            src, settings.normalizedRotationSteps, settings.flipHorizontal, settings.flipVertical
+        )
+        if (settings.stabilizePhoto) {
+            val leveled = applyStabilization(current)
+            if (leveled !== current && current !== src) current.recycle()
+            current = leveled
+        }
+        return current
+    }
+
+    private fun applyStabilization(src: Bitmap): Bitmap {
+        val analysisScale = min(1f, 512f / max(src.width, src.height))
+        val analysis = if (analysisScale < 1f) {
+            Bitmap.createScaledBitmap(
+                src,
+                (src.width * analysisScale).toInt().coerceAtLeast(1),
+                (src.height * analysisScale).toInt().coerceAtLeast(1),
+                true
+            )
+        } else src
+        val pixels = IntArray(analysis.width * analysis.height)
+        analysis.getPixels(pixels, 0, analysis.width, 0, 0, analysis.width, analysis.height)
+        val correction = try {
+            PhotoStabilizationMath.estimateCorrectionDegrees(analysis.width, analysis.height, pixels)
+        } finally {
+            if (analysis !== src) analysis.recycle()
+        } ?: return src
+        val scale = PhotoStabilizationMath.safeCropScale(src.width, src.height, correction)
+        // Avoid an unexpectedly destructive crop on panoramic/low-confidence compositions.
+        if (scale < 0.78f) return src
+        val cropWidth = (src.width * scale).toInt().coerceIn(1, src.width)
+        val cropHeight = (src.height * scale).toInt().coerceIn(1, src.height)
+        val left = (src.width - cropWidth) / 2
+        val top = (src.height - cropHeight) / 2
+        val cropped = Bitmap.createBitmap(src, left, top, cropWidth, cropHeight)
+        return try {
+            val matrix = Matrix().apply { setRotate(correction, cropWidth / 2f, cropHeight / 2f) }
+            val rotated = Bitmap.createBitmap(cropped, 0, 0, cropWidth, cropHeight, matrix, true)
+            val (innerWidth, innerHeight) = PhotoStabilizationMath.inscribedCropSize(
+                cropWidth, cropHeight, correction
+            )
+            val safeWidth = innerWidth.coerceAtMost(rotated.width)
+            val safeHeight = innerHeight.coerceAtMost(rotated.height)
+            val safe = Bitmap.createBitmap(
+                rotated,
+                ((rotated.width - safeWidth) / 2).coerceAtLeast(0),
+                ((rotated.height - safeHeight) / 2).coerceAtLeast(0),
+                safeWidth,
+                safeHeight
+            )
+            if (safe !== rotated) rotated.recycle()
+            safe
+        } finally {
+            if (cropped !== src) cropped.recycle()
+        }
     }
 
     private fun applyCrop(src: Bitmap, crop: PhotoCropRect): Bitmap {

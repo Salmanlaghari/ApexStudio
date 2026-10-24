@@ -32,7 +32,7 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
         const val TILE_SIZE = 224
         const val SCALE = 3
         private const val TILE_STEP = 192
-        private const val OUTPUT_PIXEL_LIMIT = 4_194_304L
+        internal const val OUTPUT_PIXEL_LIMIT = 4_194_304L
         private val env: OrtEnvironment by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { OrtEnvironment.getEnvironment() }
 
         internal fun outputDimensions(width: Int, height: Int): Pair<Int, Int> {
@@ -41,6 +41,24 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
             val outHeight = Math.multiplyExact(height, SCALE)
             require(outWidth.toLong() * outHeight <= OUTPUT_PIXEL_LIMIT) { "x3 ESPCN output exceeds the safe pixel limit; 4K processing is not available" }
             return outWidth to outHeight
+        }
+
+        /** Fit a decoded low-resolution photo into the adapter's hard output allocation limit. */
+        internal fun boundedInputDimensions(width: Int, height: Int): Pair<Int, Int> {
+            require(width > 0 && height > 0) { "Input bitmap must be non-empty" }
+            val sourcePixels = width.toLong() * height
+            require(sourcePixels < OUTPUT_PIXEL_LIMIT) {
+                "ESPCN still-photo output is capped at 4,194,304 pixels; this source is already too large to upscale safely"
+            }
+            val maxInputPixels = OUTPUT_PIXEL_LIMIT / (SCALE.toLong() * SCALE)
+            val scale = minOf(1.0, kotlin.math.sqrt(maxInputPixels.toDouble() / sourcePixels))
+            var inputWidth = (width * scale).toInt().coerceAtLeast(1)
+            var inputHeight = (height * scale).toInt().coerceAtLeast(1)
+            while (inputWidth.toLong() * SCALE * inputHeight * SCALE > OUTPUT_PIXEL_LIMIT) {
+                if (inputWidth >= inputHeight && inputWidth > 1) inputWidth-- else if (inputHeight > 1) inputHeight-- else break
+            }
+            outputDimensions(inputWidth, inputHeight)
+            return inputWidth to inputHeight
         }
 
         internal fun tileStarts(length: Int): IntArray {
@@ -226,7 +244,10 @@ class EspcnSuperResolutionAdapter(private val modelFile: File) {
                             val r = (yy + ((91881f * v + 32768f) / 65536f).toInt()).coerceIn(0, 255)
                             val g = (yy - ((22554f * u + 46802f * v + 32768f) / 65536f).toInt()).coerceIn(0, 255)
                             val b = (yy + ((116130f * u + 32768f) / 65536f).toInt()).coerceIn(0, 255)
-                            output[dy * outWidth + dx] = (0xff shl 24) or (r shl 16) or (g shl 8) or b
+                            val sourceX = ((dx + 0.5f) * source.width / outWidth).toInt().coerceIn(0, source.width - 1)
+                            val sourceY = ((dy + 0.5f) * source.height / outHeight).toInt().coerceIn(0, source.height - 1)
+                            val alpha = inputPixels[sourceY * source.width + sourceX] ushr 24 and 255
+                            output[dy * outWidth + dx] = (alpha shl 24) or (r shl 16) or (g shl 8) or b
                         }
                     }
                 }

@@ -16,6 +16,7 @@ class AiToolsCatalogTest {
         assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
         assertTrue(AI_PROTECTED_BLOCKER.contains("scoped existing-video editor actions"))
         assertTrue(AI_PROTECTED_BLOCKER.contains("Other model inventory is not a processing control"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("Photo AI Enhance"))
         assertFalse(AI_PROTECTED_BLOCKER.contains("all-category moderation"))
     }
 
@@ -39,12 +40,13 @@ class AiToolsCatalogTest {
         assertTrue(card.unavailableReason.contains("model readiness and audio access are checked when run"))
     }
 
-    @Test fun upscalePointsToRealVideoEntryAndDoesNotExposeStillImageAPI() {
+    @Test fun upscaleSeparatesVideoEntryFromScopedPhotoEnhanceAction() {
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.ONNX_UPSCALING, AiAvailability.READY, "ESPCN locally available"
         ))).single()
         assertTrue(card.unavailableReason.contains("Open AI Video Upscale"))
-        assertTrue(card.unavailableReason.contains("No standalone still-image"))
+        assertTrue(card.unavailableReason.contains("Photo AI Enhance"))
+        assertTrue(card.unavailableReason.contains("4.2 megapixels"))
     }
 
     @Test fun unreviewedArtisticModelRemainsUnavailableForActualLicenseAndIntegrationReasons() {
@@ -74,12 +76,12 @@ class AiToolsCatalogTest {
             .forEach { assertNull("$it must not be routed to a fake action", aiToolActionForId(it)) }
     }
 
-    @Test fun faceReframeAndDepthConversionExplainWhyTheyAreNotEnabled() {
+    @Test fun faceReframeExplainsScopedStillPhotoActionAndRestrictedVideoAction() {
         val reframe = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.FACE_AWARE_REFRAME, AiAvailability.READY, "Face model present"
         ))).single()
-        assertTrue(reframe.unavailableReason.contains("not release-ready"))
-        assertTrue(reframe.unavailableReason.contains("export rejects face-crop tracks"))
+        assertTrue(reframe.unavailableReason.contains("Still photos can use Face crop"))
+        assertTrue(reframe.unavailableReason.contains("video-track application remains review-restricted"))
         assertTrue(AI_PROTECTED_BLOCKER.contains("no integrated, tested depth model"))
     }
 }

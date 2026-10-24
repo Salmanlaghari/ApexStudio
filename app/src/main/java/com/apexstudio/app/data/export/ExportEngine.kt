@@ -463,6 +463,15 @@ class ExportEngine(private val context: Context) {
                         val keyframeClock = keyframeClockFor(itemConfig)
                         val sharedAnimation = itemConfig.sharedVideoClip
                         val videoEffects = buildList<androidx.media3.common.Effect> {
+                            clip.faceCropTrack?.let { track ->
+                                add(FaceCropGlEffect.forExport(
+                                    com.apexstudio.app.data.effect.FaceCropRenderConfig(
+                                        track = track,
+                                        trimStartMs = entry.sourceStartMs,
+                                        trimEndMs = entry.sourceEndMs
+                                    ).exportConfig()
+                                ))
+                            }
                             clip.videoCrop.takeUnless { it.isFullFrame }
                                 ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
                                 ?.let { add(it) }

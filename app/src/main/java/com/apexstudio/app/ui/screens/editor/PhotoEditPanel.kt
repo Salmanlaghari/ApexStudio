@@ -54,6 +54,7 @@ import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.presentation.state.PhotoEditTab
+import com.apexstudio.app.presentation.viewmodel.PhotoAiEnhanceUiState
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,7 +86,12 @@ fun PhotoEditPanel(
     onCanvasChange: (com.apexstudio.app.domain.model.PhotoCanvasSettings) -> Unit = {},
     onAutoEnhance: () -> Unit = {},
     onDenoise: () -> Unit = {},
-    onSharpen: () -> Unit = {}
+    onSharpen: () -> Unit = {},
+    onPhotoUpscale: () -> Unit = {},
+    onFaceCrop: () -> Unit = {},
+    onStabilize: (Boolean) -> Unit = {},
+    photoAiState: PhotoAiEnhanceUiState = PhotoAiEnhanceUiState(),
+    onCancelPhotoAi: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -191,7 +197,18 @@ fun PhotoEditPanel(
                 onKenBurns = onKenBurns
             )
             PhotoEditTab.CANVAS -> PhotoCanvasPanel(settings.canvas, onCanvasChange)
-            PhotoEditTab.AI_ENHANCE -> PhotoAiEnhanceTab(settings.adjustments, onAutoEnhance, onDenoise, onSharpen)
+            PhotoEditTab.AI_ENHANCE -> PhotoAiEnhanceTab(
+                settings = settings,
+                adjustments = settings.adjustments,
+                aiState = photoAiState,
+                onAutoEnhance = onAutoEnhance,
+                onDenoise = onDenoise,
+                onSharpen = onSharpen,
+                onUpscale = onPhotoUpscale,
+                onFaceCrop = onFaceCrop,
+                onStabilize = onStabilize,
+                onCancel = onCancelPhotoAi
+            )
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -355,15 +372,16 @@ private fun PhotoFiltersTab(
     onFilterIntensity: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    val effectivePhotoUri = PhotoEditRenderer.resolveSourceUri(context, photoUri, settings)
     val manifest = remember { LutFilterEngine(context).manifest }
-    var thumbs by remember(photoUri) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
-    var loading by remember(photoUri) { mutableStateOf(true) }
+    var thumbs by remember(effectivePhotoUri) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    var loading by remember(effectivePhotoUri) { mutableStateOf(true) }
 
-    LaunchedEffect(photoUri) {
+    LaunchedEffect(effectivePhotoUri) {
         loading = true
         thumbs = emptyMap()
         try {
-            val small = PhotoEditRenderer.loadBitmap(context, photoUri, maxDim = 160)
+            val small = PhotoEditRenderer.loadBitmap(context, effectivePhotoUri, maxDim = 160)
             if (small == null) {
                 loading = false
                 return@LaunchedEffect

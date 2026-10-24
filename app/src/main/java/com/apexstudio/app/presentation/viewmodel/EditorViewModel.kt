@@ -119,6 +119,11 @@ class EditorViewModel(
     val videoUpscaleUi: StateFlow<VideoUpscaleUiState> = _videoUpscaleUi.asStateFlow()
     internal var videoUpscaleJob: Job? = null
 
+    /** Offline still-photo ESPCN and MediaPipe face-crop actions, isolated per editor instance. */
+    internal val _photoAiEnhanceUi = MutableStateFlow(PhotoAiEnhanceUiState())
+    val photoAiEnhanceUi: StateFlow<PhotoAiEnhanceUiState> = _photoAiEnhanceUi.asStateFlow()
+    internal var photoAiEnhanceJob: Job? = null
+
     /** Captured on opening the recorder, independent of recording-time playback. */
     internal var voiceOverStartMs: Long = 0L
 
@@ -250,6 +255,7 @@ class EditorViewModel(
         faceTrackReviewToken?.cancel()
         faceTrackReviewJob?.cancel()
         videoUpscaleJob?.cancel()
+        photoAiEnhanceJob?.cancel()
         endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()

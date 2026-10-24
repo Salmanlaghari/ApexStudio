@@ -100,7 +100,14 @@ internal fun projectCompositionUnsupportedReason(
         if (clip.videoCrop.sanitized() != clip.videoCrop) {
             return "Video clip '${clip.name}' has an invalid crop edit."
         }
-        if (clip.faceCropTrack != null) return "Video clip '${clip.name}' has an automatic face-crop track."
+        clip.faceCropTrack?.let { track ->
+            if (!clip.videoCrop.isFullFrame) {
+                return "Video clip '${clip.name}' combines a dynamic face-crop track with a static crop; clear one crop before exporting."
+            }
+            if (track.outputAspectRatio !in 0.1f..10f) {
+                return "Video clip '${clip.name}' has a face-crop output aspect ratio outside the safe export range."
+            }
+        }
         clip.mask?.let { mask ->
             if (!MaskModel.isAvailable(mask.shape)) return "Video clip '${clip.name}' has an unavailable Blur Faces mask."
             if (mask.shape == MaskShape.DRAW && MaskModel.outline(mask.shape, mask.drawPoints).size < 4) {

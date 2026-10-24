@@ -21,9 +21,12 @@ import org.robolectric.annotation.Config
 class PhotoAiEnhancePanelTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun aiEnhanceShowsRealActionsAndHonestUnavailableOperations() {
+    @Test fun aiEnhanceShowsOnDevicePhotoActionsAndTruthfulAutoLevelLimits() {
         val settings = mutableStateOf(PhotoEditSettings())
         val autoEnhanceCalls = mutableStateOf(0)
+        val upscaleCalls = mutableStateOf(0)
+        val faceCropCalls = mutableStateOf(0)
+        val stabilizeEnabled = mutableStateOf(false)
         compose.setContent {
             PhotoEditPanel(
                 photoUri = "file:///photo.jpg",
@@ -41,6 +44,9 @@ class PhotoAiEnhancePanelTest {
                 onAutoEnhance = { autoEnhanceCalls.value++ },
                 onDenoise = {},
                 onSharpen = {},
+                onPhotoUpscale = { upscaleCalls.value++ },
+                onFaceCrop = { faceCropCalls.value++ },
+                onStabilize = { stabilizeEnabled.value = it },
                 onResetAll = {},
                 onClose = {}
             )
@@ -48,12 +54,17 @@ class PhotoAiEnhancePanelTest {
         compose.onNodeWithText("AI Enhance", substring = false).assertExists()
         compose.onNodeWithTag("photo_ai_enhance_auto").assertExists().assertIsDisplayed()
             .performClick()
-        compose.onNodeWithTag("photo_ai_enhance_upscale_unavailable").assertExists()
+        compose.onNodeWithTag("photo_ai_enhance_upscale").assertExists().assertIsDisplayed().performClick()
         compose.onNodeWithTag("photo_ai_enhance_denoise").assertExists()
         compose.onNodeWithTag("photo_ai_enhance_sharpen").assertExists()
-        compose.onNodeWithTag("photo_ai_enhance_stabilize_unavailable").assertExists()
-        compose.onNodeWithTag("photo_ai_enhance_face_crop_unavailable").assertExists()
-        compose.onNodeWithText("Stabilize · Unavailable", substring = false).assertExists()
-        compose.runOnIdle { assertEquals(1, autoEnhanceCalls.value) }
+        compose.onNodeWithTag("photo_ai_enhance_stabilize").assertExists().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("photo_ai_enhance_face_crop").assertExists().assertIsDisplayed().performClick()
+        compose.onNodeWithText("does not remove motion blur", substring = true).assertExists()
+        compose.runOnIdle {
+            assertEquals(1, autoEnhanceCalls.value)
+            assertEquals(1, upscaleCalls.value)
+            assertEquals(1, faceCropCalls.value)
+            assertEquals(true, stabilizeEnabled.value)
+        }
     }
 }

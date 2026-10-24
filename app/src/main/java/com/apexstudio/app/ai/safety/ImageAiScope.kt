@@ -28,6 +28,7 @@ object ImageAiScope {
     private val IMAGE_ACTIONS: Set<ProtectedAiAction> = setOf(
         ProtectedAiAction.ONNX_BACKGROUND_REMOVAL,
         ProtectedAiAction.ONNX_UPSCALING,
+        ProtectedAiAction.FACE_AWARE_REFRAME,
         ProtectedAiAction.PORTRAIT_BACKGROUND_EFFECTS,
     )
 
@@ -47,6 +48,8 @@ object ImageAiScope {
             "Background removal runs on an existing project image from the editor's image tools. No generated content, no prompts, no camera input."
         ProtectedAiAction.ONNX_UPSCALING ->
             "Upscaling runs on an existing project image from the editor's image tools. It is a learned resampler, not a generative model."
+        ProtectedAiAction.FACE_AWARE_REFRAME ->
+            "Face cropping runs on an existing project image from the editor's Photo AI Enhance tools; the user applies the crop to that photo."
         ProtectedAiAction.PORTRAIT_BACKGROUND_EFFECTS ->
             "Portrait background effects run on an existing project image from the editor's image tools."
         else ->

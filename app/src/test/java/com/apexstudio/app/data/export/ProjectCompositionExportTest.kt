@@ -42,6 +42,48 @@ class ProjectCompositionExportTest {
         type = type
     )
 
+    private fun faceCropTrack(aspect: Float = 9f / 16f) = com.apexstudio.app.domain.model.FaceCropTrack(
+        sourceWidth = 1920,
+        sourceHeight = 1080,
+        outputAspectRatio = aspect,
+        keyframes = listOf(
+            com.apexstudio.app.domain.model.FaceCropKeyframe(
+                sourceTimestampMs = 0L,
+                left = 0.2f,
+                top = 0f,
+                right = 0.2f + aspect * 1080f / 1920f,
+                bottom = 1f,
+                faceFound = true
+            )
+        )
+    )
+
+    @Test
+    fun `valid per clip face crop tracks are exported but ambiguous crops fail closed`() {
+        val tracked = clip().copy(faceCropTrack = faceCropTrack())
+        assertNull(projectCompositionUnsupportedReason(listOf(tracked), ExportEngine.ExportConfig()))
+
+        val ambiguous = tracked.copy(videoCrop = VideoCropSettings(left = 0.1f, right = 0.9f))
+        assertTrue(projectCompositionUnsupportedReason(listOf(ambiguous), ExportEngine.ExportConfig())!!
+            .contains("combines a dynamic face-crop track with a static crop"))
+
+        val unsafeAspect = clip().copy(faceCropTrack = com.apexstudio.app.domain.model.FaceCropTrack(
+            sourceWidth = 1920,
+            sourceHeight = 1080,
+            outputAspectRatio = 20f,
+            keyframes = listOf(com.apexstudio.app.domain.model.FaceCropKeyframe(
+                sourceTimestampMs = 0L,
+                left = 0f,
+                top = 0f,
+                right = 1f,
+                bottom = 1920f / (1080f * 20f),
+                faceFound = true
+            ))
+        ))
+        assertTrue(projectCompositionUnsupportedReason(listOf(unsafeAspect), ExportEngine.ExportConfig())!!
+            .contains("face-crop output aspect ratio outside the safe export range"))
+    }
+
     @Test
     fun `plain main videos with per item trim speed gain and global music are eligible`() {
         val first = clip().copy(speedMultiplier = 1.5f, volume = 0.6f)

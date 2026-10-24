@@ -222,6 +222,9 @@ object MusicExportMixer {
         val sortedVolumeKfsByTrack = placed.map {
             it.track.volumeKeyframes.sortedBy { kf -> kf.timeMs }
         }
+        val sortedPanKfsByTrack = placed.map {
+            it.track.panKeyframes.sortedBy { kf -> kf.timeMs }
+        }
 
         RandomAccessFile(wavFile, "rw").use { raf ->
             // Placeholder header; rewritten with real sizes at the end.
@@ -255,6 +258,7 @@ object MusicExportMixer {
                         val need = (s1 - s0).toInt()
                         val n = p.decoder.readFrames(tmp, need)
                         val sortedVolumeKfs = sortedVolumeKfsByTrack[trackIdx]
+                        val sortedPanKfs = sortedPanKfsByTrack[trackIdx]
                         for (i in 0 until n) {
                             val g = s0 + i
                             val env = fadeEnvelope(
@@ -273,9 +277,16 @@ object MusicExportMixer {
                                         (g * 1000L) / SAMPLE_RATE
                                     ).coerceIn(0f, 1f)
                             val v = kfVol * env
+                            val panValue = AudioTrack.interpolatePanKeyframes(
+                                sortedPanKfs,
+                                p.track.pan,
+                                (g * 1000L) / SAMPLE_RATE
+                            ).takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
+                            val panLeft = 1f - panValue.coerceAtLeast(0f)
+                            val panRight = 1f + panValue.coerceAtMost(0f)
                             val idx = ((g - w0) * 2).toInt()
-                            mix[idx] += tmp[i * 2] * v
-                            mix[idx + 1] += tmp[i * 2 + 1] * v
+                            mix[idx] += tmp[i * 2] * v * panLeft
+                            mix[idx + 1] += tmp[i * 2 + 1] * v * panRight
                         }
                     }
                     if (w0 >= endFrame || p.decoder.isEos()) {

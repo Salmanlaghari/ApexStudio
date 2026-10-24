@@ -38,6 +38,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -530,6 +531,7 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
+    val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
 
     val currentEffects = remember(
@@ -539,14 +541,27 @@ private fun EditorScreenContent(
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
-        selectedKeyframes
+        selectedKeyframes,
+        sharedPreviewClip
     ) {
         buildList<androidx.media3.common.Effect> {
-            if (activePreset != null && state.filterIntensity > 0f) {
+            val hasSharedFilterKeys = sharedPreviewClip?.filterKeyframes?.isNotEmpty() == true ||
+                sharedPreviewClip?.lutKeyframes?.isNotEmpty() == true
+            if (activePreset != null && (state.filterIntensity > 0f || hasSharedFilterKeys)) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity,
-                        intensityProvider = { state.filterIntensity }
+                        intensityProvider = { state.filterIntensity },
+                        presentationTimeIntensityProvider = sharedPreviewClip?.let { typed ->
+                            { timeUs ->
+                                val projectMs = mainPreviewClip?.let { clip ->
+                                    com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                                        state.project?.clips.orEmpty(), clip, timeUs / 1_000L
+                                    )
+                                } ?: timeUs / 1_000L
+                                state.filterIntensity * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
+                            }
+                        }
                     )
                 )
             }
@@ -594,17 +609,21 @@ private fun EditorScreenContent(
                     )
                 )
             }
-            if (selectedKeyframes != null && !selectedKeyframes.isEmpty()) {
+            val hasSharedAnimation = sharedPreviewClip?.let {
+                it.animationKeyframeTimes().isNotEmpty()
+            } == true
+            if ((selectedKeyframes != null && !selectedKeyframes.isEmpty()) || hasSharedAnimation) {
                 val trackRef = arrayOf(selectedKeyframes)
                 add(
                     com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                        trackProvider = { trackRef[0] },
+                        trackProvider = { trackRef[0] ?: com.apexstudio.app.domain.model.KeyframeTrack() },
                         timeMsAtPresentationTimeUs = { timeUs ->
                             mainPreviewClip?.let { clip ->
                                 com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
                                     state.project?.clips.orEmpty(), clip, timeUs / 1_000L)
                             } ?: timeUs / 1_000L
-                        }
+                        },
+                        sharedVideoClipProvider = { sharedPreviewClip }
                     ).buildEffects().first()
                 )
             }

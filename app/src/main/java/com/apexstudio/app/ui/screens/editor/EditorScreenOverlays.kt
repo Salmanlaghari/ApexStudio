@@ -1109,7 +1109,11 @@ fun KeyframePanelOverlay(
     // the project's first clip when the selection was cleared, so an
     // auto-keyframe slider write landed on a layer the user never touched.
     val selectedClip = state.keyframeAnchor()
-    val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    val sharedClip = selectedClip?.let { state.project?.sharedVideoClip(it.id) }
+    val track = selectedClip?.let { clip ->
+        state.project?.sharedKeyframeTrackFor(clip.id, clip.keyframes)
+    } ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    val sharedPlayheadValue = sharedClip?.animationTransformAt(state.playerPositionMs)
     val initialPropertyFilter = state.keyframePropertyFilter?.let {
         runCatching { KeyframePropertyFilter.valueOf(it) }.getOrNull()
     }
@@ -1130,10 +1134,16 @@ fun KeyframePanelOverlay(
                     canAdd = selectedClip != null,
                     onAdd = { atMs ->
                         selectedClip?.let {
-                            vm.addKeyframe(it.id, atMs, track.interpolateAt(atMs))
+                            val sampled = state.project?.sharedVideoClip(it.id)?.animationTransformAt(atMs)
+                                ?: track.interpolateAt(atMs)
+                            vm.addKeyframe(it.id, atMs, sampled)
                         }
                     },
                     onPaste = { pin, atMs -> selectedClip?.let { vm.pasteKeyframe(it.id, pin, atMs) } },
+                    atPlayheadTransform = sharedPlayheadValue,
+                    selectedKeyframeTimeMs = state.keyframeSelectedTimeMs,
+                    openCurveEditorOnOpen = state.keyframeCurveEditorOpen,
+                    onCurveEditorDismiss = { vm.dismissKeyframeCurveEditor() },
                     onUpdate = { kf ->
                         selectedClip?.let {
                             vm.updateKeyframe(it.id, kf.id) { _ -> kf }
@@ -1433,6 +1443,17 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
         val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
         val faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip)
+        val workspaceEffectIntensityProvider = remember(state.project, mainPreviewClip?.id) {
+            val clip = mainPreviewClip
+            val typed = clip?.let { state.project?.sharedVideoClip(it.id) }
+                ?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }
+            if (clip == null || typed == null) null else { presentationTimeUs: Long ->
+                val projectTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                    state.project?.clips.orEmpty(), clip, presentationTimeUs / 1_000L
+                )
+                typed.effectIntensityAt(projectTimeMs)
+            }
+        }
 
         // Layer names belong on their timeline clips, not in a HUD over media.
 
@@ -1453,6 +1474,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             faceCropConfig = faceCropConfig,
             projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
+            workspaceEffectIntensityProvider = workspaceEffectIntensityProvider,
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             compositionAspectRatio = compositionAspectRatio,
             chromaKeySettings = state.chromaKeySettings,
@@ -1610,6 +1632,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 modifier = Modifier.fillMaxSize()
             )
             }
+            SignaturePreviewOverlay(
+                signature = state.project?.signature,
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }
@@ -1770,11 +1796,18 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
         onDeleteClip = { clipId -> vm.deleteClip(clipId) },
         onDeleteClips = { ids -> vm.deleteClips(ids) },
+        onToggleMultiSelect = { vm.toggleMultiSelectMode() },
+        onToggleSelectedClip = { id -> vm.toggleSelectedClip(id) },
+        onClearMultiSelection = { vm.clearMultiSelection() },
         onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },
         onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
         onTrimClip = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
         onToggleKeyframeAtPlayhead = { clipId -> vm.toggleKeyframeAtPlayheadFor(clipId) },
         onMoveKeyframe = { clipId, kfId, newTimeMs -> vm.moveKeyframe(clipId, kfId, newTimeMs) },
+        onSelectKeyframe = { clipId, timeMs ->
+            seekPlayerAndState(timeMs)
+            vm.openKeyframeCurveEditor(clipId, timeMs)
+        },
         onToggleTextKeyframeAtPlayhead = { clipId, overlayId ->
             vm.toggleTextKeyframeAtPlayhead(clipId, overlayId)
         },

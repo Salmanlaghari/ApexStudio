@@ -43,6 +43,20 @@ fun EditorViewModel.clearSelection() = _state.update {
     )
 }
 
+fun EditorViewModel.toggleMultiSelectMode() = _state.update { state ->
+    val enabled = !state.multiSelectMode
+    state.copy(multiSelectMode = enabled, selectedClipIds = if (enabled) state.selectedClipIds else emptySet())
+}
+
+fun EditorViewModel.toggleSelectedClip(id: String) = _state.update { state ->
+    if (!state.multiSelectMode || state.project?.clips?.none { it.id == id } == true) return@update state
+    state.copy(selectedClipIds = if (id in state.selectedClipIds) state.selectedClipIds - id else state.selectedClipIds + id)
+}
+
+fun EditorViewModel.clearMultiSelection() = _state.update {
+    it.copy(selectedClipIds = emptySet(), multiSelectMode = false)
+}
+
 /**
  * Per-clip audio gain, 0 (silent) .. 2 (boosted). Applied live to the
  * ExoPlayer preview of the clip and multiplied into the export volume,

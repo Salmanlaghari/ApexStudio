@@ -147,6 +147,7 @@ fun VideoPreviewArea(
     faceCropConfig: FaceCropRenderConfig? = null,
     projectVideoEffectId: String? = null,
     workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+    workspaceEffectIntensityProvider: ((Long) -> Float)? = null,
     onEffectPreviewFailure: (String) -> Unit = {},
     compositionAspectRatio: Float = LOCKED_EDITOR_PREVIEW_ASPECT,
     showFrame: Boolean = true,
@@ -154,8 +155,8 @@ fun VideoPreviewArea(
 ) {
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
-    val workspaceEffectBinding = remember(workspaceEffects) {
-        workspaceEffectPreviewBinding(workspaceEffects)
+    val workspaceEffectBinding = remember(workspaceEffects, workspaceEffectIntensityProvider) {
+        workspaceEffectPreviewBinding(workspaceEffects, workspaceEffectIntensityProvider)
     }
     LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect

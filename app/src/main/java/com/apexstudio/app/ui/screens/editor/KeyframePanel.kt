@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -63,6 +65,7 @@ import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeCurve
 import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.domain.model.KeyframeTrack
+import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlin.math.cos
@@ -111,12 +114,20 @@ fun KeyframePanel(
     onClose: () -> Unit,
     onUpsertParam: (KeyframeParam, Float) -> Unit,
     onPaste: ((Keyframe, Long) -> Unit)? = null,
+    atPlayheadTransform: AnimatedTransform? = null,
+    selectedKeyframeTimeMs: Long? = null,
+    openCurveEditorOnOpen: Boolean = false,
+    onCurveEditorDismiss: () -> Unit = {},
     initialPropertyFilter: KeyframePropertyFilter = KeyframePropertyFilter.ALL
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
     var copiedKeyframe by remember { mutableStateOf<Keyframe?>(null) }
-    var selectedKeyframeId by remember(sorted) {
-        mutableStateOf(sorted.minByOrNull { kotlin.math.abs(it.timeMs - playheadMs) }?.id)
+    var selectedKeyframeId by remember(sorted, selectedKeyframeTimeMs) {
+        val anchorMs = selectedKeyframeTimeMs ?: playheadMs
+        mutableStateOf(sorted.minByOrNull { kotlin.math.abs(it.timeMs - anchorMs) }?.id)
+    }
+    var curveEditorOpen by remember(openCurveEditorOnOpen, selectedKeyframeTimeMs) {
+        mutableStateOf(openCurveEditorOnOpen)
     }
     var propertyFilter by remember(initialPropertyFilter) { mutableStateOf(initialPropertyFilter) }
     val effectiveDuration = clipDurationMs.coerceAtLeast(1000L)
@@ -129,7 +140,7 @@ fun KeyframePanel(
     // a keyframe there (upsert) once the track has keyframes — no
     // manual "+" needed. The inspector (curve chips, Delete) still
     // operates on the SELECTED keyframe.
-    val atPlayhead = track.interpolateAt(playheadMs)
+    val atPlayhead = atPlayheadTransform ?: track.interpolateAt(playheadMs)
 
     Column(
         modifier = Modifier
@@ -235,7 +246,10 @@ fun KeyframePanel(
                                         selectedKeyframeId = kf.id
                                         onUpdate(kf.copy(timeMs = (kf.timeMs + deltaMs).coerceIn(0L, effectiveDuration)))
                                     }
-                                }.clickable { selectedKeyframeId = kf.id },
+                                }.clickable {
+                                    selectedKeyframeId = kf.id
+                                    curveEditorOpen = true
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Box(modifier = Modifier.size(if (isSelected) 14.dp else 10.dp).graphicsLayer(rotationZ = 45f)
@@ -350,48 +364,128 @@ fun KeyframePanel(
                 // The selected pin's interpolation and Bezier preview remain editable in their own sideways card.
                 Column(Modifier.width(280.dp).fillMaxHeight().keyframePanelCard().padding(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("Selected · ${TimeFormat.formatMs(activeKeyframe.timeMs)}", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Interpolation curve", color = ApexPalette.TextSecondary, fontSize = 10.sp)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        KeyframeCurve.values().forEach { curve ->
-                            val active = activeKeyframe.curve == curve
-                            Box(Modifier.clip(RoundedCornerShape(6.dp)).background(if (active) ApexPalette.NeonCyan.copy(alpha = .25f) else ApexPalette.BgElevated)
-                                .border(1.dp, if (active) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(6.dp))
-                                .clickable { onUpdate(activeKeyframe.copy(curve = curve)) }.padding(horizontal = 7.dp, vertical = 5.dp)) {
-                                Text(if (curve == KeyframeCurve.BEZIER) "Bezier" else curve.name.lowercase().replace('_', ' '),
-                                    color = if (active) ApexPalette.NeonCyan else ApexPalette.TextTertiary, fontSize = 9.sp,
-                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
-                            }
-                        }
-                    }
+                    Text("Interpolation · ${curveLabel(activeKeyframe.curve)}", color = ApexPalette.TextSecondary, fontSize = 10.sp)
                     Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Color(0xFF13131F))
-                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp)).padding(8.dp)) {
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp)).clickable { curveEditorOpen = true }.padding(8.dp)) {
                         Canvas(Modifier.fillMaxSize()) {
                             val w = size.width; val h = size.height
                             drawLine(Color(0xFF2E2E3E), Offset(0f, h / 2f), Offset(w, h / 2f), 1f)
                             val path = Path()
                             for (i in 0..60) {
                                 val t = i / 60f
-                                val eased = when (activeKeyframe.curve) {
-                                    KeyframeCurve.LINEAR -> t
-                                    KeyframeCurve.EASE_IN -> t * t
-                                    KeyframeCurve.EASE_OUT -> 1f - (1f - t) * (1f - t)
-                                    KeyframeCurve.EASE_IN_OUT -> if (t < .5f) 2f * t * t else 1f - 2f * (1f - t) * (1f - t)
-                                    KeyframeCurve.BEZIER -> t * t * (3f - 2f * t)
-                                    KeyframeCurve.HOLD -> if (t < 1f) 0f else 1f
-                                    KeyframeCurve.OVERSHOOT -> { val c1 = 1.70158f; val c3 = c1 + 1f; 1f + c3 * (t - 1f).pow(3) + c1 * (t - 1f).pow(2) }
-                                    KeyframeCurve.SPRING -> if (t <= 0f) 0f else if (t >= 1f) 1f else 1f - exp(-6f * t) * cos(11f * t)
-                                }
+                                val eased = curveProgress(activeKeyframe.curve, t)
                                 val px = t * w; val py = h - eased * h
                                 if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
                             }
                             drawPath(path, ApexPalette.NeonCyan, style = Stroke(width = 2.5f))
                             drawCircle(ApexPalette.TextPrimary, 4f, Offset(0f, h)); drawCircle(ApexPalette.NeonCyan, 4f, Offset(w, 0f))
                         }
-                        Text("${activeKeyframe.curve.name} · drag the pin above to change time", color = ApexPalette.TextSecondary, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
+                        Text("Tap to edit curve", color = ApexPalette.TextSecondary, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
                     }
                 }
             }
         }
+    }
+    if (curveEditorOpen && activeKeyframe != null) {
+        CurveEditorBottomSheet(
+            selected = activeKeyframe.curve,
+            onSelect = { curve ->
+                onUpdate(activeKeyframe.copy(curve = curve))
+                curveEditorOpen = false
+                onCurveEditorDismiss()
+            },
+            onDismiss = {
+                curveEditorOpen = false
+                onCurveEditorDismiss()
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CurveEditorBottomSheet(
+    selected: KeyframeCurve,
+    onSelect: (KeyframeCurve) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val curves = listOf(KeyframeCurve.LINEAR, KeyframeCurve.BEZIER, KeyframeCurve.EASE_IN, KeyframeCurve.EASE_OUT)
+    val selectedChoice = selected.curveChoice()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ApexPalette.BgElevated,
+        contentColor = ApexPalette.TextPrimary,
+        modifier = Modifier.testTag("curve-editor-bottom-sheet")
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Curve editor", color = ApexPalette.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Choose how this keyframe eases into the next one.", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            Box(
+                Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgBase).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp)).padding(10.dp)
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    drawLine(ApexPalette.BorderGlass, Offset(0f, h), Offset(w, 0f), 1f)
+                    val path = Path()
+                    for (i in 0..60) {
+                        val t = i / 60f
+                        val eased = curveProgress(selectedChoice, t)
+                        val point = Offset(t * w, h - eased * h)
+                        if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                    }
+                    drawPath(path, ApexPalette.NeonCyan, style = Stroke(width = 3f))
+                    drawCircle(Color.White, 4f, Offset(0f, h))
+                    drawCircle(ApexPalette.NeonCyan, 4f, Offset(w, 0f))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                curves.forEach { curve ->
+                    val active = curve == selectedChoice
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                            .background(if (active) ApexPalette.NeonCyan.copy(alpha = .2f) else ApexPalette.BgBase)
+                            .border(1.dp, if (active) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                            .clickable { onSelect(curve) }
+                            .testTag("curve-option-${curve.name.lowercase()}")
+                            .padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(curveLabel(curve), color = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                            fontSize = 11.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun KeyframeCurve.curveChoice(): KeyframeCurve = when (this) {
+    KeyframeCurve.LINEAR -> KeyframeCurve.LINEAR
+    KeyframeCurve.EASE_IN -> KeyframeCurve.EASE_IN
+    KeyframeCurve.EASE_OUT -> KeyframeCurve.EASE_OUT
+    else -> KeyframeCurve.BEZIER
+}
+
+private fun curveLabel(curve: KeyframeCurve): String = when (curve.curveChoice()) {
+    KeyframeCurve.LINEAR -> "Linear"
+    KeyframeCurve.BEZIER -> "Smooth"
+    KeyframeCurve.EASE_IN -> "Ease In"
+    KeyframeCurve.EASE_OUT -> "Ease Out"
+    else -> "Smooth"
+}
+
+private fun curveProgress(curve: KeyframeCurve, fraction: Float): Float {
+    val t = fraction.coerceIn(0f, 1f)
+    return when (curve.curveChoice()) {
+        KeyframeCurve.LINEAR -> t
+        KeyframeCurve.EASE_IN -> t * t
+        KeyframeCurve.EASE_OUT -> 1f - (1f - t) * (1f - t)
+        else -> t * t * (3f - 2f * t)
     }
 }
 

@@ -2,6 +2,10 @@ package com.apexstudio.app.presentation.state
 
 import com.apexstudio.app.domain.model.*
 
+/** Timeline scale bounds: approximately 5 ms/px at max and 2000 ms/px at min (54 dp/s base). */
+const val TIMELINE_MIN_ZOOM: Float = 0.01f
+const val TIMELINE_MAX_ZOOM: Float = 3.7f
+
 data class EditorState(
     val project: Project? = null,
     val isPlaying: Boolean = false,
@@ -10,6 +14,8 @@ data class EditorState(
     val zoomLevel: Float = 1f,
     val selectedTool: EditorTool = EditorTool.TRIM,
     val selectedClipId: String? = null,
+    val selectedClipIds: Set<String> = emptySet(),
+    val multiSelectMode: Boolean = false,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val bpm: Int = 128,
@@ -77,6 +83,8 @@ data class EditorState(
     // Ephemeral editor UI context: opens the manual keyframe panel at a
     // selected video property. This is intentionally not part of Project.
     val keyframePropertyFilter: String? = null,
+    val keyframeSelectedTimeMs: Long? = null,
+    val keyframeCurveEditorOpen: Boolean = false,
     // Real-time FX (VHS, Glitch, Grain, …). activeFxId == null means
     // no FX; intensity is the 0..1 slider exposed in the FX panel.
     // fxSpeed (0.1–4x) drives the animation rate of time-based

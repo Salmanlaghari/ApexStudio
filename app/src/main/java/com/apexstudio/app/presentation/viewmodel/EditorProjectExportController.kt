@@ -31,7 +31,13 @@ internal fun buildProjectExportConfig(
     bitrateMbps = settings.bitrateMbps,
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
+    signature = state.project?.signature,
     videoDrawings = state.project?.videoDrawings.orEmpty(),
+    sharedVideoClips = state.project?.let { project ->
+        project.clips.mapNotNull { clip ->
+            project.sharedVideoClip(clip.id)?.let { clip.id to it }
+        }.toMap()
+    }.orEmpty(),
     adjustments = state.adjustments,
     fxPreset = FxPreset.byId(state.activeFxId),
     fxIntensity = state.fxIntensity,

@@ -1,13 +1,17 @@
 package com.apexstudio.app.domain.model
 
 import androidx.annotation.FloatRange
+import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import com.apexstudio.app.domain.model.timeline.FloatType
 import com.apexstudio.app.domain.model.timeline.Interpolator
+import com.apexstudio.app.domain.model.timeline.Keyframe
 import com.apexstudio.app.domain.model.timeline.Timeline
+import com.apexstudio.app.domain.model.timeline.AndroidUriSerializer
+import com.apexstudio.app.domain.model.timeline.ComposeColorSerializer
 
 /** How a main-track video is placed inside the fixed project composition frame. */
 @Serializable
@@ -926,6 +930,24 @@ enum class SpeedPreset(val label: String, val multiplier: Float) {
 }
 
 @Serializable
+enum class SignatureCorner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+/** Optional project-owned branding, rendered above every other composition layer. */
+@Serializable
+data class Signature(
+    val text: String = "",
+    @Serializable(with = AndroidUriSerializer::class)
+    val logoUri: Uri? = null,
+    val position: SignatureCorner = SignatureCorner.BOTTOM_RIGHT,
+    val fontSize: Float = 18f,
+    @Serializable(with = ComposeColorSerializer::class)
+    val color: Color = Color.White,
+    val alpha: Float = 0.75f,
+    val marginDp: Float = 16f,
+    val alwaysOn: Boolean = true
+)
+
+@Serializable
 data class Project(
     val id: String,
     val name: String,
@@ -985,7 +1007,13 @@ data class Project(
      */
     val timingModelVersion: Int = 0,
     /** Shared sealed-track timeline; empty by default for existing saved projects. */
-    val timeline: Timeline = Timeline()
+    val timeline: Timeline = Timeline(),
+    /** Video lanes hidden in the editor; default-empty keeps older project JSON compatible. */
+    val hiddenVideoLayers: Set<Int> = emptySet(),
+    /** Video lanes locked against editing; default-empty keeps older project JSON compatible. */
+    val lockedVideoLayers: Set<Int> = emptySet(),
+    /** Optional branding layer; missing in older projects and therefore omitted by default. */
+    val signature: Signature? = null
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {
@@ -1035,6 +1063,9 @@ data class AudioTrack(
      * ramps at the track edges). Empty = scalar [volume] applies.
      */
     val volumeKeyframes: List<VolumeKeyframe> = emptyList(),
+    /** Stereo pan in -1..1; animation is stored as typed timeline keys. */
+    val pan: Float = 0f,
+    val panKeyframes: List<Keyframe<Float>> = emptyList(),
     // Per-track trim + fade (all in ms, relative to the source media).
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
@@ -1079,6 +1110,8 @@ data class AudioTrack(
     fun effectiveVolumeAt(timeMs: Long): Float =
         if (isMuted) 0f else volumeAt(timeMs).coerceIn(0f, 1f)
 
+    fun panAt(timeMs: Long): Float = interpolatePanKeyframes(panKeyframes.sortedBy { it.timeMs }, pan, timeMs)
+
     companion object {
         /**
          * Pure interpolation over a pre-sorted volume-keyframe list.
@@ -1105,6 +1138,13 @@ data class AudioTrack(
             }
             return fallback
         }
+
+        /** Pure interpolation over a pre-sorted typed pan track. */
+        fun interpolatePanKeyframes(
+            sorted: List<Keyframe<Float>>,
+            fallback: Float,
+            timeMs: Long
+        ): Float = if (sorted.isEmpty()) fallback else Interpolator.valueAt(sorted, timeMs, FloatType)
     }
 }
 

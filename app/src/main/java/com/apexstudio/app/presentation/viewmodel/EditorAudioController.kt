@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.domain.model.timeline.collectAllTimecodes
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,7 +51,11 @@ fun EditorViewModel.toggleRippleEdit() {
  * Magnetically snaps [timeMs] to adjacent cut points, keyframes, or beat drop markers
  * if within [snapThresholdMs].
  */
-fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 150L): Long {
+fun EditorViewModel.findMagneticSnapPoint(
+    timeMs: Long,
+    snapThresholdMs: Long = 150L,
+    excludeClipId: String? = null
+): Long {
     val state = _state.value
     if (!state.magneticSnapping) {
         return if (state.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
@@ -58,6 +63,9 @@ fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 
     val candidates = mutableListOf<Long>()
     val project = state.project
     if (project != null) {
+        // The typed timeline is canonical for every lane/property. Keep the legacy
+        // candidates below as a compatibility safety net while old editors migrate.
+        candidates.addAll(project.timeline.collectAllTimecodes())
         var accMs = 0L
         candidates.add(0L)
         for (clip in project.clips) {
@@ -66,21 +74,24 @@ fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 
                 val duration = SpeedCurveMath.effectiveDurationMs(
                     end - clip.trimStartMs, SpeedCurveMath.sanitize(clip.speedPoints)
                 )
+                val isMovingClip = clip.id == excludeClipId
                 when {
                     clip.type == ClipType.OVERLAY -> {
                         // Overlays are placed independently; they never advance V1.
                         val start = clip.timelineOffsetMs.coerceAtLeast(0L)
-                        candidates.add(start)
-                        candidates.add(saturatedSnapEnd(start, duration))
+                        if (!isMovingClip) {
+                            candidates.add(start)
+                            candidates.add(saturatedSnapEnd(start, duration))
+                        }
                     }
                     clip.trackIndex == 0 && (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE) -> {
                         accMs = saturatedSnapEnd(accMs, duration)
-                        candidates.add(accMs)
+                        if (!isMovingClip) candidates.add(accMs)
                     }
                 }
             }
             // Persisted clip keyframes and timeline diamonds use absolute project time.
-            candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
+            if (clip.id != excludeClipId) candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
         }
     }
     if (state.snapToBeat) {
@@ -180,20 +191,28 @@ fun EditorViewModel.toggleMute(trackId: String) = toggleAudioTrackMute(trackId)
 
 fun EditorViewModel.setTrackVolume(trackId: String, vol: Float) = setAudioTrackVolume(trackId, vol)
 
-fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) {
-    // Dual-write (same split-brain rule as volume): the old
-    // _audio-only write never reached preview/export/persistence.
-    val solo = pan > 0.5f
-    logAudioTrackMismatch(trackId, "setTrackPanning")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(isSolo = solo) else it
-        }))
+fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) = setAudioTrackPan(trackId, pan)
+
+fun EditorViewModel.setAudioTrackPan(trackId: String, pan: Float) {
+    val safePan = pan.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
+    val original = _state.value.project ?: return
+    logAudioTrackMismatch(trackId, "setAudioTrackPan")
+    val updatedAudio = original.audioTracks.map { track ->
+        if (track.id == trackId) track.copy(pan = safePan) else track
     }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = solo) else it })
+    val normalized = original.copy(audioTracks = updatedAudio).syncSharedTimeline(importLegacyAnimation = true)
+    val sharedId = "shared-audio-$trackId"
+    val updatedTimeline = normalized.timeline.tracks.map { track ->
+        if (track is com.apexstudio.app.domain.model.timeline.AudioTrack && track.id == sharedId) {
+            track.copy(
+                pan = safePan,
+                clips = track.clips.map { if (it.id == trackId) it.copy(pan = safePan) else it }
+            )
+        } else track
     }
+    val updatedProject = normalized.copy(audioTracks = updatedAudio, timeline = com.apexstudio.app.domain.model.timeline.Timeline(updatedTimeline))
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
+    _audio.update { state -> state.copy(tracks = state.tracks.map { if (it.id == trackId) it.copy(pan = safePan) else it }) }
     persistProject()
 }
 

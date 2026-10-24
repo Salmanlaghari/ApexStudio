@@ -92,9 +92,13 @@ data class VideoClip(
     val filter: String? = null,
     val filterIntensity: Float = 1f,
     val filterKeyframes: List<Keyframe<Float>> = emptyList(),
+    val effectIntensity: Float = 1f,
+    val effectIntensityKeyframes: List<Keyframe<Float>> = emptyList(),
     val lutId: String? = null,
     val lutIntensity: Float = 1f,
     val lutKeyframes: List<Keyframe<Float>> = emptyList(),
+    val saturation: Float = 1f,
+    val saturationKeyframes: List<Keyframe<Float>> = emptyList(),
     val mask: Mask? = null,
     val chromaKey: ChromaKey? = null,
     val blendMode: BlendMode = BlendMode.NORMAL,
@@ -106,7 +110,9 @@ data class VideoClip(
 ) {
     fun opacityAt(timeMs: Long): Float = sample(opacityKeyframes, opacity, timeMs, FloatType)
     fun filterIntensityAt(timeMs: Long): Float = sample(filterKeyframes, filterIntensity, timeMs, FloatType)
+    fun effectIntensityAt(timeMs: Long): Float = sample(effectIntensityKeyframes, effectIntensity, timeMs, FloatType)
     fun lutIntensityAt(timeMs: Long): Float = sample(lutKeyframes, lutIntensity, timeMs, FloatType)
+    fun saturationAt(timeMs: Long): Float = sample(saturationKeyframes, saturation, timeMs, FloatType)
     fun volumeAt(timeMs: Long): Float = sample(volumeKeyframes, volume, timeMs, FloatType)
     fun panAt(timeMs: Long): Float = sample(panKeyframes, pan, timeMs, FloatType)
 }
@@ -158,6 +164,8 @@ data class TextItem(
     val positionKeyframes: List<Keyframe<XY>> = emptyList(),
     val scale: Float = 1f,
     val scaleKeyframes: List<Keyframe<Float>> = emptyList(),
+    val rotationDeg: Float = 0f,
+    val rotationKeyframes: List<Keyframe<Float>> = emptyList(),
     @Serializable(with = ComposeColorSerializer::class)
     val color: Color = Color.White,
     val colorKeyframes: List<Keyframe<@Serializable(with = ComposeColorSerializer::class) Color>> = emptyList(),
@@ -168,6 +176,7 @@ data class TextItem(
 ) {
     fun positionAt(timeMs: Long): XY = sample(positionKeyframes, position, timeMs, XYType)
     fun scaleAt(timeMs: Long): Float = sample(scaleKeyframes, scale, timeMs, FloatType)
+    fun rotationAt(timeMs: Long): Float = sample(rotationKeyframes, rotationDeg, timeMs, FloatType)
     fun colorAt(timeMs: Long): Color = sample(colorKeyframes, color, timeMs, ColorType)
     fun alphaAt(timeMs: Long): Float = sample(alphaKeyframes, alpha, timeMs, FloatType)
 }
@@ -176,6 +185,8 @@ data class TextItem(
 data class StickerItem(
     val id: String = UUID.randomUUID().toString(),
     val symbolOrUri: String,
+    val position: XY = XY(0.5f, 0.5f),
+    val positionKeyframes: List<Keyframe<XY>> = emptyList(),
     val scale: Float = 1f,
     val scaleKeyframes: List<Keyframe<Float>> = emptyList(),
     val rotationDeg: Float = 0f,
@@ -185,6 +196,7 @@ data class StickerItem(
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE
 ) {
+    fun positionAt(timeMs: Long): XY = sample(positionKeyframes, position, timeMs, XYType)
     fun scaleAt(timeMs: Long): Float = sample(scaleKeyframes, scale, timeMs, FloatType)
     fun rotationAt(timeMs: Long): Float = sample(rotationKeyframes, rotationDeg, timeMs, FloatType)
     fun alphaAt(timeMs: Long): Float = sample(alphaKeyframes, alpha, timeMs, FloatType)
@@ -213,9 +225,13 @@ sealed interface OverlayItem {
         val filter: String? = null,
         val filterIntensity: Float = 1f,
         val filterKeyframes: List<Keyframe<Float>> = emptyList(),
+        val effectIntensity: Float = 1f,
+        val effectIntensityKeyframes: List<Keyframe<Float>> = emptyList(),
         val lutId: String? = null,
         val lutIntensity: Float = 1f,
         val lutKeyframes: List<Keyframe<Float>> = emptyList(),
+        val saturation: Float = 1f,
+        val saturationKeyframes: List<Keyframe<Float>> = emptyList(),
         val mask: Mask? = null,
         val chromaKey: ChromaKey? = null,
         val blendMode: BlendMode = BlendMode.NORMAL,

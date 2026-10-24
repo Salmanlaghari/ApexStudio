@@ -176,10 +176,12 @@ fun EditorViewModel.startExport(
             // curve; constant [clipSpeed] is the no-curve fallback.
             speedPoints = selected?.speedPoints ?: emptyList(),
             keyframes = selected?.keyframes ?: KeyframeTrack(),
+            sharedVideoClip = selected?.let { clip -> s.project?.sharedVideoClip(clip.id) },
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
             // Shape mask (Mask tool) on the main clip.
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
+            signature = s.project?.signature,
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),
             videoDrawingClipId = selected?.id,
@@ -565,6 +567,7 @@ internal fun buildPhotoExportConfig(
         arFilterIntensity = s.arFilterIntensity,
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
+        signature = s.project?.signature,
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,

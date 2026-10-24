@@ -1,5 +1,6 @@
 package com.apexstudio.app.domain.model.timeline
 
+import android.graphics.RectF
 import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
 
@@ -48,6 +49,15 @@ object XYType : Type<XY> {
     override fun interpolate(start: XY, end: XY, fraction: Float): XY = XY(
         x = FloatType.interpolate(start.x, end.x, fraction),
         y = FloatType.interpolate(start.y, end.y, fraction)
+    )
+}
+
+object RectFType : Type<RectF> {
+    override fun interpolate(start: RectF, end: RectF, fraction: Float): RectF = RectF(
+        FloatType.interpolate(start.left, end.left, fraction),
+        FloatType.interpolate(start.top, end.top, fraction),
+        FloatType.interpolate(start.right, end.right, fraction),
+        FloatType.interpolate(start.bottom, end.bottom, fraction)
     )
 }
 

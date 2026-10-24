@@ -240,6 +240,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
   implementation(libs.androidx.navigation.compose)
   implementation(libs.coil.compose)
 

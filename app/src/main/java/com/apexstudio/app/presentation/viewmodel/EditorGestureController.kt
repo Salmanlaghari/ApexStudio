@@ -39,7 +39,7 @@ internal object GestureEditPlanner {
 
     fun timelineZoom(current: Float, factor: Float): Float? {
         if (!current.isFinite() || !factor.isFinite() || factor !in .8f..1.25f) return null
-        return (current * factor).coerceIn(.5f, 10f).takeIf { it != current }
+        return (current * factor).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM).takeIf { it != current }
     }
 }
 

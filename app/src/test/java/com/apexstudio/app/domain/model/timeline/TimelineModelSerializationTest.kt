@@ -113,11 +113,29 @@ class TimelineModelSerializationTest {
 
         val project = com.apexstudio.app.domain.model.Project(
             id = "timeline-project", name = "Timeline project", durationMs = 1_000L,
-            timeline = restored
+            timeline = restored,
+            hiddenVideoLayers = setOf(2),
+            lockedVideoLayers = setOf(3),
+            signature = com.apexstudio.app.domain.model.Signature(
+                text = "@apex",
+                logoUri = Uri.parse("file:///signature.png"),
+                position = com.apexstudio.app.domain.model.SignatureCorner.TOP_LEFT,
+                fontSize = 22f,
+                color = Color(0.2f, 0.4f, 0.6f, 0.8f),
+                alpha = 0.7f,
+                marginDp = 18f,
+                alwaysOn = true
+            )
         )
         val projectJson = json.encodeToString(com.apexstudio.app.domain.model.Project.serializer(), project)
         val restoredProject = json.decodeFromString<com.apexstudio.app.domain.model.Project>(projectJson)
         assertEquals(6, restoredProject.timeline.tracks.size)
         assertEquals(Uri.parse("file:///video.mp4"), (restoredProject.timeline.tracks[0] as VideoTrack).clips.single().uri)
+        assertEquals(setOf(2), restoredProject.hiddenVideoLayers)
+        assertEquals(setOf(3), restoredProject.lockedVideoLayers)
+        assertEquals(Uri.parse("file:///signature.png"), restoredProject.signature?.logoUri)
+        assertEquals("@apex", restoredProject.signature?.text)
+        assertEquals(0.6f, restoredProject.signature?.color?.blue ?: 0f, 0.001f)
+        assertTrue(restoredProject.signature?.alwaysOn == true)
     }
 }

@@ -242,6 +242,8 @@ fun ContextualBottomToolbar(
     // sidebar pills. Toggles the selected track's isMuted.
     onToggleTrackMute: () -> Unit,
     isTrackMuted: Boolean = false,
+    onToggleTrackSolo: () -> Unit = {},
+    isTrackSolo: Boolean = false,
     modifier: Modifier = Modifier,
     // New top-level entry points. Defaults preserve existing callers until
     // EditorScreen supplies its app-specific panel / media-picker routes.
@@ -440,6 +442,12 @@ fun ContextualBottomToolbar(
                     if (isTrackMuted) "Unmute" else "Mute",
                     if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
                     onClick = onToggleTrackMute
+                ))
+                add(CtxToolItem(
+                    if (isTrackSolo) "Unsolo" else "Solo",
+                    Icons.Default.GraphicEq,
+                    if (isTrackSolo) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                    onClick = onToggleTrackSolo
                 ))
             }
             add(CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete))
@@ -1021,6 +1029,10 @@ fun EditorBottomToolbarSection(
             selectedAudioTrack?.let { vm.toggleAudioTrackMute(it.id) }
         },
         isTrackMuted = selectedAudioTrack?.isMuted == true,
+        onToggleTrackSolo = {
+            selectedAudioTrack?.let { vm.toggleAudioTrackSolo(it.id) }
+        },
+        isTrackSolo = selectedAudioTrack?.isSolo == true,
         onText = { vm.openTextPanel() },
         onDraw = onDraw,
         onEffects = onEffectsWorkspace,

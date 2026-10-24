@@ -16,10 +16,13 @@ internal data class WorkspaceEffectPreviewBinding(
  * draft model alongside the GL chain makes preset/range/strength changes invalidation keys.
  */
 @OptIn(UnstableApi::class)
-internal fun workspaceEffectPreviewBinding(effects: List<WorkspaceEffect>): WorkspaceEffectPreviewBinding {
+internal fun workspaceEffectPreviewBinding(
+    effects: List<WorkspaceEffect>,
+    frameIntensityProvider: ((Long) -> Float)? = null
+): WorkspaceEffectPreviewBinding {
     val snapshot = effects.toList()
     return WorkspaceEffectPreviewBinding(
         sourceEffects = snapshot,
-        renderEffects = WorkspaceEffectGlEffect.createEffects(snapshot),
+        renderEffects = WorkspaceEffectGlEffect.createEffects(snapshot, frameIntensityProvider = frameIntensityProvider),
     )
 }

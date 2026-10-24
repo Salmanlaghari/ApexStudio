@@ -6,8 +6,10 @@ import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.SpeedPoint
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -47,6 +49,18 @@ class EditorTimelineSnappingTest {
         assertEquals(20_000L, vm.findMagneticSnapPoint(19_920L))
         assertEquals(36_000L, vm.findMagneticSnapPoint(36_080L))
         assertEquals(12_020L, vm.findMagneticSnapPoint(12_020L))
+    }
+
+    @Test fun movingClipCanExcludeItsOwnBoundariesFromSnapCandidates() {
+        val overlay = clip("overlay", 8_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 1,
+            timelineOffsetMs = 20_000L
+        )
+        val vm = editor(clip("main", 4_000L), overlay)
+
+        assertEquals(20_080L, vm.findMagneticSnapPoint(20_080L, 150L, excludeClipId = "overlay"))
+        assertEquals(20_000L, vm.findMagneticSnapPoint(20_080L))
     }
 
     @Test fun absoluteKeyframesAreNotOffsetAgainForLaterClips() {
@@ -98,5 +112,91 @@ class EditorTimelineSnappingTest {
         vm._state.update { it.copy(snapToBeat = true, beatMarkersMs = listOf(1_100L, 900L)) }
         assertEquals(900L, vm.findNearestBeat(1_000L))
         assertEquals(900L, vm.findMagneticSnapPoint(1_000L))
+    }
+
+    @Test fun sharedTimelineKeyframesParticipateInMagneticSnapping() {
+        val vm = editor(clip("main", 10_000L))
+        val sharedClip = com.apexstudio.app.domain.model.timeline.VideoClip(
+            id = "main",
+            uri = android.net.Uri.parse("file:///main.mp4"),
+            inMs = 0L,
+            outMs = 10_000L,
+            opacityKeyframes = listOf(
+                com.apexstudio.app.domain.model.timeline.Keyframe(6_200L, 0.5f)
+            )
+        )
+        vm._state.update { state ->
+            val project = state.project!!
+            state.copy(project = project.copy(timeline = com.apexstudio.app.domain.model.timeline.Timeline(
+                tracks = listOf(com.apexstudio.app.domain.model.timeline.VideoTrack(
+                    id = "v1", lane = 0, clips = listOf(sharedClip)
+                ))
+            )))
+        }
+
+        assertEquals(6_200L, vm.findMagneticSnapPoint(6_250L, 100L))
+    }
+
+    @Test fun clipOffsetCommitAppliesMagneticToggleAndZoomScaledTolerance() {
+        val overlay = clip("overlay", 2_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 1,
+            timelineOffsetMs = 12_000L
+        )
+        val vm = editor(clip("main", 4_000L), overlay)
+
+        vm.setClipTimelineOffset("overlay", 4_080L)
+        assertEquals(4_000L, vm._state.value.project!!.clips.single { it.id == "overlay" }.timelineOffsetMs)
+
+        vm.toggleMagneticSnapping()
+        vm.setClipTimelineOffset("overlay", 4_080L)
+        assertEquals(4_080L, vm._state.value.project!!.clips.single { it.id == "overlay" }.timelineOffsetMs)
+    }
+
+    @Test fun clearKeyframesAlsoClearsMaskAndDrawingKeysWithoutRemovingTheirContent() {
+        val base = clip("main", 1_000L)
+        val typed = com.apexstudio.app.domain.model.timeline.VideoClip(
+            id = "main",
+            uri = android.net.Uri.parse("file:///main.mp4"),
+            inMs = 0L,
+            outMs = 1_000L,
+            mask = com.apexstudio.app.domain.model.timeline.Mask.Shape(
+                kind = com.apexstudio.app.domain.model.timeline.Mask.Kind.RECTANGLE,
+                rect = android.graphics.RectF(0f, 0f, 1f, 1f),
+                keyframes = listOf(com.apexstudio.app.domain.model.timeline.Keyframe(
+                    300L, android.graphics.RectF(0f, 0f, 0.5f, 0.5f)
+                ))
+            ),
+            drawingLayer = com.apexstudio.app.domain.model.timeline.DrawingLayer(
+                globalAlphaKeyframes = listOf(com.apexstudio.app.domain.model.timeline.Keyframe(400L, 0.5f)),
+                strokes = listOf(com.apexstudio.app.domain.model.timeline.Stroke(
+                    points = listOf(androidx.compose.ui.geometry.Offset(0.1f, 0.2f)),
+                    color = androidx.compose.ui.graphics.Color.White,
+                    width = 2f,
+                    tool = com.apexstudio.app.domain.model.timeline.Tool.PEN,
+                    startMs = 0L,
+                    alphaKeyframes = listOf(com.apexstudio.app.domain.model.timeline.Keyframe(500L, 0.7f))
+                ))
+            )
+        )
+        val vm = editor(base)
+        vm._state.update { state ->
+            val project = state.project!!
+            state.copy(project = project.copy(timeline = com.apexstudio.app.domain.model.timeline.Timeline(
+                tracks = listOf(com.apexstudio.app.domain.model.timeline.VideoTrack(
+                    id = "v1", lane = 0, clips = listOf(typed)
+                ))
+            )))
+        }
+
+        vm.clearKeyframes("main")
+
+        val result = vm._state.value.project!!.sharedVideoClip("main")!!
+        assertEquals(emptyList<Long>(), result.animationKeyframeTimes())
+        assertTrue(result.mask is com.apexstudio.app.domain.model.timeline.Mask.Shape)
+        assertTrue((result.mask as com.apexstudio.app.domain.model.timeline.Mask.Shape).keyframes.isEmpty())
+        assertEquals(1, result.drawingLayer!!.strokes.size)
+        assertTrue(result.drawingLayer!!.globalAlphaKeyframes.isEmpty())
+        assertTrue(result.drawingLayer!!.strokes.single().alphaKeyframes.isEmpty())
     }
 }

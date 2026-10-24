@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
 import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
@@ -86,11 +88,15 @@ fun TimelineTrackArea(
     onDuplicateClip: (clipId: String) -> Unit,
     onDeleteClip: (clipId: String) -> Unit,
     onDeleteClips: (Set<String>) -> Unit,
+    onToggleMultiSelect: () -> Unit,
+    onToggleSelectedClip: (String) -> Unit,
+    onClearMultiSelection: () -> Unit,
     onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit,
     onSetClipOffset: (clipId: String, offsetMs: Long) -> Unit,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit,
     onToggleKeyframeAtPlayhead: (clipId: String) -> Unit,
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit,
+    onSelectKeyframe: (clipId: String, timeMs: Long) -> Unit = { _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit,
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit,
     onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit,
@@ -135,12 +141,10 @@ fun TimelineTrackArea(
         }
     }
 
-    // ms-per-dp at the current zoom — mirrors VideoTimeline's scaling
-    // (54dp/s x zoom, clamped to 24..540dp/s) so extraction windows,
-    // cell positions and the ruler all agree.
+    // ms-per-dp at the current zoom — mirrors VideoTimeline's 54dp/s
+    // base scale so extraction windows, cell positions and the ruler agree.
     val msToDp = remember(state.timelineZoom) {
-        ((54.dp * state.timelineZoom.coerceIn(0.5f, 10f))
-            .coerceIn(24.dp, 540.dp)).value / 1000f
+        (54.dp * state.timelineZoom.coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)).value / 1000f
     }
     // One frame per 64dp of clip width; the ms interval follows zoom.
     val frameIntervalMs = remember(msToDp) {
@@ -374,8 +378,12 @@ fun TimelineTrackArea(
             onTrimClip = onTrimClip,
             onMoveClipOffset = onSetClipOffset,
             onDeleteClips = onDeleteClips,
+            onToggleMultiSelect = onToggleMultiSelect,
+            onToggleSelectedClip = onToggleSelectedClip,
+            onClearMultiSelection = onClearMultiSelection,
             onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
             onMoveKeyframe = onMoveKeyframe,
+            onSelectKeyframe = onSelectKeyframe,
             onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
             onMoveTextKeyframe = onMoveTextKeyframe,
             onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
@@ -490,7 +498,11 @@ fun BottomTimelineActionRow(
                     onClick = onZoomOut
                 )
                 Text(
-                    text = String.format(java.util.Locale.US, "%.1fx", timelineZoom),
+                    text = String.format(
+                        java.util.Locale.US,
+                        if (timelineZoom < 0.1f) "%.2fx" else "%.1fx",
+                        timelineZoom
+                    ),
                     color = EditorPalette.TextPrimary,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,

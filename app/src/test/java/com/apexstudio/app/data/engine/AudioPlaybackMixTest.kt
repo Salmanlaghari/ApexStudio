@@ -79,8 +79,8 @@ class AudioPlaybackMixTest {
     fun `pan produces distinct stereo gains and samples typed pan keyframes`() {
         val base = track(startMs = 0L, trimStartMs = 0L, trimEndMs = 10_000L)
         assertEquals(1f to 1f, AudioPlaybackMix.stereoGainsAt(base, 0L))
-        assertEquals(0f to 1f, AudioPlaybackMix.stereoGainsAt(base.copy(pan = -1f), 0L))
-        assertEquals(1f to 0f, AudioPlaybackMix.stereoGainsAt(base.copy(pan = 1f), 0L))
+        assertEquals(1f to 0f, AudioPlaybackMix.stereoGainsAt(base.copy(pan = -1f), 0L))
+        assertEquals(0f to 1f, AudioPlaybackMix.stereoGainsAt(base.copy(pan = 1f), 0L))
 
         val animated = base.copy(
             panKeyframes = listOf(
@@ -88,7 +88,7 @@ class AudioPlaybackMixTest {
                 Keyframe(1_000L, 1f, Curve.LINEAR)
             )
         )
-        assertEquals(1f to 0f, AudioPlaybackMix.stereoGainsAt(animated, 1_000L))
+        assertEquals(0f to 1f, AudioPlaybackMix.stereoGainsAt(animated, 1_000L))
         assertEquals(1f to 1f, AudioPlaybackMix.stereoGainsAt(animated, 500L))
     }
 }

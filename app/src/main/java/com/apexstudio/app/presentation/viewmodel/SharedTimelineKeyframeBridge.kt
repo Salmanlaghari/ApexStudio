@@ -509,9 +509,15 @@ private fun VideoClip.toLegacyKeyframeTrack(existing: KeyframeTrack): KeyframeTr
     val existingByTime = existing.keyframes.associateBy(LegacyKeyframe::timeMs)
     val output = times.mapIndexed { index, time ->
         val value = animationAt(time)
-        val previousCurve = times.getOrNull(index - 1)?.let(::curveAt)
+        val existingKey = existingByTime[time]
+        val segmentCurve = times.getOrNull(index - 1)?.let(::curveAt)?.toLegacyCurve()
+        val legacyCurve = when {
+            existingKey == null -> segmentCurve ?: KeyframeCurve.LINEAR
+            segmentCurve == null || segmentCurve == existingKey.curve -> existingKey.curve
+            else -> segmentCurve
+        }
         LegacyKeyframe(
-            id = existingByTime[time]?.id ?: "shared-$id-$time",
+            id = existingKey?.id ?: "shared-$id-$time",
             timeMs = time,
             translateX = value.position.x,
             translateY = value.position.y,
@@ -521,8 +527,8 @@ private fun VideoClip.toLegacyKeyframeTrack(existing: KeyframeTrack): KeyframeTr
             volume = value.volume,
             effectIntensity = value.effectIntensity,
             filterIntensity = value.filterIntensity,
-            saturation = value.saturation.takeIf { saturationKeyframes.isNotEmpty() },
-            curve = previousCurve?.toLegacyCurve() ?: KeyframeCurve.LINEAR
+            saturation = value.saturation.takeIf { saturationKeyframes.any { key -> key.timeMs == time } },
+            curve = legacyCurve
         )
     }
     return KeyframeTrack(output).sorted()

@@ -6,7 +6,6 @@ import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.SpeedPoint
-import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -192,7 +191,16 @@ class EditorTimelineSnappingTest {
         vm.clearKeyframes("main")
 
         val result = vm._state.value.project!!.sharedVideoClip("main")!!
-        assertEquals(emptyList<Long>(), result.animationKeyframeTimes())
+        assertTrue(result.transform.positionKeyframes.isEmpty())
+        assertTrue(result.transform.scaleKeyframes.isEmpty())
+        assertTrue(result.transform.rotationKeyframes.isEmpty())
+        assertTrue(result.opacityKeyframes.isEmpty())
+        assertTrue(result.volumeKeyframes.isEmpty())
+        assertTrue(result.panKeyframes.isEmpty())
+        assertTrue(result.filterKeyframes.isEmpty())
+        assertTrue(result.effectIntensityKeyframes.isEmpty())
+        assertTrue(result.lutKeyframes.isEmpty())
+        assertTrue(result.saturationKeyframes.isEmpty())
         assertTrue(result.mask is com.apexstudio.app.domain.model.timeline.Mask.Shape)
         assertTrue((result.mask as com.apexstudio.app.domain.model.timeline.Mask.Shape).keyframes.isEmpty())
         assertEquals(1, result.drawingLayer!!.strokes.size)

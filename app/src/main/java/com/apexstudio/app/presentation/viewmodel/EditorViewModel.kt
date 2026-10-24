@@ -210,7 +210,7 @@ class EditorViewModel(
         }
         Log.d("ApexTrace", "EditorViewModel.init start")
         context?.let { CrashMarker.mark(it, "EditorViewModel.init start") }
-        loadProject()
+        if (context != null || projectId != null) loadProject()
         loadLuts()
         loadTransmissionTemplates()
         // NOTE: no loadAudioState() — the audio list is synced from the

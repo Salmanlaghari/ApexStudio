@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,8 @@ class TimelineWorkspaceLayoutTest {
         onDeleteClips: (Set<String>) -> Unit = {},
         onSelectAudioTrack: (String) -> Unit = {},
     ) {
+        val multiSelectMode = remember { mutableStateOf(false) }
+        val selectedClipIds = remember { mutableStateOf(emptySet<String>()) }
         Box(Modifier.requiredSize(widthDp.dp, heightDp.dp).testTag("timeline-test-root")) {
             VideoTimeline(
                 clips = clips,
@@ -84,6 +87,20 @@ class TimelineWorkspaceLayoutTest {
                 audioWaveform = audioWaveform,
                 totalDurationMs = 120_000L,
                 playheadMs = playheadMs,
+                multiSelectMode = multiSelectMode.value,
+                selectedClipIds = selectedClipIds.value,
+                onToggleMultiSelect = {
+                    multiSelectMode.value = !multiSelectMode.value
+                    if (!multiSelectMode.value) selectedClipIds.value = emptySet()
+                },
+                onToggleSelectedClip = { id ->
+                    selectedClipIds.value = if (id in selectedClipIds.value) selectedClipIds.value - id
+                    else selectedClipIds.value + id
+                },
+                onClearMultiSelection = {
+                    multiSelectMode.value = false
+                    selectedClipIds.value = emptySet()
+                },
                 onOpenSpeed = {},
                 onOpenTrim = {},
                 onAddMedia = onAddMedia,
@@ -389,6 +406,9 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
             click(Offset(x, center.y))
         }
+        // The ruler also recognizes double-tap-to-fit, so single-tap seek is
+        // delivered after the double-tap timeout has ruled out a second tap.
+        composeRule.mainClock.advanceTimeBy(400L)
         composeRule.runOnIdle { assertTrue("108dp at 54dp/s must seek 2s: $scrubbedMs", kotlin.math.abs(scrubbedMs - 2_000L) <= 2L) }
     }
 

@@ -364,7 +364,7 @@ fun KeyframePanel(
                 // The selected pin's interpolation and Bezier preview remain editable in their own sideways card.
                 Column(Modifier.width(280.dp).fillMaxHeight().keyframePanelCard().padding(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("Selected · ${TimeFormat.formatMs(activeKeyframe.timeMs)}", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Interpolation · ${curveLabel(activeKeyframe.curve)}", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                    Text("Interpolation curve · ${curveLabel(activeKeyframe.curve)}", color = ApexPalette.TextSecondary, fontSize = 10.sp)
                     Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Color(0xFF13131F))
                         .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp)).clickable { curveEditorOpen = true }.padding(8.dp)) {
                         Canvas(Modifier.fillMaxSize()) {

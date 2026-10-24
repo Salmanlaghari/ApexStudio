@@ -116,4 +116,35 @@ class MaskModelTest {
         assertTrue(out.size <= MaskModel.MAX_POINTS)
         assertTrue(out.isNotEmpty())
     }
+
+    @Test
+    fun `normalized pen capture returns frame geometry and a non-empty shape polygon`() {
+        val capture = MaskModel.capturePen(
+            listOf(MaskPoint(0.25f, 0.25f), MaskPoint(0.75f, 0.25f), MaskPoint(0.5f, 0.75f)),
+            frameWidth = 1920f,
+            frameHeight = 1080f
+        )
+        assertEquals(0.5f, capture.centerX, 0.0001f)
+        assertEquals(0.5f, capture.centerY, 0.0001f)
+        assertEquals(0.5f, capture.sizeX, 0.0001f)
+        assertEquals(0.5f, capture.sizeY, 0.0001f)
+        assertTrue(MaskModel.outline(MaskShape.DRAW, capture.points).size >= 4)
+        assertTrue(capture.points.all { it.x in -1f..1f && it.y in -1f..1f })
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `normalized pen capture rejects a degenerate path`() {
+        MaskModel.capturePen(
+            listOf(MaskPoint(0.5f, 0.5f), MaskPoint(0.5f, 0.5f), MaskPoint(0.5f, 0.5f)),
+            frameWidth = 640f,
+            frameHeight = 480f
+        )
+    }
+
+    @Test
+    fun `blur faces is explicitly unavailable rather than an analytic oval`() {
+        assertTrue(!MaskModel.isAvailable(MaskShape.BLUR_FACE))
+        assertTrue(MaskModel.isAvailable(MaskShape.CIRCLE))
+        assertTrue(MaskModel.BLUR_FACES_UNAVAILABLE_REASON.contains("face-region"))
+    }
 }

@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class EditorTimelineSnappingTest {

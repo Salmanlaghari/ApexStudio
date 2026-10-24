@@ -10,6 +10,9 @@ import com.apexstudio.app.domain.model.timeline.moveAnimationKeyframe
 import com.apexstudio.app.domain.model.timeline.removeAnimationKeyframeAt
 
 
+import com.apexstudio.app.domain.model.timeline.sharedStickerItem
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.domain.model.timeline.updateSharedStickerItem
 // Phase D: PiP overlay preview. setOverlayTransform persists the
 // (x, y, scale, opacity) tuple so a pinch-zoom doesn't get clobbered
 // by unrelated state recompositions. setOverlayClip registers /
@@ -59,7 +62,7 @@ fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, nam
         val updatedStickers = proj.stickers + newSticker
         st.copy(project = proj.copy(stickers = updatedStickers))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -238,7 +241,7 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
             owner.copy(textOverlays = owner.textOverlays + copies)
         }), selectedTextOverlayId = newId)
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
@@ -276,7 +279,7 @@ fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
             })
         }), selectedTextOverlayId = state.selectedTextOverlayId.takeUnless { it == overlayId })
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.selectSticker(id: String?) {
@@ -393,7 +396,7 @@ fun EditorViewModel.updateTextOverlayProjectRange(
         }
         current.copy(project = currentProject.copy(clips = updatedClips))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -405,7 +408,7 @@ fun EditorViewModel.updateStickerTiming(stickerId: String, startMs: Long, endMs:
         }
         s.copy(project = p.copy(stickers = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -662,7 +665,7 @@ fun EditorViewModel.applyTextRevealTemplate() {
             selectedTextOverlayId = text.id
         )
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 /** Duration of the Text Reveal template effect (matches the ~2s Reel). */
@@ -689,7 +692,7 @@ fun EditorViewModel.removeSticker(stickerId: String) {
         )
         if (s.selectedStickerId == stickerId) cleared.copy(selectedStickerId = null) else cleared
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.setStickerCrop(
@@ -727,5 +730,5 @@ fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: S
             stickerPanelOpen = false
         )
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }

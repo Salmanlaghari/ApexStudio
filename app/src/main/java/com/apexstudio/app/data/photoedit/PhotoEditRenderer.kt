@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * CPU photo-editing pipeline shared by the live preview and the export.
  *
  * Render order (identical in both so the preview is WYSIWYG):
- *   decode (+EXIF orientation) → rotate/flip → crop → sharpen →
+ *   decode (+EXIF orientation) → rotate/flip → crop → denoise → sharpen →
  *   colour adjustments (ColorMatrix) → LUT filter (real .cube data).
  *
  * The preview calls [renderEdited] with a small [maxDim] (fast,
@@ -295,23 +295,29 @@ object PhotoEditRenderer {
         if (crop != null && !crop.isFullFrame()) {
             advance(applyCrop(cur, crop))
         }
-        // 3. Sharpness (unsharp mask).
+        // 3. Local spatial denoise. Keep this before sharpness so edges can
+        //    be restored after smoothing, matching the preview/export order.
+        val denoise = settings.adjustments.denoise.coerceIn(0f, 1f)
+        if (denoise > 0f) {
+            advance(applyDenoise(cur, denoise))
+        }
+        // 4. Sharpness (unsharp mask).
         val sharp = settings.adjustments.sharpness.coerceIn(0f, 1f)
         if (sharp > 0f) {
             advance(applySharpness(cur, sharp))
         }
-        // 4. Colour adjustments via the same ColorMatrix math the video
+        // 5. Colour adjustments via the same ColorMatrix math the video
         //    Adjust tools use, so photo + video adjustments match.
         //    (Sharpness is a convolution, not a ColorMatrix op — it was
-        //    already applied in step 3.)
+        //    already applied in step 4.)
         if (!settings.adjustments.isDefault) {
             advance(applyAdjustments(cur, settings))
         }
-        // 5. LUT filter — the real .cube data, same as export.
+        // 6. LUT filter — the real .cube data, same as export.
         if (lutTexture != null && settings.filterId != null && settings.filterIntensity > 0f) {
             advance(LutBitmapCache.applyToBitmap(cur, lutTexture, settings.filterIntensity))
         }
-        // 6. Canvas is composed AFTER grading: filters affect the image only,
+        // 7. Canvas is composed AFTER grading: filters affect the image only,
         // never the user's solid background. Output stays within the decode budget.
         val canvasAspect = settings.canvas.aspectRatio
         if (canvasAspect != null) {
@@ -417,6 +423,51 @@ object PhotoEditRenderer {
         result.setPixels(px, 0, w, 0, 0, w, h)
         return result
     }
+
+    /**
+     * Bounded, deterministic local spatial denoise for photo preview/export.
+     * A 3x3 edge-replicated box estimate is blended with the source; alpha is
+     * copied unchanged so transparent pixels and image dimensions are stable.
+     * The amount is deliberately capped at 0.85 to avoid turning detail into
+     * a flat wash at the strongest UI setting. No model or network is used.
+     */
+    fun applyDenoise(src: Bitmap, amount: Float): Bitmap {
+        val strength = amount.coerceIn(0f, 1f) * 0.85f
+        if (strength <= 0f || src.width < 2 || src.height < 2) return src
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+        val out = IntArray(px.size)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var rs = 0
+                var gs = 0
+                var bs = 0
+                for (ky in -1..1) {
+                    val yy = (y + ky).coerceIn(0, h - 1)
+                    for (kx in -1..1) {
+                        val c = px[yy * w + (x + kx).coerceIn(0, w - 1)]
+                        rs += (c ushr 16) and 0xff
+                        gs += (c ushr 8) and 0xff
+                        bs += c and 0xff
+                    }
+                }
+                val source = px[y * w + x]
+                val a = source ushr 24
+                val r = blendChannel((source ushr 16) and 0xff, rs / 9, strength)
+                val g = blendChannel((source ushr 8) and 0xff, gs / 9, strength)
+                val b = blendChannel(source and 0xff, bs / 9, strength)
+                out[y * w + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+            it.setPixels(out, 0, w, 0, 0, w, h)
+        }
+    }
+
+    private fun blendChannel(source: Int, filtered: Int, strength: Float): Int =
+        (source + (filtered - source) * strength).roundToInt().coerceIn(0, 255)
 
     /**
      * Unsharp mask: out = src + strength * (src − boxBlur(src)).

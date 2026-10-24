@@ -158,13 +158,14 @@ fun VideoPreviewArea(
     val workspaceEffectBinding = remember(workspaceEffects, workspaceEffectIntensityProvider) {
         workspaceEffectPreviewBinding(workspaceEffects, workspaceEffectIntensityProvider)
     }
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
+    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings, workspaceEffectBinding.sourceEffects, photoClip?.id) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
                 player.setVideoEffects(listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
+                    com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(chromaKeySettings),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
                 ))
@@ -334,6 +335,7 @@ fun VideoPreviewArea(
                 MaskPreviewOverlay(
                     mask = mask,
                     editMode = maskEditMode,
+                    localTimeMs = currentTimeMs,
                     onCenterChangeLive = onMaskCenterLive,
                     onCenterChangeFinished = onMaskCenterFinished,
                     onSizeChangeLive = onMaskSizeLive,

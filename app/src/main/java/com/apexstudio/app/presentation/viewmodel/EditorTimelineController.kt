@@ -16,6 +16,15 @@ import com.apexstudio.app.domain.model.timeline.removeAnimationKeyframeAt
 import com.apexstudio.app.domain.model.timeline.setAnimationCurveAt
 import com.apexstudio.app.domain.model.timeline.upsertAnimationValue
 
+import com.apexstudio.app.domain.model.timeline.clearAnimationKeyframes
+import com.apexstudio.app.domain.model.timeline.replaceLegacyKeyframeAt
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
+import com.apexstudio.app.domain.model.timeline.sharedTextItem
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.domain.model.timeline.updateSharedKeyframeTrack
+import com.apexstudio.app.domain.model.timeline.updateSharedTextItem
+import com.apexstudio.app.domain.model.timeline.animationTransformAt
 /**
  * Minimum interval between [EditorState] position mirrors. The live
  * playhead ([EditorViewModel.playerPositionFlow]) still ticks at ~30Hz,
@@ -36,7 +45,7 @@ fun EditorViewModel.setVideoFitMode(clipId: String, mode: VideoFitMode) {
             if (it.id == clipId) it.copy(videoFitMode = mode) else it
         }))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -118,7 +127,9 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
         selectedAudioTrackId = if (id != null) null else state.selectedAudioTrackId,
         selectedTextOverlayId = if (id != null) null else state.selectedTextOverlayId,
         selectedStickerId = if (id != null) null else state.selectedStickerId,
-        activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
+        chromaKeySettings = clip?.chromaKeySettings
+            ?: com.apexstudio.app.domain.model.ChromaKeySettings()
     )
 }
 
@@ -307,7 +318,10 @@ internal fun EditorViewModel.updateClip(
         val legacyAnimationChanged = newClips.any { changed ->
             proj.clips.firstOrNull { it.id == changed.id }?.keyframes != changed.keyframes
         }
-        s.copy(project = proj.copy(clips = newClips).syncSharedTimeline(refreshLegacyAnimation = legacyAnimationChanged))
+        s.copy(project = proj.copy(clips = newClips).syncSharedTimeline(
+            refreshLegacyAnimation = legacyAnimationChanged,
+            refreshLegacyClipFields = true
+        ))
     }
     if (persist) persistProject()
 }
@@ -676,7 +690,7 @@ fun EditorViewModel.moveClipLeft(clipId: String) {
         updated.add(index - 1, item)
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -691,25 +705,45 @@ fun EditorViewModel.moveClipRight(clipId: String) {
         updated.add(index + 1, item)
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
-fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
-    if (fromIndex == toIndex) return
+fun EditorViewModel.reorderMainVideoClips(orderedIds: List<String>) {
+    val main = _state.value.project?.clips?.filter(::isMainTrack).orEmpty()
+    if (orderedIds.size != main.size || orderedIds.toSet() != main.map { it.id }.toSet()) return
+    if (orderedIds == main.map { it.id }) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
-        if (fromIndex !in p.clips.indices || toIndex !in p.clips.indices) return@update s
-        val updated = p.clips.toMutableList()
-        val item = updated.removeAt(fromIndex)
-        updated.add(toIndex, item)
-        s.copy(project = p.copy(clips = updated))
+        val mainClips = p.clips.filter(::isMainTrack)
+        val byId = mainClips.associateBy { it.id }
+        val requested = orderedIds.map { byId.getValue(it) }
+        val grouped = requested.groupBy { it.groupId }.filter { (key, value) -> key != null && value.size > 1 }
+        val normalized = requested.toMutableList()
+        grouped.forEach { (groupId, members) ->
+            val positions = normalized.mapIndexedNotNull { i, clip -> if (clip.groupId == groupId) i else null }
+            if (positions.last() - positions.first() + 1 != positions.size) {
+                normalized.removeAll { it.groupId == groupId }
+                normalized.addAll(positions.last().coerceAtMost(normalized.size), members)
+            }
+        }
+        var index = 0
+        s.copy(project = p.copy(clips = p.clips.map { if (isMainTrack(it)) normalized[index++] else it }))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
-
+fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
+    val main = _state.value.project?.clips?.filter(::isMainTrack).orEmpty()
+    if (fromIndex !in main.indices || toIndex !in main.indices || fromIndex == toIndex) return
+    val source = main[fromIndex]
+    val group = source.groupId?.let { gid -> main.filter { it.groupId == gid } } ?: listOf(source)
+    val remaining = main.filterNot { it.id in group.map { member -> member.id }.toSet() }.toMutableList()
+    val insertion = toIndex.coerceIn(0, remaining.size)
+    remaining.addAll(insertion, group)
+    reorderMainVideoClips(remaining.map { it.id })
+}
 fun EditorViewModel.applyConfiguredAnimationPreset(
     preset: com.apexstudio.app.data.animation.AnimationPresetType,
     mode: com.apexstudio.app.data.animation.AnimationPresetMode,
@@ -827,12 +861,12 @@ fun EditorViewModel.redo() = viewModelScope.launch {
  * starting earlier is untouched. Track 0 itself never moves here — its
  * own layout is derived cumulatively.
  */
-private fun isMainTrack(c: MediaClip): Boolean =
+internal fun isMainTrack(c: MediaClip): Boolean =
     c.trackIndex == 0 &&
         (c.type == ClipType.VIDEO || c.type == ClipType.IMAGE)
 
 /** Timeline ms where [clipId] starts on the main track (cumulative V1). */
-private fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
+internal fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
     var acc = 0L
     for (c in clips) {
         if (c.id == clipId) return acc
@@ -842,7 +876,7 @@ private fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
 }
 
 /** Shift every non-main-track item at/after [anchorMs] by [deltaMs]. */
-private fun rippleOverlays(
+internal fun rippleOverlays(
     clips: List<MediaClip>,
     anchorMs: Long,
     deltaMs: Long
@@ -932,7 +966,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     // (when the trim shrank the timeline below the current position);
     // otherwise a no-op, never a backward snap.
     newDurationMs?.let { d -> _playerPosition.update { it.coerceIn(0L, d) } }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -1039,11 +1073,11 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                             val updatedClips = p.clips + newClip
                             val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
                             s.copy(
-                                project = p.copy(clips = updatedClips, durationMs = newDuration),
-                                durationMs = newDuration
-                            )
-                        }
-                        persistProject()
+                            project = p.copy(clips = updatedClips, durationMs = newDuration),
+                            durationMs = newDuration
+                        )
+                    }
+                    persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
                     }
                     _state.update {
                         it.copy(
@@ -1156,7 +1190,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             canRedo = redoStack.isNotEmpty()
         )
     }
-    persistProject()
+    persistProject(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true,
+        refreshLegacyTextStickerFields = true
+    )
 }
 
 
@@ -1194,7 +1232,11 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             canRedo = redoStack.isNotEmpty()
         )
     }
-    persistProject()
+    persistProject(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true,
+        refreshLegacyTextStickerFields = true
+    )
 }
 
 
@@ -1242,7 +1284,7 @@ fun EditorViewModel.deleteClip(clipId: String) {
             selectedOverlayClipId = if (s.selectedOverlayClipId == clipId) null else s.selectedOverlayClipId
         )
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true, refreshLegacyTextStickerFields = true)
 }
 
 
@@ -1252,30 +1294,13 @@ fun EditorViewModel.deleteClip(clipId: String) {
  * loop for multi-select bulk delete.
  */
 fun EditorViewModel.deleteClips(clipIds: Set<String>) {
-    if (clipIds.isEmpty()) return
-    pushUndo()
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        val updated = p.clips.filterNot { it.id in clipIds }
-        val newSelected = if (s.selectedClipId in clipIds) updated.firstOrNull()?.id else s.selectedClipId
-        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
-        s.copy(
-            project = p.copy(clips = updated, durationMs = newDur),
-            durationMs = newDur,
-            selectedClipIds = emptySet(),
-            multiSelectMode = false,
-            selectedClipId = newSelected,
-            // Deleting the active overlay clip clears the transform too,
-            // otherwise the preview layer would keep trying to render a
-            // non-existent overlay's PlayerView.
-            overlayClipId = if (s.overlayClipId in clipIds) null else s.overlayClipId,
-            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform,
-            // PiP canvas selection must follow the clip: a deleted
-            // overlay cannot stay selected.
-            selectedOverlayClipId = if (s.selectedOverlayClipId in clipIds) null else s.selectedOverlayClipId
-        )
-    }
-    persistProject()
+    // Keep this legacy UI route on the same ripple-aware implementation as
+    // the multi-select action. Selection setup is transient; the action still
+    // records exactly one undo snapshot and performs one persistence.
+    val valid = _state.value.project?.clips.orEmpty().map { it.id }.toSet().intersect(clipIds)
+    if (valid.isEmpty()) return
+    _state.update { it.copy(selectedClipIds = valid, multiSelectMode = true) }
+    deleteSelectedClips()
 }
 
 
@@ -1289,7 +1314,7 @@ fun EditorViewModel.moveClipToTrack(clipId: String, newType: ClipType, newTrackI
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
 }
 
 
@@ -1326,7 +1351,7 @@ fun EditorViewModel.addClipToTrack(type: ClipType, trackIndex: Int) {
                 selectedClipId = newClip.id
             )
         }
-        persistProject()
+        persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
     }
 }
 
@@ -1340,35 +1365,44 @@ fun EditorViewModel.setClipTimelineOffset(clipId: String, offsetMs: Long) {
         offsetMs.coerceAtLeast(0L), thresholdMs, excludeClipId = clipId
     ).coerceAtLeast(0L)
     if (source.timelineOffsetMs == snappedOffset) return
+    val delta = snappedOffset - source.timelineOffsetMs
+    val groupId = source.groupId
+    val members = before.project?.clips.orEmpty().filter { groupId != null && it.groupId == groupId }
+    val effectiveDelta = if (members.isEmpty()) delta else delta.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
+    if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val updated = p.clips.map {
-            if (it.id == clipId) it.copy(timelineOffsetMs = snappedOffset)
+            if (it.id == clipId || (groupId != null && it.groupId == groupId))
+                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
             else it
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
 fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
+    if (deltaMs == 0L) return
+    val before = _state.value.project ?: return
+    val source = before.clips.firstOrNull { it.id == clipId } ?: return
+    val members = before.clips.filter { source.groupId != null && it.groupId == source.groupId }
+    val effectiveDelta = if (members.isEmpty()) deltaMs else deltaMs.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
+    if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val updated = p.clips.map {
-            if (it.id == clipId) {
-                val newOffset = (it.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
-                it.copy(timelineOffsetMs = newOffset)
-            } else it
+            if (it.id == clipId || (source.groupId != null && it.groupId == source.groupId))
+                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
+            else it
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
-
-
 internal fun EditorViewModel.pushUndo() {
     val state = _state.value
     val project = state.project ?: return

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 /**
  * Legacy overlay repair (Bug B): OVERLAY clips created before the
  * overlay-track system (or by a buggy build) can carry trackIndex 0
@@ -91,7 +92,10 @@ internal fun EditorViewModel.loadProject() {
             durationMs = computeTimelineDurationMs(effectiveClips, p.audioTracks),
             hiddenVideoLayers = p.hiddenVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet(),
             lockedVideoLayers = p.lockedVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet()
-        ).syncSharedTimeline(importLegacyAnimation = true)
+        ).syncSharedTimeline(
+            importLegacyAnimation = true,
+            refreshLegacyClipFields = true
+        )
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
@@ -472,11 +476,21 @@ internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
 fun EditorViewModel.flushProject() = persistProject()
 
 
-internal fun EditorViewModel.persistProject() {
+internal fun EditorViewModel.persistProject(
+    importLegacyAnimation: Boolean = false,
+    refreshLegacyClipFields: Boolean = false,
+    refreshLegacyTextStickerFields: Boolean = false,
+    refreshLegacyDrawingClipIds: Set<String> = emptySet()
+) {
     val snapshot = _state.value.project ?: return
     val repo = projectRepository ?: return
     // Phase 3: stamp edit time so History sorts correctly.
-    val stamped = snapshot.syncSharedTimeline().copy(lastEditedMs = System.currentTimeMillis())
+    val stamped = snapshot.syncSharedTimeline(
+        importLegacyAnimation = importLegacyAnimation,
+        refreshLegacyClipFields = refreshLegacyClipFields,
+        refreshLegacyTextStickerFields = refreshLegacyTextStickerFields,
+        refreshLegacyDrawingClipIds = refreshLegacyDrawingClipIds
+    ).copy(lastEditedMs = System.currentTimeMillis())
     if (stamped != snapshot) {
         _state.update { it.copy(project = stamped) }
     }
@@ -554,7 +568,10 @@ fun EditorViewModel.deleteSavedProject(projectId: String) {
 /** Phase 3: opens a saved project/draft in the editor. */
 fun EditorViewModel.openSavedProject(project: com.apexstudio.app.domain.model.Project) {
     _state.update {
-        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)).syncSharedTimeline(importLegacyAnimation = true))
+        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)).syncSharedTimeline(
+            importLegacyAnimation = true,
+            refreshLegacyClipFields = true
+        ))
     }
     persistProject()
 }

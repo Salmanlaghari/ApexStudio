@@ -90,6 +90,7 @@ fun EditorViewModel.applyGpuFilterToSelectedClip() {
                 gpuFilterPanelOpen = false
             )
         }
+        persistProject(refreshLegacyClipFields = true)
     } else {
         closeGpuFilterPanel()
     }
@@ -107,6 +108,7 @@ fun EditorViewModel.applyGpuFilterToAllClips() {
             gpuFilterPanelOpen = false
         )
     }
+    persistProject(refreshLegacyClipFields = true)
 }
 
 

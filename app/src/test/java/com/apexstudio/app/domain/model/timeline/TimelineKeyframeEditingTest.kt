@@ -194,6 +194,7 @@ class TimelineKeyframeEditingTest {
                             text = "Caption",
                             startMs = 10L,
                             endMs = 600L,
+                            rotationKeyframes = listOf(Keyframe(375L, 5f)),
                             colorKeyframes = listOf(Keyframe(350L, Color.Red))
                         )
                     )
@@ -206,6 +207,7 @@ class TimelineKeyframeEditingTest {
                             symbolOrUri = "★",
                             startMs = 20L,
                             endMs = 700L,
+                            positionKeyframes = listOf(Keyframe(425L, XY(0.3f, 0.7f))),
                             rotationKeyframes = listOf(Keyframe(450L, 15f))
                         )
                     )
@@ -226,7 +228,7 @@ class TimelineKeyframeEditingTest {
         )
 
         val times = timeline.collectAllTimecodes()
-        assertTrue(times.containsAll(listOf(10L, 20L, 30L, 100L, 150L, 200L, 250L, 350L, 400L, 450L, 550L, 600L, 700L, 800L)))
+        assertTrue(times.containsAll(listOf(10L, 20L, 30L, 100L, 150L, 200L, 250L, 350L, 375L, 400L, 425L, 450L, 550L, 600L, 700L, 800L)))
     }
 
     @Test

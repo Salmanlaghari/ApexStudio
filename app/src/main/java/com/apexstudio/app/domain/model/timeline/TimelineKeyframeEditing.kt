@@ -265,11 +265,13 @@ fun Timeline.collectAllTimecodes(bpm: Int? = null): Set<Long> {
                 result.addKeys(item.positionKeyframes)
                 result.addKeys(item.scaleKeyframes)
                 result.addKeys(item.colorKeyframes)
+                result.addKeys(item.rotationKeyframes)
                 result.addKeys(item.alphaKeyframes)
             }
             is StickerTrack -> track.items.forEach { item ->
                 result.addIfNonNegative(item.startMs)
                 result.addIfNonNegative(item.endMs)
+                result.addKeys(item.positionKeyframes)
                 result.addKeys(item.scaleKeyframes)
                 result.addKeys(item.rotationKeyframes)
                 result.addKeys(item.alphaKeyframes)

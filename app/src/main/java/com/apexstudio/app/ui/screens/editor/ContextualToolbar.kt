@@ -74,7 +74,7 @@ internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
     "Music", "Enhance", "Color", "Templates", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
-    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Info"
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
 )
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
@@ -185,6 +185,7 @@ fun ContextualBottomToolbar(
     onMusic: () -> Unit,
     onAutoClip: () -> Unit,
     onHistory: () -> Unit,
+    onSignature: () -> Unit = {},
     onEditPack: () -> Unit,
     onScopes: () -> Unit,
     onBgRemover: () -> Unit,
@@ -326,6 +327,7 @@ fun ContextualBottomToolbar(
             CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory),
+            CtxToolItem("Signature", Icons.Default.Verified, onClick = onSignature),
             CtxToolItem("Info", Icons.Outlined.Info, onClick = { showToolbarNotes = true }, contentDescription = "Editing and export notes")
     )
     check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
@@ -959,6 +961,7 @@ fun EditorBottomToolbarSection(
     onChallenge: () -> Unit = { vm.openTextPanel() },
     onNext: () -> Unit = {},
     onColorWorkspace: () -> Unit = { vm.openColorGradingLutPanel() },
+    onSignature: () -> Unit = { vm.openSignaturePanel() },
     onBeforeToolAction: () -> Unit = {},
     // Main-timeline media picker; EditorScreen may override when it owns the route.
     onMedia: () -> Unit = {
@@ -1088,6 +1091,7 @@ fun EditorBottomToolbarSection(
         onMusic = { vm.openMusicLibraryPanel() },
         onAutoClip = { vm.openAutoClipPanel() },
         onHistory = { vm.openHistoryDraftsPanel() },
+        onSignature = onSignature,
         onEditPack = { vm.openEditPackPanel() },
         onScopes = { vm.openColorScopesPanel() },
         onBgRemover = { vm.openBgRemoverPanel() },

@@ -52,6 +52,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 /** Editing target may be any layer; do not confuse it with the V1 media source. */
 internal fun resolveEditorSelectionClip(clips: List<MediaClip>, selectedClipId: String?): MediaClip? =
     if (selectedClipId != null) clips.firstOrNull { it.id == selectedClipId } else clips.firstOrNull()
@@ -276,6 +277,12 @@ private fun EditorScreenContent(
             .collect { (metadataList, _) ->
                 if (metadataList.isNotEmpty()) {
                     val s = vm.state.value
+                    if (s.signaturePanelOpen) {
+                        vm.updateSignature { signature ->
+                            signature.copy(logoUri = Uri.parse(metadataList.first().uri))
+                        }
+                        return@collect
+                    }
                     when {
                         // CapCut-style Replace flow: swap the selected clip/track
                         // media instead of adding new media to the timeline.
@@ -1054,7 +1061,8 @@ private fun EditorScreenContent(
                     }
                 },
                 onCrop = { showCropPanel = true },
-                onDeviceAudio = importPhoneMusic
+                onDeviceAudio = importPhoneMusic,
+                onSignature = { vm.openSignaturePanel() }
             )
             if (localAudioImporting) {
                 androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -1173,6 +1181,7 @@ private fun EditorScreenContent(
     )
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
+    SignaturePanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     VoiceRecorderOverlay(state = state, vm = vm)
     ArFilterPanelOverlay(state = state, vm = vm)
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
@@ -1276,6 +1285,9 @@ private fun PhotoEditSheet(
                 onFlipV = { vm.togglePhotoFlipVertical(photoEditClip.id) },
                 onKenBurns = { vm.setPhotoKenBurns(photoEditClip.id, it) },
                 onCanvasChange = { canvas -> vm.setPhotoCanvas(photoEditClip.id, canvas) },
+                onAutoEnhance = { vm.applyPhotoAutoEnhance(photoEditClip.id) },
+                onDenoise = { vm.applyPhotoDenoise(photoEditClip.id) },
+                onSharpen = { vm.applyPhotoSharpen(photoEditClip.id) },
                 onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
                 onClose = { vm.closePhotoEditPanel() }
             )

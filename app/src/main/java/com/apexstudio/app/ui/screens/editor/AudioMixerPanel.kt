@@ -102,7 +102,15 @@ fun AudioMixerPanel(
     /** Delete one volume keyframe pin. */
     onRemoveVolumeKeyframe: (trackId: String, keyframeId: String) -> Unit = { _, _ -> },
     /** Seek the playhead (tap a volume-keyframe chip). */
-    onSeekTo: (Long) -> Unit = {}
+    onSeekTo: (Long) -> Unit = {},
+    /** Audio Intelligence: normalize using an explicitly labelled LUFS-like estimate. */
+    onNormalizeTrack: (trackId: String) -> Unit = {},
+    /** Audio Intelligence: duck music under the selected voice/SFX track. */
+    onAutoDuckMusic: (musicTrackId: String, voiceTrackId: String) -> Unit = { _, _ -> },
+    /** Audio Intelligence: choose a source window matching the project duration. */
+    onFitMusicToProject: (trackId: String) -> Unit = {},
+    /** Audio Intelligence: remove detected silence while retaining source ranges. */
+    onRemoveSilence: (trackId: String) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -215,7 +223,12 @@ fun AudioMixerPanel(
                     onFadeOut = { onFadeOut(track.id, it) },
                     onAddVolumeKeyframe = { onAddVolumeKeyframe(track.id) },
                     onRemoveVolumeKeyframe = { kfId -> onRemoveVolumeKeyframe(track.id, kfId) },
-                    onSeekTo = onSeekTo
+                    onSeekTo = onSeekTo,
+                    voiceTrackId = state.tracks.firstOrNull { it.kind == AudioTrack.Kind.SFX }?.id,
+                    onNormalizeTrack = onNormalizeTrack,
+                    onAutoDuckMusic = onAutoDuckMusic,
+                    onFitMusicToProject = onFitMusicToProject,
+                    onRemoveSilence = onRemoveSilence
                 )
             }
             items(state.tracks, key = { "trim-${it.id}" }) { track ->
@@ -425,7 +438,12 @@ private fun AudioTrackRow(
     onFadeOut: (Long) -> Unit,
     onAddVolumeKeyframe: () -> Unit,
     onRemoveVolumeKeyframe: (String) -> Unit,
-    onSeekTo: (Long) -> Unit
+    onSeekTo: (Long) -> Unit,
+    voiceTrackId: String?,
+    onNormalizeTrack: (String) -> Unit,
+    onAutoDuckMusic: (String, String) -> Unit,
+    onFitMusicToProject: (String) -> Unit,
+    onRemoveSilence: (String) -> Unit
 ) {
     val accent = when {
         track.isSolo -> ApexPalette.NeonCyan
@@ -536,6 +554,43 @@ private fun AudioTrackRow(
                 }
             }
         }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            AudioActionButton("Normalize · -16 LUFS-like", "audio-track-normalize-${track.id}") {
+                onNormalizeTrack(track.id)
+            }
+            if (track.kind == AudioTrack.Kind.MUSIC && voiceTrackId != null) {
+                AudioActionButton("Auto-duck", "audio-track-duck-${track.id}") {
+                    onAutoDuckMusic(track.id, voiceTrackId)
+                }
+                AudioActionButton("Fit to project", "audio-track-fit-${track.id}") {
+                    onFitMusicToProject(track.id)
+                }
+            }
+            AudioActionButton("Remove silence", "audio-track-remove-silence-${track.id}") {
+                onRemoveSilence(track.id)
+            }
+        }
+        Text(
+            text = "Normalize is a deterministic gated loudness estimate, not a broadcast LUFS meter.",
+            color = ApexPalette.TextTertiary,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun AudioActionButton(label: String, tag: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.testTag(tag),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+    ) {
+        Text(label, fontSize = 10.sp, maxLines = 1)
     }
 }
 

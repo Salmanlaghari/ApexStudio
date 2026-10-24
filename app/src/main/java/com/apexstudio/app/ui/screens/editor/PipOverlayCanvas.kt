@@ -245,6 +245,7 @@ private fun OverlayBlend.toComposeBlendMode(): BlendMode = when (this) {
     OverlayBlend.SCREEN -> BlendMode.Screen
     OverlayBlend.MULTIPLY -> BlendMode.Multiply
     OverlayBlend.OVERLAY -> BlendMode.Overlay
+    OverlayBlend.SOFT_LIGHT -> BlendMode.Softlight
 }
 
 @Composable

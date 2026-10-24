@@ -17,7 +17,7 @@ fun EditorViewModel.updateVideoDrawingLayer(layer: VideoDrawingLayer) {
         if (index >= 0) drawings[index] = clean else drawings += clean
         state.copy(project = current.copy(videoDrawings = drawings))
     }
-    persistProject()
+    persistProject(refreshLegacyDrawingClipIds = clean.clipId?.let { setOf(it) }.orEmpty())
 }
 
 /** Remove the most recent completed mark for the currently drawn clip only. */
@@ -33,7 +33,7 @@ fun EditorViewModel.undoVideoDrawingStroke(clipId: String?) {
         if (updated.strokes.isEmpty()) drawings.removeAt(index) else drawings[index] = updated
         state.copy(project = current.copy(videoDrawings = drawings))
     }
-    persistProject()
+    persistProject(refreshLegacyDrawingClipIds = clipId?.let { setOf(it) }.orEmpty())
 }
 
 /** Clear artwork on one clip without affecting the video or artwork on other clips. */
@@ -45,5 +45,5 @@ fun EditorViewModel.clearVideoDrawings(clipId: String?) {
         val current = state.project ?: return@update state
         state.copy(project = current.copy(videoDrawings = current.videoDrawings.filterNot { it.clipId == clipId }))
     }
-    persistProject()
+    persistProject(refreshLegacyDrawingClipIds = clipId?.let { setOf(it) }.orEmpty())
 }

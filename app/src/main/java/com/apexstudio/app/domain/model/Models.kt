@@ -189,6 +189,9 @@ data class MediaClip(
     val trackIndex: Int = 0,
     val type: ClipType = ClipType.VIDEO,
     val timelineOffsetMs: Long = 0L,
+    // Clips sharing a non-null groupId move/reorder together. Null preserves
+    // the legacy ungrouped behavior and keeps older project JSON compatible.
+    val groupId: String? = null,
     // Speed ramping: speedMultiplier is the per-clip playback rate
     // (0.25 slow-mo → 8 fast-forward). The user picks one of the
     // SpeedPreset values OR a custom value via the speed panel.
@@ -246,7 +249,9 @@ data class MediaClip(
     // same relative position and size.
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
-    val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig = com.apexstudio.app.data.filter.GpuFilterConfig(),
+    val gpuFilterConfig: GpuFilterConfig = GpuFilterConfig(),
+    /** Per-clip chroma key settings shared by preview and export; null preserves the original. */
+    val chromaKeySettings: ChromaKeySettings? = null,
     // Optional fixed, deterministic project-video effect. The preset id is resolved by
     // ProjectVideoPresets in both preview and export; null preserves legacy rendering.
     val projectVideoEffectId: String? = null,
@@ -667,13 +672,15 @@ enum class OverlayBlend {
     NORMAL,
     SCREEN,
     MULTIPLY,
-    OVERLAY;
+    OVERLAY,
+    SOFT_LIGHT;
 
     val label: String get() = when (this) {
         NORMAL -> "Normal"
         SCREEN -> "Screen"
         MULTIPLY -> "Multiply"
         OVERLAY -> "Overlay"
+        SOFT_LIGHT -> "Soft Light"
     }
 
     /** ID consumed by the export shader's uPipBlend (do NOT use ordinal). */
@@ -682,6 +689,7 @@ enum class OverlayBlend {
         SCREEN -> 1
         MULTIPLY -> 2
         OVERLAY -> 3
+        SOFT_LIGHT -> 4
     }
 }
 
@@ -1006,6 +1014,13 @@ data class Project(
      * placements are intentionally not rewritten during migration.
      */
     val timingModelVersion: Int = 0,
+    /**
+     * Version of the typed timeline authority/schema, independent from the
+     * main-track timing semantics above. Missing legacy JSON decodes as 0.
+     * Ordinary editor projects remain legacy-authoritative until consumers
+     * explicitly opt into the typed timeline.
+     */
+    val timelineAuthorityVersion: Int = 0,
     /** Shared sealed-track timeline; empty by default for existing saved projects. */
     val timeline: Timeline = Timeline(),
     /** Video lanes hidden in the editor; default-empty keeps older project JSON compatible. */
@@ -1031,6 +1046,8 @@ data class Project(
     companion object {
         /** Current main-video output duration behavior: trim span / constant speed. */
         const val CURRENT_TIMING_MODEL_VERSION: Int = 1
+        /** First version of the complete typed timeline schema. */
+        const val CURRENT_TIMELINE_AUTHORITY_VERSION: Int = 1
     }
 }
 

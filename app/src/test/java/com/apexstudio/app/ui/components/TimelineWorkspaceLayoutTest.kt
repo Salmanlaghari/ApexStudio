@@ -240,7 +240,8 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithTag("timeline-clip-main-a", useUnmergedTree = true).performTouchInput { click() }
         composeRule.onNodeWithTag("timeline-clip-main-b", useUnmergedTree = true).performTouchInput { click() }
         composeRule.onNodeWithText("2 selected").assertExists()
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithTag("timeline-multiselect-actions").performClick()
+        composeRule.onNodeWithText("Delete selected").performClick()
 
         composeRule.runOnIdle { assertEquals(setOf("main-a", "main-b"), deleted.value) }
         composeRule.onNodeWithTag("timeline-overflow").performClick()

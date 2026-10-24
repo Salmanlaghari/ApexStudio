@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.media.TimelineThumbnailCache
+import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
@@ -88,10 +89,15 @@ fun TimelineTrackArea(
     onDuplicateClip: (clipId: String) -> Unit,
     onDeleteClip: (clipId: String) -> Unit,
     onDeleteClips: (Set<String>) -> Unit,
+    onDuplicateSelectedClips: () -> Unit = {},
+    onGroupSelectedClips: () -> Unit = {},
+    onApplySpeedToSelectedClips: (Float) -> Unit = {},
+    onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
+    onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
     onToggleMultiSelect: () -> Unit,
     onToggleSelectedClip: (String) -> Unit,
     onClearMultiSelection: () -> Unit,
-    onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit,
+    onReorderClips: (orderedIds: List<String>) -> Unit,
     onSetClipOffset: (clipId: String, offsetMs: Long) -> Unit,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit,
     onToggleKeyframeAtPlayhead: (clipId: String) -> Unit,
@@ -381,6 +387,11 @@ fun TimelineTrackArea(
             onTrimClip = onTrimClip,
             onMoveClipOffset = onSetClipOffset,
             onDeleteClips = onDeleteClips,
+            onDuplicateSelectedClips = onDuplicateSelectedClips,
+            onGroupSelectedClips = onGroupSelectedClips,
+            onApplySpeedToSelectedClips = onApplySpeedToSelectedClips,
+            onApplyFilterToSelectedClips = onApplyFilterToSelectedClips,
+            onApplyLutToSelectedClips = onApplyLutToSelectedClips,
             onToggleMultiSelect = onToggleMultiSelect,
             onToggleSelectedClip = onToggleSelectedClip,
             onClearMultiSelection = onClearMultiSelection,

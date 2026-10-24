@@ -248,7 +248,8 @@ data class EditorState(
     val beatSourceTrackId: String? = null,
     // Volume / Fade bottom sheets for the contextual toolbar.
     val clipVolumeSheetOpen: Boolean = false,
-    val audioFadeSheetOpen: Boolean = false
+    val audioFadeSheetOpen: Boolean = false,
+    val signaturePanelOpen: Boolean = false
 ) {
     companion object {
         /** Manifest category id selected when a new editor state is created. */
@@ -323,7 +324,8 @@ enum class PhotoEditTab(val label: String) {
     FILTERS("Filters"),
     ROTATE("Rotate"),
     MOTION("Motion"),
-    CANVAS("Canvas")
+    CANVAS("Canvas"),
+    AI_ENHANCE("AI Enhance")
 }
 
 data class ExportState(

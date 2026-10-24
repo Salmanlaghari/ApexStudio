@@ -82,7 +82,10 @@ fun PhotoEditPanel(
     onResetAll: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    onCanvasChange: (com.apexstudio.app.domain.model.PhotoCanvasSettings) -> Unit = {}
+    onCanvasChange: (com.apexstudio.app.domain.model.PhotoCanvasSettings) -> Unit = {},
+    onAutoEnhance: () -> Unit = {},
+    onDenoise: () -> Unit = {},
+    onSharpen: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -188,6 +191,7 @@ fun PhotoEditPanel(
                 onKenBurns = onKenBurns
             )
             PhotoEditTab.CANVAS -> PhotoCanvasPanel(settings.canvas, onCanvasChange)
+            PhotoEditTab.AI_ENHANCE -> PhotoAiEnhanceTab(settings.adjustments, onAutoEnhance, onDenoise, onSharpen)
         }
         Spacer(Modifier.height(8.dp))
     }

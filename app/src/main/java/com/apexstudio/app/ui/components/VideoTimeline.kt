@@ -1,6 +1,9 @@
 package com.apexstudio.app.ui.components
 
 import android.graphics.Bitmap
+import com.apexstudio.app.data.filter.GpuColorProfiles
+import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.StylisticEffectType
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -66,6 +69,8 @@ import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -139,7 +144,6 @@ import com.apexstudio.app.domain.model.WorkspaceFilterPresets
 import com.apexstudio.app.domain.model.timeline.snapTimeMs
 import com.apexstudio.app.domain.model.timeline.collectAllTimecodes
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
-import com.apexstudio.app.presentation.viewmodel.sharedKeyframeTrackFor
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
@@ -158,6 +162,7 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
 internal const val TIMELINE_HEADER_HEIGHT_DP = 40
 internal const val TIMELINE_RULER_HEIGHT_DP = 28
 internal const val MAIN_VIDEO_LANE_HEIGHT_DP = 52
@@ -457,7 +462,7 @@ fun VideoTimeline(
     // Tapping empty timeline space (no clip/track consumed the tap)
     // clears the selection (hides the clip action bar).
     onDeselect: () -> Unit = {},
-    onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onReorderClips: (orderedIds: List<String>) -> Unit = {},
     onAddMedia: (ClipType) -> Unit = {},
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
@@ -473,6 +478,11 @@ fun VideoTimeline(
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
     onDeleteClips: (Set<String>) -> Unit = {},
+    onDuplicateSelectedClips: () -> Unit = {},
+    onGroupSelectedClips: () -> Unit = {},
+    onApplySpeedToSelectedClips: (Float) -> Unit = {},
+    onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
+    onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
     // Keyframe layer interactions.
     onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
@@ -1055,7 +1065,7 @@ fun VideoTimeline(
                                     val clipId = draggingClipId
                                     val origIdx = videoClips.indexOfFirst { it.id == clipId }
                                     if (clipId != null && origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
-                                        onReorderClips(origIdx, targetDropIndex)
+                                        onReorderClips(videoClips.toMutableList().apply { val moved = removeAt(origIdx); add(targetDropIndex.coerceIn(0, size), moved) }.map { it.id })
                                     }
                                     draggingClipId = null
                                     dragAccumulatedOffsetPx = 0f
@@ -1151,6 +1161,9 @@ fun VideoTimeline(
                                     frameIntervalMs = frameIntervalMs,
                                     visibleWindowPx = visibleWindowPx,
                                     selectedClipId = selectedClipId,
+                                    selectedClipIds = selectedClipIds,
+                                    multiSelectMode = multiSelectMode,
+                                    onToggleSelectedClip = onToggleSelectedClip,
                                     msToDp = msToDp,
                                     isHidden = layer in hiddenVideoLayers,
                                     isLocked = layer in lockedVideoLayers,
@@ -1344,47 +1357,62 @@ fun VideoTimeline(
             )
         }
 
-        // Multi-select action bar: bulk delete + done.
+        // Compact, accessible multi-select action menu. Mutating actions stay
+        // in multi-select; delete is the sole action that clears selection.
         if (multiSelectMode) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
-                    .zIndex(30f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFFFFFFFF).copy(alpha = 0.95f))
+            var actionsExpanded by remember { mutableStateOf(false) }
+            val stylisticChoices = remember { listOf(StylisticEffectType.VIGNETTE, StylisticEffectType.SEPIA, StylisticEffectType.SHARPEN) }
+            val lutChoices = remember { GpuColorProfiles.ALL.take(3) }
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp).zIndex(30f)
+                    .clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.96f))
                     .border(1.dp, Color(0xFFFFB300), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
-                Text(
-                    text = "${selectedClipIds.size} selected",
-                    color = Color(0xFF111827),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (selectedClipIds.isNotEmpty()) {
-                    Text(
-                        text = "Delete",
-                        color = Color(0xFFB42318),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            onDeleteClips(selectedClipIds)
-                            onClearMultiSelection()
-                        }
-                    )
-                }
-                Text(
-                    text = "Done",
-                    color = Color(0xFF8A5A00),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        onClearMultiSelection()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${selectedClipIds.size} selected", color = Color(0xFF111827), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = { actionsExpanded = true }, modifier = Modifier.size(34.dp).testTag("timeline-multiselect-actions")) {
+                        Icon(Icons.Default.MoreVert, "Multi-select actions", tint = Color(0xFF334155), modifier = Modifier.size(19.dp))
                     }
-                )
+                    Text("Done", color = Color(0xFF8A5A00), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onClearMultiSelection() }.semantics { contentDescription = "Exit multi-select" })
+                }
+                DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.widthIn(max = 260.dp)) {
+                    DropdownMenuItem(text = { Text("Duplicate selected") }, onClick = { actionsExpanded = false; onDuplicateSelectedClips() }, modifier = Modifier.testTag("timeline-action-duplicate"))
+                    DropdownMenuItem(text = { Text("Group selected") }, onClick = { actionsExpanded = false; onGroupSelectedClips() }, modifier = Modifier.testTag("timeline-action-group"))
+                    DropdownMenuItem(text = { Text("Delete selected") }, onClick = { actionsExpanded = false; onDeleteClips(selectedClipIds); onClearMultiSelection() }, modifier = Modifier.testTag("timeline-action-delete"))
+                    Text("Speed", color = Color(0xFF64748B), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    listOf(0.5f, 1f, 1.5f, 2f).forEach { speed ->
+                        DropdownMenuItem(text = { Text("${speed}x") }, onClick = { actionsExpanded = false; onApplySpeedToSelectedClips(speed) }, modifier = Modifier.testTag("timeline-action-speed-${speed}x"))
+                    }
+                    Text("Filters/LUTs", color = Color(0xFF64748B), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    stylisticChoices.forEach { effect ->
+                        DropdownMenuItem(
+                            text = { Text("Filter: ${effect.title}") },
+                            onClick = {
+                                actionsExpanded = false
+                                onApplyFilterToSelectedClips(
+                                    GpuFilterConfig(
+                                        stylisticEffect = effect,
+                                        stylisticIntensity = effect.defaultParam.coerceIn(0f, 1f),
+                                        effectParam = effect.defaultParam.coerceIn(0f, 1f)
+                                    )
+                                )
+                            },
+                            modifier = Modifier.testTag("timeline-action-filter-${effect.name.lowercase()}")
+                        )
+                    }
+                    lutChoices.forEach { profile ->
+                        DropdownMenuItem(
+                            text = { Text("LUT: ${profile.name}") },
+                            onClick = {
+                                actionsExpanded = false
+                                onApplyLutToSelectedClips(profile.id, 1f)
+                            },
+                            modifier = Modifier.testTag("timeline-action-lut-${profile.id}")
+                        )
+                    }
+                }
             }
         }
     }
@@ -1491,7 +1519,7 @@ fun VideoTimeline(
     // Tapping empty timeline space clears the selection (hides the clip
     // action bar). No-op default keeps standalone callers working.
     onDeselect: () -> Unit = {},
-    onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit,
+    onReorderClips: (orderedIds: List<String>) -> Unit,
     onAddMedia: (ClipType) -> Unit,
     onSplitClip: (clipId: String, atMs: Long) -> Unit,
     onDuplicateClip: (clipId: String) -> Unit,
@@ -1507,6 +1535,11 @@ fun VideoTimeline(
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
     onDeleteClips: (Set<String>) -> Unit = {},
+    onDuplicateSelectedClips: () -> Unit = {},
+    onGroupSelectedClips: () -> Unit = {},
+    onApplySpeedToSelectedClips: (Float) -> Unit = {},
+    onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
+    onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
     onToggleMultiSelect: () -> Unit = {},
     onToggleSelectedClip: (String) -> Unit = {},
     onClearMultiSelection: () -> Unit = {},
@@ -1911,6 +1944,9 @@ private fun TimelineVideoLayerRow(
     frameIntervalMs: Long,
     visibleWindowPx: Pair<Int, Int>,
     selectedClipId: String?,
+    selectedClipIds: Set<String> = emptySet(),
+    multiSelectMode: Boolean = false,
+    onToggleSelectedClip: (String) -> Unit = {},
     msToDp: Float,
     isHidden: Boolean,
     isLocked: Boolean,
@@ -1960,6 +1996,7 @@ private fun TimelineVideoLayerRow(
         Box(modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
+                val isMultiSelected = clip.id in selectedClipIds
                 // Speed-ramped clips occupy their OUTPUT length.
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(500L)
                 val clipWidthDp = maxOf((clipDur * msToDp).dp, 56.dp)
@@ -1996,12 +2033,13 @@ private fun TimelineVideoLayerRow(
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(7.dp))
                             .background(
-                                if (isSelected) Color(0xFF124554)
+                                if (isMultiSelected) Color(0xFF28231B)
+                                else if (isSelected) Color(0xFF124554)
                                 else if (isDragging) Color(0xFF145363)
                                 else Color(0xFF0D2A3A)
                             )
                             .border(
-                                width = if (isSelected || isDragging) 1.5.dp else 1.dp,
+                                width = if (isSelected || isMultiSelected || isDragging) 1.5.dp else 1.dp,
                                 color = if (isSelected) Color(0xFF00A99D)
                                 else if (isDragging) ApexPalette.NeonCyan
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
@@ -2062,7 +2100,7 @@ private fun TimelineVideoLayerRow(
                                     )
                                 }
                             }
-                            .clickable { onSelectClip(clip.id) }
+                            .clickable { if (multiSelectMode) onToggleSelectedClip(clip.id) else onSelectClip(clip.id) }
                             .semantics {
                                 contentDescription = "Overlay clip ${clip.name}, track V${layerIndex + 1}"
                                 selected = isSelected

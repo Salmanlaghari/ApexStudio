@@ -39,10 +39,21 @@ data class AudioTrack(
     override val id: String = UUID.randomUUID().toString(),
     override val lane: Int,
     val clips: List<AudioClip> = emptyList(),
+    /** Track identity and mixer state; source placement belongs to [AudioClip]. */
+    val name: String = "",
+    val volume: Float = 0.75f,
+    val isMuted: Boolean = false,
+    val isSolo: Boolean = false,
+    val volumeKeyframes: List<Keyframe<Float>> = emptyList(),
     val pan: Float = 0f,
     val panKeyframes: List<Keyframe<Float>> = emptyList(),
+    val kind: AudioKind = AudioKind.MUSIC,
     val ducking: Ducking? = null
 ) : Track {
+    @Serializable
+    enum class AudioKind { ORIGINAL_VIDEO, MUSIC, SFX }
+
+    fun volumeAt(timeMs: Long): Float = sample(volumeKeyframes, volume, timeMs, FloatType)
     fun panAt(timeMs: Long): Float = sample(panKeyframes, pan, timeMs, FloatType)
 }
 
@@ -85,6 +96,18 @@ data class VideoClip(
     /** Source-media trim offset, in milliseconds. */
     val trimStartMs: Long = 0L,
     val speed: Float = 1f,
+    /** Legacy-compatible source identity and timing metadata. */
+    val sourceName: String = "",
+    val sourceDurationMs: Long = 0L,
+    val trimEndMs: Long = 0L,
+    val thumbnail: String? = null,
+    val groupId: String? = null,
+    val speedCurve: com.apexstudio.app.domain.model.SpeedCurve = com.apexstudio.app.domain.model.SpeedCurve.LINEAR,
+    val rampStartSpeed: Float = 1f,
+    val rampEndSpeed: Float = 1f,
+    val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
+    /** Main-track source kind; IMAGE clips still use this shared visual shape. */
+    val mediaType: com.apexstudio.app.domain.model.ClipType = com.apexstudio.app.domain.model.ClipType.VIDEO,
     val transform: Transform = Transform(),
     val opacity: Float = 1f,
     val opacityKeyframes: List<Keyframe<Float>> = emptyList(),
@@ -106,7 +129,31 @@ data class VideoClip(
     val volumeKeyframes: List<Keyframe<Float>> = emptyList(),
     val pan: Float = 0f,
     val panKeyframes: List<Keyframe<Float>> = emptyList(),
-    val drawingLayer: DrawingLayer? = null
+    val drawingLayer: DrawingLayer? = null,
+    val denoiseEnabled: Boolean = false,
+    val denoiseStrength: com.apexstudio.app.domain.model.DenoiseStrength = com.apexstudio.app.domain.model.DenoiseStrength.MEDIUM,
+    val backgroundReplace: com.apexstudio.app.domain.model.BackgroundReplaceSettings? = null,
+    val gpuFilterConfig: com.apexstudio.app.domain.model.GpuFilterConfig = com.apexstudio.app.domain.model.GpuFilterConfig(),
+    val projectVideoEffectId: String? = null,
+    val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings(),
+    val faceCropTrack: com.apexstudio.app.domain.model.FaceCropTrack? = null,
+    val pipX: Float = 0.85f,
+    val pipY: Float = 0.85f,
+    val pipScale: Float = 0.25f,
+    val pipRotationDeg: Float = 0f,
+    val pipOpacity: Float = 1f,
+    val overlayAspect: Float = 16f / 9f,
+    val overlayBlend: BlendMode = BlendMode.NORMAL,
+    val overlayBorderWidth: Float = 0f,
+    val overlayBorderColor: Int = 0xFFFFFFFF.toInt(),
+    val overlayShadow: Float = 0f,
+    val overlayFlipH: Boolean = false,
+    val overlayFlipV: Boolean = false,
+    val overlayVolume: Float = 0f,
+    val photoEdit: com.apexstudio.app.domain.model.PhotoEditSettings = com.apexstudio.app.domain.model.PhotoEditSettings(),
+    val workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+    val videoFitMode: com.apexstudio.app.domain.model.VideoFitMode = com.apexstudio.app.domain.model.VideoFitMode.FIT
+
 ) {
     fun opacityAt(timeMs: Long): Float = sample(opacityKeyframes, opacity, timeMs, FloatType)
     fun filterIntensityAt(timeMs: Long): Float = sample(filterKeyframes, filterIntensity, timeMs, FloatType)
@@ -140,6 +187,11 @@ data class AudioClip(
     val inMs: Long,
     val outMs: Long,
     val trimStartMs: Long = 0L,
+    /** Source boundary and envelope values; placement is [inMs]/[outMs]. */
+    val trimEndMs: Long = 0L,
+    val sourceDurationMs: Long = 0L,
+    val fadeInMs: Long = 0L,
+    val fadeOutMs: Long = 0L,
     val volume: Float = 1f,
     val volumeKeyframes: List<Keyframe<Float>> = emptyList(),
     val pan: Float = 0f,
@@ -159,7 +211,7 @@ data class Ducking(
 @Serializable
 data class TextItem(
     val id: String = UUID.randomUUID().toString(),
-    val text: String,
+    val text: String = "Text",
     val position: XY = XY(0.5f, 0.5f),
     val positionKeyframes: List<Keyframe<XY>> = emptyList(),
     val scale: Float = 1f,
@@ -171,8 +223,36 @@ data class TextItem(
     val colorKeyframes: List<Keyframe<@Serializable(with = ComposeColorSerializer::class) Color>> = emptyList(),
     val alpha: Float = 1f,
     val alphaKeyframes: List<Keyframe<Float>> = emptyList(),
+    val bgArgb: Long? = null,
+    val strokeColorArgb: Long? = null,
+    val shadowColorArgb: Long? = null,
+    val fontFamily: String = "sans",
+    val isBold: Boolean = true,
+    val isItalic: Boolean = false,
+    val presetId: String? = null,
+    val animationType: String = "NONE",
+    val animationDurationMs: Long = 800L,
+    val outroAnimationType: String = "NONE",
+    val outroAnimationDurationMs: Long = 600L,
+    val textAlign: String = "CENTER",
+    val letterSpacingEm: Float = 0f,
+    val gradientStartArgb: Long? = null,
+    val gradientEndArgb: Long? = null,
+    val keyframes: List<Keyframe<Transform>> = emptyList(),
+    val mask: Mask? = null,
+    val maskKeyframes: List<com.apexstudio.app.domain.model.TextMaskKeyframe> = emptyList(),
+    val highlightStartUtf16: Int? = null,
+    val highlightEndUtf16: Int? = null,
+    val highlightSourceFingerprint: String? = null,
+    val highlightColorArgb: Long = 0xFFFFFF00L,
+    val animationWindowStartMs: Long? = null,
+    val animationWindowEndMs: Long? = null,
+    val projectTextLayerId: String? = null,
+    val rangeEndExclusive: Boolean = false,
     val startMs: Long = 0L,
-    val endMs: Long = Long.MAX_VALUE
+    val endMs: Long = Long.MAX_VALUE,
+    /** True when this item is a compatibility projection of a legacy TextOverlay. */
+    val legacyBacked: Boolean = false
 ) {
     fun positionAt(timeMs: Long): XY = sample(positionKeyframes, position, timeMs, XYType)
     fun scaleAt(timeMs: Long): Float = sample(scaleKeyframes, scale, timeMs, FloatType)
@@ -184,7 +264,9 @@ data class TextItem(
 @Serializable
 data class StickerItem(
     val id: String = UUID.randomUUID().toString(),
-    val symbolOrUri: String,
+    val symbolOrUri: String = "🔥",
+    val category: String = "Emoji",
+    val name: String = "Sticker",
     val position: XY = XY(0.5f, 0.5f),
     val positionKeyframes: List<Keyframe<XY>> = emptyList(),
     val scale: Float = 1f,
@@ -193,8 +275,17 @@ data class StickerItem(
     val rotationKeyframes: List<Keyframe<Float>> = emptyList(),
     val alpha: Float = 1f,
     val alphaKeyframes: List<Keyframe<Float>> = emptyList(),
+    val keyframes: List<Keyframe<Transform>> = emptyList(),
+    val assetPath: String? = null,
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 1f,
+    val cropBottom: Float = 1f,
+    val cutoutShape: String = "NONE",
     val startMs: Long = 0L,
-    val endMs: Long = Long.MAX_VALUE
+    val endMs: Long = Long.MAX_VALUE,
+    /** True when this item is a compatibility projection of a legacy StickerOverlay. */
+    val legacyBacked: Boolean = false
 ) {
     fun positionAt(timeMs: Long): XY = sample(positionKeyframes, position, timeMs, XYType)
     fun scaleAt(timeMs: Long): Float = sample(scaleKeyframes, scale, timeMs, FloatType)
@@ -219,6 +310,15 @@ sealed interface OverlayItem {
         val outMs: Long,
         val trimStartMs: Long = 0L,
         val speed: Float = 1f,
+        val sourceName: String = "",
+        val sourceDurationMs: Long = 0L,
+        val trimEndMs: Long = 0L,
+        val thumbnail: String? = null,
+        val groupId: String? = null,
+        val speedCurve: com.apexstudio.app.domain.model.SpeedCurve = com.apexstudio.app.domain.model.SpeedCurve.LINEAR,
+        val rampStartSpeed: Float = 1f,
+        val rampEndSpeed: Float = 1f,
+        val speedPoints: List<com.apexstudio.app.domain.model.SpeedPoint> = emptyList(),
         override val transform: Transform = Transform(),
         override val opacity: Float = 1f,
         override val opacityKeyframes: List<Keyframe<Float>> = emptyList(),
@@ -235,7 +335,31 @@ sealed interface OverlayItem {
         val mask: Mask? = null,
         val chromaKey: ChromaKey? = null,
         val blendMode: BlendMode = BlendMode.NORMAL,
-        val drawingLayer: DrawingLayer? = null
+        val drawingLayer: DrawingLayer? = null,
+            val denoiseEnabled: Boolean = false,
+            val denoiseStrength: com.apexstudio.app.domain.model.DenoiseStrength = com.apexstudio.app.domain.model.DenoiseStrength.MEDIUM,
+            val backgroundReplace: com.apexstudio.app.domain.model.BackgroundReplaceSettings? = null,
+            val gpuFilterConfig: com.apexstudio.app.domain.model.GpuFilterConfig = com.apexstudio.app.domain.model.GpuFilterConfig(),
+            val projectVideoEffectId: String? = null,
+            val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings(),
+            val faceCropTrack: com.apexstudio.app.domain.model.FaceCropTrack? = null,
+            val pipX: Float = 0.85f,
+            val pipY: Float = 0.85f,
+            val pipScale: Float = 0.25f,
+            val pipRotationDeg: Float = 0f,
+            val pipOpacity: Float = 1f,
+            val overlayAspect: Float = 16f / 9f,
+            val overlayBlend: BlendMode = BlendMode.NORMAL,
+            val overlayBorderWidth: Float = 0f,
+            val overlayBorderColor: Int = 0xFFFFFFFF.toInt(),
+            val overlayShadow: Float = 0f,
+            val overlayFlipH: Boolean = false,
+            val overlayFlipV: Boolean = false,
+            val overlayVolume: Float = 0f,
+            val photoEdit: com.apexstudio.app.domain.model.PhotoEditSettings = com.apexstudio.app.domain.model.PhotoEditSettings(),
+            val workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+            val videoFitMode: com.apexstudio.app.domain.model.VideoFitMode = com.apexstudio.app.domain.model.VideoFitMode.FIT
+
     ) : OverlayItem
 
     @Serializable
@@ -245,10 +369,59 @@ sealed interface OverlayItem {
         val uri: Uri,
         val inMs: Long,
         val outMs: Long,
+        val sourceName: String = "",
+        val sourceDurationMs: Long = 0L,
+        val trimStartMs: Long = 0L,
+        val trimEndMs: Long = 0L,
+        val thumbnail: String? = null,
+        val groupId: String? = null,
         override val transform: Transform = Transform(),
         override val opacity: Float = 1f,
-        override val opacityKeyframes: List<Keyframe<Float>> = emptyList()
-    ) : OverlayItem
+        override val opacityKeyframes: List<Keyframe<Float>> = emptyList(),
+        val filter: String? = null,
+        val filterIntensity: Float = 1f,
+        val filterKeyframes: List<Keyframe<Float>> = emptyList(),
+        val effectIntensity: Float = 1f,
+        val effectIntensityKeyframes: List<Keyframe<Float>> = emptyList(),
+        val lutId: String? = null,
+        val lutIntensity: Float = 1f,
+        val lutKeyframes: List<Keyframe<Float>> = emptyList(),
+        val saturation: Float = 1f,
+        val saturationKeyframes: List<Keyframe<Float>> = emptyList(),
+        val mask: Mask? = null,
+        val chromaKey: ChromaKey? = null,
+        val blendMode: BlendMode = BlendMode.NORMAL,
+        val drawingLayer: DrawingLayer? = null,
+            val denoiseEnabled: Boolean = false,
+            val denoiseStrength: com.apexstudio.app.domain.model.DenoiseStrength = com.apexstudio.app.domain.model.DenoiseStrength.MEDIUM,
+            val backgroundReplace: com.apexstudio.app.domain.model.BackgroundReplaceSettings? = null,
+            val gpuFilterConfig: com.apexstudio.app.domain.model.GpuFilterConfig = com.apexstudio.app.domain.model.GpuFilterConfig(),
+            val projectVideoEffectId: String? = null,
+            val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings = com.apexstudio.app.domain.model.VideoCropSettings(),
+            val faceCropTrack: com.apexstudio.app.domain.model.FaceCropTrack? = null,
+            val pipX: Float = 0.85f,
+            val pipY: Float = 0.85f,
+            val pipScale: Float = 0.25f,
+            val pipRotationDeg: Float = 0f,
+            val pipOpacity: Float = 1f,
+            val overlayAspect: Float = 16f / 9f,
+            val overlayBlend: BlendMode = BlendMode.NORMAL,
+            val overlayBorderWidth: Float = 0f,
+            val overlayBorderColor: Int = 0xFFFFFFFF.toInt(),
+            val overlayShadow: Float = 0f,
+            val overlayFlipH: Boolean = false,
+            val overlayFlipV: Boolean = false,
+            val overlayVolume: Float = 0f,
+            val photoEdit: com.apexstudio.app.domain.model.PhotoEditSettings = com.apexstudio.app.domain.model.PhotoEditSettings(),
+            val workspaceEffects: List<com.apexstudio.app.domain.model.WorkspaceEffect> = emptyList(),
+            val videoFitMode: com.apexstudio.app.domain.model.VideoFitMode = com.apexstudio.app.domain.model.VideoFitMode.FIT
+
+    ) : OverlayItem {
+        fun filterIntensityAt(timeMs: Long): Float = sample(filterKeyframes, filterIntensity, timeMs, FloatType)
+        fun effectIntensityAt(timeMs: Long): Float = sample(effectIntensityKeyframes, effectIntensity, timeMs, FloatType)
+        fun lutIntensityAt(timeMs: Long): Float = sample(lutKeyframes, lutIntensity, timeMs, FloatType)
+        fun saturationAt(timeMs: Long): Float = sample(saturationKeyframes, saturation, timeMs, FloatType)
+    }
 }
 
 @Serializable
@@ -257,7 +430,13 @@ data class ChromaKey(
     val softness: Float,
     val spill: Float,
     @Serializable(with = ComposeColorSerializer::class)
-    val color: Color
+    val color: Color,
+    val enabled: Boolean = true,
+    val depth3D: Float = 0.35f,
+    val tiltX: Float = 0f,
+    val tiltY: Float = 0f,
+    val backgroundType: String = "cyber_portal",
+    val customBackgroundUri: String? = null
 )
 
 @Serializable
@@ -269,19 +448,43 @@ sealed interface Mask {
         val rect: RectF,
         val feather: Float = 0f,
         val inverted: Boolean = false,
-        val keyframes: List<Keyframe<@Serializable(with = AndroidRectFSerializer::class) RectF>> = emptyList()
+        val keyframes: List<Keyframe<@Serializable(with = AndroidRectFSerializer::class) RectF>> = emptyList(),
+        val enabled: Boolean = true,
+        val opacity: Float = 1f,
+        val rotationDeg: Float = 0f,
+        val presetId: String? = null,
+        val maskKeyframes: List<MaskKeyframe> = emptyList()
     ) : Mask
 
     @Serializable
     data class Pen(
         @Serializable(with = AndroidPathSerializer::class)
-        val path: Path,
+        val path: Path = Path(),
+        val points: List<XY> = emptyList(),
         val strokes: List<Stroke> = emptyList(),
-        val feather: Float = 0f
+        val feather: Float = 0f,
+        val inverted: Boolean = false,
+        val enabled: Boolean = true,
+        val opacity: Float = 1f,
+        val rotationDeg: Float = 0f,
+        val presetId: String? = null,
+        val maskKeyframes: List<MaskKeyframe> = emptyList()
     ) : Mask
 
     @Serializable
-    data class BlurFaces(val enabled: Boolean = true) : Mask
+    data class BlurFaces(
+        val enabled: Boolean = true,
+        val centerX: Float = 0.5f,
+        val centerY: Float = 0.5f,
+        val sizeX: Float = 0.6f,
+        val sizeY: Float = 0.6f,
+        val feather: Float = 0.15f,
+        val inverted: Boolean = false,
+        val opacity: Float = 1f,
+        val rotationDeg: Float = 0f,
+        val presetId: String? = null,
+        val maskKeyframes: List<MaskKeyframe> = emptyList()
+    ) : Mask
 
     @Serializable
     enum class Kind {
@@ -296,8 +499,24 @@ sealed interface Mask {
     }
 }
 
+/** Typed, field-level mask animation keyframe; it deliberately does not retain VideoMask. */
+@Serializable
+data class MaskKeyframe(
+    val id: String,
+    val timeMs: Long,
+    @Serializable(with = AndroidRectFSerializer::class)
+    val rect: RectF,
+    val rotationDeg: Float = 0f,
+    val feather: Float = 0f,
+    val opacity: Float = 1f,
+    val inverted: Boolean = false,
+    val curve: Curve = Curve.LINEAR
+)
+
 @Serializable
 data class DrawingLayer(
+    val id: String = UUID.randomUUID().toString(),
+    val ownerClipId: String? = null,
     val strokes: List<Stroke> = emptyList(),
     val blendMode: BlendMode = BlendMode.NORMAL,
     val globalAlpha: Float = 1f,

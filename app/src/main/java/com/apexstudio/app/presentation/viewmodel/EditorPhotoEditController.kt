@@ -67,6 +67,26 @@ fun EditorViewModel.updatePhotoAdjustments(
 fun EditorViewModel.resetPhotoAdjustments(clipId: String) =
     updatePhotoEdit(clipId) { it.copy(adjustments = VideoAdjustments()) }
 
+/** Deterministic on-device enhancement through the existing photo renderer. */
+fun EditorViewModel.applyPhotoAutoEnhance(clipId: String) =
+    updatePhotoAdjustments(clipId) {
+        it.copy(
+            brightness = maxOf(it.brightness, 0.08f),
+            contrast = maxOf(it.contrast, 1.08f),
+            saturation = maxOf(it.saturation, 1.05f),
+            clarity = maxOf(it.clarity, 0.12f),
+            sharpness = maxOf(it.sharpness, 0.18f)
+        )
+    }
+
+/** Enable the existing local denoise shader at a conservative strength. */
+fun EditorViewModel.applyPhotoDenoise(clipId: String) =
+    updatePhotoAdjustments(clipId) { it.copy(denoise = maxOf(it.denoise, 0.35f)) }
+
+/** Enable the existing local sharpness stage without changing other edits. */
+fun EditorViewModel.applyPhotoSharpen(clipId: String) =
+    updatePhotoAdjustments(clipId) { it.copy(sharpness = maxOf(it.sharpness, 0.35f)) }
+
 fun EditorViewModel.setPhotoFilter(clipId: String, filterId: String?, intensity: Float = 1f) =
     updatePhotoEdit(clipId) { it.copy(filterId = filterId, filterIntensity = intensity.coerceIn(0f, 1f)) }
 

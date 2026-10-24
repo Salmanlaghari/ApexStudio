@@ -73,6 +73,9 @@ import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+import com.apexstudio.app.domain.model.timeline.animationTransformAt
 /**
  * Modal overlay sections extracted from [EditorScreen] to keep it under the
  * JVM 64KB method limit. Pure extraction — no behavior changes.
@@ -640,7 +643,13 @@ fun AudioMixerPanelOverlay(
                 onRemoveVolumeKeyframe = { trackId, kfId ->
                     vm.removeAudioVolumeKeyframe(trackId, kfId)
                 },
-                onSeekTo = { targetMs -> vm.seekTo(targetMs) }
+                onSeekTo = { targetMs -> vm.seekTo(targetMs) },
+                onNormalizeTrack = { trackId -> vm.normalizeTrackLoudness(trackId) },
+                onAutoDuckMusic = { musicTrackId, voiceTrackId ->
+                    vm.autoDuckMusicUnderVoice(musicTrackId, voiceTrackId)
+                },
+                onFitMusicToProject = { trackId -> vm.fitMusicToProjectLength(trackId) },
+                onRemoveSilence = { trackId -> vm.removeSilenceFromAudioTrack(trackId) }
             )
         }
     }
@@ -957,7 +966,9 @@ fun MaskPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             MaskPanel(
                 mask = selectedClip?.mask,
-                keyframeTimeMs = state.playerPositionMs,
+                keyframeTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), selectedClip, state.playerPositionMs
+                ).coerceAtLeast(0L),
                 onUpdate = { mask ->
                     val clipId = selectedClip?.id ?: return@MaskPanel
                     if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)
@@ -1522,7 +1533,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Per-clip saturation keyframes: factor from the
             // selected clip's track at the playhead (1f = no pins).
             keyframedSaturationFactor = animatedTransform.saturation ?: 1f,
-            currentTimeMs = state.playerPositionMs,
+            currentTimeMs = mainPreviewClip?.let { clip ->
+                com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), clip, state.playerPositionMs
+                ).coerceAtLeast(0L)
+            } ?: 0L,
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with
             // drag-to-move/resize while the mask panel is open.
@@ -1796,10 +1811,15 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
         onDeleteClip = { clipId -> vm.deleteClip(clipId) },
         onDeleteClips = { ids -> vm.deleteClips(ids) },
+        onDuplicateSelectedClips = { vm.duplicateSelectedClips() },
+        onGroupSelectedClips = { vm.groupSelectedClips() },
+        onApplySpeedToSelectedClips = { speed -> vm.applySpeedToSelectedClips(speed) },
+        onApplyFilterToSelectedClips = { config -> vm.applyFilterToSelectedClips(config) },
+        onApplyLutToSelectedClips = { profileId, intensity -> vm.applyLutToSelectedClips(profileId, intensity) },
         onToggleMultiSelect = { vm.toggleMultiSelectMode() },
         onToggleSelectedClip = { id -> vm.toggleSelectedClip(id) },
         onClearMultiSelection = { vm.clearMultiSelection() },
-        onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },
+        onReorderClips = { orderedIds -> vm.reorderMainVideoClips(orderedIds) },
         onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
         onTrimClip = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
         onToggleKeyframeAtPlayhead = { clipId -> vm.toggleKeyframeAtPlayheadFor(clipId) },

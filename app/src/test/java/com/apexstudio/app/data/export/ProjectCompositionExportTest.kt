@@ -19,6 +19,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.StylisticEffectType
+import kotlinx.serialization.json.Json
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
+import com.apexstudio.app.domain.model.MaskShape
 
 class ProjectCompositionExportTest {
     private fun clip(
@@ -245,5 +251,69 @@ class ProjectCompositionExportTest {
                 highlights = ColorWheelVector(2f, 0f)
             ))
         )!!.contains("invalid Color Studio grade"))
+    }
+
+    @Test
+    fun `per clip GPU filter state stays attached to its own project item`() {
+        val first = clip().copy(gpuFilterConfig = GpuFilterConfig(
+            stylisticEffect = StylisticEffectType.VIGNETTE,
+            stylisticIntensity = 0.75f
+        ))
+        val second = clip("second")
+        assertEquals(
+            listOf(
+                ProjectItemFilterExport(first.id, first.gpuFilterConfig),
+                ProjectItemFilterExport(second.id, GpuFilterConfig())
+            ),
+            projectItemFilterExports(listOf(first, second))
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(first, second), ExportEngine.ExportConfig()))
+        assertTrue(second.gpuFilterConfig.isDefault)
+        assertTrue(first.gpuFilterConfig.toProjectExportAdjustments().vignette > 0f)
+    }
+
+    @Test
+    fun `default per clip GPU filter preserves export defaults`() {
+        val adjustments = GpuFilterConfig().toProjectExportAdjustments()
+        assertTrue(adjustments.isDefault)
+        assertNull(projectGpuFilterUnsupportedReason(GpuFilterConfig()))
+    }
+
+    @Test
+    fun `per clip GPU filter survives project item persistence reload`() {
+        val source = clip().copy(gpuFilterConfig = GpuFilterConfig(
+            filterPresetId = "creator_clean",
+            filterIntensity = 0.6f,
+            brightness = 0.15f
+        ))
+        val restored = Json.decodeFromString<MediaClip>(
+            Json.encodeToString(MediaClip.serializer(), source)
+        )
+        assertEquals(source.gpuFilterConfig, restored.gpuFilterConfig)
+        assertEquals(source.id, restored.id)
+    }
+
+    @Test
+    fun `malformed per clip GPU filter is rejected`() {
+        val invalid = clip().copy(gpuFilterConfig = GpuFilterConfig(filterIntensity = Float.NaN))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
+            .contains("invalid per-clip filter/LUT"))
+    }
+
+    @Test
+    fun `whole project export accepts valid main-track clip masks`() {
+        val masked = clip().copy(mask = MaskModel.defaultForShape(MaskShape.ELLIPSE))
+        assertNull(projectCompositionUnsupportedReason(listOf(masked), ExportEngine.ExportConfig()))
+    }
+
+    @Test
+    fun `whole project export rejects unavailable and invalid clip masks explicitly`() {
+        val blur = clip().copy(mask = MaskModel.defaultForShape(MaskShape.BLUR_FACE))
+        assertTrue(projectCompositionUnsupportedReason(listOf(blur), ExportEngine.ExportConfig())!!
+            .contains("unavailable Blur Faces"))
+        val invalidPen = clip().copy(mask = MaskModel.defaultForShape(MaskShape.DRAW)
+            .copy(drawPoints = listOf(MaskPoint(0f, 0f), MaskPoint(1f, 1f))))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalidPen), ExportEngine.ExportConfig())!!
+            .contains("invalid pen mask geometry"))
     }
 }

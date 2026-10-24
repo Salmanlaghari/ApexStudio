@@ -29,18 +29,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.components.AudioWaveform
 import com.apexstudio.app.ui.components.RealAudioWaveform
-import com.apexstudio.app.data.audio.TrackWaveformCache
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.WaveformGenerator
+import com.apexstudio.app.data.audio.TrackWaveformCache
+import com.apexstudio.app.domain.model.AudioTrack
 import kotlin.math.abs
 
 @Composable
@@ -55,6 +56,7 @@ fun AudioStudioScreen(
 ) {
     val state by vm.audio.collectAsStateWithLifecycle()
     val audioState by vm.state.collectAsStateWithLifecycle()
+    val projectAudioTracks = audioState.project?.audioTracks.orEmpty()
 
     Column(
         modifier = Modifier
@@ -82,22 +84,25 @@ fun AudioStudioScreen(
                 cornerRadius = 14.dp
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
-                    if (state.tracks.isEmpty()) {
+                    if (projectAudioTracks.isEmpty()) {
                         Text(
-                            "No audio tracks yet. Add music or a voiceover from the editor timeline.",
-                            color = ApexPalette.TextTertiary,
+                            "No audio tracks yet. Add music, voiceover, or sound effects to this project.",
+                            color = ApexPalette.TextSecondary,
                             fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(vertical = 12.dp)
                         )
-                    } else {
-                        state.tracks.forEachIndexed { idx, track ->
-                            RealAudioTrackRow(
-                                track = track,
-                                onMute = { vm.toggleAudioTrackMute(track.id) },
-                                onSolo = { vm.toggleAudioTrackSolo(track.id) }
-                            )
-                            if (idx < state.tracks.lastIndex) Spacer(Modifier.height(6.dp))
-                        }
+                    } else projectAudioTracks.forEachIndexed { idx, track ->
+                        WaveformTrackRow(
+                            track = track,
+                            samples = rememberTrackWaveform(track),
+                            progress = if (audioState.durationMs > 0L) {
+                                (audioState.currentTimeMs.toFloat() / audioState.durationMs).coerceIn(0f, 1f)
+                            } else 0f,
+                            color = trackAccent(track),
+                            onMute = { vm.toggleAudioTrackMute(track.id) },
+                            onSolo = { vm.toggleAudioTrackSolo(track.id) }
+                        )
+                        if (idx < projectAudioTracks.lastIndex) Spacer(Modifier.height(6.dp))
                     }
                 }
             }
@@ -107,34 +112,17 @@ fun AudioStudioScreen(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        MixerChannel("Main", state.volume, 0f, ApexPalette.NeonCyan,
-                            onVolumeChange = { vm.setVolume(it) },
-                            onMute = { vm.toggleMuteEngine() },
-                            onSolo = { vm.toggleSoloEngine() },
-                            isMuted = state.isMuted, isSolo = state.isSolo
-                        )
-                        MixerChannel("Vocal", state.volume * 0.8f, 0.3f, ApexPalette.NeonPurple,
-                            onVolumeChange = { vm.setVolume(it) },
-                            onMute = { vm.toggleMuteEngine() },
-                            onSolo = { vm.toggleSoloEngine() },
-                            isMuted = state.isMuted, isSolo = state.isSolo
-                        )
-                        MixerChannel("Beat", state.volume * 0.6f, 0f, ApexPalette.NeonEmerald,
-                            onVolumeChange = { vm.setVolume(it) },
-                            onMute = { vm.toggleMuteEngine() },
-                            onSolo = { vm.toggleSoloEngine() },
-                            isMuted = state.isMuted, isSolo = state.isSolo
-                        )
-                        MixerChannel("SFX", state.volume * 0.5f, -0.4f, ApexPalette.NeonPink,
-                            onVolumeChange = { vm.setVolume(it) },
-                            onMute = { vm.toggleMuteEngine() },
-                            onSolo = { vm.toggleSoloEngine() },
-                            isMuted = state.isMuted, isSolo = state.isSolo
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (projectAudioTracks.isEmpty()) {
+                        Text("Track controls appear here after audio is added.", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                    } else projectAudioTracks.forEach { track ->
+                        AudioTrackMixerRow(
+                            track = track,
+                            accent = trackAccent(track),
+                            onVolumeChange = { vm.setTrackVolume(track.id, it) },
+                            onPanChange = { vm.setAudioTrackPan(track.id, it) },
+                            onMute = { vm.toggleAudioTrackMute(track.id) },
+                            onSolo = { vm.toggleAudioTrackSolo(track.id) }
                         )
                     }
                 }
@@ -331,115 +319,165 @@ private fun SectionLabel(text: String) {
     )
 }
 
-
 @Composable
-private fun MixerChannel(
-    name: String,
-    volume: Float,
-    pan: Float,
-    accent: Color,
-    onVolumeChange: (Float) -> Unit,
-    onMute: () -> Unit,
-    onSolo: () -> Unit,
-    isMuted: Boolean,
-    isSolo: Boolean
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(60.dp)
-    ) {
-        Text(
-            name,
-            color = ApexPalette.TextPrimary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            "Panning",
-            color = ApexPalette.TextTertiary,
-            fontSize = 7.sp
-        )
-        Spacer(Modifier.height(4.dp))
-        PanKnob(pan = pan, accent = accent)
-        Spacer(Modifier.height(6.dp))
-        VerticalFader(volume = volume, accent = accent)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "${(volume * 100).toInt()}%",
-            color = accent,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold
+private fun rememberTrackWaveform(track: AudioTrack): FloatArray {
+    val context = LocalContext.current
+    var samples by remember(track.id, track.uri, track.trimStartMs, track.trimEndMs) {
+        mutableStateOf(
+            TrackWaveformCache.peek(track.uri, track.trimStartMs, track.trimEndMs) ?: FloatArray(0)
         )
     }
+    LaunchedEffect(track.id, track.uri, track.trimStartMs, track.trimEndMs) {
+        TrackWaveformCache.get(context, track.uri, track.trimStartMs, track.trimEndMs)?.let {
+            samples = it
+        }
+    }
+    return samples
+}
+
+private fun trackAccent(track: AudioTrack): Color = when (track.kind) {
+    AudioTrack.Kind.ORIGINAL_VIDEO -> ApexPalette.NeonCyan
+    AudioTrack.Kind.MUSIC -> ApexPalette.NeonEmerald
+    AudioTrack.Kind.SFX -> ApexPalette.NeonPurple
 }
 
 @Composable
-private fun PanKnob(pan: Float, accent: Color) {
-    Box(
+private fun WaveformTrackRow(
+    track: AudioTrack,
+    samples: FloatArray,
+    progress: Float,
+    color: Color,
+    onMute: () -> Unit,
+    onSolo: () -> Unit
+) {
+    Row(
         modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(ApexPalette.BgElevated)
-            .border(1.dp, accent.copy(alpha = 0.5f), CircleShape)
+            .fillMaxWidth()
+            .height(40.dp)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val r = size.minDimension / 2f * 0.7f
-            val angle = (pan * 135f) - 90f
-            val rad = Math.toRadians(angle.toDouble())
-            val x = cx + (r * kotlin.math.cos(rad)).toFloat()
-            val y = cy + (r * kotlin.math.sin(rad)).toFloat()
-            drawLine(
-                color = accent,
-                start = Offset(cx, cy),
-                end = Offset(x, y),
-                strokeWidth = 2f
+        Box(
+            modifier = Modifier
+                .width(68.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgElevated)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                .padding(3.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                track.name,
+                color = color,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 9.sp,
+                maxLines = 1
             )
-            drawCircle(color = Color.White, radius = 2.5f, center = Offset(x, y))
+        }
+        Spacer(Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(34.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(ApexPalette.BgBase)
+                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(4.dp))
+                .padding(2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (samples.isNotEmpty()) {
+                RealAudioWaveform(
+                    samples = samples,
+                    modifier = Modifier.fillMaxSize(),
+                    color = if (track.isMuted) ApexPalette.TextTertiary else color,
+                    progress = progress
+                )
+            } else {
+                Text("Waveform unavailable", color = ApexPalette.TextTertiary, fontSize = 8.sp)
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (track.isMuted) ApexPalette.NeonPink.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                    .border(1.dp, if (track.isMuted) ApexPalette.NeonPink else ApexPalette.BorderGlass, RoundedCornerShape(3.dp))
+                    .clickable { onMute() }
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Text("M", color = if (track.isMuted) ApexPalette.NeonPink else ApexPalette.TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (track.isSolo) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                    .border(1.dp, if (track.isSolo) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(3.dp))
+                    .clickable { onSolo() }
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Text("S", color = if (track.isSolo) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
 
 @Composable
-private fun VerticalFader(volume: Float, accent: Color) {
-    val trackHeight = 80.dp
-    val capOffset = -(trackHeight * (1f - volume))
-    Box(
-        modifier = Modifier
-            .width(28.dp)
-            .height(trackHeight)
-            .clip(RoundedCornerShape(6.dp))
-            .background(ApexPalette.BgBase)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(6.dp)),
-        contentAlignment = Alignment.BottomCenter
+private fun AudioTrackMixerRow(
+    track: AudioTrack,
+    accent: Color,
+    onVolumeChange: (Float) -> Unit,
+    onPanChange: (Float) -> Unit,
+    onMute: () -> Unit,
+    onSolo: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(ApexPalette.BgBase).padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        val fillHeight = trackHeight * volume
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(fillHeight)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(accent, accent.copy(alpha = 0.3f))
-                    )
-                )
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(y = capOffset)
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(ApexPalette.BgElevated, ApexPalette.BgSurface)
-                    )
-                )
-                .border(1.dp, accent, RoundedCornerShape(3.dp))
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(track.name, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+            Text("${track.kind}", color = ApexPalette.TextTertiary, fontSize = 8.sp)
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.clip(RoundedCornerShape(3.dp)).background(if (track.isMuted) ApexPalette.NeonPink.copy(alpha = 0.2f) else ApexPalette.BgElevated).clickable { onMute() }.padding(horizontal = 6.dp, vertical = 3.dp)) {
+                Text("M", color = if (track.isMuted) ApexPalette.NeonPink else ApexPalette.TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(4.dp))
+            Box(Modifier.clip(RoundedCornerShape(3.dp)).background(if (track.isSolo) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated).clickable { onSolo() }.padding(horizontal = 6.dp, vertical = 3.dp)) {
+                Text("S", color = if (track.isSolo) ApexPalette.NeonCyan else ApexPalette.TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("VOL", color = ApexPalette.TextTertiary, fontSize = 8.sp, modifier = Modifier.width(28.dp))
+            Slider(
+                value = track.volume.coerceIn(0f, 1f),
+                onValueChange = onVolumeChange,
+                valueRange = 0f..1f,
+                modifier = Modifier.weight(1f).height(28.dp),
+                colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
+            )
+            Text("${(track.volume.coerceIn(0f, 1f) * 100).toInt()}%", color = accent, fontSize = 8.sp, modifier = Modifier.width(32.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("PAN", color = ApexPalette.TextTertiary, fontSize = 8.sp, modifier = Modifier.width(28.dp))
+            Slider(
+                value = track.pan.coerceIn(-1f, 1f),
+                onValueChange = onPanChange,
+                valueRange = -1f..1f,
+                modifier = Modifier.weight(1f).height(28.dp),
+                colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
+            )
+            val panLabel = when {
+                track.pan < -0.03f -> "L${(track.pan * -100).toInt()}"
+                track.pan > 0.03f -> "R${(track.pan * 100).toInt()}"
+                else -> "C"
+            }
+            Text(panLabel, color = accent, fontSize = 8.sp, modifier = Modifier.width(32.dp))
+        }
     }
 }
 

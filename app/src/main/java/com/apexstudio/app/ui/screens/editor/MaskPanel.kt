@@ -109,7 +109,7 @@ fun MaskPanel(
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            MaskShape.entries.forEach { shape ->
+            MaskShape.entries.filter { MaskModel.isAvailable(it) }.forEach { shape ->
                 val selected = mask?.shape == shape
                 Column(
                     modifier = Modifier
@@ -137,6 +137,13 @@ fun MaskPanel(
                 }
             }
         }
+
+        Text(
+            "Blur Faces unavailable: face-region detection is not wired to preview/export.",
+            color = ApexPalette.TextPrimary.copy(alpha = 0.5f),
+            fontSize = 10.sp,
+            modifier = Modifier.padding(top = 5.dp)
+        )
 
         if (mask == null) {
             Spacer(Modifier.height(9.dp))

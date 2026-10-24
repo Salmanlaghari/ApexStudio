@@ -59,5 +59,5 @@ fun EditorViewModel.duplicateSticker(stickerId: String) {
         }
         state.copy(project = next, selectedStickerId = duplicate.id)
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }

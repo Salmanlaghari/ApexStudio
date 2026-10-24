@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.data.picker.MediaMetadata
+import com.apexstudio.app.domain.model.timeline.applyLegacyAudioTrackChanges
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 
@@ -43,6 +44,20 @@ fun EditorViewModel.clearSelection() = _state.update {
     )
 }
 
+fun EditorViewModel.toggleMultiSelectMode() = _state.update { state ->
+    val enabled = !state.multiSelectMode
+    state.copy(multiSelectMode = enabled, selectedClipIds = if (enabled) state.selectedClipIds else emptySet())
+}
+
+fun EditorViewModel.toggleSelectedClip(id: String) = _state.update { state ->
+    if (!state.multiSelectMode || state.project?.clips?.none { it.id == id } == true) return@update state
+    state.copy(selectedClipIds = if (id in state.selectedClipIds) state.selectedClipIds - id else state.selectedClipIds + id)
+}
+
+fun EditorViewModel.clearMultiSelection() = _state.update {
+    it.copy(selectedClipIds = emptySet(), multiSelectMode = false)
+}
+
 /**
  * Per-clip audio gain, 0 (silent) .. 2 (boosted). Applied live to the
  * ExoPlayer preview of the clip and multiplied into the export volume,
@@ -55,7 +70,7 @@ fun EditorViewModel.setClipVolume(clipId: String, volume: Float) {
         val updated = p.clips.map { if (it.id == clipId) it.copy(volume = safe) else it }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 /**
@@ -76,7 +91,7 @@ fun EditorViewModel.setClipDenoise(
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 fun EditorViewModel.openClipVolumeSheet() = _state.update { it.copy(clipVolumeSheetOpen = true) }
@@ -130,7 +145,7 @@ fun EditorViewModel.replaceClipMedia(clipId: String, meta: MediaMetadata) {
             pendingReplaceClipId = null
         )
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 /**
@@ -141,6 +156,7 @@ fun EditorViewModel.replaceClipMedia(clipId: String, meta: MediaMetadata) {
 fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata) {
     _state.update { s ->
         val p = s.project ?: return@update s
+        val before = p.audioTracks.firstOrNull { it.id == trackId } ?: return@update s
         val newDur = meta.durationMs.coerceAtLeast(500L)
         val updated = p.audioTracks.map { track ->
             if (track.id != trackId) return@map track
@@ -151,8 +167,15 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
                 trimEndMs = newDur
             )
         }
+        val after = updated.first { it.id == trackId }
+        val typed = p.timeline.tracks.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+            .firstOrNull { it.id == "shared-audio-$trackId" }
+        val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(before, after, it) }
+        val timeline = if (updatedTyped == null) p.timeline else p.timeline.copy(
+            tracks = p.timeline.tracks.map { if (it.id == updatedTyped.id) updatedTyped else it }
+        )
         s.copy(
-            project = p.copy(audioTracks = updated),
+            project = p.copy(audioTracks = updated, timeline = timeline),
             pendingReplaceAudioTrackId = null,
             // Beats were computed for the old audio — drop them.
             beatMarkersMs = emptyList(),

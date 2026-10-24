@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
 
 fun EditorViewModel.setSelectedResolution(res: String) {
@@ -162,6 +163,7 @@ fun EditorViewModel.startExport(
             projectVideoEffectId = selected?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = selected?.workspaceEffects.orEmpty(),
             videoCrop = selected?.videoCrop,
+            chromaKeySettings = selected?.chromaKeySettings,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
@@ -176,10 +178,12 @@ fun EditorViewModel.startExport(
             // curve; constant [clipSpeed] is the no-curve fallback.
             speedPoints = selected?.speedPoints ?: emptyList(),
             keyframes = selected?.keyframes ?: KeyframeTrack(),
+            sharedVideoClip = selected?.let { clip -> s.project?.sharedVideoClip(clip.id) },
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
             // Shape mask (Mask tool) on the main clip.
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
+            signature = s.project?.signature,
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),
             videoDrawingClipId = selected?.id,
@@ -195,6 +199,7 @@ fun EditorViewModel.startExport(
             // global audio volume, so what the user hears in the preview
             // is exactly what bakes into the export.
             volume = (selected?.volume ?: 1f) * (if (audioSt.isMuted) 0f else audioSt.volume),
+            globalAudioVolume = if (audioSt.isMuted) 0f else audioSt.volume,
             // Clean Voice: the selected clip's denoise setting rides
             // into the export with the same processor the preview uses.
             denoiseEnabled = selected?.denoiseEnabled ?: false,
@@ -565,6 +570,7 @@ internal fun buildPhotoExportConfig(
         arFilterIntensity = s.arFilterIntensity,
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
+        signature = s.project?.signature,
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,

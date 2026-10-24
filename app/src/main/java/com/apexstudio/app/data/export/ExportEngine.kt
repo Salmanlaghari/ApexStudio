@@ -18,10 +18,12 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
+import androidx.compose.ui.graphics.toArgb
 import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
 import com.apexstudio.app.data.audio.AudioTrackEnvelopeAudioProcessor
 import com.apexstudio.app.data.audio.DenoiseAudioProcessor
+import com.apexstudio.app.data.audio.SharedVideoClipAudioProcessor
 import com.apexstudio.app.data.effect.TextOverlayGlEffect
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropGlEffect
@@ -38,10 +40,16 @@ import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.toLutTexture
 import com.apexstudio.app.domain.model.DenoiseStrength
+import com.apexstudio.app.domain.model.ChromaKeySettings
+import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParameters
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.resolveMaskAt
+import com.apexstudio.app.domain.model.Signature
+import com.apexstudio.app.domain.model.SignatureCorner
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.hasValidParameters
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,7 +66,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import java.util.concurrent.atomic.AtomicBoolean
 import java.io.File
-
 /**
  * Production Video Export and Rendering Engine built with AndroidX Media3 Transformer.
  *
@@ -234,6 +241,8 @@ class ExportEngine(private val context: Context) {
         // Preferred per-clip crop source. The legacy editor-state cropRect
         // remains a fallback for older callers/projects.
         val videoCrop: com.apexstudio.app.domain.model.VideoCropSettings? = null,
+        /** Per-clip chroma key pass; null/disabled preserves the source. */
+        val chromaKeySettings: ChromaKeySettings? = null,
         val faceCropConfig: com.apexstudio.app.data.effect.FaceCropRenderConfig? = null,
         val cropRect: com.apexstudio.app.presentation.state.CropRect? = null,
         val clipSpeed: Float = 1f,
@@ -261,6 +270,8 @@ class ExportEngine(private val context: Context) {
         val transitionGlId: String? = null,
         val transitionDurationMs: Long = 500L,
         val textOverlays: List<TextOverlay> = emptyList(),
+        /** Project branding is appended after every other visual composition layer. */
+        val signature: Signature? = null,
         /** Active artwork layers for selected-clip export; callers filter to global + selected clip. */
         val videoDrawings: List<VideoDrawingLayer> = emptyList(),
         /** Source clip id used by VideoDrawingRenderer to include matching clip-specific layers. */
@@ -273,6 +284,8 @@ class ExportEngine(private val context: Context) {
         val trimEndMs: Long = 0L,
         val pitchSemitones: Float = 0f,
         val volume: Float = 1f,
+        /** Global mixer gain, separate from clip volume when typed audio is animated. */
+        val globalAudioVolume: Float? = null,
         // Clean Voice (per-clip voice noise cleanup): when true, the
         // export runs the same DenoiseAudioProcessor the preview uses
         // (first in the audio chain, so it sees the original audio).
@@ -297,6 +310,10 @@ class ExportEngine(private val context: Context) {
         val overlayAudioSources: List<AudioExportSource> = emptyList(),
         /** Project-global start of this clip; keyframes are stored in this clock. */
         val keyframeTimelineStartMs: Long = 0L,
+        /** Canonical typed keyframe source for a selected clip export. */
+        val sharedVideoClip: com.apexstudio.app.domain.model.timeline.VideoClip? = null,
+        /** Canonical typed video clips used by whole-project export, keyed by clip id. */
+        val sharedVideoClips: Map<String, com.apexstudio.app.domain.model.timeline.VideoClip> = emptyMap(),
         /** Optional Color Studio project grade. Applied to every eligible composed main-track clip. */
         val colorStudioGrade: ColorStudioGrade? = null
     )
@@ -435,6 +452,7 @@ class ExportEngine(private val context: Context) {
                             clipSpeed = clip.speedMultiplier,
                             speedPoints = clip.speedPoints,
                             keyframes = clip.keyframes,
+                            sharedVideoClip = config.sharedVideoClips[clip.id],
                             volume = (config.volume * clip.volume).coerceIn(0f, 2f),
                             denoiseEnabled = config.denoiseEnabled || clip.denoiseEnabled,
                             denoiseStrength = if (clip.denoiseEnabled) clip.denoiseStrength else config.denoiseStrength
@@ -443,16 +461,75 @@ class ExportEngine(private val context: Context) {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
                         val keyframeClock = keyframeClockFor(itemConfig)
+                        val sharedAnimation = itemConfig.sharedVideoClip
                         val videoEffects = buildList<androidx.media3.common.Effect> {
+                            clip.faceCropTrack?.let { track ->
+                                add(FaceCropGlEffect.forExport(
+                                    com.apexstudio.app.data.effect.FaceCropRenderConfig(
+                                        track = track,
+                                        trimStartMs = entry.sourceStartMs,
+                                        trimEndMs = entry.sourceEndMs
+                                    ).exportConfig()
+                                ))
+                            }
                             clip.videoCrop.takeUnless { it.isFullFrame }
                                 ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
                                 ?.let { add(it) }
+                            com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(clip.chromaKeySettings)
+                                ?.let { add(it) }
                             com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                                 ?.let { add(it) }
-                            addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(clip.workspaceEffects, entry.sourceStartMs))
+                            addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(
+                                clip.workspaceEffects,
+                                entry.sourceStartMs,
+                                sharedAnimation?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }?.let { typed ->
+                                    { compositionTimeUs ->
+                                        val projectMs = keyframeClock.projectTimeMs(
+                                            com.apexstudio.app.data.animation.itemLocalPresentationTimeUs(
+                                                compositionTimeUs, entry.timelineStartMs
+                                            )
+                                        )
+                                        typed.effectIntensityAt(projectMs)
+                                    }
+                                }
+                            ))
                             add(ProjectOutputSizeTransformation(outputWidth, outputHeight, clip.videoFitMode))
-                            if (config.filterPreset != null && config.filterIntensity > 0f) {
-                                add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                            // Per-clip GPU filter/LUT state is intentionally resolved inside
+                            // this item's effect graph. A default config contributes no stage;
+                            // another clip's state can therefore never bleed into this item.
+                            if (!clip.gpuFilterConfig.isDefault) {
+                                clip.gpuFilterConfig.filterPresetId
+                                    ?.let { com.apexstudio.app.data.filter.FilterManifest.presetById(it) }
+                                    ?.let { preset ->
+                                        add(LutFilterGlEffect(
+                                            context,
+                                            preset,
+                                            clip.gpuFilterConfig.filterIntensity
+                                        ))
+                                    }
+                                val perClipAdjustments = clip.gpuFilterConfig.toProjectExportAdjustments()
+                                if (!perClipAdjustments.isDefault) {
+                                    add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(perClipAdjustments))
+                                }
+                            }
+                            if (config.filterPreset != null && (config.filterIntensity > 0f ||
+                                    sharedAnimation?.filterKeyframes?.isNotEmpty() == true ||
+                                    sharedAnimation?.lutKeyframes?.isNotEmpty() == true)) {
+                                add(LutFilterGlEffect(
+                                    context,
+                                    config.filterPreset,
+                                    config.filterIntensity,
+                                    presentationTimeIntensityProvider = sharedAnimation?.let { typed ->
+                                        { compositionTimeUs ->
+                                            val projectMs = keyframeClock.projectTimeMs(
+                                                com.apexstudio.app.data.animation.itemLocalPresentationTimeUs(
+                                                    compositionTimeUs, entry.timelineStartMs
+                                                )
+                                            )
+                                            config.filterIntensity * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
+                                        }
+                                    }
+                                ))
                             }
                             if (!config.adjustments.isDefault) {
                                 val matrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
@@ -485,7 +562,9 @@ class ExportEngine(private val context: Context) {
                             // Keyframes are in project-global time. This effect runs before
                             // speed changes PTS, so the mapper can apply this clip's source trim,
                             // speed curve, and sequential project placement exactly once.
-                            if (!clip.keyframes.isEmpty()) {
+                            val hasTypedAnimation = itemConfig.sharedVideoClip
+                                ?.animationKeyframeTimes()?.isNotEmpty() == true
+                            if (!clip.keyframes.isEmpty() || hasTypedAnimation) {
                                 add(com.apexstudio.app.data.animation.KeyframeAnimationEffect(
                                     trackProvider = { clip.keyframes },
                                     // Composition effects see PTS with this item's sequence offset;
@@ -496,9 +575,28 @@ class ExportEngine(private val context: Context) {
                                                 compositionTimeUs, entry.timelineStartMs
                                             )
                                         )
-                                    }
+                                    },
+                                    sharedVideoClipProvider = { itemConfig.sharedVideoClip }
                                 ).buildEffects().first())
                             }
+                            // Clip masks use the clip-output clock. Composition
+                            // PTS includes the sequence offset, so localize it
+                            // first, map through this item's speed clock, then
+                            // subtract the entry placement before interpolation.
+                            com.apexstudio.app.data.effect.MaskGlEffect.fromMask(
+                                clip.mask,
+                                clip.mask?.let { mask ->
+                                    { compositionTimeUs ->
+                                        mask.resolveMaskAt(
+                                            (keyframeClock.projectTimeMs(
+                                                com.apexstudio.app.data.animation.itemLocalPresentationTimeUs(
+                                                    compositionTimeUs, entry.timelineStartMs
+                                                )
+                                            ) - entry.timelineStartMs).coerceAtLeast(0L)
+                                        )
+                                    }
+                                }
+                            )?.let(::add)
                             speedPair?.second?.let(::add)
                             // These windows are clip-output-relative: the trimmed sequence item starts at 0,
                             // and the caption/sticker effects follow speed processing on that output clock.
@@ -526,6 +624,9 @@ class ExportEngine(private val context: Context) {
                                 add(com.apexstudio.app.data.filter.LutFilterGlEffect(
                                     context, preset = null, preloaded = grade.toLutTexture()
                                 ))
+                            }
+                            config.signature?.let { signature ->
+                                addAll(buildSignatureExportEffects(signature, aspect))
                             }
                             add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                 effectiveExportFrameRate(config.fps).toFloat()
@@ -763,6 +864,9 @@ class ExportEngine(private val context: Context) {
                 require(config.workspaceEffects.size <= 16 && config.workspaceEffects.all { it.hasValidParameters() }) {
                     "Invalid ranged filter or custom grading values; export stopped rather than dropping the edit."
                 }
+                require(config.chromaKeySettings == null || config.chromaKeySettings.hasValidChromaParameters()) {
+                    "Invalid chroma-key parameters; export stopped rather than changing the keyed result."
+                }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
                 if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {
@@ -834,12 +938,24 @@ class ExportEngine(private val context: Context) {
                     else config.cropRect?.let { r -> VideoCropGlEffect.fromRect(r.left, r.top, r.right, r.bottom) }
                 } else null // Dynamic face crop takes precedence over all static crop sources.
                 cropEffect?.let { videoEffects.add(it) }
+                com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(config.chromaKeySettings)
+                    ?.let { videoEffects.add(it) }
 
                 com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(config.projectVideoEffectId)
                     ?.let { videoEffects.add(it) }
                 // Match preview: source crop → fixed color → ranged effect, before output resize/speed.
+                val keyframeClock = keyframeClockFor(config)
+                val sharedAnimation = config.sharedVideoClip
                 videoEffects.addAll(
-                    com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(config.workspaceEffects, config.trimStartMs)
+                    com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(
+                        config.workspaceEffects,
+                        config.trimStartMs,
+                        sharedAnimation?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }?.let { typed ->
+                            { presentationTimeUs ->
+                                typed.effectIntensityAt(keyframeClock.projectTimeMs(presentationTimeUs))
+                            }
+                        }
+                    )
                 )
 
                 // 1.5 Rotation and Flipping
@@ -854,16 +970,38 @@ class ExportEngine(private val context: Context) {
                     )
                 }
 
-                // 1.6 Shape mask (Mask tool): applied to the source frame
-                // right after geometry, before any colour work, so the
-                // mask matches what MaskPreviewOverlay showed in the
-                // editor. Null/enabled-off = no-op.
-                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(config.mask)
+                // 1.6 Shape mask (Mask tool). Mask keyframes are clip-output
+                // relative: convert the pre-speed clipped-item PTS through
+                // the same clock as transforms, then remove the timeline
+                // placement used by project/global clocks.
+                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(
+                    config.mask,
+                    config.mask?.let { mask ->
+                        { presentationTimeUs ->
+                            mask.resolveMaskAt(
+                                (keyframeClock.projectTimeMs(presentationTimeUs) -
+                                    config.keyframeTimelineStartMs).coerceAtLeast(0L)
+                            )
+                        }
+                    }
+                )
                     ?.let { videoEffects.add(it) }
 
                 // 2. Color Filter (3D LUT) & Video Adjustments
-                if (config.filterPreset != null && config.filterIntensity > 0f) {
-                    videoEffects.add(LutFilterGlEffect(context, config.filterPreset, config.filterIntensity))
+                if (config.filterPreset != null && (config.filterIntensity > 0f ||
+                        sharedAnimation?.filterKeyframes?.isNotEmpty() == true ||
+                        sharedAnimation?.lutKeyframes?.isNotEmpty() == true)) {
+                    videoEffects.add(LutFilterGlEffect(
+                        context,
+                        config.filterPreset,
+                        config.filterIntensity,
+                        presentationTimeIntensityProvider = sharedAnimation?.let { typed ->
+                            { presentationTimeUs ->
+                                val projectMs = keyframeClock.projectTimeMs(presentationTimeUs)
+                                config.filterIntensity * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
+                            }
+                        }
+                    ))
                 }
                 if (!config.adjustments.isDefault) {
                     val adjustMatrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
@@ -935,12 +1073,13 @@ class ExportEngine(private val context: Context) {
 
                 // Keyframes are stored against the project playhead. Evaluate them on the
                 // clipped source clock before SpeedChangeEffect rewrites frame timestamps.
-                val keyframeClock = keyframeClockFor(config)
-                if (!config.keyframes.isEmpty()) {
+                val hasTypedAnimation = config.sharedVideoClip?.animationKeyframeTimes()?.isNotEmpty() == true
+                if (!config.keyframes.isEmpty() || hasTypedAnimation) {
                     videoEffects.add(
                         com.apexstudio.app.data.animation.KeyframeAnimationEffect(
                             trackProvider = { config.keyframes },
-                            timeMsAtPresentationTimeUs = keyframeClock::projectTimeMs
+                            timeMsAtPresentationTimeUs = keyframeClock::projectTimeMs,
+                            sharedVideoClipProvider = { config.sharedVideoClip }
                         ).buildEffects().first()
                     )
                 }
@@ -960,7 +1099,7 @@ class ExportEngine(private val context: Context) {
                 // 7. Caption / Text Overlays & Stickers
                 val captionOverlays = config.textOverlays.filter { it.text.isNotBlank() } +
                     listOfNotNull(buildArGreetingOverlay(config))
-                if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty()) {
+                if (captionOverlays.isNotEmpty() || config.stickers.isNotEmpty() || config.signature != null) {
                     val (width, height) = AspectCropTransformation.targetSizeFor(config.resolution, config.aspectRatio)
                     val aspect = config.faceCropConfig?.track?.outputAspectRatio
                         ?: if (config.preserveInputAspectRatio) queryAspectRatio(inputUri) else width.toFloat() / height
@@ -984,6 +1123,9 @@ class ExportEngine(private val context: Context) {
                             val overlay = projectEmojiStickerAsTextOverlay(sticker)
                             foregroundEffects.add(TextOverlayGlEffect(context, overlay, aspect))
                         }
+                    }
+                    config.signature?.let { signature ->
+                        foregroundEffects.addAll(buildSignatureExportEffects(signature, aspect))
                     }
                 }
 
@@ -1059,8 +1201,21 @@ class ExportEngine(private val context: Context) {
                 setPitch(pitchFactor)
             })
         }
-        volumeProcessorFor(config.volume)?.let(processors::add)
+        val sharedAudioAnimation = config.sharedVideoClip
+            ?.takeIf { it.volumeKeyframes.isNotEmpty() || it.panKeyframes.isNotEmpty() }
+        if (sharedAudioAnimation == null) volumeProcessorFor(config.volume)?.let(processors::add)
         speedProcessor?.let(processors::add)
+        sharedAudioAnimation?.let { clip ->
+            // This runs after speed, so its frame clock is the emitted output
+            // clock and does not apply the speed transform a second time.
+            processors.add(
+                SharedVideoClipAudioProcessor(
+                    clip = clip,
+                    globalGain = config.globalAudioVolume ?: config.volume,
+                    timelineStartMs = config.keyframeTimelineStartMs
+                )
+            )
+        }
         return processors
     }
 
@@ -1209,6 +1364,64 @@ class ExportEngine(private val context: Context) {
         val visibleText = overlays.filter { it.text.isNotBlank() }
         return if (visibleText.isEmpty()) emptyList()
         else listOf(TextOverlayGlEffect(context, visibleText, aspectRatio))
+    }
+
+    /** Text/logo signature effects are appended last and composite over every other layer. */
+    internal fun buildSignatureExportEffects(
+        signature: Signature,
+        aspectRatio: Float
+    ): List<androidx.media3.common.Effect> = buildList<androidx.media3.common.Effect> {
+        val alpha = signature.alpha.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        val fontSize = signature.fontSize.takeIf(Float::isFinite)?.coerceIn(12f, 256f) ?: 24f
+        val margin = signature.marginDp.takeIf(Float::isFinite)?.coerceIn(0f, 256f) ?: 16f
+        val isRight = signature.position == SignatureCorner.TOP_RIGHT ||
+            signature.position == SignatureCorner.BOTTOM_RIGHT
+        val isTop = signature.position == SignatureCorner.TOP_LEFT ||
+            signature.position == SignatureCorner.TOP_RIGHT
+        if (signature.text.isNotBlank() && alpha > 0f) {
+            val marginFraction = (margin / 1080f).coerceIn(0f, 0.2f)
+            val sizeScale = (fontSize / 64f).coerceIn(0.3f, 4f)
+            val textHeightFraction = 0.07f * sizeScale
+            val x = if (isRight) 1f - marginFraction else marginFraction
+            val y = if (isTop) marginFraction + textHeightFraction / 2f
+                else 1f - marginFraction - textHeightFraction / 2f
+            add(
+                TextOverlayGlEffect(
+                    context,
+                    TextOverlay(
+                        id = "project-signature",
+                        text = signature.text,
+                        x = x,
+                        y = y,
+                        sizeScale = sizeScale,
+                        colorArgb = signature.color.toArgb().toLong() and 0xFFFFFFFFL,
+                        fontFamily = "sans",
+                        isBold = false,
+                        startMs = 0L,
+                        endMs = Long.MAX_VALUE,
+                        opacity = alpha,
+                        textAlign = if (isRight) "RIGHT" else "LEFT"
+                    ),
+                    aspectRatio
+                )
+            )
+        }
+        signature.logoUri?.takeIf { alpha > 0f }?.let { logoUri ->
+            val marginFraction = (margin / 1080f).coerceIn(0f, 0.2f)
+            val backgroundX = if (isRight) 1f - marginFraction * 2f else -1f + marginFraction * 2f
+            val backgroundY = if (isTop) 1f - marginFraction * 2f else -1f + marginFraction * 2f
+            val overlayX = if (isRight) 1f else -1f
+            val overlayY = if (isTop) 1f else -1f
+            val settings = androidx.media3.effect.OverlaySettings.Builder()
+                .setAlphaScale(alpha)
+                .setBackgroundFrameAnchor(backgroundX, backgroundY)
+                .setOverlayFrameAnchor(overlayX, overlayY)
+                .setScale(0.12f, 0.12f)
+                .build()
+            val bitmapOverlay = androidx.media3.effect.BitmapOverlay
+                .createStaticBitmapOverlay(context, logoUri, settings)
+            add(androidx.media3.effect.OverlayEffect(listOf(bitmapOverlay)))
+        }
     }
 
     /** Build fresh, independently processed Media3 items for either standalone or overlay audio. */

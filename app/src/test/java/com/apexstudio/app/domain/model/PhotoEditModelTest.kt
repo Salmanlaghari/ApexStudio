@@ -26,6 +26,8 @@ class PhotoEditModelTest {
         assertEquals(0, settings.normalizedRotationSteps)
         assertFalse(settings.flipHorizontal)
         assertFalse(settings.flipVertical)
+        assertNull(settings.aiUpscaledImageUri)
+        assertFalse(settings.stabilizePhoto)
     }
 
     @Test
@@ -40,6 +42,8 @@ class PhotoEditModelTest {
         assertFalse(PhotoEditSettings(filterId = "noir").isDefault)
         assertFalse(PhotoEditSettings(rotationSteps = 1).isDefault)
         assertFalse(PhotoEditSettings(flipHorizontal = true).isDefault)
+        assertFalse(PhotoEditSettings(aiUpscaledImageUri = "file:///private/upscaled.png").isDefault)
+        assertFalse(PhotoEditSettings(stabilizePhoto = true).isDefault)
         assertFalse(
             PhotoEditSettings(crop = PhotoCropRect(0.1f, 0.1f, 0.9f, 0.9f)).isDefault
         )
@@ -101,7 +105,9 @@ class PhotoEditModelTest {
                 filterId = "noir",
                 filterIntensity = 0.75f,
                 rotationSteps = 1,
-                flipHorizontal = true
+                flipHorizontal = true,
+                aiUpscaledImageUri = "file:///private/upscaled.png",
+                stabilizePhoto = true
             )
         )
         val encoded = json.encodeToString(clip)

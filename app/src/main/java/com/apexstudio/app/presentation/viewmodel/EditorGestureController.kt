@@ -8,6 +8,8 @@ import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import kotlinx.coroutines.flow.update
 import java.util.UUID
 import kotlin.math.abs
@@ -39,7 +41,7 @@ internal object GestureEditPlanner {
 
     fun timelineZoom(current: Float, factor: Float): Float? {
         if (!current.isFinite() || !factor.isFinite() || factor !in .8f..1.25f) return null
-        return (current * factor).coerceIn(.5f, 10f).takeIf { it != current }
+        return (current * factor).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM).takeIf { it != current }
     }
 }
 

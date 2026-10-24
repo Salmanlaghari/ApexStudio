@@ -648,7 +648,10 @@ fun ExportScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "No watermark • 100% on-device",
+                            if (editorState.project?.signature != null)
+                                "Project signature • 100% on-device"
+                            else
+                                "No watermark • 100% on-device",
                             color = ApexPalette.NeonCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold

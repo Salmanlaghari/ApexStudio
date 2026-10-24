@@ -15,3 +15,11 @@ data class ChromaKeySettings(
     val backgroundType: String = "cyber_portal", // cyber_portal, neon_city, virtual_studio, deep_space, matrix_grid, transparent, custom
     val customBackgroundUri: String? = null
 )
+
+fun ChromaKeySettings.hasValidParameters(): Boolean =
+    similarity.isFinite() && similarity in 0.01f..1f &&
+        smoothness.isFinite() && smoothness in 0.01f..0.5f &&
+        spillSuppression.isFinite() && spillSuppression in 0f..1f &&
+        depth3D.isFinite() && depth3D in 0f..1f &&
+        tiltX.isFinite() && tiltX in -1f..1f &&
+        tiltY.isFinite() && tiltY in -1f..1f

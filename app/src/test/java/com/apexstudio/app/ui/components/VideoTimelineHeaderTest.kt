@@ -63,4 +63,24 @@ class VideoTimelineHeaderTest {
             assertEquals(listOf(ClipType.VIDEO), addedTypes)
         }
     }
+    @Test
+    fun multiSelectActionsAreReachableAtCompactWidthAndInvokeCallbacks() {
+        var duplicated = false
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(MediaClip("main", "Main", "file:///main.mp4", 10_000L, trimEndMs = 10_000L)),
+                totalDurationMs = 10_000L,
+                playheadMs = 0L,
+                multiSelectMode = true,
+                selectedClipIds = setOf("main"),
+                onDuplicateSelectedClips = { duplicated = true },
+                onOpenSpeed = {}, onOpenTrim = {},
+                scrollState = ScrollState(0), modifier = Modifier.fillMaxSize()
+            )
+        }
+        compose.onNodeWithTag("timeline-multiselect-actions").performClick()
+        compose.onNodeWithTag("timeline-action-duplicate").performClick()
+        compose.runOnIdle { assertEquals(true, duplicated) }
+    }
+
 }

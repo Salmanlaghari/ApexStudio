@@ -74,7 +74,7 @@ internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
     "Music", "Enhance", "Color", "Templates", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
-    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Info"
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
 )
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
@@ -185,6 +185,7 @@ fun ContextualBottomToolbar(
     onMusic: () -> Unit,
     onAutoClip: () -> Unit,
     onHistory: () -> Unit,
+    onSignature: () -> Unit = {},
     onEditPack: () -> Unit,
     onScopes: () -> Unit,
     onBgRemover: () -> Unit,
@@ -242,6 +243,8 @@ fun ContextualBottomToolbar(
     // sidebar pills. Toggles the selected track's isMuted.
     onToggleTrackMute: () -> Unit,
     isTrackMuted: Boolean = false,
+    onToggleTrackSolo: () -> Unit = {},
+    isTrackSolo: Boolean = false,
     modifier: Modifier = Modifier,
     // New top-level entry points. Defaults preserve existing callers until
     // EditorScreen supplies its app-specific panel / media-picker routes.
@@ -258,6 +261,7 @@ fun ContextualBottomToolbar(
     onNext: () -> Unit = {},
     // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
     onMedia: () -> Unit = {},
+    onOverlay: (() -> Unit)? = null,
     onColorWorkspace: () -> Unit = onAdjust,
     onBeforeToolAction: () -> Unit = {}
 ) {
@@ -269,7 +273,10 @@ fun ContextualBottomToolbar(
         CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
         CtxToolItem("Audio", Icons.Outlined.MusicNote, tint = ApexPalette.TextPrimary, onClick = onDeviceAudio),
         CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
-        CtxToolItem("Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary, onClick = { showOverlayChoices = true }),
+        CtxToolItem(
+            "Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary,
+            onClick = { if (onOverlay != null) onOverlay() else showOverlayChoices = true }
+        ),
         CtxToolItem("Stickers", Icons.Outlined.SentimentSatisfiedAlt, tint = ApexPalette.TextPrimary, onClick = onStickers),
         CtxToolItem("FX", Icons.Outlined.AutoAwesome, tint = ApexPalette.TextPrimary, onClick = onEffects),
         CtxToolItem("Filters", Icons.Outlined.FilterNone, tint = ApexPalette.TextPrimary, onClick = onFilters),
@@ -320,6 +327,7 @@ fun ContextualBottomToolbar(
             CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory),
+            CtxToolItem("Signature", Icons.Default.Verified, onClick = onSignature),
             CtxToolItem("Info", Icons.Outlined.Info, onClick = { showToolbarNotes = true }, contentDescription = "Editing and export notes")
     )
     check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
@@ -436,6 +444,12 @@ fun ContextualBottomToolbar(
                     if (isTrackMuted) "Unmute" else "Mute",
                     if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
                     onClick = onToggleTrackMute
+                ))
+                add(CtxToolItem(
+                    if (isTrackSolo) "Unsolo" else "Solo",
+                    Icons.Default.GraphicEq,
+                    if (isTrackSolo) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                    onClick = onToggleTrackSolo
                 ))
             }
             add(CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete))
@@ -930,6 +944,7 @@ fun EditorBottomToolbarSection(
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
     onAi: () -> Unit = {},
     onDraw: () -> Unit = {},
+    onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
     onDeviceAudio: () -> Unit = {
         vm.setPendingAddAsOverlay(false)
         vm.setPendingAddAsAudio(true)
@@ -946,6 +961,7 @@ fun EditorBottomToolbarSection(
     onChallenge: () -> Unit = { vm.openTextPanel() },
     onNext: () -> Unit = {},
     onColorWorkspace: () -> Unit = { vm.openColorGradingLutPanel() },
+    onSignature: () -> Unit = { vm.openSignaturePanel() },
     onBeforeToolAction: () -> Unit = {},
     // Main-timeline media picker; EditorScreen may override when it owns the route.
     onMedia: () -> Unit = {
@@ -955,7 +971,8 @@ fun EditorBottomToolbarSection(
                 androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
             )
         )
-    }
+    },
+    onOverlay: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
@@ -1015,6 +1032,10 @@ fun EditorBottomToolbarSection(
             selectedAudioTrack?.let { vm.toggleAudioTrackMute(it.id) }
         },
         isTrackMuted = selectedAudioTrack?.isMuted == true,
+        onToggleTrackSolo = {
+            selectedAudioTrack?.let { vm.toggleAudioTrackSolo(it.id) }
+        },
+        isTrackSolo = selectedAudioTrack?.isSolo == true,
         onText = { vm.openTextPanel() },
         onDraw = onDraw,
         onEffects = onEffectsWorkspace,
@@ -1031,6 +1052,7 @@ fun EditorBottomToolbarSection(
         onChallenge = onChallenge,
         onNext = onNext,
         onMedia = onMedia,
+        onOverlay = onOverlay,
         onColorWorkspace = onColorWorkspace,
         onBeforeToolAction = onBeforeToolAction,
         onAdjust = { vm.openAdjustmentsPanel() },
@@ -1069,6 +1091,7 @@ fun EditorBottomToolbarSection(
         onMusic = { vm.openMusicLibraryPanel() },
         onAutoClip = { vm.openAutoClipPanel() },
         onHistory = { vm.openHistoryDraftsPanel() },
+        onSignature = onSignature,
         onEditPack = { vm.openEditPackPanel() },
         onScopes = { vm.openColorScopesPanel() },
         onBgRemover = { vm.openBgRemoverPanel() },
@@ -1174,7 +1197,7 @@ fun EditorBottomToolbarSection(
         onTrim = { vm.openTrimPanel() },
         onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
-        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+        onToggleKeyframe = onToggleKeyframe,
         onAudioMix = { vm.openAudioMixer() },
         onRecord = { vm.openVoiceRecorder() },
         onRoyaltyMusic = { vm.openRoyaltyMusicDialog() },

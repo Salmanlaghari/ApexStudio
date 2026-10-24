@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.domain.model.timeline.collectAllTimecodes
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
@@ -12,6 +13,8 @@ import com.apexstudio.app.ai.audio.AudioIntelligence
 import com.apexstudio.app.data.audio.PcmAudioExtractor
 
 
+import com.apexstudio.app.domain.model.timeline.applyLegacyAudioTrackChanges
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 fun EditorViewModel.openAudioMixer() = _state.update { it.copy(audioMixerOpen = true) }
 
 fun EditorViewModel.closeAudioMixer() = _state.update { it.copy(audioMixerOpen = false) }
@@ -54,7 +57,11 @@ fun EditorViewModel.toggleRippleEdit() {
  * Magnetically snaps [timeMs] to adjacent cut points, keyframes, or beat drop markers
  * if within [snapThresholdMs].
  */
-fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 150L): Long {
+fun EditorViewModel.findMagneticSnapPoint(
+    timeMs: Long,
+    snapThresholdMs: Long = 150L,
+    excludeClipId: String? = null
+): Long {
     val state = _state.value
     if (!state.magneticSnapping) {
         return if (state.snapToBeat) findNearestBeat(timeMs, snapThresholdMs) else timeMs
@@ -62,6 +69,9 @@ fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 
     val candidates = mutableListOf<Long>()
     val project = state.project
     if (project != null) {
+        // The typed timeline is canonical for every lane/property. Keep the legacy
+        // candidates below as a compatibility safety net while old editors migrate.
+        candidates.addAll(project.timeline.collectAllTimecodes())
         var accMs = 0L
         candidates.add(0L)
         for (clip in project.clips) {
@@ -70,21 +80,24 @@ fun EditorViewModel.findMagneticSnapPoint(timeMs: Long, snapThresholdMs: Long = 
                 val duration = SpeedCurveMath.effectiveDurationMs(
                     end - clip.trimStartMs, SpeedCurveMath.sanitize(clip.speedPoints)
                 )
+                val isMovingClip = clip.id == excludeClipId
                 when {
                     clip.type == ClipType.OVERLAY -> {
                         // Overlays are placed independently; they never advance V1.
                         val start = clip.timelineOffsetMs.coerceAtLeast(0L)
-                        candidates.add(start)
-                        candidates.add(saturatedSnapEnd(start, duration))
+                        if (!isMovingClip) {
+                            candidates.add(start)
+                            candidates.add(saturatedSnapEnd(start, duration))
+                        }
                     }
                     clip.trackIndex == 0 && (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE) -> {
                         accMs = saturatedSnapEnd(accMs, duration)
-                        candidates.add(accMs)
+                        if (!isMovingClip) candidates.add(accMs)
                     }
                 }
             }
             // Persisted clip keyframes and timeline diamonds use absolute project time.
-            candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
+            if (clip.id != excludeClipId) candidates.addAll(clip.keyframes.keyframes.map { it.timeMs })
         }
     }
     if (state.snapToBeat) {
@@ -184,21 +197,12 @@ fun EditorViewModel.toggleMute(trackId: String) = toggleAudioTrackMute(trackId)
 
 fun EditorViewModel.setTrackVolume(trackId: String, vol: Float) = setAudioTrackVolume(trackId, vol)
 
-fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) {
-    // Dual-write (same split-brain rule as volume): the old
-    // _audio-only write never reached preview/export/persistence.
-    val solo = pan > 0.5f
-    logAudioTrackMismatch(trackId, "setTrackPanning")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(isSolo = solo) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = solo) else it })
-    }
-    persistProject()
+fun EditorViewModel.setTrackPanning(trackId: String, pan: Float) = setAudioTrackPan(trackId, pan)
+
+fun EditorViewModel.setAudioTrackPan(trackId: String, pan: Float) {
+    val safePan = pan.takeIf(Float::isFinite)?.coerceIn(-1f, 1f) ?: 0f
+    logAudioTrackMismatch(trackId, "setAudioTrackPan")
+    updateAudioTrackBoth(trackId) { it.copy(pan = safePan) }
 }
 
 /**
@@ -332,7 +336,7 @@ fun EditorViewModel.addAudioTrack(
         val updatedTracks = p.audioTracks + track
         val newDuration = computeTimelineDurationMs(p.clips, updatedTracks)
         s.copy(
-            project = p.copy(audioTracks = updatedTracks, durationMs = newDuration),
+            project = p.copy(audioTracks = updatedTracks, durationMs = newDuration).syncSharedTimeline(),
             durationMs = newDuration
         )
     }
@@ -354,7 +358,7 @@ fun EditorViewModel.removeAudioTrack(trackId: String) {
         remainingTracks = tracks
         remainingDuration = duration
         s.copy(
-            project = p.copy(audioTracks = tracks, durationMs = duration),
+            project = p.copy(audioTracks = tracks, durationMs = duration).syncSharedTimeline(),
             durationMs = duration,
             playerPositionMs = s.playerPositionMs.coerceAtMost(duration),
             currentTimeMs = s.currentTimeMs.coerceAtMost(duration)
@@ -376,18 +380,7 @@ fun EditorViewModel.setAudioTrackVolume(trackId: String, vol: Float) {
     // reopen, absent from export. See setAudioTrackVolumeFull.
     val safe = vol.coerceIn(0f, 1f)
     logAudioTrackMismatch(trackId, "setAudioTrackVolume")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(volume = safe) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map {
-            if (it.id == trackId) it.copy(volume = safe) else it
-        })
-    }
-    persistProject()
+    updateAudioTrackBoth(trackId) { it.copy(volume = safe) }
 }
 
 
@@ -484,16 +477,26 @@ private fun EditorViewModel.updateAudioTrackBoth(
     trackId: String,
     transform: (AudioTrack) -> AudioTrack
 ) {
+    val original = _state.value.project ?: return
+    val before = original.audioTracks.firstOrNull { it.id == trackId } ?: return
+    val after = transform(before)
+    val typed = original.timeline.tracks
+        .filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+        .firstOrNull { it.id == "shared-audio-$trackId" }
+    val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(before, after, it) }
+    val updatedTimeline = if (updatedTyped == null) original.timeline else
+        original.timeline.copy(tracks = original.timeline.tracks.map {
+            if (it.id == updatedTyped.id) updatedTyped else it
+        })
     _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) transform(it) else it
-        }))
+        if (s.project?.id != original.id) return@update s
+        s.copy(project = original.copy(
+            audioTracks = original.audioTracks.map { if (it.id == trackId) after else it },
+            timeline = updatedTimeline
+        ))
     }
     _audio.update { s ->
-        s.copy(tracks = s.tracks.map {
-            if (it.id == trackId) transform(it) else it
-        })
+        s.copy(tracks = s.tracks.map { if (it.id == trackId) after else it })
     }
     persistProject()
 }
@@ -502,17 +505,8 @@ fun EditorViewModel.toggleAudioTrackMute(trackId: String) {
     if (_state.value.project?.audioTracks?.none { it.id == trackId } != false) return
     pushUndo()
     logAudioTrackMismatch(trackId, "toggleAudioTrackMute")
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it })
-    }
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        val updated = p.audioTracks.map {
-            if (it.id == trackId) it.copy(isMuted = !it.isMuted) else it
-        }
-        s.copy(project = p.copy(audioTracks = updated))
-    }
-    persistProject()
+    val current = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId } ?: return
+    updateAudioTrackBoth(trackId) { it.copy(isMuted = !current.isMuted) }
 }
 
 
@@ -522,16 +516,8 @@ fun EditorViewModel.toggleAudioTrackSolo(trackId: String) {
     // Dual-write + persist (same split-brain bug as volume: the old
     // _audio-only write never reached preview/export/persistence).
     logAudioTrackMismatch(trackId, "toggleAudioTrackSolo")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(isSolo = !it.isSolo) else it })
-    }
-    persistProject()
+    val current = _state.value.project?.audioTracks?.firstOrNull { it.id == trackId } ?: return
+    updateAudioTrackBoth(trackId) { it.copy(isSolo = !current.isSolo) }
 }
 
 
@@ -539,53 +525,23 @@ fun EditorViewModel.setAudioTrackTrim(trackId: String, startMs: Long, endMs: Lon
     // Dual-write + persist (same split-brain bug as volume: the old
     // _audio-only write never reached preview/export/persistence).
     logAudioTrackMismatch(trackId, "setAudioTrackTrim")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(
-                trimStartMs = startMs.coerceAtLeast(0),
-                trimEndMs = endMs.coerceAtLeast(startMs)
-            ) else it
-        }))
+    updateAudioTrackBoth(trackId) {
+        it.copy(trimStartMs = startMs.coerceAtLeast(0), trimEndMs = endMs.coerceAtLeast(startMs))
     }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map {
-            if (it.id == trackId) it.copy(trimStartMs = startMs.coerceAtLeast(0), trimEndMs = endMs.coerceAtLeast(startMs)) else it
-        })
-    }
-    persistProject()
 }
 
 
 fun EditorViewModel.setAudioTrackFadeIn(trackId: String, ms: Long) {
     // Dual-write + persist (same split-brain bug as volume).
     logAudioTrackMismatch(trackId, "setAudioTrackFadeIn")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeInMs = ms.coerceAtLeast(0)) else it })
-    }
-    persistProject()
+    updateAudioTrackBoth(trackId) { it.copy(fadeInMs = ms.coerceAtLeast(0)) }
 }
 
 
 fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
     // Dual-write + persist (same split-brain bug as volume).
     logAudioTrackMismatch(trackId, "setAudioTrackFadeOut")
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        s.copy(project = p.copy(audioTracks = p.audioTracks.map {
-            if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it
-        }))
-    }
-    _audio.update { s ->
-        s.copy(tracks = s.tracks.map { if (it.id == trackId) it.copy(fadeOutMs = ms.coerceAtLeast(0)) else it })
-    }
-    persistProject()
+    updateAudioTrackBoth(trackId) { it.copy(fadeOutMs = ms.coerceAtLeast(0)) }
 }
 
 
@@ -613,7 +569,13 @@ fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
         val updated = p.audioTracks.flatMap {
             if (it.id == trackId) listOf(part1, part2) else listOf(it)
         }
-        s.copy(project = p.copy(audioTracks = updated))
+        val typed = p.timeline.tracks.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+            .firstOrNull { it.id == "shared-audio-$trackId" }
+        val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(track, part1, it) }
+        val timeline = if (updatedTyped == null) p.timeline else p.timeline.copy(
+            tracks = p.timeline.tracks.map { if (it.id == updatedTyped.id) updatedTyped else it }
+        )
+        s.copy(project = p.copy(audioTracks = updated, timeline = timeline))
     }
     _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
     selectAudioTrack(part2Id)
@@ -857,5 +819,106 @@ fun EditorViewModel.fitMusicToProjectLength(trackId: String) {
         pushUndo()
         updateAudioTrackBoth(trackId) { t -> t.copy(trimStartMs = startMs, trimEndMs = endMs) }
         Log.i(AUDIO_INTELLIGENCE_TAG, "fit $trackId to ${targetMs}ms: trim ${startMs}..${endMs}ms")
+    }
+}
+
+/** A source-relative retained range produced by silence removal. */
+internal data class RetainedAudioRange(val startMs: Long, val endMs: Long)
+
+/**
+ * Convert non-silent source intervals into retained ranges inside a track's existing trim.
+ * The ranges remain source-relative; only their project placement is compacted by the caller.
+ */
+internal fun retainedAudioRanges(
+    intervals: List<AudioIntelligence.Interval>,
+    sampleRateHz: Int,
+    trimStartMs: Long,
+    trimEndMs: Long
+): List<RetainedAudioRange> {
+    if (sampleRateHz <= 0 || trimEndMs <= trimStartMs) return emptyList()
+    return intervals.mapNotNull { interval ->
+        val start = trimStartMs.coerceAtLeast(
+            (interval.startSample.toLong() * 1_000L / sampleRateHz)
+        )
+        val end = trimEndMs.coerceAtMost(
+            (interval.endSampleExclusive.toLong() * 1_000L / sampleRateHz)
+        )
+        RetainedAudioRange(start, end).takeIf { it.endMs > it.startMs }
+    }.fold(mutableListOf()) { result, range ->
+        val previous = result.lastOrNull()
+        if (previous != null && range.startMs <= previous.endMs) {
+            result[result.lastIndex] = RetainedAudioRange(previous.startMs, maxOf(previous.endMs, range.endMs))
+        } else {
+            result += range
+        }
+        result
+    }
+}
+
+/**
+ * Removes detected silence without flattening the source: every returned segment keeps its
+ * original source trim, while [startTimeMs] is compacted in project time. This is intentionally
+ * a split-track representation because one AudioTrack cannot contain discontiguous source ranges.
+ */
+fun EditorViewModel.removeSilenceFromAudioTrack(trackId: String) {
+    val ctx = context ?: return
+    val track = _state.value.findAudioTrack(trackId) ?: return
+    val sourceEnd = track.sourceEndMs
+    if (sourceEnd <= track.trimStartMs) return
+    viewModelScope.launch {
+        val pcm = decodeTrackPcm(ctx, track.uri) ?: return@launch
+        val ranges = withContext(Dispatchers.Default) {
+            retainedAudioRanges(
+                AudioIntelligence.findSilence(pcm, AUDIO_INTELLIGENCE_RATE_HZ),
+                AUDIO_INTELLIGENCE_RATE_HZ,
+                track.trimStartMs,
+                track.trimEndMs.coerceIn(track.trimStartMs, sourceEnd)
+            )
+        }
+        if (ranges.size <= 1) return@launch
+        pushUndo()
+        val segments = ranges.mapIndexed { index, range ->
+            val projectStart = track.startTimeMs + ranges.take(index).sumOf { it.endMs - it.startMs }
+            val translatedKeys = track.volumeKeyframes.mapNotNull { keyframe ->
+                val sourceOffset = keyframe.timeMs - track.startTimeMs + track.trimStartMs
+                if (sourceOffset in range.startMs..range.endMs) {
+                    keyframe.copy(timeMs = projectStart + (sourceOffset - range.startMs))
+                } else null
+            }
+            val translatedPanKeys = track.panKeyframes.mapNotNull { keyframe ->
+                val sourceOffset = keyframe.timeMs - track.startTimeMs + track.trimStartMs
+                if (sourceOffset in range.startMs..range.endMs) {
+                    keyframe.copy(timeMs = projectStart + (sourceOffset - range.startMs))
+                } else null
+            }
+            track.copy(
+                id = if (index == 0) track.id else java.util.UUID.randomUUID().toString(),
+                name = if (index == 0) track.name else "${track.name} · ${index + 1}",
+                trimStartMs = range.startMs,
+                trimEndMs = range.endMs,
+                startTimeMs = projectStart,
+                fadeInMs = if (index == 0) track.fadeInMs else 0L,
+                fadeOutMs = if (index == ranges.lastIndex) track.fadeOutMs else 0L,
+                volumeKeyframes = translatedKeys,
+                panKeyframes = translatedPanKeys
+            )
+        }
+        _state.update { state ->
+            val project = state.project ?: return@update state
+            val updatedTracks = project.audioTracks.flatMap { if (it.id == trackId) segments else listOf(it) }
+            val ducking = project.timeline.tracks
+                .filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+                .firstOrNull { it.id == "shared-audio-$trackId" }
+                ?.ducking
+            val updatedProject = project.copy(audioTracks = updatedTracks).syncSharedTimeline(
+                refreshLegacyAudioTrackIds = segments.map(com.apexstudio.app.domain.model.AudioTrack::id).toSet(),
+                preservedAudioDucking = segments.associate { it.id to ducking }
+            )
+            state.copy(project = updatedProject)
+        }
+        _audio.update { it.copy(tracks = _state.value.project?.audioTracks.orEmpty()) }
+        selectAudioTrack(segments.first().id)
+        persistProject()
+        Log.i(AUDIO_INTELLIGENCE_TAG, "remove silence $trackId: ${ranges.size} retained source ranges")
     }
 }

@@ -41,11 +41,13 @@ class LutFilterGlEffect(
     private val preset: FilterPreset?,
     private val intensity: Float = 1f,
     private val intensityProvider: (() -> Float)? = null,
-    private val preloaded: LutTexture? = null
+    private val preloaded: LutTexture? = null,
+    /** Per-rendered-frame intensity source for project/export keyframe sampling. */
+    private val presentationTimeIntensityProvider: ((Long) -> Float)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, preloaded, useHdr)
+        return LutShaderProgram(context, preset, intensity.coerceIn(0f, 1f), intensityProvider, preloaded, presentationTimeIntensityProvider, useHdr)
     }
 
     @UnstableApi
@@ -55,6 +57,7 @@ class LutFilterGlEffect(
         private val intensity: Float,
         private val intensityProvider: (() -> Float)?,
         preloaded: LutTexture?,
+        private val presentationTimeIntensityProvider: ((Long) -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -176,7 +179,10 @@ class LutFilterGlEffect(
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.setSamplerTexIdUniform("uLutSampler", lutTexId[0], 1)
                 glProgram.setFloatUniform("uLutSize", lutSize.toFloat())
-                val currentIntensity = intensityProvider?.invoke()?.coerceIn(0f, 1f) ?: intensity
+                val currentIntensity = presentationTimeIntensityProvider?.invoke(presentationTimeUs)
+                    ?.coerceIn(0f, 1f)
+                    ?: intensityProvider?.invoke()?.coerceIn(0f, 1f)
+                    ?: intensity
                 glProgram.setFloatUniform("uIntensity", currentIntensity)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

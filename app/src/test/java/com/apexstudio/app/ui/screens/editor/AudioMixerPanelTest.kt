@@ -105,6 +105,44 @@ class AudioMixerPanelTest {
         compose.runOnIdle { playhead.longValue = 1_999L }
         compose.onNodeWithTag("audio-track-split-music").assertIsNotEnabled()
     }
+
+    @Test
+    fun audioIntelligenceButtonsInvokeTheirCallbacks() {
+        val track = AudioTrack(
+            id = "music",
+            name = "Music",
+            uri = "file://music",
+            kind = AudioTrack.Kind.MUSIC,
+            trimEndMs = 8_000L,
+            sourceDurationMs = 8_000L
+        )
+        var normalized = false
+        var ducked: Pair<String, String>? = null
+        var fitted = false
+        var silenceRemoved = false
+        compose.setContent {
+            AudioMixerPanel(
+                state = AudioStudioState(tracks = listOf(track, track.copy(id = "voice", kind = AudioTrack.Kind.SFX))),
+                muteOriginalVideo = false,
+                onMuteOriginal = {}, onAddTrack = { _, _, _ -> }, onRemoveTrack = {},
+                onVolume = { _, _ -> }, onMute = {}, onSolo = {}, onTrim = { _, _, _ -> },
+                onFadeIn = { _, _ -> }, onFadeOut = { _, _ -> }, onClose = {},
+                onNormalizeTrack = { normalized = it == "music" },
+                onAutoDuckMusic = { music, voice -> ducked = music to voice },
+                onFitMusicToProject = { fitted = it == "music" },
+                onRemoveSilence = { silenceRemoved = it == "music" }
+            )
+        }
+        compose.onNodeWithTag("audio-mixer-panel-cards").performScrollToKey("music")
+        compose.onNodeWithTag("audio-track-normalize-music").performScrollTo().performClick()
+        compose.onNodeWithTag("audio-track-duck-music").performScrollTo().performClick()
+        compose.onNodeWithTag("audio-track-fit-music").performScrollTo().performClick()
+        compose.onNodeWithTag("audio-track-remove-silence-music").performScrollTo().performClick()
+        assertTrue(normalized)
+        assertEquals("music" to "voice", ducked)
+        assertTrue(fitted)
+        assertTrue(silenceRemoved)
+    }
 }
 
 @androidx.compose.runtime.Composable

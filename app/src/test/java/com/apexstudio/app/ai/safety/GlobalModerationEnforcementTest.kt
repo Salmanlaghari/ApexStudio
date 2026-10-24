@@ -25,6 +25,7 @@ class GlobalModerationEnforcementTest {
         assertFalse(GlobalModerationEnforcement.readiness.approved)
         assertTrue(GlobalModerationEnforcement.readiness.requiredCategories.isEmpty())
         assertTrue(GlobalModerationEnforcement.readiness.message.contains("does not impose a blanket", ignoreCase = true))
+        assertTrue(GlobalModerationEnforcement.readiness.message.contains("selected project images", ignoreCase = true))
     }
 
     @Test fun everyRawProtectedActionFailsOutsideItsIntegratedScope() {
@@ -35,10 +36,10 @@ class GlobalModerationEnforcementTest {
         }
     }
 
-    @Test fun statusMessageDescribesTheVideoOnlyScopeWithoutOfferingABypass() {
+    @Test fun statusMessageDescribesSeparatedPhotoAndVideoUpscaleActionsWithoutOfferingABypass() {
         val message = GlobalModerationEnforcement.statusMessage(ProtectedAiAction.ONNX_UPSCALING)
-        assertTrue(message.contains("existing project video", ignoreCase = true))
-        assertTrue(message.contains("standalone still-image inference is unavailable", ignoreCase = true))
+        assertTrue(message.contains("Photo AI Enhance", ignoreCase = true))
+        assertTrue(message.contains("video-frame upscaling", ignoreCase = true))
         assertFalse(message.contains("override", ignoreCase = true))
         assertFalse(message.contains("continue anyway", ignoreCase = true))
     }
@@ -130,5 +131,23 @@ class GlobalModerationEnforcementTest {
         }
         assertDenied(ProtectedAiAction.BACKGROUND_REPLACEMENT)
         assertDenied(ProtectedAiAction.FACE_TRACK_REVIEW)
+    }
+
+    @Test fun faceCropRunsOnlyForTheExactExistingProjectImageInsidePhotoScope(): Unit = runBlocking {
+        val image = MediaClip("photo", "Photo", "content://project/photo", 3_000L,
+            trimEndMs = 3_000L, type = ClipType.IMAGE)
+        ImageAiScope.withExistingProjectImage(image, ProtectedAiAction.FACE_AWARE_REFRAME) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, image.uri)
+            assertDenied(ProtectedAiAction.ONNX_UPSCALING)
+            try {
+                GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, "content://other/photo")
+                throw AssertionError("A different image URI must stay outside the face-crop scope")
+            } catch (_: AiModelUnavailableException) { }
+        }
+        assertDenied(ProtectedAiAction.FACE_AWARE_REFRAME)
+        try {
+            ImageAiScope.withExistingProjectImage(image.copy(type = ClipType.VIDEO), ProtectedAiAction.FACE_AWARE_REFRAME) { }
+            throw AssertionError("Still-photo face-crop scope must reject video clips")
+        } catch (_: IllegalArgumentException) { }
     }
 }

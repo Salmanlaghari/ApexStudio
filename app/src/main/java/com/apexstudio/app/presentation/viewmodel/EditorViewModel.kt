@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.graphics.Bitmap
+import androidx.lifecycle.SavedStateHandle
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.engine.AudioEngine
 import com.apexstudio.app.data.engine.ColorGradingEngine
@@ -25,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -40,11 +42,23 @@ internal data class EditorUndoSnapshot(
 class EditorViewModel(
     internal val repo: MediaRepository = MediaRepository,
     internal val context: android.content.Context? = null,
-    internal val projectId: String? = null
+    internal val projectId: String? = null,
+    internal val savedStateHandle: SavedStateHandle? = null
 ) : ViewModel() {
 
-    internal val _state = MutableStateFlow(EditorState())
+    internal val _state = MutableStateFlow(
+        EditorState(
+            selectedClipIds = savedStateHandle?.get<ArrayList<String>>(SELECTED_CLIP_IDS_KEY)?.toSet()
+                ?: emptySet(),
+            multiSelectMode = savedStateHandle?.get<Boolean>(MULTI_SELECT_MODE_KEY) ?: false,
+        )
+    )
     val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    private companion object {
+        const val SELECTED_CLIP_IDS_KEY = "editor.selectedClipIds"
+        const val MULTI_SELECT_MODE_KEY = "editor.multiSelectMode"
+    }
 
     private val aiContentReportController = AiContentReportController(
         store = context?.let { FileAiContentReportStore(java.io.File(it.filesDir, "ai-content-reports")) },
@@ -104,6 +118,11 @@ class EditorViewModel(
     internal val _videoUpscaleUi = MutableStateFlow(VideoUpscaleUiState())
     val videoUpscaleUi: StateFlow<VideoUpscaleUiState> = _videoUpscaleUi.asStateFlow()
     internal var videoUpscaleJob: Job? = null
+
+    /** Offline still-photo ESPCN and MediaPipe face-crop actions, isolated per editor instance. */
+    internal val _photoAiEnhanceUi = MutableStateFlow(PhotoAiEnhanceUiState())
+    val photoAiEnhanceUi: StateFlow<PhotoAiEnhanceUiState> = _photoAiEnhanceUi.asStateFlow()
+    internal var photoAiEnhanceJob: Job? = null
 
     /** Captured on opening the recorder, independent of recording-time playback. */
     internal var voiceOverStartMs: Long = 0L
@@ -186,9 +205,17 @@ class EditorViewModel(
     internal var mainPlayerRef: androidx.media3.exoplayer.ExoPlayer? = null
 
     init {
+        savedStateHandle?.let { handle ->
+            viewModelScope.launch {
+                state.drop(1).collect { current ->
+                    handle[SELECTED_CLIP_IDS_KEY] = ArrayList(current.selectedClipIds)
+                    handle[MULTI_SELECT_MODE_KEY] = current.multiSelectMode
+                }
+            }
+        }
         Log.d("ApexTrace", "EditorViewModel.init start")
         context?.let { CrashMarker.mark(it, "EditorViewModel.init start") }
-        loadProject()
+        if (context != null || projectId != null) loadProject()
         loadLuts()
         loadTransmissionTemplates()
         // NOTE: no loadAudioState() — the audio list is synced from the
@@ -228,6 +255,7 @@ class EditorViewModel(
         faceTrackReviewToken?.cancel()
         faceTrackReviewJob?.cancel()
         videoUpscaleJob?.cancel()
+        photoAiEnhanceJob?.cancel()
         endGestureEditing()
         audioEngine?.stopRecording()
         audioEngine?.release()

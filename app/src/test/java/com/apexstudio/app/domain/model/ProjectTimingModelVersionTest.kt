@@ -15,6 +15,7 @@ class ProjectTimingModelVersionTest {
     fun `projects without timing version decode as legacy`() {
         val project = Json.decodeFromString<Project>(legacyJson)
         assertEquals(0, project.timingModelVersion)
+        assertTrue(project.timeline.tracks.isEmpty())
     }
 
     @Test

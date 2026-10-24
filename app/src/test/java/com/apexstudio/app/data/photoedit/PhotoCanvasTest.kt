@@ -136,6 +136,42 @@ class PhotoCanvasTest {
         } finally { result.recycle(); src.recycle() }
     }
 
+    @Test fun `denoise reduces synthetic noise while preserving dimensions and alpha`() {
+        val src = Bitmap.createBitmap(9, 7, Bitmap.Config.ARGB_8888)
+        val pixels = IntArray(9 * 7) { index ->
+            val x = index % 9
+            val y = index / 9
+            val base = if (x < 4) 80 else 210
+            val noisy = if ((x + y) % 3 == 0) 30 else base
+            ((40 + x * 7 + y) shl 24) or (noisy shl 16) or (noisy shl 8) or noisy
+        }
+        src.setPixels(pixels, 0, 9, 0, 0, 9, 7)
+        val result = PhotoEditRenderer.applyEdits(
+            src,
+            PhotoEditSettings(adjustments = VideoAdjustments(denoise = 1f)),
+            null
+        )
+        try {
+            assertEquals(9, result.width)
+            assertEquals(7, result.height)
+            assertTrue("denoise should change noisy pixels", result.getPixel(0, 0) != src.getPixel(0, 0))
+            assertEquals("alpha must be preserved", Color.alpha(src.getPixel(5, 3)), Color.alpha(result.getPixel(5, 3)))
+            assertTrue("edge should remain visibly separated", Color.red(result.getPixel(3, 3)) < Color.red(result.getPixel(5, 3)))
+        } finally {
+            result.recycle()
+            src.recycle()
+        }
+    }
+
+    @Test fun `default photo output is unchanged and denoise zero is a no-op`() {
+        val src = Bitmap.createBitmap(4, 3, Bitmap.Config.ARGB_8888).apply { eraseColor(0x80406080.toInt()) }
+        try {
+            assertSame(src, PhotoEditRenderer.applyEdits(src, PhotoEditSettings(), null))
+            assertSame(src, PhotoEditRenderer.applyDenoise(src, 0f))
+            assertSame(src, PhotoEditRenderer.applyDenoise(src, -1f))
+        } finally { src.recycle() }
+    }
+
     @Test fun `motion only edits expose reset affordance`() {
         assertFalse(PhotoEditSettings(kenBurns = true).isDefault)
     }

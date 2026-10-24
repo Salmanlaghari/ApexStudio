@@ -1,6 +1,9 @@
 package com.apexstudio.app.ui.components
 
 import android.graphics.Bitmap
+import com.apexstudio.app.data.filter.GpuColorProfiles
+import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.StylisticEffectType
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -66,6 +69,8 @@ import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -128,6 +133,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipTransition
 import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
@@ -135,8 +141,12 @@ import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.domain.model.WorkspaceFilterPresets
+import com.apexstudio.app.domain.model.timeline.snapTimeMs
+import com.apexstudio.app.domain.model.timeline.collectAllTimecodes
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -152,6 +162,7 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
 internal const val TIMELINE_HEADER_HEIGHT_DP = 40
 internal const val TIMELINE_RULER_HEIGHT_DP = 28
 internal const val MAIN_VIDEO_LANE_HEIGHT_DP = 52
@@ -416,6 +427,11 @@ fun VideoTimeline(
     playheadMs: Long,
     timelineZoom: Float = 1.0f,
     selectedClipId: String? = null,
+    multiSelectMode: Boolean = false,
+    selectedClipIds: Set<String> = emptySet(),
+    onToggleMultiSelect: () -> Unit = {},
+    onToggleSelectedClip: (String) -> Unit = {},
+    onClearMultiSelection: () -> Unit = {},
     selectedAudioTrackId: String? = null,
     onSelectAudioTrack: (String) -> Unit = {},
     // Source trim bounds and project placement are independent audio values.
@@ -425,10 +441,11 @@ fun VideoTimeline(
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
     snapToBeat: Boolean = false,
+    magneticSnapping: Boolean = true,
+    sharedSnapTimes: Set<Long> = emptySet(),
     // Editing-assist modes. The snapping/ripple logic lives in
     // EditorAudioController; these flags and callbacks only surface it in the
     // timeline overflow menu so the modes are reachable outside landscape.
-    magneticSnapping: Boolean = true,
     rippleEditEnabled: Boolean = false,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
@@ -445,7 +462,7 @@ fun VideoTimeline(
     // Tapping empty timeline space (no clip/track consumed the tap)
     // clears the selection (hides the clip action bar).
     onDeselect: () -> Unit = {},
-    onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onReorderClips: (orderedIds: List<String>) -> Unit = {},
     onAddMedia: (ClipType) -> Unit = {},
     onSplitClip: (clipId: String, atMs: Long) -> Unit = { _, _ -> },
     onDuplicateClip: (clipId: String) -> Unit = {},
@@ -461,9 +478,15 @@ fun VideoTimeline(
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
     onDeleteClips: (Set<String>) -> Unit = {},
+    onDuplicateSelectedClips: () -> Unit = {},
+    onGroupSelectedClips: () -> Unit = {},
+    onApplySpeedToSelectedClips: (Float) -> Unit = {},
+    onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
+    onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
     // Keyframe layer interactions.
     onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onSelectKeyframe: (clipId: String, timeMs: Long) -> Unit = { _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
@@ -550,13 +573,30 @@ fun VideoTimeline(
     // hoisted + remembered: the old inline flatMap at the row call site
     // rebuilt this list on every timeline recomposition (10x/s during
     // playback) for every overlay row.
-    val allSnapEdges = remember(clips) {
-        clips.flatMap { listOf(it.timelineOffsetMs, it.timelineOffsetMs + it.effectiveDurationMs()) }
+    val allSnapEdges = remember(clips, sharedSnapTimes) {
+        val mainClips = clips.filter {
+            it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+        }
+        val mainCuts = buildList {
+            var cursor = 0L
+            add(cursor)
+            mainClips.forEach { clip ->
+                val duration = clip.effectiveDurationMs().coerceAtLeast(0L)
+                cursor = if (duration > Long.MAX_VALUE - cursor) Long.MAX_VALUE else cursor + duration
+                add(cursor)
+            }
+        }
+        val overlayCuts = clips.filterNot { it in mainClips }.flatMap { clip ->
+            val start = clip.timelineOffsetMs.coerceAtLeast(0L)
+            val duration = clip.effectiveDurationMs().coerceAtLeast(0L)
+            listOf(start, if (duration > Long.MAX_VALUE - start) Long.MAX_VALUE else start + duration)
+        }
+        (mainCuts + overlayCuts + sharedSnapTimes).distinct()
     }
-    val effectiveZoom = timelineZoom.coerceIn(0.5f, 10.0f)
+    val effectiveZoom = timelineZoom.coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
 
-    // Scaling: dp per second based on zoom factor (scales up to 540dp/sec for frame-level editing)
-    val secondWidthDp = (54.dp * effectiveZoom).coerceIn(24.dp, 540.dp)
+    // Scaling: 54dp/sec at 1x; bounds correspond to the supported 5–2000 ms/px range.
+    val secondWidthDp = 54.dp * effectiveZoom
     val msToDp = secondWidthDp.value / 1000f
 
     // Pinch-to-zoom interactive state
@@ -765,9 +805,6 @@ fun VideoTimeline(
             }
     }
 
-    // Multi-select state (pro timeline): select several clips, then move/delete together.
-    var multiSelectMode by remember { mutableStateOf(false) }
-    var multiSelectedIds by remember { mutableStateOf(setOf<String>()) }
     var timelineOptionsExpanded by remember { mutableStateOf(false) }
 
     // Snap indicator: true when the playhead sits on (or within threshold of) a beat marker
@@ -835,6 +872,7 @@ fun VideoTimeline(
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
+        val viewportWidthDp = maxWidth
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         CompactTimelineHeader(
@@ -849,10 +887,7 @@ fun VideoTimeline(
                 }
             },
             multiSelectMode = multiSelectMode,
-            onToggleMultiSelect = {
-                multiSelectMode = !multiSelectMode
-                if (!multiSelectMode) multiSelectedIds = emptySet()
-            },
+            onToggleMultiSelect = onToggleMultiSelect,
             onAddMedia = { onAddMedia(ClipType.VIDEO) },
         )
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -868,24 +903,24 @@ fun VideoTimeline(
                             hudDismissJob?.cancel()
                             showZoomHud = true
                         },
-                        onPinchZoom = { centroidX, zoomRatio ->
+                        onPinchTransform = { centroidX, previousCentroidX, zoomRatio ->
                             val oldZoom = activeZoomDisplay
-                            val targetZoom = (oldZoom * zoomRatio).coerceIn(0.5f, 10.0f)
+                            val targetZoom = (oldZoom * zoomRatio).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
                             if (abs(targetZoom - oldZoom) > 0.003f) {
                                 activeZoomDisplay = targetZoom
                                 onZoomChange(targetZoom)
-
-                                // Maintain anchor point under pinch centroid
-                                val oldMsToPx = (54f * oldZoom) / 1000f * density.density
-                                if (oldMsToPx > 0f) {
-                                    val timeAtCentroidMs = ((scrollState.value + centroidX) / oldMsToPx).coerceAtLeast(0f)
-                                    val newMsToPx = (54f * targetZoom) / 1000f * density.density
-                                    val desiredScroll = (timeAtCentroidMs * newMsToPx - centroidX).roundToInt().coerceAtLeast(0)
-                                    coroutineScope.launch {
-                                        scrollState.scrollTo(desiredScroll)
-                                    }
-                                }
                             }
+                            // Keep the same timeline time under the moving two-finger centroid.
+                            // This equation handles both pinch anchoring and pure two-finger panning.
+                            val desiredScroll = timelineScrollForCentroid(
+                                currentScrollPx = scrollState.value,
+                                previousCentroidX = previousCentroidX,
+                                centroidX = centroidX,
+                                oldZoom = oldZoom,
+                                newZoom = targetZoom,
+                                density = density.density
+                            )
+                            coroutineScope.launch { scrollState.scrollTo(desiredScroll) }
                         },
                         onPinchEnd = {
                             isPinchZooming = false
@@ -949,6 +984,19 @@ fun VideoTimeline(
                                 beatMarkersMs = beatMarkersMs,
                                 snapToBeat = snapToBeat,
                                 onScrub = onScrub,
+                                onDoubleTap = {
+                                    val projectWidthDp = safeDurationMs.coerceAtLeast(1L).toFloat() / 1000f * 54f
+                                    val fitZoom = (viewportWidthDp.value / projectWidthDp).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
+                                    activeZoomDisplay = fitZoom
+                                    onZoomChange(fitZoom)
+                                    showZoomHud = true
+                                    hudDismissJob?.cancel()
+                                    hudDismissJob = coroutineScope.launch {
+                                        delay(1200)
+                                        showZoomHud = false
+                                    }
+                                    coroutineScope.launch { scrollState.scrollTo(0) }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(rulerHeight)
@@ -976,19 +1024,16 @@ fun VideoTimeline(
                                 onOpenTransition = onOpenTransition,
                                 onSelectClip = onSelectClip,
                                 onSeekToKeyframe = onScrub,
+                                onSelectKeyframe = onSelectKeyframe,
                                 onClipBoundsMeasured = { idx, leftPx, widthPx ->
                                     clipLayoutBounds[idx] = Pair(leftPx, widthPx)
                                 },
                                 onAddClip = { onAddMedia(ClipType.VIDEO) },
                                 multiSelectMode = multiSelectMode,
-                                multiSelectedIds = multiSelectedIds,
-                                onToggleMultiSelect = { clipId ->
-                                    multiSelectedIds = if (clipId in multiSelectedIds) {
-                                        multiSelectedIds - clipId
-                                    } else {
-                                        multiSelectedIds + clipId
-                                    }
-                                },
+                                multiSelectedIds = selectedClipIds,
+                                onToggleMultiSelect = onToggleSelectedClip,
+                                snapCandidates = (allSnapEdges + if (snapToBeat) beatMarkersMs else emptyList()).toSet(),
+                                snappingEnabled = magneticSnapping || snapToBeat,
                                 onTrimClip = onTrimClip,
                                 onReorderByDrag = { clipId, deltaX ->
                                     // Direct finger-drag reorder for the selected clip (no long-press needed).
@@ -1020,7 +1065,7 @@ fun VideoTimeline(
                                     val clipId = draggingClipId
                                     val origIdx = videoClips.indexOfFirst { it.id == clipId }
                                     if (clipId != null && origIdx != -1 && targetDropIndex != -1 && origIdx != targetDropIndex) {
-                                        onReorderClips(origIdx, targetDropIndex)
+                                        onReorderClips(videoClips.toMutableList().apply { val moved = removeAt(origIdx); add(targetDropIndex.coerceIn(0, size), moved) }.map { it.id })
                                     }
                                     draggingClipId = null
                                     dragAccumulatedOffsetPx = 0f
@@ -1116,6 +1161,9 @@ fun VideoTimeline(
                                     frameIntervalMs = frameIntervalMs,
                                     visibleWindowPx = visibleWindowPx,
                                     selectedClipId = selectedClipId,
+                                    selectedClipIds = selectedClipIds,
+                                    multiSelectMode = multiSelectMode,
+                                    onToggleSelectedClip = onToggleSelectedClip,
                                     msToDp = msToDp,
                                     isHidden = layer in hiddenVideoLayers,
                                     isLocked = layer in lockedVideoLayers,
@@ -1133,6 +1181,9 @@ fun VideoTimeline(
                                     // across all video tracks (remembered
                                     // above, not rebuilt per recomposition).
                                     snapEdges = allSnapEdges,
+                                    magneticSnapping = magneticSnapping,
+                                    snapToBeat = snapToBeat,
+                                    beatMarkersMs = beatMarkersMs,
                                     onTrimClip = onTrimClip,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1306,48 +1357,62 @@ fun VideoTimeline(
             )
         }
 
-        // Multi-select action bar: bulk delete + done.
+        // Compact, accessible multi-select action menu. Mutating actions stay
+        // in multi-select; delete is the sole action that clears selection.
         if (multiSelectMode) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
-                    .zIndex(30f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFFFFFFFF).copy(alpha = 0.95f))
+            var actionsExpanded by remember { mutableStateOf(false) }
+            val stylisticChoices = remember { listOf(StylisticEffectType.VIGNETTE, StylisticEffectType.SEPIA, StylisticEffectType.SHARPEN) }
+            val lutChoices = remember { GpuColorProfiles.ALL.take(3) }
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp).zIndex(30f)
+                    .clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.96f))
                     .border(1.dp, Color(0xFFFFB300), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
-                Text(
-                    text = "${multiSelectedIds.size} selected",
-                    color = Color(0xFF111827),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (multiSelectedIds.isNotEmpty()) {
-                    Text(
-                        text = "Delete",
-                        color = Color(0xFFB42318),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            onDeleteClips(multiSelectedIds)
-                            multiSelectedIds = emptySet()
-                        }
-                    )
-                }
-                Text(
-                    text = "Done",
-                    color = Color(0xFF8A5A00),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        multiSelectMode = false
-                        multiSelectedIds = emptySet()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${selectedClipIds.size} selected", color = Color(0xFF111827), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = { actionsExpanded = true }, modifier = Modifier.size(34.dp).testTag("timeline-multiselect-actions")) {
+                        Icon(Icons.Default.MoreVert, "Multi-select actions", tint = Color(0xFF334155), modifier = Modifier.size(19.dp))
                     }
-                )
+                    Text("Done", color = Color(0xFF8A5A00), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onClearMultiSelection() }.semantics { contentDescription = "Exit multi-select" })
+                }
+                DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.widthIn(max = 260.dp)) {
+                    DropdownMenuItem(text = { Text("Duplicate selected") }, onClick = { actionsExpanded = false; onDuplicateSelectedClips() }, modifier = Modifier.testTag("timeline-action-duplicate"))
+                    DropdownMenuItem(text = { Text("Group selected") }, onClick = { actionsExpanded = false; onGroupSelectedClips() }, modifier = Modifier.testTag("timeline-action-group"))
+                    DropdownMenuItem(text = { Text("Delete selected") }, onClick = { actionsExpanded = false; onDeleteClips(selectedClipIds); onClearMultiSelection() }, modifier = Modifier.testTag("timeline-action-delete"))
+                    Text("Speed", color = Color(0xFF64748B), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    listOf(0.5f, 1f, 1.5f, 2f).forEach { speed ->
+                        DropdownMenuItem(text = { Text("${speed}x") }, onClick = { actionsExpanded = false; onApplySpeedToSelectedClips(speed) }, modifier = Modifier.testTag("timeline-action-speed-${speed}x"))
+                    }
+                    Text("Filters/LUTs", color = Color(0xFF64748B), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    stylisticChoices.forEach { effect ->
+                        DropdownMenuItem(
+                            text = { Text("Filter: ${effect.title}") },
+                            onClick = {
+                                actionsExpanded = false
+                                onApplyFilterToSelectedClips(
+                                    GpuFilterConfig(
+                                        stylisticEffect = effect,
+                                        stylisticIntensity = effect.defaultParam.coerceIn(0f, 1f),
+                                        effectParam = effect.defaultParam.coerceIn(0f, 1f)
+                                    )
+                                )
+                            },
+                            modifier = Modifier.testTag("timeline-action-filter-${effect.name.lowercase()}")
+                        )
+                    }
+                    lutChoices.forEach { profile ->
+                        DropdownMenuItem(
+                            text = { Text("LUT: ${profile.name}") },
+                            onClick = {
+                                actionsExpanded = false
+                                onApplyLutToSelectedClips(profile.id, 1f)
+                            },
+                            modifier = Modifier.testTag("timeline-action-lut-${profile.id}")
+                        )
+                    }
+                }
             }
         }
     }
@@ -1406,8 +1471,7 @@ fun VideoTimeline(
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable {
                             timelineOptionsExpanded = false
-                            multiSelectMode = !multiSelectMode
-                            if (!multiSelectMode) multiSelectedIds = emptySet()
+                            onToggleMultiSelect()
                         }.testTag("timeline-multiselect").padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) { Text(if (multiSelectMode) "Exit multi-select" else "Select multiple clips", color = Color(0xFFE4EDF7), fontSize = 12.sp) }
@@ -1455,7 +1519,7 @@ fun VideoTimeline(
     // Tapping empty timeline space clears the selection (hides the clip
     // action bar). No-op default keeps standalone callers working.
     onDeselect: () -> Unit = {},
-    onReorderClips: (fromIndex: Int, toIndex: Int) -> Unit,
+    onReorderClips: (orderedIds: List<String>) -> Unit,
     onAddMedia: (ClipType) -> Unit,
     onSplitClip: (clipId: String, atMs: Long) -> Unit,
     onDuplicateClip: (clipId: String) -> Unit,
@@ -1471,8 +1535,17 @@ fun VideoTimeline(
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onMoveClipOffset: (clipId: String, offsetMs: Long) -> Unit = { _, _ -> },
     onDeleteClips: (Set<String>) -> Unit = {},
+    onDuplicateSelectedClips: () -> Unit = {},
+    onGroupSelectedClips: () -> Unit = {},
+    onApplySpeedToSelectedClips: (Float) -> Unit = {},
+    onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
+    onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
+    onToggleMultiSelect: () -> Unit = {},
+    onToggleSelectedClip: (String) -> Unit = {},
+    onClearMultiSelection: () -> Unit = {},
     onToggleKeyframeAtPlayhead: (clipId: String) -> Unit = {},
     onMoveKeyframe: (clipId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
+    onSelectKeyframe: (clipId: String, timeMs: Long) -> Unit = { _, _ -> },
     onToggleTextKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
@@ -1507,7 +1580,12 @@ fun VideoTimeline(
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
 ) {
-    val clips = state.project?.clips ?: emptyList()
+    val project = state.project
+    val sharedSnapTimes = remember(project?.timeline) { project?.timeline?.collectAllTimecodes().orEmpty() }
+    val clips = project?.clips.orEmpty().map { clip ->
+        val sharedTrack: KeyframeTrack? = project?.sharedKeyframeTrackFor(clip.id, clip.keyframes)
+        if (sharedTrack == null || sharedTrack == clip.keyframes) clip else clip.copy(keyframes = sharedTrack)
+    }
     val audioTracks = state.project?.audioTracks ?: emptyList()
     val textOverlays = clips.flatMap { it.textOverlays }
     // Project-level stickers: addStickerOverlay() stores them on
@@ -1539,11 +1617,17 @@ fun VideoTimeline(
         playheadMs = state.playerPositionMs,
         timelineZoom = state.timelineZoom,
         selectedClipId = state.selectedClipId,
+        multiSelectMode = state.multiSelectMode,
+        selectedClipIds = state.selectedClipIds,
+        onToggleMultiSelect = onToggleMultiSelect,
+        onToggleSelectedClip = onToggleSelectedClip,
+        onClearMultiSelection = onClearMultiSelection,
         isPlaying = state.isPlaying,
         audioWaveform = state.audioWaveform,
         beatMarkersMs = state.beatMarkersMs,
         snapToBeat = state.snapToBeat,
         magneticSnapping = state.magneticSnapping,
+        sharedSnapTimes = sharedSnapTimes,
         rippleEditEnabled = state.rippleEditEnabled,
         onToggleMagneticSnapping = onToggleMagneticSnapping,
         onToggleSnapToBeat = onToggleSnapToBeat,
@@ -1567,6 +1651,7 @@ fun VideoTimeline(
         onOpenSpeed = onOpenSpeed,
         onOpenTrim = onOpenTrim,
         onMoveKeyframe = onMoveKeyframe,
+        onSelectKeyframe = onSelectKeyframe,
         onToggleTextKeyframeAtPlayhead = onToggleTextKeyframeAtPlayhead,
         onMoveTextKeyframe = onMoveTextKeyframe,
         onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
@@ -1601,6 +1686,7 @@ private fun TimelineTimeRuler(
     beatMarkersMs: List<Long>,
     snapToBeat: Boolean,
     onScrub: (Long) -> Unit,
+    onDoubleTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -1609,10 +1695,13 @@ private fun TimelineTimeRuler(
             .background(Color(0xFF111A2C))
             .border(1.dp, Color(0xFF30405C), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
             .pointerInput(durationMs, msToDp) {
-                detectTapGestures { offset ->
-                    val scrubMs = ((offset.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
-                    onScrub(scrubMs)
-                }
+                detectTapGestures(
+                    onTap = { offset ->
+                        val scrubMs = ((offset.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
+                        onScrub(scrubMs)
+                    },
+                    onDoubleTap = { onDoubleTap() }
+                )
             }
             .pointerInput(durationMs, msToDp) {
                 detectDragGestures { change, _ ->
@@ -1855,6 +1944,9 @@ private fun TimelineVideoLayerRow(
     frameIntervalMs: Long,
     visibleWindowPx: Pair<Int, Int>,
     selectedClipId: String?,
+    selectedClipIds: Set<String> = emptySet(),
+    multiSelectMode: Boolean = false,
+    onToggleSelectedClip: (String) -> Unit = {},
     msToDp: Float,
     isHidden: Boolean,
     isLocked: Boolean,
@@ -1873,6 +1965,9 @@ private fun TimelineVideoLayerRow(
     // a drag is in flight.
     playheadMsProvider: () -> Long = { 0L },
     snapEdges: List<Long> = emptyList(),
+    magneticSnapping: Boolean = true,
+    snapToBeat: Boolean = false,
+    beatMarkersMs: List<Long> = emptyList(),
     // Trim commit (called ONCE at drag end — the trim handles keep
     // local state during the drag so a trim never spams undo entries).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
@@ -1901,6 +1996,7 @@ private fun TimelineVideoLayerRow(
         Box(modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)) {
             clips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
+                val isMultiSelected = clip.id in selectedClipIds
                 // Speed-ramped clips occupy their OUTPUT length.
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(500L)
                 val clipWidthDp = maxOf((clipDur * msToDp).dp, 56.dp)
@@ -1937,12 +2033,13 @@ private fun TimelineVideoLayerRow(
                             .graphicsLayer { translationX = dragDx }
                             .clip(RoundedCornerShape(7.dp))
                             .background(
-                                if (isSelected) Color(0xFF124554)
+                                if (isMultiSelected) Color(0xFF28231B)
+                                else if (isSelected) Color(0xFF124554)
                                 else if (isDragging) Color(0xFF145363)
                                 else Color(0xFF0D2A3A)
                             )
                             .border(
-                                width = if (isSelected || isDragging) 1.5.dp else 1.dp,
+                                width = if (isSelected || isMultiSelected || isDragging) 1.5.dp else 1.dp,
                                 color = if (isSelected) Color(0xFF00A99D)
                                 else if (isDragging) ApexPalette.NeonCyan
                                 else ApexPalette.NeonCyan.copy(alpha = 0.5f),
@@ -1964,18 +2061,21 @@ private fun TimelineVideoLayerRow(
                                             val deltaMs = (dragDx / (msToDp * density.density)).toLong()
                                             val rawOffset =
                                                 (clip.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
-                                            // Snap the start (and the end)
-                                            // to the nearest playhead /
-                                            // clip edge within 200ms.
-                                            // Targets: playhead (read live
-                                            // at drag end) + every OTHER
-                                            // clip's start/end.
-                                            val snapTargets = (snapEdges + playheadMsProvider()).filter {
+                                            // Tolerance follows an 8px target at this zoom.
+                                            // Shared snap times include typed keyframes and every lane.
+                                            val snapThresholdMs = (8f / (msToDp * density.density))
+                                                .roundToLong().coerceAtLeast(1L)
+                                            val snapTargets = when {
+                                                magneticSnapping -> snapEdges + playheadMsProvider() +
+                                                    if (snapToBeat) beatMarkersMs else emptyList()
+                                                snapToBeat -> beatMarkersMs
+                                                else -> emptyList()
+                                            }.filter {
                                                 it != clip.timelineOffsetMs &&
                                                     it != clip.timelineOffsetMs + clipDur
                                             }.distinct()
                                             var snapped = rawOffset
-                                            var bestDist = 200L
+                                            var bestDist = snapThresholdMs
                                             for (edge in snapTargets) {
                                                 val dStart = kotlin.math.abs(rawOffset - edge)
                                                 if (dStart < bestDist) {
@@ -2000,7 +2100,7 @@ private fun TimelineVideoLayerRow(
                                     )
                                 }
                             }
-                            .clickable { onSelectClip(clip.id) }
+                            .clickable { if (multiSelectMode) onToggleSelectedClip(clip.id) else onSelectClip(clip.id) }
                             .semantics {
                                 contentDescription = "Overlay clip ${clip.name}, track V${layerIndex + 1}"
                                 selected = isSelected
@@ -2132,6 +2232,9 @@ private fun TimelineVideoLayerRow(
                         showLaneBackground = false,
                         markerTagPrefix = "overlay-${clip.id}",
                         addButtonAlignment = Alignment.BottomEnd,
+                        snapCandidates = (snapEdges + clip.keyframes.keyframes.map(Keyframe::timeMs) +
+                            if (snapToBeat) beatMarkersMs else emptyList()).toSet(),
+                        snappingEnabled = magneticSnapping || snapToBeat,
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("timeline-keyframe-layer-overlay-${clip.id}")
@@ -2369,6 +2472,7 @@ private fun KeyframeDiamondStrip(
     stripWidthDp: Dp,
     msToDp: Float,
     onSeekToKeyframe: (Long) -> Unit,
+    onSelectKeyframe: (Long) -> Unit = {},
     onMoveKeyframe: (keyframeId: String, newTimeMs: Long) -> Unit,
     onAddAtPlayhead: () -> Unit,
     accentColor: Color,
@@ -2376,6 +2480,8 @@ private fun KeyframeDiamondStrip(
     showLaneBackground: Boolean = true,
     markerTagPrefix: String? = null,
     addButtonAlignment: Alignment = Alignment.CenterEnd,
+    snapCandidates: Set<Long> = emptySet(),
+    snappingEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current.density
@@ -2392,7 +2498,10 @@ private fun KeyframeDiamondStrip(
             val currentSpanStartMs by rememberUpdatedState(spanStartMs)
             val currentSpanDurationMs by rememberUpdatedState(spanDur)
             val currentOnSeekToKeyframe by rememberUpdatedState(onSeekToKeyframe)
+            val currentOnSelectKeyframe by rememberUpdatedState(onSelectKeyframe)
             val currentOnMoveKeyframe by rememberUpdatedState(onMoveKeyframe)
+            val currentSnapCandidates by rememberUpdatedState(snapCandidates)
+            val currentSnappingEnabled by rememberUpdatedState(snappingEnabled)
             val frac = ((kf.timeMs - spanStartMs).toFloat() / spanDur.toFloat()).coerceIn(0f, 1f)
             var dragDx by remember(kf.id) { mutableFloatStateOf(0f) }
             var isDragging by remember(kf.id) { mutableStateOf(false) }
@@ -2462,8 +2571,17 @@ private fun KeyframeDiamondStrip(
                                 val latestKeyframe = currentKeyframe
                                 val latestSpanStartMs = currentSpanStartMs
                                 val latestSpanDurationMs = currentSpanDurationMs
-                                val newTimeMs = (latestKeyframe.timeMs + deltaMs)
+                                val rawTimeMs = (latestKeyframe.timeMs + deltaMs)
                                     .coerceIn(latestSpanStartMs, latestSpanStartMs + latestSpanDurationMs)
+                                val pixelsPerMs = msToDp * density
+                                val newTimeMs = if (currentSnappingEnabled && pixelsPerMs > 0f) {
+                                    snapTimeMs(
+                                        rawTimeMs,
+                                        currentSnapCandidates.filterNot { it == latestKeyframe.timeMs },
+                                        thresholdPx = 8f,
+                                        msPerPx = 1f / pixelsPerMs
+                                    ).coerceIn(latestSpanStartMs, latestSpanStartMs + latestSpanDurationMs)
+                                } else rawTimeMs
                                 dragDx = 0f
                                 isDragging = false
                                 if (newTimeMs != latestKeyframe.timeMs) {
@@ -2471,6 +2589,7 @@ private fun KeyframeDiamondStrip(
                                 }
                             } else {
                                 currentOnSeekToKeyframe(currentKeyframe.timeMs)
+                                currentOnSelectKeyframe(currentKeyframe.timeMs)
                             }
                         }
                     }
@@ -2478,6 +2597,7 @@ private fun KeyframeDiamondStrip(
                     .semantics {
                         onClick(label = "Seek to keyframe") {
                             onSeekToKeyframe(kf.timeMs)
+                            onSelectKeyframe(kf.timeMs)
                             true
                         }
                     }
@@ -2520,11 +2640,14 @@ private fun TimelineVideoTrack(
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
     onSelectClip: (String) -> Unit,
     onSeekToKeyframe: ((Long) -> Unit)? = null,
+    onSelectKeyframe: (clipId: String, timeMs: Long) -> Unit = { _, _ -> },
     onClipBoundsMeasured: (index: Int, leftPx: Float, widthPx: Float) -> Unit,
     onAddClip: () -> Unit,
     multiSelectMode: Boolean = false,
     multiSelectedIds: Set<String> = emptySet(),
     onToggleMultiSelect: (String) -> Unit = {},
+    snapCandidates: Set<Long> = emptySet(),
+    snappingEnabled: Boolean = false,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onReorderByDrag: (clipId: String, deltaX: Float) -> Unit = { _, _ -> },
     onReorderByDragEnd: () -> Unit = {},
@@ -2887,8 +3010,11 @@ private fun TimelineVideoTrack(
                             stripWidthDp = clipWidth,
                             msToDp = msToDp,
                             onSeekToKeyframe = { ms -> onSeekToKeyframe?.invoke(ms) },
+                            onSelectKeyframe = { ms -> onSelectKeyframe(clip.id, ms) },
                             onMoveKeyframe = { kfId, newTimeMs -> onMoveKeyframe(clip.id, kfId, newTimeMs) },
                             onAddAtPlayhead = {},
+                            snapCandidates = snapCandidates + clipKeyframes.map(Keyframe::timeMs),
+                            snappingEnabled = snappingEnabled,
                         accentColor = Color(0xFFFFD700),
                         showAddButton = false,
                         showLaneBackground = false,
@@ -3700,12 +3826,13 @@ private fun TimelinePlayheadOverlay(
  */
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTimelinePinchZoom(
     onPinchStart: () -> Unit,
-    onPinchZoom: (centroidX: Float, zoomRatio: Float) -> Unit,
+    onPinchTransform: (centroidX: Float, previousCentroidX: Float, zoomRatio: Float) -> Unit,
     onPinchEnd: () -> Unit
 ) {
     awaitEachGesture {
         var isPinching = false
         var previousDistance = 0f
+        var previousCentroidX = 0f
 
         while (true) {
             val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -3721,23 +3848,24 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTi
                     if (currentDistance > 15f) {
                         isPinching = true
                         previousDistance = currentDistance
+                        previousCentroidX = centroidX
                         onPinchStart()
                         activePointers.forEach { it.consume() }
                     }
                 } else {
                     if (previousDistance > 0f) {
                         val zoomRatio = currentDistance / previousDistance
-                        if (abs(zoomRatio - 1f) > 0.001f) {
-                            onPinchZoom(centroidX, zoomRatio)
-                        }
+                        onPinchTransform(centroidX, previousCentroidX, zoomRatio)
                     }
                     previousDistance = currentDistance
+                    previousCentroidX = centroidX
                     activePointers.forEach { it.consume() }
                 }
             } else {
                 if (isPinching) {
                     isPinching = false
                     previousDistance = 0f
+                    previousCentroidX = 0f
                     onPinchEnd()
                 }
             }
@@ -3746,6 +3874,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTi
                 if (isPinching) {
                     isPinching = false
                     previousDistance = 0f
+                    previousCentroidX = 0f
                     onPinchEnd()
                 }
                 break

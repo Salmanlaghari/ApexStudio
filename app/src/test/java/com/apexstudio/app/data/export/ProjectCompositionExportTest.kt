@@ -19,6 +19,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.StylisticEffectType
+import kotlinx.serialization.json.Json
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
+import com.apexstudio.app.domain.model.MaskShape
 
 class ProjectCompositionExportTest {
     private fun clip(
@@ -35,6 +41,48 @@ class ProjectCompositionExportTest {
         trackIndex = track,
         type = type
     )
+
+    private fun faceCropTrack(aspect: Float = 9f / 16f) = com.apexstudio.app.domain.model.FaceCropTrack(
+        sourceWidth = 1920,
+        sourceHeight = 1080,
+        outputAspectRatio = aspect,
+        keyframes = listOf(
+            com.apexstudio.app.domain.model.FaceCropKeyframe(
+                sourceTimestampMs = 0L,
+                left = 0.2f,
+                top = 0f,
+                right = 0.2f + aspect * 1080f / 1920f,
+                bottom = 1f,
+                faceFound = true
+            )
+        )
+    )
+
+    @Test
+    fun `valid per clip face crop tracks are exported but ambiguous crops fail closed`() {
+        val tracked = clip().copy(faceCropTrack = faceCropTrack())
+        assertNull(projectCompositionUnsupportedReason(listOf(tracked), ExportEngine.ExportConfig()))
+
+        val ambiguous = tracked.copy(videoCrop = VideoCropSettings(left = 0.1f, right = 0.9f))
+        assertTrue(projectCompositionUnsupportedReason(listOf(ambiguous), ExportEngine.ExportConfig())!!
+            .contains("combines a dynamic face-crop track with a static crop"))
+
+        val unsafeAspect = clip().copy(faceCropTrack = com.apexstudio.app.domain.model.FaceCropTrack(
+            sourceWidth = 1920,
+            sourceHeight = 1080,
+            outputAspectRatio = 20f,
+            keyframes = listOf(com.apexstudio.app.domain.model.FaceCropKeyframe(
+                sourceTimestampMs = 0L,
+                left = 0f,
+                top = 0f,
+                right = 1f,
+                bottom = 1920f / (1080f * 20f),
+                faceFound = true
+            ))
+        ))
+        assertTrue(projectCompositionUnsupportedReason(listOf(unsafeAspect), ExportEngine.ExportConfig())!!
+            .contains("face-crop output aspect ratio outside the safe export range"))
+    }
 
     @Test
     fun `plain main videos with per item trim speed gain and global music are eligible`() {
@@ -245,5 +293,69 @@ class ProjectCompositionExportTest {
                 highlights = ColorWheelVector(2f, 0f)
             ))
         )!!.contains("invalid Color Studio grade"))
+    }
+
+    @Test
+    fun `per clip GPU filter state stays attached to its own project item`() {
+        val first = clip().copy(gpuFilterConfig = GpuFilterConfig(
+            stylisticEffect = StylisticEffectType.VIGNETTE,
+            stylisticIntensity = 0.75f
+        ))
+        val second = clip("second")
+        assertEquals(
+            listOf(
+                ProjectItemFilterExport(first.id, first.gpuFilterConfig),
+                ProjectItemFilterExport(second.id, GpuFilterConfig())
+            ),
+            projectItemFilterExports(listOf(first, second))
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(first, second), ExportEngine.ExportConfig()))
+        assertTrue(second.gpuFilterConfig.isDefault)
+        assertTrue(first.gpuFilterConfig.toProjectExportAdjustments().vignette > 0f)
+    }
+
+    @Test
+    fun `default per clip GPU filter preserves export defaults`() {
+        val adjustments = GpuFilterConfig().toProjectExportAdjustments()
+        assertTrue(adjustments.isDefault)
+        assertNull(projectGpuFilterUnsupportedReason(GpuFilterConfig()))
+    }
+
+    @Test
+    fun `per clip GPU filter survives project item persistence reload`() {
+        val source = clip().copy(gpuFilterConfig = GpuFilterConfig(
+            filterPresetId = "creator_clean",
+            filterIntensity = 0.6f,
+            brightness = 0.15f
+        ))
+        val restored = Json.decodeFromString<MediaClip>(
+            Json.encodeToString(MediaClip.serializer(), source)
+        )
+        assertEquals(source.gpuFilterConfig, restored.gpuFilterConfig)
+        assertEquals(source.id, restored.id)
+    }
+
+    @Test
+    fun `malformed per clip GPU filter is rejected`() {
+        val invalid = clip().copy(gpuFilterConfig = GpuFilterConfig(filterIntensity = Float.NaN))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
+            .contains("invalid per-clip filter/LUT"))
+    }
+
+    @Test
+    fun `whole project export accepts valid main-track clip masks`() {
+        val masked = clip().copy(mask = MaskModel.defaultForShape(MaskShape.ELLIPSE))
+        assertNull(projectCompositionUnsupportedReason(listOf(masked), ExportEngine.ExportConfig()))
+    }
+
+    @Test
+    fun `whole project export rejects unavailable and invalid clip masks explicitly`() {
+        val blur = clip().copy(mask = MaskModel.defaultForShape(MaskShape.BLUR_FACE))
+        assertTrue(projectCompositionUnsupportedReason(listOf(blur), ExportEngine.ExportConfig())!!
+            .contains("unavailable Blur Faces"))
+        val invalidPen = clip().copy(mask = MaskModel.defaultForShape(MaskShape.DRAW)
+            .copy(drawPoints = listOf(MaskPoint(0f, 0f), MaskPoint(1f, 1f))))
+        assertTrue(projectCompositionUnsupportedReason(listOf(invalidPen), ExportEngine.ExportConfig())!!
+            .contains("invalid pen mask geometry"))
     }
 }

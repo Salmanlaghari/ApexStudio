@@ -2,6 +2,9 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskPoint
+import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
 import kotlinx.coroutines.flow.update
 import kotlin.math.abs
@@ -37,6 +40,33 @@ fun EditorViewModel.setMaskCenter(clipId: String, x: Float, y: Float, persist: B
 /** Resize the mask (persist=false during the gesture, true on release). */
 fun EditorViewModel.setMaskSize(clipId: String, sx: Float, sy: Float, persist: Boolean = true) =
     updateClipMask(clipId, persist = persist) { it.withSize(sx, sy) }
+
+/**
+ * Capture a pen region from frame-normalized points. [MaskModel.capturePen]
+ * validates and normalizes the path first, so an incomplete gesture fails
+ * loudly instead of becoming an empty export polygon.
+ */
+fun EditorViewModel.captureMaskPen(
+    clipId: String,
+    framePoints: List<MaskPoint>,
+    frameWidth: Float,
+    frameHeight: Float,
+    persist: Boolean = true
+) {
+    val capture = MaskModel.capturePen(framePoints, frameWidth, frameHeight)
+    updateClip(clipId, persist = persist) { clip ->
+        val current = clip.mask ?: MaskModel.defaultForShape(MaskShape.DRAW)
+        clip.copy(mask = current.copy(
+            shape = MaskShape.DRAW,
+            centerX = capture.centerX,
+            centerY = capture.centerY,
+            sizeX = capture.sizeX,
+            sizeY = capture.sizeY,
+            drawPoints = capture.points,
+            presetId = null
+        ))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Text keyframes — CapCut behaviour.

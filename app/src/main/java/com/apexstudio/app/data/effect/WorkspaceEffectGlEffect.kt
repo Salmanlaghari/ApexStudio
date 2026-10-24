@@ -24,15 +24,20 @@ import com.apexstudio.app.domain.model.isActiveAtSourceTime
  * Export callers therefore supply the source trim offset. Windows are start-inclusive/end-exclusive.
  */
 @UnstableApi
-class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val sourceTimeOffsetMs: Long = 0L) : GlEffect {
+class WorkspaceEffectGlEffect(
+    private val effect: WorkspaceEffect,
+    private val sourceTimeOffsetMs: Long = 0L,
+    private val frameIntensityProvider: ((Long) -> Float)? = null
+) : GlEffect {
     init { require(sourceTimeOffsetMs >= 0L) }
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        WorkspaceShaderProgram(effect, sourceTimeOffsetMs, useHdr)
+        WorkspaceShaderProgram(effect, sourceTimeOffsetMs, frameIntensityProvider, useHdr)
 
     @UnstableApi
     private class WorkspaceShaderProgram(
         private val effect: WorkspaceEffect,
         private val sourceTimeOffsetMs: Long,
+        private val frameIntensityProvider: ((Long) -> Float)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
         private val program = try {
@@ -74,7 +79,8 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
                 program.use()
                 program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 program.setFloatUniform("uEnabled", if (enabled) 1f else 0f)
-                program.setFloatUniform("uIntensity", effect.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f)
+                val animatedIntensity = frameIntensityProvider?.invoke(presentationTimeUs)
+                program.setFloatUniform("uIntensity", intensityForFrame(effect.intensity, animatedIntensity))
                 program.setFloatUniform("uExposure", effect.exposure.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f)
                 program.setFloatUniform("uContrast", effect.contrast.takeIf { it.isFinite() }?.coerceIn(0.5f, 1.5f) ?: 1f)
                 program.setFloatUniform("uSaturation", effect.saturation.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f)
@@ -336,9 +342,19 @@ class WorkspaceEffectGlEffect(private val effect: WorkspaceEffect, private val s
         """.trimIndent()
 
         /** The one canonical effect-chain constructor used in preview and both export routes. */
-        fun createEffects(effects: List<WorkspaceEffect>, sourceTimeOffsetMs: Long = 0L): List<GlEffect> = effects
+        fun createEffects(
+            effects: List<WorkspaceEffect>,
+            sourceTimeOffsetMs: Long = 0L,
+            frameIntensityProvider: ((Long) -> Float)? = null
+        ): List<GlEffect> = effects
             .filter { it.hasValidParameters() && it.intensity > 0f }
-            .map { WorkspaceEffectGlEffect(it, sourceTimeOffsetMs) }
+            .map { WorkspaceEffectGlEffect(it, sourceTimeOffsetMs, frameIntensityProvider) }
+
+        internal fun intensityForFrame(baseIntensity: Float, animatedIntensity: Float?): Float {
+            val base = baseIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+            val animation = animatedIntensity?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+            return (base * animation).coerceIn(0f, 1f)
+        }
 
         /** Source-clock evaluation happens before any export speed transformation. */
         internal fun sourceTimeMs(presentationTimeUs: Long, offsetMs: Long): Long {

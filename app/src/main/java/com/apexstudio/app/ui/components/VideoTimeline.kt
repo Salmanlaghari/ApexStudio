@@ -137,6 +137,7 @@ import com.apexstudio.app.domain.model.TransitionLibrary
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.domain.model.WorkspaceFilterPresets
 import com.apexstudio.app.domain.model.timeline.snapTimeMs
+import com.apexstudio.app.domain.model.timeline.collectAllTimecodes
 import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.viewmodel.sharedKeyframeTrackFor
 import com.apexstudio.app.presentation.state.EditorState
@@ -854,6 +855,7 @@ fun VideoTimeline(
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
+        val viewportWidthDp = maxWidth
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         CompactTimelineHeader(
@@ -967,7 +969,7 @@ fun VideoTimeline(
                                 onScrub = onScrub,
                                 onDoubleTap = {
                                     val projectWidthDp = safeDurationMs.coerceAtLeast(1L).toFloat() / 1000f * 54f
-                                    val fitZoom = (maxWidth.value / projectWidthDp).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
+                                    val fitZoom = (viewportWidthDp.value / projectWidthDp).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
                                     activeZoomDisplay = fitZoom
                                     onZoomChange(fitZoom)
                                     showZoomHud = true
@@ -1512,9 +1514,7 @@ fun VideoTimeline(
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
 ) {
     val project = state.project
-    val sharedSnapTimes = remember(project?.timeline) {
-        project?.timeline?.let { com.apexstudio.app.domain.model.timeline.collectAllTimecodes(it) }.orEmpty()
-    }
+    val sharedSnapTimes = remember(project?.timeline) { project?.timeline?.collectAllTimecodes().orEmpty() }
     val clips = project?.clips.orEmpty().map { clip ->
         val sharedTrack: KeyframeTrack? = project?.sharedKeyframeTrackFor(clip.id, clip.keyframes)
         if (sharedTrack == null || sharedTrack == clip.keyframes) clip else clip.copy(keyframes = sharedTrack)

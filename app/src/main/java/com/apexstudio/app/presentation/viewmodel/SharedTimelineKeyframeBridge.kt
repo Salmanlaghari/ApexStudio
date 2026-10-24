@@ -355,10 +355,10 @@ private fun MediaClip.toSharedVideoClip(
     importLegacyAnimation: Boolean,
     refreshLegacyAnimation: Boolean = false
 ): VideoClip {
-    val legacyKeyframes = keyframes.sorted().keyframes
+    val legacyTrack = keyframes.sorted()
     val shouldImport = existing == null || refreshLegacyAnimation ||
         (importLegacyAnimation && existing.animationKeyframeTimes().isEmpty())
-    val imported = if (shouldImport) legacyKeyframes.toTypedVideoAnimation() else null
+    val imported = if (shouldImport) legacyTrack.toTypedVideoAnimation() else null
     val outputDuration = if (speedMultiplier.isFinite() && speedMultiplier > 0f) {
         ((trimEndMs - trimStartMs).coerceAtLeast(0L).toDouble() / speedMultiplier.toDouble()).toLong()
     } else durationMs.coerceAtLeast(0L)

@@ -8,6 +8,8 @@ import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import kotlinx.coroutines.flow.update
 import java.util.UUID
 import kotlin.math.abs

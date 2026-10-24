@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import com.apexstudio.app.domain.model.timeline.FloatType
 import com.apexstudio.app.domain.model.timeline.Interpolator
-import com.apexstudio.app.domain.model.timeline.Keyframe
+import com.apexstudio.app.domain.model.timeline.Keyframe as TimelineKeyframe
 import com.apexstudio.app.domain.model.timeline.Timeline
 import com.apexstudio.app.domain.model.timeline.AndroidUriSerializer
 import com.apexstudio.app.domain.model.timeline.ComposeColorSerializer
@@ -1065,7 +1065,7 @@ data class AudioTrack(
     val volumeKeyframes: List<VolumeKeyframe> = emptyList(),
     /** Stereo pan in -1..1; animation is stored as typed timeline keys. */
     val pan: Float = 0f,
-    val panKeyframes: List<Keyframe<Float>> = emptyList(),
+    val panKeyframes: List<TimelineKeyframe<Float>> = emptyList(),
     // Per-track trim + fade (all in ms, relative to the source media).
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 0L,
@@ -1141,7 +1141,7 @@ data class AudioTrack(
 
         /** Pure interpolation over a pre-sorted typed pan track. */
         fun interpolatePanKeyframes(
-            sorted: List<Keyframe<Float>>,
+            sorted: List<TimelineKeyframe<Float>>,
             fallback: Float,
             timeMs: Long
         ): Float = if (sorted.isEmpty()) fallback else Interpolator.valueAt(sorted, timeMs, FloatType)

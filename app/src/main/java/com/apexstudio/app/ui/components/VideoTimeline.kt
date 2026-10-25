@@ -3746,47 +3746,6 @@ private fun AudioTrackLaneRow(
 
 private enum class AudioBlockGesture { NONE, MOVE, LEFT, RIGHT }
 
-private fun beatSnapThresholdMs(msToDp: Float, density: Float): Long =
-    (8f / (msToDp * density).coerceAtLeast(0.000001f)).roundToLong().coerceAtLeast(1L)
-
-private fun snapToBeatTime(timeMs: Long, beatsMs: List<Long>, enabled: Boolean, thresholdMs: Long): Long {
-    if (!enabled || thresholdMs < 0L) return timeMs
-    var closest = timeMs
-    var closestDistance = thresholdMs
-    var found = false
-    for (beatMs in beatsMs) {
-        if (beatMs < 0L) continue
-        val distance = if (beatMs >= timeMs) beatMs - timeMs else timeMs - beatMs
-        if (distance <= closestDistance && (!found || distance < closestDistance || beatMs < closest)) {
-            closest = beatMs
-            closestDistance = distance
-            found = true
-        }
-    }
-    return if (found) closest else timeMs
-}
-
-private fun snapVideoTrimEndToBeat(
-    clip: MediaClip,
-    trimStartMs: Long,
-    requestedEndMs: Long,
-    timelineStartMs: Long,
-    beatMarkersMs: List<Long>,
-    enabled: Boolean,
-    thresholdMs: Long
-): Long {
-    if (!enabled || beatMarkersMs.isEmpty()) return requestedEndMs
-    val rawDurationMs = clip.copy(trimStartMs = trimStartMs, trimEndMs = requestedEndMs).effectiveDurationMs()
-    val snappedTimelineEnd = snapToBeatTime(timelineStartMs + rawDurationMs, beatMarkersMs, true, thresholdMs)
-    if (snappedTimelineEnd == timelineStartMs + rawDurationMs) return requestedEndMs
-    val baseDurationMs = clip.copy(trimStartMs = trimStartMs).effectiveDurationMs()
-    val targetDurationMs = (snappedTimelineEnd - timelineStartMs).coerceAtLeast(100L)
-    return timelineTrimEndForOutputDeltaMs(
-        clip.copy(trimStartMs = trimStartMs),
-        targetDurationMs - baseDurationMs
-    )
-}
-
 /** Snap whichever edge of a moved audio clip is closest to a beat. */
 private fun snapAudioMoveStart(
     rawStartMs: Long,

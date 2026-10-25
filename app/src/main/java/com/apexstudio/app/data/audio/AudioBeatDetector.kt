@@ -1,10 +1,13 @@
 package com.apexstudio.app.data.audio
 
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
 /**
  * Small on-device transient detector for decoded mono PCM. It reduces the PCM
- * stream to 5 ms RMS-energy frames, then picks strong positive energy changes
+ * stream to short RMS-energy frames, then picks strong positive energy changes
  * as onsets. No model, network call, or third-party DSP dependency is used.
  */
 object AudioBeatDetector {
@@ -13,13 +16,17 @@ object AudioBeatDetector {
     private const val RELATIVE_THRESHOLD = 0.08f
     private const val MAD_MULTIPLIER = 4f
 
-    /** Incremental accumulator so long imported tracks need not be retained in memory. */
+    /**
+     * Streams PCM into compact per-frame energy values for robust whole-track
+     * thresholding; decoded PCM samples themselves are never retained.
+     */
     class Accumulator(
         private val sampleRateHz: Int = PcmAudioExtractor.TARGET_RATE,
         frameMs: Int = FRAME_MS
     ) {
+        private val frameMs = frameMs
         private val frameSamples: Int
-        private val frames = ArrayList<Float>()
+        private val frames = FloatFrameBuffer()
         private var sumSquares = 0.0
         private var samplesInFrame = 0
         private var finished = false
@@ -43,11 +50,11 @@ object AudioBeatDetector {
             check(!finished) { "finish() may only be called once" }
             finished = true
             if (samplesInFrame > 0) flushFrame()
-            return detectFrames(frames)
+            return detectFrames(frames.takeArray(), frameSamples, sampleRateHz, frameMs)
         }
 
         private fun flushFrame() {
-            frames += sqrt(sumSquares / samplesInFrame).toFloat()
+            frames.add(sqrt(sumSquares / samplesInFrame).toFloat())
             sumSquares = 0.0
             samplesInFrame = 0
         }
@@ -61,7 +68,23 @@ object AudioBeatDetector {
         return accumulator.finish()
     }
 
-    private fun detectFrames(energy: List<Float>): List<Long> {
+    /** Median for an ascending, non-empty array; averages both middle values for even lengths. */
+    internal fun medianOfSorted(values: FloatArray): Float {
+        require(values.isNotEmpty()) { "values must not be empty" }
+        val middle = values.size / 2
+        return if (values.size % 2 == 0) {
+            (values[middle - 1] + values[middle]) / 2f
+        } else {
+            values[middle]
+        }
+    }
+
+    private fun detectFrames(
+        energy: FloatArray,
+        frameSamples: Int,
+        sampleRateHz: Int,
+        frameMs: Int
+    ): List<Long> {
         if (energy.size < 2) return emptyList()
         val novelty = FloatArray(energy.size)
         for (index in energy.indices) {
@@ -69,14 +92,16 @@ object AudioBeatDetector {
             novelty[index] = (energy[index] - previous).coerceAtLeast(0f)
         }
 
-        val sorted = novelty.sorted()
-        val median = sorted[sorted.size / 2]
-        val deviations = novelty.map { kotlin.math.abs(it - median) }.sorted()
-        val mad = deviations[deviations.size / 2]
+        val sortedNovelty = novelty.copyOf().also { it.sort() }
+        val median = medianOfSorted(sortedNovelty)
+        val deviations = FloatArray(novelty.size) { index -> abs(novelty[index] - median) }
+        deviations.sort()
+        val mad = medianOfSorted(deviations)
         val maximum = novelty.maxOrNull() ?: 0f
         if (maximum <= 1e-6f) return emptyList()
         val threshold = maxOf(maximum * RELATIVE_THRESHOLD, median + MAD_MULTIPLIER * mad)
-        val minSpacingFrames = (MIN_ONSET_SPACING_MS / FRAME_MS).coerceAtLeast(1)
+        val frameDurationMs = frameSamples.toDouble() * 1_000.0 / sampleRateHz
+        val minSpacingFrames = (MIN_ONSET_SPACING_MS / frameDurationMs).roundToInt().coerceAtLeast(1)
         val candidates = mutableListOf<Int>()
 
         for (index in novelty.indices) {
@@ -93,6 +118,31 @@ object AudioBeatDetector {
                 candidates[candidates.lastIndex] = index
             }
         }
-        return candidates.map { it.toLong() * FRAME_MS }.distinct()
+        return candidates.map { index ->
+            (index.toDouble() * frameSamples * 1_000.0 / sampleRateHz).roundToLong()
+        }
+    }
+
+    private class FloatFrameBuffer {
+        private var values = FloatArray(INITIAL_CAPACITY)
+        private var size = 0
+
+        fun add(value: Float) {
+            if (size == values.size) {
+                values = values.copyOf((values.size * 2).coerceAtLeast(INITIAL_CAPACITY))
+            }
+            values[size++] = value
+        }
+
+        fun takeArray(): FloatArray {
+            val result = values.copyOf(size)
+            values = FloatArray(0)
+            size = 0
+            return result
+        }
+
+        private companion object {
+            const val INITIAL_CAPACITY = 1_024
+        }
     }
 }

@@ -119,6 +119,8 @@ internal fun EditorViewModel.loadProject() {
                 selectedClipId = it.selectedClipId ?: firstClipId,
                 selectedClipIds = validSelectedClipIds,
                 multiSelectMode = it.multiSelectMode && validSelectedClipIds.isNotEmpty(),
+                // Beat detections are transient and URI-specific; the loaded project can resolve media differently.
+                // Clear stale results and let the user rerun Beats for tracks they want analyzed.
                 beatMarkersMs = emptyList(),
                 beatMarkersByTrackUri = emptyMap(),
                 beatSourceTrackId = null,

@@ -351,7 +351,7 @@ class ContextualToolbarTest {
     }
 
     @Test
-    fun `projectBeatMarkers maps source onsets through trim and timeline placement`() {
+    fun `projectBeatMarkers maps source onsets through a half-open trim and timeline placement`() {
         val track = AudioTrack(
             id = "music",
             name = "Track",
@@ -367,6 +367,28 @@ class ContextualToolbarTest {
             sourceMarkersByUri = mapOf(track.uri to listOf(50L, 100L, 350L, 1_000L))
         )
 
+        // The 1,000 ms onset is exactly at the exclusive source trim end and is intentionally omitted.
         assertEquals(listOf(1_200L, 1_450L), projected)
+    }
+
+    @Test
+    fun `projectBeatMarkers keeps simultaneous beats from separate tracks`() {
+        val first = audioTrack().copy(
+            uri = "file:///first.wav",
+            trimStartMs = 0L,
+            trimEndMs = 1_000L,
+            startTimeMs = 500L
+        )
+        val second = first.copy(id = "track2", uri = "file:///second.wav")
+
+        val projected = projectBeatMarkers(
+            tracks = listOf(first, second),
+            sourceMarkersByUri = mapOf(
+                first.uri to listOf(100L),
+                second.uri to listOf(100L)
+            )
+        )
+
+        assertEquals(listOf(600L, 600L), projected)
     }
 }

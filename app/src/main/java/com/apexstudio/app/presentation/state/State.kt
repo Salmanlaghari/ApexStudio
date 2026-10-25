@@ -177,8 +177,9 @@ data class EditorState(
     // Project-time positions for snapping, derived from the imported audio
     // sources below after applying each track's trim and timeline placement.
     val beatMarkersMs: List<Long> = emptyList(),
-    // Source-relative PCM onset times keyed by audio URI; multiple clips that
-    // reference the same imported file can reuse one decoded analysis.
+    // Transient source-relative PCM onset cache keyed by audio URI; multiple
+    // clips can reuse one analysis. Derived markers are not project data and
+    // are recalculated when the user requests Beats after loading a project.
     val beatMarkersByTrackUri: Map<String, List<Long>> = emptyMap(),
     val magneticSnapping: Boolean = true,
     val rippleEditEnabled: Boolean = true,

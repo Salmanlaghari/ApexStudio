@@ -6,6 +6,12 @@ import org.junit.Test
 
 class AudioBeatDetectorTest {
     @Test
+    fun evenSizedMedianUsesBothCenterValues() {
+        assertEquals(3f, AudioBeatDetector.medianOfSorted(floatArrayOf(1f, 5f)), 0f)
+        assertEquals(4f, AudioBeatDetector.medianOfSorted(floatArrayOf(1f, 3f, 5f, 7f)), 0f)
+    }
+
+    @Test
     fun detectsSyntheticClickTrackWithinOneAnalysisFrame() {
         val expectedMs = listOf(250L, 750L, 1_250L, 1_750L, 2_250L, 2_750L, 3_250L)
         val pcm = syntheticClickTrack(

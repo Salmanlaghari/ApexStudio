@@ -95,7 +95,8 @@ object PcmAudioExtractor {
             var resamplerEncoding = 0
             var lastProgressNs = System.nanoTime()
             val emitSample: (Float) -> Unit = { sample ->
-                if (emittedSamples >= MAX_OUTPUT_SAMPLES) {
+                // Allow exactly the configured duration; fail only on the next sample.
+                if (emittedSamples == MAX_OUTPUT_SAMPLES) {
                     throw AudioDurationLimitException("Decoded audio exceeds the $MAX_DURATION_SECONDS-second extraction limit")
                 }
                 emittedSamples++

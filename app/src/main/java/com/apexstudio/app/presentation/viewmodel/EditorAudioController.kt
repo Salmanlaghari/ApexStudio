@@ -657,6 +657,7 @@ fun EditorViewModel.toggleBeatsForTrack(trackId: String) {
     }
 }
 
+/** Project-time snap targets; source-relative markers remain separately keyed by URI for waveform attribution. */
 internal fun projectBeatMarkers(
     tracks: List<AudioTrack>,
     sourceMarkersByUri: Map<String, List<Long>>
@@ -666,13 +667,14 @@ internal fun projectBeatMarkers(
     val timelineStart = track.startTimeMs.coerceAtLeast(0L)
     sourceMarkersByUri[track.uri].orEmpty()
         .asSequence()
+        // Audio trim ranges are half-open: the end boundary is outside the clip.
         .filter { it >= sourceStart && it < sourceEnd }
         .map { sourceMs ->
             val offset = sourceMs - sourceStart
             if (offset > Long.MAX_VALUE - timelineStart) Long.MAX_VALUE else timelineStart + offset
         }
         .toList()
-}.distinct().sorted()
+}.sorted()
 
 
 // ---------------------------------------------------------------------------

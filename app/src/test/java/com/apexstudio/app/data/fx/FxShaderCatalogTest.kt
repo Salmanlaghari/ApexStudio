@@ -9,7 +9,7 @@ class FxShaderCatalogTest {
     @Test
     fun `all FX gallery presets resolve to unique concrete fragment shaders`() {
         val presets = FxPreset.values()
-        assertTrue("Expected a 50+ effect catalog", presets.size >= 50)
+        assertTrue("Expected the 130+ existing and requested effects", presets.size >= 136)
         assertEquals("FX ids must be stable and unique", presets.size, presets.map { it.id }.toSet().size)
 
         val shaders = presets.associateWith(FxGlEffect::shaderSourceFor)
@@ -24,5 +24,22 @@ class FxShaderCatalogTest {
         }
         assertTrue("At least 50 distinct shader programs should be present", shaders.values.toSet().size >= 50)
         assertFalse("No preset should resolve to a blank shader", shaders.values.any { it.isBlank() })
+    }
+
+    @Test
+    fun `requested weather celebration impact zoom and blur effects are real animated shaders`() {
+        val ids = listOf("rain", "cherry_blossom", "wedding_glow", "zoom_punch", "crash_impact", "defocus_blur")
+        for (id in ids) {
+            val preset = FxPreset.byId(id)
+            assertTrue("Missing requested effect $id", preset != null)
+            val shader = FxGlEffect.shaderSourceFor(preset!!)
+            assertTrue("$id must read the input image", shader.contains("texture2D(uTexSampler"))
+            assertTrue("$id must blend with the chosen intensity", shader.contains("uIntensity"))
+            if (id != "defocus_blur") {
+                assertTrue("$id should animate in preview/export", preset.isAnimated)
+                assertTrue("$id needs the shared playback speed uniform", shader.contains("uSpeed"))
+                assertTrue("$id must use the shared time and speed", shader.contains("uTime * uSpeed"))
+            }
+        }
     }
 }

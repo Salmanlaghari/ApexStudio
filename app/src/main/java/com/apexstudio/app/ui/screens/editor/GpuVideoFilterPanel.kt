@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
@@ -34,6 +37,7 @@ import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.GpuColorProfile
 import com.apexstudio.app.data.filter.GpuColorProfiles
+import com.apexstudio.app.data.filter.GpuColorProfileThumbnailGenerator
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.domain.model.MediaClip
@@ -486,6 +490,24 @@ fun GpuVideoFilterPanel(
                 else all.filter { it.category == profileCategoryFilter }
             }
 
+            val allProfilesForSamples = remember(packsReady, dlVersion) {
+                GpuColorProfiles.ALL_WITH_DOWNLOADED
+            }
+            val unfilteredSample = lutThumbnails[null]
+            var profileSampleBitmaps by remember {
+                mutableStateOf<Map<String, ImageBitmap>>(emptyMap())
+            }
+            LaunchedEffect(unfilteredSample, allProfilesForSamples) {
+                profileSampleBitmaps = if (unfilteredSample == null) {
+                    emptyMap()
+                } else {
+                    GpuColorProfileThumbnailGenerator.generate(
+                        unfilteredSample.asAndroidBitmap(),
+                        allProfilesForSamples
+                    )
+                }
+            }
+
             // Horizontal scrollable strip of Preset Profiles (video stays visible above)
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -497,6 +519,7 @@ fun GpuVideoFilterPanel(
                     GpuColorProfileCard(
                         profile = profile,
                         isSelected = isSelected,
+                        preview = profileSampleBitmaps[profile.id],
                         onClick = {
                             if (isSelected) {
                                 onConfigChange(GpuFilterConfig())
@@ -1079,6 +1102,7 @@ private fun getEffectIcon(effect: StylisticEffectType): androidx.compose.ui.grap
 private fun GpuColorProfileCard(
     profile: GpuColorProfile,
     isSelected: Boolean,
+    preview: ImageBitmap?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1115,6 +1139,14 @@ private fun GpuColorProfileCard(
                     )
                     .padding(8.dp)
             ) {
+                if (preview != null) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = "${profile.name} sample preview",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().testTag("gpu-profile-sample-${profile.id}")
+                    )
+                }
                 // Icon Emoji
                 Text(
                     profile.iconEmoji,

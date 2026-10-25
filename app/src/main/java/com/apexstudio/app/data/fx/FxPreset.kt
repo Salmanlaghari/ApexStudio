@@ -113,6 +113,15 @@ enum class FxPreset(
     GRADIENT_SWEEP("gradient_sweep", "Gradient Sweep", "Animated", isAnimated = true, defaultSpeed = 1f),
     LIGHT_LEAK_SWEEP("light_leak_sweep", "Light Leak Sweep", "Animated", isAnimated = true, defaultSpeed = 1f),
 
+    // Requested weather, celebration, and impact effects. Each runs through the
+    // same Media3 shader path used for both live video preview and video export.
+    RAIN("rain", "Rain", "Weather", isAnimated = true, defaultSpeed = 1f),
+    CHERRY_BLOSSOM("cherry_blossom", "Cherry Blossom", "Seasonal", isAnimated = true, defaultSpeed = 0.8f),
+    WEDDING_GLOW("wedding_glow", "Wedding Glow", "Portrait", isAnimated = true, defaultSpeed = 0.45f),
+    ZOOM_PUNCH("zoom_punch", "Zoom Punch", "Blur & Motion", isAnimated = true, defaultSpeed = 1f),
+    CRASH_IMPACT("crash_impact", "Crash Impact", "Trending", isAnimated = true, defaultSpeed = 1f),
+    DEFOCUS_BLUR("defocus_blur", "Defocus Blur", "Blur & Motion"),
+
     // Original Creator Pack profiles: new shader families and parameter/tint/geometry variants.
     CREATOR_PRISM_AURORA("creator_prism_aurora", "Aurora Prism", "Creator Pack"),
     CREATOR_PRISM_CANDY("creator_prism_candy", "Candy Prism", "Creator Pack"),
@@ -172,6 +181,9 @@ enum class FxPreset(
             "All",
             "Trending",
             "Animated",
+            "Weather",
+            "Seasonal",
+            "Portrait",
             "Light & Optics",
             "Glitch & Digital",
             "Retro & Film",

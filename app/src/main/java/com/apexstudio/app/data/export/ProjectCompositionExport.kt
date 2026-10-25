@@ -16,6 +16,7 @@ import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.visibleVideoDrawingLayers
 import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.domain.model.VideoAdjustments
+import com.apexstudio.app.domain.model.toVideoAdjustments
 import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParameters
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
@@ -215,38 +216,7 @@ internal fun projectDrawingLayersForClipExport(
 ): List<VideoDrawingLayer> = visibleVideoDrawingLayers(layers, clipId).filter { it.strokes.isNotEmpty() }
 
 /** Maps the persisted GPUImage model onto the existing Media3 adjustment shader. */
-internal fun GpuFilterConfig.toProjectExportAdjustments(): VideoAdjustments = VideoAdjustments(
-    brightness = brightness,
-    contrast = contrast,
-    saturation = when (stylisticEffect) {
-        com.apexstudio.app.data.filter.StylisticEffectType.SEPIA ->
-            saturation * (1f - 0.35f * stylisticIntensity.coerceIn(0f, 1f))
-        else -> saturation
-    },
-    exposure = exposure,
-    temperature = (((temperature - 5000f) / 3000f) +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SEPIA)
-            0.35f * stylisticIntensity.coerceIn(0f, 1f) else 0f).coerceIn(-1f, 1f),
-    tint = ((tint / 100f) +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SEPIA)
-            0.12f * stylisticIntensity.coerceIn(0f, 1f) else 0f).coerceIn(-1f, 1f),
-    highlights = highlights - 1f,
-    shadows = shadows,
-    sharpness = (sharpness +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SHARPEN)
-            stylisticIntensity else 0f).coerceIn(0f, 1f),
-    vignette = (vignette +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE)
-            stylisticIntensity else 0f).coerceIn(0f, 1f),
-    grain = grain,
-    lightness = lightness,
-    whites = whites,
-    blacks = blacks,
-    hue = hue,
-    clarity = clarity,
-    denoise = denoise,
-    vibrance = vibrance
-)
+internal fun GpuFilterConfig.toProjectExportAdjustments(): VideoAdjustments = toVideoAdjustments()
 
 /** Overlay windows are expressed in the clip's output clock, starting at zero after its trim. */
 private fun Long.isValidProjectOverlayTime(endMs: Long): Boolean = this >= 0L && endMs >= this

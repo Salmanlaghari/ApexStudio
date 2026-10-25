@@ -50,6 +50,16 @@ class TimelineTrimScaleTest {
     }
 
     @Test
+    fun `beat snap threshold is safe for invalid and extreme timeline scales`() {
+        assertEquals(16L, beatSnapThresholdMs(0.25f, 2f))
+        listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, 0f, -0.1f).forEach { invalid ->
+            assertEquals(1L, beatSnapThresholdMs(invalid, 2f))
+            assertEquals(1L, beatSnapThresholdMs(0.25f, invalid))
+        }
+        assertEquals(5_000L, beatSnapThresholdMs(Float.MIN_VALUE, 1f))
+    }
+
+    @Test
     fun `ramped main head drag maps timeline delta through resulting output duration`() {
         val clip = rampedClip()
         val trimmedStart = timelineTrimStartForOutputDeltaMs(clip, 500L)
@@ -67,6 +77,29 @@ class TimelineTrimScaleTest {
 
         assertEquals(-500.0, (changed.effectiveDurationMs() - clip.effectiveDurationMs()).toDouble(), 2.0)
         assertNotEquals("output milliseconds are not source milliseconds on this ramp", 2_500L, trimmedEnd)
+    }
+
+    @Test
+    fun `beat snap maps a speed-ramped video tail back to a source trim boundary`() {
+        val clip = rampedClip()
+        val timelineStartMs = 2_500L
+        val requestedEndMs = timelineTrimEndForOutputDeltaMs(clip, 125L)
+        val rawTimelineEndMs = timelineStartMs + clip.copy(trimEndMs = requestedEndMs).effectiveDurationMs()
+        val targetBeatMs = rawTimelineEndMs + 50L
+
+        val snappedEndMs = snapVideoTrimEndToBeat(
+            clip = clip,
+            trimStartMs = clip.trimStartMs,
+            requestedEndMs = requestedEndMs,
+            timelineStartMs = timelineStartMs,
+            beatMarkersMs = listOf(targetBeatMs),
+            enabled = true,
+            thresholdMs = 100L
+        )
+        val actualTimelineEndMs = timelineStartMs + clip.copy(trimEndMs = snappedEndMs).effectiveDurationMs()
+
+        assertNotEquals(requestedEndMs, snappedEndMs)
+        assertEquals(targetBeatMs.toDouble(), actualTimelineEndMs.toDouble(), 2.0)
     }
 
     @Test

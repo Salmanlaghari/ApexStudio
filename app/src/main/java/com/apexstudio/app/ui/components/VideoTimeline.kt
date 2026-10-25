@@ -440,6 +440,7 @@ fun VideoTimeline(
     isPlaying: Boolean = false,
     audioWaveform: FloatArray = FloatArray(0),
     beatMarkersMs: List<Long> = emptyList(),
+    beatMarkersByTrackUri: Map<String, List<Long>> = emptyMap(),
     snapToBeat: Boolean = false,
     magneticSnapping: Boolean = true,
     sharedSnapTimes: Set<Long> = emptySet(),
@@ -983,7 +984,9 @@ fun VideoTimeline(
                                 msToDp = msToDp,
                                 beatMarkersMs = beatMarkersMs,
                                 snapToBeat = snapToBeat,
-                                onScrub = onScrub,
+                                onScrub = { requestedMs ->
+                                    onScrub(snapToBeatTime(requestedMs, beatMarkersMs, snapToBeat, snapThresholdMs))
+                                },
                                 onDoubleTap = {
                                     val projectWidthDp = safeDurationMs.coerceAtLeast(1L).toFloat() / 1000f * 54f
                                     val fitZoom = (viewportWidthDp.value / projectWidthDp).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
@@ -1034,6 +1037,9 @@ fun VideoTimeline(
                                 onToggleMultiSelect = onToggleSelectedClip,
                                 snapCandidates = (allSnapEdges + if (snapToBeat) beatMarkersMs else emptyList()).toSet(),
                                 snappingEnabled = magneticSnapping || snapToBeat,
+                                beatMarkersMs = beatMarkersMs,
+                                snapToBeat = snapToBeat,
+                                snapThresholdMs = snapThresholdMs,
                                 onTrimClip = onTrimClip,
                                 onReorderByDrag = { clipId, deltaX ->
                                     // Direct finger-drag reorder for the selected clip (no long-press needed).
@@ -1111,7 +1117,7 @@ fun VideoTimeline(
                                         samples = audioWaveform,
                                         durationMs = firstClip.effectiveDurationMs(),
                                         playheadMsProvider = playheadMsProvider,
-                                        beatMarkersMs = beatMarkersMs,
+                                        beatMarkersMs = emptyList(),
                                         isMuted = isAudioMuted,
                                         modifier = Modifier.fillMaxSize()
                                     )
@@ -1279,6 +1285,7 @@ fun VideoTimeline(
                                     msToDp = msToDp,
                                     isMuted = isAudioMuted,
                                     beatMarkersMs = beatMarkersMs,
+                                    beatMarkersByTrackUri = beatMarkersByTrackUri,
                                     snapToBeat = snapToBeat,
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
@@ -1298,6 +1305,7 @@ fun VideoTimeline(
                                     msToDp = msToDp,
                                     isMuted = isAudioMuted,
                                     beatMarkersMs = beatMarkersMs,
+                                    beatMarkersByTrackUri = beatMarkersByTrackUri,
                                     snapToBeat = snapToBeat,
                                     playheadMsProvider = playheadMsProvider,
                                     selectedAudioTrackId = selectedAudioTrackId,
@@ -1625,6 +1633,7 @@ fun VideoTimeline(
         isPlaying = state.isPlaying,
         audioWaveform = state.audioWaveform,
         beatMarkersMs = state.beatMarkersMs,
+        beatMarkersByTrackUri = state.beatMarkersByTrackUri,
         snapToBeat = state.snapToBeat,
         magneticSnapping = state.magneticSnapping,
         sharedSnapTimes = sharedSnapTimes,
@@ -2648,6 +2657,9 @@ private fun TimelineVideoTrack(
     onToggleMultiSelect: (String) -> Unit = {},
     snapCandidates: Set<Long> = emptySet(),
     snappingEnabled: Boolean = false,
+    beatMarkersMs: List<Long> = emptyList(),
+    snapToBeat: Boolean = false,
+    snapThresholdMs: Long = 200L,
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> },
     onReorderByDrag: (clipId: String, deltaX: Float) -> Unit = { _, _ -> },
     onReorderByDragEnd: () -> Unit = {},
@@ -2930,7 +2942,7 @@ private fun TimelineVideoTrack(
                                 .align(Alignment.CenterEnd)
                                 .width(16.dp).fillMaxHeight()
                                 .testTag("timeline-trim-end-${clip.id}")
-                                .pointerInput(clip, msToDp, density) {
+                                .pointerInput(clip, msToDp, density, snapToBeat, beatMarkersMs) {
                                     detectDragGestures(
                                         onDragStart = {
                                             trimDragAccumX = 0f
@@ -2941,8 +2953,17 @@ private fun TimelineVideoTrack(
                                             trimDragAccumX += dragAmount.x
                                             val deltaMs = sourceTrimDeltaToMs(trimDragAccumX, msToDp, density)
                                             val start = trimPreviewStart ?: clip.trimStartMs
-                                            trimPreviewEnd = timelineTrimEndForOutputDeltaMs(
+                                            val requestedEnd = timelineTrimEndForOutputDeltaMs(
                                                 clip.copy(trimStartMs = start), deltaMs
+                                            )
+                                            trimPreviewEnd = snapVideoTrimEndToBeat(
+                                                clip = clip,
+                                                trimStartMs = start,
+                                                requestedEndMs = requestedEnd,
+                                                timelineStartMs = clipTimelineStarts.getOrElse(index) { 0L },
+                                                beatMarkersMs = beatMarkersMs,
+                                                enabled = snapToBeat,
+                                                thresholdMs = snapThresholdMs
                                             )
                                         },
                                         onDragEnd = {
@@ -3498,6 +3519,7 @@ private fun TimelineAudioTrack(
     msToDp: Float,
     isMuted: Boolean,
     beatMarkersMs: List<Long>,
+    beatMarkersByTrackUri: Map<String, List<Long>>,
     snapToBeat: Boolean,
     // Playhead provider (read in draw phase only): passing the ticking
     // Long recomposed every audio row on every playhead tick just to
@@ -3529,13 +3551,20 @@ private fun TimelineAudioTrack(
             // Phase 4: each track paints its OWN decoded waveform
             // (falls back to the shared clip waveform while decoding).
             val trackSamples = rememberTrackWaveform(track, samples)
+            val sourceStartMs = track.trimStartMs.coerceAtLeast(0L)
+            val sourceEndMs = track.trimEndMs.takeIf { it > sourceStartMs } ?: track.sourceEndMs
+            val trackBeatMarkersMs = beatMarkersByTrackUri[track.uri].orEmpty()
+                .filter { it >= sourceStartMs && it < sourceEndMs }
+                .map { it - sourceStartMs }
             AudioTrackLaneRow(
                 track = track,
                 isSelected = isSelected,
                 samples = trackSamples,
                 durationMs = durationMs,
                 playheadMsProvider = playheadMsProvider,
-                beatMarkersMs = beatMarkersMs,
+                beatMarkersMs = trackBeatMarkersMs,
+                snapToBeat = snapToBeat,
+                snapCandidatesMs = beatMarkersMs,
                 isMuted = isMuted || track.isMuted,
                 onSelect = { onSelectAudioTrack(track.id) },
                 msToDp = msToDp,
@@ -3560,6 +3589,8 @@ private fun AudioTrackLaneRow(
     durationMs: Long,
     playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
+    snapToBeat: Boolean,
+    snapCandidatesMs: List<Long>,
     isMuted: Boolean,
     onSelect: () -> Unit,
     msToDp: Float,
@@ -3576,12 +3607,25 @@ private fun AudioTrackLaneRow(
     val initialTrimEnd = track.trimEndMs.coerceIn(initialTrimStart + 1L, sourceEnd)
     val initialStart = track.startTimeMs.coerceAtLeast(0L)
     val deltaMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
-    val requestedHead = (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    val snapThresholdMs = beatSnapThresholdMs(msToDp, density.density)
+    val requestedHeadRaw = (initialTrimStart + deltaMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    val rawHeadTimelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(track, requestedHeadRaw)
+    val requestedHead = if (gestureMode == AudioBlockGesture.LEFT) {
+        val snappedTimelineStart = snapToBeatTime(rawHeadTimelineStart, snapCandidatesMs, snapToBeat, snapThresholdMs)
+        (requestedHeadRaw + snappedTimelineStart - rawHeadTimelineStart)
+            .coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+    } else requestedHeadRaw
     val headPreview = if (gestureMode == AudioBlockGesture.LEFT) AudioTrackPlacement.trimmed(
         track, requestedHead, initialTrimEnd, AudioTrackPlacement.timelineStartAfterHeadTrim(track, requestedHead)
     ) else null
     val previewStart = when (gestureMode) {
-        AudioBlockGesture.MOVE -> (initialStart + deltaMs).coerceAtLeast(0L)
+        AudioBlockGesture.MOVE -> snapAudioMoveStart(
+            (initialStart + deltaMs).coerceAtLeast(0L),
+            initialTrimEnd - initialTrimStart,
+            snapCandidatesMs,
+            snapToBeat,
+            snapThresholdMs
+        )
         AudioBlockGesture.LEFT -> headPreview!!.startTimeMs
         else -> initialStart
     }
@@ -3589,10 +3633,18 @@ private fun AudioTrackLaneRow(
         headPreview!!.trimStartMs
     } else initialTrimStart
     val previewTrimEnd = if (gestureMode == AudioBlockGesture.RIGHT) {
-        (initialTrimEnd + deltaMs).coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
+        val rawEnd = (initialTrimEnd + deltaMs).coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
+        val rawTimelineEnd = initialStart + (rawEnd - initialTrimStart)
+        val snappedTimelineEnd = snapToBeatTime(rawTimelineEnd, snapCandidatesMs, snapToBeat, snapThresholdMs)
+        (rawEnd + snappedTimelineEnd - rawTimelineEnd)
+            .coerceIn(previewTrimStart + 250L, sourceEnd.coerceAtLeast(previewTrimStart + 250L))
     } else initialTrimEnd
     val displayedSpanMs = (previewTrimEnd - previewTrimStart).coerceAtLeast(250L)
     val displayedWidth = maxOf((displayedSpanMs * msToDp).dp, 42.dp)
+    val visibleBeatMarkersMs = remember(beatMarkersMs, previewTrimStart, initialTrimStart, displayedSpanMs) {
+        val trimShiftMs = previewTrimStart - initialTrimStart
+        beatMarkersMs.map { it - trimShiftMs }.filter { it in 0L..displayedSpanMs }
+    }
 
     Box(modifier = modifier.height(AUDIO_TRACK_ITEM_HEIGHT_DP.dp)) {
         Box(
@@ -3607,7 +3659,7 @@ private fun AudioTrackLaneRow(
                 .testTag("timeline-audio-track-${track.id}")
                 .semantics { selected = isSelected }
                 .clickable(onClick = onSelect)
-                .pointerInput(track, msToDp) {
+                .pointerInput(track, msToDp, snapToBeat, snapCandidatesMs) {
                     detectDragGestures(
                         onDragStart = { down ->
                             onSelect()
@@ -3626,14 +3678,31 @@ private fun AudioTrackLaneRow(
                         onDragEnd = {
                             val changeMs = (transientDxPx / (msToDp * density.density)).roundToInt().toLong()
                             when (gestureMode) {
-                                AudioBlockGesture.MOVE -> onMove(track.id, (initialStart + changeMs).coerceAtLeast(0L))
+                                AudioBlockGesture.MOVE -> onMove(
+                                    track.id,
+                                    snapAudioMoveStart(
+                                        (initialStart + changeMs).coerceAtLeast(0L),
+                                        initialTrimEnd - initialTrimStart,
+                                        snapCandidatesMs,
+                                        snapToBeat,
+                                        snapThresholdMs
+                                    )
+                                )
                                 AudioBlockGesture.LEFT -> {
-                                    val sourceStart = (initialTrimStart + changeMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+                                    val rawSourceStart = (initialTrimStart + changeMs).coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
+                                    val rawTimelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(track, rawSourceStart)
+                                    val snappedTimelineStart = snapToBeatTime(rawTimelineStart, snapCandidatesMs, snapToBeat, snapThresholdMs)
+                                    val sourceStart = (rawSourceStart + snappedTimelineStart - rawTimelineStart)
+                                        .coerceIn(0L, (initialTrimEnd - 250L).coerceAtLeast(0L))
                                     val timelineStart = AudioTrackPlacement.timelineStartAfterHeadTrim(track, sourceStart)
                                     onTrim(track.id, sourceStart, initialTrimEnd, timelineStart)
                                 }
                                 AudioBlockGesture.RIGHT -> {
-                                    val sourceEndMs = (initialTrimEnd + changeMs).coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))
+                                    val rawSourceEnd = (initialTrimEnd + changeMs).coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))
+                                    val rawTimelineEnd = initialStart + (rawSourceEnd - initialTrimStart)
+                                    val snappedTimelineEnd = snapToBeatTime(rawTimelineEnd, snapCandidatesMs, snapToBeat, snapThresholdMs)
+                                    val sourceEndMs = (rawSourceEnd + snappedTimelineEnd - rawTimelineEnd)
+                                        .coerceIn(initialTrimStart + 250L, sourceEnd.coerceAtLeast(initialTrimStart + 250L))
                                     onTrim(track.id, initialTrimStart, sourceEndMs, initialStart)
                                 }
                                 AudioBlockGesture.NONE -> Unit
@@ -3652,7 +3721,7 @@ private fun AudioTrackLaneRow(
                 samples = samples,
                 durationMs = displayedSpanMs,
                 playheadMsProvider = { (playheadMsProvider() - previewStart).coerceAtLeast(0L) },
-                beatMarkersMs = beatMarkersMs,
+                beatMarkersMs = visibleBeatMarkersMs,
                 isMuted = isMuted,
                 barColor = accent,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)
@@ -3676,6 +3745,37 @@ private fun AudioTrackLaneRow(
 }
 
 private enum class AudioBlockGesture { NONE, MOVE, LEFT, RIGHT }
+
+/** Snap whichever edge of a moved audio clip is closest to a beat. */
+private fun snapAudioMoveStart(
+    rawStartMs: Long,
+    clipSpanMs: Long,
+    beatsMs: List<Long>,
+    enabled: Boolean,
+    thresholdMs: Long
+): Long {
+    if (!enabled || beatsMs.isEmpty()) return rawStartMs
+    val rawEndMs = rawStartMs + clipSpanMs
+    var bestStart = rawStartMs
+    var bestDistance = thresholdMs
+    var found = false
+    for (beatMs in beatsMs) {
+        if (beatMs < 0L) continue
+        val startDistance = if (beatMs >= rawStartMs) beatMs - rawStartMs else rawStartMs - beatMs
+        if (startDistance <= bestDistance && (!found || startDistance < bestDistance)) {
+            bestStart = beatMs
+            bestDistance = startDistance
+            found = true
+        }
+        val endDistance = if (beatMs >= rawEndMs) beatMs - rawEndMs else rawEndMs - beatMs
+        if (endDistance <= bestDistance && (!found || endDistance < bestDistance)) {
+            bestStart = (beatMs - clipSpanMs).coerceAtLeast(0L)
+            bestDistance = endDistance
+            found = true
+        }
+    }
+    return bestStart.coerceAtLeast(0L)
+}
 
 /**
  * Shared waveform bar renderer used by the A1 lane rows: full-width bars
@@ -3709,6 +3809,11 @@ private fun AudioWaveformBars(
         }
         out
     }
+    val beatFractions = remember(beatMarkersMs, durationMs) {
+        val safeDuration = durationMs.coerceAtLeast(1L)
+        beatMarkersMs.filter { it in 0L..safeDuration }
+            .map { it.toFloat() / safeDuration.toFloat() }
+    }
     Canvas(modifier = modifier) {
         val barCount = 120
         // Draw-phase read: re-draws on playhead ticks, never recomposes.
@@ -3717,24 +3822,39 @@ private fun AudioWaveformBars(
         val slotW = size.width / barCount
         val barW = 2.dp.toPx()
         val radius = 1.dp.toPx()
-        if (samples.isEmpty()) return@Canvas
-        for (i in 0 until barCount) {
-            val barFrac = i.toFloat() / barCount.toFloat()
-            val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
-            val amp = samples[sampleIdx].coerceIn(0f, 1.0f)
-            val barH = size.height * amp
-            val x = i * slotW + (slotW - barW) / 2f
-            val color = when {
-                isMuted -> Color(0xFF64748B)
-                i in beatBars -> ApexPalette.NeonCyan
-                barFrac <= progress -> Color(0xFF225E65)
-                else -> Color(0xFF26D7C8).copy(alpha = 0.9f)
+        if (samples.isNotEmpty()) {
+            for (i in 0 until barCount) {
+                val barFrac = i.toFloat() / barCount.toFloat()
+                val sampleIdx = (barFrac * (samples.size - 1)).toInt().coerceIn(samples.indices)
+                val amp = samples[sampleIdx].coerceIn(0f, 1.0f)
+                val barH = size.height * amp
+                val x = i * slotW + (slotW - barW) / 2f
+                val color = when {
+                    isMuted -> Color(0xFF64748B)
+                    i in beatBars -> ApexPalette.NeonCyan
+                    barFrac <= progress -> Color(0xFF225E65)
+                    else -> Color(0xFF26D7C8).copy(alpha = 0.9f)
+                }
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(x, (size.height - barH) / 2f),
+                    size = Size(barW, barH),
+                    cornerRadius = CornerRadius(radius, radius)
+                )
             }
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(x, (size.height - barH) / 2f),
-                size = Size(barW, barH),
-                cornerRadius = CornerRadius(radius, radius)
+        }
+        val dotRadius = 2.5.dp.toPx().coerceAtMost(size.height / 4f)
+        val dotY = 3.5.dp.toPx().coerceAtMost(size.height / 2f)
+        beatFractions.forEach { fraction ->
+            drawCircle(
+                color = Color(0xFF7AF3FF).copy(alpha = 0.35f),
+                radius = dotRadius * 1.65f,
+                center = Offset(fraction * size.width, dotY)
+            )
+            drawCircle(
+                color = Color(0xFFBDFBFF),
+                radius = dotRadius,
+                center = Offset(fraction * size.width, dotY)
             )
         }
     }

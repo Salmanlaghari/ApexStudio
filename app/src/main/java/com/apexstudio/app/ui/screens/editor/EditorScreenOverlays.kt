@@ -453,6 +453,7 @@ fun TextPanelOverlay(
             overlay.copy(startMs = activeRange.startMs, endMs = activeRange.endMs) else overlay
     }
     val captionUiState by vm.captionUi.collectAsState()
+    val captionFillerReview by vm.captionFillerReview.collectAsState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -582,7 +583,12 @@ fun TextPanelOverlay(
                     ?: CaptionStyles.CLASSIC_ID,
                 onCaptionStyleChange = { styleId -> textClip?.let { vm.setCaptionStyle(it.id, styleId) } },
                 onCancelCaptions = { vm.cancelAutoCaptions() },
-                hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
+                hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" },
+                fillerReviewState = captionFillerReview,
+                onReviewFillers = { vm.openCaptionFillerReview(it) },
+                onFillerSelected = { id, selected -> vm.setCaptionFillerSelected(id, selected) },
+                onApplyFillerRemoval = { vm.applyCaptionFillerRemoval() },
+                onCloseFillerReview = { vm.closeCaptionFillerReview() }
             )
         }
     }

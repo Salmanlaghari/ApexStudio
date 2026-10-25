@@ -4,6 +4,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.TextOverlay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -64,6 +65,25 @@ class CaptionFillerCutPlannerTest {
         assertEquals(listOf(2_500L, 2_000L), plan.keptSegmentsByClipId.getValue("fast").map {
             it.sourceClip.copy(trimStartMs = it.sourceStartMs, trimEndMs = it.sourceEndMs).effectiveDurationMs()
         })
+    }
+
+    @Test
+    fun `non-main track zero media is excluded consistently from detection and cut clocks`() {
+        val first = clip("first")
+        val ignoredTrackZeroAudio = clip("audio", type = ClipType.AUDIO, track = 0)
+        val fillerCaption = TextOverlay.of(text = "um").copy(
+            id = "filler", presetId = "caption_auto", startMs = 100L, endMs = 200L,
+            rangeEndExclusive = true
+        )
+        val second = clip("second").copy(textOverlays = listOf(fillerCaption))
+        val clips = listOf(first, ignoredTrackZeroAudio, second)
+        val filler = CaptionFillerWordStream.fromMainVideoClips(clips).single()
+
+        assertEquals(1_100L, filler.startMs)
+        val plan = CaptionFillerCutPlanner.plan(clips, listOf(TimelineCutRange(filler.startMs, filler.endMs)))
+        assertEquals(100L, plan.removedDurationMs)
+        assertEquals(listOf(0L to 100L, 200L to 1_000L),
+            plan.keptSegmentsByClipId.getValue("second").map { it.sourceStartMs to it.sourceEndMs })
     }
 
     @Test

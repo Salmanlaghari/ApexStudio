@@ -44,7 +44,8 @@ object CaptionFillerDetector {
     /** Return the one whole lexical token in [text], allowing surrounding punctuation. */
     fun singleToken(text: String): MatchResult? {
         val matches = tokenPattern.findAll(text).toList()
-        return matches.singleOrNull()
+        if (matches.size != 1) return null
+        return matches[0]
     }
 
     fun detect(
@@ -56,7 +57,7 @@ object CaptionFillerDetector {
             val token = singleToken(word.word) ?: return@mapNotNull null
             if (word.endMs <= word.startMs) null else word.copy(word = token.value)
         }
-            .sortedWith(compareBy<TimedCaptionWord> { it.startMs }.thenBy { it.endMs }.thenBy { it.id })
+        .sortedWith(compareBy<TimedCaptionWord> { it.startMs }.thenBy { it.endMs }.thenBy { it.id })
         return ordered.mapIndexedNotNull { index, word ->
             val inList = word.word.lowercase(Locale.ROOT) in configured
             val previous = ordered.getOrNull(index - 1)?.word?.lowercase(Locale.ROOT)
@@ -69,7 +70,7 @@ object CaptionFillerDetector {
                     else -> FillerMatchKind.WORD_LIST
                 }
             )
-        }
+        }.distinctBy { it.id }
     }
 }
 
@@ -82,6 +83,7 @@ object CaptionFillerWordStream {
         var projectStartMs = 0L
         val words = mutableListOf<TimedCaptionWord>()
         clips.forEach { clip ->
+            // Match ProjectCompositionTimeline: only track-0 VIDEO/IMAGE clips advance V1 time.
             val isMainVideo = clip.trackIndex == 0 && clip.type == ClipType.VIDEO
             if (isMainVideo) {
                 val duration = clip.effectiveDurationMs()
@@ -189,18 +191,20 @@ object CaptionFillerCaptionEditor {
                 return@mapNotNull null
             }
             val expanded = mergedDeletionRanges(overlay.text, removedRanges)
-            val newText = removeRanges(overlay.text, expanded)
-            if (newText.isBlank()) return@mapNotNull null
+            val rewritten = removeRanges(overlay.text, expanded)
+            if (rewritten.text.isEmpty()) return@mapNotNull null
             val newRange = valid?.let { old ->
-                val start = shiftOffset(old.startUtf16, expanded)
-                val end = shiftOffset(old.endUtf16Exclusive, expanded)
+                val start = (shiftOffset(old.startUtf16, expanded) - rewritten.leadingTrimChars)
+                    .coerceIn(0, rewritten.text.length)
+                val end = (shiftOffset(old.endUtf16Exclusive, expanded) - rewritten.leadingTrimChars)
+                    .coerceIn(0, rewritten.text.length)
                 if (end > start) start to end else null
             }
             overlay.copy(
-                text = newText,
+                text = rewritten.text,
                 highlightStartUtf16 = newRange?.first,
                 highlightEndUtf16 = newRange?.second,
-                highlightSourceFingerprint = TextOverlayKaraoke.fingerprint(newText)
+                highlightSourceFingerprint = TextOverlayKaraoke.fingerprint(rewritten.text)
             )
         }
     }
@@ -231,7 +235,9 @@ object CaptionFillerCaptionEditor {
 
     private fun isPunctuation(char: Char): Boolean = !char.isLetterOrDigit() && !char.isWhitespace() && char != '\'' && char != '’'
 
-    private fun removeRanges(text: String, ranges: List<Pair<Int, Int>>): String {
+    private data class RewrittenText(val text: String, val leadingTrimChars: Int)
+
+    private fun removeRanges(text: String, ranges: List<Pair<Int, Int>>): RewrittenText {
         val result = StringBuilder(text.length)
         var cursor = 0
         ranges.forEach { (start, end) ->
@@ -239,7 +245,9 @@ object CaptionFillerCaptionEditor {
             cursor = end
         }
         result.append(text, cursor, text.length)
-        return result.toString().trim()
+        val raw = result.toString()
+        val leadingTrimChars = raw.length - raw.trimStart().length
+        return RewrittenText(raw.trim(), leadingTrimChars)
     }
 
     private fun shiftOffset(offset: Int, ranges: List<Pair<Int, Int>>): Int =

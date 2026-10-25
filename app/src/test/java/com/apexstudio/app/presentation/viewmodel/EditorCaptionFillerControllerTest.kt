@@ -6,7 +6,15 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.TextOverlay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,7 +25,20 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@OptIn(ExperimentalCoroutinesApi::class)
 class EditorCaptionFillerControllerTest {
+    private val mainDispatcher = UnconfinedTestDispatcher()
+
+    @Before
+    fun setMainDispatcher() {
+        Dispatchers.setMain(mainDispatcher)
+    }
+
+    @After
+    fun resetMainDispatcher() {
+        Dispatchers.resetMain()
+    }
+
     private fun caption(id: String, word: String, start: Long, endExclusive: Long) =
         TextOverlay.of(text = word).copy(
             id = id,
@@ -73,7 +94,8 @@ class EditorCaptionFillerControllerTest {
         assertEquals(1, vm.undoStack.size)
         assertFalse(vm.captionFillerReview.value.isOpen)
 
-        vm.undo()
+        val undoJob = vm.undo()
+        runBlocking { undoJob.join() }
         assertEquals(original, vm.state.value.project)
         assertTrue(vm.undoStack.isEmpty())
     }

@@ -53,7 +53,7 @@ fun EditorViewModel.applyCaptionFillerRemoval() {
     val project = _state.value.project ?: return closeCaptionFillerReview()
     val currentFindings = CaptionFillerDetector.detect(
         CaptionFillerWordStream.fromMainVideoClips(project.clips), review.fillerWords
-    ).associateBy { it.id }
+    ).distinctBy { it.id }.associateBy { it.id }
     val selected = review.selectedIds.mapNotNull(currentFindings::get)
     if (selected.isEmpty()) {
         closeCaptionFillerReview()

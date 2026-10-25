@@ -2,6 +2,7 @@ package com.apexstudio.app.data.captions
 
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,8 +62,18 @@ class CaptionFillerDetectionTest {
     }
 
     @Test
+    fun `multi-token caption text is safely skipped and duplicate finding IDs are collapsed`() {
+        assertNull(CaptionFillerDetector.singleToken("um then"))
+        assertTrue(CaptionFillerDetector.detect(listOf(word("phrase", "um then", 0L, 100L))).isEmpty())
+        assertEquals(1, CaptionFillerDetector.detect(listOf(
+            word("same-id", "um", 0L, 100L),
+            word("same-id", "um", 0L, 100L)
+        )).size)
+    }
+
+    @Test
     fun `karaoke phrase removal updates every phrase overlay and its highlight offsets`() {
-        val phrase = "I um like it"
+        val phrase = "  I um like it  "
         val fingerprint = TextOverlayKaraoke.fingerprint(phrase)
         fun caption(id: String, start: Long, end: Long, wordStart: Int, wordEnd: Int) =
             com.apexstudio.app.domain.model.TextOverlay.of(text = phrase).copy(
@@ -78,10 +89,10 @@ class CaptionFillerDetectionTest {
             id = "clip", name = "clip", uri = "file:///clip.mp4", durationMs = 1_000L,
             trimEndMs = 1_000L,
             textOverlays = listOf(
-                caption("i", 0L, 99L, 0, 1),
-                caption("um", 100L, 199L, 2, 4),
-                caption("like", 200L, 299L, 5, 9),
-                caption("it", 300L, 399L, 10, 12)
+                caption("i", 0L, 99L, 2, 3),
+                caption("um", 100L, 199L, 4, 6),
+                caption("like", 200L, 299L, 7, 11),
+                caption("it", 300L, 399L, 12, 14)
             )
         )
         val filler = CaptionFillerDetector.detect(CaptionFillerWordStream.fromMainVideoClips(listOf(clip))).single()

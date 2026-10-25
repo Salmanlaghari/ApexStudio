@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
@@ -574,6 +575,9 @@ fun TextPanelOverlay(
                 onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
                 onCaptionLanguageChange = { vm.setCaptionLanguage(it) },
                 onCaptionTimingChange = { vm.setCaptionTimingMode(it) },
+                captionStyleId = textOverlays.firstOrNull { it.presetId == "caption_auto" }?.captionStyleId
+                    ?: CaptionStyles.CLASSIC_ID,
+                onCaptionStyleChange = { styleId -> textClip?.let { vm.setCaptionStyle(it.id, styleId) } },
                 onCancelCaptions = { vm.cancelAutoCaptions() },
                 hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
             )

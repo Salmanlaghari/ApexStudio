@@ -53,7 +53,16 @@ internal fun EditorViewModel.loadProject() {
         val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
         val p = resolveEditorProject(projects, projectId)
         if (p == null) {
-            _state.update { it.copy(project = null, durationMs = 0L) }
+            _state.update {
+                it.copy(
+                    project = null,
+                    durationMs = 0L,
+                    beatMarkersMs = emptyList(),
+                    beatMarkersByTrackUri = emptyMap(),
+                    beatSourceTrackId = null,
+                    beatsAnalyzing = false
+                )
+            }
             return@launch
         }
 
@@ -110,6 +119,11 @@ internal fun EditorViewModel.loadProject() {
                 selectedClipId = it.selectedClipId ?: firstClipId,
                 selectedClipIds = validSelectedClipIds,
                 multiSelectMode = it.multiSelectMode && validSelectedClipIds.isNotEmpty(),
+                beatMarkersMs = emptyList(),
+                beatMarkersByTrackUri = emptyMap(),
+                beatSourceTrackId = null,
+                beatsAnalyzing = false,
+                snapToBeat = false,
                 // Loading a project establishes its initial playhead; it
                 // must not start playback before the user presses Play.
                 isPlaying = false

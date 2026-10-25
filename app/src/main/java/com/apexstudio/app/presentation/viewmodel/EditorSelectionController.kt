@@ -168,6 +168,11 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
             )
         }
         val after = updated.first { it.id == trackId }
+        val beatMarkersByTrackUri = if (updated.any { it.id != trackId && it.uri == before.uri }) {
+            s.beatMarkersByTrackUri
+        } else {
+            s.beatMarkersByTrackUri - before.uri
+        }
         val typed = p.timeline.tracks.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
             .firstOrNull { it.id == "shared-audio-$trackId" }
         val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(before, after, it) }
@@ -177,9 +182,10 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
         s.copy(
             project = p.copy(audioTracks = updated, timeline = timeline),
             pendingReplaceAudioTrackId = null,
-            // Beats were computed for the old audio — drop them.
-            beatMarkersMs = emptyList(),
-            beatSourceTrackId = null
+            beatMarkersByTrackUri = beatMarkersByTrackUri,
+            beatMarkersMs = projectBeatMarkers(updated, beatMarkersByTrackUri),
+            beatSourceTrackId = if (s.beatSourceTrackId == trackId) null else s.beatSourceTrackId,
+            snapToBeat = if (beatMarkersByTrackUri.isEmpty()) false else s.snapToBeat
         )
     }
     _audio.update { s ->

@@ -106,6 +106,7 @@ private fun EditorViewModel.updateAudioPlacement(
         state.copy(
             project = project.copy(audioTracks = tracks, durationMs = duration, timeline = timeline),
             durationMs = duration,
+            beatMarkersMs = projectBeatMarkers(tracks, state.beatMarkersByTrackUri),
             playerPositionMs = state.playerPositionMs.coerceAtMost(duration),
             currentTimeMs = state.currentTimeMs.coerceAtMost(duration)
         )

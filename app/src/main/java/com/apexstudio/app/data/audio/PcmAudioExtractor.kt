@@ -40,6 +40,21 @@ object PcmAudioExtractor {
         context: Context,
         uri: Uri,
         checkCancelled: () -> Unit = {}
+    ): FloatArray? = decodeMono16k(context, uri, checkCancelled, onSample = null)
+
+    /** Decode PCM incrementally into [onSample] instead of buffering a full-track FloatArray. */
+    fun forEachMono16kSample(
+        context: Context,
+        uri: Uri,
+        checkCancelled: () -> Unit = {},
+        onSample: (Float) -> Unit
+    ): Boolean = decodeMono16k(context, uri, checkCancelled, onSample) != null
+
+    private fun decodeMono16k(
+        context: Context,
+        uri: Uri,
+        checkCancelled: () -> Unit,
+        onSample: ((Float) -> Unit)?
     ): FloatArray? {
         checkCancelled()
         val extractor = MediaExtractor()
@@ -66,10 +81,11 @@ object PcmAudioExtractor {
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(trackFormat, null, null, 0)
             codec.start()
-            val output = FloatSampleBuffer()
+            val output = if (onSample == null) FloatSampleBuffer() else null
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
+            var emittedSamples = 0
             var sampleRate = trackFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = trackFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
@@ -79,10 +95,11 @@ object PcmAudioExtractor {
             var resamplerEncoding = 0
             var lastProgressNs = System.nanoTime()
             val emitSample: (Float) -> Unit = { sample ->
-                if (output.size >= MAX_OUTPUT_SAMPLES) {
+                if (emittedSamples >= MAX_OUTPUT_SAMPLES) {
                     throw AudioDurationLimitException("Decoded audio exceeds the $MAX_DURATION_SECONDS-second extraction limit")
                 }
-                output.append(sample)
+                emittedSamples++
+                if (onSample == null) output!!.append(sample) else onSample(sample)
             }
 
             while (!outputDone) {
@@ -165,7 +182,11 @@ object PcmAudioExtractor {
                 }
             }
             resampler?.finish()
-            return output.toFloatArray().takeIf { it.isNotEmpty() }
+            return if (onSample == null) {
+                output?.toFloatArray()?.takeIf { it.isNotEmpty() }
+            } else {
+                FloatArray(0).takeIf { emittedSamples > 0 }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (durationLimit: AudioDurationLimitException) {

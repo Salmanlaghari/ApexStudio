@@ -174,7 +174,12 @@ data class EditorState(
     val helpDialogOpen: Boolean = false,
     val mediaLibraryOpen: Boolean = false,
     val snapToBeat: Boolean = false,
+    // Project-time positions for snapping, derived from the imported audio
+    // sources below after applying each track's trim and timeline placement.
     val beatMarkersMs: List<Long> = emptyList(),
+    // Source-relative PCM onset times keyed by audio URI; multiple clips that
+    // reference the same imported file can reuse one decoded analysis.
+    val beatMarkersByTrackUri: Map<String, List<Long>> = emptyMap(),
     val magneticSnapping: Boolean = true,
     val rippleEditEnabled: Boolean = true,
     val opticalFlowMotionBlur: Boolean = false,
@@ -241,9 +246,8 @@ data class EditorState(
     // the media of this clip / audio track instead of adding new media.
     val pendingReplaceClipId: String? = null,
     val pendingReplaceAudioTrackId: String? = null,
-    // Beats: energy-based beat detection for the selected audio track.
-    // beatMarkersMs are shown on the audio lane; beatSourceTrackId
-    // records which track produced them (re-tap Beats to clear).
+    // Beats: on-device PCM onset detection is requested from the selected
+    // audio track. beatSourceTrackId tracks the last toolbar target.
     val beatsAnalyzing: Boolean = false,
     val beatSourceTrackId: String? = null,
     // Volume / Fade bottom sheets for the contextual toolbar.

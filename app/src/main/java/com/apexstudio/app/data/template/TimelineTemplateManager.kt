@@ -253,7 +253,7 @@ class TimelineTemplateManager(private val context: Context) {
             editedItems.add(editedMediaItem)
         }
 
-        val sequence = EditedMediaItemSequence(editedItems)
+        val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
         return Composition.Builder(sequence).build()
     }
 

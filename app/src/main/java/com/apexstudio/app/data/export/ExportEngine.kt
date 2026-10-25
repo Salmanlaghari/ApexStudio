@@ -656,7 +656,8 @@ class ExportEngine(private val context: Context) {
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
-                    val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
+                    val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
+                    val composition = Composition.Builder(sequence).build()
                     diagnostics.stage("project_preparation_completed", "durationMs=${plan.durationMs}")
                     val renderResult = renderProjectComposition(composition, config, partial, run, diagnostics)
                     currentCoroutineContext().ensureActive()
@@ -1421,7 +1422,7 @@ class ExportEngine(private val context: Context) {
             val backgroundY = if (isTop) 1f - marginFraction * 2f else -1f + marginFraction * 2f
             val overlayX = if (isRight) 1f else -1f
             val overlayY = if (isTop) 1f else -1f
-            val settings = androidx.media3.effect.OverlaySettings.Builder()
+            val settings = androidx.media3.effect.StaticOverlaySettings.Builder()
                 .setAlphaScale(alpha)
                 .setBackgroundFrameAnchor(backgroundX, backgroundY)
                 .setOverlayFrameAnchor(overlayX, overlayY)

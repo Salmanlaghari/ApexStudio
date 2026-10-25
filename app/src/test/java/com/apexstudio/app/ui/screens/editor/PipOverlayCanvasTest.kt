@@ -12,6 +12,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
@@ -48,6 +49,59 @@ class PipOverlayCanvasTest {
         pipY = 0.5f,
         pipScale = 0.5f,
     )
+
+    @Test
+    fun imageOverlayMountsTheImageRendererInThePipCanvas() {
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-image-pip-image", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun videoOverlayMountsTheDedicatedPlayerViewInThePipCanvas() {
+        composeRule.setContent {
+            val context = LocalContext.current
+            val player = remember(context) { ExoPlayer.Builder(context).build() }
+            DisposableEffect(player) { onDispose { player.release() } }
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = player,
+                    overlayPlayerClipId = "pip-image",
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf("pip-image" to true),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-video-pip-image", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
 
     @Test
     fun tapOnOverlayItemSelectsItsId() {

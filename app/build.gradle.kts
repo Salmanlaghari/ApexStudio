@@ -253,13 +253,14 @@ dependencies {
   implementation("androidx.camera:camera-view:1.4.1")
 
   // Media3 & Video/Audio Processing
-  implementation("androidx.media3:media3-exoplayer:1.5.0")
-  implementation("androidx.media3:media3-ui:1.5.0")
-  implementation("androidx.media3:media3-common:1.5.0")
-  implementation("androidx.media3:media3-transformer:1.5.0")
-  implementation("androidx.media3:media3-effect:1.5.0")
-  implementation("androidx.media3:media3-session:1.5.0")
-  implementation("androidx.media3:media3-datasource:1.5.0")
+  val media3Version = "1.11.1"
+  implementation("androidx.media3:media3-exoplayer:$media3Version")
+  implementation("androidx.media3:media3-ui:$media3Version")
+  implementation("androidx.media3:media3-common:$media3Version")
+  implementation("androidx.media3:media3-transformer:$media3Version")
+  implementation("androidx.media3:media3-effect:$media3Version")
+  implementation("androidx.media3:media3-session:$media3Version")
+  implementation("androidx.media3:media3-datasource:$media3Version")
 
   // SplitInstall API for the Camera Kit Play on-demand feature.
   implementation(libs.play.feature.delivery)

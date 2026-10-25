@@ -102,6 +102,37 @@ class PhotoExportConfigTest {
         assertTrue(config(state.copy(hiddenVideoLayers = setOf(1, 2))).pipOverlays.isEmpty())
     }
 
+    @Test fun `shared Media3 PiP snapshot carries both image and video sources`() {
+        fun overlay(id: String, uri: String, track: Int) = MediaClip(
+            id = id, name = id, uri = uri, durationMs = 5000L,
+            trimStartMs = 300L, trimEndMs = 4200L, type = ClipType.OVERLAY,
+            trackIndex = track, timelineOffsetMs = 700L, pipX = 0.2f,
+            pipY = 0.7f, pipScale = 0.35f, pipRotationDeg = 12f, pipOpacity = 0.6f,
+            overlayAspect = 1.5f
+        )
+        val image = overlay("image-pip", "file:///pip.png", 1)
+        val video = overlay("video-pip", "file:///pip.mp4", 2)
+        val hidden = overlay("hidden-pip", "file:///hidden.png", 3)
+
+        val configs = buildPipOverlayExportConfigs(
+            listOf(image, video, hidden, photo),
+            hiddenVideoLayers = setOf(3)
+        )
+
+        assertEquals(listOf(image.uri, video.uri), configs.map { it.uri })
+        configs.forEach { config ->
+            assertEquals(700L, config.offsetMs)
+            assertEquals(300L, config.trimStartMs)
+            assertEquals(4200L, config.trimEndMs)
+            assertEquals(0.2f, config.centerX, 0f)
+            assertEquals(0.7f, config.centerY, 0f)
+            assertEquals(0.35f, config.widthFraction, 0f)
+            assertEquals(12f, config.rotationDeg, 0f)
+            assertEquals(0.6f, config.opacity, 0f)
+            assertEquals(1.5f, config.aspect, 0f)
+        }
+    }
+
     @Test fun `photo music uses project mute solo semantics`() {
         val music = AudioTrack("m", "Music", "file:///m.m4a")
         val solo = music.copy(id = "v", isSolo = true)

@@ -308,8 +308,8 @@ private fun EditorScreenContent(
         }
         try {
             // The RenderersFactory wires the shared denoise processor
-            // into the player's audio sink (Media3 1.5.0 has no
-            // Player.setAudioEffects — the sink is the only hook).
+            // into the player's audio sink (the supported hook for custom
+            // AudioProcessor instances; Player has no setAudioEffects API).
             val renderersFactory =
                 com.apexstudio.app.data.audio.DenoiseRenderersFactory(context) {
                     denoiseProcessor

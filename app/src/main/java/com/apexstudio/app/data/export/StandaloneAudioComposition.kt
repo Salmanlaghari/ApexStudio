@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.export
 
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.C
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -16,13 +17,11 @@ internal object StandaloneAudioComposition {
         require(items.isNotEmpty()) { "No audio sources to export" }
         val sequences = items.map { placed ->
             require(placed.item.removeVideo) { "Standalone audio items must remove video" }
-            val builder = EditedMediaItemSequence.Builder()
+            val builder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
             val offsetUs = ExportAudioTimelineMapping.timelinePositionUs(placed.timelinePositionMs)
             if (offsetUs > 0L) builder.addGap(offsetUs)
             builder.addItem(placed.item).build()
         }
-        return Composition.Builder(sequences)
-            .experimentalSetForceAudioTrack(true)
-            .build()
+        return Composition.Builder(sequences).build()
     }
 }

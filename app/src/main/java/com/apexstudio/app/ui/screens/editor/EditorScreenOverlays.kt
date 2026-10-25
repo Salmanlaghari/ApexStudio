@@ -1813,6 +1813,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onDeleteClips = { ids -> vm.deleteClips(ids) },
         onDuplicateSelectedClips = { vm.duplicateSelectedClips() },
         onGroupSelectedClips = { vm.groupSelectedClips() },
+        onAutoCutSelected = { vm.autoCutSelectedClips() },
         onApplySpeedToSelectedClips = { speed -> vm.applySpeedToSelectedClips(speed) },
         onApplyFilterToSelectedClips = { config -> vm.applyFilterToSelectedClips(config) },
         onApplyLutToSelectedClips = { profileId, intensity -> vm.applyLutToSelectedClips(profileId, intensity) },

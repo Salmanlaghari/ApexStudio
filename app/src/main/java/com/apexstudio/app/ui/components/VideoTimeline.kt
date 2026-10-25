@@ -481,6 +481,8 @@ fun VideoTimeline(
     onDeleteClips: (Set<String>) -> Unit = {},
     onDuplicateSelectedClips: () -> Unit = {},
     onGroupSelectedClips: () -> Unit = {},
+    onAutoCutSelected: () -> Unit = {},
+    autoCutAvailable: Boolean = false,
     onApplySpeedToSelectedClips: (Float) -> Unit = {},
     onApplyFilterToSelectedClips: (GpuFilterConfig) -> Unit = {},
     onApplyLutToSelectedClips: (String, Float) -> Unit = { _, _ -> },
@@ -1369,6 +1371,8 @@ fun VideoTimeline(
         // in multi-select; delete is the sole action that clears selection.
         if (multiSelectMode) {
             var actionsExpanded by remember { mutableStateOf(false) }
+            val canAutoCutSelection = autoCutAvailable && selectedClipIds.size >= 2 &&
+                selectedClipIds.all { id -> clips.any { it.id == id && it.type == ClipType.VIDEO && it.trackIndex == 0 } }
             val stylisticChoices = remember { listOf(StylisticEffectType.VIGNETTE, StylisticEffectType.SEPIA, StylisticEffectType.SHARPEN) }
             val lutChoices = remember { GpuColorProfiles.ALL.take(3) }
             Box(
@@ -1386,6 +1390,12 @@ fun VideoTimeline(
                         modifier = Modifier.clickable { onClearMultiSelection() }.semantics { contentDescription = "Exit multi-select" })
                 }
                 DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.widthIn(max = 260.dp)) {
+                    DropdownMenuItem(
+                        text = { Text("AutoCut to beats") },
+                        onClick = { actionsExpanded = false; onAutoCutSelected() },
+                        enabled = canAutoCutSelection,
+                        modifier = Modifier.testTag("timeline-action-autocut")
+                    )
                     DropdownMenuItem(text = { Text("Duplicate selected") }, onClick = { actionsExpanded = false; onDuplicateSelectedClips() }, modifier = Modifier.testTag("timeline-action-duplicate"))
                     DropdownMenuItem(text = { Text("Group selected") }, onClick = { actionsExpanded = false; onGroupSelectedClips() }, modifier = Modifier.testTag("timeline-action-group"))
                     DropdownMenuItem(text = { Text("Delete selected") }, onClick = { actionsExpanded = false; onDeleteClips(selectedClipIds); onClearMultiSelection() }, modifier = Modifier.testTag("timeline-action-delete"))
@@ -1587,8 +1597,14 @@ fun VideoTimeline(
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
+    onAutoCutSelected: () -> Unit = {},
 ) {
     val project = state.project
+    val autoCutAvailable = state.selectedAudioTrackId?.let { trackId ->
+        val beatTrack = project?.audioTracks?.firstOrNull { it.id == trackId }
+        beatTrack != null && beatTrack.kind == AudioTrack.Kind.MUSIC &&
+            state.beatMarkersByTrackUri[beatTrack.uri].orEmpty().size >= 2
+    } == true
     val sharedSnapTimes = remember(project?.timeline) { project?.timeline?.collectAllTimecodes().orEmpty() }
     val clips = project?.clips.orEmpty().map { clip ->
         val sharedTrack: KeyframeTrack? = project?.sharedKeyframeTrackFor(clip.id, clip.keyframes)
@@ -1641,6 +1657,8 @@ fun VideoTimeline(
         onToggleMagneticSnapping = onToggleMagneticSnapping,
         onToggleSnapToBeat = onToggleSnapToBeat,
         onToggleRippleEdit = onToggleRippleEdit,
+        onAutoCutSelected = onAutoCutSelected,
+        autoCutAvailable = autoCutAvailable,
         onScrub = onScrub,
         onSelectClip = { onSelectClip(it) },
         onDeselect = onDeselect,

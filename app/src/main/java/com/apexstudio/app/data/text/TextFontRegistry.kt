@@ -132,13 +132,16 @@ object TextFontRegistry {
         }
     }
 
-    private fun systemTypeface(key: String, bold: Boolean, italic: Boolean): Typeface {
+    private fun systemTypeface(key: String, bold: Boolean, italic: Boolean, weight: Int? = null): Typeface {
         val base = when (key.lowercase()) {
             "serif" -> Typeface.SERIF
             "monospace", "mono" -> Typeface.MONOSPACE
             // No framework CURSIVE constant — the bundled "script"
             // font (Great Vibes) covers the script look.
             else -> Typeface.SANS_SERIF
+        }
+        if (weight != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return Typeface.create(base, weight.coerceIn(100, 900), italic)
         }
         val style = when {
             bold && italic -> Typeface.BOLD_ITALIC
@@ -149,13 +152,13 @@ object TextFontRegistry {
         return Typeface.create(base, style)
     }
 
-    private fun loadAsset(assetPath: String, bold: Boolean, italic: Boolean, variable: Boolean): Typeface? {
+    private fun loadAsset(assetPath: String, bold: Boolean, italic: Boolean, variable: Boolean, weight: Int?): Typeface? {
         val ctx = appContext ?: return null
         return try {
             if (variable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 // Real weight axis instead of synthetic emboldening.
                 Typeface.Builder(ctx.assets, assetPath)
-                    .setWeight(if (bold) 700 else 400)
+                    .setWeight(weight?.coerceIn(100, 900) ?: if (bold) 700 else 400)
                     .setItalic(italic)
                     .build()
             } else {
@@ -180,24 +183,25 @@ object TextFontRegistry {
      * Resolve [key] to a [Typeface], honouring bold/italic. Never
      * throws: falls back to a system family on any failure.
      */
-    fun resolve(key: String?, bold: Boolean, italic: Boolean): Typeface {
+    fun resolve(key: String?, bold: Boolean, italic: Boolean, weight: Int? = null): Typeface {
+        val weightedBold = weight?.let { it >= 600 } ?: bold
         val entry = find(key)
         if (entry == null || entry.regularAsset == null) {
-            return systemTypeface(key ?: "sans", bold, italic)
+            return systemTypeface(key ?: "sans", weightedBold, italic, weight)
         }
         // Prefer dedicated bold/italic faces when the family ships them.
         val asset = when {
-            bold && italic && entry.boldItalicAsset != null -> entry.boldItalicAsset
-            bold && entry.boldAsset != null -> entry.boldAsset
+            weightedBold && italic && entry.boldItalicAsset != null -> entry.boldItalicAsset
+            weightedBold && entry.boldAsset != null -> entry.boldAsset
             italic && entry.italicAsset != null -> entry.italicAsset
             else -> entry.regularAsset
         }
-        val cacheKey = "$asset|$bold|$italic|${entry.variable}"
+        val cacheKey = "$asset|$weightedBold|$italic|${entry.variable}|$weight"
         synchronized(lock) {
             cache[cacheKey]?.let { return it }
         }
-        val tf = loadAsset(asset, bold && entry.boldAsset == null, italic && entry.italicAsset == null, entry.variable)
-            ?: systemTypeface("sans", bold, italic)
+        val tf = loadAsset(asset, weightedBold && entry.boldAsset == null, italic && entry.italicAsset == null, entry.variable, weight)
+            ?: systemTypeface("sans", weightedBold, italic, weight)
         synchronized(lock) {
             if (cache.size < 32) cache[cacheKey] = tf
         }

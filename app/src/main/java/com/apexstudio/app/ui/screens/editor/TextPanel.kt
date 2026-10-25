@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.packs.download.PackManager
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
@@ -135,6 +136,8 @@ fun TextPanel(
     onClearCaptions: () -> Unit = {},
     onCaptionLanguageChange: (String) -> Unit = {},
     onCaptionTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit = {},
+    captionStyleId: String = CaptionStyles.CLASSIC_ID,
+    onCaptionStyleChange: (String) -> Unit = {},
     onCancelCaptions: () -> Unit = {},
     hasAutoCaptions: Boolean = false,
     // One-tap templates: "Text Reveal" adds editable text + walking
@@ -352,7 +355,9 @@ fun TextPanel(
                 onLanguageChange = onCaptionLanguageChange,
                 onTimingChange = onCaptionTimingChange,
                 onCancelCaptions = onCancelCaptions,
-                hasAutoCaptions = hasAutoCaptions
+                hasAutoCaptions = hasAutoCaptions,
+                captionStyleId = captionStyleId,
+                onCaptionStyleChange = onCaptionStyleChange
             )
             return@Column
         }
@@ -1324,7 +1329,9 @@ fun TextPanel(
                     onLanguageChange = onCaptionLanguageChange,
                     onTimingChange = onCaptionTimingChange,
                     onCancelCaptions = onCancelCaptions,
-                    hasAutoCaptions = hasAutoCaptions
+                    hasAutoCaptions = hasAutoCaptions,
+                    captionStyleId = captionStyleId,
+                    onCaptionStyleChange = onCaptionStyleChange
                 )
             }
             }
@@ -1432,7 +1439,9 @@ private fun AutoCaptionsTab(
     onLanguageChange: (String) -> Unit,
     onTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit,
     onCancelCaptions: () -> Unit,
-    hasAutoCaptions: Boolean
+    hasAutoCaptions: Boolean,
+    captionStyleId: String,
+    onCaptionStyleChange: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1531,6 +1540,31 @@ private fun AutoCaptionsTab(
                 ) {
                     Text(label, fontSize = 11.sp)
                 }
+            }
+        }
+        if (hasAutoCaptions) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Caption style", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(CaptionStyles.presets) { style ->
+                        val isSelected = style.id == captionStyleId
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                                .border(1.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                    RoundedCornerShape(16.dp))
+                                .clickable(enabled = !busy) { onCaptionStyleChange(style.id) }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(style.name, color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                                fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                        }
+                    }
+                }
+                Text(CaptionStyles.find(captionStyleId)?.description.orEmpty(),
+                    color = ApexPalette.TextTertiary, fontSize = 10.sp)
             }
         }
         Text(

@@ -582,6 +582,10 @@ data class TextOverlay(
     val highlightEndUtf16: Int? = null,
     val highlightSourceFingerprint: String? = null,
     val highlightColorArgb: Long = 0xFFFFFF00L,
+    // Caption look selection is persisted with each generated caption so preview
+    // and export resolve the same preset after the project is reopened.
+    val captionStyleId: String? = null,
+    val captionFontWeight: Int? = null,
     // Optional animation timing window on the clip-output timeline. Segmented
     // overlays share a logical window that may extend beyond their local window.
     val animationWindowStartMs: Long? = null,

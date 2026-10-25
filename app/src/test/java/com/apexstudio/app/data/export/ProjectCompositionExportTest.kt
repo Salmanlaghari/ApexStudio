@@ -208,19 +208,24 @@ class ProjectCompositionExportTest {
     }
 
     @Test
-    fun `whole project export rejects artwork instead of silently omitting it`() {
+    fun `whole project export accepts artwork for per clip rendering`() {
         val base = listOf(clip())
         assertNull(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig(
             videoDrawings = listOf(VideoDrawingLayer(id = "empty"))
         )))
-        val drawings = listOf(VideoDrawingLayer(
-            id = "paint",
-            clipId = "v1",
-            strokes = listOf(VideoDrawingStroke(points = listOf(VideoDrawingPoint(0.2f, 0.3f))))
-        ))
-        assertTrue(projectCompositionUnsupportedReason(
+        val stroke = VideoDrawingStroke(points = listOf(VideoDrawingPoint(0.2f, 0.3f)))
+        val drawings = listOf(
+            VideoDrawingLayer(id = "project-wide", strokes = listOf(stroke)),
+            VideoDrawingLayer(id = "paint", clipId = "v1", strokes = listOf(stroke)),
+            VideoDrawingLayer(id = "other-clip", clipId = "v2", strokes = listOf(stroke))
+        )
+        assertEquals(
+            listOf("project-wide", "paint"),
+            projectDrawingLayersForClipExport(drawings, "v1").map { it.id }
+        )
+        assertNull(projectCompositionUnsupportedReason(
             base, ExportEngine.ExportConfig(videoDrawings = drawings)
-        )!!.contains("does not support project or clip drawings"))
+        ))
     }
 
     @Test
@@ -340,6 +345,22 @@ class ProjectCompositionExportTest {
         val invalid = clip().copy(gpuFilterConfig = GpuFilterConfig(filterIntensity = Float.NaN))
         assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
             .contains("invalid per-clip filter/LUT"))
+    }
+
+    @Test
+    fun `whole project export refuses per clip GPU operations its Media3 renderer cannot represent`() {
+        val unsupported = listOf(
+            GpuFilterConfig(gamma = 1.2f) to "gamma grading",
+            GpuFilterConfig(activeProfileId = "film") to "color profile",
+            GpuFilterConfig(stylisticEffect = StylisticEffectType.HALFTONE) to "stylistic effect",
+            GpuFilterConfig(filterPresetId = "missing-preset") to "unknown per-clip filter/LUT preset"
+        )
+        unsupported.forEach { (gpuConfig, expected) ->
+            val reason = projectCompositionUnsupportedReason(
+                listOf(clip().copy(gpuFilterConfig = gpuConfig)), ExportEngine.ExportConfig()
+            )!!
+            assertTrue("expected '$expected' in '$reason'", reason.contains(expected))
+        }
     }
 
     @Test

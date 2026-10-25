@@ -1309,6 +1309,29 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val scope = rememberCoroutineScope()
     val exportState by vm.export.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
+    val mainPreviewClip = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+    val sourceVideoWidth = state.videoWidth.takeIf { it > 0 }
+        ?: exoPlayer?.videoSize?.width?.takeIf { it > 0 }
+        ?: 0
+    val sourceVideoHeight = state.videoHeight.takeIf { it > 0 }
+        ?: exoPlayer?.videoSize?.height?.takeIf { it > 0 }
+        ?: 0
+    val sourcePixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio
+        ?.takeIf { it.isFinite() && it > 0f }
+        ?: 1f
+    val sourceVideoAspectRatio = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.let { clip ->
+        previewContentAspect(
+            videoWidth = sourceVideoWidth,
+            videoHeight = sourceVideoHeight,
+            pixelAspect = sourcePixelAspect,
+            effectOutputAspect = clip.faceCropTrack?.outputAspectRatio
+                ?: videoCropOutputAspect(
+                    sourceVideoWidth, sourceVideoHeight, sourcePixelAspect, clip.videoCrop
+                )
+        )
+    }
+    val previewStageAspectRatio = editorPreviewStageAspectRatio(sourceVideoAspectRatio, compositionAspectRatio)
+    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1335,21 +1358,21 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         contentAlignment = Alignment.TopCenter
     ) {
         // Keep the historical flexible preview frame, but fit the entire
-        // composition (player AND normalized overlays) to the output frame.
-        // Source FIT remains FIT inside that same frame, never a different box.
+        // source frame (player AND normalized overlays) to decoded media geometry.
+        // The export aspect remains the fallback before source dimensions are known.
         PreviewContentCanvas(
-            mediaAspectRatio = compositionAspectRatio,
+            mediaAspectRatio = previewStageAspectRatio,
             isCoverMode = false,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                scaleX = portraitScale
+                scaleY = portraitScale
+            },
             frameModifier = Modifier.background(Color.Black)
         ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
         val selectedClip = resolveEditorSelectionClip(
             state.project?.clips.orEmpty(), state.selectedClipId
-        )
-        val mainPreviewClip = timelinePreviewClip(
-            state.project?.clips.orEmpty(), state.playerPositionMs
         )
         val animatedTransform = remember(mainPreviewClip, state.playerPositionMs) {
             mainPreviewClip?.keyframes?.interpolateAt(state.playerPositionMs)
@@ -1472,8 +1495,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectionFileLabel = null,
             showFrame = false,
             exoPlayer = exoPlayer,
-            videoWidth = state.videoWidth,
-            videoHeight = state.videoHeight,
+            videoWidth = sourceVideoWidth,
+            videoHeight = sourceVideoHeight,
             drawingLayers = state.project?.videoDrawings.orEmpty(),
             drawingClipId = mainPreviewClip?.id,
             drawingEnabled = drawingEnabled,
@@ -1487,7 +1510,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
             workspaceEffectIntensityProvider = workspaceEffectIntensityProvider,
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
-            compositionAspectRatio = compositionAspectRatio,
+            compositionAspectRatio = previewStageAspectRatio,
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,
@@ -1594,7 +1617,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
 
         // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
         PreviewContentCanvas(
-            mediaAspectRatio = compositionAspectRatio,
+            mediaAspectRatio = previewStageAspectRatio,
             isCoverMode = false,
             modifier = Modifier.fillMaxSize()
         ) {

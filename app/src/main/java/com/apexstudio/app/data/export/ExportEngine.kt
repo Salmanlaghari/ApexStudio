@@ -628,6 +628,15 @@ class ExportEngine(private val context: Context) {
                             config.signature?.let { signature ->
                                 addAll(buildSignatureExportEffects(signature, aspect))
                             }
+                            val itemDrawings = projectDrawingLayersForClipExport(config.videoDrawings, clip.id)
+                            if (itemDrawings.isNotEmpty()) {
+                                val drawingBitmap = com.apexstudio.app.ui.screens.editor.VideoDrawingRenderer.renderBitmap(
+                                    outputWidth, outputHeight, itemDrawings, clip.id
+                                )
+                                add(androidx.media3.effect.OverlayEffect(listOf(
+                                    androidx.media3.effect.BitmapOverlay.createStaticBitmapOverlay(drawingBitmap)
+                                )))
+                            }
                             add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                 effectiveExportFrameRate(config.fps).toFloat()
                             ))

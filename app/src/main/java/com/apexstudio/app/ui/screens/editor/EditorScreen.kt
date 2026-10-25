@@ -31,6 +31,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
+import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
@@ -307,8 +308,8 @@ private fun EditorScreenContent(
         }
         try {
             // The RenderersFactory wires the shared denoise processor
-            // into the player's audio sink (Media3 1.5.0 has no
-            // Player.setAudioEffects — the sink is the only hook).
+            // into the player's audio sink (the supported hook for custom
+            // AudioProcessor instances; Player has no setAudioEffects API).
             val renderersFactory =
                 com.apexstudio.app.data.audio.DenoiseRenderersFactory(context) {
                     denoiseProcessor
@@ -538,11 +539,18 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
+    val previewGpuFilterConfig = mainPreviewClip
+        ?.takeIf { it.type == ClipType.VIDEO }
+        ?.gpuFilterConfig
+        ?: com.apexstudio.app.domain.model.GpuFilterConfig()
     val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
 
     val currentEffects = remember(
         activePreset,
+        previewGpuFilterConfig,
+        state.gpuFilterCompareMode,
+        state.lutCompareMode,
         state.filterIntensity,
         activeFx,
         state.fxIntensity,
@@ -552,9 +560,29 @@ private fun EditorScreenContent(
         sharedPreviewClip
     ) {
         buildList<androidx.media3.common.Effect> {
+            // Match project export's per-clip LUT/adjustment stages when the
+            // config is entirely representable by Media3. Keep profile-only
+            // and GPU-only stylists on their explicit Compose fallback path.
+            if (!state.gpuFilterCompareMode && gpuFilterConfigUsesMedia3(previewGpuFilterConfig) &&
+                !previewGpuFilterConfig.isDefault
+            ) {
+                previewGpuFilterConfig.filterPresetId
+                    ?.let { com.apexstudio.app.data.filter.FilterManifest.presetById(it) }
+                    ?.let { preset ->
+                        add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                            context, preset, previewGpuFilterConfig.filterIntensity
+                        ))
+                    }
+                val perClipAdjustments = previewGpuFilterConfig.toProjectExportAdjustments()
+                if (!perClipAdjustments.isDefault) {
+                    add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(perClipAdjustments))
+                }
+            }
             val hasSharedFilterKeys = sharedPreviewClip?.filterKeyframes?.isNotEmpty() == true ||
                 sharedPreviewClip?.lutKeyframes?.isNotEmpty() == true
-            if (activePreset != null && (state.filterIntensity > 0f || hasSharedFilterKeys)) {
+            if (!state.lutCompareMode && activePreset != null &&
+                (state.filterIntensity > 0f || hasSharedFilterKeys)
+            ) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity,
@@ -572,7 +600,7 @@ private fun EditorScreenContent(
                     )
                 )
             }
-            if (!state.adjustments.isDefault) {
+            if (!state.lutCompareMode && !state.adjustments.isDefault) {
                 val adjustMatrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
                     filterId = null,
                     intensity = 0f,
@@ -586,7 +614,7 @@ private fun EditorScreenContent(
             // as a color matrix, so they run in the live GL shader below.
             // Base = all-default VideoAdjustments so the matrix-covered
             // knobs don't double-apply; only the v2 providers are live.
-            run {
+            if (!state.lutCompareMode) run {
                 val v2 = state.adjustments
                 if (v2.hasNonMatrixAdjustments) {
                     add(
@@ -636,10 +664,6 @@ private fun EditorScreenContent(
             }
         }
     }
-
-    // Live preview effects and filters are rendered in real-time by FilterPreviewOverlay
-    // and FxPreviewOverlay with Compose hardware acceleration, preventing ExoPlayer
-    // GL pipeline crashes and surface detachment on Android devices.
 
     val audioPlaybackManager = remember { com.apexstudio.app.data.engine.AudioPlaybackManager(context) }
     DisposableEffect(Unit) {
@@ -909,6 +933,7 @@ private fun EditorScreenContent(
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
+        CompositionLocalProvider(LocalEditorPreviewEffects provides currentEffects) {
         EditorPreviewSection(
             state = state,
             vm = vm,
@@ -928,6 +953,7 @@ private fun EditorScreenContent(
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth
         )
+        }
             },
             timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {

@@ -158,23 +158,33 @@ fun VideoPreviewArea(
     val workspaceEffectBinding = remember(workspaceEffects, workspaceEffectIntensityProvider) {
         workspaceEffectPreviewBinding(workspaceEffects, workspaceEffectIntensityProvider)
     }
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings, workspaceEffectBinding.sourceEffects, photoClip?.id) {
+    val editorGradeEffects = LocalEditorPreviewEffects.current
+    LaunchedEffect(
+        exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings,
+        workspaceEffectBinding.sourceEffects, editorGradeEffects, photoClip?.id
+    ) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
-                player.setVideoEffects(listOfNotNull(
+                val geometryAndWorkspaceEffects = listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
                     com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(chromaKeySettings),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
-                ))
+                )
+                player.setVideoEffects(
+                    mergeEditorPreviewEffects(geometryAndWorkspaceEffects, editorGradeEffects)
+                )
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
-                // Replacing a video-effect chain while paused does not guarantee Media3
-                // redraws the already-presented frame. Seek to the same source position
-                // to invalidate that frame; never move the project playhead or auto-play.
+                // A same-position seek may reuse a rendered buffer; re-prepare the
+                // retained source time to get a newly decoded frame through the graph.
+                // This branch is paused-only, so editing effects never auto-plays.
                 else if (!player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY) {
-                    player.seekTo(player.currentPosition.coerceAtLeast(0L))
+                    val retainedPositionMs = player.currentPosition.coerceAtLeast(0L)
+                    player.stop()
+                    player.seekTo(retainedPositionMs)
+                    player.prepare()
                 }
             } else player.setVideoEffects(emptyList())
         } catch (error: Exception) {
@@ -206,6 +216,7 @@ fun VideoPreviewArea(
     } else {
         androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
+    val composeTransform = composeTransformForPreview(photoClip != null, animatedTransform)
 
     Box(
         modifier = modifier
@@ -236,12 +247,12 @@ fun VideoPreviewArea(
                     }
                 }
                 .graphicsLayer {
-                    scaleX = animatedTransform.scale
-                    scaleY = animatedTransform.scale
-                    rotationZ = animatedTransform.rotationDeg
-                    alpha = animatedTransform.opacity.coerceIn(0f, 1f)
-                    translationX = animatedTransform.translateX * size.width * 0.5f
-                    translationY = animatedTransform.translateY * size.height * 0.5f
+                    scaleX = composeTransform.scale
+                    scaleY = composeTransform.scale
+                    rotationZ = composeTransform.rotationDeg
+                    alpha = composeTransform.opacity.coerceIn(0f, 1f)
+                    translationX = composeTransform.translateX * size.width * 0.5f
+                    translationY = composeTransform.translateY * size.height * 0.5f
                 }
         ) {
             // Photo clip (PR F): still image rendered with its edits via
@@ -279,24 +290,30 @@ fun VideoPreviewArea(
                 }
             }
 
-            // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
-            FilterPreviewOverlay(
-                filterId = activeFilterId,
-                intensity = filterIntensity,
-                adjustments = adjustments,
-                saturationMultiplier = keyframedSaturationFactor,
-                compareMode = lutCompareMode,
-                splitPosition = lutCompareSplitPosition,
-                modifier = mediaContentModifier
-            )
+            // Video grades run on decoded pixels in Media3. Compose remains the
+            // still-image path and the intentional split-comparison fallback.
+            if (shouldRenderComposeGrade(photoClip != null, lutCompareMode)) {
+                FilterPreviewOverlay(
+                    filterId = activeFilterId,
+                    intensity = filterIntensity,
+                    adjustments = adjustments,
+                    saturationMultiplier = if (photoClip != null) keyframedSaturationFactor else 1f,
+                    compareMode = lutCompareMode,
+                    splitPosition = lutCompareSplitPosition,
+                    modifier = mediaContentModifier
+                )
+            }
 
-            // Live Real-Time GPUImage Filter & Stylistic Effects Overlay
-            GpuVideoFilterOverlay(
-                config = gpuFilterConfig,
-                compareMode = gpuFilterCompareMode,
-                splitPosition = gpuFilterSplitPosition,
-                modifier = mediaContentModifier
-            )
+            // Export-parity GPU grades run on video frames; retain the Compose
+            // approximation only for photos, compare mode, and GPU-only profiles.
+            if (shouldRenderComposeGpuFilter(photoClip != null, gpuFilterCompareMode, gpuFilterConfig)) {
+                GpuVideoFilterOverlay(
+                    config = gpuFilterConfig,
+                    compareMode = gpuFilterCompareMode,
+                    splitPosition = gpuFilterSplitPosition,
+                    modifier = mediaContentModifier
+                )
+            }
 
             // Real-time 3D Chroma Key Live Overlay
             if (chromaKeySettings.enabled) {
@@ -306,8 +323,8 @@ fun VideoPreviewArea(
                 )
             }
 
-            // Live Visual FX Overlay (VHS, Glitch, Scanlines, Grain, Light Leaks, Bloom, etc.)
-            if (activeFxId != null && fxIntensity > 0f) {
+            // Video FX run on decoded pixels in Media3; only photos use this overlay.
+            if (shouldRenderComposeFx(photoClip != null) && activeFxId != null && fxIntensity > 0f) {
                 FxPreviewOverlay(
                     fxId = activeFxId,
                     intensity = fxIntensity,

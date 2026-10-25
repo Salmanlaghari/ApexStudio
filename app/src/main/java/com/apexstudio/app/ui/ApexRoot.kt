@@ -16,6 +16,7 @@ import com.apexstudio.app.ui.components.NeonGradientBackground
 import com.apexstudio.app.camerakit.CameraKitDeliveryRoute
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
 import com.apexstudio.app.ui.screens.editor.EditorScreen
+import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
@@ -58,7 +59,7 @@ fun ApexRoot() {
                             },
                             onOpenSettings = { overlay = Overlay.Settings }
                         )
-                        "edit", "color", "audio", "export" -> EditorScreen(
+                        "edit", "color", "audio" -> EditorScreen(
                             projectId = projectId ?: "p1",
                             onBack = { currentTab = "home" },
                             onExport = { showExportSettings = true },
@@ -66,6 +67,14 @@ fun ApexRoot() {
                             onAudio = { currentTab = "audio" },
                             entryWorkspace = apexContentTab(currentTab, showExportSettings),
                             onCloseWorkspace = { showExportSettings = false; currentTab = "edit" }
+                        )
+                        // Keep export as its own page. Leaving EditorScreen here disposes
+                        // its preview/overlay players before the encoder starts, while the
+                        // shared project-keyed ViewModel keeps export settings and state.
+                        "export" -> ExportScreen(
+                            projectId = projectId ?: "p1",
+                            onBack = { showExportSettings = false },
+                            onExport = { showExportSettings = false }
                         )
                         "lenses" -> CameraKitDeliveryRoute(
                             onBack = { currentTab = "home" }

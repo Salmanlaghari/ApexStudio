@@ -125,6 +125,7 @@ class FxGlEffect(
         """.trimIndent()
 
         internal fun shaderSourceFor(preset: FxPreset): String {
+            RequestedFxShaders.shaderFor(preset)?.let { return it }
             ModernFxShaders.shaderFor(preset)?.let { return it }
             return when (preset) {
             FxPreset.VIGNETTE -> vignetteShader()

@@ -68,3 +68,34 @@ data class GpuFilterConfig(
             lightness == 0f && whites == 0f && blacks == 0f && hue == 0f && vignette == 0f && grain == 0f &&
             clarity == 0f && denoise == 0f && sharpness == 0f
 }
+
+/** Maps the persisted GPU profile config onto the shared Media3 adjustment model. */
+fun GpuFilterConfig.toVideoAdjustments(): VideoAdjustments = VideoAdjustments(
+    brightness = brightness,
+    contrast = contrast,
+    saturation = when (stylisticEffect) {
+        StylisticEffectType.SEPIA -> saturation * (1f - 0.35f * stylisticIntensity.coerceIn(0f, 1f))
+        else -> saturation
+    },
+    exposure = exposure,
+    temperature = (((temperature - 5000f) / 3000f) +
+        if (stylisticEffect == StylisticEffectType.SEPIA) 0.35f * stylisticIntensity.coerceIn(0f, 1f) else 0f)
+        .coerceIn(-1f, 1f),
+    tint = ((tint / 100f) +
+        if (stylisticEffect == StylisticEffectType.SEPIA) 0.12f * stylisticIntensity.coerceIn(0f, 1f) else 0f)
+        .coerceIn(-1f, 1f),
+    highlights = highlights - 1f,
+    shadows = shadows,
+    sharpness = (sharpness +
+        if (stylisticEffect == StylisticEffectType.SHARPEN) stylisticIntensity else 0f).coerceIn(0f, 1f),
+    vignette = (vignette +
+        if (stylisticEffect == StylisticEffectType.VIGNETTE) stylisticIntensity else 0f).coerceIn(0f, 1f),
+    grain = grain,
+    lightness = lightness,
+    whites = whites,
+    blacks = blacks,
+    hue = hue,
+    clarity = clarity,
+    denoise = denoise,
+    vibrance = vibrance
+)

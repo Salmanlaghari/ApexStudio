@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import androidx.media3.common.util.Size
 import androidx.media3.effect.GlMatrixTransformation
+import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -11,8 +12,11 @@ import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.visibleVideoDrawingLayers
 import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.domain.model.VideoAdjustments
+import com.apexstudio.app.domain.model.toVideoAdjustments
 import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParameters
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
@@ -37,9 +41,6 @@ internal fun projectCompositionUnsupportedReason(
     if (clips.isEmpty()) return "Project export needs at least one main-track video clip."
     if (config.colorStudioGrade?.hasValidRenderParameters() == false) {
         return "Project export has an invalid Color Studio grade; reset or adjust it before exporting."
-    }
-    if (config.videoDrawings.any { it.strokes.isNotEmpty() }) {
-        return "Project export does not support project or clip drawings yet; export a selected clip to include artwork."
     }
 
     clips.forEach { clip ->
@@ -185,6 +186,20 @@ internal fun projectGpuFilterUnsupportedReason(config: GpuFilterConfig): String?
         !valid(config.denoise, 0f..1f) || !valid(config.sharpness, 0f..1f) ||
         !valid(config.profileIntensity, 0f..1f)
     ) return "an invalid per-clip filter/LUT configuration."
+    if (config.filterPresetId != null && FilterManifest.presetById(config.filterPresetId) == null) {
+        return "an unknown per-clip filter/LUT preset."
+    }
+    if (config.activeProfileId != null) {
+        return "a per-clip GPU color profile that project export cannot render."
+    }
+    if (config.gamma != 1f) return "per-clip gamma grading that project export cannot render."
+    if (config.stylisticEffect !in setOf(
+            com.apexstudio.app.data.filter.StylisticEffectType.NONE,
+            com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE,
+            com.apexstudio.app.data.filter.StylisticEffectType.SEPIA,
+            com.apexstudio.app.data.filter.StylisticEffectType.SHARPEN
+        )
+    ) return "a GPU-only per-clip stylistic effect that project export cannot render."
     return null
 }
 
@@ -194,39 +209,14 @@ internal data class ProjectItemFilterExport(val clipId: String, val config: GpuF
 internal fun projectItemFilterExports(clips: List<MediaClip>): List<ProjectItemFilterExport> =
     clips.map { ProjectItemFilterExport(it.id, it.gpuFilterConfig) }
 
+/** Project artwork spans every item; clip artwork is included only for its owning export item. */
+internal fun projectDrawingLayersForClipExport(
+    layers: List<VideoDrawingLayer>,
+    clipId: String
+): List<VideoDrawingLayer> = visibleVideoDrawingLayers(layers, clipId).filter { it.strokes.isNotEmpty() }
+
 /** Maps the persisted GPUImage model onto the existing Media3 adjustment shader. */
-internal fun GpuFilterConfig.toProjectExportAdjustments(): VideoAdjustments = VideoAdjustments(
-    brightness = brightness,
-    contrast = contrast,
-    saturation = when (stylisticEffect) {
-        com.apexstudio.app.data.filter.StylisticEffectType.SEPIA ->
-            saturation * (1f - 0.35f * stylisticIntensity.coerceIn(0f, 1f))
-        else -> saturation
-    },
-    exposure = exposure,
-    temperature = (((temperature - 5000f) / 3000f) +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SEPIA)
-            0.35f * stylisticIntensity.coerceIn(0f, 1f) else 0f).coerceIn(-1f, 1f),
-    tint = ((tint / 100f) +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SEPIA)
-            0.12f * stylisticIntensity.coerceIn(0f, 1f) else 0f).coerceIn(-1f, 1f),
-    highlights = highlights - 1f,
-    shadows = shadows,
-    sharpness = (sharpness +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.SHARPEN)
-            stylisticIntensity else 0f).coerceIn(0f, 1f),
-    vignette = (vignette +
-        if (stylisticEffect == com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE)
-            stylisticIntensity else 0f).coerceIn(0f, 1f),
-    grain = grain,
-    lightness = lightness,
-    whites = whites,
-    blacks = blacks,
-    hue = hue,
-    clarity = clarity,
-    denoise = denoise,
-    vibrance = vibrance
-)
+internal fun GpuFilterConfig.toProjectExportAdjustments(): VideoAdjustments = toVideoAdjustments()
 
 /** Overlay windows are expressed in the clip's output clock, starting at zero after its trim. */
 private fun Long.isValidProjectOverlayTime(endMs: Long): Boolean = this >= 0L && endMs >= this

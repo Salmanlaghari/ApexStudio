@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,14 +22,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apexstudio.app.data.effect.WorkspaceFilterThumbnailGenerator
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
@@ -39,6 +44,8 @@ import com.apexstudio.app.presentation.viewmodel.applyWorkspaceEffects
 import com.apexstudio.app.presentation.viewmodel.setPlaying
 import com.apexstudio.app.presentation.viewmodel.setPlayerError
 import com.apexstudio.app.ui.theme.EditorPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** A compact, local-only color-look workspace. Drafts are preview-only until the single Apply boundary. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,7 +61,38 @@ internal fun FilterWorkspacePanel(
     onDismiss: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val catalog = WorkspaceFilterPresets.all
+    var filterSampleBitmaps by remember(originalClip.id) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    val filterSampleSourceMs = remember(originalClip.id) {
+        sourceTimeAtProjectPlayhead(
+            clips = state.project?.clips.orEmpty(),
+            clip = originalClip,
+            liveProjectTimeMs = null,
+            fallbackProjectTimeMs = state.currentTimeMs,
+        )
+    }
+    LaunchedEffect(originalClip.id, filterSampleSourceMs) {
+        val sampleFrame = withContext(Dispatchers.IO) {
+            runCatching {
+                if (originalClip.uri.isBlank()) null else {
+                    val playable = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(context, originalClip.uri)
+                    val missingLocalFile = playable.scheme == "file" &&
+                        !java.io.File(playable.path.orEmpty()).isFile
+                    if (missingLocalFile) null else {
+                        com.apexstudio.app.data.media.VideoThumbnailExtractor
+                            .extractFrame(context, playable.toString(), filterSampleSourceMs)
+                    }
+                }
+            }.getOrNull()
+        }
+        filterSampleBitmaps = WorkspaceFilterThumbnailGenerator.generate(
+            context = context,
+            source = sampleFrame,
+            presetIds = catalog.map { it.id },
+        )
+    }
     val firstExisting = remember(originalClip) { originalClip.workspaceEffects.indexOfFirst { it.id in WorkspaceEffectPresets.filterIds }.takeIf { it >= 0 } }
     var effects by remember(originalClip) { mutableStateOf(originalClip.workspaceEffects) }
     var selectedIndex by remember(originalClip) { mutableStateOf(firstExisting) }
@@ -256,8 +294,20 @@ internal fun FilterWorkspacePanel(
                                         .padding(horizontal = 6.dp, vertical = 7.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Box(Modifier.fillMaxWidth().height(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
-                                        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                                    val sample = filterSampleBitmaps[preset.id]
+                                    if (sample != null) {
+                                        Image(
+                                            bitmap = sample,
+                                            contentDescription = "${preset.label} sample preview",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxWidth().height(42.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .testTag("filter-sample-${preset.id}"),
+                                        )
+                                    } else {
+                                        Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
+                                            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                                        }
                                     }
                                     Text(preset.label, color = foreground, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }

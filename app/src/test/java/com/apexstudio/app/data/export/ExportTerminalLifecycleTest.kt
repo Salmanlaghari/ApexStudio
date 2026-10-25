@@ -37,7 +37,7 @@ class ExportTerminalLifecycleTest {
         runBlocking { engine.startTransformerOnApplicationThread({ active }) { /* no native codec start */ } }
         return active
     }
-    private fun composition() = Composition.Builder(EditedMediaItemSequence(listOf(
+    private fun composition() = Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(listOf(
         EditedMediaItem.Builder(MediaItem.fromUri("file:///test.mp4")).build()
     ))).build()
 

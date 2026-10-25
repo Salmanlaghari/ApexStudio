@@ -127,7 +127,8 @@ fun TimelineTrackArea(
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
-    onToggleRippleEdit: () -> Unit = {}
+    onToggleRippleEdit: () -> Unit = {},
+    onAutoCutSelected: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -389,6 +390,7 @@ fun TimelineTrackArea(
             onDeleteClips = onDeleteClips,
             onDuplicateSelectedClips = onDuplicateSelectedClips,
             onGroupSelectedClips = onGroupSelectedClips,
+            onAutoCutSelected = onAutoCutSelected,
             onApplySpeedToSelectedClips = onApplySpeedToSelectedClips,
             onApplyFilterToSelectedClips = onApplyFilterToSelectedClips,
             onApplyLutToSelectedClips = onApplyLutToSelectedClips,

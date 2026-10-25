@@ -80,13 +80,15 @@ internal data class CaptionPhraseGroup(val id: String, val overlays: List<TextOv
 /** Extracts only explicit single-word or valid karaoke word intervals; phrase captions are not split artificially. */
 object CaptionFillerWordStream {
     fun fromMainVideoClips(clips: List<MediaClip>): List<TimedCaptionWord> {
+        // Filter first, matching ProjectCompositionTimeline: only V1 VIDEO/IMAGE clips contribute time.
+        val mainTrackClips = clips.filter {
+            it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+        }
         var projectStartMs = 0L
         val words = mutableListOf<TimedCaptionWord>()
-        clips.forEach { clip ->
-            // Match ProjectCompositionTimeline: only track-0 VIDEO/IMAGE clips advance V1 time.
-            val isMainVideo = clip.trackIndex == 0 && clip.type == ClipType.VIDEO
-            if (isMainVideo) {
-                val duration = clip.effectiveDurationMs()
+        mainTrackClips.forEach { clip ->
+            val duration = clip.effectiveDurationMs()
+            if (clip.type == ClipType.VIDEO) {
                 val auto = clip.textOverlays.filter { it.presetId == "caption_auto" }
                 val phraseGroupByOverlay = phraseGroups(clip.id, auto).flatMap { group ->
                     group.overlays.map { it.id to group.id }
@@ -123,10 +125,8 @@ object CaptionFillerWordStream {
                         tokenEndUtf16Exclusive = token.third
                     )
                 }
-                projectStartMs += duration
-            } else if (clip.trackIndex == 0 && clip.type == ClipType.IMAGE) {
-                projectStartMs += clip.effectiveDurationMs()
             }
+            projectStartMs += duration
         }
         return words.sortedWith(compareBy<TimedCaptionWord> { it.startMs }.thenBy { it.endMs }.thenBy { it.id })
     }

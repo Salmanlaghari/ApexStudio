@@ -1,8 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
-import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.SpeedPoint
@@ -40,10 +40,12 @@ fun EditorViewModel.autoCutSelectedClips(): Boolean {
     if (plan.size != selectedClips.size) return false
 
     val sourceById = selectedClips.associateBy(MediaClip::id)
+    var nextGeneratedStartMs = sequenceStartMs
     val generatedClips = plan.map { segment ->
         val source = sourceById[segment.clipId] ?: return false
+        val sourceStartMs = SpeedCurveMath.timelineStartMsForClip(project.clips, source)
         val trimEndMs = sourceEndForOutputDuration(source, segment.durationMs)
-        source.copy(
+        val trimmedClip = source.copy(
             id = "clip_${UUID.randomUUID()}_autocut",
             trimEndMs = trimEndMs,
             speedPoints = speedPointsForTrim(source, trimEndMs),
@@ -54,6 +56,16 @@ fun EditorViewModel.autoCutSelectedClips(): Boolean {
             textOverlays = source.textOverlays.map { it.copy(id = "text_${UUID.randomUUID()}") },
             stickers = source.stickers.map { it.copy(id = "sticker_${UUID.randomUUID()}") }
         )
+        val generatedClip = trimmedClip.copy(
+            keyframes = rebaseKeyframesForAutoCut(
+                source.keyframes,
+                sourceStartMs,
+                nextGeneratedStartMs,
+                trimmedClip.effectiveDurationMs()
+            )
+        )
+        nextGeneratedStartMs += generatedClip.effectiveDurationMs()
+        generatedClip
     }
 
     // A single snapshot covers the whole append, so one Undo restores the exact project.
@@ -77,14 +89,28 @@ fun EditorViewModel.autoCutSelectedClips(): Boolean {
     return true
 }
 
-/** Converts an output-time segment into a source trim without exceeding the selected clip's current trim. */
+/** Finds the source trim whose speed-mapped output duration is nearest to the planned beat span. */
 private fun sourceEndForOutputDuration(source: MediaClip, outputDurationMs: Long): Long {
-    val sourceSpan = (source.trimEndMs - source.trimStartMs).coerceAtLeast(0L)
-    val sourceOffset = ClipTimeMapping.mainSourceOffsetAtOutputMs(
-        source,
-        outputDurationMs.coerceIn(0L, source.effectiveDurationMs())
-    )
-    return (source.trimStartMs + sourceOffset).coerceIn(source.trimStartMs, source.trimStartMs + sourceSpan)
+    val minEndMs = source.trimStartMs
+    val maxEndMs = source.trimEndMs.coerceAtLeast(minEndMs)
+    val targetDurationMs = outputDurationMs.coerceIn(0L, source.effectiveDurationMs())
+
+    fun durationAt(trimEndMs: Long): Long = source.copy(
+        trimEndMs = trimEndMs,
+        speedPoints = speedPointsForTrim(source, trimEndMs)
+    ).effectiveDurationMs()
+
+    var low = minEndMs
+    var high = maxEndMs
+    while (low < high) {
+        val middle = low + (high - low) / 2L
+        if (durationAt(middle) < targetDurationMs) low = middle + 1L else high = middle
+    }
+
+    val beforeEndMs = (low - 1L).coerceAtLeast(minEndMs)
+    val beforeErrorMs = targetDurationMs - durationAt(beforeEndMs)
+    val afterErrorMs = durationAt(low) - targetDurationMs
+    return if (beforeErrorMs <= afterErrorMs) beforeEndMs else low
 }
 
 /** Re-bases a trimmed variable-speed curve to the new source range instead of discarding the user's speed ramp. */
@@ -104,5 +130,27 @@ private fun speedPointsForTrim(source: MediaClip, trimEndMs: Long): List<SpeedPo
     return SpeedCurveMath.sanitize(
         listOf(points.first().copy(timeFraction = 0f)) + kept +
             SpeedPoint(1f, SpeedCurveMath.speedAt(points, endFraction), endSharp)
+    )
+}
+
+/** Shifts absolute source-timeline keyframes into the appended clip's speed-adjusted output span. */
+private fun rebaseKeyframesForAutoCut(
+    source: KeyframeTrack,
+    sourceStartMs: Long,
+    generatedStartMs: Long,
+    outputDurationMs: Long
+): KeyframeTrack {
+    val sourceEndExclusiveMs = sourceStartMs + outputDurationMs.coerceAtLeast(0L)
+    return source.copy(
+        keyframes = source.keyframes.asSequence()
+            .filter { it.timeMs >= sourceStartMs && it.timeMs < sourceEndExclusiveMs }
+            .map { keyframe ->
+                keyframe.copy(
+                    id = "keyframe_${UUID.randomUUID()}_autocut",
+                    timeMs = generatedStartMs + (keyframe.timeMs - sourceStartMs)
+                )
+            }
+            .sortedBy { it.timeMs }
+            .toList()
     )
 }

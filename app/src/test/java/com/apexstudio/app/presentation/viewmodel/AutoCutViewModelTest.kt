@@ -1,8 +1,11 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.SpeedCurveMath
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,6 +71,70 @@ class AutoCutViewModelTest {
         assertEquals(original, vm.state.value.project)
         assertEquals(original.durationMs, vm.state.value.durationMs)
         assertTrue(vm.state.value.canRedo)
+    }
+
+    @Test
+    fun `rebases only in-span keyframes by output time for speed-ramped clips`() {
+        val existing = video("existing", 1_000L)
+        val firstSource = video("source-a", 5_000L).copy(
+            speedPoints = SpeedCurveMath.flat(2f),
+            keyframes = KeyframeTrack(
+                listOf(
+                    Keyframe("a-before", 999L),
+                    Keyframe("a-start", 1_000L),
+                    Keyframe("a-middle", 1_500L),
+                    Keyframe("a-near-end", 2_499L),
+                    Keyframe("a-outside", 2_500L)
+                )
+            )
+        )
+        val secondSource = video("source-b", 5_000L).copy(
+            speedPoints = SpeedCurveMath.flat(2f),
+            keyframes = KeyframeTrack(
+                listOf(
+                    Keyframe("b-start", 3_500L),
+                    Keyframe("b-middle", 4_000L),
+                    Keyframe("b-near-end", 4_999L),
+                    Keyframe("b-outside", 5_000L)
+                )
+            )
+        )
+        val music = AudioTrack(
+            id = "music",
+            name = "Analyzed music",
+            uri = "file:///music.wav",
+            trimEndMs = 20_000L,
+            sourceDurationMs = 20_000L
+        )
+        val original = Project(
+            id = "project",
+            name = "Speed-ramped sources",
+            durationMs = 20_000L,
+            clips = listOf(existing, firstSource, secondSource),
+            audioTracks = listOf(music)
+        )
+        val vm = EditorViewModel()
+        vm._state.update {
+            it.copy(
+                project = original,
+                selectedClipIds = setOf(firstSource.id, secondSource.id),
+                selectedAudioTrackId = music.id,
+                beatSourceTrackId = music.id,
+                beatMarkersByTrackUri = mapOf(music.uri to listOf(0L, 6_500L, 7_000L, 7_500L, 8_000L, 8_500L, 9_000L))
+            )
+        }
+
+        assertTrue(vm.autoCutSelectedClips())
+
+        val generated = vm.state.value.project!!.clips.takeLast(2)
+        assertEquals(listOf(1_500L, 1_500L), generated.map { it.effectiveDurationMs() })
+        assertEquals(listOf(3_000L, 3_000L), generated.map { it.trimEndMs - it.trimStartMs })
+        assertEquals(
+            listOf(listOf(6_000L, 6_500L, 7_499L), listOf(7_500L, 8_000L, 8_999L)),
+            generated.map { clip -> clip.keyframes.keyframes.map(Keyframe::timeMs) }
+        )
+        val originalKeyframeIds = (firstSource.keyframes.keyframes + secondSource.keyframes.keyframes).map { it.id }.toSet()
+        assertTrue(generated.flatMap { it.keyframes.keyframes }.none { it.id in originalKeyframeIds })
     }
 
     @Test

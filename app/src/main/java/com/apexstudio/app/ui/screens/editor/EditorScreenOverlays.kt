@@ -1705,6 +1705,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     onTimelineFocusModeChange: (Boolean) -> Unit = {},
     compactLandscape: Boolean = false
 ) {
+    val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
     val kfClip = selectedKeyframeVideo(state)
@@ -1813,7 +1814,15 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onDeleteClips = { ids -> vm.deleteClips(ids) },
         onDuplicateSelectedClips = { vm.duplicateSelectedClips() },
         onGroupSelectedClips = { vm.groupSelectedClips() },
-        onAutoCutSelected = { vm.autoCutSelectedClips() },
+        onAutoCutSelected = {
+            if (!vm.autoCutSelectedClips()) {
+                android.widget.Toast.makeText(
+                    context,
+                    "AutoCut couldn't fit the selected clips to beats after the current sequence.",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        },
         onApplySpeedToSelectedClips = { speed -> vm.applySpeedToSelectedClips(speed) },
         onApplyFilterToSelectedClips = { config -> vm.applyFilterToSelectedClips(config) },
         onApplyLutToSelectedClips = { profileId, intensity -> vm.applyLutToSelectedClips(profileId, intensity) },

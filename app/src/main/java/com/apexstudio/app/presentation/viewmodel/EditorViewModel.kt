@@ -65,6 +65,10 @@ class EditorViewModel(
     internal val _captionUi = MutableStateFlow(CaptionUiState())
     val captionUi: StateFlow<CaptionUiState> = _captionUi.asStateFlow()
 
+    /** Review-before-apply filler candidates, scoped to this editor instance. */
+    internal val _captionFillerReviewState = MutableStateFlow(CaptionFillerReviewState())
+    val captionFillerReview: StateFlow<CaptionFillerReviewState> = _captionFillerReviewState.asStateFlow()
+
     /**
      * In-flight auto-caption transcription job (Whisper). Cancelled when
      * the user taps Cancel, switches language, or leaves the editor.

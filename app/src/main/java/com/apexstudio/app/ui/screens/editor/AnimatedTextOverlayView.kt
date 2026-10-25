@@ -257,6 +257,8 @@ fun AnimatedTextOverlayView(
                 text = karaokeText.ifEmpty { androidx.compose.ui.text.AnnotatedString(" ") },
                 color = if (gradientBrush == null) textColor else Color.Unspecified,
                 fontSize = fontSizeSp.sp,
+                // TextFontRegistry resolves captionFontWeight into the single
+                // Typeface-backed family; avoid asking Compose to synthesize it again.
                 fontWeight = if (overlay.captionFontWeight != null) FontWeight.Normal
                     else if (!isBundledFont && overlay.isBold) FontWeight.Bold else FontWeight.Normal,
                 fontStyle = if (!isBundledFont && overlay.isItalic) FontStyle.Italic else FontStyle.Normal,

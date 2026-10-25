@@ -386,9 +386,13 @@ object TextSpriteRenderer {
                 )
             }
 
-            // Draw outline stroke if specified (no gradient on the stroke).
-            overlay.strokeColorArgb?.let { strokeColor ->
-                val strokePaint = Paint(paint).apply {
+            val karaokeRange = (if (CaptionStyles.find(overlay.captionStyleId) != null) {
+                captionFrame.highlightRange
+            } else {
+                TextOverlayKaraoke.validRange(overlay)
+            })?.takeIf { it.endUtf16Exclusive <= text.length }
+            val strokePaint = overlay.strokeColorArgb?.let { strokeColor ->
+                Paint(paint).apply {
                     shader = null
                     style = Paint.Style.STROKE
                     strokeWidth = (height * 0.008f).coerceAtLeast(2f)
@@ -396,68 +400,65 @@ object TextSpriteRenderer {
                     clearShadowLayer()
                     maskFilter = null
                 }
-                canvas.drawText(text, centerX, textTop, strokePaint)
             }
-
-            val karaokeRange = (if (CaptionStyles.find(overlay.captionStyleId) != null) {
-                captionFrame.highlightRange
-            } else {
-                TextOverlayKaraoke.validRange(overlay)
-            })?.takeIf { it.endUtf16Exclusive <= text.length }
+            val fullTextLeft = when (paint.textAlign) {
+                Paint.Align.LEFT -> centerX
+                Paint.Align.RIGHT -> centerX - paint.measureText(text)
+                else -> centerX - paint.measureText(text) / 2f
+            }
+            val prefixWidth = karaokeRange?.let {
+                paint.getRunAdvance(text, 0, text.length, 0, text.length, false, it.startUtf16)
+            }
+            val endAdvance = karaokeRange?.let {
+                paint.getRunAdvance(text, 0, text.length, 0, text.length, false, it.endUtf16Exclusive)
+            }
             if (karaokeRange != null && wordLocalMotion) {
-                val fullTextLeft = when (paint.textAlign) {
-                    Paint.Align.LEFT -> centerX
-                    Paint.Align.RIGHT -> centerX - paint.measureText(text)
-                    else -> centerX - paint.measureText(text) / 2f
+                // Keep the full source as shaping context for every piece. The cloned
+                // paints preserve the line's shader and shadow while its word moves.
+                fun drawRun(start: Int, end: Int, x: Float, runPaint: Paint) {
+                    if (end > start) canvas.drawTextRun(
+                        text, start, end, 0, text.length, x, textTop, false, runPaint
+                    )
                 }
-                val prefixWidth = paint.getRunAdvance(
-                    text, 0, text.length, 0, text.length, false, karaokeRange.startUtf16
-                )
-                val endAdvance = paint.getRunAdvance(
-                    text, 0, text.length, 0, text.length, false, karaokeRange.endUtf16Exclusive
-                )
                 val baseRunPaint = Paint(paint).apply { textAlign = Paint.Align.LEFT }
+                val baseStrokePaint = strokePaint?.let { Paint(it).apply { textAlign = Paint.Align.LEFT } }
                 if (karaokeRange.startUtf16 > 0) {
-                    canvas.drawTextRun(text, 0, karaokeRange.startUtf16, 0, text.length,
-                        fullTextLeft, textTop, false, baseRunPaint)
+                    baseStrokePaint?.let { drawRun(0, karaokeRange.startUtf16, fullTextLeft, it) }
+                    drawRun(0, karaokeRange.startUtf16, fullTextLeft, baseRunPaint)
                 }
                 if (karaokeRange.endUtf16Exclusive < text.length) {
-                    canvas.drawTextRun(text, karaokeRange.endUtf16Exclusive, text.length, 0, text.length,
-                        fullTextLeft + endAdvance, textTop, false, baseRunPaint)
+                    val afterX = fullTextLeft + requireNotNull(endAdvance)
+                    baseStrokePaint?.let { drawRun(karaokeRange.endUtf16Exclusive, text.length, afterX, it) }
+                    drawRun(karaokeRange.endUtf16Exclusive, text.length, afterX, baseRunPaint)
                 }
                 val highlightPaint = Paint(paint).apply {
                     shader = null
                     color = withAlpha(overlay.highlightColorArgb, visualAlpha)
                     textAlign = Paint.Align.LEFT
                 }
-                val wordCenterX = fullTextLeft + (prefixWidth + endAdvance) / 2f
+                val wordCenterX = fullTextLeft + (requireNotNull(prefixWidth) + requireNotNull(endAdvance)) / 2f
+                val highlightStrokePaint = strokePaint?.let { Paint(it).apply { textAlign = Paint.Align.LEFT } }
                 canvas.save()
                 if (captionStyle?.wordAnimation == com.apexstudio.app.data.captions.CaptionWordAnimation.WORD_POP) {
                     canvas.scale(captionFrame.scale, captionFrame.scale, wordCenterX, centerY)
                 } else {
                     canvas.translate(0f, captionFrame.verticalOffsetFraction * height)
                 }
-                canvas.drawTextRun(text, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive,
-                    0, text.length, fullTextLeft + prefixWidth, textTop, false, highlightPaint)
+                val wordX = fullTextLeft + requireNotNull(prefixWidth)
+                highlightStrokePaint?.let { drawRun(karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive, wordX, it) }
+                drawRun(karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive, wordX, highlightPaint)
                 canvas.restore()
             } else {
+                strokePaint?.let { canvas.drawText(text, centerX, textTop, it) }
                 canvas.drawText(text, centerX, textTop, paint)
                 if (karaokeRange != null) {
-                    val fullTextLeft = when (paint.textAlign) {
-                        Paint.Align.LEFT -> centerX
-                        Paint.Align.RIGHT -> centerX - paint.measureText(text)
-                        else -> centerX - paint.measureText(text) / 2f
-                    }
-                    val prefixWidth = paint.getRunAdvance(
-                        text, 0, text.length, 0, text.length, false, karaokeRange.startUtf16
-                    )
                     val highlightPaint = Paint(paint).apply {
                         shader = null
                         color = withAlpha(overlay.highlightColorArgb, visualAlpha)
                         textAlign = Paint.Align.LEFT
                     }
                     canvas.drawTextRun(text, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive,
-                        0, text.length, fullTextLeft + prefixWidth, textTop, false, highlightPaint)
+                        0, text.length, fullTextLeft + requireNotNull(prefixWidth), textTop, false, highlightPaint)
                 }
             }
 

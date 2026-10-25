@@ -275,16 +275,15 @@ object CaptionStyleEngine {
         val frame = CaptionStyleTiming.evaluate(wordTimings, style, timeMs)
         val visibleEnd = frame.visibleWordIndices.maxOfOrNull { wordTimings[it].endUtf16Exclusive }
             ?: return 0
-        return if (frame.visibleWordIndices.size == wordTimings.size && timeMs >= wordTimings.maxOf { it.endMs }) {
-            overlay.text.length
-        } else visibleEnd.coerceIn(0, overlay.text.length)
+        return visibleEnd.coerceIn(0, overlay.text.length)
     }
 
     private fun singleWordRange(text: String, style: CaptionStyle): KaraokeHighlightRange? {
         val isWordAnimation = style.wordAnimation == CaptionWordAnimation.KARAOKE_FILL ||
             style.wordAnimation == CaptionWordAnimation.WORD_POP ||
             style.wordAnimation == CaptionWordAnimation.BOUNCE
-        return if (isWordAnimation && text.isNotBlank() && text.trim().none(Char::isWhitespace)) {
+        val trimmed = text.trim()
+        return if (isWordAnimation && trimmed.isNotEmpty() && trimmed.none(Char::isWhitespace)) {
             KaraokeHighlightRange(0, text.length)
         } else null
     }

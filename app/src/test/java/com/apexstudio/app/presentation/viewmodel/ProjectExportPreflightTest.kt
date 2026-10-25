@@ -1,6 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.data.filter.OneTapLooks
+import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
 import org.junit.Test
@@ -34,6 +36,25 @@ class ProjectExportPreflightTest {
             state.copy(activeFxId = "glitch"),
             state.copy(adjustments = VideoAdjustments(brightness = 0.2f))
         )) assertNull(projectVisualScopeUnsupportedReason(edited))
+    }
+
+    @Test fun `persisted Viral HDR is accepted without applying its mirrored LUT twice`() {
+        val viral = OneTapLooks.VIRAL_HDR.applyWithIntensity(1f)
+        val edited = state.copy(
+            project = state.project!!.copy(clips = listOf(video.copy(gpuFilterConfig = viral))),
+            activeGpuFilterConfig = viral,
+            activeFilterId = "hdr_punch",
+            filterIntensity = 0.85f
+        )
+
+        assertTrue(OneTapLooks.isValidRenderConfig(viral))
+        assertEquals(viral, edited.project!!.clips.single().gpuFilterConfig)
+        assertNull(wholeProjectExportUnsupportedReason(
+            edited,
+            AudioStudioState(),
+            ExportSettings(),
+            filterPreset = null
+        ))
     }
 
     @Test fun `unsupported AR GPU grading and crop remain fail closed`() {

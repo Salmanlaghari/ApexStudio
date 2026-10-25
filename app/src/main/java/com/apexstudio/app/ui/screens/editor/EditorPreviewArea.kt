@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
@@ -35,6 +36,7 @@ import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropRenderConfig
+import com.apexstudio.app.data.filter.toVideoAdjustments
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingTool
@@ -152,21 +154,46 @@ fun VideoPreviewArea(
     showFrame: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val usesViralHdrPipeline = gpuFilterConfig.activeProfileId ==
+        com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
+    val gpuFilterPreset = remember(context, gpuFilterConfig.filterPresetId, usesViralHdrPipeline) {
+        if (usesViralHdrPipeline && gpuFilterConfig.filterPresetId != null) {
+            com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
+                .firstOrNull { it.id == gpuFilterConfig.filterPresetId }
+        } else null
+    }
+    val gpuVideoAdjustments = remember(gpuFilterConfig) { gpuFilterConfig.toVideoAdjustments() }
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
     val workspaceEffectBinding = remember(workspaceEffects) {
         workspaceEffectPreviewBinding(workspaceEffects)
     }
-    LaunchedEffect(exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, workspaceEffectBinding.sourceEffects, photoClip?.id) {
+    LaunchedEffect(
+        exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId,
+        workspaceEffectBinding.sourceEffects, photoClip?.id, gpuFilterConfig, gpuFilterPreset
+    ) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
+                val viralHdrEffects = if (usesViralHdrPipeline) {
+                    buildList<androidx.media3.common.Effect> {
+                        if (gpuFilterPreset != null && gpuFilterConfig.filterIntensity > 0f) {
+                            add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                                context, gpuFilterPreset, gpuFilterConfig.filterIntensity
+                            ))
+                        }
+                        if (!gpuVideoAdjustments.isDefault) {
+                            add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(gpuVideoAdjustments))
+                        }
+                    }
+                } else emptyList()
                 player.setVideoEffects(listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
-                ))
+                ) + viralHdrEffects)
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
                 // Replacing a video-effect chain while paused does not guarantee Media3
                 // redraws the already-presented frame. Seek to the same source position
@@ -279,8 +306,8 @@ fun VideoPreviewArea(
 
             // Live Filter Grading & Color Adjustments Overlay (Hardware accelerated Compose canvas, 0ms lag, zero video disappearances)
             FilterPreviewOverlay(
-                filterId = activeFilterId,
-                intensity = filterIntensity,
+                filterId = if (usesViralHdrPipeline) null else activeFilterId,
+                intensity = if (usesViralHdrPipeline) 0f else filterIntensity,
                 adjustments = adjustments,
                 saturationMultiplier = keyframedSaturationFactor,
                 compareMode = lutCompareMode,
@@ -289,12 +316,14 @@ fun VideoPreviewArea(
             )
 
             // Live Real-Time GPUImage Filter & Stylistic Effects Overlay
-            GpuVideoFilterOverlay(
-                config = gpuFilterConfig,
-                compareMode = gpuFilterCompareMode,
-                splitPosition = gpuFilterSplitPosition,
-                modifier = mediaContentModifier
-            )
+            if (!usesViralHdrPipeline) {
+                GpuVideoFilterOverlay(
+                    config = gpuFilterConfig,
+                    compareMode = gpuFilterCompareMode,
+                    splitPosition = gpuFilterSplitPosition,
+                    modifier = mediaContentModifier
+                )
+            }
 
             // Real-time 3D Chroma Key Live Overlay
             if (chromaKeySettings.enabled) {

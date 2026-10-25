@@ -156,6 +156,13 @@
         "apex_midnight_cyan",
         "apex_pastel_lift"
       ]
+    },
+    {
+      "id": "dramatic_hdr_punch",
+      "name": "Dramatic & HDR Punch",
+      "filters": [
+        "hdr_punch"
+      ]
     }
   ],
   "filters": [
@@ -812,6 +819,12 @@
       "name": "Apex Pastel Lift",
       "category": "Original",
       "asset": "luts/apex_pastel_lift.cube"
+    },
+    {
+      "id": "hdr_punch",
+      "name": "HDR Punch",
+      "category": "Dramatic & HDR Punch",
+      "asset": "luts/hdr_punch.cube"
     }
   ]
 }

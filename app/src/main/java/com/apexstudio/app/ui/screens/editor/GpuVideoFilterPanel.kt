@@ -35,6 +35,7 @@ import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.GpuColorProfile
 import com.apexstudio.app.data.filter.GpuColorProfiles
 import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
@@ -58,6 +59,7 @@ fun GpuVideoFilterPanel(
     onApplyToAllClips: () -> Unit,
     onReset: () -> Unit,
     onClose: () -> Unit,
+    onApplyOneTapLook: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var effectCategoryFilter by remember { mutableStateOf("All") }
@@ -214,6 +216,19 @@ fun GpuVideoFilterPanel(
                 )
             }
         }
+
+        // Featured One-Tap Looks group stays at the top of the filter workspace.
+        Text(
+            "One-Tap Looks",
+            color = ApexPalette.TextPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+        OneTapLookCard(
+            profile = OneTapLooks.VIRAL_HDR,
+            selected = config.activeProfileId == OneTapLooks.VIRAL_HDR_ID,
+            onClick = { onApplyOneTapLook(OneTapLooks.VIRAL_HDR_ID) }
+        )
 
         // Studio Navigation Tabs — scrollable with single-line labels so
         // labels never wrap ("Stylisti c") on narrow phones.
@@ -798,7 +813,9 @@ fun GpuVideoFilterPanel(
         // ==========================================
         if (selectedTab == 3) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // LUT Intensity Slider
+                // The featured look's slider scales its full recipe; ordinary LUTs keep LUT-only intensity.
+                val viralHdrProfile = GpuColorProfiles.findById(config.activeProfileId)
+                    ?.takeIf { it.id == OneTapLooks.VIRAL_HDR_ID }
                 if (config.filterPresetId != null) {
                     Column(
                         modifier = Modifier
@@ -813,12 +830,16 @@ fun GpuVideoFilterPanel(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Filter Intensity", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("${(config.filterIntensity * 100).toInt()}%", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(if (viralHdrProfile != null) "Look Intensity" else "Filter Intensity", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            val intensity = if (viralHdrProfile != null) config.profileIntensity else config.filterIntensity
+                            Text("${(intensity * 100).toInt()}%", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         Slider(
-                            value = config.filterIntensity,
-                            onValueChange = { onConfigChange(config.copy(filterIntensity = it)) },
+                            value = if (viralHdrProfile != null) config.profileIntensity else config.filterIntensity,
+                            onValueChange = { intensity ->
+                                onConfigChange(viralHdrProfile?.applyWithIntensity(intensity)
+                                    ?: config.copy(filterIntensity = intensity))
+                            },
                             valueRange = 0f..1f,
                             colors = SliderDefaults.colors(
                                 thumbColor = ApexPalette.NeonCyan,
@@ -855,7 +876,7 @@ fun GpuVideoFilterPanel(
                                 else ApexPalette.BorderGlass,
                                 RoundedCornerShape(10.dp)
                             )
-                            .clickable { onConfigChange(config.copy(filterPresetId = null)) }
+                            .clickable { onConfigChange(config.copy(filterPresetId = null, activeProfileId = null, profileIntensity = 1f)) }
                             .padding(6.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -885,7 +906,7 @@ fun GpuVideoFilterPanel(
                                     else ApexPalette.BorderGlass,
                                     RoundedCornerShape(10.dp)
                                 )
-                                .clickable { onConfigChange(config.copy(filterPresetId = preset.id)) }
+                                .clickable { onConfigChange(config.copy(filterPresetId = preset.id, activeProfileId = null, profileIntensity = 1f)) }
                                 .padding(4.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -998,6 +1019,48 @@ fun GpuVideoFilterPanel(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OneTapLookCard(
+    profile: GpuColorProfile,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val gradient = profile.gradientColors.map { argb -> Color(argb) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Brush.horizontalGradient(gradient.map { it.copy(alpha = 0.22f) }))
+            .border(
+                1.5.dp,
+                if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .testTag("one-tap-look-${profile.id}")
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(Brush.linearGradient(gradient)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("HDR", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(profile.name, color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(profile.description, color = ApexPalette.TextSecondary, fontSize = 10.sp, maxLines = 2)
+        }
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = "Viral HDR selected", tint = ApexPalette.NeonCyan)
         }
     }
 }

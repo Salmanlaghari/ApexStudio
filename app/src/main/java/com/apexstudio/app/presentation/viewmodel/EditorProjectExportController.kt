@@ -4,6 +4,7 @@ import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ExportResolution
@@ -53,8 +54,12 @@ internal fun wholeProjectExportUnsupportedReason(
     audio: AudioStudioState,
     settings: ExportSettings,
     filterPreset: FilterPreset? = null
-): String? = projectVisualScopeUnsupportedReason(state)
-    ?: if (state.activeFilterId != null && filterPreset == null) {
+): String? {
+    val activeFilterMirrorsViralHdr =
+        OneTapLooks.isValidRenderConfig(state.activeGpuFilterConfig) &&
+            state.activeFilterId == state.activeGpuFilterConfig.filterPresetId
+    return projectVisualScopeUnsupportedReason(state)
+    ?: if (state.activeFilterId != null && !activeFilterMirrorsViralHdr && filterPreset == null) {
         "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
     } else if (state.activeFxId != null && FxPreset.byId(state.activeFxId) == null) {
         "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
@@ -63,6 +68,7 @@ internal fun wholeProjectExportUnsupportedReason(
             projectMainExportClips(state), buildProjectExportConfig(state, audio, settings, filterPreset)
         )
     }
+}
 
 /** Explicit opt-in; the selected-clip route and its visuals remain unchanged. */
 fun EditorViewModel.startWholeProjectExport() {
@@ -70,7 +76,10 @@ fun EditorViewModel.startWholeProjectExport() {
     val snapshot = _state.value
     val audioSnapshot = _audio.value
     val settings = _export.value.settings
-    val filterPreset = if (snapshot.activeFilterId != null && context != null) {
+    val activeFilterMirrorsViralHdr =
+        OneTapLooks.isValidRenderConfig(snapshot.activeGpuFilterConfig) &&
+            snapshot.activeFilterId == snapshot.activeGpuFilterConfig.filterPresetId
+    val filterPreset = if (!activeFilterMirrorsViralHdr && snapshot.activeFilterId != null && context != null) {
         try {
             com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
                 .firstOrNull { it.id == snapshot.activeFilterId }

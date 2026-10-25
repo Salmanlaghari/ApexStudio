@@ -39,6 +39,7 @@ class LutAssetIntegrityTest {
             assertNotNull("Malformed LUT $path", parsed)
             assertTrue("empty LUT data for $path", parsed!!.isNotEmpty())
         }
+        assertTrue("Viral HDR must resolve to the bundled hdr_punch LUT", OneTapLooks.VIRAL_HDR.config.filterPresetId in ids)
         val categories = root.getJSONArray("categories")
         val categorized = mutableSetOf<String>()
         for (i in 0 until categories.length()) {

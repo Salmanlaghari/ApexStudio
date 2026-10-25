@@ -28,6 +28,7 @@ import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.AspectCropTransformation
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterGlEffect
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.gl.TransitionEngine
@@ -226,6 +227,9 @@ class ExportEngine(private val context: Context) {
         val bitrateMbps: Int = 0, // 0 = auto (resolution-based default)
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
+        /** Per-clip GPU filter recipe; currently Viral HDR is export-supported. */
+        val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig =
+            com.apexstudio.app.data.filter.GpuFilterConfig(),
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
         /** Fixed non-AI effect; resolved by the same catalog/shader as the video decoder preview. */
         val projectVideoEffectId: String? = null,
@@ -477,6 +481,7 @@ class ExportEngine(private val context: Context) {
                                     ))
                                 }
                             }
+                            addViralHdrEffects(context, clip.gpuFilterConfig, this)
                             if (config.fxPreset != null && config.fxIntensity > 0f) {
                                 add(com.apexstudio.app.data.fx.FxGlEffect(
                                     config.fxPreset, config.fxIntensity, config.fxSpeed
@@ -760,6 +765,10 @@ class ExportEngine(private val context: Context) {
                     com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
                     "Unknown project-video effect; export stopped rather than dropping the edit."
                 }
+                require(config.gpuFilterConfig == com.apexstudio.app.data.filter.GpuFilterConfig() ||
+                    OneTapLooks.isValidRenderConfig(config.gpuFilterConfig)) {
+                    "This GPU filter edit is not supported for export; export stopped rather than dropping it."
+                }
                 require(config.workspaceEffects.size <= 16 && config.workspaceEffects.all { it.hasValidParameters() }) {
                     "Invalid ranged filter or custom grading values; export stopped rather than dropping the edit."
                 }
@@ -896,6 +905,7 @@ class ExportEngine(private val context: Context) {
                         )
                     }
                 }
+                addViralHdrEffects(context, config.gpuFilterConfig, videoEffects)
 
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)
                 if (config.fxPreset != null && config.fxIntensity > 0f) {

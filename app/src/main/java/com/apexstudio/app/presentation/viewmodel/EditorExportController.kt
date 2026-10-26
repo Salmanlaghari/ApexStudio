@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
 
 fun EditorViewModel.setSelectedResolution(res: String) {
@@ -51,6 +52,41 @@ internal fun resolveExportBaseClip(state: EditorState): MediaClip? {
 internal fun selectedExportDrawings(state: EditorState, clipId: String?): List<VideoDrawingLayer> =
     state.project?.videoDrawings.orEmpty().filter { it.clipId == null || it.clipId == clipId }
 
+/** Snapshot every visible image/video overlay for the selected-source Media3 render. */
+@androidx.media3.common.util.UnstableApi
+internal fun buildPipOverlayExportConfigs(
+    clips: List<MediaClip>,
+    hiddenVideoLayers: Set<Int>
+): List<ExportEngine.PipOverlayConfig> = clips
+    .asSequence()
+    .filter { it.type == ClipType.OVERLAY && it.trackIndex !in hiddenVideoLayers }
+    .map { overlay ->
+        ExportEngine.PipOverlayConfig(
+            uri = overlay.uri,
+            offsetMs = overlay.timelineOffsetMs,
+            trimStartMs = overlay.trimStartMs,
+            trimEndMs = overlay.trimEndMs,
+            speedPoints = overlay.speedPoints,
+            widthFraction = overlay.pipScale,
+            centerX = overlay.pipX,
+            centerY = overlay.pipY,
+            rotationDeg = overlay.pipRotationDeg,
+            opacity = overlay.pipOpacity.coerceIn(0f, 1f),
+            mask = overlay.mask,
+            aspect = overlay.overlayAspect,
+            blendMode = overlay.overlayBlend.glId,
+            borderWidth = overlay.overlayBorderWidth,
+            borderColor = overlay.overlayBorderColor,
+            shadow = overlay.overlayShadow,
+            flipH = overlay.overlayFlipH,
+            flipV = overlay.overlayFlipV,
+            keyframes = overlay.keyframes.keyframes,
+            videoCrop = overlay.videoCrop
+        )
+    }
+    .toList()
+
+@androidx.media3.common.util.UnstableApi
 fun EditorViewModel.startExport(
     resolution: String = _export.value.settings.resolution,
     fps: Int = _export.value.settings.frameRate,
@@ -105,41 +141,9 @@ fun EditorViewModel.startExport(
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
-    // Picture-in-Picture overlays: composite overlay clips in the export.
-    // Hidden video layers are skipped.
-    val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
-        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
-                  it.trackIndex !in s.hiddenVideoLayers }
-        .map { ov ->
-            ExportEngine.PipOverlayConfig(
-                uri = ov.uri,
-                offsetMs = ov.timelineOffsetMs,
-                trimStartMs = ov.trimStartMs,
-                trimEndMs = ov.trimEndMs,
-                speedPoints = ov.speedPoints,
-                // The overlay's canvas transform — preview and export
-                // resolve the same numbers against the frame geometry.
-                widthFraction = ov.pipScale,
-                centerX = ov.pipX,
-                centerY = ov.pipY,
-                rotationDeg = ov.pipRotationDeg,
-                // BASE opacity only: the effect multiplies the
-                // keyframe-interpolated opacity per frame.
-                opacity = ov.pipOpacity.coerceIn(0f, 1f),
-                // Shape mask (Mask tool) on the overlay clip.
-                mask = ov.mask,
-                // Properties panel + intrinsic aspect + keyframes.
-                aspect = ov.overlayAspect,
-                blendMode = ov.overlayBlend.glId,
-                borderWidth = ov.overlayBorderWidth,
-                borderColor = ov.overlayBorderColor,
-                shadow = ov.overlayShadow,
-                flipH = ov.overlayFlipH,
-                flipV = ov.overlayFlipV,
-                keyframes = ov.keyframes.keyframes,
-                videoCrop = ov.videoCrop
-            )
-        }
+    // Image and video overlay clips share this snapshot; the Media3 GL effect
+    // selects a video decoder or still-image texture from each source URI.
+    val pipOverlays = buildPipOverlayExportConfigs(s.project?.clips.orEmpty(), s.hiddenVideoLayers)
     // Transition: apply the project's chosen transition type in the export
     // (not just a timeline badge — actually rendered via TransitionGlEffect).
     // Phase 4: gl-transitions shaders ride as transitionGlId; the legacy
@@ -167,6 +171,7 @@ fun EditorViewModel.startExport(
             projectVideoEffectId = selected?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = selected?.workspaceEffects.orEmpty(),
             videoCrop = selected?.videoCrop,
+            chromaKeySettings = selected?.chromaKeySettings,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
             fxIntensity = s.fxIntensity,
@@ -181,10 +186,12 @@ fun EditorViewModel.startExport(
             // curve; constant [clipSpeed] is the no-curve fallback.
             speedPoints = selected?.speedPoints ?: emptyList(),
             keyframes = selected?.keyframes ?: KeyframeTrack(),
+            sharedVideoClip = selected?.let { clip -> s.project?.sharedVideoClip(clip.id) },
             cropRect = s.cropRect.takeIf { !it.isFullFrame() },
             // Shape mask (Mask tool) on the main clip.
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
+            signature = s.project?.signature,
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),
             videoDrawingClipId = selected?.id,
@@ -200,6 +207,7 @@ fun EditorViewModel.startExport(
             // global audio volume, so what the user hears in the preview
             // is exactly what bakes into the export.
             volume = (selected?.volume ?: 1f) * (if (audioSt.isMuted) 0f else audioSt.volume),
+            globalAudioVolume = if (audioSt.isMuted) 0f else audioSt.volume,
             // Clean Voice: the selected clip's denoise setting rides
             // into the export with the same processor the preview uses.
             denoiseEnabled = selected?.denoiseEnabled ?: false,
@@ -490,6 +498,7 @@ internal fun photoExportSourceDurationMs(clip: MediaClip): Long {
 }
 
 /** Pure snapshot mapping shared by photo export and host regressions. */
+@androidx.media3.common.util.UnstableApi
 internal fun buildPhotoExportConfig(
     s: EditorState,
     clip: MediaClip,
@@ -500,40 +509,7 @@ internal fun buildPhotoExportConfig(
     bitrateMbps: Int
 ): ExportEngine.ExportConfig {
     val stickers = (s.project?.stickers ?: emptyList()) + clip.stickers
-    val pipOverlays: List<ExportEngine.PipOverlayConfig> = (s.project?.clips ?: emptyList())
-        .filter { it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY &&
-                  it.trackIndex !in s.hiddenVideoLayers }
-        .map { ov ->
-            ExportEngine.PipOverlayConfig(
-                uri = ov.uri,
-                offsetMs = ov.timelineOffsetMs,
-                trimStartMs = ov.trimStartMs,
-                trimEndMs = ov.trimEndMs,
-                speedPoints = ov.speedPoints,
-                // The overlay's canvas transform — preview and
-                // export resolve the same numbers against the
-                // frame geometry.
-                widthFraction = ov.pipScale,
-                centerX = ov.pipX,
-                centerY = ov.pipY,
-                rotationDeg = ov.pipRotationDeg,
-                // BASE opacity only: the effect multiplies the
-                // keyframe-interpolated opacity per frame.
-                opacity = ov.pipOpacity.coerceIn(0f, 1f),
-                // Shape mask (Mask tool) on the overlay clip.
-                mask = ov.mask,
-                // Properties panel + intrinsic aspect + keyframes.
-                aspect = ov.overlayAspect,
-                blendMode = ov.overlayBlend.glId,
-                borderWidth = ov.overlayBorderWidth,
-                borderColor = ov.overlayBorderColor,
-                shadow = ov.overlayShadow,
-                flipH = ov.overlayFlipH,
-                flipV = ov.overlayFlipV,
-                keyframes = ov.keyframes.keyframes,
-                videoCrop = ov.videoCrop
-            )
-        }
+    val pipOverlays = buildPipOverlayExportConfigs(s.project?.clips.orEmpty(), s.hiddenVideoLayers)
     // Phase 4: gl-transitions shaders ride as transitionGlId.
     val lastTransitionIdPhoto = s.project?.lastTransitionType
     val transitionGlIdPhoto = lastTransitionIdPhoto
@@ -570,6 +546,7 @@ internal fun buildPhotoExportConfig(
         arFilterIntensity = s.arFilterIntensity,
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
+        signature = s.project?.signature,
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,

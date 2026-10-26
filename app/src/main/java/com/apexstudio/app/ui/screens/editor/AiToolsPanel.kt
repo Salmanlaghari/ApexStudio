@@ -93,9 +93,9 @@ fun AiToolsPanel(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close AI tools", tint = ApexPalette.TextPrimary) }
             }
-            Text("Local video editing tools", modifier = Modifier.padding(horizontal = 16.dp),
-                color = ApexPalette.TextPrimary, style = MaterialTheme.typography.labelMedium)
-            Text("Existing project videos only · no prompts · no generation", modifier = Modifier.padding(horizontal = 16.dp),
+        Text("Local editing tools", modifier = Modifier.padding(horizontal = 16.dp),
+            color = ApexPalette.TextPrimary, style = MaterialTheme.typography.labelMedium)
+            Text("Video tools work on selected project clips; Photo AI Enhance offers scoped upscale and face crop for selected stills · no prompts or generation", modifier = Modifier.padding(horizontal = 16.dp),
                 color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
             if (onOpenVideoPresets != null) OutlinedButton(onClick = onOpenVideoPresets,
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("open_project_video_presets")) {
@@ -206,10 +206,10 @@ fun AiToolsPanel(
             confirmButton = { TextButton(onClick = { selectedTool = null }) { Text("Close") } })
     }
     if (showSafetyInfo) AlertDialog(onDismissRequest = { showSafetyInfo = false },
-        title = { Text("Video-only processing availability") },
+        title = { Text("AI processing availability") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(AI_PROTECTED_BLOCKER)
-            Text("Google Play's AI-Generated Content policy describes content created by generative models based on user prompts and gives prompt-to-content examples; this is not a blanket video exemption. Whisper speech recognition, optional English acoustic word timing, segmentation/compositing, sampled face review and ESPCN upscale run locally on selected existing project videos without prompts or new media generation. This scope does not waive privacy or restricted-content policies. Face-crop application remains unavailable because project export rejects face-crop tracks; artistic style transfer remains unavailable pending license/provenance review and end-to-end integration. Depth-based 2D-to-3D video conversion is not supported: no integrated and tested depth model is available. Depth Anything V2 Small is Apache-2.0 (24.8M parameters), while larger variants are non-commercial; model availability or license alone is not sufficient to enable this workflow.")
+            Text("Google Play's AI-Generated Content policy describes content created by generative models based on user prompts and gives prompt-to-content examples; this is not a blanket video exemption. Whisper speech recognition, optional English acoustic word timing, segmentation/compositing, sampled face review and video ESPCN run locally on selected existing project videos. Photo AI Enhance separately provides bundled ESPCN upscaling and local face crop for selected project photos. Preview and export share the still-photo renderer, and project export supports dynamic face-crop tracks; automatic video-track application remains review-restricted. No prompts or new media are generated, and this scope does not waive privacy or restricted-content policies. Artistic style transfer remains unavailable pending license/provenance review and end-to-end integration. Depth-based 2D-to-3D video conversion is not supported: no integrated and tested depth model is available. Depth Anything V2 Small is Apache-2.0 (24.8M parameters), while larger variants are non-commercial; model availability or license alone is not sufficient to enable this workflow.")
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },
         confirmButton = { TextButton(onClick = { showSafetyInfo = false }) { Text("Close") } })

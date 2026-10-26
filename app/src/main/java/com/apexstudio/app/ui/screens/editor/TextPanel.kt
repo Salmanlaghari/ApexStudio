@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -25,7 +26,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.data.captions.CaptionStyles
+import com.apexstudio.app.data.captions.CaptionFillerDetector
 import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.ui.screens.settings.SettingsPreferences
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
@@ -55,6 +59,9 @@ import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.presentation.viewmodel.CaptionPhase
 import com.apexstudio.app.presentation.viewmodel.CaptionUiState
+import com.apexstudio.app.presentation.viewmodel.CaptionFillerReviewState
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 enum class TextPanelTab {
     EDIT,
@@ -135,8 +142,15 @@ fun TextPanel(
     onClearCaptions: () -> Unit = {},
     onCaptionLanguageChange: (String) -> Unit = {},
     onCaptionTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit = {},
+    captionStyleId: String = CaptionStyles.CLASSIC_ID,
+    onCaptionStyleChange: (String) -> Unit = {},
     onCancelCaptions: () -> Unit = {},
     hasAutoCaptions: Boolean = false,
+    fillerReviewState: CaptionFillerReviewState = CaptionFillerReviewState(),
+    onReviewFillers: (List<String>) -> Unit = {},
+    onFillerSelected: (String, Boolean) -> Unit = { _, _ -> },
+    onApplyFillerRemoval: () -> Unit = {},
+    onCloseFillerReview: () -> Unit = {},
     // One-tap templates: "Text Reveal" adds editable text + walking
     // sticker + keyframed mask at the playhead. Disabled when the
     // project has no clip to attach the text to.
@@ -157,6 +171,14 @@ fun TextPanel(
     var selectedCategory by remember { mutableStateOf(TextPresetEngine.categories.first()) }
     var designMotionQuery by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
+    val settingsContext = LocalContext.current.applicationContext
+    val settingsScope = rememberCoroutineScope()
+    val fillerWords by remember(settingsContext) {
+        SettingsPreferences.captionFillerWords(settingsContext)
+    }.collectAsState(initial = CaptionFillerDetector.defaultWords)
+    val updateFillerWords: (List<String>) -> Unit = { words ->
+        settingsScope.launch { SettingsPreferences.setCaptionFillerWords(settingsContext, words) }
+    }
 
     Column(
         modifier = Modifier
@@ -352,7 +374,16 @@ fun TextPanel(
                 onLanguageChange = onCaptionLanguageChange,
                 onTimingChange = onCaptionTimingChange,
                 onCancelCaptions = onCancelCaptions,
-                hasAutoCaptions = hasAutoCaptions
+                hasAutoCaptions = hasAutoCaptions,
+                captionStyleId = captionStyleId,
+                onCaptionStyleChange = onCaptionStyleChange,
+                fillerWords = fillerWords,
+                onFillerWordsChange = updateFillerWords,
+                fillerReviewState = fillerReviewState,
+                onReviewFillers = { onReviewFillers(fillerWords) },
+                onFillerSelected = onFillerSelected,
+                onApplyFillerRemoval = onApplyFillerRemoval,
+                onCloseFillerReview = onCloseFillerReview
             )
             return@Column
         }
@@ -1324,7 +1355,16 @@ fun TextPanel(
                     onLanguageChange = onCaptionLanguageChange,
                     onTimingChange = onCaptionTimingChange,
                     onCancelCaptions = onCancelCaptions,
-                    hasAutoCaptions = hasAutoCaptions
+                    hasAutoCaptions = hasAutoCaptions,
+                    captionStyleId = captionStyleId,
+                    onCaptionStyleChange = onCaptionStyleChange,
+                    fillerWords = fillerWords,
+                    onFillerWordsChange = updateFillerWords,
+                    fillerReviewState = fillerReviewState,
+                    onReviewFillers = { onReviewFillers(fillerWords) },
+                    onFillerSelected = onFillerSelected,
+                    onApplyFillerRemoval = onApplyFillerRemoval,
+                    onCloseFillerReview = onCloseFillerReview
                 )
             }
             }
@@ -1432,7 +1472,16 @@ private fun AutoCaptionsTab(
     onLanguageChange: (String) -> Unit,
     onTimingChange: (com.apexstudio.app.presentation.viewmodel.CaptionTimingMode) -> Unit,
     onCancelCaptions: () -> Unit,
-    hasAutoCaptions: Boolean
+    hasAutoCaptions: Boolean,
+    captionStyleId: String,
+    onCaptionStyleChange: (String) -> Unit,
+    fillerWords: List<String>,
+    onFillerWordsChange: (List<String>) -> Unit,
+    fillerReviewState: CaptionFillerReviewState,
+    onReviewFillers: () -> Unit,
+    onFillerSelected: (String, Boolean) -> Unit,
+    onApplyFillerRemoval: () -> Unit,
+    onCloseFillerReview: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1511,6 +1560,7 @@ private fun AutoCaptionsTab(
 
         val phase = captionUiState.phase
         val busy = phase == CaptionPhase.TRANSCRIBING
+        var newFillerWord by remember { mutableStateOf("") }
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(com.apexstudio.app.presentation.viewmodel.CaptionTimingMode.entries.size) { index ->
@@ -1533,12 +1583,116 @@ private fun AutoCaptionsTab(
                 }
             }
         }
+        if (hasAutoCaptions) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Caption style", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(CaptionStyles.presets) { style ->
+                        val isSelected = style.id == captionStyleId
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
+                                .border(1.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                    RoundedCornerShape(16.dp))
+                                .clickable(enabled = !busy) { onCaptionStyleChange(style.id) }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(style.name, color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                                fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                        }
+                    }
+                }
+                Text(CaptionStyles.find(captionStyleId)?.description.orEmpty(),
+                    color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            }
+        }
         Text(
             if (captionUiState.language != "en") "Select English to enable measured word timing and karaoke."
             else "Word mode shows one word at a time; Full-phrase karaoke keeps the original Whisper phrase and highlights the measured word. " +
                 "No artificial equal-split timing; unsupported text or low-confidence alignment fails without replacing captions.",
             color = ApexPalette.TextSecondary, fontSize = 10.sp
         )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ApexPalette.BgElevated)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Filler words", color = ApexPalette.TextPrimary, fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onFillerWordsChange(CaptionFillerDetector.defaultWords) }) {
+                    Text("Reset", fontSize = 10.sp)
+                }
+            }
+            Text("Saved for the app. Repeated words (for example, ‘the the’) are checked separately.",
+                color = ApexPalette.TextTertiary, fontSize = 10.sp)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(fillerWords, key = { it }) { word ->
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(ApexPalette.BgSurface)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
+                            .padding(start = 9.dp, end = 5.dp, top = 3.dp, bottom = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(word, color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        Icon(Icons.Default.Close, contentDescription = "Remove $word",
+                            tint = ApexPalette.TextTertiary,
+                            modifier = Modifier.size(19.dp).clickable {
+                                onFillerWordsChange(fillerWords - word)
+                            }.padding(4.dp))
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = newFillerWord,
+                    onValueChange = { newFillerWord = it },
+                    label = { Text("Add one word") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ApexPalette.NeonCyan,
+                        unfocusedBorderColor = ApexPalette.BorderGlass,
+                        focusedLabelColor = ApexPalette.NeonCyan
+                    )
+                )
+                Icon(Icons.Default.Add, contentDescription = "Add filler word",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(28.dp).clickable {
+                        val entry = CaptionFillerDetector.normalizeList(listOf(newFillerWord)).singleOrNull()
+                        if (entry != null && entry !in fillerWords) {
+                            onFillerWordsChange(fillerWords + entry)
+                            newFillerWord = ""
+                        }
+                    }.padding(4.dp))
+            }
+            if (hasAutoCaptions) {
+                OutlinedButton(
+                    onClick = onReviewFillers,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Review & Remove Fillers", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
+        if (fillerReviewState.isOpen) {
+            CaptionFillerReviewDialog(
+                state = fillerReviewState,
+                onSelected = onFillerSelected,
+                onApply = onApplyFillerRemoval,
+                onDismiss = onCloseFillerReview
+            )
+        }
 
         if (phase == CaptionPhase.NEED_DOWNLOAD) {
             // Model pack prompt — routed through PackManager (PR-C pattern).
@@ -1657,6 +1811,74 @@ private fun AutoCaptionsTab(
             }
         }
     }
+}
+
+@Composable
+private fun CaptionFillerReviewDialog(
+    state: CaptionFillerReviewState,
+    onSelected: (String, Boolean) -> Unit,
+    onApply: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Review filler words") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Choose which measured word ranges to remove from captions and the main timeline. Nothing changes until you apply.",
+                    fontSize = 12.sp)
+                state.message?.let { Text(it, color = ApexPalette.TextSecondary, fontSize = 11.sp) }
+                if (state.findings.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(state.findings, key = { it.id }) { finding ->
+                            val word = finding.timedWord
+                            val checked = finding.id in state.selectedIds
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    onSelected(finding.id, !checked)
+                                }.padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = { onSelected(finding.id, it) })
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Remove ‘${word.word}’ · ${formatFillerTime(word.startMs)}–${formatFillerTime(word.endMs)}",
+                                        color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        when (finding.kind) {
+                                            com.apexstudio.app.data.captions.FillerMatchKind.WORD_LIST -> "Filler list match"
+                                            com.apexstudio.app.data.captions.FillerMatchKind.REPEATED_WORD -> "Repeated word"
+                                            com.apexstudio.app.data.captions.FillerMatchKind.WORD_LIST_AND_REPEATED -> "Filler list + repeated word"
+                                        },
+                                        color = ApexPalette.TextTertiary, fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = if (state.findings.isEmpty()) onDismiss else onApply,
+                enabled = state.findings.isEmpty() || state.selectedIds.isNotEmpty()) {
+                Text(if (state.findings.isEmpty()) "Close" else "Remove selected")
+            }
+        },
+        dismissButton = {
+            if (state.findings.isNotEmpty()) TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+private fun formatFillerTime(timeMs: Long): String {
+    val safe = timeMs.coerceAtLeast(0L)
+    val totalSeconds = safe / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds / 60L) % 60L
+    val seconds = totalSeconds % 60L
+    val millis = safe % 1_000L
+    return if (hours > 0L) String.format(Locale.ROOT, "%d:%02d:%02d.%03d", hours, minutes, seconds, millis)
+    else String.format(Locale.ROOT, "%02d:%02d.%03d", minutes, seconds, millis)
 }
 
 /**

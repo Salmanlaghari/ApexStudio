@@ -30,6 +30,7 @@ import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPoint
+import com.apexstudio.app.domain.model.resolveMaskAt
 import com.apexstudio.app.ui.theme.ApexPalette
 
 /**
@@ -237,12 +238,37 @@ fun Modifier.videoMaskFeatheredClip(mask: VideoMask): Modifier = this.then(
 fun MaskPreviewOverlay(
     mask: VideoMask?,
     editMode: Boolean,
+    localTimeMs: Long = 0L,
+    onCenterChangeLive: (x: Float, y: Float) -> Unit = { _, _ -> },
+    onCenterChangeFinished: (x: Float, y: Float) -> Unit = { _, _ -> },
+    onSizeChangeLive: (sx: Float, sy: Float) -> Unit = { _, _ -> },
+    onSizeChangeFinished: (sx: Float, sy: Float) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier
+) = MaskPreviewOverlayResolved(
+    sourceMask = mask,
+    editMode = editMode,
+    localTimeMs = localTimeMs,
+    onCenterChangeLive = onCenterChangeLive,
+    onCenterChangeFinished = onCenterChangeFinished,
+    onSizeChangeLive = onSizeChangeLive,
+    onSizeChangeFinished = onSizeChangeFinished,
+    modifier = modifier
+)
+
+@Composable
+private fun MaskPreviewOverlayResolved(
+    sourceMask: VideoMask?,
+    editMode: Boolean,
+    localTimeMs: Long = 0L,
     onCenterChangeLive: (x: Float, y: Float) -> Unit = { _, _ -> },
     onCenterChangeFinished: (x: Float, y: Float) -> Unit = { _, _ -> },
     onSizeChangeLive: (sx: Float, sy: Float) -> Unit = { _, _ -> },
     onSizeChangeFinished: (sx: Float, sy: Float) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    val mask = sourceMask?.resolveMaskAt(localTimeMs)
+    if (mask?.shape == MaskShape.BLUR_FACE) return
+    if (mask?.shape == MaskShape.DRAW && MaskModel.outline(mask.shape, mask.drawPoints).size < 4) return
     if (mask == null || !mask.enabled) return
 
     // Latest mask for the gesture block: reading through

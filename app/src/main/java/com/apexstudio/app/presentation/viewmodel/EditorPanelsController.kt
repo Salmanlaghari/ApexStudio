@@ -124,12 +124,18 @@ fun EditorViewModel.closeTextMaskPanel() = _state.update { it.copy(textMaskPanel
 
 fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings) {
     _state.update { 
+        val selectedId = it.selectedClipId ?: it.project?.clips?.firstOrNull()?.id
+        val updatedClips = it.project?.clips?.map { clip ->
+            if (clip.id == selectedId) clip.copy(chromaKeySettings = settings) else clip
+        } ?: emptyList()
         it.copy(
             chromaKeySettings = settings,
             activeFxId = if (settings.enabled) "3d_chromakey" else it.activeFxId,
-            fxIntensity = if (settings.enabled) 1.0f else it.fxIntensity
+            fxIntensity = if (settings.enabled) 1.0f else it.fxIntensity,
+            project = it.project?.copy(clips = updatedClips)
         ) 
     }
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -212,6 +218,10 @@ fun EditorViewModel.openHistoryDraftsPanel(
 ) = _state.update { it.copy(historyDraftsPanelOpen = true, historyDraftsTab = tab) }
 
 fun EditorViewModel.closeHistoryDraftsPanel() = _state.update { it.copy(historyDraftsPanelOpen = false) }
+
+fun EditorViewModel.openSignaturePanel() = _state.update { it.copy(signaturePanelOpen = true) }
+
+fun EditorViewModel.closeSignaturePanel() = _state.update { it.copy(signaturePanelOpen = false) }
 
 fun EditorViewModel.setHistoryDraftsTab(
     tab: com.apexstudio.app.presentation.state.HistoryDraftsTab

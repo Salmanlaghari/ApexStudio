@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
@@ -73,6 +74,9 @@ import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+import com.apexstudio.app.domain.model.timeline.animationTransformAt
 /**
  * Modal overlay sections extracted from [EditorScreen] to keep it under the
  * JVM 64KB method limit. Pure extraction — no behavior changes.
@@ -450,6 +454,7 @@ fun TextPanelOverlay(
             overlay.copy(startMs = activeRange.startMs, endMs = activeRange.endMs) else overlay
     }
     val captionUiState by vm.captionUi.collectAsState()
+    val captionFillerReview by vm.captionFillerReview.collectAsState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -575,8 +580,16 @@ fun TextPanelOverlay(
                 onClearCaptions = { textClip?.let { vm.clearAutoCaptions(it.id) } },
                 onCaptionLanguageChange = { vm.setCaptionLanguage(it) },
                 onCaptionTimingChange = { vm.setCaptionTimingMode(it) },
+                captionStyleId = textOverlays.firstOrNull { it.presetId == "caption_auto" }?.captionStyleId
+                    ?: CaptionStyles.CLASSIC_ID,
+                onCaptionStyleChange = { styleId -> textClip?.let { vm.setCaptionStyle(it.id, styleId) } },
                 onCancelCaptions = { vm.cancelAutoCaptions() },
-                hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" }
+                hasAutoCaptions = textOverlays.any { it.presetId == "caption_auto" },
+                fillerReviewState = captionFillerReview,
+                onReviewFillers = { vm.openCaptionFillerReview(it) },
+                onFillerSelected = { id, selected -> vm.setCaptionFillerSelected(id, selected) },
+                onApplyFillerRemoval = { vm.applyCaptionFillerRemoval() },
+                onCloseFillerReview = { vm.closeCaptionFillerReview() }
             )
         }
     }
@@ -641,7 +654,13 @@ fun AudioMixerPanelOverlay(
                 onRemoveVolumeKeyframe = { trackId, kfId ->
                     vm.removeAudioVolumeKeyframe(trackId, kfId)
                 },
-                onSeekTo = { targetMs -> vm.seekTo(targetMs) }
+                onSeekTo = { targetMs -> vm.seekTo(targetMs) },
+                onNormalizeTrack = { trackId -> vm.normalizeTrackLoudness(trackId) },
+                onAutoDuckMusic = { musicTrackId, voiceTrackId ->
+                    vm.autoDuckMusicUnderVoice(musicTrackId, voiceTrackId)
+                },
+                onFitMusicToProject = { trackId -> vm.fitMusicToProjectLength(trackId) },
+                onRemoveSilence = { trackId -> vm.removeSilenceFromAudioTrack(trackId) }
             )
         }
     }
@@ -958,7 +977,9 @@ fun MaskPanelOverlay(
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             MaskPanel(
                 mask = selectedClip?.mask,
-                keyframeTimeMs = state.playerPositionMs,
+                keyframeTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), selectedClip, state.playerPositionMs
+                ).coerceAtLeast(0L),
                 onUpdate = { mask ->
                     val clipId = selectedClip?.id ?: return@MaskPanel
                     if (mask == null) vm.clearClipMask(clipId) else vm.setClipMask(clipId, mask)
@@ -1110,7 +1131,11 @@ fun KeyframePanelOverlay(
     // the project's first clip when the selection was cleared, so an
     // auto-keyframe slider write landed on a layer the user never touched.
     val selectedClip = state.keyframeAnchor()
-    val track = selectedClip?.keyframes ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    val sharedClip = selectedClip?.let { state.project?.sharedVideoClip(it.id) }
+    val track = selectedClip?.let { clip ->
+        state.project?.sharedKeyframeTrackFor(clip.id, clip.keyframes)
+    } ?: com.apexstudio.app.domain.model.KeyframeTrack()
+    val sharedPlayheadValue = sharedClip?.animationTransformAt(state.playerPositionMs)
     val initialPropertyFilter = state.keyframePropertyFilter?.let {
         runCatching { KeyframePropertyFilter.valueOf(it) }.getOrNull()
     }
@@ -1131,10 +1156,16 @@ fun KeyframePanelOverlay(
                     canAdd = selectedClip != null,
                     onAdd = { atMs ->
                         selectedClip?.let {
-                            vm.addKeyframe(it.id, atMs, track.interpolateAt(atMs))
+                            val sampled = state.project?.sharedVideoClip(it.id)?.animationTransformAt(atMs)
+                                ?: track.interpolateAt(atMs)
+                            vm.addKeyframe(it.id, atMs, sampled)
                         }
                     },
                     onPaste = { pin, atMs -> selectedClip?.let { vm.pasteKeyframe(it.id, pin, atMs) } },
+                    atPlayheadTransform = sharedPlayheadValue,
+                    selectedKeyframeTimeMs = state.keyframeSelectedTimeMs,
+                    openCurveEditorOnOpen = state.keyframeCurveEditorOpen,
+                    onCurveEditorDismiss = { vm.dismissKeyframeCurveEditor() },
                     onUpdate = { kf ->
                         selectedClip?.let {
                             vm.updateKeyframe(it.id, kf.id) { _ -> kf }
@@ -1289,6 +1320,29 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val scope = rememberCoroutineScope()
     val exportState by vm.export.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
+    val mainPreviewClip = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+    val sourceVideoWidth = state.videoWidth.takeIf { it > 0 }
+        ?: exoPlayer?.videoSize?.width?.takeIf { it > 0 }
+        ?: 0
+    val sourceVideoHeight = state.videoHeight.takeIf { it > 0 }
+        ?: exoPlayer?.videoSize?.height?.takeIf { it > 0 }
+        ?: 0
+    val sourcePixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio
+        ?.takeIf { it.isFinite() && it > 0f }
+        ?: 1f
+    val sourceVideoAspectRatio = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.let { clip ->
+        previewContentAspect(
+            videoWidth = sourceVideoWidth,
+            videoHeight = sourceVideoHeight,
+            pixelAspect = sourcePixelAspect,
+            effectOutputAspect = clip.faceCropTrack?.outputAspectRatio
+                ?: videoCropOutputAspect(
+                    sourceVideoWidth, sourceVideoHeight, sourcePixelAspect, clip.videoCrop
+                )
+        )
+    }
+    val previewStageAspectRatio = editorPreviewStageAspectRatio(sourceVideoAspectRatio, compositionAspectRatio)
+    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1315,21 +1369,21 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         contentAlignment = Alignment.TopCenter
     ) {
         // Keep the historical flexible preview frame, but fit the entire
-        // composition (player AND normalized overlays) to the output frame.
-        // Source FIT remains FIT inside that same frame, never a different box.
+        // source frame (player AND normalized overlays) to decoded media geometry.
+        // The export aspect remains the fallback before source dimensions are known.
         PreviewContentCanvas(
-            mediaAspectRatio = compositionAspectRatio,
+            mediaAspectRatio = previewStageAspectRatio,
             isCoverMode = false,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                scaleX = portraitScale
+                scaleY = portraitScale
+            },
             frameModifier = Modifier.background(Color.Black)
         ) {
         // Selecting a V2+ overlay must not make its media/keyframes the
         // background preview source; PipOverlayCanvas owns that layer.
         val selectedClip = resolveEditorSelectionClip(
             state.project?.clips.orEmpty(), state.selectedClipId
-        )
-        val mainPreviewClip = timelinePreviewClip(
-            state.project?.clips.orEmpty(), state.playerPositionMs
         )
         val animatedTransform = remember(mainPreviewClip, state.playerPositionMs) {
             mainPreviewClip?.keyframes?.interpolateAt(state.playerPositionMs)
@@ -1434,6 +1488,17 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
         val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
         val faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip)
+        val workspaceEffectIntensityProvider = remember(state.project, mainPreviewClip?.id) {
+            val clip = mainPreviewClip
+            val typed = clip?.let { state.project?.sharedVideoClip(it.id) }
+                ?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }
+            if (clip == null || typed == null) null else { presentationTimeUs: Long ->
+                val projectTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                    state.project?.clips.orEmpty(), clip, presentationTimeUs / 1_000L
+                )
+                typed.effectIntensityAt(projectTimeMs)
+            }
+        }
 
         // Layer names belong on their timeline clips, not in a HUD over media.
 
@@ -1441,8 +1506,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectionFileLabel = null,
             showFrame = false,
             exoPlayer = exoPlayer,
-            videoWidth = state.videoWidth,
-            videoHeight = state.videoHeight,
+            videoWidth = sourceVideoWidth,
+            videoHeight = sourceVideoHeight,
             drawingLayers = state.project?.videoDrawings.orEmpty(),
             drawingClipId = mainPreviewClip?.id,
             drawingEnabled = drawingEnabled,
@@ -1454,8 +1519,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             faceCropConfig = faceCropConfig,
             projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
+            workspaceEffectIntensityProvider = workspaceEffectIntensityProvider,
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
-            compositionAspectRatio = compositionAspectRatio,
+            compositionAspectRatio = previewStageAspectRatio,
             chromaKeySettings = state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,
@@ -1501,7 +1567,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Per-clip saturation keyframes: factor from the
             // selected clip's track at the playhead (1f = no pins).
             keyframedSaturationFactor = animatedTransform.saturation ?: 1f,
-            currentTimeMs = state.playerPositionMs,
+            currentTimeMs = mainPreviewClip?.let { clip ->
+                com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
+                    state.project?.clips.orEmpty(), clip, state.playerPositionMs
+                ).coerceAtLeast(0L)
+            } ?: 0L,
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with
             // drag-to-move/resize while the mask panel is open.
@@ -1558,7 +1628,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
 
         // Screen-Level Wording & Object Overlays (Positioned relative to Screen, NOT clipped by video view)
         PreviewContentCanvas(
-            mediaAspectRatio = compositionAspectRatio,
+            mediaAspectRatio = previewStageAspectRatio,
             isCoverMode = false,
             modifier = Modifier.fillMaxSize()
         ) {
@@ -1611,6 +1681,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 modifier = Modifier.fillMaxSize()
             )
             }
+            SignaturePreviewOverlay(
+                signature = state.project?.signature,
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }
@@ -1665,6 +1739,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     onTimelineFocusModeChange: (Boolean) -> Unit = {},
     compactLandscape: Boolean = false
 ) {
+    val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
     val kfClip = selectedKeyframeVideo(state)
@@ -1771,11 +1846,32 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onDuplicateClip = { clipId -> vm.duplicateClip(clipId) },
         onDeleteClip = { clipId -> vm.deleteClip(clipId) },
         onDeleteClips = { ids -> vm.deleteClips(ids) },
-        onReorderClips = { fromIndex, toIndex -> vm.reorderClips(fromIndex, toIndex) },
+        onDuplicateSelectedClips = { vm.duplicateSelectedClips() },
+        onGroupSelectedClips = { vm.groupSelectedClips() },
+        onAutoCutSelected = {
+            if (!vm.autoCutSelectedClips()) {
+                android.widget.Toast.makeText(
+                    context,
+                    "AutoCut couldn't fit the selected clips to beats after the current sequence.",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        },
+        onApplySpeedToSelectedClips = { speed -> vm.applySpeedToSelectedClips(speed) },
+        onApplyFilterToSelectedClips = { config -> vm.applyFilterToSelectedClips(config) },
+        onApplyLutToSelectedClips = { profileId, intensity -> vm.applyLutToSelectedClips(profileId, intensity) },
+        onToggleMultiSelect = { vm.toggleMultiSelectMode() },
+        onToggleSelectedClip = { id -> vm.toggleSelectedClip(id) },
+        onClearMultiSelection = { vm.clearMultiSelection() },
+        onReorderClips = { orderedIds -> vm.reorderMainVideoClips(orderedIds) },
         onSetClipOffset = { clipId, offsetMs -> vm.setClipTimelineOffset(clipId, offsetMs) },
         onTrimClip = { clipId, startMs, endMs -> vm.trimClip(clipId, startMs, endMs) },
         onToggleKeyframeAtPlayhead = { clipId -> vm.toggleKeyframeAtPlayheadFor(clipId) },
         onMoveKeyframe = { clipId, kfId, newTimeMs -> vm.moveKeyframe(clipId, kfId, newTimeMs) },
+        onSelectKeyframe = { clipId, timeMs ->
+            seekPlayerAndState(timeMs)
+            vm.openKeyframeCurveEditor(clipId, timeMs)
+        },
         onToggleTextKeyframeAtPlayhead = { clipId, overlayId ->
             vm.toggleTextKeyframeAtPlayhead(clipId, overlayId)
         },

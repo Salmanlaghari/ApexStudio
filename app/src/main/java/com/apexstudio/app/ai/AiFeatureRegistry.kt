@@ -99,9 +99,9 @@ object AiFeatureRegistry {
         AiFeatureId.SCENE_ANALYSIS to AiFeatureDescription("Scene analysis", "Review candidate cuts from actual sampled luma histograms and frame differences; not learned AI."),
         AiFeatureId.STYLE_ANALYSIS to AiFeatureDescription("Style analysis", "Rule-based sampled color/contrast/saturation summary; not artistic style transfer."),
         AiFeatureId.AUTO_CROP to AiFeatureDescription("Auto crop", "Luma-gradient crop suggestion; not subject or face detection."),
-        AiFeatureId.FACE_AWARE_REFRAME to AiFeatureDescription("Face-aware reframe", "Bundled face model and crop-track geometry. Full-clip application is not release-ready."),
+        AiFeatureId.FACE_AWARE_REFRAME to AiFeatureDescription("Face-aware reframe", "Bundled face model supports local face-centered crops on imported still photos. Applying automatic video face tracks remains restricted to its reviewed editor workflow."),
         AiFeatureId.FACE_BLUR to AiFeatureDescription("Face blur", "Bundled face landmarks and frame-level privacy renderer; full-clip editor/export integration remains incomplete."),
-        AiFeatureId.FACE_TRACKING to AiFeatureDescription("Face tracking", "Local sampled face detection and crop candidates are available for explicit review on existing project videos; applying the automatic crop remains unavailable because project export rejects face-crop tracks."),
+        AiFeatureId.FACE_TRACKING to AiFeatureDescription("Face tracking", "Local sampled face detection and crop candidates are available for explicit review on existing project videos; dynamic face-crop tracks can render in project export, while automatic video-track application remains review-restricted."),
         AiFeatureId.BACKGROUND_BLUR to AiFeatureDescription("Background blur", "Bundled person segmentation supports the existing pre-rendered background workflow; not real-time AI preview."),
         AiFeatureId.POSE_EFFECTS to AiFeatureDescription("Pose effects", "Bundled pose model and frame-level skeleton processing; no validated full-clip effect integration."),
         AiFeatureId.SKELETON_OVERLAY to AiFeatureDescription("Skeleton overlay", "Bundled pose model and frame renderer; not a validated timeline/export tool."),
@@ -113,7 +113,7 @@ object AiFeatureRegistry {
         AiFeatureId.MEDIAPIPE_POSE to AiFeatureDescription("Pose landmarks", "Official bundled Pose Landmarker Lite; SHA-256 checked locally before inference."),
         AiFeatureId.MEDIAPIPE_HAND to AiFeatureDescription("Hand landmarks", "Official bundled Hand Landmarker; SHA-256 checked locally before inference."),
         AiFeatureId.ONNX_BACKGROUND_REMOVAL to AiFeatureDescription("ONNX background removal", "Pinned MODNet photographic portrait-matting backend is bundled. The generic standalone image workflow is unavailable; realtime preview/export and device-quality acceptance remain incomplete."),
-        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Learned ESPCN x3 luma video upscaling with bounded offline pre-rendering. Preview and export use the same rendered clip. Not 4K or a generative model."),
+        AiFeatureId.ONNX_UPSCALING to AiFeatureDescription("ONNX upscaling", "Bundled ESPCN x3 luma upscaling is available for selected project videos and low-resolution still photos. Photo output is capped at 4.2 megapixels; preview and export use the saved image. Not generative or 4K processing."),
         AiFeatureId.ONNX_STYLE_TRANSFER to AiFeatureDescription("ONNX style transfer", "Pinned Candy-9 ONNX pack (fixed 224-square input) is debug/evaluation-only and excluded from release builds pending license/provenance review. Aspect ratio is distorted; standalone image processing is outside the enabled video-only scope. Preview/export and device-quality acceptance are incomplete."),
         AiFeatureId.CONTENT_MODERATION to AiFeatureDescription("Content safety", "No validated classifier is supplied. Local non-generative editing is not blocked solely for this reason.")
     )
@@ -153,7 +153,7 @@ object AiFeatureRegistry {
         if (id == AiFeatureId.ONNX_UPSCALING) return try {
             com.apexstudio.app.ai.onnx.EspcnSuperResolutionAdapter.fromBundledAssets(context)
             AiFeatureAvailability(id, AiAvailability.READY,
-                "Pinned Apache-2.0 ESPCN x3 luma model is available locally. Use AI Video Upscale for supported existing project videos only; device codec and resource limits are checked before processing.",
+                "Pinned Apache-2.0 ESPCN x3 luma model is available locally. AI Video Upscale is limited to selected videos; Photo AI Enhance runs only on selected project images and caps output at 4.2 megapixels.",
                 requirements, requirements.map { it.id })
         } catch (cancelled: CancellationException) {
             throw cancelled

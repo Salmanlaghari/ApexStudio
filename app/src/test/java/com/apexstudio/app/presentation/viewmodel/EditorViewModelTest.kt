@@ -4,6 +4,7 @@ import com.apexstudio.app.presentation.state.EditorTool
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,6 +27,36 @@ import org.robolectric.annotation.Config
 class EditorViewModelTest {
 
     private fun viewModel() = EditorViewModel()
+
+    @Test
+    fun `multi-select toggles ids and rejects ids absent from project`() {
+        val clip = MediaClip("clip", "Clip", "file:///clip.mp4", 10_000L, trimEndMs = 10_000L)
+        val vm = viewModel().also {
+            it._state.value = it.state.value.copy(
+                project = Project("project", "Project", 10_000L, clips = listOf(clip))
+            )
+        }
+        vm.toggleMultiSelectMode()
+        vm.toggleSelectedClip(clip.id)
+        vm.toggleSelectedClip("missing")
+        assertTrue(vm.state.value.multiSelectMode)
+        assertEquals(setOf(clip.id), vm.state.value.selectedClipIds)
+        vm.toggleMultiSelectMode()
+        assertTrue(vm.state.value.selectedClipIds.isEmpty())
+    }
+
+    @Test
+    fun `multi-select restores from SavedStateHandle`() {
+        val handle = SavedStateHandle(
+            mapOf(
+                "editor.selectedClipIds" to arrayListOf("valid", "stale"),
+                "editor.multiSelectMode" to true,
+            )
+        )
+        val vm = EditorViewModel(savedStateHandle = handle)
+        assertEquals(setOf("valid", "stale"), vm.state.value.selectedClipIds)
+        assertTrue(vm.state.value.multiSelectMode)
+    }
 
     @Test
     fun `togglePlay flips isPlaying`() {

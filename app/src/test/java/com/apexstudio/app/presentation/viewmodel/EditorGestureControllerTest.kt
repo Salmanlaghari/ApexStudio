@@ -3,6 +3,8 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.ai.mediapipe.GestureCommand
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,8 +45,8 @@ class EditorGestureControllerTest {
     }
 
     @Test fun zoomIsBoundedTimelineOnlyAndAvoidsNoOpUpdates() {
-        assertEquals(10f, GestureEditPlanner.timelineZoom(9f, 1.25f)!!, 0f)
-        assertEquals(.5f, GestureEditPlanner.timelineZoom(.6f, .8f)!!, 0f)
+        assertEquals(TIMELINE_MAX_ZOOM, GestureEditPlanner.timelineZoom(3.5f, 1.25f)!!, 0f)
+        assertEquals(TIMELINE_MIN_ZOOM, GestureEditPlanner.timelineZoom(.011f, .8f)!!, 0f)
         assertNull(GestureEditPlanner.timelineZoom(1f, 1f))
     }
 

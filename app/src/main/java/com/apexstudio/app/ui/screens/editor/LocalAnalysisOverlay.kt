@@ -62,7 +62,7 @@ fun LocalAnalysisOverlay(
             }
             Text("Offline face tracking review", modifier = Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-            Text("Local face detection and crop suggestions run on bounded samples of the selected project video (up to 180 frames, about 500 ms apart). Review only: the automatic reframe cannot be applied because project export rejects face-crop tracks; use manual crop instead.",
+            Text("Local face detection and crop suggestions run on bounded samples of the selected project video (up to 180 frames, about 500 ms apart). Review only: dynamic face-crop tracks are supported by project export, but automatic video-track application remains review-restricted.",
                 modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
                 color = ApexPalette.TextSecondary)
             val selectedFaceCropClip = editor.project?.clips?.firstOrNull { it.id == editor.selectedClipId && it.faceCropTrack != null }

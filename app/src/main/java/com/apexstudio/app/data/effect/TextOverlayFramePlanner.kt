@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.effect
 
 import com.apexstudio.app.data.text.TextAnimEngine
+import com.apexstudio.app.data.captions.CaptionStyleEngine
 import com.apexstudio.app.domain.model.TextOverlay
 
 /**
@@ -18,7 +19,8 @@ internal object TextOverlayFramePlanner {
     data class OverlayVisualKey(
         val id: String,
         val animationState: Any,
-        val mask: com.apexstudio.app.domain.model.VideoMask?
+        val mask: com.apexstudio.app.domain.model.VideoMask?,
+        val captionStyleState: Any
     )
 
     fun plan(overlays: List<TextOverlay>, timeMs: Long): Plan {
@@ -32,7 +34,8 @@ internal object TextOverlayFramePlanner {
             OverlayVisualKey(
                 id = overlay.id,
                 animationState = TextAnimEngine.stateKeyFull(overlay, timeMs),
-                mask = overlay.effectiveMaskAt(timeMs)
+                mask = overlay.effectiveMaskAt(timeMs),
+                captionStyleState = CaptionStyleEngine.stateKey(overlay, timeMs, overlays)
             )
         }
         return Plan(active, key)

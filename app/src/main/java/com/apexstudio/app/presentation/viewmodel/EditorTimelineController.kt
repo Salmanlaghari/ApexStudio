@@ -5,7 +5,26 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.apexstudio.app.domain.model.timeline.Curve
+import com.apexstudio.app.domain.model.timeline.VideoAnimationProperty
+import com.apexstudio.app.domain.model.timeline.addAnimationKeyframe
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
+import com.apexstudio.app.domain.model.timeline.addAnimationKeyframeAt
+import com.apexstudio.app.domain.model.timeline.copyAnimationKeyframe
+import com.apexstudio.app.domain.model.timeline.moveAnimationKeyframe
+import com.apexstudio.app.domain.model.timeline.removeAnimationKeyframeAt
+import com.apexstudio.app.domain.model.timeline.setAnimationCurveAt
+import com.apexstudio.app.domain.model.timeline.upsertAnimationValue
 
+import com.apexstudio.app.domain.model.timeline.clearAnimationKeyframes
+import com.apexstudio.app.domain.model.timeline.replaceLegacyKeyframeAt
+import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
+import com.apexstudio.app.domain.model.timeline.sharedTextItem
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.domain.model.timeline.updateSharedKeyframeTrack
+import com.apexstudio.app.domain.model.timeline.updateSharedTextItem
+import com.apexstudio.app.domain.model.timeline.animationTransformAt
 /**
  * Minimum interval between [EditorState] position mirrors. The live
  * playhead ([EditorViewModel.playerPositionFlow]) still ticks at ~30Hz,
@@ -26,7 +45,7 @@ fun EditorViewModel.setVideoFitMode(clipId: String, mode: VideoFitMode) {
             if (it.id == clipId) it.copy(videoFitMode = mode) else it
         }))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -108,7 +127,9 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
         selectedAudioTrackId = if (id != null) null else state.selectedAudioTrackId,
         selectedTextOverlayId = if (id != null) null else state.selectedTextOverlayId,
         selectedStickerId = if (id != null) null else state.selectedStickerId,
-        activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
+        chromaKeySettings = clip?.chromaKeySettings
+            ?: com.apexstudio.app.domain.model.ChromaKeySettings()
     )
 }
 
@@ -294,37 +315,44 @@ internal fun EditorViewModel.updateClip(
                 if (changed.uri != original.uri) changed.copy(faceCropTrack = null) else changed
             }
         }
-        s.copy(project = proj.copy(clips = newClips))
+        val legacyAnimationChanged = newClips.any { changed ->
+            proj.clips.firstOrNull { it.id == changed.id }?.keyframes != changed.keyframes
+        }
+        s.copy(project = proj.copy(clips = newClips).syncSharedTimeline(
+            refreshLegacyAnimation = legacyAnimationChanged,
+            refreshLegacyClipFields = true
+        ))
     }
     if (persist) persistProject()
 }
 
 
 fun EditorViewModel.addKeyframe(clipId: String, timeMs: Long, transform: AnimatedTransform = AnimatedTransform.Identity) {
-    // Keyframe add is a discrete, undoable action (including overlay
-    // keyframes added from the clip bar's Keyframe button).
+    val project = _state.value.project ?: return
+    if (project.clips.none { it.id == clipId }) return
+    // Add samples all typed properties first, then records the preview values at this time.
     pushUndo()
-    updateClip(clipId) { clip ->
-        val kf = Keyframe(
-            id = java.util.UUID.randomUUID().toString(),
-            timeMs = timeMs,
-            translateX = transform.translateX,
-            translateY = transform.translateY,
-            scale = transform.scale,
-            rotationDeg = transform.rotationDeg,
-            opacity = transform.opacity,
-            volume = transform.volume,
-            effectIntensity = transform.effectIntensity,
-            filterIntensity = transform.filterIntensity,
-            // Pin the current effective saturation (1f when nothing
-            // pins it) so a later saturation pin interpolates from
-            // the value the clip actually had at this keyframe
-            // instead of clamping to the later pin's value.
-            saturation = transform.saturation ?: 1f
-        )
-        val without = clip.keyframes.keyframes.filter { it.timeMs != timeMs }
-        clip.copy(keyframes = KeyframeTrack(without + kf).sorted())
+    val targetTime = timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    val keyframe = Keyframe(
+        id = java.util.UUID.randomUUID().toString(),
+        timeMs = targetTime,
+        translateX = transform.translateX,
+        translateY = transform.translateY,
+        scale = transform.scale,
+        rotationDeg = transform.rotationDeg,
+        opacity = transform.opacity,
+        volume = transform.volume,
+        effectIntensity = transform.effectIntensity,
+        filterIntensity = transform.filterIntensity,
+        saturation = transform.saturation ?: 1f,
+        curve = KeyframeCurve.BEZIER
+    )
+    val synced = project.syncSharedTimeline()
+    val updated = synced.updateSharedKeyframeTrack(clipId) { clip ->
+        clip.addAnimationKeyframe(targetTime, Curve.SMOOTH).replaceLegacyKeyframeAt(keyframe)
     }
+    _state.update { current -> if (current.project?.id == project.id) current.copy(project = updated) else current }
+    persistProject()
 }
 
 /**
@@ -361,47 +389,47 @@ private fun Keyframe.withParam(param: KeyframeParam, value: Float): Keyframe = w
     KeyframeParam.SATURATION -> copy(saturation = value)
 }
 
+private fun KeyframeCurve.toTimelineCurve(): Curve = when (this) {
+    KeyframeCurve.LINEAR -> Curve.LINEAR
+    KeyframeCurve.EASE_IN -> Curve.EASE_IN
+    KeyframeCurve.EASE_OUT -> Curve.EASE_OUT
+    KeyframeCurve.BEZIER, KeyframeCurve.EASE_IN_OUT, KeyframeCurve.SPRING, KeyframeCurve.OVERSHOOT -> Curve.SMOOTH
+    KeyframeCurve.HOLD -> Curve.LINEAR
+}
+
 fun EditorViewModel.upsertKeyframeParam(
     clipId: String,
     timeMs: Long,
     param: KeyframeParam,
     value: Float
 ): Boolean {
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return false
-    if (clip.keyframes.keyframes.isEmpty()) return false
-    val at = clip.keyframes.interpolateAt(timeMs)
-    val near = clip.keyframes.keyframes.minByOrNull { kotlin.math.abs(it.timeMs - timeMs) }
-    if (near != null && kotlin.math.abs(near.timeMs - timeMs) <= 150L) {
-        updateClip(clipId) { c ->
-            c.copy(
-                keyframes = KeyframeTrack(
-                    c.keyframes.keyframes.map { kf ->
-                        if (kf.id == near.id) kf.withParam(param, value) else kf
-                    }
-                ).sorted()
-            )
-        }
-        return true
+    if (!value.isFinite()) return false
+    val original = _state.value.project ?: return false
+    val project = original.syncSharedTimeline()
+    val clip = project.sharedVideoClip(clipId) ?: return false
+    val times = clip.animationKeyframeTimes()
+    if (times.isEmpty()) return false
+    val property = when (param) {
+        KeyframeParam.TRANSLATE_X -> VideoAnimationProperty.POSITION_X
+        KeyframeParam.TRANSLATE_Y -> VideoAnimationProperty.POSITION_Y
+        KeyframeParam.SCALE -> VideoAnimationProperty.SCALE
+        KeyframeParam.ROTATION -> VideoAnimationProperty.ROTATION
+        KeyframeParam.OPACITY -> VideoAnimationProperty.OPACITY
+        KeyframeParam.VOLUME -> VideoAnimationProperty.VOLUME
+        KeyframeParam.EFFECT_INTENSITY -> VideoAnimationProperty.EFFECT_INTENSITY
+        KeyframeParam.FILTER_INTENSITY -> VideoAnimationProperty.FILTER_INTENSITY
+        KeyframeParam.SATURATION -> VideoAnimationProperty.SATURATION
     }
-    // New keyframe at the playhead: one undo entry for the insert;
-    // subsequent drag ticks update it via the near-keyframe path.
-    pushUndo()
-    updateClip(clipId) { c ->
-        val kf = Keyframe(
-            id = java.util.UUID.randomUUID().toString(),
-            timeMs = timeMs,
-            translateX = at.translateX,
-            translateY = at.translateY,
-            scale = at.scale,
-            rotationDeg = at.rotationDeg,
-            opacity = at.opacity,
-            volume = at.volume,
-            effectIntensity = at.effectIntensity,
-            filterIntensity = at.filterIntensity,
-            saturation = at.saturation ?: 1f
-        ).withParam(param, value)
-        c.copy(keyframes = KeyframeTrack((c.keyframes.keyframes + kf)).sorted())
+    val near = times.minByOrNull { kotlin.math.abs(it - timeMs) }
+    val nearEnough = near != null && kotlin.math.abs(near - timeMs) <= 150L
+    val targetTime = if (nearEnough) near!! else timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    if (!nearEnough) pushUndo()
+    val updated = project.updateSharedKeyframeTrack(clipId) { current ->
+        val seeded = if (nearEnough) current else current.addAnimationKeyframe(targetTime, Curve.SMOOTH)
+        seeded.upsertAnimationValue(property, targetTime, value)
     }
+    _state.update { current -> if (current.project?.id == original.id) current.copy(project = updated) else current }
+    persistProject()
     return true
 }
 
@@ -446,46 +474,73 @@ private fun Keyframe.copy(param: KeyframeParam, value: Float): Keyframe = when (
 
 
 fun EditorViewModel.updateKeyframe(clipId: String, keyframeId: String, transform: (Keyframe) -> Keyframe) {
-    updateClip(clipId) { clip ->
-        clip.copy(
-            keyframes = KeyframeTrack(
-                clip.keyframes.keyframes.map { if (it.id == keyframeId) transform(it) else it }
-            ).sorted()
-        )
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline()
+    val legacy = project.clips.firstOrNull { it.id == clipId } ?: return
+    val prior = project.sharedKeyframeTrackFor(clipId, legacy.keyframes).keyframes.firstOrNull { it.id == keyframeId } ?: return
+    val changed = transform(prior)
+    val targetTime = changed.timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    if (targetTime == prior.timeMs && changed == prior) return
+    // Time drags are continuous gestures; changing values or the curve is a discrete edit.
+    if (targetTime == prior.timeMs && changed != prior) pushUndo()
+    val updated = project.updateSharedKeyframeTrack(clipId) { current ->
+        val moved = if (targetTime == prior.timeMs) current else current.moveAnimationKeyframe(prior.timeMs, targetTime)
+        moved.setAnimationCurveAt(targetTime, changed.curve.toTimelineCurve())
+            .replaceLegacyKeyframeAt(changed.copy(timeMs = targetTime))
     }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
+    persistProject()
 }
 
 
 fun EditorViewModel.removeKeyframe(clipId: String, keyframeId: String) {
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline()
+    val legacy = project.clips.firstOrNull { it.id == clipId } ?: return
+    val selected = project.sharedKeyframeTrackFor(clipId, legacy.keyframes).keyframes.firstOrNull { it.id == keyframeId } ?: return
     pushUndo()
-    updateClip(clipId) { clip ->
-        clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.id != keyframeId }))
-    }
+    val updated = project.updateSharedKeyframeTrack(clipId) { it.removeAnimationKeyframeAt(selected.timeMs) }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
+    persistProject()
 }
 
 
 fun EditorViewModel.clearKeyframes(clipId: String) {
-    if (_state.value.project?.clips?.none { it.id == clipId && it.keyframes.keyframes.isNotEmpty() } != false) return
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline()
+    if (project.sharedVideoClip(clipId)?.animationKeyframeTimes().isNullOrEmpty()) return
     pushUndo()
-    updateClip(clipId) { it.copy(keyframes = KeyframeTrack()) }
+    val updated = project.updateSharedKeyframeTrack(clipId) { it.clearAnimationKeyframes() }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
+    persistProject()
 }
 
 /** Paste a pin as a single undoable edit, replacing only an exact-time collision. */
 fun EditorViewModel.pasteKeyframe(clipId: String, source: Keyframe, timeMs: Long) {
-    val project = _state.value.project ?: return
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline()
     if (project.clips.none { it.id == clipId }) return
     val targetTime = timeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
     pushUndo()
-    updateClip(clipId) { clip ->
-        val existing = clip.keyframes.keyframes.firstOrNull { it.timeMs == targetTime }
-        val pasted = source.copy(id = existing?.id ?: java.util.UUID.randomUUID().toString(), timeMs = targetTime)
-        clip.copy(keyframes = KeyframeTrack(clip.keyframes.keyframes.filter { it.timeMs != targetTime } + pasted).sorted())
+    val updated = project.updateSharedKeyframeTrack(clipId) { clip ->
+        clip.copyAnimationKeyframe(source.timeMs, targetTime)
+            .setAnimationCurveAt(targetTime, source.curve.toTimelineCurve())
+            .replaceLegacyKeyframeAt(source.copy(timeMs = targetTime))
     }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
+    persistProject()
 }
 
 
 fun EditorViewModel.setKeyframePanelOpen(open: Boolean) =
-    _state.update { it.copy(keyframePanelOpen = open, keyframePropertyFilter = if (open) it.keyframePropertyFilter else null) }
+    _state.update {
+        it.copy(
+            keyframePanelOpen = open,
+            keyframePropertyFilter = if (open) it.keyframePropertyFilter else null,
+            keyframeSelectedTimeMs = if (open) it.keyframeSelectedTimeMs else null,
+            keyframeCurveEditorOpen = if (open) it.keyframeCurveEditorOpen else false
+        )
+    }
 
 /** Opens the actual horizontally-scrolling manual keyframe editor on one property. */
 fun EditorViewModel.openKeyframePropertyPanel(property: String) {
@@ -494,20 +549,28 @@ fun EditorViewModel.openKeyframePropertyPanel(property: String) {
 }
 
 fun EditorViewModel.openKeyframeAnimationPanel() =
-    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = null) }
+    _state.update { it.copy(keyframePanelOpen = true, keyframePropertyFilter = null, keyframeSelectedTimeMs = null, keyframeCurveEditorOpen = false) }
+
+fun EditorViewModel.openKeyframeCurveEditor(clipId: String, timeMs: Long) {
+    if (_state.value.project?.clips?.none { it.id == clipId } != false) return
+    _state.update {
+        it.copy(
+            selectedClipId = clipId,
+            keyframePanelOpen = true,
+            keyframePropertyFilter = "ALL",
+            keyframeSelectedTimeMs = timeMs,
+            keyframeCurveEditorOpen = true
+        )
+    }
+}
+
+fun EditorViewModel.dismissKeyframeCurveEditor() =
+    _state.update { it.copy(keyframeCurveEditorOpen = false) }
 
 
 fun EditorViewModel.toggleKeyframeAtPlayhead() {
     val clipId = _state.value.selectedClipId ?: _state.value.project?.clips?.firstOrNull()?.id ?: return
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val playheadMs = livePlayheadMs()
-    val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
-    if (existingKf != null) {
-        removeKeyframe(clipId, existingKf.id)
-    } else {
-        val currentTransform = clip.keyframes.interpolateAt(playheadMs)
-        addKeyframe(clipId, playheadMs, currentTransform)
-    }
+    toggleKeyframeAtPlayheadFor(clipId)
 }
 
 /** Project-frame identity for APIs used by the frame-precise inspector. */
@@ -600,19 +663,19 @@ fun EditorViewModel.jumpToPrevKeyframe() {
 
 
 fun EditorViewModel.setTimelineZoom(zoom: Float) {
-    _state.update { it.copy(timelineZoom = zoom.coerceIn(0.5f, 10.0f)) }
+    _state.update { it.copy(timelineZoom = zoom.coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)) }
 }
 
 
 fun EditorViewModel.zoomInTimeline() {
     val current = _state.value.timelineZoom
-    setTimelineZoom((current + 0.5f).coerceAtMost(10.0f))
+    setTimelineZoom((current + 0.5f).coerceAtMost(TIMELINE_MAX_ZOOM))
 }
 
 
 fun EditorViewModel.zoomOutTimeline() {
     val current = _state.value.timelineZoom
-    setTimelineZoom((current - 0.5f).coerceAtLeast(0.5f))
+    setTimelineZoom((current - 0.5f).coerceAtLeast(TIMELINE_MIN_ZOOM))
 }
 
 
@@ -627,7 +690,7 @@ fun EditorViewModel.moveClipLeft(clipId: String) {
         updated.add(index - 1, item)
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -642,25 +705,45 @@ fun EditorViewModel.moveClipRight(clipId: String) {
         updated.add(index + 1, item)
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
-fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
-    if (fromIndex == toIndex) return
+fun EditorViewModel.reorderMainVideoClips(orderedIds: List<String>) {
+    val main = _state.value.project?.clips?.filter(::isMainTrack).orEmpty()
+    if (orderedIds.size != main.size || orderedIds.toSet() != main.map { it.id }.toSet()) return
+    if (orderedIds == main.map { it.id }) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
-        if (fromIndex !in p.clips.indices || toIndex !in p.clips.indices) return@update s
-        val updated = p.clips.toMutableList()
-        val item = updated.removeAt(fromIndex)
-        updated.add(toIndex, item)
-        s.copy(project = p.copy(clips = updated))
+        val mainClips = p.clips.filter(::isMainTrack)
+        val byId = mainClips.associateBy { it.id }
+        val requested = orderedIds.map { byId.getValue(it) }
+        val grouped = requested.groupBy { it.groupId }.filter { (key, value) -> key != null && value.size > 1 }
+        val normalized = requested.toMutableList()
+        grouped.forEach { (groupId, members) ->
+            val positions = normalized.mapIndexedNotNull { i, clip -> if (clip.groupId == groupId) i else null }
+            if (positions.last() - positions.first() + 1 != positions.size) {
+                normalized.removeAll { it.groupId == groupId }
+                normalized.addAll(positions.last().coerceAtMost(normalized.size), members)
+            }
+        }
+        var index = 0
+        s.copy(project = p.copy(clips = p.clips.map { if (isMainTrack(it)) normalized[index++] else it }))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
-
+fun EditorViewModel.reorderClips(fromIndex: Int, toIndex: Int) {
+    val main = _state.value.project?.clips?.filter(::isMainTrack).orEmpty()
+    if (fromIndex !in main.indices || toIndex !in main.indices || fromIndex == toIndex) return
+    val source = main[fromIndex]
+    val group = source.groupId?.let { gid -> main.filter { it.groupId == gid } } ?: listOf(source)
+    val remaining = main.filterNot { it.id in group.map { member -> member.id }.toSet() }.toMutableList()
+    val insertion = toIndex.coerceIn(0, remaining.size)
+    remaining.addAll(insertion, group)
+    reorderMainVideoClips(remaining.map { it.id })
+}
 fun EditorViewModel.applyConfiguredAnimationPreset(
     preset: com.apexstudio.app.data.animation.AnimationPresetType,
     mode: com.apexstudio.app.data.animation.AnimationPresetMode,
@@ -786,12 +869,12 @@ fun EditorViewModel.redo() = viewModelScope.launch {
  * starting earlier is untouched. Track 0 itself never moves here — its
  * own layout is derived cumulatively.
  */
-private fun isMainTrack(c: MediaClip): Boolean =
+internal fun isMainTrack(c: MediaClip): Boolean =
     c.trackIndex == 0 &&
         (c.type == ClipType.VIDEO || c.type == ClipType.IMAGE)
 
 /** Timeline ms where [clipId] starts on the main track (cumulative V1). */
-private fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
+internal fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
     var acc = 0L
     for (c in clips) {
         if (c.id == clipId) return acc
@@ -801,7 +884,7 @@ private fun v1StartBefore(clips: List<MediaClip>, clipId: String): Long {
 }
 
 /** Shift every non-main-track item at/after [anchorMs] by [deltaMs]. */
-private fun rippleOverlays(
+internal fun rippleOverlays(
     clips: List<MediaClip>,
     anchorMs: Long,
     deltaMs: Long
@@ -891,7 +974,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     // (when the trim shrank the timeline below the current position);
     // otherwise a no-op, never a backward snap.
     newDurationMs?.let { d -> _playerPosition.update { it.coerceIn(0L, d) } }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
@@ -998,11 +1081,11 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                             val updatedClips = p.clips + newClip
                             val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
                             s.copy(
-                                project = p.copy(clips = updatedClips, durationMs = newDuration),
-                                durationMs = newDuration
-                            )
-                        }
-                        persistProject()
+                            project = p.copy(clips = updatedClips, durationMs = newDuration),
+                            durationMs = newDuration
+                        )
+                    }
+                    persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
                     }
                     _state.update {
                         it.copy(
@@ -1115,7 +1198,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
             canRedo = redoStack.isNotEmpty()
         )
     }
-    persistProject()
+    persistProject(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true,
+        refreshLegacyTextStickerFields = true
+    )
 }
 
 
@@ -1153,7 +1240,11 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             canRedo = redoStack.isNotEmpty()
         )
     }
-    persistProject()
+    persistProject(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true,
+        refreshLegacyTextStickerFields = true
+    )
 }
 
 
@@ -1201,7 +1292,7 @@ fun EditorViewModel.deleteClip(clipId: String) {
             selectedOverlayClipId = if (s.selectedOverlayClipId == clipId) null else s.selectedOverlayClipId
         )
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true, refreshLegacyTextStickerFields = true)
 }
 
 
@@ -1211,28 +1302,13 @@ fun EditorViewModel.deleteClip(clipId: String) {
  * loop for multi-select bulk delete.
  */
 fun EditorViewModel.deleteClips(clipIds: Set<String>) {
-    if (clipIds.isEmpty()) return
-    pushUndo()
-    _state.update { s ->
-        val p = s.project ?: return@update s
-        val updated = p.clips.filterNot { it.id in clipIds }
-        val newSelected = if (s.selectedClipId in clipIds) updated.firstOrNull()?.id else s.selectedClipId
-        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
-        s.copy(
-            project = p.copy(clips = updated, durationMs = newDur),
-            durationMs = newDur,
-            selectedClipId = newSelected,
-            // Deleting the active overlay clip clears the transform too,
-            // otherwise the preview layer would keep trying to render a
-            // non-existent overlay's PlayerView.
-            overlayClipId = if (s.overlayClipId in clipIds) null else s.overlayClipId,
-            overlayTransform = if (s.overlayClipId in clipIds) com.apexstudio.app.presentation.state.OverlayTransform.Identity else s.overlayTransform,
-            // PiP canvas selection must follow the clip: a deleted
-            // overlay cannot stay selected.
-            selectedOverlayClipId = if (s.selectedOverlayClipId in clipIds) null else s.selectedOverlayClipId
-        )
-    }
-    persistProject()
+    // Keep this legacy UI route on the same ripple-aware implementation as
+    // the multi-select action. Selection setup is transient; the action still
+    // records exactly one undo snapshot and performs one persistence.
+    val valid = _state.value.project?.clips.orEmpty().map { it.id }.toSet().intersect(clipIds)
+    if (valid.isEmpty()) return
+    _state.update { it.copy(selectedClipIds = valid, multiSelectMode = true) }
+    deleteSelectedClips()
 }
 
 
@@ -1246,7 +1322,7 @@ fun EditorViewModel.moveClipToTrack(clipId: String, newType: ClipType, newTrackI
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
 }
 
 
@@ -1283,41 +1359,58 @@ fun EditorViewModel.addClipToTrack(type: ClipType, trackIndex: Int) {
                 selectedClipId = newClip.id
             )
         }
-        persistProject()
+        persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
     }
 }
 
 
 fun EditorViewModel.setClipTimelineOffset(clipId: String, offsetMs: Long) {
+    val before = _state.value
+    val source = before.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val zoom = before.timelineZoom.coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
+    val thresholdMs = (8_000f / (54f * zoom)).toLong().coerceAtLeast(1L)
+    val snappedOffset = findMagneticSnapPoint(
+        offsetMs.coerceAtLeast(0L), thresholdMs, excludeClipId = clipId
+    ).coerceAtLeast(0L)
+    if (source.timelineOffsetMs == snappedOffset) return
+    val delta = snappedOffset - source.timelineOffsetMs
+    val groupId = source.groupId
+    val members = before.project?.clips.orEmpty().filter { groupId != null && it.groupId == groupId }
+    val effectiveDelta = if (members.isEmpty()) delta else delta.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
+    if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val updated = p.clips.map {
-            if (it.id == clipId) it.copy(timelineOffsetMs = offsetMs.coerceAtLeast(0L))
+            if (it.id == clipId || (groupId != null && it.groupId == groupId))
+                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
             else it
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
 
 
 fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
+    if (deltaMs == 0L) return
+    val before = _state.value.project ?: return
+    val source = before.clips.firstOrNull { it.id == clipId } ?: return
+    val members = before.clips.filter { source.groupId != null && it.groupId == source.groupId }
+    val effectiveDelta = if (members.isEmpty()) deltaMs else deltaMs.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
+    if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
         val updated = p.clips.map {
-            if (it.id == clipId) {
-                val newOffset = (it.timelineOffsetMs + deltaMs).coerceAtLeast(0L)
-                it.copy(timelineOffsetMs = newOffset)
-            } else it
+            if (it.id == clipId || (source.groupId != null && it.groupId == source.groupId))
+                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
+            else it
         }
         s.copy(project = p.copy(clips = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }
-
-
 internal fun EditorViewModel.pushUndo() {
     val state = _state.value
     val project = state.project ?: return
@@ -1335,29 +1428,20 @@ internal fun EditorViewModel.pushUndo() {
  * one is added using the interpolated transform at the playhead.
  */
 fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline()
+    val legacy = project.clips.firstOrNull { it.id == clipId } ?: return
+    val shared = project.sharedVideoClip(clipId) ?: return
     val playheadMs = livePlayheadMs()
-    val existingKf = clip.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
-    if (existingKf != null) {
-        removeKeyframe(clipId, existingKf.id)
+    val existingTime = shared.animationKeyframeTimes()
+        .minByOrNull { kotlin.math.abs(it - playheadMs) }
+        ?.takeIf { kotlin.math.abs(it - playheadMs) <= 150L }
+    if (existingTime != null) {
+        val marker = project.sharedKeyframeTrackFor(clipId, legacy.keyframes).keyframes
+            .firstOrNull { it.timeMs == existingTime } ?: return
+        removeKeyframe(clipId, marker.id)
     } else {
-        // Overlays: keyframe transforms are ABSOLUTE overlay transforms
-        // (translateX = pipX, ...). With no keyframes yet, the current
-        // transform is the pip base values — capturing Identity (the
-        // V1 default) would teleport the overlay to the top-left at
-        // full scale. With keyframes, interpolate as usual.
-        val transform = if (clip.type == ClipType.OVERLAY && clip.keyframes.keyframes.isEmpty()) {
-            AnimatedTransform(
-                translateX = clip.pipX,
-                translateY = clip.pipY,
-                scale = clip.pipScale,
-                rotationDeg = clip.pipRotationDeg,
-                opacity = clip.pipOpacity
-            )
-        } else {
-            clip.keyframes.interpolateAt(playheadMs)
-        }
-        addKeyframe(clipId, playheadMs, transform)
+        addKeyframe(clipId, playheadMs, shared.animationTransformAt(playheadMs))
     }
 }
 
@@ -1374,30 +1458,20 @@ fun EditorViewModel.moveKeyframe(clipId: String, keyframeId: String, newTimeMs: 
  * Toggles a text-overlay keyframe at the current playhead position.
  */
 fun EditorViewModel.toggleTextKeyframeAtPlayhead(clipId: String, overlayId: String) {
-    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
-    val overlay = clip.textOverlays.firstOrNull { it.id == overlayId } ?: return
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline(importLegacyAnimation = true)
+    val item = project.sharedTextItem(clipId, overlayId) ?: return
     val playheadMs = livePlayheadMs()
-    val existingKf = overlay.keyframes.keyframes.firstOrNull { kotlin.math.abs(it.timeMs - playheadMs) <= 150L }
-    if (existingKf != null) {
-        updateTextOverlay(clipId, overlayId) { ov ->
-            ov.copy(keyframes = KeyframeTrack(ov.keyframes.keyframes.filter { it.id != existingKf.id }))
-        }
-    } else {
-        val t = overlay.keyframes.interpolateAt(playheadMs)
-        val kf = Keyframe(
-            id = java.util.UUID.randomUUID().toString(),
-            timeMs = playheadMs,
-            translateX = t.translateX,
-            translateY = t.translateY,
-            scale = t.scale,
-            rotationDeg = t.rotationDeg,
-            opacity = t.opacity
-        )
-        updateTextOverlay(clipId, overlayId) { ov ->
-            val without = ov.keyframes.keyframes.filter { it.timeMs != playheadMs }
-            ov.copy(keyframes = KeyframeTrack(without + kf).sorted())
-        }
+    val existingTime = item.animationKeyframeTimes().firstOrNull { time ->
+        val delta = time - playheadMs
+        delta in -150L..150L
     }
+    val updatedItem = if (existingTime != null) item.removeAnimationKeyframeAt(existingTime)
+        else item.addAnimationKeyframeAt(playheadMs)
+    pushUndo()
+    val updatedProject = project.updateSharedTextItem(clipId, overlayId) { updatedItem }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
+    persistProject()
 }
 
 
@@ -1405,15 +1479,17 @@ fun EditorViewModel.toggleTextKeyframeAtPlayhead(clipId: String, overlayId: Stri
  * Moves a text-overlay keyframe to a new timeline position (from diamond drag).
  */
 fun EditorViewModel.moveTextKeyframe(clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) {
-    updateTextOverlay(clipId, overlayId) { ov ->
-        ov.copy(
-            keyframes = KeyframeTrack(
-                ov.keyframes.keyframes.map {
-                    if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
-                }
-            ).sorted()
-        )
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline(importLegacyAnimation = true)
+    val oldTime = project.clips.firstOrNull { it.id == clipId }?.textOverlays
+        ?.firstOrNull { it.id == overlayId }?.keyframes?.keyframes
+        ?.firstOrNull { it.id == keyframeId }?.timeMs ?: return
+    pushUndo()
+    val updatedProject = project.updateSharedTextItem(clipId, overlayId) {
+        it.moveAnimationKeyframe(oldTime, newTimeMs.coerceAtLeast(0L))
     }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
+    persistProject()
 }
 
 
@@ -1434,7 +1510,10 @@ fun EditorViewModel.toggleVideoLayerVisibility(layer: Int) {
     _state.update { s ->
         val hidden = s.hiddenVideoLayers.toMutableSet()
         if (l in hidden) hidden.remove(l) else hidden.add(l)
-        s.copy(hiddenVideoLayers = hidden)
+        s.copy(
+            project = s.project?.copy(hiddenVideoLayers = hidden),
+            hiddenVideoLayers = hidden
+        )
     }
     persistProject()
 }
@@ -1446,7 +1525,10 @@ fun EditorViewModel.toggleVideoLayerLock(layer: Int) {
     _state.update { s ->
         val locked = s.lockedVideoLayers.toMutableSet()
         if (l in locked) locked.remove(l) else locked.add(l)
-        s.copy(lockedVideoLayers = locked)
+        s.copy(
+            project = s.project?.copy(lockedVideoLayers = locked),
+            lockedVideoLayers = locked
+        )
     }
     persistProject()
 }
@@ -1474,7 +1556,11 @@ fun EditorViewModel.deleteVideoLayer(layer: Int): Boolean {
         val locked = s.lockedVideoLayers - l
         val extras = s.extraVideoLayers - l
         s.copy(
-            project = p.copy(clips = remaining),
+            project = p.copy(
+                clips = remaining,
+                hiddenVideoLayers = hidden,
+                lockedVideoLayers = locked
+            ),
             hiddenVideoLayers = hidden,
             lockedVideoLayers = locked,
             extraVideoLayers = extras,

@@ -98,4 +98,15 @@ class FilterWorkspacePanelTest {
         compose.runOnIdle { assertEquals(before, vm.state.value.project) }
     }
 
+    @Test fun `filter gallery shows a generated sample image for each available look`() {
+        val vm = editor()
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
+        showCard("filter-presets-card")
+        val sampleTag = "filter-sample-${WorkspaceEffectPresets.FILTER_SOFT_WARM}"
+        compose.waitUntil(10_000L) {
+            compose.onAllNodesWithTag(sampleTag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag(sampleTag, useUnmergedTree = true).assertExists()
+    }
+
 }

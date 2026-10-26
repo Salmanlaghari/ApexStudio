@@ -27,11 +27,12 @@ import com.apexstudio.app.domain.model.VideoMask
  */
 @UnstableApi
 class MaskGlEffect private constructor(
-    private val mask: VideoMask
+    private val mask: VideoMask,
+    private val maskAtPresentationTimeUs: (Long) -> VideoMask = { mask }
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: android.content.Context, useHdr: Boolean): GlShaderProgram {
-        return MaskShaderProgram(mask, useHdr)
+        return MaskShaderProgram(mask, maskAtPresentationTimeUs, useHdr)
     }
 
     companion object {
@@ -45,16 +46,27 @@ class MaskGlEffect private constructor(
          * to do (disabled mask, or a full-frame non-inverted mask with
          * full opacity — i.e. a no-op).
          */
-        fun fromMask(mask: VideoMask?): MaskGlEffect? {
+        fun fromMask(
+            mask: VideoMask?,
+            maskAtPresentationTimeUs: ((Long) -> VideoMask)? = null
+        ): MaskGlEffect? {
             if (mask == null || !mask.enabled) return null
-            if (mask.opacity <= 0.001f) return null
+            require(MaskModel.isAvailable(mask.shape)) {
+                MaskModel.BLUR_FACES_UNAVAILABLE_REASON
+            }
+            if (mask.shape == MaskShape.DRAW) {
+                require(MaskModel.outline(mask.shape, mask.drawPoints).size >= 4) {
+                    "Pen mask requires at least three distinct finite points before export"
+                }
+            }
+            if (mask.opacity <= 0.001f && mask.maskKeyframes.isEmpty()) return null
             // Full-size non-inverted rect/ellipse with full opacity is a
             // no-op. LINEAR is excluded: its wipe position (centerX) still
             // cuts the frame even at full size, so it must reach the shader.
             val coversAll = mask.sizeX >= 0.999f && mask.sizeY >= 0.999f &&
                     !mask.invert && mask.shape != MaskShape.LINEAR
-            if (coversAll && mask.opacity >= 0.999f) return null
-            return MaskGlEffect(mask)
+            if (coversAll && mask.opacity >= 0.999f && mask.maskKeyframes.isEmpty()) return null
+            return MaskGlEffect(mask, maskAtPresentationTimeUs ?: { mask })
         }
 
         private val VERTEX_SHADER = """
@@ -223,6 +235,7 @@ class MaskGlEffect private constructor(
     @UnstableApi
     private class MaskShaderProgram(
         mask: VideoMask,
+        private val maskAtPresentationTimeUs: (Long) -> VideoMask,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -249,6 +262,10 @@ class MaskGlEffect private constructor(
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
 
+            setMaskUniforms(mask)
+        }
+
+        private fun setMaskUniforms(mask: VideoMask) {
             // Single source of truth: MaskShape.shaderId pins 0 rect,
             // 1 ellipse, 2 horizontal, 3 circle, 4 heart, 5 star,
             // 6 triangle, 7 mirror, 8 pen, 9 blur faces, so reordering
@@ -296,6 +313,10 @@ class MaskGlEffect private constructor(
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
                 glProgram.use()
+                // Media3 invokes this for every output frame. Resolve the mask
+                // on that clock and refresh every animated uniform, not only
+                // geometry, so feather/invert/opacity/rotation cannot lag.
+                setMaskUniforms(maskAtPresentationTimeUs(presentationTimeUs))
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

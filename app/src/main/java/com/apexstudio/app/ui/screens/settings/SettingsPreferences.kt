@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.apexstudio.app.data.captions.CaptionFillerDetector
 import com.apexstudio.app.ui.theme.ApexThemeOption
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,7 @@ private val Context.apexSettingsStore by preferencesDataStore(name = "apex_setti
 /** Small persistent settings independent of the project store. */
 object SettingsPreferences {
     private val themeKey = stringPreferencesKey("theme")
+    private val captionFillerWordsKey = stringPreferencesKey("caption_filler_words")
 
     fun theme(context: Context): Flow<ApexThemeOption> =
         context.applicationContext.apexSettingsStore.data.catch { error ->
@@ -27,6 +29,23 @@ object SettingsPreferences {
     suspend fun setTheme(context: Context, theme: ApexThemeOption) {
         context.applicationContext.apexSettingsStore.edit { preferences ->
             preferences[themeKey] = theme.storedValue
+        }
+    }
+
+    /** Filler vocabulary is app-wide, not stored in individual project files. */
+    fun captionFillerWords(context: Context): Flow<List<String>> =
+        context.applicationContext.apexSettingsStore.data.catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }.map { preferences ->
+            preferences[captionFillerWordsKey]?.let { stored ->
+                CaptionFillerDetector.normalizeList(stored.split('\n'))
+            } ?: CaptionFillerDetector.defaultWords
+        }
+
+    suspend fun setCaptionFillerWords(context: Context, words: Iterable<String>) {
+        val stored = CaptionFillerDetector.normalizeList(words).joinToString("\n")
+        context.applicationContext.apexSettingsStore.edit { preferences ->
+            preferences[captionFillerWordsKey] = stored
         }
     }
 }

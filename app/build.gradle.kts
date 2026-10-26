@@ -29,7 +29,8 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 // Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
-// ESPCN model stays bundled for bounded, offline video upscaling. Use
+// ESPCN model and the 3.8 MB checksum-pinned face landmarker stay bundled for offline
+// still-photo enhancement/cropping; no model download is required at runtime. Use
 // -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
@@ -38,7 +39,9 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
   from(layout.projectDirectory.dir("src/main/assets"))
   if (!includeBundledAiModels.get()) {
     exclude(
-      "models/mediapipe/*.task", "models/mediapipe/*.tflite",
+      "models/mediapipe/mediapipe-hand-landmarker.task",
+      "models/mediapipe/mediapipe-pose-landmarker.task",
+      "models/mediapipe/selfie_segmenter.tflite",
       "models/whisper/*.onnx", "models/whisper/*.txt",
       "models/alignment/*.onnx",
       "models/background_removal/*.onnx"
@@ -240,6 +243,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
   implementation(libs.androidx.navigation.compose)
   implementation(libs.coil.compose)
 
@@ -249,13 +253,14 @@ dependencies {
   implementation("androidx.camera:camera-view:1.4.1")
 
   // Media3 & Video/Audio Processing
-  implementation("androidx.media3:media3-exoplayer:1.5.0")
-  implementation("androidx.media3:media3-ui:1.5.0")
-  implementation("androidx.media3:media3-common:1.5.0")
-  implementation("androidx.media3:media3-transformer:1.5.0")
-  implementation("androidx.media3:media3-effect:1.5.0")
-  implementation("androidx.media3:media3-session:1.5.0")
-  implementation("androidx.media3:media3-datasource:1.5.0")
+  val media3Version = "1.11.1"
+  implementation("androidx.media3:media3-exoplayer:$media3Version")
+  implementation("androidx.media3:media3-ui:$media3Version")
+  implementation("androidx.media3:media3-common:$media3Version")
+  implementation("androidx.media3:media3-transformer:$media3Version")
+  implementation("androidx.media3:media3-effect:$media3Version")
+  implementation("androidx.media3:media3-session:$media3Version")
+  implementation("androidx.media3:media3-datasource:$media3Version")
 
   // SplitInstall API for the Camera Kit Play on-demand feature.
   implementation(libs.play.feature.delivery)

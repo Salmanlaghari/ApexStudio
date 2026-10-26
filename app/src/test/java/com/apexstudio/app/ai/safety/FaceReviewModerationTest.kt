@@ -25,7 +25,7 @@ class FaceReviewModerationTest {
         } catch (blocked: AiModelUnavailableException) {
             assertTrue(blocked.message.orEmpty().contains("available only for a selected existing project video"))
             assertTrue(blocked.message.orEmpty().contains("it does not apply edits"))
-            assertTrue(blocked.message.orEmpty().contains("Project export rejects face-crop tracks"))
+            assertFalse(blocked.message.orEmpty().contains("export rejects face-crop tracks"))
         }
     }
 

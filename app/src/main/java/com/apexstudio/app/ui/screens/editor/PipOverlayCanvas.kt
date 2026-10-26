@@ -245,6 +245,7 @@ private fun OverlayBlend.toComposeBlendMode(): BlendMode = when (this) {
     OverlayBlend.SCREEN -> BlendMode.Screen
     OverlayBlend.MULTIPLY -> BlendMode.Multiply
     OverlayBlend.OVERLAY -> BlendMode.Overlay
+    OverlayBlend.SOFT_LIGHT -> BlendMode.Softlight
 }
 
 @Composable
@@ -536,7 +537,7 @@ private fun PipOverlayItem(
                         // TextureView, matching the main preview renderer.
                         factory = { ctx -> createOverlayPlayerView(ctx, overlayPlayer) },
                         update = { view -> view.player = overlayPlayer },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize().testTag("pip-overlay-video-${clip.id}")
                     )
                 }
                 isVideo == true -> {
@@ -596,7 +597,8 @@ private fun PipOverlayItem(
                                     loadError = false
                                     loadAttempts++
                                 }
-                                .padding(6.dp),
+                                .padding(6.dp)
+                                .testTag("pip-overlay-image-${clip.id}"),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
@@ -650,7 +652,7 @@ private fun PipOverlayItem(
                                     scaleY = 1f / crop.height
                                     translationX = (0.5f - (crop.left + crop.right) * 0.5f) * size.width * scaleX
                                     translationY = (0.5f - (crop.top + crop.bottom) * 0.5f) * size.height * scaleY
-                                },
+                                }.testTag("pip-overlay-image-${clip.id}"),
                                 onError = {
                                     android.util.Log.w(
                                         "PipOverlayCanvas",

@@ -25,7 +25,7 @@ class Media3Engine(
     /**
      * Returns the bundled Media3 library version.
      */
-    override fun getVersion(): String = "1.5.0"
+    override fun getVersion(): String = "1.11.1"
 
     /**
      * Media3 supports lightweight operations:

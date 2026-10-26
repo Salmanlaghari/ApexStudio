@@ -6,7 +6,12 @@ import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ColorTimelineExportSnapshotTest {
     private val first = MediaClip("one", "One", "file:///one.mp4", 8000,
         trimStartMs = 1000, trimEndMs = 5000)

@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import androidx.media3.common.util.Size
 import androidx.media3.effect.GlMatrixTransformation
+import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.domain.model.ClipType
@@ -12,7 +13,14 @@ import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.VideoDrawingLayer
+import com.apexstudio.app.domain.model.visibleVideoDrawingLayers
 import com.apexstudio.app.domain.model.hasValidParameters
+import com.apexstudio.app.domain.model.VideoAdjustments
+import com.apexstudio.app.domain.model.toVideoAdjustments
+import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParameters
+import com.apexstudio.app.domain.model.MaskModel
+import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.data.color.hasValidRenderParameters
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
@@ -34,9 +42,6 @@ internal fun projectCompositionUnsupportedReason(
     if (clips.isEmpty()) return "Project export needs at least one main-track video clip."
     if (config.colorStudioGrade?.hasValidRenderParameters() == false) {
         return "Project export has an invalid Color Studio grade; reset or adjust it before exporting."
-    }
-    if (config.videoDrawings.any { it.strokes.isNotEmpty() }) {
-        return "Project export does not support project or clip drawings yet; export a selected clip to include artwork."
     }
 
     clips.forEach { clip ->
@@ -71,6 +76,9 @@ internal fun projectCompositionUnsupportedReason(
             return "Video clip '${clip.name}' has an invalid audio gain."
         }
         if (clip.backgroundReplace != null) return "Video clip '${clip.name}' has a background-replacement edit."
+        if (clip.chromaKeySettings?.hasValidChromaParameters() == false) {
+            return "Video clip '${clip.name}' has invalid chroma-key parameters."
+        }
         if (clip.textOverlays.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a caption with an invalid time range."
         }
@@ -87,15 +95,31 @@ internal fun projectCompositionUnsupportedReason(
         }
         if (clip.gpuFilterConfig != GpuFilterConfig() &&
             !OneTapLooks.isValidRenderConfig(clip.gpuFilterConfig)
-        ) return "Video clip '${clip.name}' has a color/filter edit that project export cannot render."
+        ) {
+            projectGpuFilterUnsupportedReason(clip.gpuFilterConfig)?.let { reason ->
+                return "Video clip '${clip.name}' has $reason"
+            }
+        }
         if (clip.projectVideoEffectId != null && com.apexstudio.app.data.template.ProjectVideoPresets.effect(clip.projectVideoEffectId) == null) {
             return "Video clip '${clip.name}' has an unknown project-video effect."
         }
         if (clip.videoCrop.sanitized() != clip.videoCrop) {
             return "Video clip '${clip.name}' has an invalid crop edit."
         }
-        if (clip.faceCropTrack != null) return "Video clip '${clip.name}' has an automatic face-crop track."
-        if (clip.mask != null) return "Video clip '${clip.name}' has a shape-mask edit."
+        clip.faceCropTrack?.let { track ->
+            if (!clip.videoCrop.isFullFrame) {
+                return "Video clip '${clip.name}' combines a dynamic face-crop track with a static crop; clear one crop before exporting."
+            }
+            if (track.outputAspectRatio !in 0.1f..10f) {
+                return "Video clip '${clip.name}' has a face-crop output aspect ratio outside the safe export range."
+            }
+        }
+        clip.mask?.let { mask ->
+            if (!MaskModel.isAvailable(mask.shape)) return "Video clip '${clip.name}' has an unavailable Blur Faces mask."
+            if (mask.shape == MaskShape.DRAW && MaskModel.outline(mask.shape, mask.drawPoints).size < 4) {
+                return "Video clip '${clip.name}' has invalid pen mask geometry."
+            }
+        }
         if (!clip.photoEdit.isDefault) return "Video clip '${clip.name}' has photo-only edits."
     }
 
@@ -150,6 +174,54 @@ internal fun projectCompositionUnsupportedReason(
     // musicMixTracks are supported as an explicit postmix after video composition.
     return null
 }
+
+/** Reject malformed persisted per-clip filter/LUT values instead of dropping them. */
+internal fun projectGpuFilterUnsupportedReason(config: GpuFilterConfig): String? {
+    fun valid(value: Float, range: ClosedFloatingPointRange<Float>) = value.isFinite() && value in range
+    if (!valid(config.filterIntensity, 0f..1f) || !valid(config.stylisticIntensity, 0f..1f) ||
+        !valid(config.effectParam, 0f..1f) || !valid(config.brightness, -1f..1f) ||
+        !valid(config.contrast, 0f..2f) || !valid(config.saturation, 0f..2f) ||
+        !valid(config.temperature, 2000f..8000f) || !valid(config.tint, -100f..100f) ||
+        !valid(config.exposure, -2f..2f) || !valid(config.gamma, 0.2f..3f) ||
+        !valid(config.highlights, 0f..1f) || !valid(config.shadows, 0f..1f) ||
+        !valid(config.vibrance, -1f..1f) || !valid(config.lightness, -1f..1f) ||
+        !valid(config.whites, -1f..1f) || !valid(config.blacks, -1f..1f) ||
+        !valid(config.hue, -180f..180f) || !valid(config.vignette, 0f..1f) ||
+        !valid(config.grain, 0f..1f) || !valid(config.clarity, -1f..1f) ||
+        !valid(config.denoise, 0f..1f) || !valid(config.sharpness, 0f..1f) ||
+        !valid(config.profileIntensity, 0f..1f)
+    ) return "an invalid per-clip filter/LUT configuration."
+    if (config.filterPresetId != null && FilterManifest.presetById(config.filterPresetId) == null) {
+        return "an unknown per-clip filter/LUT preset."
+    }
+    if (config.activeProfileId != null) {
+        return "a per-clip GPU color profile that project export cannot render."
+    }
+    if (config.gamma != 1f) return "per-clip gamma grading that project export cannot render."
+    if (config.stylisticEffect !in setOf(
+            com.apexstudio.app.data.filter.StylisticEffectType.NONE,
+            com.apexstudio.app.data.filter.StylisticEffectType.VIGNETTE,
+            com.apexstudio.app.data.filter.StylisticEffectType.SEPIA,
+            com.apexstudio.app.data.filter.StylisticEffectType.SHARPEN
+        )
+    ) return "a GPU-only per-clip stylistic effect that project export cannot render."
+    return null
+}
+
+/** Testable snapshot of the filter state attached to each project item. */
+internal data class ProjectItemFilterExport(val clipId: String, val config: GpuFilterConfig)
+
+internal fun projectItemFilterExports(clips: List<MediaClip>): List<ProjectItemFilterExport> =
+    clips.map { ProjectItemFilterExport(it.id, it.gpuFilterConfig) }
+
+/** Project artwork spans every item; clip artwork is included only for its owning export item. */
+internal fun projectDrawingLayersForClipExport(
+    layers: List<VideoDrawingLayer>,
+    clipId: String
+): List<VideoDrawingLayer> = visibleVideoDrawingLayers(layers, clipId).filter { it.strokes.isNotEmpty() }
+
+/** Maps the persisted GPUImage model onto the existing Media3 adjustment shader. */
+internal fun GpuFilterConfig.toProjectExportAdjustments(): VideoAdjustments = toVideoAdjustments()
 
 /** Overlay windows are expressed in the clip's output clock, starting at zero after its trim. */
 private fun Long.isValidProjectOverlayTime(endMs: Long): Boolean = this >= 0L && endMs >= this

@@ -1000,7 +1000,7 @@ private fun VideoClip.toLegacyKeyframeTrack(existing: KeyframeTrack): KeyframeTr
         val segmentCurve = times.getOrNull(index - 1)?.let(::curveAt)?.toLegacyCurve()
         val legacyCurve = when {
             existingKey == null -> segmentCurve ?: KeyframeCurve.LINEAR
-            segmentCurve == null || segmentCurve == existingKey.curve -> existingKey.curve
+            segmentCurve == null || segmentCurve.toSharedCurve() == existingKey.curve.toSharedCurve() -> existingKey.curve
             else -> segmentCurve
         }
         LegacyKeyframe(
@@ -1015,7 +1015,11 @@ private fun VideoClip.toLegacyKeyframeTrack(existing: KeyframeTrack): KeyframeTr
             effectIntensity = value.effectIntensity,
             filterIntensity = value.filterIntensity,
             saturation = value.saturation.takeIf { saturationKeyframes.any { key -> key.timeMs == time } },
-            curve = legacyCurve
+            curve = legacyCurve,
+            bezierCp1X = existingKey?.bezierCp1X,
+            bezierCp1Y = existingKey?.bezierCp1Y,
+            bezierCp2X = existingKey?.bezierCp2X,
+            bezierCp2Y = existingKey?.bezierCp2Y
         )
     }
     return KeyframeTrack(output).sorted()
@@ -1264,6 +1268,8 @@ private fun VideoClip.toUiKeyframeTrack(existing: KeyframeTrack): KeyframeTrack 
     return KeyframeTrack(
         times.map { time ->
             val value = animationAt(time)
+            val sharedCurve = curveAt(time)
+            val existingCurve = existingByTime[time]?.curve
             LegacyKeyframe(
                 id = existingByTime[time]?.id ?: "shared-$id-$time",
                 timeMs = time,
@@ -1276,7 +1282,15 @@ private fun VideoClip.toUiKeyframeTrack(existing: KeyframeTrack): KeyframeTrack 
                 effectIntensity = value.effectIntensity,
                 filterIntensity = value.filterIntensity,
                 saturation = value.saturation.takeIf { saturationKeyframes.isNotEmpty() },
-                curve = curveAt(time).toLegacyCurve()
+                curve = if (existingCurve != null && existingCurve.toSharedCurve() == sharedCurve) {
+                    existingCurve
+                } else {
+                    sharedCurve.toLegacyCurve()
+                },
+                bezierCp1X = existingByTime[time]?.bezierCp1X,
+                bezierCp1Y = existingByTime[time]?.bezierCp1Y,
+                bezierCp2X = existingByTime[time]?.bezierCp2X,
+                bezierCp2Y = existingByTime[time]?.bezierCp2Y
             )
         }
     ).sorted()

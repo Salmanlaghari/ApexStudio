@@ -87,9 +87,7 @@ class KeyframeAnimationEffect(
         }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
-            val sample = sharedClip?.let {
-                sampleSharedAtPresentationTimeUs(it, presentationTimeUs, timeMsAtPresentationTimeUs)
-            } ?: sampleAtPresentationTimeUs(track, presentationTimeUs, timeMsAtPresentationTimeUs)
+            val sample = sampleForPlayback(track, sharedClip, presentationTimeUs, timeMsAtPresentationTimeUs)
             try {
                 android.opengl.GLES20.glClearColor(0f, 0f, 0f, 1f)
                 android.opengl.GLES20.glClear(android.opengl.GLES20.GL_COLOR_BUFFER_BIT)
@@ -163,6 +161,32 @@ class KeyframeAnimationEffect(
                 ),
                 saturation = value.saturation
             )
+        }
+
+        /**
+         * The typed timeline supports only linear/smooth/ease-in/ease-out.
+         * Keep its evaluator for those legacy-compatible shapes, but use the
+         * same KeyframeTrack path in preview and export for custom Bezier,
+         * ease-in-out, hold, spring, and overshoot curves.
+         */
+        internal fun sampleForPlayback(
+            track: KeyframeTrack,
+            sharedClip: SharedVideoClip?,
+            presentationTimeUs: Long,
+            timeMsAtPresentationTimeUs: (Long) -> Long = { it.coerceAtLeast(0L) / 1_000L }
+        ): KeyframeAnimationSample {
+            val legacyOnlyCurve = track.keyframes.any { keyframe ->
+                keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.EASE_IN_OUT ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.BEZIER ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.HOLD ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.SPRING ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.OVERSHOOT
+            }
+            return if (sharedClip != null && !legacyOnlyCurve) {
+                sampleSharedAtPresentationTimeUs(sharedClip, presentationTimeUs, timeMsAtPresentationTimeUs)
+            } else {
+                sampleAtPresentationTimeUs(track, presentationTimeUs, timeMsAtPresentationTimeUs)
+            }
         }
 
         /** Saturation matrix in OpenGL column-major order; alpha is multiplied separately. */

@@ -3,6 +3,7 @@ package com.apexstudio.app.data.animation
 import android.net.Uri
 import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeCurve
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.timeline.Curve
 import com.apexstudio.app.domain.model.timeline.Keyframe as SharedKeyframe
@@ -71,6 +72,39 @@ class KeyframeAnimationEffectTest {
         assertEquals(0.75f, sample.transform.filterIntensity, 0.0001f)
         assertEquals(0.8f, clip.lutIntensityAt(sample.timeMs), 0.0001f)
         assertEquals(1.25f, sample.saturation, 0.0001f)
+    }
+
+    @Test
+    fun `preview and export sampler prefer legacy track for custom Bezier curves`() {
+        val track = KeyframeTrack(
+            listOf(
+                Keyframe("start", 0L, scale = 0f),
+                Keyframe(
+                    "end", 1_000L, scale = 1f, curve = KeyframeCurve.BEZIER,
+                    bezierCp1X = 0.1f, bezierCp1Y = 0.9f,
+                    bezierCp2X = 0.3f, bezierCp2Y = 1.2f
+                )
+            )
+        )
+        val sharedClip = SharedVideoClip(
+            uri = Uri.parse("file:///tmp/shared.mp4"),
+            inMs = 0L,
+            outMs = 1_000L,
+            transform = Transform(scaleKeyframes = listOf(
+                SharedKeyframe(0L, 0f, Curve.LINEAR),
+                SharedKeyframe(1_000L, 100f, Curve.LINEAR)
+            ))
+        )
+
+        val sample = KeyframeAnimationEffect.sampleForPlayback(
+            track = track,
+            sharedClip = sharedClip,
+            presentationTimeUs = 250_000L
+        )
+        val legacyExpected = KeyframeAnimationEffect.sampleAtPresentationTimeUs(track, 250_000L)
+
+        assertEquals(0.88327964f, sample.transform.scale, 0.00002f)
+        assertEquals(legacyExpected.transform.scale, sample.transform.scale, 0f)
     }
 
     @Test

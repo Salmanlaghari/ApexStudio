@@ -1214,7 +1214,12 @@ data class Keyframe(
      * leaving a hole that would clamp backwards.
      */
     val saturation: Float? = null,
-    val curve: KeyframeCurve = KeyframeCurve.LINEAR
+    val curve: KeyframeCurve = KeyframeCurve.LINEAR,
+    /** Optional custom cubic-Bezier controls for the segment ending at this keyframe. */
+    val bezierCp1X: Float? = null,
+    val bezierCp1Y: Float? = null,
+    val bezierCp2X: Float? = null,
+    val bezierCp2Y: Float? = null
 ) {
     companion object {
         fun identity(timeMs: Long, id: String = java.util.UUID.randomUUID().toString()) =
@@ -1265,6 +1270,98 @@ enum class KeyframeCurve {
     OVERSHOOT,
 }
 
+/** Shared easing math for playback, export, and the curve editor graph. */
+object KeyframeCurveMath {
+    private const val DEFAULT_CP1_X = 1.0 / 3.0
+    private const val DEFAULT_CP1_Y = 0.0
+    private const val DEFAULT_CP2_X = 2.0 / 3.0
+    private const val DEFAULT_CP2_Y = 1.0
+
+    /**
+     * Evaluate a normalized curve fraction. Bezier x controls are clamped to
+     * [0, 1] so x(t) remains monotonic; y controls may overshoot within
+     * [-0.35, 1.35] for pop effects. Missing controls use the legacy smoothstep.
+     */
+    fun evaluate(
+        progress: Float,
+        curve: KeyframeCurve,
+        bezierCp1X: Float? = null,
+        bezierCp1Y: Float? = null,
+        bezierCp2X: Float? = null,
+        bezierCp2Y: Float? = null
+    ): Float = evaluate(
+        progress.toDouble(), curve, bezierCp1X, bezierCp1Y, bezierCp2X, bezierCp2Y
+    ).toFloat()
+
+    /** Double precision variant used by [KeyframeTrack] on rendered frames. */
+    fun evaluate(
+        progress: Double,
+        curve: KeyframeCurve,
+        bezierCp1X: Float? = null,
+        bezierCp1Y: Float? = null,
+        bezierCp2X: Float? = null,
+        bezierCp2Y: Float? = null
+    ): Double {
+        val t = if (progress.isFinite()) progress.coerceIn(0.0, 1.0) else 0.0
+        return when (curve) {
+            KeyframeCurve.LINEAR -> t
+            KeyframeCurve.EASE_IN -> t * t
+            KeyframeCurve.EASE_OUT -> 1.0 - (1.0 - t) * (1.0 - t)
+            KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2.0 * t * t else 1.0 - 2.0 * (1.0 - t) * (1.0 - t)
+            KeyframeCurve.BEZIER -> {
+                val custom = bezierCp1X?.isFinite() == true && bezierCp1Y?.isFinite() == true &&
+                    bezierCp2X?.isFinite() == true && bezierCp2Y?.isFinite() == true
+                val x1 = (if (custom) bezierCp1X!!.toDouble() else DEFAULT_CP1_X).coerceIn(0.0, 1.0)
+                val y1 = (if (custom) bezierCp1Y!!.toDouble() else DEFAULT_CP1_Y).coerceIn(-0.35, 1.35)
+                val x2 = (if (custom) bezierCp2X!!.toDouble() else DEFAULT_CP2_X).coerceIn(0.0, 1.0)
+                val y2 = (if (custom) bezierCp2Y!!.toDouble() else DEFAULT_CP2_Y).coerceIn(-0.35, 1.35)
+                cubicBezierAtX(t, x1, y1, x2, y2)
+            }
+            KeyframeCurve.HOLD -> 0.0
+            KeyframeCurve.SPRING -> if (t <= 0.0) 0.0 else if (t >= 1.0) 1.0
+                else 1.0 - kotlin.math.exp(-6.0 * t) * kotlin.math.cos(11.0 * t)
+            KeyframeCurve.OVERSHOOT -> {
+                val c1 = 1.70158
+                val c3 = c1 + 1.0
+                1.0 + c3 * (t - 1.0).pow(3.0) + c1 * (t - 1.0).pow(2.0)
+            }
+        }
+    }
+
+    /** Solve x(t)=progress with Newton steps and a bounded bisection fallback. */
+    private fun cubicBezierAtX(progress: Double, x1: Double, y1: Double, x2: Double, y2: Double): Double {
+        if (progress <= 0.0) return 0.0
+        if (progress >= 1.0) return 1.0
+
+        var low = 0.0
+        var high = 1.0
+        var parameter = progress
+        repeat(8) {
+            val error = cubicCoordinate(parameter, x1, x2) - progress
+            if (kotlin.math.abs(error) <= 1e-8) return cubicCoordinate(parameter, y1, y2)
+            if (error < 0.0) low = parameter else high = parameter
+            val slope = cubicDerivative(parameter, x1, x2)
+            val candidate = if (slope > 1e-8) parameter - error / slope else Double.NaN
+            parameter = if (candidate.isFinite() && candidate > low && candidate < high) candidate else (low + high) * 0.5
+        }
+        repeat(24) {
+            parameter = (low + high) * 0.5
+            if (cubicCoordinate(parameter, x1, x2) < progress) low = parameter else high = parameter
+        }
+        return cubicCoordinate((low + high) * 0.5, y1, y2)
+    }
+
+    private fun cubicCoordinate(t: Double, p1: Double, p2: Double): Double {
+        val inverse = 1.0 - t
+        return 3.0 * inverse * inverse * t * p1 + 3.0 * inverse * t * t * p2 + t * t * t
+    }
+
+    private fun cubicDerivative(t: Double, p1: Double, p2: Double): Double {
+        val inverse = 1.0 - t
+        return 3.0 * inverse * inverse * p1 + 6.0 * inverse * t * (p2 - p1) + 3.0 * t * t * (1.0 - p2)
+    }
+}
+
 /**
  * Full animated-transform track attached to a single clip. The
  * track stores the keyframes sorted by time and exposes
@@ -1296,7 +1393,7 @@ data class KeyframeTrack(
             timeMsOf = { it.timeMs },
             valueOf = valueOf,
             // The legacy format assigns a segment's curve to its incoming (later) keyframe.
-            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next.curve).toFloat() },
+            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next).toFloat() },
             exactMatchUsesPriorSegment = true
         )
 
@@ -1351,7 +1448,7 @@ data class KeyframeTrack(
             type = FloatType,
             timeMsOf = { it.timeMs },
             valueOf = { requireNotNull(it.saturation) },
-            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next.curve).toFloat() },
+            easedFraction = { fraction, _, next -> ease(fraction.toDouble(), next).toFloat() },
             exactMatchUsesPriorSegment = true
         )
     }
@@ -1369,25 +1466,14 @@ data class KeyframeTrack(
     fun saturationFactorAt(timeMs: Long): Float =
         interpolateAt(timeMs).saturation ?: 1f
 
-    private fun ease(t: Double, curve: KeyframeCurve): Double = when (curve) {
-        KeyframeCurve.LINEAR -> t
-        KeyframeCurve.EASE_IN -> t * t
-        KeyframeCurve.EASE_OUT -> 1.0 - (1.0 - t) * (1.0 - t)
-        KeyframeCurve.EASE_IN_OUT -> if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t)
-        KeyframeCurve.BEZIER -> t * t * (3.0 - 2.0 * t) // Smoothstep cubic Bezier easing
-        KeyframeCurve.HOLD -> 0.0 // first keyframe value until the next one
-        // CapCut-style easeOutBack: overshoots past 1.0 then settles — buttery pop feel.
-        KeyframeCurve.OVERSHOOT -> {
-            val c1 = 1.70158
-            val c3 = c1 + 1.0
-            1.0 + c3 * (t - 1.0).pow(3.0) + c1 * (t - 1.0).pow(2.0)
-        }
-        // Damped spring: oscillates and settles at 1.0 — CapCut "Spring" entrance feel.
-        KeyframeCurve.SPRING -> {
-            if (t <= 0.0) 0.0 else if (t >= 1.0) 1.0
-            else 1.0 - kotlin.math.exp(-6.0 * t) * kotlin.math.cos(11.0 * t)
-        }
-    }
+    private fun ease(t: Double, keyframe: Keyframe): Double = KeyframeCurveMath.evaluate(
+        t,
+        keyframe.curve,
+        keyframe.bezierCp1X,
+        keyframe.bezierCp1Y,
+        keyframe.bezierCp2X,
+        keyframe.bezierCp2Y
+    )
 
     private fun lerp(a: Float, b: Float, t: Double): Float =
         (a + (b - a) * t.toFloat())

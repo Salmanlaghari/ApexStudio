@@ -86,7 +86,7 @@ class ContextualToolbarTest {
         assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
         assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
             "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
-            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
+            "SFX", "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
         )))
     }
 
@@ -327,7 +327,14 @@ class ContextualToolbarTest {
     @Test
     fun `replaceAudioTrackMedia swaps uri and resets trims`() {
         val vm = EditorViewModel()
-        val track = audioTrack().copy(volume = 0.5f, trimStartMs = 1000L, trimEndMs = 5000L)
+        val track = audioTrack().copy(
+            volume = 0.5f,
+            trimStartMs = 1000L,
+            trimEndMs = 5000L,
+            kind = AudioTrack.Kind.SFX,
+            sfxEffectId = "whoosh",
+            sfxIntensity = 0.6f
+        )
         vm._state.update {
             it.copy(project = Project(id = "p", name = "p", durationMs = 10_000L, audioTracks = listOf(track)))
         }
@@ -347,6 +354,8 @@ class ContextualToolbarTest {
         assertEquals(0L, replaced.trimStartMs)
         assertEquals(12_000L, replaced.trimEndMs)
         assertEquals(0.5f, replaced.volume, 0.001f) // volume preserved
+        assertNull(replaced.sfxEffectId)
+        assertEquals(1f, replaced.sfxIntensity, 0.001f)
         assertTrue(vm.state.value.beatMarkersMs.isEmpty()) // stale beats dropped
     }
 

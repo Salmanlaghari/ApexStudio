@@ -311,7 +311,9 @@ fun EditorViewModel.addAudioTrack(
     uri: String,
     kind: AudioTrack.Kind = AudioTrack.Kind.MUSIC,
     sourceDurationMs: Long = 0L,
-    startTimeMs: Long = livePlayheadMs()
+    startTimeMs: Long = livePlayheadMs(),
+    sfxEffectId: String? = null,
+    sfxIntensity: Float = 1f
 ) {
     if (_state.value.project == null) return
     pushUndo()
@@ -325,7 +327,9 @@ fun EditorViewModel.addAudioTrack(
         startTimeMs = startTimeMs.coerceAtLeast(0L),
         sourceDurationMs = finalDuration,
         trimStartMs = 0L,
-        trimEndMs = finalDuration
+        trimEndMs = finalDuration,
+        sfxEffectId = sfxEffectId.takeIf { kind == AudioTrack.Kind.SFX },
+        sfxIntensity = sfxIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
     )
     _state.update { s ->
         val p = s.project ?: return@update s

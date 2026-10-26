@@ -235,6 +235,7 @@ data class EditorState(
     // ---- Phase 3: Auto Clip / Music / History / Drafts ----
     val autoClipPanelOpen: Boolean = false,
     val musicLibraryPanelOpen: Boolean = false,
+    val sfxLibraryPanelOpen: Boolean = false,
     val historyDraftsPanelOpen: Boolean = false,
     val historyDraftsTab: HistoryDraftsTab = HistoryDraftsTab.HISTORY,
     // Auto-save bookkeeping: last time the project was auto-persisted.

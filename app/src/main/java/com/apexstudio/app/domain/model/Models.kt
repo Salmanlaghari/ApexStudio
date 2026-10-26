@@ -1108,7 +1108,11 @@ data class AudioTrack(
      * "Voiceover / SFX"). Defaults to MUSIC so pre-existing saved projects
      * decode unchanged. Voice recordings are stored as SFX.
      */
-    val kind: Kind = Kind.MUSIC
+    val kind: Kind = Kind.MUSIC,
+    /** Runtime-renderable recipe identity; null for imported and recorded audio. */
+    val sfxEffectId: String? = null,
+    /** Synthesis gain used to deterministically restore a cleared cached source. */
+    val sfxIntensity: Float = 1f
 ) {
     /**
      * The kind of audio track, used by the mixer UI to label faders

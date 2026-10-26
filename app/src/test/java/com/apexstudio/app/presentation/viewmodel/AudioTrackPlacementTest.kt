@@ -3,7 +3,10 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.Project
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -191,5 +194,42 @@ class AudioTrackPlacementTest {
         assertEquals(16_000L, vm.state.value.durationMs)
         assertEquals(16_000L, vm.state.value.project!!.durationMs)
         assertEquals(12_000L, vm.state.value.project!!.audioTracks.single().startTimeMs)
+    }
+
+    @Test
+    fun addingProceduralSfxPlacesSelectsAndUndoesAsOneAudioTrackEdit() {
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(
+                    project = Project(id = "p", name = "p", durationMs = 10_000L),
+                    durationMs = 10_000L
+                )
+            }
+            viewModel._playerPosition.update { 4_250L }
+        }
+
+        vm.addAudioTrack(
+            name = "Whoosh",
+            uri = "/cache/sfx/whoosh_650.wav",
+            kind = AudioTrack.Kind.SFX,
+            sourceDurationMs = 650L,
+            sfxEffectId = "whoosh",
+            sfxIntensity = 0.7f
+        )
+
+        val inserted = vm.state.value.project!!.audioTracks.single()
+        assertEquals(AudioTrack.Kind.SFX, inserted.kind)
+        assertEquals(4_250L, inserted.startTimeMs)
+        assertEquals("whoosh", inserted.sfxEffectId)
+        assertEquals(0.7f, inserted.sfxIntensity, 0.001f)
+        assertEquals(inserted.id, vm.state.value.selectedAudioTrackId)
+        assertEquals(listOf(inserted), vm.audio.value.tracks)
+        assertEquals(1, vm.undoStack.size)
+
+        runBlocking { vm.undo().join() }
+
+        assertTrue(vm.state.value.project!!.audioTracks.isEmpty())
+        assertNull(vm.state.value.selectedAudioTrackId)
+        assertTrue(vm.undoStack.isEmpty())
     }
 }

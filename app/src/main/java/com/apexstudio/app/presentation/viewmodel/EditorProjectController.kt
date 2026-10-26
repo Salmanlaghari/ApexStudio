@@ -72,6 +72,32 @@ internal fun EditorViewModel.loadProject() {
             } catch (_: Exception) { null }
         }
         val ctx = context
+        val recoveredAudioTracks = if (ctx == null) {
+            p.audioTracks
+        } else {
+            withContext(Dispatchers.IO) {
+                p.audioTracks.map { track ->
+                    val effectId = track.sfxEffectId ?: return@map track
+                    val effect = com.apexstudio.app.data.audio.sfx.SfxLibrary.find(effectId)
+                        ?: return@map track
+                    try {
+                        val durationMs = track.sourceDurationMs.takeIf { it > 0L }
+                            ?: effect.defaultDurationMs
+                        val source = com.apexstudio.app.data.audio.sfx.SfxWavCache.getOrCreate(
+                            ctx, effectId, durationMs, track.sfxIntensity
+                        )
+                        track.copy(
+                            uri = source.absolutePath,
+                            sourceDurationMs = durationMs,
+                            trimEndMs = track.trimEndMs.takeIf { it > 0L } ?: durationMs
+                        )
+                    } catch (error: Exception) {
+                        Log.w("EditorViewModel", "Could not restore cached SFX '${track.name}'", error)
+                        track
+                    }
+                }
+            }
+        }
         val validClips = p.clips.map { clip ->
             if (ctx != null) {
                 val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
@@ -98,12 +124,14 @@ internal fun EditorViewModel.loadProject() {
         } else normalizeOverlayTrackIndices(validClips)
         val updatedP = p.copy(
             clips = effectiveClips,
-            durationMs = computeTimelineDurationMs(effectiveClips, p.audioTracks),
+            audioTracks = recoveredAudioTracks,
+            durationMs = computeTimelineDurationMs(effectiveClips, recoveredAudioTracks),
             hiddenVideoLayers = p.hiddenVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet(),
             lockedVideoLayers = p.lockedVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet()
         ).syncSharedTimeline(
             importLegacyAnimation = true,
-            refreshLegacyClipFields = true
+            refreshLegacyClipFields = true,
+            refreshLegacyAudioFields = true
         )
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id

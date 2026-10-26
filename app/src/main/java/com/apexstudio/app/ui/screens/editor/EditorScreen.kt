@@ -849,6 +849,10 @@ private fun EditorScreenContent(
         isTimelineFocusMode = false
     }
 
+    BackHandler(enabled = state.musicLibraryPanelOpen || state.sfxLibraryPanelOpen) {
+        if (state.sfxLibraryPanelOpen) vm.closeSfxLibraryPanel() else vm.closeMusicLibraryPanel()
+    }
+
     val openEffectsWorkspace: () -> Unit = {
         val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
         if (clip != null) {
@@ -865,7 +869,7 @@ private fun EditorScreenContent(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color.Black)
+            .background(ApexPalette.BgBase)
     ) {
         if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
@@ -1264,6 +1268,20 @@ private fun EditorScreenContent(
                 sourceDurationMs = durationMs
             )
             musicMoodFilter = null
+        }
+    )
+    SfxLibraryPanelOverlay(
+        state = state,
+        vm = vm,
+        onAddEffect = { effect, filePath, durationMs, intensity ->
+            vm.addAudioTrack(
+                name = effect.displayName,
+                uri = filePath,
+                kind = AudioTrack.Kind.SFX,
+                sourceDurationMs = durationMs,
+                sfxEffectId = effect.id,
+                sfxIntensity = intensity
+            )
         }
     )
     HistoryDraftsPanelOverlay(

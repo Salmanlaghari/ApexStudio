@@ -322,15 +322,16 @@ fun ExportScreen(
         GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            cornerRadius = 18.dp,
+                .height(48.dp)
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            cornerRadius = 16.dp,
             backgroundColor = ApexPalette.BgGlassSoft,
             borderColor = ApexPalette.NeonPurple.copy(alpha = 0.35f)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan))),
                     contentAlignment = Alignment.Center
@@ -338,14 +339,11 @@ fun ExportScreen(
                     Icon(Icons.Default.IosShare, contentDescription = null, tint = ApexPalette.BgDeep)
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("EXPORT YOUR STORY", color = ApexPalette.NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("EXPORT YOUR STORY", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        if (wholeProject) "Whole project ready to render" else "Selected clip ready to render",
-                        color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold
-                    )
-                    Text(
-                        "$selectedResolution • $selectedAspect • ${selectedFps.toInt()} fps • MP4",
-                        color = ApexPalette.TextSecondary, fontSize = 11.sp
+                        "${if (wholeProject) "Whole project" else "Selected clip"} • $selectedResolution • $selectedAspect • MP4",
+                        color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1
                     )
                 }
             }

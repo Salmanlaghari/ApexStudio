@@ -69,6 +69,9 @@ fun TopAppBarSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.TopBarHeight)
+            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+            .background(EditorPalette.BgGlass)
+            .border(1.dp, EditorPalette.BorderGlass.copy(alpha = 0.8f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
             .padding(horizontal = EditorLayoutMetrics.TopBarHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -102,7 +105,7 @@ fun TopAppBarSection(
             Column(modifier = Modifier.widthIn(max = 110.dp)) {
                 Text("ApexStudio", color = EditorPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-                Text("Build ${BuildIdentity.shortCommit}", color = EditorPalette.NeonCyan, fontSize = 8.sp,
+                Text("EDIT PROJECT • ${BuildIdentity.shortCommit}", color = EditorPalette.NeonCyan, fontSize = 8.sp,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
             }
         }

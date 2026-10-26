@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
@@ -35,6 +36,7 @@ import com.apexstudio.app.domain.model.VideoCropSettings
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropRenderConfig
+import com.apexstudio.app.data.filter.toVideoAdjustments
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingTool
@@ -153,6 +155,16 @@ fun VideoPreviewArea(
     showFrame: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val usesViralHdrPipeline = gpuFilterConfig.activeProfileId ==
+        com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
+    val gpuFilterPreset = remember(context, gpuFilterConfig.filterPresetId, usesViralHdrPipeline) {
+        if (usesViralHdrPipeline && gpuFilterConfig.filterPresetId != null) {
+            com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
+                .firstOrNull { it.id == gpuFilterConfig.filterPresetId }
+        } else null
+    }
+    val gpuVideoAdjustments = remember(gpuFilterConfig) { gpuFilterConfig.toVideoAdjustments() }
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
     val workspaceEffectBinding = remember(workspaceEffects, workspaceEffectIntensityProvider) {
@@ -161,12 +173,25 @@ fun VideoPreviewArea(
     val editorGradeEffects = LocalEditorPreviewEffects.current
     LaunchedEffect(
         exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings,
-        workspaceEffectBinding.sourceEffects, editorGradeEffects, photoClip?.id
+        workspaceEffectBinding.sourceEffects, editorGradeEffects, photoClip?.id,
+        gpuFilterConfig, gpuFilterPreset
     ) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
+                val viralHdrEffects = if (usesViralHdrPipeline) {
+                    buildList<androidx.media3.common.Effect> {
+                        if (gpuFilterPreset != null && gpuFilterConfig.filterIntensity > 0f) {
+                            add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                                context, gpuFilterPreset, gpuFilterConfig.filterIntensity
+                            ))
+                        }
+                        if (!gpuVideoAdjustments.isDefault) {
+                            add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(gpuVideoAdjustments))
+                        }
+                    }
+                } else emptyList()
                 val geometryAndWorkspaceEffects = listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
                     com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(chromaKeySettings),
@@ -174,7 +199,7 @@ fun VideoPreviewArea(
                     *workspaceEffectBinding.renderEffects.toTypedArray()
                 )
                 player.setVideoEffects(
-                    mergeEditorPreviewEffects(geometryAndWorkspaceEffects, editorGradeEffects)
+                    mergeEditorPreviewEffects(geometryAndWorkspaceEffects, viralHdrEffects + editorGradeEffects)
                 )
                 if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
                 // A same-position seek may reuse a rendered buffer; re-prepare the
@@ -294,8 +319,8 @@ fun VideoPreviewArea(
             // still-image path and the intentional split-comparison fallback.
             if (shouldRenderComposeGrade(photoClip != null, lutCompareMode)) {
                 FilterPreviewOverlay(
-                    filterId = activeFilterId,
-                    intensity = filterIntensity,
+                    filterId = if (usesViralHdrPipeline) null else activeFilterId,
+                    intensity = if (usesViralHdrPipeline) 0f else filterIntensity,
                     adjustments = adjustments,
                     saturationMultiplier = if (photoClip != null) keyframedSaturationFactor else 1f,
                     compareMode = lutCompareMode,
@@ -306,7 +331,9 @@ fun VideoPreviewArea(
 
             // Export-parity GPU grades run on video frames; retain the Compose
             // approximation only for photos, compare mode, and GPU-only profiles.
-            if (shouldRenderComposeGpuFilter(photoClip != null, gpuFilterCompareMode, gpuFilterConfig)) {
+            if (!usesViralHdrPipeline &&
+                shouldRenderComposeGpuFilter(photoClip != null, gpuFilterCompareMode, gpuFilterConfig)
+            ) {
                 GpuVideoFilterOverlay(
                     config = gpuFilterConfig,
                     compareMode = gpuFilterCompareMode,

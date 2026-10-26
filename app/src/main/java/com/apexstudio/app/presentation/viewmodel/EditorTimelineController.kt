@@ -802,8 +802,16 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
     _playerPosition.value = position
     _audio.update { it.copy(tracks = snapshot.project.audioTracks) }
     _state.update { state ->
+        val activeClip = snapshot.project.clips.firstOrNull { it.id == state.selectedClipId }
+            ?: snapshot.project.clips.firstOrNull {
+                it.trackIndex == 0 && it.type == ClipType.VIDEO
+            }
+        val restoredFilter = activeClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
         state.copy(
             project = snapshot.project,
+            activeGpuFilterConfig = restoredFilter,
+            activeFilterId = restoredFilter.filterPresetId,
+            filterIntensity = restoredFilter.filterIntensity,
             durationMs = duration,
             playerPositionMs = position,
             currentTimeMs = position,

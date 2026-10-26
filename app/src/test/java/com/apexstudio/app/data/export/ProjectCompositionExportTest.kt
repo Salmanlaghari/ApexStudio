@@ -15,11 +15,12 @@ import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.ColorWheelVector
+import com.apexstudio.app.data.filter.OneTapLooks
+import com.apexstudio.app.data.filter.GpuFilterConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
 import kotlinx.serialization.json.Json
 import com.apexstudio.app.domain.model.MaskModel
@@ -243,6 +244,18 @@ class ProjectCompositionExportTest {
         assertNull(projectCompositionUnsupportedReason(listOf(clip()), config))
         assertTrue(projectCompositionUnsupportedReason(listOf(clip()), config.copy(fxSpeed = 5f))!!
             .contains("global FX settings"))
+    }
+
+    @Test
+    fun `project export accepts Viral HDR but still blocks unsupported GPU filter edits`() {
+        val viralClip = clip().copy(
+            gpuFilterConfig = OneTapLooks.VIRAL_HDR.applyWithIntensity(1f)
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(viralClip), ExportEngine.ExportConfig()))
+
+        val unsupportedClip = clip().copy(gpuFilterConfig = GpuFilterConfig(gamma = 1.2f))
+        assertTrue(projectCompositionUnsupportedReason(listOf(unsupportedClip), ExportEngine.ExportConfig())!!
+            .contains("per-clip gamma grading that project export cannot render"))
     }
 
     @Test

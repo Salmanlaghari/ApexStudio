@@ -42,8 +42,11 @@ fun EditorViewModel.closeGpuFilterPanel() = _state.update { it.copy(gpuFilterPan
 
 fun EditorViewModel.setGpuFilterConfig(config: com.apexstudio.app.data.filter.GpuFilterConfig) {
     _state.update { state ->
+        val targetId = state.selectedClipId ?: state.project?.clips?.firstOrNull {
+            it.trackIndex == 0 && it.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+        }?.id
         val updatedClips = state.project?.clips?.map { clip ->
-            if (clip.id == state.selectedClipId) {
+            if (clip.id == targetId) {
                 clip.copy(gpuFilterConfig = config)
             } else clip
         } ?: emptyList()
@@ -63,6 +66,36 @@ fun EditorViewModel.applyColorProfilePreset(profileId: String, intensity: Float 
     if (profile != null) {
         setGpuFilterConfig(profile.applyWithIntensity(intensity))
     }
+}
+
+/** Apply a featured profile to the active clip as one project-history transaction. */
+fun EditorViewModel.applyGpuFilterProfilePreset(profileId: String) {
+    val profile = com.apexstudio.app.data.filter.GpuColorProfiles.findById(profileId) ?: return
+    val snapshot = _state.value
+    val targetId = snapshot.selectedClipId
+        ?: snapshot.project?.clips?.firstOrNull {
+            it.trackIndex == 0 && it.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+        }?.id
+    val nextConfig = profile.applyWithIntensity(1f)
+    val currentConfig = snapshot.project?.clips?.firstOrNull { it.id == targetId }?.gpuFilterConfig
+    if (currentConfig == nextConfig) {
+        setGpuFilterConfig(nextConfig)
+        return
+    }
+
+    if (targetId != null) pushUndo()
+    _state.update { state ->
+        val clips = state.project?.clips?.map { clip ->
+            if (clip.id == targetId) clip.copy(gpuFilterConfig = nextConfig) else clip
+        } ?: emptyList()
+        state.copy(
+            activeGpuFilterConfig = nextConfig,
+            activeFilterId = nextConfig.filterPresetId,
+            filterIntensity = nextConfig.filterIntensity,
+            project = state.project?.copy(clips = clips)
+        )
+    }
+    if (targetId != null) persistProject()
 }
 
 

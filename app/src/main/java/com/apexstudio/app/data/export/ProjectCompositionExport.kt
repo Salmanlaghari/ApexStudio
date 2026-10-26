@@ -4,6 +4,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
@@ -92,8 +93,12 @@ internal fun projectCompositionUnsupportedReason(
         if (clip.stickers.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a sticker with an invalid time range."
         }
-        projectGpuFilterUnsupportedReason(clip.gpuFilterConfig)?.let { reason ->
-            return "Video clip '${clip.name}' has $reason"
+        if (clip.gpuFilterConfig != GpuFilterConfig() &&
+            !OneTapLooks.isValidRenderConfig(clip.gpuFilterConfig)
+        ) {
+            projectGpuFilterUnsupportedReason(clip.gpuFilterConfig)?.let { reason ->
+                return "Video clip '${clip.name}' has $reason"
+            }
         }
         if (clip.projectVideoEffectId != null && com.apexstudio.app.data.template.ProjectVideoPresets.effect(clip.projectVideoEffectId) == null) {
             return "Video clip '${clip.name}' has an unknown project-video effect."

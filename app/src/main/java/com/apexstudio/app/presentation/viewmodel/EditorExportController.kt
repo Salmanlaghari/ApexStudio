@@ -124,8 +124,12 @@ fun EditorViewModel.startExport(
     }
     _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
+    val selectedGpuFilterConfig = selected?.gpuFilterConfig
+        ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+    val usesViralHdrPipeline = selectedGpuFilterConfig.activeProfileId ==
+        com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
     var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
-    if (s.activeFilterId != null && context != null) {
+    if (!usesViralHdrPipeline && s.activeFilterId != null && context != null) {
         try {
             filterPreset = com.apexstudio.app.data.filter.LutFilterEngine(context!!).manifest.filters
                 .firstOrNull { it.id == s.activeFilterId }
@@ -161,8 +165,9 @@ fun EditorViewModel.startExport(
             videoFitMode = selected?.videoFitMode ?: com.apexstudio.app.domain.model.VideoFitMode.COVER,
             bitrateMbps = bitrateMbps,
             filterPreset = filterPreset,
-            filterIntensity = s.filterIntensity,
+            filterIntensity = if (usesViralHdrPipeline) 0f else s.filterIntensity,
             adjustments = s.adjustments,
+            gpuFilterConfig = selectedGpuFilterConfig,
             projectVideoEffectId = selected?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
             workspaceEffects = selected?.workspaceEffects.orEmpty(),
             videoCrop = selected?.videoCrop,

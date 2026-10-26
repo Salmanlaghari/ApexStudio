@@ -2147,7 +2147,8 @@ fun SfxLibraryPanelOverlay(
             .clickable { vm.closeSfxLibraryPanel() },
         contentAlignment = Alignment.BottomCenter
     ) {
-        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+        // Consume taps inside the sheet so they do not reach the dismissing backdrop.
+        Box(modifier = Modifier.fillMaxWidth().clickable { }) {
             SfxLibraryPanel(
                 onAddEffect = { effect, path, durationMs, intensity ->
                     onAddEffect(effect, path, durationMs, intensity)

@@ -227,7 +227,7 @@ internal fun DashboardHeader(onOpenSettings: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("YOUR CREATIVE SPACE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("YOUR CREATIVE WORKSPACE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Text("ApexStudio", color = ApexPalette.TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
             Text("Make every frame yours.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
         }
@@ -396,21 +396,21 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "New Video Project",
+                    "Create New Project",
                     color = ApexPalette.TextPrimary,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 22.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "EDIT • LAYER • CREATE",
+                    "CREATE • EDIT • SHARE",
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "Choose your clips. Shape your story.",
+                    "Start with video, photos, or both.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 13.sp
                 )

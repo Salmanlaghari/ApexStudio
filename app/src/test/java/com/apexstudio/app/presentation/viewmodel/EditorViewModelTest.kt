@@ -4,6 +4,7 @@ import com.apexstudio.app.presentation.state.EditorTool
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -208,5 +209,47 @@ class EditorViewModelTest {
         assertEquals(9000f, vm.state.value.lutTemperature, 0.001f)
         vm.setLutTemperature(100f)
         assertEquals(2000f, vm.state.value.lutTemperature, 0.001f)
+    }
+
+    @Test
+    fun `curve preview stays live and Done commits one undo step`() {
+        val originalKeyframe = com.apexstudio.app.domain.model.Keyframe(
+            id = "end", timeMs = 1_000L, scale = 1f,
+            curve = com.apexstudio.app.domain.model.KeyframeCurve.BEZIER
+        )
+        val clip = MediaClip(
+            "clip", "Clip", "file:///clip.mp4", 2_000L, trimEndMs = 2_000L,
+            keyframes = com.apexstudio.app.domain.model.KeyframeTrack(listOf(
+                com.apexstudio.app.domain.model.Keyframe("start", 0L, scale = 0f),
+                originalKeyframe
+            ))
+        )
+        val vm = viewModel().also {
+            it._state.value = it.state.value.copy(
+                project = Project("project", "Project", 2_000L, clips = listOf(clip)),
+                durationMs = 2_000L
+            )
+        }
+        val editedKeyframe = originalKeyframe.copy(
+            bezierCp1X = 0.1f, bezierCp1Y = 0.9f,
+            bezierCp2X = 0.3f, bezierCp2Y = 1.2f
+        )
+
+        vm.previewKeyframeCurve("clip", editedKeyframe.copy(bezierCp1X = 0.2f))
+        assertTrue(vm.undoStack.isEmpty())
+        assertEquals(0.2f, vm.state.value.project!!.clips.single().keyframes.keyframes.last().bezierCp1X!!, 0f)
+        vm.previewKeyframeCurve("clip", editedKeyframe)
+        vm.commitKeyframeCurve("clip", originalKeyframe, editedKeyframe)
+
+        assertEquals(1, vm.undoStack.size)
+        assertEquals(editedKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
+        assertEquals(originalKeyframe, vm.undoStack.single().project.clips.single().keyframes.keyframes.last())
+        val movedKeyframe = editedKeyframe.copy(timeMs = 1_200L)
+        vm.updateKeyframe("clip", editedKeyframe.id) { movedKeyframe }
+        assertEquals(movedKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
+        assertEquals(movedKeyframe, vm.state.value.project!!.syncSharedTimeline().clips.single().keyframes.keyframes.last())
+        assertEquals(1, vm.undoStack.size)
+        vm.undo()
+        assertEquals(originalKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
     }
 }

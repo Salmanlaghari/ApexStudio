@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,14 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeCurve
+import com.apexstudio.app.domain.model.KeyframeCurveMath
 import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
-import kotlin.math.cos
-import kotlin.math.exp
-import kotlin.math.pow
 
 enum class KeyframePropertyFilter(val label: String, val color: Color) {
     ALL("All", ApexPalette.NeonCyan),
@@ -118,7 +119,9 @@ fun KeyframePanel(
     selectedKeyframeTimeMs: Long? = null,
     openCurveEditorOnOpen: Boolean = false,
     onCurveEditorDismiss: () -> Unit = {},
-    initialPropertyFilter: KeyframePropertyFilter = KeyframePropertyFilter.ALL
+    initialPropertyFilter: KeyframePropertyFilter = KeyframePropertyFilter.ALL,
+    onPreviewCurve: (Keyframe) -> Unit = {},
+    onCommitCurve: ((Keyframe, Keyframe) -> Unit)? = null
 ) {
     val sorted = remember(track) { track.sorted().keyframes }
     var copiedKeyframe by remember { mutableStateOf<Keyframe?>(null) }
@@ -377,7 +380,7 @@ fun KeyframePanel(
                             val path = Path()
                             for (i in 0..60) {
                                 val t = i / 60f
-                                val eased = curveProgress(activeKeyframe.curve, t)
+                                val eased = curveProgress(activeKeyframe, t)
                                 val px = t * w; val py = h - eased * h
                                 if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
                             }
@@ -392,12 +395,13 @@ fun KeyframePanel(
     }
     if (curveEditorOpen && activeKeyframe != null) {
         CurveEditorBottomSheet(
-            selected = activeKeyframe.curve,
-            onSelect = { curve ->
-                onUpdate(activeKeyframe.copy(curve = curve))
-                curveEditorOpen = false
-                onCurveEditorDismiss()
+            keyframe = activeKeyframe,
+            onPreview = onPreviewCurve,
+            onCommit = { original, edited ->
+                if (onCommitCurve != null) onCommitCurve(original, edited)
+                else if (edited != original) onUpdate(edited)
             },
+            onCancel = onPreviewCurve,
             onDismiss = {
                 curveEditorOpen = false
                 onCurveEditorDismiss()
@@ -409,52 +413,152 @@ fun KeyframePanel(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CurveEditorBottomSheet(
-    selected: KeyframeCurve,
-    onSelect: (KeyframeCurve) -> Unit,
+    keyframe: Keyframe,
+    onPreview: (Keyframe) -> Unit,
+    onCommit: (Keyframe, Keyframe) -> Unit,
+    onCancel: (Keyframe) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val curves = listOf(KeyframeCurve.LINEAR, KeyframeCurve.BEZIER, KeyframeCurve.EASE_IN, KeyframeCurve.EASE_OUT)
-    val selectedChoice = selected.curveChoice()
+    val original = remember(keyframe.id) { keyframe }
+    var editing by remember(keyframe.id) { mutableStateOf(keyframe) }
+    var activeHandle by remember(keyframe.id) { mutableStateOf(0) }
+    val latestEditing by rememberUpdatedState(editing)
+    val publishEdit by rememberUpdatedState<(Keyframe) -> Unit>({ updated ->
+        editing = updated
+        onPreview(updated)
+    })
+    val graphPaddingPx = with(LocalDensity.current) { 14.dp.toPx() }
+    val handleRadiusPx = with(LocalDensity.current) { 8.dp.toPx() }
+    val hitRadiusPx = with(LocalDensity.current) { 26.dp.toPx() }
+    val curves = KeyframeCurve.values().toList()
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (editing != original) onCancel(original)
+            onDismiss()
+        },
         containerColor = ApexPalette.BgElevated,
         contentColor = ApexPalette.TextPrimary,
         modifier = Modifier.testTag("curve-editor-bottom-sheet")
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp).padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Curve editor", color = ApexPalette.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Choose how this keyframe eases into the next one.", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+            Text(
+                "This curve is stored on the selected end keyframe and shapes the segment from the previous keyframe into it.",
+                color = ApexPalette.TextSecondary, fontSize = 12.sp
+            )
             Box(
-                Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.BgBase).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp)).padding(10.dp)
+                Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgBase).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
             ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    drawLine(ApexPalette.BorderGlass, Offset(0f, h), Offset(w, 0f), 1f)
+                Canvas(
+                    Modifier.fillMaxSize().testTag("curve-editor-graph")
+                        .pointerInput(keyframe.id, editing.curve) {
+                            detectDragGestures(
+                                onDragStart = { touch ->
+                                    if (latestEditing.curve != KeyframeCurve.BEZIER) {
+                                        activeHandle = 0
+                                    } else {
+                                        val viewport = CurveGraphViewport(
+                                            size.width.toFloat(), size.height.toFloat(), graphPaddingPx, graphPaddingPx
+                                        )
+                                        val controls = latestEditing.bezierControls()
+                                        val first = viewport.point(controls.cp1X, controls.cp1Y)
+                                        val second = viewport.point(controls.cp2X, controls.cp2Y)
+                                        val firstDistance = (touch - first).getDistance()
+                                        val secondDistance = (touch - second).getDistance()
+                                        activeHandle = when {
+                                            minOf(firstDistance, secondDistance) > hitRadiusPx -> 0
+                                            firstDistance <= secondDistance -> 1
+                                            else -> 2
+                                        }
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    if (activeHandle != 0 && latestEditing.curve == KeyframeCurve.BEZIER) {
+                                        change.consume()
+                                        val viewport = CurveGraphViewport(
+                                            size.width.toFloat(), size.height.toFloat(), graphPaddingPx, graphPaddingPx
+                                        )
+                                        val position = viewport.values(change.position)
+                                        val controls = latestEditing.bezierControls()
+                                        val updated = if (activeHandle == 1) {
+                                            latestEditing.copy(
+                                                bezierCp1X = position.x.coerceIn(0f, 1f),
+                                                bezierCp1Y = position.y.coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX),
+                                                bezierCp2X = controls.cp2X,
+                                                bezierCp2Y = controls.cp2Y
+                                            )
+                                        } else {
+                                            latestEditing.copy(
+                                                bezierCp1X = controls.cp1X,
+                                                bezierCp1Y = controls.cp1Y,
+                                                bezierCp2X = position.x.coerceIn(0f, 1f),
+                                                bezierCp2Y = position.y.coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX)
+                                            )
+                                        }
+                                        publishEdit(updated)
+                                    }
+                                },
+                                onDragEnd = { activeHandle = 0 },
+                                onDragCancel = { activeHandle = 0 }
+                            )
+                        }
+                ) {
+                    val viewport = CurveGraphViewport(size.width, size.height, graphPaddingPx, graphPaddingPx)
+                    val bottomLeft = viewport.point(0f, 0f)
+                    val topRight = viewport.point(1f, 1f)
+                    val gridColor = ApexPalette.BorderGlass.copy(alpha = 0.55f)
+                    for (index in 0..4) {
+                        val fraction = index / 4f
+                        val x = viewport.point(fraction, 0f).x
+                        val y = viewport.point(0f, fraction).y
+                        drawLine(gridColor, Offset(x, topRight.y), Offset(x, bottomLeft.y), 1f)
+                        drawLine(gridColor, Offset(viewport.left, y), Offset(viewport.right, y), 1f)
+                    }
+                    drawLine(ApexPalette.TextSecondary.copy(alpha = 0.7f), Offset(viewport.left, bottomLeft.y), Offset(viewport.right, bottomLeft.y), 1.4f)
+                    drawLine(ApexPalette.TextSecondary.copy(alpha = 0.7f), Offset(viewport.left, topRight.y), Offset(viewport.right, topRight.y), 1.4f)
+
                     val path = Path()
-                    for (i in 0..60) {
-                        val t = i / 60f
-                        val eased = curveProgress(selectedChoice, t)
-                        val point = Offset(t * w, h - eased * h)
-                        if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                    for (index in 0..80) {
+                        val t = index / 80f
+                        val point = viewport.point(t, curveProgress(editing, t))
+                        if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
                     }
                     drawPath(path, ApexPalette.NeonCyan, style = Stroke(width = 3f))
-                    drawCircle(Color.White, 4f, Offset(0f, h))
-                    drawCircle(ApexPalette.NeonCyan, 4f, Offset(w, 0f))
+
+                    if (editing.curve == KeyframeCurve.BEZIER) {
+                        val controls = editing.bezierControls()
+                        val cp1 = viewport.point(controls.cp1X, controls.cp1Y)
+                        val cp2 = viewport.point(controls.cp2X, controls.cp2Y)
+                        drawLine(ApexPalette.NeonPurple.copy(alpha = 0.85f), bottomLeft, cp1, 1.5f)
+                        drawLine(ApexPalette.NeonEmerald.copy(alpha = 0.85f), topRight, cp2, 1.5f)
+                        drawCircle(ApexPalette.NeonPurple, handleRadiusPx, cp1)
+                        drawCircle(ApexPalette.NeonEmerald, handleRadiusPx, cp2)
+                    }
+                    drawCircle(Color.White, 5.dp.toPx(), bottomLeft)
+                    drawCircle(ApexPalette.NeonCyan, 5.dp.toPx(), topRight)
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(
+                "Bezier handles: x 0–1 · y −0.35–1.35. Drag either handle to update the preview live.",
+                color = ApexPalette.TextTertiary, fontSize = 10.sp
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
                 curves.forEach { curve ->
-                    val active = curve == selectedChoice
+                    val active = curve == editing.curve
                     Box(
-                        Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                        Modifier.width(82.dp).clip(RoundedCornerShape(8.dp))
                             .background(if (active) ApexPalette.NeonCyan.copy(alpha = .2f) else ApexPalette.BgBase)
                             .border(1.dp, if (active) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
-                            .clickable { onSelect(curve) }
+                            .clickable { publishEdit(editing.copy(curve = curve)) }
                             .testTag("curve-option-${curve.name.lowercase()}")
                             .padding(vertical = 11.dp),
                         contentAlignment = Alignment.Center
@@ -464,34 +568,98 @@ private fun CurveEditorBottomSheet(
                     }
                 }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp)).background(ApexPalette.BgBase)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                        .clickable {
+                            publishEdit(editing.copy(
+                                curve = KeyframeCurve.LINEAR,
+                                bezierCp1X = null, bezierCp1Y = null,
+                                bezierCp2X = null, bezierCp2Y = null
+                            ))
+                        }.padding(horizontal = 14.dp, vertical = 10.dp)
+                        .testTag("curve-reset")
+                ) {
+                    Text("Reset curve", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                }
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp)).background(ApexPalette.NeonCyan)
+                        .clickable {
+                            if (editing != original) onCommit(original, editing)
+                            onDismiss()
+                        }.padding(horizontal = 22.dp, vertical = 10.dp)
+                        .testTag("curve-done"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Done", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
 
-private fun KeyframeCurve.curveChoice(): KeyframeCurve = when (this) {
-    KeyframeCurve.LINEAR -> KeyframeCurve.LINEAR
-    KeyframeCurve.EASE_IN -> KeyframeCurve.EASE_IN
-    KeyframeCurve.EASE_OUT -> KeyframeCurve.EASE_OUT
-    else -> KeyframeCurve.BEZIER
-}
+private const val BEZIER_Y_MIN = -0.35f
+private const val BEZIER_Y_MAX = 1.35f
 
-private fun curveLabel(curve: KeyframeCurve): String = when (curve.curveChoice()) {
-    KeyframeCurve.LINEAR -> "Linear"
-    KeyframeCurve.BEZIER -> "Smooth"
-    KeyframeCurve.EASE_IN -> "Ease In"
-    KeyframeCurve.EASE_OUT -> "Ease Out"
-    else -> "Smooth"
-}
+private data class BezierControls(val cp1X: Float, val cp1Y: Float, val cp2X: Float, val cp2Y: Float)
 
-private fun curveProgress(curve: KeyframeCurve, fraction: Float): Float {
-    val t = fraction.coerceIn(0f, 1f)
-    return when (curve.curveChoice()) {
-        KeyframeCurve.LINEAR -> t
-        KeyframeCurve.EASE_IN -> t * t
-        KeyframeCurve.EASE_OUT -> 1f - (1f - t) * (1f - t)
-        else -> t * t * (3f - 2f * t)
+private fun Keyframe.bezierControls(): BezierControls {
+    val custom = bezierCp1X?.isFinite() == true && bezierCp1Y?.isFinite() == true &&
+        bezierCp2X?.isFinite() == true && bezierCp2Y?.isFinite() == true
+    return if (custom) {
+        BezierControls(
+            bezierCp1X!!.coerceIn(0f, 1f), bezierCp1Y!!.coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX),
+            bezierCp2X!!.coerceIn(0f, 1f), bezierCp2Y!!.coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX)
+        )
+    } else {
+        BezierControls(1f / 3f, 0f, 2f / 3f, 1f)
     }
 }
+
+private data class CurveGraphViewport(
+    val width: Float,
+    val height: Float,
+    val horizontalPadding: Float,
+    val verticalPadding: Float
+) {
+    val left: Float get() = horizontalPadding.coerceAtMost(width * 0.4f)
+    val right: Float get() = (width - horizontalPadding).coerceAtLeast(left + 1f)
+    val top: Float get() = verticalPadding.coerceAtMost(height * 0.4f)
+    val bottom: Float get() = (height - verticalPadding).coerceAtLeast(top + 1f)
+
+    fun point(x: Float, y: Float): Offset = Offset(
+        x = left + x.coerceIn(0f, 1f) * (right - left),
+        y = top + (BEZIER_Y_MAX - y.coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX)) /
+            (BEZIER_Y_MAX - BEZIER_Y_MIN) * (bottom - top)
+    )
+
+    fun values(position: Offset): Offset = Offset(
+        x = ((position.x - left) / (right - left)).coerceIn(0f, 1f),
+        y = (BEZIER_Y_MAX - (position.y - top) / (bottom - top) * (BEZIER_Y_MAX - BEZIER_Y_MIN))
+            .coerceIn(BEZIER_Y_MIN, BEZIER_Y_MAX)
+    )
+}
+
+private fun curveLabel(curve: KeyframeCurve): String = when (curve) {
+    KeyframeCurve.LINEAR -> "Linear"
+    KeyframeCurve.BEZIER -> "Bezier"
+    KeyframeCurve.EASE_IN -> "Ease In"
+    KeyframeCurve.EASE_OUT -> "Ease Out"
+    KeyframeCurve.EASE_IN_OUT -> "Ease In-Out"
+    KeyframeCurve.HOLD -> "Hold"
+    KeyframeCurve.SPRING -> "Spring"
+    KeyframeCurve.OVERSHOOT -> "Overshoot"
+}
+
+private fun curveProgress(keyframe: Keyframe, fraction: Float): Float = KeyframeCurveMath.evaluate(
+    fraction,
+    keyframe.curve,
+    keyframe.bezierCp1X,
+    keyframe.bezierCp1Y,
+    keyframe.bezierCp2X,
+    keyframe.bezierCp2Y
+)
 
 @Composable
 private fun KeyframeAction(label: String, enabled: Boolean, onClick: () -> Unit) {

@@ -1171,6 +1171,12 @@ fun KeyframePanelOverlay(
                             vm.updateKeyframe(it.id, kf.id) { _ -> kf }
                         }
                     },
+                    onPreviewCurve = { kf ->
+                        selectedClip?.let { vm.previewKeyframeCurve(it.id, kf) }
+                    },
+                    onCommitCurve = { original, edited ->
+                        selectedClip?.let { vm.commitKeyframeCurve(it.id, original, edited) }
+                    },
                     // CapCut-style auto-keyframe: slider changes at the
                     // playhead upsert one parameter there (no manual
                     // "+" needed once the clip has keyframes). Writes

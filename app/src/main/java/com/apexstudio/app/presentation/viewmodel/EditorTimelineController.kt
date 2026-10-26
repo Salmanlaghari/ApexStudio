@@ -483,13 +483,59 @@ fun EditorViewModel.updateKeyframe(clipId: String, keyframeId: String, transform
     if (targetTime == prior.timeMs && changed == prior) return
     // Time drags are continuous gestures; changing values or the curve is a discrete edit.
     if (targetTime == prior.timeMs && changed != prior) pushUndo()
-    val updated = project.updateSharedKeyframeTrack(clipId) { current ->
+    val sharedUpdated = project.updateSharedKeyframeTrack(clipId) { current ->
         val moved = if (targetTime == prior.timeMs) current else current.moveAnimationKeyframe(prior.timeMs, targetTime)
         moved.setAnimationCurveAt(targetTime, changed.curve.toTimelineCurve())
             .replaceLegacyKeyframeAt(changed.copy(timeMs = targetTime))
     }
+    val updated = sharedUpdated.withExactLegacyKeyframe(clipId, changed.copy(timeMs = targetTime))
     _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
     persistProject()
+}
+
+
+/** Apply transient curve-editor state to the live preview without saving or creating undo entries. */
+fun EditorViewModel.previewKeyframeCurve(clipId: String, keyframe: Keyframe) {
+    val original = _state.value.project ?: return
+    val updated = original.updateSharedKeyframeTrack(clipId) { current ->
+        current.setAnimationCurveAt(keyframe.timeMs, keyframe.curve.toTimelineCurve())
+            .replaceLegacyKeyframeAt(keyframe)
+    }.withExactLegacyKeyframe(clipId, keyframe)
+    if (updated == original) return
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updated) else state }
+}
+
+/** Commit a curve-editor gesture as one undoable edit, using its pre-drag model as the undo snapshot. */
+fun EditorViewModel.commitKeyframeCurve(clipId: String, originalKeyframe: Keyframe, editedKeyframe: Keyframe) {
+    if (originalKeyframe == editedKeyframe) return
+    val currentProject = _state.value.project ?: return
+    val restoredProject = currentProject.updateSharedKeyframeTrack(clipId) { current ->
+        current.setAnimationCurveAt(originalKeyframe.timeMs, originalKeyframe.curve.toTimelineCurve())
+            .replaceLegacyKeyframeAt(originalKeyframe)
+    }.withExactLegacyKeyframe(clipId, originalKeyframe)
+    _state.update { state ->
+        if (state.project?.id == currentProject.id) state.copy(project = restoredProject) else state
+    }
+    updateKeyframe(clipId, originalKeyframe.id) { editedKeyframe }
+}
+
+/** Keep the legacy UI/render adapter's exact curve identity and Bezier controls across a shared update. */
+private fun Project.withExactLegacyKeyframe(clipId: String, keyframe: Keyframe): Project {
+    val clipIndex = clips.indexOfFirst { it.id == clipId }
+    if (clipIndex < 0) return this
+    val clip = clips[clipIndex]
+    val priorKeys = clip.keyframes.keyframes
+    val targetIndex = priorKeys.indexOfFirst { it.id == keyframe.id }
+        .takeIf { it >= 0 }
+        ?: priorKeys.indexOfFirst { it.timeMs == keyframe.timeMs }
+    val updatedKeys = if (targetIndex < 0) {
+        priorKeys + keyframe
+    } else {
+        priorKeys.mapIndexed { index, prior -> if (index == targetIndex) keyframe else prior }
+    }
+    val updatedClips = clips.toMutableList()
+    updatedClips[clipIndex] = clip.copy(keyframes = KeyframeTrack(updatedKeys))
+    return copy(clips = updatedClips)
 }
 
 

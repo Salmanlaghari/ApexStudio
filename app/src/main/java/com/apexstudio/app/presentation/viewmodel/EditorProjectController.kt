@@ -44,6 +44,26 @@ internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaCli
 internal fun withImportedMainVideoFitDefault(clip: MediaClip): MediaClip =
     if (clip.type == ClipType.VIDEO) clip.copy(videoFitMode = VideoFitMode.COVER) else clip
 
+/** Recreates a cached procedural SFX source when a saved audio track is loaded. */
+internal fun recoverCachedSfxTrack(context: android.content.Context, track: AudioTrack): AudioTrack {
+    val effectId = track.sfxEffectId ?: return track
+    val effect = com.apexstudio.app.data.audio.sfx.SfxLibrary.find(effectId) ?: return track
+    return try {
+        val durationMs = track.sourceDurationMs.takeIf { it > 0L } ?: effect.defaultDurationMs
+        val source = com.apexstudio.app.data.audio.sfx.SfxWavCache.getOrCreate(
+            context, effectId, durationMs, track.sfxIntensity
+        )
+        track.copy(
+            uri = source.absolutePath,
+            sourceDurationMs = durationMs,
+            trimEndMs = track.trimEndMs.takeIf { it > 0L } ?: durationMs
+        )
+    } catch (error: Exception) {
+        Log.w("EditorViewModel", "Could not restore cached SFX '${track.name}'", error)
+        track
+    }
+}
+
 
 internal fun EditorViewModel.loadProject() {
     viewModelScope.launch {
@@ -76,26 +96,7 @@ internal fun EditorViewModel.loadProject() {
             p.audioTracks
         } else {
             withContext(Dispatchers.IO) {
-                p.audioTracks.map { track ->
-                    val effectId = track.sfxEffectId ?: return@map track
-                    val effect = com.apexstudio.app.data.audio.sfx.SfxLibrary.find(effectId)
-                        ?: return@map track
-                    try {
-                        val durationMs = track.sourceDurationMs.takeIf { it > 0L }
-                            ?: effect.defaultDurationMs
-                        val source = com.apexstudio.app.data.audio.sfx.SfxWavCache.getOrCreate(
-                            ctx, effectId, durationMs, track.sfxIntensity
-                        )
-                        track.copy(
-                            uri = source.absolutePath,
-                            sourceDurationMs = durationMs,
-                            trimEndMs = track.trimEndMs.takeIf { it > 0L } ?: durationMs
-                        )
-                    } catch (error: Exception) {
-                        Log.w("EditorViewModel", "Could not restore cached SFX '${track.name}'", error)
-                        track
-                    }
-                }
+                p.audioTracks.map { track -> recoverCachedSfxTrack(ctx, track) }
             }
         }
         val validClips = p.clips.map { clip ->

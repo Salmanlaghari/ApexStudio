@@ -2132,6 +2132,33 @@ fun MusicLibraryPanelOverlay(
     }
 }
 
+/** Built-in procedural SFX browser bottom-sheet overlay. */
+@Composable
+fun SfxLibraryPanelOverlay(
+    state: EditorState,
+    vm: EditorViewModel,
+    onAddEffect: (com.apexstudio.app.data.audio.sfx.SfxEffect, String, Long, Float) -> Unit
+) {
+    if (!state.sfxLibraryPanelOpen) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .clickable { vm.closeSfxLibraryPanel() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+            SfxLibraryPanel(
+                onAddEffect = { effect, path, durationMs, intensity ->
+                    onAddEffect(effect, path, durationMs, intensity)
+                    vm.closeSfxLibraryPanel()
+                },
+                onClose = { vm.closeSfxLibraryPanel() }
+            )
+        }
+    }
+}
+
 /** History & Drafts bottom-sheet overlay. */
 @Composable
 fun HistoryDraftsPanelOverlay(

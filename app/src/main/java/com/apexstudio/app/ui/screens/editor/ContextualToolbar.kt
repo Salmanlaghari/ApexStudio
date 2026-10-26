@@ -71,7 +71,7 @@ internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
 internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
-    "Music", "Enhance", "Color", "Templates", "Canvas",
+    "Music", "SFX", "Enhance", "Color", "Templates", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
     "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
@@ -183,6 +183,7 @@ fun ContextualBottomToolbar(
     onPhotoRotate: () -> Unit,
     // Phase 3 tools
     onMusic: () -> Unit,
+    onSfxLibrary: () -> Unit = {},
     onAutoClip: () -> Unit,
     onHistory: () -> Unit,
     onSignature: () -> Unit = {},
@@ -291,6 +292,7 @@ fun ContextualBottomToolbar(
     // to its existing route; nothing is represented by a placeholder action.
     val secondaryItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
+            CtxToolItem("SFX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary),
             CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
             CtxToolItem("Color", Icons.Default.Palette, onClick = onColorWorkspace),
             CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
@@ -436,6 +438,7 @@ fun ContextualBottomToolbar(
             }
             add(CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix))
             add(CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic))
+            add(CtxToolItem("Sound FX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary))
             add(CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio))
             add(CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord))
             if (!isLegacyAudioClipSelected) {
@@ -1089,6 +1092,7 @@ fun EditorBottomToolbarSection(
         }?.type == ClipType.OVERLAY,
         // Phase 3 tools.
         onMusic = { vm.openMusicLibraryPanel() },
+        onSfxLibrary = { vm.openSfxLibraryPanel() },
         onAutoClip = { vm.openAutoClipPanel() },
         onHistory = { vm.openHistoryDraftsPanel() },
         onSignature = onSignature,

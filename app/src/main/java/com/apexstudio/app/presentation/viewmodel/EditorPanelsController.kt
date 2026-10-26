@@ -208,9 +208,17 @@ fun EditorViewModel.openAutoClipPanel() = _state.update { it.copy(autoClipPanelO
 
 fun EditorViewModel.closeAutoClipPanel() = _state.update { it.copy(autoClipPanelOpen = false) }
 
-fun EditorViewModel.openMusicLibraryPanel() = _state.update { it.copy(musicLibraryPanelOpen = true) }
+fun EditorViewModel.openMusicLibraryPanel() = _state.update {
+    it.copy(musicLibraryPanelOpen = true, sfxLibraryPanelOpen = false)
+}
 
 fun EditorViewModel.closeMusicLibraryPanel() = _state.update { it.copy(musicLibraryPanelOpen = false) }
+
+fun EditorViewModel.openSfxLibraryPanel() = _state.update {
+    it.copy(sfxLibraryPanelOpen = true, musicLibraryPanelOpen = false)
+}
+
+fun EditorViewModel.closeSfxLibraryPanel() = _state.update { it.copy(sfxLibraryPanelOpen = false) }
 
 fun EditorViewModel.openHistoryDraftsPanel(
     tab: com.apexstudio.app.presentation.state.HistoryDraftsTab =

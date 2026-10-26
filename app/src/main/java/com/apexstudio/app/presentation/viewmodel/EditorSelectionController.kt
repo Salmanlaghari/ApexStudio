@@ -164,7 +164,9 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
                 name = meta.name,
                 uri = meta.uri,
                 trimStartMs = 0L,
-                trimEndMs = newDur
+                trimEndMs = newDur,
+                sfxEffectId = null,
+                sfxIntensity = 1f
             )
         }
         val after = updated.first { it.id == trackId }
@@ -192,7 +194,14 @@ fun EditorViewModel.replaceAudioTrackMedia(trackId: String, meta: MediaMetadata)
         val newDur = meta.durationMs.coerceAtLeast(500L)
         s.copy(tracks = s.tracks.map { track ->
             if (track.id != trackId) return@map track
-            track.copy(name = meta.name, uri = meta.uri, trimStartMs = 0L, trimEndMs = newDur)
+            track.copy(
+                name = meta.name,
+                uri = meta.uri,
+                trimStartMs = 0L,
+                trimEndMs = newDur,
+                sfxEffectId = null,
+                sfxIntensity = 1f
+            )
         })
     }
     persistProject()

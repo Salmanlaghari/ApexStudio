@@ -319,6 +319,35 @@ fun ExportScreen(
             onBack = { if (export.isExporting) vm.cancelCurrentExport() else onBack() },
             onExport = if (!export.isExporting && canRequestVideoExport) requestVideoExport else null
         )
+        GlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            cornerRadius = 16.dp,
+            backgroundColor = ApexPalette.BgGlassSoft,
+            borderColor = ApexPalette.NeonPurple.copy(alpha = 0.35f)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.IosShare, contentDescription = null, tint = ApexPalette.BgDeep)
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("EXPORT YOUR STORY", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${if (wholeProject) "Whole project" else "Selected clip"} • $selectedResolution • $selectedAspect • MP4",
+                        color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
         Column(
             modifier = Modifier
                 .weight(1f)

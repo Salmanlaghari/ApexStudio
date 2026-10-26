@@ -20,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,9 +100,6 @@ private fun EditorScreenContent(
     onCloseWorkspace: () -> Unit
 ) {
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
-    val configuration = LocalConfiguration.current
-    val landscapeEditor = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
-        configuration.screenWidthDp >= 600
     val savedState by vm.state.collectAsStateWithLifecycle()
     var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
@@ -931,9 +927,9 @@ private fun EditorScreenContent(
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
         AdaptiveEditorWorkspace(
-            // Use the wide-screen editor for tablets, Chromebooks and landscape
-            // phones; keep the preview-first stack on compact portrait screens.
-            landscape = landscapeEditor,
+            // PR169/170's preview-first stacked shell is the editor default;
+            // adaptive landscape remains available to explicit workspace hosts.
+            landscape = false,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
@@ -951,7 +947,7 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
-            fitAvailableHeight = landscapeEditor,
+            fitAvailableHeight = false,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
@@ -962,7 +958,7 @@ private fun EditorScreenContent(
             timeline = {
         if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
             EditorTransportSection(
-                compactLandscape = landscapeEditor,
+                compactLandscape = false,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,

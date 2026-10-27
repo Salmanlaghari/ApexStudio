@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +70,7 @@ import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.components.compactTimelineHeight
 import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
@@ -1371,6 +1373,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         Box(
             Modifier
                 .size(stageSize.width.dp, stageSize.height.dp)
+                .testTag("editor-preview-frame")
                 .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
                 .background(Color.Black)
                 .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
@@ -1790,8 +1793,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // No persistent property strip above the timeline. Keyframe/Animation stay
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
+    val compactTimelineHostHeight = if (isTimelineFocusMode) null else {
+        compactTimelineHeight(state) + (if (compactLandscape) 44.dp else 26.dp) + 2.dp
+    }
     CenteredTimelineWorkspace(
-        layoutWeight = timelineTrackLayoutWeight(isTimelineFocusMode)
+        layoutWeight = timelineTrackLayoutWeight(isTimelineFocusMode),
+        compactHeight = compactTimelineHostHeight
     ) {
     Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
         if (compactLandscape) {

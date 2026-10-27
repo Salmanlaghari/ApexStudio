@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,13 +11,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -179,6 +181,221 @@ internal fun FilterWorkspacePanel(
         ScrollState(initial = with(density) { 320.dp.roundToPx() })
     }
 
+    if (compactPhone) {
+        var mobileTuningExpanded by remember(originalClip.id) { mutableStateOf(false) }
+        Surface(
+            color = background,
+            contentColor = foreground,
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+            modifier = Modifier.testTag("filter-workspace-panel").heightIn(max = panelMaxHeight)
+        ) {
+            Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight)
+                .padding(horizontal = 12.dp, vertical = 4.dp)) {
+                Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filters", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onPreviewClip(originalClip); onDismiss() },
+                        modifier = Modifier.testTag("filter-close")) {
+                        Icon(Icons.Default.Close, contentDescription = "Close filters", tint = foreground)
+                    }
+                }
+
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Looks", fontSize = 13.sp)
+                    if (disabledReason != null) {
+                        Text(disabledReason, color = EditorPalette.Warning, fontSize = 10.sp,
+                            lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("filter-look-categories")) {
+                        items(categories) { name ->
+                            FilterChip(selected = category == name, onClick = { category = name },
+                                label = { Text(name, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EditorPalette.NeonPurple.copy(alpha = 0.18f),
+                                    selectedLabelColor = EditorPalette.NeonPurple
+                                ), modifier = Modifier.testTag("filter-look-category-$name"))
+                        }
+                    }
+                    Column(Modifier.fillMaxWidth().testTag("filter-presets-card")) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                            items(categoryCatalog, key = { it.id }) { preset ->
+                                val selected = selectedId == preset.id
+                                Column(
+                                    Modifier.width(70.dp).clip(RoundedCornerShape(10.dp))
+                                        .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgDeep)
+                                        .border(if (selected) 2.dp else 1.dp,
+                                            if (selected) EditorPalette.NeonPurple else EditorPalette.BorderGlass,
+                                            RoundedCornerShape(10.dp))
+                                        .testTag("filter-preset-${preset.id}")
+                                        .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
+                                        .semantics { contentDescription = "${preset.label}: ${preset.description}" }
+                                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    val sample = filterSampleBitmaps[preset.id]
+                                    if (sample != null) {
+                                        Image(bitmap = sample, contentDescription = "${preset.label} sample preview",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                                                .clip(RoundedCornerShape(6.dp)).testTag("filter-sample-${preset.id}"))
+                                    } else {
+                                        Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(6.dp))
+                                            .background(Color(preset.swatchArgb))) {
+                                            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                                        }
+                                    }
+                                    Text(preset.label, color = foreground, fontSize = 10.sp,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                    Text("${catalog.size} looks · ${categoryCatalog.size} shown",
+                        fontSize = 10.sp, color = EditorPalette.TextSecondary)
+
+                    TextButton(onClick = { mobileTuningExpanded = !mobileTuningExpanded },
+                        modifier = Modifier.fillMaxWidth().height(28.dp).testTag("filter-details-toggle")) {
+                        Text(if (mobileTuningExpanded) "Hide range & adjustments" else "Range & adjustments",
+                            fontSize = 11.sp, color = EditorPalette.TextSecondary)
+                    }
+                    if (mobileTuningExpanded) {
+                    Column(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().testTag("filter-source-card")) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Source range  ${startMs}–${endMs} ms", fontSize = 11.sp,
+                                color = EditorPalette.TextSecondary, modifier = Modifier.weight(1f))
+                            IconButton(onClick = {
+                                if (!isPlaying) onSeekSource(startMs)
+                                onTogglePlayback()
+                            }, enabled = enabled, modifier = Modifier.testTag("filter-play-preview")) {
+                                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause filter preview" else "Play filter preview",
+                                    tint = foreground)
+                            }
+                            IconButton(onClick = {
+                                effects = originalClip.workspaceEffects
+                                val idx = effects.indexOfFirst { it.id in WorkspaceEffectPresets.filterIds }.takeIf { it >= 0 }
+                                selectedIndex = idx
+                                idx?.let { selectSavedFilter(it) } ?: run {
+                                    selectedId = catalog.first().id
+                                    intensity = 0.78f; exposure = 0f; contrast = 1f; saturation = 1f
+                                    startMs = originalClip.trimStartMs; endMs = originalClip.trimEndMs
+                                }
+                            }, enabled = dirty || selectedIndex != firstExisting,
+                                modifier = Modifier.testTag("filter-undo")) {
+                                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo filter draft", tint = foreground)
+                            }
+                        }
+                        val filterEffects = effects.withIndex().filter { it.value.id in WorkspaceEffectPresets.filterIds }
+                        if (filterEffects.isNotEmpty()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                items(filterEffects, key = { "${it.index}-${it.value.id}" }) { indexed ->
+                                    val preset = WorkspaceFilterPresets.find(indexed.value.id)
+                                    AssistChip(onClick = { selectSavedFilter(indexed.index) },
+                                        label = { Text("${preset?.label ?: indexed.value.id}  ${indexed.value.startMs}–${indexed.value.endMs}ms", maxLines = 1) },
+                                        leadingIcon = { Box(Modifier.size(9.dp).clip(RoundedCornerShape(3.dp))
+                                            .background(Color(preset?.swatchArgb ?: 0xFF8C91A0))) },
+                                        modifier = Modifier.testTag("filter-saved-${indexed.index}"))
+                                }
+                            }
+                        }
+                        TextButton(onClick = {
+                            selectedIndex = null
+                            intensity = 0.78f; exposure = 0f; contrast = 1f; saturation = 1f
+                            startMs = originalClip.trimStartMs; endMs = originalClip.trimEndMs
+                        }, enabled = enabled, modifier = Modifier.testTag("filter-new-range")) {
+                            Text(if (selectedIndex == null) "Choose a look for a new range" else "Add another range", fontSize = 11.sp)
+                        }
+                        if (validRange) {
+                            val rangeStart = ((startMs - originalClip.trimStartMs).toFloat() / sourceSpan).coerceIn(0f, 1f)
+                            val rangeEnd = ((endMs - originalClip.trimStartMs).toFloat() / sourceSpan).coerceIn(rangeStart, 1f)
+                            RangeSlider(value = rangeStart..rangeEnd, onValueChange = { fractions ->
+                                vm.setPlaying(false)
+                                val start = originalClip.trimStartMs + (fractions.start * sourceSpan).toLong()
+                                val end = originalClip.trimStartMs + (fractions.endInclusive * sourceSpan).toLong()
+                                startMs = start.coerceIn(originalClip.trimStartMs, originalClip.trimEndMs - 1L)
+                                endMs = end.coerceIn(startMs + 1L, originalClip.trimEndMs)
+                                if (selectedIndex != null) updateSelected(currentDraft())
+                            }, onValueChangeFinished = { onSeekSource(startMs) },
+                                enabled = enabled && validRange && selectedIndex != null,
+                                modifier = Modifier.fillMaxWidth().height(36.dp).testTag("filter-source-range"))
+                        }
+                    }
+
+                    Column(Modifier.fillMaxWidth().testTag("filter-tuning-card")) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Strength", fontSize = 11.sp, modifier = Modifier.width(58.dp))
+                            Slider(value = intensity, onValueChange = {
+                                intensity = it
+                                if (selectedIndex != null) updateSelected(currentDraft().copy(intensity = it))
+                            }, valueRange = 0f..1f, enabled = enabled && selectedIndex != null,
+                                modifier = Modifier.weight(1f).height(32.dp).testTag("filter-intensity"))
+                            Text("${(intensity * 100).toInt()}%", fontSize = 10.sp, modifier = Modifier.width(34.dp))
+                            IconButton(onClick = {
+                                val idx = selectedIndex
+                                if (idx != null && idx in effects.indices) {
+                                    effects = effects.toMutableList().also { it.removeAt(idx) }
+                                    selectedIndex = null
+                                }
+                            }, enabled = enabled && selectedIndex != null,
+                                modifier = Modifier.testTag("filter-remove")) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground)
+                            }
+                        }
+                        state.playerError?.let { Text("Preview failed: $it. Apply is disabled; choose another look or Cancel.",
+                            color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    }
+
+                    Column(Modifier.fillMaxWidth().testTag("filter-customize-card")) {
+                        TextButton(onClick = { customizeExpanded = !customizeExpanded },
+                            enabled = enabled && selectedIndex != null,
+                            modifier = Modifier.testTag("filter-customize-toggle")) {
+                            Text(if (customizeExpanded) "Adjustments  −" else "Adjustments  +", fontSize = 11.sp,
+                                color = EditorPalette.TextSecondary)
+                        }
+                        if (customizeExpanded) {
+                            listOf(Triple("Exposure", exposure, -2f..2f),
+                                Triple("Contrast", contrast, 0.5f..1.5f),
+                                Triple("Saturation", saturation, 0f..2f)).forEach { (label, value, bounds) ->
+                                Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label, fontSize = 10.sp, modifier = Modifier.width(58.dp))
+                                    Slider(value = value, onValueChange = { changed ->
+                                        when (label) {
+                                            "Exposure" -> exposure = changed
+                                            "Contrast" -> contrast = changed
+                                            else -> saturation = changed
+                                        }
+                                        if (selectedIndex != null) updateSelected(currentDraft())
+                                    }, valueRange = bounds, enabled = enabled && selectedIndex != null,
+                                        modifier = Modifier.weight(1f).height(28.dp).testTag("filter-${label.lowercase()}"))
+                                    Text(if (label == "Exposure") "${"%.1f".format(value)} EV" else "${"%.2f".format(value)}×",
+                                        fontSize = 9.sp, modifier = Modifier.width(42.dp))
+                                }
+                            }
+                        }
+                    }
+                    }
+                    }
+                }
+
+                Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { onPreviewClip(originalClip); onDismiss() },
+                        modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
+                    Button(onClick = {
+                        if (enabled && state.playerError == null && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
+                    }, enabled = enabled && dirty && state.playerError == null,
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
+                        colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)) {
+                        Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Apply")
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Surface(
         color = background,
         contentColor = foreground,
@@ -230,7 +447,7 @@ internal fun FilterWorkspacePanel(
                                     endMs = originalClip.trimEndMs
                                 }
                             }, enabled = dirty || selectedIndex != firstExisting, modifier = Modifier.testTag("filter-undo")) {
-                                Icon(Icons.Default.Undo, contentDescription = "Undo filter draft", tint = foreground)
+                                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo filter draft", tint = foreground)
                             }
                         }
                         if (disabledReason != null) {

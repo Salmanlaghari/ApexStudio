@@ -58,8 +58,8 @@ class TimelineFocusModeControlTest {
         val normalPreviewHeight = paneHeight("preview-pane")
         val normalTimelineHeight = paneHeight("timeline-pane")
         assertTrue("normal preview should have useful height", normalPreviewHeight > 100f)
-        assertTrue("default mobile editing should prioritize the timeline", normalTimelineHeight > normalPreviewHeight)
-        assertTrue("default timeline should retain a substantial working area", normalTimelineHeight > 260f)
+        assertTrue("default mobile editing should prioritize the source-ratio preview", normalPreviewHeight > normalTimelineHeight)
+        assertTrue("default timeline should retain an accessible working area", normalTimelineHeight > 120f)
 
         compose.onNodeWithContentDescription("Expand timeline to full height").performClick()
 
@@ -80,7 +80,7 @@ class TimelineFocusModeControlTest {
     }
 
     @Test
-    fun defaultTimelineFirstSplitKeepsPreviewReachableAt400Dp() {
+    fun previewFirstSplitKeepsTimelineReachableAt400Dp() {
         compose.setContent {
             var isFocused by remember { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().height(400.dp)) {
@@ -103,7 +103,8 @@ class TimelineFocusModeControlTest {
         val previewHeight = paneHeight("preview-pane")
         val timelineHeight = paneHeight("timeline-pane")
         assertTrue("Preview should stay reachable in the default mobile layout: $previewHeight", previewHeight > 100f)
-        assertTrue("Timeline should remain the larger working pane: $timelineHeight", timelineHeight > previewHeight)
+        assertTrue("Preview should use the larger pane for portrait source footage: $previewHeight", previewHeight > timelineHeight)
+        assertTrue("Timeline remains visible and reachable: $timelineHeight", timelineHeight > 70f)
     }
 
     private fun paneHeight(tag: String): Float = compose

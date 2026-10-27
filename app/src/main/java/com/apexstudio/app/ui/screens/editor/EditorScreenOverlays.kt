@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
@@ -1349,7 +1350,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     }
     val previewStageAspectRatio = editorPreviewStageAspectRatio(sourceVideoAspectRatio, compositionAspectRatio)
     val portraitScale = portraitPreviewScale(sourceVideoAspectRatio)
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             // Keep the preview/player subtree composed in focus mode while
@@ -1358,25 +1359,29 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
                 else -> Modifier.weight(editorPreviewLayoutWeight(isTimelineFocusMode))
             })
-            // The stage now reaches directly from the app bar to transport.
-            // Its border surrounds the entire available preview, not just the
-            // aspect-fitted image; FIT and all overlay coordinates stay intact.
-            .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
-            .background(Color.Black)
-            .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
-                Modifier.border(
-                    1.dp,
-                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-                        Color(0xFF3B6978), Color(0xFF202C42), Color(0xFF60517C)
-                    )),
-                    RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)
-                ))
+            .background(ApexPalette.BgBase)
             .semantics { contentDescription = "Editor preview stage" },
         contentAlignment = Alignment.TopCenter
     ) {
-        // Keep the historical flexible preview frame, but fit the entire
-        // source frame (player AND normalized overlays) to decoded media geometry.
-        // The export aspect remains the fallback before source dimensions are known.
+        val stageSize = if (isFullscreenPreview) PreviewStageSize(maxWidth.value, maxHeight.value)
+            else fittedPreviewStageSize(maxWidth.value, maxHeight.value, previewStageAspectRatio)
+                ?: PreviewStageSize(maxWidth.value, maxHeight.value)
+        Box(
+            Modifier
+                .size(stageSize.width.dp, stageSize.height.dp)
+                .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
+                .background(Color.Black)
+                .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
+                    Modifier.border(
+                        1.dp,
+                        androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+                            Color(0xFF3B6978), Color(0xFF202C42), Color(0xFF60517C)
+                        )),
+                        RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)
+                    )),
+            contentAlignment = Alignment.TopCenter
+        ) {
+        // Keep player, overlays, and gesture coordinates on the same source-ratio canvas.
         PreviewContentCanvas(
             mediaAspectRatio = previewStageAspectRatio,
             isCoverMode = false,
@@ -1725,6 +1730,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
         }
         }
     }

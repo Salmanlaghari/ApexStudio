@@ -934,6 +934,7 @@ fun ChromaKeyPanelOverlay(
     mediaPicker: MediaPickerHelper
 ) {
     if (!state.chromaKeyPanelOpen) return
+    val targetAvailable = state.selectedChromaKeyTarget() != null
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -948,7 +949,8 @@ fun ChromaKeyPanelOverlay(
                 onPickCustomBg = {
                     mediaPicker.pickSingleMedia.launch("image/*")
                 },
-                onClose = { vm.closeChromaKeyPanel() }
+                onClose = { vm.closeChromaKeyPanel() },
+                targetAvailable = targetAvailable
             )
         }
     }

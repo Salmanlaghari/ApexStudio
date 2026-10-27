@@ -87,6 +87,30 @@ class FilterWorkspacePanelTest {
         compose.runOnIdle { assertEquals(source, vm.state.value.project!!.clips.single()) }
     }
 
+    @Test fun `selected look reaches the live renderer binding before Apply and persists after Apply`() {
+        val vm = editor()
+        var preview: MediaClip? = null
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, { preview = it }, {}, {}, {}) }
+
+        choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.runOnIdle {
+            val draft = requireNotNull(preview)
+            val derivedState = workspacePreviewState(vm.state.value, draft)
+            val renderedClip = derivedState.project!!.clips.single()
+            assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, renderedClip.workspaceEffects.single().id)
+            val binding = workspaceEffectPreviewBinding(renderedClip.workspaceEffects)
+            assertEquals(renderedClip.workspaceEffects, binding.sourceEffects)
+            assertEquals(1, binding.renderEffects.size)
+            assertTrue("Draft preview must not mutate the saved project", vm.state.value.project!!.clips.single().workspaceEffects.isEmpty())
+        }
+
+        compose.onNodeWithTag("filter-apply").performClick()
+        compose.runOnIdle {
+            assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, vm.state.value.project!!.clips.single().workspaceEffects.single().id)
+            assertEquals(1, vm.undoStack.size)
+        }
+    }
+
     @Test fun `selection changes disable stale drafts instead of editing another clip`() {
         val vm = editor(); val before = vm.state.value.project
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }

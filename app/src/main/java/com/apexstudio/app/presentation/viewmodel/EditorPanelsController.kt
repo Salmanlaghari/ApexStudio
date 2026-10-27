@@ -108,6 +108,12 @@ fun EditorViewModel.saveCoverWords(text: String, style: String) {
 }
 
 
+internal fun EditorState.selectedChromaKeyTarget(): MediaClip? {
+    val selectedId = selectedClipId ?: return null
+    val clip = project?.clips?.firstOrNull { it.id == selectedId } ?: return null
+    return clip.takeIf { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY }
+}
+
 fun EditorViewModel.openChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = true) }
 
 fun EditorViewModel.closeChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = false) }
@@ -122,20 +128,24 @@ fun EditorViewModel.openTextMaskPanel() = _state.update { it.copy(textMaskPanelO
 
 fun EditorViewModel.closeTextMaskPanel() = _state.update { it.copy(textMaskPanelOpen = false) }
 
-fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings) {
-    _state.update { 
-        val selectedId = it.selectedClipId ?: it.project?.clips?.firstOrNull()?.id
-        val updatedClips = it.project?.clips?.map { clip ->
-            if (clip.id == selectedId) clip.copy(chromaKeySettings = settings) else clip
-        } ?: emptyList()
-        it.copy(
+fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.model.ChromaKeySettings): Boolean {
+    var applied = false
+    _state.update { state ->
+        val target = state.selectedChromaKeyTarget() ?: return@update state
+        val updatedClips = state.project?.clips?.map { clip ->
+            if (clip.id == target.id) clip.copy(chromaKeySettings = settings) else clip
+        } ?: return@update state
+        applied = true
+        state.copy(
             chromaKeySettings = settings,
-            activeFxId = if (settings.enabled) "3d_chromakey" else it.activeFxId,
-            fxIntensity = if (settings.enabled) 1.0f else it.fxIntensity,
-            project = it.project?.copy(clips = updatedClips)
-        ) 
+            activeFxId = if (settings.enabled) "3d_chromakey" else state.activeFxId,
+            fxIntensity = if (settings.enabled) 1.0f else state.fxIntensity,
+            project = state.project?.copy(clips = updatedClips)
+        )
     }
+    if (!applied) return false
     persistProject(refreshLegacyClipFields = true)
+    return true
 }
 
 

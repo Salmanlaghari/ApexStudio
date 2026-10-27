@@ -3,6 +3,7 @@ package com.apexstudio.app.data.media
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.PhotoEditSettings
+import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -45,6 +46,35 @@ class TimelineThumbnailCacheKeyTest {
         assertNotEquals(key, TimelineThumbnailCacheKey.from(original.copy(trimStartMs = 100L), 500L, 160, 90))
         assertNotEquals(key, TimelineThumbnailCacheKey.from(original, 500L, 320, 90))
         assertNotEquals(key, TimelineThumbnailCacheKey.from(original.copy(type = ClipType.VIDEO), 500L, 160, 90))
+    }
+
+    @Test
+    fun `main video filmstrip output time maps through speed curve to the same source clock`() {
+        val clip = MediaClip(
+            id = "main-speed", name = "main", uri = "file:///main.mp4",
+            durationMs = 10_000L, trimStartMs = 1_000L, trimEndMs = 9_000L,
+            type = ClipType.VIDEO, trackIndex = 0,
+            speedPoints = listOf(SpeedPoint(0f, 2f), SpeedPoint(1f, 2f)),
+        )
+
+        val key = TimelineThumbnailCacheKey.from(clip, 1_500L, 160, 90)
+
+        assertEquals(4_000.0, key.sourceTimeMs.toDouble(), 1.0)
+    }
+
+    @Test
+    fun `overlay filmstrip output time maps through its overlay speed curve`() {
+        val clip = image().copy(
+            type = ClipType.OVERLAY,
+            durationMs = 10_000L,
+            trimStartMs = 500L,
+            trimEndMs = 8_500L,
+            speedPoints = listOf(SpeedPoint(0f, 2f), SpeedPoint(1f, 2f)),
+        )
+
+        val key = TimelineThumbnailCacheKey.from(clip, 1_000L, 160, 90)
+
+        assertEquals(2_500.0, key.sourceTimeMs.toDouble(), 1.0)
     }
 
     @Test

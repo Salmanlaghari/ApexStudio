@@ -1619,6 +1619,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                     state.project?.clips.orEmpty(), clip, state.playerPositionMs
                 ).coerceAtLeast(0L)
             } ?: 0L,
+            projectTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with
             // drag-to-move/resize while the mask panel is open.
@@ -1960,6 +1961,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onSetTextOverlayRange = { ownerId, overlayId, start, end ->
             vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
         },
+        onSetStickerRange = { id, start, end -> vm.setStickerPropertyRange(id, start, end) },
         // Editing-assist modes. The logic already lived in
         // EditorAudioController but only landscape exposed one of the three;
         // the timeline overflow menu now reaches all of them.

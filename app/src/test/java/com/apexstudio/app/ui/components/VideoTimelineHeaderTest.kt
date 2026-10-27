@@ -25,7 +25,7 @@ class VideoTimelineHeaderTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun addClipRemainsVisibleAndV1MusicNoteAndA1LabelsAreAbsent() {
+    fun addClipRemainsVisibleAndMainVideoAndMusicLaneRolesAreExplicit() {
         val addedTypes = mutableListOf<ClipType>()
         val scrollState = ScrollState(0)
         compose.setContent {
@@ -50,14 +50,12 @@ class VideoTimelineHeaderTest {
         compose.onNodeWithTag("timeline-header").assertExists()
         compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
         compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
+        compose.onNodeWithText("Main video · V1", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Music (A1)").assertIsDisplayed()
+        compose.onNodeWithText("♫").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
         compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Video").assertIsDisplayed()
-        compose.onNodeWithText("Music").assertIsDisplayed()
-        compose.onNodeWithText("V1").assertDoesNotExist()
-        compose.onNodeWithText("A1").assertDoesNotExist()
-        compose.onNodeWithText("♫").assertDoesNotExist()
 
         compose.runOnIdle {
             assertEquals(listOf(ClipType.VIDEO), addedTypes)

@@ -468,10 +468,10 @@ fun VideoTimeline(
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
-    // Lazy filmstrip frames: (clipId, clip-relative ms) -> bitmap.
+    // Lazy filmstrip frames: (complete source identity, clip-relative output ms) -> bitmap.
     // Only the visible window is ever held (see TimelineTrackArea);
     // lanes look frames up by exact key with a nearest-earlier fallback.
-    filmstripFrames: Map<Pair<String, Long>, Bitmap> = emptyMap(),
+    filmstripFrames: Map<Pair<com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey, Long>, Bitmap> = emptyMap(),
     // Ms between filmstrip cells at the current zoom (one frame per
     // 64dp of clip width). Lanes and the extractor share this value.
     frameIntervalMs: Long = 1000L,
@@ -514,6 +514,7 @@ fun VideoTimeline(
     onToggleTextMaskKeyframeAtPlayhead: (clipId: String, overlayId: String) -> Unit = { _, _ -> },
     onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     // Multi-layer video tracks (CapCut-style, up to 10). Layer 0 = main (V1),
     // layers 1..9 = overlay layers (V2..V10) composited PiP above the main.
     hiddenVideoLayers: Set<Int> = emptySet(),
@@ -1258,6 +1259,8 @@ fun VideoTimeline(
                                     rowIndices = stickerLaneRows,
                                     msToDp = msToDp,
                                     selectedStickerId = selectedStickerId,
+                                    timelineDurationMs = totalDurationMs,
+                                    onSetStickerRange = onSetStickerRange,
                                     onSelectSticker = onSelectSticker,
                                     onSeekToKeyframe = onScrub,
                                     onMoveStickerKeyframe = onMoveStickerKeyframe,
@@ -1588,7 +1591,7 @@ fun VideoTimeline(
     onDuplicateClip: (clipId: String) -> Unit,
     onDeleteClip: (clipId: String) -> Unit,
     onZoomChange: (Float) -> Unit,
-    filmstripFrames: Map<Pair<String, Long>, Bitmap> = emptyMap(),
+    filmstripFrames: Map<Pair<com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey, Long>, Bitmap> = emptyMap(),
     frameIntervalMs: Long = 1000L,
     transitions: List<ClipTransition> = state.project?.transitions ?: emptyList(),
     onOpenTransition: (fromClipId: String, toClipId: String) -> Unit = { _, _ -> },
@@ -1639,6 +1642,7 @@ fun VideoTimeline(
     scrollState: ScrollState = rememberScrollState(),
     vScrollState: ScrollState = rememberScrollState(),
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
@@ -1731,6 +1735,7 @@ fun VideoTimeline(
         onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
         onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
         onSetTextOverlayRange = onSetTextOverlayRange,
+        onSetStickerRange = onSetStickerRange,
         selectedAudioTrackId = state.selectedAudioTrackId,
         onSelectAudioTrack = onSelectAudioTrack,
         onMoveAudioTrack = onMoveAudioTrack,
@@ -1930,13 +1935,13 @@ private fun TimelineTimeRuler(
  */
 @Composable
 private fun FilmstripCells(
-    clipId: String,
+    sourceKey: com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey,
     clipStartMs: Long,
     clipDurMs: Long,
     msToDp: Float,
     frameIntervalMs: Long,
     visibleWindowPx: Pair<Int, Int>,
-    filmstripFrames: Map<Pair<String, Long>, Bitmap>,
+    filmstripFrames: Map<Pair<com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey, Long>, Bitmap>,
     placeholderIconSize: Dp = 14.dp,
     modifier: Modifier = Modifier
 ) {
@@ -1948,8 +1953,8 @@ private fun FilmstripCells(
     val cellCount = kotlin.math.ceil(clipDurMs / frameIntervalMs.toFloat())
         .toInt().coerceAtLeast(1)
     // Sorted keys for this clip (nearest-earlier fallback).
-    val clipKeys = remember(filmstripFrames, clipId) {
-        filmstripFrames.keys.filter { it.first == clipId }.map { it.second }.sorted()
+    val clipKeys = remember(filmstripFrames, sourceKey) {
+        filmstripFrames.keys.filter { it.first == sourceKey }.map { it.second }.sorted()
     }
     Box(modifier = modifier) {
         if (cellPx <= 0f) return@Box
@@ -1963,10 +1968,10 @@ private fun FilmstripCells(
         )
         for (cell in firstCell..lastCell) {
             val keyMs = cell * frameIntervalMs
-            val frameBmp = filmstripFrames[clipId to keyMs] ?: run {
+            val frameBmp = filmstripFrames[sourceKey to keyMs] ?: run {
                 val idx = clipKeys.binarySearch(keyMs)
                 val earlier = if (idx >= 0) idx - 1 else -idx - 2
-                if (earlier >= 0) filmstripFrames[clipId to clipKeys[earlier]] else null
+                if (earlier >= 0) filmstripFrames[sourceKey to clipKeys[earlier]] else null
             }
             Box(
                 modifier = Modifier
@@ -2012,7 +2017,7 @@ private fun FilmstripCells(
 private fun TimelineVideoLayerRow(
     layerIndex: Int,
     clips: List<MediaClip>,
-    filmstripFrames: Map<Pair<String, Long>, Bitmap>,
+    filmstripFrames: Map<Pair<com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey, Long>, Bitmap>,
     frameIntervalMs: Long,
     visibleWindowPx: Pair<Int, Int>,
     selectedClipId: String?,
@@ -2183,7 +2188,7 @@ private fun TimelineVideoLayerRow(
                         // window. Clip width is ALWAYS duration x
                         // pxPerSecond; cells never size the clip.
                         FilmstripCells(
-                            clipId = clip.id,
+                            sourceKey = com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey.from(clip),
                             clipStartMs = clip.timelineOffsetMs,
                             clipDurMs = clipDur,
                             msToDp = msToDp,
@@ -2314,7 +2319,7 @@ private fun TimelineVideoLayerRow(
                 }
             }
             Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
-                TimelineLaneIdentity("Overlay V${layerIndex + 1}", ApexPalette.NeonCyan)
+                TimelineLaneIdentity("PiP overlay · V${layerIndex + 1}", ApexPalette.NeonCyan)
             }
         }
     }
@@ -2384,9 +2389,18 @@ private fun TimelineTextLane(
         textLayers.forEachIndexed { itemIndex, layer ->
             val textOverlay = layer.overlay
             val ownerClipId = layer.ownerClipId
-            val ovStartMs = layer.startMs.coerceAtLeast(0L)
-            val ovEndMs = if (layer.endMs == Long.MAX_VALUE) ovStartMs + 3000L else layer.endMs
-            val ovDur = (ovEndMs - ovStartMs).coerceAtLeast(500L)
+            val timelineEndMs = timelineDurationMs.coerceAtLeast(1L)
+            val baseStartMs = layer.startMs.coerceIn(0L, timelineEndMs - 1L)
+            val baseEndMs = (if (layer.endMs == Long.MAX_VALUE) baseStartMs + 3000L else layer.endMs)
+                .coerceIn(baseStartMs + 1L, timelineEndMs)
+            var previewStartMs by remember(textOverlay.id, baseStartMs, baseEndMs) { mutableStateOf(baseStartMs) }
+            var previewEndMs by remember(textOverlay.id, baseStartMs, baseEndMs) { mutableStateOf(baseEndMs) }
+            var dragBaseStartMs by remember(textOverlay.id) { mutableStateOf(baseStartMs) }
+            var dragBaseEndMs by remember(textOverlay.id) { mutableStateOf(baseEndMs) }
+            var dragAccumulatedPx by remember(textOverlay.id) { mutableFloatStateOf(0f) }
+            val ovStartMs = previewStartMs.coerceIn(0L, timelineEndMs - 1L)
+            val ovEndMs = previewEndMs.coerceIn(ovStartMs + 1L, timelineEndMs)
+            val ovDur = (ovEndMs - ovStartMs).coerceAtLeast(1L)
             val ovWidthDp = maxOf((ovDur * msToDp).dp, 40.dp)
             val ovOffsetDp = (ovStartMs * msToDp).dp
 
@@ -2487,8 +2501,6 @@ private fun TimelineTextLane(
                     )
                 }
                 if (isSelected && ownerClipId != null && onSetTextOverlayRange != null) {
-                    val latestStart by rememberUpdatedState(ovStartMs)
-                    val latestEnd by rememberUpdatedState(ovEndMs)
                     val latestHandler by rememberUpdatedState(onSetTextOverlayRange)
                     @Composable
                     fun handle(isStart: Boolean) {
@@ -2499,21 +2511,37 @@ private fun TimelineTextLane(
                                 .height(18.dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(Color.White)
-                                .pointerInput(textOverlay.id, isStart, msToDp, timelineDurationMs) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        val currentStart = latestStart
-                                        val currentEnd = latestEnd
-                                        val delta = if (msToDp > 0f && density > 0f)
-                                            (dragAmount.x / (msToDp * density)).roundToLong() else 0L
-                                        if (isStart) {
-                                            val next = (currentStart + delta).coerceIn(0L, currentEnd - 1L)
-                                            latestHandler?.invoke(ownerClipId, textOverlay.id, next, currentEnd)
-                                        } else {
-                                            val next = (currentEnd + delta).coerceIn(currentStart + 1L, timelineDurationMs.coerceAtLeast(currentStart + 1L))
-                                            latestHandler?.invoke(ownerClipId, textOverlay.id, currentStart, next)
+                                .pointerInput(textOverlay.id, isStart, msToDp, density, timelineEndMs) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragAccumulatedPx = 0f
+                                            dragBaseStartMs = ovStartMs
+                                            dragBaseEndMs = ovEndMs
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragAccumulatedPx += dragAmount.x
+                                            val deltaMs = sourceTrimDeltaToMs(dragAccumulatedPx, msToDp, density)
+                                            if (isStart) {
+                                                previewStartMs = (dragBaseStartMs + deltaMs).coerceIn(0L, dragBaseEndMs - 1L)
+                                            } else {
+                                                previewEndMs = (dragBaseEndMs + deltaMs).coerceIn(dragBaseStartMs + 1L, timelineEndMs)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            val finalStart = previewStartMs.coerceIn(0L, timelineEndMs - 1L)
+                                            val finalEnd = previewEndMs.coerceIn(finalStart + 1L, timelineEndMs)
+                                            dragAccumulatedPx = 0f
+                                            if (finalStart != baseStartMs || finalEnd != baseEndMs) {
+                                                latestHandler?.invoke(ownerClipId, textOverlay.id, finalStart, finalEnd)
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            dragAccumulatedPx = 0f
+                                            previewStartMs = baseStartMs
+                                            previewEndMs = baseEndMs
                                         }
-                                    }
+                                    )
                                 }
                                 .testTag("timeline-text-range-handle-${if (isStart) "start" else "end"}-${textOverlay.id}")
                         )
@@ -2523,7 +2551,7 @@ private fun TimelineTextLane(
                 }
             }
             Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp).zIndex(5f)) {
-                TimelineLaneIdentity("Text", Color(0xFFAE8BFF))
+                TimelineLaneIdentity("Text overlay", Color(0xFFAE8BFF))
             }
         }
     }
@@ -2702,7 +2730,7 @@ private fun TimelineVideoTrack(
     videoClips: List<MediaClip>,
     selectedClipId: String?,
     msToDp: Float,
-    filmstripFrames: Map<Pair<String, Long>, Bitmap>,
+    filmstripFrames: Map<Pair<com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey, Long>, Bitmap>,
     frameIntervalMs: Long,
     visibleWindowPx: Pair<Int, Int>,
     draggingClipId: String?,
@@ -2873,7 +2901,7 @@ private fun TimelineVideoTrack(
                     // window. Clip width is ALWAYS duration x
                     // pxPerSecond; cells never size the clip.
                     FilmstripCells(
-                        clipId = clip.id,
+                        sourceKey = com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey.from(clip),
                         clipStartMs = clipTimelineStarts.getOrElse(index) { 0L },
                         clipDurMs = clipDur,
                         msToDp = msToDp,
@@ -3202,7 +3230,7 @@ private fun TimelineVideoTrack(
             }
         }
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 3.dp).zIndex(5f)) {
-            TimelineLaneIdentity("Video", ApexPalette.NeonCyan)
+            TimelineLaneIdentity("Main video · V1", ApexPalette.NeonCyan)
         }
     }
 }
@@ -3218,7 +3246,9 @@ private fun TimelineStickerLane(
     stickers: List<StickerOverlay>,
     rowIndices: List<Int>,
     msToDp: Float,
+    timelineDurationMs: Long,
     selectedStickerId: String? = null,
+    onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onSelectSticker: (String?) -> Unit = {},
     onSeekToKeyframe: (Long) -> Unit = {},
     onMoveStickerKeyframe: (stickerId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
@@ -3226,6 +3256,7 @@ private fun TimelineStickerLane(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val imageCache = remember(context) { StickerImageCache(context.applicationContext) }
     Box(
         modifier = modifier
@@ -3239,9 +3270,19 @@ private fun TimelineStickerLane(
                 val path = sticker.assetPath ?: return@produceState
                 value = withContext(Dispatchers.IO) { imageCache.get(path) }
             }
-            val start = sticker.startMs.coerceAtLeast(0L)
-            val rawEnd = if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs
-            val dur = (rawEnd - start).coerceAtLeast(500L)
+            val timelineEnd = timelineDurationMs.coerceAtLeast(1L)
+            val start = sticker.startMs.coerceIn(0L, timelineEnd - 1L)
+            val rawEnd = if (sticker.endMs == Long.MAX_VALUE) {
+                (start + 3000L).coerceAtMost(timelineEnd)
+            } else sticker.endMs.coerceIn(start + 1L, timelineEnd)
+            var previewStart by remember(sticker.id, start, rawEnd) { mutableStateOf(start) }
+            var previewEnd by remember(sticker.id, start, rawEnd) { mutableStateOf(rawEnd) }
+            var dragBaseStart by remember(sticker.id) { mutableStateOf(start) }
+            var dragBaseEnd by remember(sticker.id) { mutableStateOf(rawEnd) }
+            var dragAccumulatedPx by remember(sticker.id) { mutableFloatStateOf(0f) }
+            val rangeStart = previewStart.coerceIn(0L, timelineEnd - 1L)
+            val rangeEnd = previewEnd.coerceIn(rangeStart + 1L, timelineEnd)
+            val dur = (rangeEnd - rangeStart).coerceAtLeast(1L)
             val isSelected = sticker.id == selectedStickerId
             val assetName = sticker.assetPath?.substringAfterLast("/")?.substringBeforeLast(".")
             val label = when {
@@ -3253,7 +3294,7 @@ private fun TimelineStickerLane(
             val hasKeyframeLane = isSelected || sticker.keyframes.keyframes.isNotEmpty()
             Box(
                 modifier = Modifier
-                    .offset(x = (start * msToDp).dp)
+                    .offset(x = (rangeStart * msToDp).dp)
                     .offset(y = ((rowIndices.getOrElse(itemIndex) { 0 }) * 28).dp)
                     .width(segWidthDp)
                     .height(28.dp)
@@ -3316,7 +3357,7 @@ private fun TimelineStickerLane(
                 if (hasKeyframeLane) {
                     KeyframeDiamondStrip(
                         keyframes = sticker.keyframes.keyframes,
-                        spanStartMs = start,
+                        spanStartMs = rangeStart,
                         spanDurationMs = dur,
                         stripWidthDp = segWidthDp,
                         msToDp = msToDp,
@@ -3333,10 +3374,58 @@ private fun TimelineStickerLane(
                             .testTag("timeline-keyframe-layer-sticker-markers-${sticker.id}")
                     )
                 }
+                if (isSelected && onSetStickerRange != null) {
+                    @Composable
+                    fun rangeHandle(isStart: Boolean) {
+                        Box(
+                            Modifier
+                                .align(if (isStart) Alignment.CenterStart else Alignment.CenterEnd)
+                                .width(8.dp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.White)
+                                .pointerInput(sticker.id, isStart, msToDp, density.density, timelineEnd) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragAccumulatedPx = 0f
+                                            dragBaseStart = rangeStart
+                                            dragBaseEnd = rangeEnd
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragAccumulatedPx += dragAmount.x
+                                            val deltaMs = sourceTrimDeltaToMs(dragAccumulatedPx, msToDp, density.density)
+                                            if (isStart) {
+                                                previewStart = (dragBaseStart + deltaMs).coerceIn(0L, dragBaseEnd - 1L)
+                                            } else {
+                                                previewEnd = (dragBaseEnd + deltaMs).coerceIn(dragBaseStart + 1L, timelineEnd)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            val finalStart = previewStart.coerceIn(0L, timelineEnd - 1L)
+                                            val finalEnd = previewEnd.coerceIn(finalStart + 1L, timelineEnd)
+                                            dragAccumulatedPx = 0f
+                                            if (finalStart != start || finalEnd != rawEnd) {
+                                                onSetStickerRange(sticker.id, finalStart, finalEnd)
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            dragAccumulatedPx = 0f
+                                            previewStart = start
+                                            previewEnd = rawEnd
+                                        }
+                                    )
+                                }
+                                .testTag("timeline-sticker-range-handle-${if (isStart) "start" else "end"}-${sticker.id}")
+                        )
+                    }
+                    rangeHandle(isStart = true)
+                    rangeHandle(isStart = false)
+                }
             }
         }
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
-            TimelineLaneIdentity("Stickers", Color(0xFFA88CFF))
+            TimelineLaneIdentity("Sticker overlay", Color(0xFFA88CFF))
         }
     }
 }
@@ -3804,9 +3893,9 @@ private fun AudioTrackLaneRow(
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
             TimelineLaneIdentity(
                 when (track.kind) {
-                    AudioTrack.Kind.ORIGINAL_VIDEO -> "V1 audio"
-                    AudioTrack.Kind.MUSIC -> "Music"
-                    AudioTrack.Kind.SFX -> "Voice/SFX"
+                    AudioTrack.Kind.ORIGINAL_VIDEO -> "Main audio · V1"
+                    AudioTrack.Kind.MUSIC -> "Music audio"
+                    AudioTrack.Kind.SFX -> "Voice / SFX"
                 }, accent
             )
         }

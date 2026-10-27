@@ -1,5 +1,6 @@
 package com.apexstudio.app.data.media
 
+import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.PhotoEditSettings
@@ -20,10 +21,21 @@ internal data class TimelineThumbnailCacheKey(
     companion object {
         fun from(clip: MediaClip, clipRelativeTimeMs: Long, width: Int, height: Int): TimelineThumbnailCacheKey {
             val relative = clipRelativeTimeMs.coerceAtLeast(0L)
-            val absolute = if (clip.trimStartMs > Long.MAX_VALUE - relative) {
+            // Filmstrip positions are output/project time. Convert them back to
+            // source time before indexing and decoding; adding output ms directly
+            // selected the wrong source frame for retimed clips.
+            val sourceOffset = when {
+                clip.type == ClipType.VIDEO && clip.trackIndex == 0 ->
+                    ClipTimeMapping.mainSourceOffsetAtOutputMs(clip, relative)
+                clip.type == ClipType.OVERLAY -> clip.overlaySourceOffsetMs(relative)
+                clip.speedPoints.size >= 2 -> com.apexstudio.app.domain.model.SpeedCurveMath
+                    .outputToSourceMs(relative, (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(0L), clip.speedPoints)
+                else -> relative
+            }
+            val absolute = if (clip.trimStartMs > Long.MAX_VALUE - sourceOffset) {
                 Long.MAX_VALUE
             } else {
-                (clip.trimStartMs + relative).coerceAtLeast(0L)
+                (clip.trimStartMs + sourceOffset).coerceAtLeast(0L)
             }
             return TimelineThumbnailCacheKey(
                 uri = clip.uri,

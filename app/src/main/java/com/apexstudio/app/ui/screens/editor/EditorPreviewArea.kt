@@ -98,6 +98,9 @@ fun VideoPreviewArea(
     textOverlays: List<com.apexstudio.app.domain.model.TextOverlay> = emptyList(),
     selectedTextOverlayId: String? = null,
     currentTimeMs: Long = 0L,
+    // Main-clip effects use a clip-local clock; PiP placement is project-global.
+    // Keep both domains explicit so later V1 clips do not hide/mis-time overlays.
+    projectTimeMs: Long = currentTimeMs,
     durationMs: Long = 0L,
     onSelectTextOverlay: ((String) -> Unit)? = null,
     onMoveTextOverlay: ((id: String, dx: Float, dy: Float) -> Unit)? = null,
@@ -459,7 +462,7 @@ fun VideoPreviewArea(
                 PipOverlayCanvas(
                     overlayClips = overlayClips,
                     selectedOverlayClipId = selectedOverlayClipId,
-                    currentTimeMs = currentTimeMs,
+                    currentTimeMs = projectTimeMs,
                     overlayPlayer = overlayPlayer,
                     overlayPlayerClipId = overlayPlayerClipId,
                     overlayIsVideo = overlayIsVideo,

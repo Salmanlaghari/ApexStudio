@@ -76,6 +76,36 @@ class PipOverlayCanvasTest {
     }
 
     @Test
+    fun laterOverlayUsesProjectPlayheadTimeInsteadOfMainClipLocalZero() {
+        val later = overlay().copy(
+            timelineOffsetMs = 2_000L,
+            trimStartMs = 0L,
+            trimEndMs = 2_000L,
+        )
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(later),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 2_500L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(later.id to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-image-${later.id}", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun videoOverlayMountsTheDedicatedPlayerViewInThePipCanvas() {
         composeRule.setContent {
             val context = LocalContext.current

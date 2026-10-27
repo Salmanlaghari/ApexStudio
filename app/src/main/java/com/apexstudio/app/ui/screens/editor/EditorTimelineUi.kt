@@ -125,6 +125,7 @@ fun TimelineTrackArea(
     playerPositionFlow: kotlinx.coroutines.flow.StateFlow<Long>? = null,
     modifier: Modifier = Modifier,
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
@@ -170,34 +171,34 @@ fun TimelineTrackArea(
         (48 * density.density).roundToInt().coerceAtLeast(24)
     }
 
-    // Visible-window filmstrip frames: (clipId, clip-relative ms) ->
-    // bitmap. Only the visible window (+1 viewport buffer) is ever
+    // Visible-window filmstrip frames: (source identity, clip-relative output ms) -> bitmap. Only the visible window (+1 viewport buffer) is ever
     // held: entries outside it are pruned on every window move, so
     // scrolling a 10-minute clip can't accumulate hundreds of bitmaps.
     // The LruCache + disk cache (TimelineThumbnailCache) own
     // longer-term retention, and frames are re-fetched from them.
-    val filmstripFrames = remember { mutableStateMapOf<Pair<String, Long>, Bitmap>() }
+    val filmstripFrames = remember { mutableStateMapOf<Pair<TimelineThumbnailSourceKey, Long>, Bitmap>() }
     // In-flight extraction keys: touched from up to 4 IO threads at
     // once (launch children remove in finally), so a plain HashSet
     // would corrupt — synchronized set. `add`'s return value is the
     // atomic check-and-claim.
-    val inFlightKeys = remember { java.util.Collections.synchronizedSet(mutableSetOf<Pair<String, Long>>()) }
+    val inFlightKeys = remember { java.util.Collections.synchronizedSet(mutableSetOf<Pair<TimelineThumbnailSourceKey, Long>>()) }
     val thumbDispatcher = remember { Dispatchers.IO.limitedParallelism(4) }
 
     // Content start (timeline ms) per clip: V1 clips (track 0) tile
     // cumulatively from 0; every other clip sits at timelineOffsetMs
     // (same layout rule the lanes use).
     val contentStarts = remember(filmstripClips) {
-        val starts = mutableMapOf<String, Long>()
+        val starts = mutableMapOf<TimelineThumbnailSourceKey, Long>()
         var acc = 0L
         filmstripClips.forEach { clip ->
+            val source = TimelineThumbnailSourceKey.from(clip)
             if (clip.trackIndex == 0 &&
                 (clip.type == ClipType.VIDEO || clip.type == ClipType.IMAGE)
             ) {
-                starts[clip.id] = acc
+                starts[source] = acc
                 acc += clip.effectiveDurationMs().coerceAtLeast(0L)
             } else {
-                starts[clip.id] = clip.timelineOffsetMs
+                starts[source] = clip.timelineOffsetMs
             }
         }
         starts
@@ -208,9 +209,9 @@ fun TimelineTrackArea(
     // URI replacement and speed edits also change the source frame behind
     // a clip-relative key. Canvas movement/opacity do not, and must not
     // cancel in-flight decodes after their backfill cursor has advanced.
-    val clipSources = remember { mutableMapOf<String, TimelineThumbnailSourceKey>() }
-    // Persistent full-clip backfill cursor, clipId -> next ms to scan.
-    val backfillCursor = remember { HashMap<String, Long>() }
+    val clipSources = remember { mutableSetOf<TimelineThumbnailSourceKey>() }
+    // Persistent full-clip backfill cursor, source identity -> next output ms to scan.
+    val backfillCursor = remember { HashMap<TimelineThumbnailSourceKey, Long>() }
     var previousFrameIntervalMs by remember { mutableStateOf(frameIntervalMs) }
     // FULL-LENGTH FILMSTRIP EXTRACTION LOOP. Every pass recomputes the
     // visible window, launches the keys the window needs FIRST, then the
@@ -223,17 +224,14 @@ fun TimelineTrackArea(
             backfillCursor.clear()
             previousFrameIntervalMs = frameIntervalMs
         }
-        for (clip in filmstripClips) {
-            val source = TimelineThumbnailSourceKey.from(clip)
-            if (clipSources[clip.id] != null && clipSources[clip.id] != source) {
-                filmstripFrames.keys.filter { it.first == clip.id }
-                    .forEach { filmstripFrames.remove(it) }
-                backfillCursor.remove(clip.id)
-            }
-            clipSources[clip.id] = source
+        val activeSources = filmstripClips.map { TimelineThumbnailSourceKey.from(it) }.toSet()
+        (clipSources - activeSources).forEach { source ->
+            filmstripFrames.keys.filter { it.first == source }
+                .forEach { filmstripFrames.remove(it) }
+            backfillCursor.remove(source)
         }
-        (clipSources.keys - filmstripClips.map { it.id }.toSet())
-            .forEach { clipSources.remove(it); backfillCursor.remove(it) }
+        clipSources.clear()
+        clipSources.addAll(activeSources)
         // FULL-LENGTH FILMSTRIP: visible window first, then the REST of
         // every clip. The old implementation wrapped extraction in
         // `snapshotFlow{...}.sample(150).collectLatest { ... }` — every
@@ -263,7 +261,8 @@ fun TimelineTrackArea(
                 keyMs: Long,
                 visible: Boolean = false,
             ) {
-                val key = clip.id to keyMs
+                val source = TimelineThumbnailSourceKey.from(clip)
+                val key = source to keyMs
                 if (!requests.claim(key, cached = filmstripFrames.containsKey(key), visible = visible)) return
                 // Immutable captures only: `keyMs` is a moving counter in the
                 // caller's loop and `clip` would be re-read on the next pass,
@@ -284,7 +283,8 @@ fun TimelineTrackArea(
                 }
             }
             for (clip in filmstripClips) {
-                val startMs = latestContentStarts[clip.id] ?: continue
+                val source = TimelineThumbnailSourceKey.from(clip)
+                val startMs = latestContentStarts[source] ?: continue
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(0L)
                 val clipStartPx = startMs * msToPx
                 val visStartMs = ((winStartPx - clipStartPx) / msToPx)
@@ -306,7 +306,7 @@ fun TimelineTrackArea(
                 // PRIORITY 2 — one background frame only when no visible
                 // frame is missing and no decode is already occupying the
                 // bounded worker budget. Cursor advances only for planned work.
-                val cursor = backfillCursor[clip.id] ?: 0L
+                val cursor = backfillCursor[source] ?: 0L
                 val backfillKeys = TimelineThumbnailBackfill.batch(
                     cursorMs = cursor,
                     durationMs = clipDur,
@@ -320,7 +320,7 @@ fun TimelineTrackArea(
                 val nextCursor = backfillKeys.lastOrNull()
                     ?.plus(frameIntervalMs)
                     ?: cursor
-                backfillCursor[clip.id] =
+                backfillCursor[source] =
                     if (nextCursor > clipDur) clipDur + frameIntervalMs else nextCursor
             }
             // Bounded memory: only prune when the strip grows past the
@@ -348,8 +348,8 @@ fun TimelineTrackArea(
         }
     }
     // Drop frames for clips that no longer exist.
-    LaunchedEffect(filmstripClips.map { it.id }) {
-        val alive = filmstripClips.map { it.id }.toSet()
+    LaunchedEffect(extractionSources) {
+        val alive = extractionSources.toSet()
         filmstripFrames.keys.filter { it.first !in alive }
             .forEach { filmstripFrames.remove(it) }
     }
@@ -407,6 +407,7 @@ fun TimelineTrackArea(
             onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
             onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
             onSetTextOverlayRange = onSetTextOverlayRange,
+            onSetStickerRange = onSetStickerRange,
             onToggleMagneticSnapping = onToggleMagneticSnapping,
             onToggleSnapToBeat = onToggleSnapToBeat,
             onToggleRippleEdit = onToggleRippleEdit,

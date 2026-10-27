@@ -2,6 +2,8 @@ package com.apexstudio.app.ui.screens.home
 
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,8 +68,10 @@ fun HomeScreen(
     var projectToRename by remember { mutableStateOf<Project?>(null) }
     var projectToDelete by remember { mutableStateOf<Project?>(null) }
     var renameText by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    var showAllProjects by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
@@ -117,71 +121,34 @@ fun HomeScreen(
         mediaPicker.pickMultipleMedia.launch(PickVisualMediaRequest(pickerType))
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ApexPalette.BgBase)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        item {
-            DashboardHeader(onOpenSettings = onOpenSettings)
-        }
-
-        item {
-            NewProjectHero(
-                enabled = true,
-                onCreate = { openEditorFor(ClipType.VIDEO) }
-            )
-        }
-        item {
-            DashboardEditorEntries(
-                onImageEditing = { openEditorFor(ClipType.IMAGE) },
-                onVideoEditor = { openEditorFor(ClipType.VIDEO) }
-            )
-        }
-
-        item {
-            ProjectsShortcut(projectCount = projects.size) {
-                scope.launch { listState.animateScrollToItem(PROJECTS_SECTION_INDEX) }
+    ApexHomeContent(
+        projects = projects,
+        savedProjectIds = savedProjectIds,
+        searchOpen = searchOpen,
+        searchText = searchText,
+        showAllProjects = showAllProjects,
+        onSearchOpen = { searchOpen = !searchOpen },
+        onSearchChange = { searchText = it; showAllProjects = it.isNotBlank() },
+        onNotifications = {
+            val settingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            runCatching { context.startActivity(settingsIntent) }.onFailure {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(android.net.Uri.fromParts("package", context.packageName, null))
+                )
             }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SectionLabel("Your Projects (${projects.size})")
-                Text("Pick up where you left off", color = ApexPalette.TextSecondary, fontSize = 12.sp)
-            }
-        }
-        if (projects.isEmpty()) {
-            item {
-                GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 20.dp) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Your next story starts here", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
-                        Text("Choose a video or photo above. Your original media stays unchanged.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
-                    }
-                }
-            }
-        }
-
-        items(projects, key = { it.id }) { project ->
-            ProjectRow(
-                project = project,
-                onOpen = { onProjectOpen(project.id) },
-                onRename = {
-                    renameText = project.name
-                    projectToRename = project
-                },
-                onDelete = { projectToDelete = project },
-                canManage = project.id in savedProjectIds
-            )
-        }
-    }
+        },
+        onCreateVideo = { openEditorFor(ClipType.VIDEO) },
+        onCreatePhoto = { openEditorFor(ClipType.IMAGE) },
+        onOpenProject = { onProjectOpen(it.id) },
+        onRenameProject = { project ->
+            renameText = project.name
+            projectToRename = project
+        },
+        onDeleteProject = { projectToDelete = it },
+        onShowAll = { showAllProjects = !showAllProjects }
+    )
 
     projectToRename?.let { project ->
         RenameProjectDialog(

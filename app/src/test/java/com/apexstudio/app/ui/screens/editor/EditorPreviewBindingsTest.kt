@@ -12,7 +12,7 @@ import org.junit.Test
 
 @OptIn(UnstableApi::class)
 class EditorPreviewBindingsTest {
-    @Test fun `actual preview effect chain follows preset range and strength draft changes`() {
+    @Test fun `actual preview effect chain keeps stable slots for live numeric drafts`() {
         val initial = WorkspaceEffect(
             id = WorkspaceEffectPresets.FILTER_LAVENDER,
             startMs = 1_000L,
@@ -20,6 +20,12 @@ class EditorPreviewBindingsTest {
             intensity = 0.35f,
         )
         val selected = workspaceEffectPreviewBinding(listOf(initial))
+        val numericDraft = workspaceEffectPreviewBinding(listOf(initial.copy(
+            startMs = 1_500L,
+            endMs = 4_500L,
+            intensity = 0.9f,
+            exposure = 0.5f,
+        )))
         val changed = workspaceEffectPreviewBinding(listOf(initial.copy(
             id = WorkspaceEffectPresets.FILTER_SOFT_WARM,
             startMs = 2_000L,
@@ -27,14 +33,23 @@ class EditorPreviewBindingsTest {
             intensity = 0.9f,
         )))
 
-        // The Player.setVideoEffects call consumes renderEffects; its Compose effect key
-        // consumes sourceEffects. Thus each real UI draft edit rebuilds the renderer chain.
+        // Intensity/range/grade values are read from the live atomic draft per frame.
+        // Only adding/removing/replacing effect slots changes the Player stage identity.
         assertEquals(listOf(initial), selected.sourceEffects)
         assertEquals(1, selected.renderEffects.size)
         assertTrue(selected.renderEffects.single() is WorkspaceEffectGlEffect)
-        assertNotEquals(selected.sourceEffects, changed.sourceEffects)
+        assertEquals(selected.renderStageIds, numericDraft.renderStageIds)
+        assertEquals(1, numericDraft.renderEffects.size)
+        assertNotEquals(selected.renderStageIds, changed.renderStageIds)
         assertEquals(1, changed.renderEffects.size)
         assertTrue(changed.renderEffects.single() is GlEffect)
+    }
+
+    @Test fun `zero-strength live slot remains attached so increasing it does not rebuild preview`() {
+        val inactive = WorkspaceEffect(WorkspaceEffectPresets.FILTER_LAVENDER, 1_000L, 3_000L, intensity = 0f)
+        val binding = workspaceEffectPreviewBinding(listOf(inactive))
+        assertEquals(listOf(inactive.id), binding.renderStageIds)
+        assertEquals(1, binding.renderEffects.size)
     }
 
     @Test fun `empty or invalid draft does not leave an effect attached to preview`() {

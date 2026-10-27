@@ -33,6 +33,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.VideoCropSettings
+import com.apexstudio.app.domain.model.WorkspaceEffect
+import com.apexstudio.app.domain.model.hasValidParameters
 import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropGlEffect
 import com.apexstudio.app.data.effect.FaceCropRenderConfig
@@ -158,23 +160,37 @@ fun VideoPreviewArea(
     val context = LocalContext.current
     val usesViralHdrPipeline = gpuFilterConfig.activeProfileId ==
         com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
+    val gpuFilterStageKey = gpuFilterConfigPreviewKey(gpuFilterConfig)
+    val liveGpuFilterIntensity = remember {
+        java.util.concurrent.atomic.AtomicReference(gpuFilterConfig.filterIntensity)
+    }
+    SideEffect { liveGpuFilterIntensity.set(gpuFilterConfig.filterIntensity) }
     val gpuFilterPreset = remember(context, gpuFilterConfig.filterPresetId, usesViralHdrPipeline) {
         if (usesViralHdrPipeline && gpuFilterConfig.filterPresetId != null) {
             com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
                 .firstOrNull { it.id == gpuFilterConfig.filterPresetId }
         } else null
     }
-    val gpuVideoAdjustments = remember(gpuFilterConfig) { gpuFilterConfig.toVideoAdjustments() }
+    val gpuVideoAdjustments = remember(gpuFilterStageKey) { gpuFilterConfig.toVideoAdjustments() }
     // Fixed project-video effects run on decoded pixels with the same matrix and
     // shader as export, not the approximate legacy Compose filter overlay.
-    val workspaceEffectBinding = remember(workspaceEffects, workspaceEffectIntensityProvider) {
-        workspaceEffectPreviewBinding(workspaceEffects, workspaceEffectIntensityProvider)
+    val liveWorkspaceEffects = remember {
+        java.util.concurrent.atomic.AtomicReference<List<WorkspaceEffect>>(emptyList())
+    }
+    SideEffect { liveWorkspaceEffects.set(workspaceEffects.toList()) }
+    val workspaceEffectStageIds = workspaceEffects.filter { it.hasValidParameters() }.map { it.id }
+    val workspaceEffectBinding = remember(workspaceEffectStageIds, workspaceEffectIntensityProvider) {
+        workspaceEffectPreviewBinding(
+            effects = workspaceEffects,
+            frameIntensityProvider = workspaceEffectIntensityProvider,
+            frameEffectProvider = { index, _ -> liveWorkspaceEffects.get().getOrNull(index) }
+        )
     }
     val editorGradeEffects = LocalEditorPreviewEffects.current
     LaunchedEffect(
         exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings,
-        workspaceEffectBinding.sourceEffects, editorGradeEffects, photoClip?.id,
-        gpuFilterConfig, gpuFilterPreset
+        workspaceEffectBinding.renderStageIds, editorGradeEffects, photoClip?.id,
+        gpuFilterStageKey, gpuFilterPreset
     ) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
@@ -182,9 +198,10 @@ fun VideoPreviewArea(
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
                 val viralHdrEffects = if (usesViralHdrPipeline) {
                     buildList<androidx.media3.common.Effect> {
-                        if (gpuFilterPreset != null && gpuFilterConfig.filterIntensity > 0f) {
+                        if (gpuFilterPreset != null) {
                             add(com.apexstudio.app.data.filter.LutFilterGlEffect(
-                                context, gpuFilterPreset, gpuFilterConfig.filterIntensity
+                                context, gpuFilterPreset,
+                                intensityProvider = { liveGpuFilterIntensity.get() }
                             ))
                         }
                         if (!gpuVideoAdjustments.isDefault) {

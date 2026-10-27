@@ -174,4 +174,16 @@ class EffectWorkspacePanelTest {
         compose.runOnIdle { assertEquals(1, vm.undoStack.size) }
     }
 
+    @Test fun `Edit Pack entry opens the range render actions category`() {
+        val vm = editor()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {}, openTimeActions = true)
+            }
+        }
+        compose.onNodeWithTag("workspace-category-TIME").assertIsSelected()
+        compose.onNodeWithText("Slow 0.5×").assertExists()
+        compose.onNodeWithText("Motion actions").assertExists()
+    }
+
 }

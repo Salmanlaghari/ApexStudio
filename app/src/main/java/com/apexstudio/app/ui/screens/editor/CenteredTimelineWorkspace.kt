@@ -16,8 +16,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Normal phone mode bounds the timeline to its populated rows; focus mode can
- * omit [compactHeight] and use [layoutWeight] to expand the editable viewport.
+ * Portrait phone and focus layouts use the available weighted viewport; compact
+ * landscape hosts can pass [compactHeight] to bound the timeline to its rows.
  */
 @Composable
 internal fun ColumnScope.CenteredTimelineWorkspace(

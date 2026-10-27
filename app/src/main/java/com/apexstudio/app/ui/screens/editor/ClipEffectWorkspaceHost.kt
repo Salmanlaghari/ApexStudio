@@ -15,11 +15,13 @@ internal fun ClipEffectWorkspaceHost(
     onPreviewClip: (MediaClip) -> Unit,
     onSeekSource: (Long) -> Unit,
     onTogglePlayback: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    openTimeActions: Boolean = false,
 ) {
     if (filters) {
         FilterWorkspacePanel(projectId, originalClip, vm, isPlaying, onPreviewClip, onSeekSource, onTogglePlayback, onDismiss)
     } else {
-        EffectWorkspacePanel(projectId, originalClip, vm, isPlaying, onPreviewClip, onSeekSource, onTogglePlayback, onDismiss)
+        EffectWorkspacePanel(projectId, originalClip, vm, isPlaying, onPreviewClip, onSeekSource, onTogglePlayback, onDismiss,
+            openTimeActions = openTimeActions)
     }
 }

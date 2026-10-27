@@ -250,7 +250,7 @@ class RestoredEditorInstrumentedTest {
                 val trackBottom = device.findObject(By.desc("Animation")).visibleBounds.top - 40
                 val trackScrollStep = (100 * context.resources.displayMetrics.density).toInt()
                 val seenLayers = mutableSetOf<String>()
-                val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects")
+                val expectedLayers = listOf("Main video track", "V2 overlay", "Text", "Stickers", "Music", "Voice and sound effects (A2)")
                 for (attempt in 0 until 8) {
                     expectedLayers.filterTo(seenLayers) { device.hasObject(By.desc(it)) }
                     if (seenLayers.containsAll(expectedLayers)) break

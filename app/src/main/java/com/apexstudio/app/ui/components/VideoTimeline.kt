@@ -229,9 +229,11 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     val hasStickers = stickerRowCount > 0
     val hasFx = !state.activeFilterId.isNullOrBlank() || !state.activeFxId.isNullOrBlank() ||
         adjustmentsSummary(state.adjustments).isNotEmpty()
-    val musicRows = project?.audioTracks.orEmpty().count { it.kind == AudioTrack.Kind.MUSIC }
-    val voiceRows = project?.audioTracks.orEmpty().count { it.kind != AudioTrack.Kind.MUSIC }
-    val hasWaveform = state.audioWaveform.isNotEmpty() && hasMain
+    val audioLanes = partitionAudioTracksForTimeline(project?.audioTracks.orEmpty())
+    val originalAudioRows = audioLanes.originalVideoAudio.size
+    val musicRows = audioLanes.music.size
+    val voiceRows = audioLanes.voiceAndSfx.size
+    val hasWaveform = state.audioWaveform.isNotEmpty() && hasMain && originalAudioRows == 0
 
     // Keep this estimate in lockstep with the rendered header, ruler, and
     // historical portrait timeline rows below.
@@ -240,16 +242,31 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     if (hasWaveform) height += 10 + 12
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
+        (if (originalAudioRows > 0) 1 else 0) +
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
     if (supportRows > 0) height += 10
     height += overlayLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
     if (hasText) height += textRowCount * 40 + 10
     if (hasStickers) height += stickerRowCount * 40 + 10
     if (hasFx) height += 40 + 10
+    height += originalAudioRows * AUDIO_LANE_ROW_HEIGHT_DP + if (originalAudioRows > 0) 10 else 0
     height += musicRows * AUDIO_LANE_ROW_HEIGHT_DP + if (musicRows > 0) 10 else 0
     height += voiceRows * AUDIO_LANE_ROW_HEIGHT_DP + if (voiceRows > 0) 10 else 0
     return height.dp
 }
+
+internal data class TimelineAudioLanePartition(
+    val originalVideoAudio: List<AudioTrack>,
+    val music: List<AudioTrack>,
+    val voiceAndSfx: List<AudioTrack>,
+)
+
+internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): TimelineAudioLanePartition =
+    TimelineAudioLanePartition(
+        originalVideoAudio = tracks.filter { it.kind == AudioTrack.Kind.ORIGINAL_VIDEO },
+        music = tracks.filter { it.kind == AudioTrack.Kind.MUSIC },
+        voiceAndSfx = tracks.filter { it.kind == AudioTrack.Kind.SFX },
+    )
 
 /** Small in-row identity chip: it overlays the time-zero edge instead of reserving a gutter. */
 @Composable
@@ -821,16 +838,20 @@ fun VideoTimeline(
     // A1 grows with the audio track count (34dp per extra row, capped) so
     // every track stays visible and tappable — never collapsed or hidden.
     val rulerHeight = TIMELINE_RULER_HEIGHT_DP.dp
-    // A1/A2 audio lanes (mockup): A1 = music, A2 = voice. Each lane grows
+    // A0/A1/A2 audio lanes: A0 = extracted V1 source audio, A1 = music,
+    // A2 = voice/SFX. Each lane grows
     // 46dp per extra audio row so every track stays visible and tappable —
     // never collapsed or hidden; the outer vertical scroll handles overflow.
-    // A1 = music, A2 = voice/SFX — keyed off the persisted AudioTrack.kind
+    // Lane membership is keyed off the persisted AudioTrack.kind
     // (Kilo: the old volume>=0.99f threshold misfiled SFX into the voice lane
     // and broke on any track at exactly the boundary).
-    val musicTracks = remember(audioTracks) { audioTracks.filter { it.kind == AudioTrack.Kind.MUSIC } }
-    val voiceTracks = remember(audioTracks) { audioTracks.filter { it.kind != AudioTrack.Kind.MUSIC } }
+    val audioLaneTracks = remember(audioTracks) { partitionAudioTracksForTimeline(audioTracks) }
+    val originalVideoAudioTracks = audioLaneTracks.originalVideoAudio
+    val musicTracks = audioLaneTracks.music
+    val voiceTracks = audioLaneTracks.voiceAndSfx
     // Lane heights grow 46dp per extra row (one AudioTrackLaneRow each) so
     // every track stays visible; the outer vertical scroll handles overflow.
+    val a0Height = (originalVideoAudioTracks.size * AUDIO_LANE_ROW_HEIGHT_DP).dp
     val a1Height = (musicTracks.size * AUDIO_LANE_ROW_HEIGHT_DP).dp
     val a2Height = (voiceTracks.size * AUDIO_LANE_ROW_HEIGHT_DP).dp
     // Supporting rows use generous touch-friendly heights beneath the dominant V1 filmstrip.
@@ -841,13 +862,15 @@ fun VideoTimeline(
     // its segments — the lane renders only when this is true.
     val hasFx = !activeFilterId.isNullOrBlank() || !activeFxId.isNullOrBlank() ||
         adjustmentsSummary(adjustments).isNotEmpty()
-    val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty()
+    val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty() &&
+        originalVideoAudioTracks.isEmpty()
     val waveformStripHeight = 12
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
         .sumOf { overlayLayerHeight.value.toInt() + 10 }
     val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
     val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 10 else 0
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
+    val a0Total = if (originalVideoAudioTracks.isNotEmpty()) a0Height.value.toInt() + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
     val a2Total = if (voiceTracks.isNotEmpty()) a2Height.value.toInt() + 10 else 0
     val v1Height = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
@@ -857,7 +880,7 @@ fun VideoTimeline(
         (if (hasMainVideo) 10 + v1Height.value.toInt() else 0) +
         (if (showWaveformStrip) 10 + waveformStripHeight else 0)
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
-        fxLaneTotal + a1Total + a2Total
+        fxLaneTotal + a0Total + a1Total + a2Total
     val timelineTotalDp = fixedHeaderHeight +
         (if (supportRowsTotal > 0) 10 else 0) +
         supportRowsTotal
@@ -1278,8 +1301,30 @@ fun VideoTimeline(
                                 )
                             }
 
-                            // TRACK 4: A1 (music) + TRACK 5: A2 (voice).
+                            // TRACKS A0 (source video audio), A1 (music), A2 (voice/SFX).
                             // Each renders only when it holds tracks.
+                            if (originalVideoAudioTracks.isNotEmpty()) {
+                                TimelineAudioTrack(
+                                    audioTracks = originalVideoAudioTracks,
+                                    durationMs = safeDurationMs,
+                                    msToDp = msToDp,
+                                    isMuted = isAudioMuted,
+                                    beatMarkersMs = beatMarkersMs,
+                                    beatMarkersByTrackUri = beatMarkersByTrackUri,
+                                    snapToBeat = snapToBeat,
+                                    playheadMsProvider = playheadMsProvider,
+                                    selectedAudioTrackId = selectedAudioTrackId,
+                                    onSelectAudioTrack = onSelectAudioTrack,
+                                    onMoveAudioTrack = onMoveAudioTrack,
+                                    onTrimAudioTrack = onTrimAudioTrack,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(a0Height)
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = "Original video audio (A0)"
+                                        }
+                                )
+                            }
                             if (musicTracks.isNotEmpty()) {
                                 TimelineAudioTrack(
                                     audioTracks = musicTracks,
@@ -1297,7 +1342,7 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(a1Height)
-                                        .semantics(mergeDescendants = true) { contentDescription = "Music" }
+                                        .semantics(mergeDescendants = true) { contentDescription = "Music (A1)" }
                                 )
                             }
                             if (voiceTracks.isNotEmpty()) {
@@ -1318,7 +1363,7 @@ fun VideoTimeline(
                                         .fillMaxWidth()
                                         .height(a2Height)
                                         .semantics(mergeDescendants = true) {
-                                            contentDescription = "Voice and sound effects"
+                                            contentDescription = "Voice and sound effects (A2)"
                                         }
                                 )
                             }
@@ -3757,7 +3802,13 @@ private fun AudioTrackLaneRow(
             Box(Modifier.align(Alignment.CenterEnd).width(14.dp).fillMaxHeight().background(accent.copy(alpha = 0.65f)))
         }
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
-            TimelineLaneIdentity(if (track.kind == AudioTrack.Kind.MUSIC) "Music" else "Audio", accent)
+            TimelineLaneIdentity(
+                when (track.kind) {
+                    AudioTrack.Kind.ORIGINAL_VIDEO -> "V1 audio"
+                    AudioTrack.Kind.MUSIC -> "Music"
+                    AudioTrack.Kind.SFX -> "Voice/SFX"
+                }, accent
+            )
         }
     }
 }

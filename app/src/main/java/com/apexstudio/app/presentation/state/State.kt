@@ -369,6 +369,7 @@ data class AudioStudioState(
     val bpm: Int = 128,
     val beatSyncActive: Boolean = true,
     val tracks: List<AudioTrack> = emptyList(),
+    val originalVideoAudioNotice: String? = null,
     val aiVoiceEnhance: Boolean = true,
     val clarity: Float = 0.6f,
     val reduceNoise: Float = 0.4f,

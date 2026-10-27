@@ -91,7 +91,7 @@ class TimelineRealMaterialRowsTest {
         composeRule.setContent { timeline(audioTracks = listOf(sfx)) }
 
         composeRule.onNodeWithContentDescription("Main video track").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Voice and sound effects").assertExists()
+        composeRule.onNodeWithContentDescription("Voice and sound effects (A2)").assertExists()
         composeRule.onNodeWithTag("timeline-audio-track-sfx-track", useUnmergedTree = true).assertExists()
     }
 

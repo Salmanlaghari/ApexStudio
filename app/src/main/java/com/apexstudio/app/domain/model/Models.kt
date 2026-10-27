@@ -1109,6 +1109,8 @@ data class AudioTrack(
      * decode unchanged. Voice recordings are stored as SFX.
      */
     val kind: Kind = Kind.MUSIC,
+    /** Main-track video clip whose embedded audio was detached into this track. */
+    val sourceVideoClipId: String? = null,
     /** Runtime-renderable recipe identity; null for imported and recorded audio. */
     val sfxEffectId: String? = null,
     /** Synthesis gain used to deterministically restore a cleared cached source. */

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,12 +111,15 @@ fun AudioMixerPanel(
     /** Audio Intelligence: choose a source window matching the project duration. */
     onFitMusicToProject: (trackId: String) -> Unit = {},
     /** Audio Intelligence: remove detected silence while retaining source ranges. */
-    onRemoveSilence: (trackId: String) -> Unit = {}
+    onRemoveSilence: (trackId: String) -> Unit = {},
+    canExtractOriginalVideoAudio: Boolean = false,
+    originalVideoAudioUnavailableMessage: String? = null,
+    onExtractOriginalVideoAudio: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 260.dp)
+            .heightIn(max = 280.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgElevated)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
@@ -149,7 +153,7 @@ fun AudioMixerPanel(
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(190.dp)
+                .height(214.dp)
                 .testTag("audio-mixer-panel-cards"),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -192,10 +196,22 @@ fun AudioMixerPanel(
                         showVolume = false,
                         showSolo = false
                     )
+                    Button(
+                        onClick = onExtractOriginalVideoAudio,
+                        enabled = canExtractOriginalVideoAudio,
+                        modifier = Modifier.fillMaxWidth().height(34.dp).testTag("audio-separate-video-audio"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (canExtractOriginalVideoAudio) "Separate audio to A0" else "Select a V1 clip", fontSize = 11.sp)
+                    }
                     Text(
-                        text = "Original gain is unavailable here; mute is supported.",
+                        text = state.originalVideoAudioNotice ?: originalVideoAudioUnavailableMessage
+                            ?: "Adds an editable source waveform and mutes duplicate V1 audio.",
                         color = ApexPalette.TextSecondary,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
+                        maxLines = 2
                     )
                 }
             }

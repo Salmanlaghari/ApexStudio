@@ -35,6 +35,10 @@ internal fun gpuFilterConfigUsesMedia3(config: GpuFilterConfig): Boolean {
     return presetSupported && config.activeProfileId == null && config.gamma == 1f && stylisticSupported
 }
 
+/** Intensity is a per-frame uniform; changing it must not rebuild the decoder/GL graph. */
+internal fun gpuFilterConfigPreviewKey(config: GpuFilterConfig): GpuFilterConfig =
+    config.copy(filterIntensity = 0f)
+
 /** Keep the legacy visual fallback for photos, A/B compare, and GPU-only profile/shader modes. */
 internal fun shouldRenderComposeGpuFilter(
     isPhotoClip: Boolean,

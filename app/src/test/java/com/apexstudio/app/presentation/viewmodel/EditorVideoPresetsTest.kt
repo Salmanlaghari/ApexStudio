@@ -70,9 +70,22 @@ class EditorVideoPresetsTest {
         assertEquals(before, vm.undoStack.single().project)
         val updated = vm.state.value.project!!.clips.first()
         assertEquals(OneTapLooks.VIRAL_HDR.applyWithIntensity(1f), updated.gpuFilterConfig)
+        assertEquals(null, vm.state.value.activeFilterId)
         val restored = Json.decodeFromString<MediaClip>(Json.encodeToString(updated))
         assertEquals("viral_hdr", restored.gpuFilterConfig.activeProfileId)
         assertEquals(updated.gpuFilterConfig, restored.gpuFilterConfig)
+    }
+
+    @Test
+    fun `per clip filter strength does not become a duplicate project wide look`() {
+        val vm = editor()
+        val globalFilterBefore = vm.state.value.activeFilterId to vm.state.value.filterIntensity
+        val config = GpuFilterConfig(filterPresetId = "cinematic", filterIntensity = 0.4f)
+
+        vm.setGpuFilterConfig(config)
+
+        assertEquals(config, vm.state.value.project!!.clips.first().gpuFilterConfig)
+        assertEquals(globalFilterBefore, vm.state.value.activeFilterId to vm.state.value.filterIntensity)
     }
 
     @Test

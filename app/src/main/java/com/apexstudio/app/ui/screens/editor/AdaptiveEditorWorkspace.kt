@@ -37,8 +37,28 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
     var inspectorOpen by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth().weight(1f).testTag("adaptive-editor-workspace")) {
         if (!landscape || fullscreen) {
-            preview()
-            timeline()
+            if (fullscreen) {
+                preview()
+                timeline()
+            } else if (focused) {
+                Column(
+                    Modifier.fillMaxWidth().weight(0.001f).testTag("portrait-preview-pane"),
+                    content = preview
+                )
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).testTag("portrait-timeline-pane"),
+                    content = timeline
+                )
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane"),
+                    content = preview
+                )
+                Column(
+                    Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-timeline-pane"),
+                    content = timeline
+                )
+            }
         } else {
             Row(Modifier.fillMaxWidth().weight(if (focused) .001f else .48f).testTag("landscape-preview-row")) {
                 Column(Modifier.weight(1f).fillMaxHeight().testTag("landscape-preview"), content = preview)

@@ -609,6 +609,18 @@ fun AudioMixerPanelOverlay(
     audioSessionId: Int = 0
 ) {
     if (!state.audioMixerOpen) return
+    val selectedOriginalVideo = state.project?.clips?.firstOrNull { clip ->
+        clip.id == state.selectedClipId && clip.trackIndex == 0 &&
+            clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+    }
+    val originalAudioAlreadyExtracted = selectedOriginalVideo?.let { clip ->
+        state.project?.audioTracks.orEmpty().any { it.sourceVideoClipId == clip.id }
+    } == true
+    val extractAudioUnavailableMessage = when {
+        selectedOriginalVideo == null -> "Select a main-track V1 video clip first."
+        originalAudioAlreadyExtracted -> "This clip already has an editable A0 audio track."
+        else -> null
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -624,6 +636,11 @@ fun AudioMixerPanelOverlay(
                 onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
                 onImportLocalAudio = onImportLocalAudio,
                 onOpenRoyaltyFreeMusic = onOpenRoyaltyFreeSheet,
+                canExtractOriginalVideoAudio = selectedOriginalVideo != null && !originalAudioAlreadyExtracted,
+                originalVideoAudioUnavailableMessage = extractAudioUnavailableMessage,
+                onExtractOriginalVideoAudio = {
+                    selectedOriginalVideo?.let { vm.extractOriginalVideoAudio(it.id) }
+                },
                 onRemoveTrack = { vm.removeAudioTrack(it) },
                 // Volume fader: routes to the volume-keyframe upsert
                 // when the track has volume keyframes, else to the
@@ -1362,10 +1379,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            // In normal phone mode the stage wraps its source-ratio frame instead
-            // of consuming the whole remainder. That keeps 16:9 preview and the
-            // playback row adjacent; portrait footage uses only the height left
-            // after the compact timeline and transport chrome are reserved.
+            // When the parent already reserves timeline space, use this pane's
+            // full remaining height. Standalone preview hosts can keep the
+            // source-ratio budget below without subtracting timeline chrome twice.
             .then(when {
                 isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
                 isTimelineFocusMode -> Modifier.weight(editorPreviewLayoutWeight(true))
@@ -1769,7 +1785,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     onOpenAddMediaMenu: (ClipType) -> Unit,
     isTimelineFocusMode: Boolean = false,
     onTimelineFocusModeChange: (Boolean) -> Unit = {},
-    compactLandscape: Boolean = false
+    compactLandscape: Boolean = false,
+    isFullscreenPreview: Boolean = false,
 ) {
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
@@ -1978,7 +1995,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 @Composable
 fun EditPackPanelOverlay(
     state: EditorState,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    onOpenTimeActions: () -> Unit = {},
 ) {
     if (!state.editPackPanelOpen) return
     Box(
@@ -2011,6 +2029,9 @@ fun EditPackPanelOverlay(
             val onApplyZoom: (String, Boolean) -> Unit = remember(clipId) {
                 { _, zoomIn -> clipId?.let { vm.applyEditPackZoom(it, zoomIn) } }
             }
+            val onOpenTimeActionsForClip: () -> Unit = remember(clipId, onOpenTimeActions) {
+                { if (clipId != null) onOpenTimeActions() }
+            }
             val onClose: () -> Unit = remember { { vm.closeEditPackPanel() } }
             EditPackPanel(
                 selectedClipName = selectedClip?.name,
@@ -2018,7 +2039,8 @@ fun EditPackPanelOverlay(
                 onApplyFreeze = onApplyFreeze,
                 onApplySplitScreen = onApplySplitScreen,
                 onApplyZoom = onApplyZoom,
-                onClose = onClose
+                onClose = onClose,
+                onOpenTimeActions = onOpenTimeActionsForClip,
             )
         }
     }

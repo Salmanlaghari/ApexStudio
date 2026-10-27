@@ -1,11 +1,13 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,11 +49,11 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
  *
  * - speed_ramp  -> applied via EditorViewModel.setClipSpeed / setClipSpeedRamp
  * - freeze_frame -> dramatic slow-mo hold (engine has no true freeze; honest label)
- * - reverse     -> engine has no reverse playback: shown with "Soon" badge
+ * - reverse     -> opens the on-device range-render action workspace
  * - split_screen -> PIP layout via clip pipX/pipY/pipScale
  * - zoom        -> scale keyframes via EditorViewModel.addKeyframe
  *
- * No dead buttons: every preset either applies or carries a "Soon" badge.
+ * Slow-Mo and Reverse routes open the actual local-render actions workspace.
  */
 
 private data class EditPresetUi(
@@ -90,6 +95,7 @@ fun EditPackPanel(
     onApplySplitScreen: (presetId: String, layout: SplitLayout) -> Unit,
     onApplyZoom: (presetId: String, zoomIn: Boolean) -> Unit,
     onClose: () -> Unit,
+    onOpenTimeActions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -201,6 +207,26 @@ fun EditPackPanel(
             Spacer(Modifier.height(10.dp))
         }
 
+        Text("MOTION ACTIONS", color = ApexPalette.TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EditActionRouteCard(
+                title = "Slow-Mo",
+                subtitle = "Render a selected range",
+                tag = "edit-action-slowmo",
+                enabled = hasSelection,
+                modifier = Modifier.weight(1f),
+                onClick = { onOpenTimeActions() },
+            )
+            EditActionRouteCard(
+                title = "Reverse",
+                subtitle = "Render a selected range",
+                tag = "edit-action-reverse",
+                enabled = hasSelection,
+                modifier = Modifier.weight(1f),
+                onClick = { onOpenTimeActions() },
+            )
+        }
+
         // Type filter chips
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
@@ -240,7 +266,7 @@ fun EditPackPanel(
                                     "freeze_frame" -> onApplyFreeze(preset.id)
                                     "split_screen" -> onApplySplitScreen(preset.id, layoutFor(preset.id))
                                     "zoom" -> onApplyZoom(preset.id, zoomInFor(preset.id))
-                                    // reverse: no engine support — badge shown, no-op
+                                    "reverse" -> onOpenTimeActions()
                                     else -> { /* coming soon */ }
                                 }
                             }
@@ -257,6 +283,37 @@ fun EditPackPanel(
                     modifier = Modifier.padding(16.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun EditActionRouteCard(
+    title: String,
+    subtitle: String,
+    tag: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(46.dp).testTag(tag),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = ApexPalette.BgElevated,
+            contentColor = ApexPalette.NeonCyan,
+            disabledContainerColor = ApexPalette.BgElevated,
+            disabledContentColor = ApexPalette.TextTertiary,
+        ),
+        border = BorderStroke(1.dp, ApexPalette.NeonCyan.copy(alpha = if (enabled) 0.45f else 0.16f)),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.Center) {
+            Text(title, color = if (enabled) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+                fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 1)
         }
     }
 }
@@ -291,13 +348,13 @@ private fun EditPresetCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val isSoon = preset.type == "reverse"
+    val isTimeAction = preset.type == "reverse"
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(ApexPalette.BgElevated)
             .border(0.5.dp, ApexPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled && !isSoon) { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -307,14 +364,14 @@ private fun EditPresetCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(preset.emoji, fontSize = 22.sp)
-                if (isSoon) {
+                if (isTimeAction) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(ApexPalette.NeonAmber.copy(alpha = 0.2f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
-                        Text("SOON", color = ApexPalette.NeonAmber, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                        Text("ACTIONS", color = ApexPalette.NeonCyan, fontSize = 8.sp, fontWeight = FontWeight.Black)
                     }
                 } else {
                     Text(

@@ -81,7 +81,7 @@ class EditorReferenceLayoutTest {
             previewFrame.height > previewFrame.width)
         assertEquals("Normal timeline host should fit populated timeline rows", expectedTimelineHeightPx,
             timelineHost.height, 1.5f)
-        assertTrue("The portrait preview should receive more height than the compact timeline",
+        assertTrue("The portrait preview should receive more height than the compact timeline: preview=$previewFrame timeline=$timelineHost",
             previewFrame.height > timelineHost.height)
     }
 }

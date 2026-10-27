@@ -53,8 +53,6 @@ fun EditorViewModel.setGpuFilterConfig(config: com.apexstudio.app.data.filter.Gp
 
         state.copy(
             activeGpuFilterConfig = config,
-            activeFilterId = config.filterPresetId,
-            filterIntensity = config.filterIntensity,
             project = state.project?.copy(clips = updatedClips)
         )
     }
@@ -90,8 +88,6 @@ fun EditorViewModel.applyGpuFilterProfilePreset(profileId: String) {
         } ?: emptyList()
         state.copy(
             activeGpuFilterConfig = nextConfig,
-            activeFilterId = nextConfig.filterPresetId,
-            filterIntensity = nextConfig.filterIntensity,
             project = state.project?.copy(clips = clips)
         )
     }

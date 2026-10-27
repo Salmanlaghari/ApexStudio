@@ -107,6 +107,7 @@ private fun EditorScreenContent(
     var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
+    var workspaceOpenTimeActions by remember(projectId) { mutableStateOf(false) }
     var initialReferenceWorkspaceOpened by remember(projectId) { mutableStateOf(false) }
     val state = workspacePreviewState(savedState, workspacePreview)
     val isColorWorkspace = entryWorkspace == "color"
@@ -120,6 +121,7 @@ private fun EditorScreenContent(
         workspaceTarget = null
         workspacePreview = null
         workspaceIsFilters = false
+        workspaceOpenTimeActions = false
     }
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
     LaunchedEffect(entryWorkspace) {
@@ -556,15 +558,25 @@ private fun EditorScreenContent(
         ?.takeIf { it.type == ClipType.VIDEO }
         ?.gpuFilterConfig
         ?: com.apexstudio.app.domain.model.GpuFilterConfig()
+    val previewGpuFilterIntensity = remember {
+        java.util.concurrent.atomic.AtomicReference(previewGpuFilterConfig.filterIntensity)
+    }
+    val globalFilterIntensity = remember {
+        java.util.concurrent.atomic.AtomicReference(state.filterIntensity)
+    }
+    SideEffect {
+        previewGpuFilterIntensity.set(previewGpuFilterConfig.filterIntensity)
+        globalFilterIntensity.set(state.filterIntensity)
+    }
+    val previewGpuFilterStageConfig = gpuFilterConfigPreviewKey(previewGpuFilterConfig)
     val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
 
     val currentEffects = remember(
         activePreset,
-        previewGpuFilterConfig,
+        previewGpuFilterStageConfig,
         state.gpuFilterCompareMode,
         state.lutCompareMode,
-        state.filterIntensity,
         activeFx,
         state.fxIntensity,
         state.fxSpeed,
@@ -583,7 +595,8 @@ private fun EditorScreenContent(
                     ?.let { com.apexstudio.app.data.filter.FilterManifest.presetById(it) }
                     ?.let { preset ->
                         add(com.apexstudio.app.data.filter.LutFilterGlEffect(
-                            context, preset, previewGpuFilterConfig.filterIntensity
+                            context, preset,
+                            intensityProvider = { previewGpuFilterIntensity.get() }
                         ))
                     }
                 val perClipAdjustments = previewGpuFilterConfig.toProjectExportAdjustments()
@@ -591,15 +604,10 @@ private fun EditorScreenContent(
                     add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(perClipAdjustments))
                 }
             }
-            val hasSharedFilterKeys = sharedPreviewClip?.filterKeyframes?.isNotEmpty() == true ||
-                sharedPreviewClip?.lutKeyframes?.isNotEmpty() == true
-            if (!state.lutCompareMode && activePreset != null &&
-                (state.filterIntensity > 0f || hasSharedFilterKeys)
-            ) {
+            if (!state.lutCompareMode && activePreset != null) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
-                        context, activePreset, state.filterIntensity,
-                        intensityProvider = { state.filterIntensity },
+                        context, activePreset, intensityProvider = { globalFilterIntensity.get() },
                         presentationTimeIntensityProvider = sharedPreviewClip?.let { typed ->
                             { timeUs ->
                                 val projectMs = mainPreviewClip?.let { clip ->
@@ -607,7 +615,7 @@ private fun EditorScreenContent(
                                         state.project?.clips.orEmpty(), clip, timeUs / 1_000L
                                     )
                                 } ?: timeUs / 1_000L
-                                state.filterIntensity * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
+                                globalFilterIntensity.get() * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
                             }
                         }
                     )
@@ -866,13 +874,14 @@ private fun EditorScreenContent(
         if (state.sfxLibraryPanelOpen) vm.closeSfxLibraryPanel() else vm.closeMusicLibraryPanel()
     }
 
-    val openEffectsWorkspace: () -> Unit = {
+    val openEffectsWorkspace: (Boolean) -> Unit = { openTimeActions ->
         val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
         if (clip != null) {
             vm.setPlaying(false)
             vm.selectClip(clip.id)
             workspaceTarget = clip
             workspacePreview = clip
+            workspaceOpenTimeActions = openTimeActions
         } else {
             android.widget.Toast.makeText(context, "Select a main-track project video first", android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -890,6 +899,7 @@ private fun EditorScreenContent(
             workspaceTarget = clip
             workspacePreview = clip
             workspaceIsFilters = true
+            workspaceOpenTimeActions = false
             initialReferenceWorkspaceOpened = true
         }
     }
@@ -981,7 +991,7 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
-            fitAvailableHeight = false,
+            fitAvailableHeight = true,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
@@ -998,6 +1008,7 @@ private fun EditorScreenContent(
                 seekPlayerAndState = seekPlayerAndState,
                 isTimelineFocusMode = isTimelineFocusMode,
                 onTimelineFocusModeChange = { isTimelineFocusMode = it },
+                isFullscreenPreview = state.isFullscreenPreview,
                 // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
                 // set here and the picker launches immediately, so the pick
                 // can never be misrouted to V1 (the old bug: the ClipType was
@@ -1042,16 +1053,20 @@ private fun EditorScreenContent(
                 state = state,
                 vm = vm,
                 mediaPicker = mediaPicker,
-                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace() },
+                onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace(false) },
                 onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
                 onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
-                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace() },
+                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace(false) },
                 onChallenge = { showLocalChallenge = true },
                 onNext = onExport,
                 onColorWorkspace = onColor,
                 referenceToolMode = workspaceTarget != null,
                 referenceActiveTool = if (workspaceTarget != null) {
-                    if (workspaceIsFilters) "Filters" else "Effects"
+                    when {
+                        workspaceIsFilters -> "Filters"
+                        workspaceOpenTimeActions -> "Actions"
+                        else -> "Effects"
+                    }
                 } else null,
                 onReferenceTrim = {
                     val clip = mainPreviewClip ?: selectedWorkspaceVideo(state.project, state.selectedClipId)
@@ -1142,7 +1157,8 @@ private fun EditorScreenContent(
                     vm.setPlayerPosition(outputMs, forceStateSync = true)
                 },
                 onTogglePlayback = { vm.togglePlay() },
-                onDismiss = dismissWorkspace
+                onDismiss = dismissWorkspace,
+                openTimeActions = workspaceOpenTimeActions
             )
         }
     }
@@ -1276,7 +1292,11 @@ private fun EditorScreenContent(
     )
 
     // ---- Phase 3 overlays ----
-    EditPackPanelOverlay(state = state, vm = vm)
+    EditPackPanelOverlay(state = state, vm = vm, onOpenTimeActions = {
+        vm.closeEditPackPanel()
+        workspaceIsFilters = false
+        openEffectsWorkspace(true)
+    })
     AdjustPackPanelOverlay(state = state, vm = vm)
     ColorScopesPanelOverlay(state = state, vm = vm)
     BgRemoverPanelOverlay(

@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import com.apexstudio.app.ai.audio.AudioIntelligence
 import com.apexstudio.app.data.audio.AudioBeatDetector
 import com.apexstudio.app.data.audio.PcmAudioExtractor
+import com.apexstudio.app.data.export.AudioExportSourceProbe
 
 
 import com.apexstudio.app.domain.model.timeline.applyLegacyAudioTrackChanges
@@ -347,6 +348,101 @@ fun EditorViewModel.addAudioTrack(
 }
 
 
+/** Detach the selected V1 clip's embedded audio into one editable A0 waveform track. */
+fun EditorViewModel.extractOriginalVideoAudio(clipId: String) {
+    val ctx = context
+    val initialProject = _state.value.project
+    val initialClip = initialProject?.clips?.firstOrNull { it.id == clipId }
+    if (ctx == null || initialProject == null || initialClip == null) {
+        _audio.update { it.copy(originalVideoAudioNotice = "Select a main-track video clip first.") }
+        return
+    }
+    val sourceUri = initialClip.uri
+    val startMs = ClipTimeMapping.projectAtSourceTime(
+        initialProject.clips, initialClip, initialClip.trimStartMs
+    )
+    val preflight = planOriginalVideoAudioExtraction(
+        clip = initialClip,
+        sourceUri = sourceUri,
+        timelineStartMs = startMs,
+        existingTracks = initialProject.audioTracks,
+        sourceHasAudio = true,
+        trackId = "preflight",
+    )
+    if (preflight is OriginalVideoAudioExtractionPlan.Blocked) {
+        _audio.update { it.copy(originalVideoAudioNotice = preflight.reason.userMessage) }
+        return
+    }
+
+    setPlaying(false)
+    _audio.update { it.copy(originalVideoAudioNotice = "Checking source audio…") }
+    viewModelScope.launch {
+        val hasAudio = withContext(Dispatchers.IO) {
+            AudioExportSourceProbe.hasAudio(ctx, sourceUri)
+        }
+        val latestProject = _state.value.project
+        val latestClip = latestProject?.clips?.firstOrNull { it.id == clipId }
+        if (latestProject?.id != initialProject.id || latestClip != initialClip) {
+            _audio.update { it.copy(originalVideoAudioNotice = "The selected clip changed. Select it again and retry.") }
+            return@launch
+        }
+        val plan = planOriginalVideoAudioExtraction(
+            clip = initialClip,
+            sourceUri = sourceUri,
+            timelineStartMs = startMs,
+            existingTracks = latestProject.audioTracks,
+            sourceHasAudio = hasAudio,
+            trackId = java.util.UUID.randomUUID().toString(),
+        )
+        if (plan is OriginalVideoAudioExtractionPlan.Blocked) {
+            _audio.update { it.copy(originalVideoAudioNotice = plan.reason.userMessage) }
+            return@launch
+        }
+
+        plan as OriginalVideoAudioExtractionPlan.Ready
+        pushUndo()
+        var addedTrack: AudioTrack? = null
+        var nextDuration: Long? = null
+        _state.update { editorState ->
+            val project = editorState.project ?: return@update editorState
+            val currentClip = project.clips.firstOrNull { it.id == clipId }
+            if (project.id != initialProject.id || currentClip != initialClip ||
+                project.audioTracks.any { it.sourceVideoClipId == clipId }
+            ) return@update editorState
+
+            val tracks = project.audioTracks + plan.track
+            val clips = project.clips.map { clip ->
+                if (clip.id == clipId) plan.mutedSourceClip else clip
+            }
+            val duration = computeTimelineDurationMs(clips, tracks)
+            addedTrack = plan.track
+            nextDuration = duration
+            editorState.copy(
+                project = project.copy(clips = clips, audioTracks = tracks, durationMs = duration).syncSharedTimeline(),
+                durationMs = duration,
+                beatMarkersMs = projectBeatMarkers(tracks, editorState.beatMarkersByTrackUri),
+                playerPositionMs = editorState.playerPositionMs.coerceAtMost(duration),
+                currentTimeMs = editorState.currentTimeMs.coerceAtMost(duration),
+            )
+        }
+        val createdTrack = addedTrack
+        val duration = nextDuration
+        if (createdTrack == null || duration == null) {
+            _audio.update { it.copy(originalVideoAudioNotice = "The project changed before audio could be added. Retry.") }
+            return@launch
+        }
+        _audio.update {
+            it.copy(
+                tracks = _state.value.project?.audioTracks.orEmpty(),
+                originalVideoAudioNotice = "Source audio added to A0 as an editable track; V1 audio is muted.",
+            )
+        }
+        _playerPosition.update { it.coerceAtMost(duration) }
+        selectAudioTrack(createdTrack.id)
+        persistProject(refreshLegacyClipFields = true)
+    }
+}
+
 fun EditorViewModel.removeAudioTrack(trackId: String) {
     if (_state.value.project?.audioTracks?.none { it.id == trackId } != false) return
     pushUndo()
@@ -358,11 +454,16 @@ fun EditorViewModel.removeAudioTrack(trackId: String) {
         val tracks = p.audioTracks.filterNot { it.id == trackId }
         val byUri = if (tracks.any { it.uri == removed.uri }) s.beatMarkersByTrackUri
         else s.beatMarkersByTrackUri - removed.uri
-        val duration = computeTimelineDurationMs(p.clips, tracks)
+        val restoredClips = if (removed.sourceVideoClipId == null) p.clips else p.clips.map { clip ->
+            if (clip.id == removed.sourceVideoClipId && clip.volume <= 0.0001f) {
+                clip.copy(volume = if (removed.isMuted) 0f else removed.volume.coerceIn(0f, 1f))
+            } else clip
+        }
+        val duration = computeTimelineDurationMs(restoredClips, tracks)
         remainingTracks = tracks
         remainingDuration = duration
         s.copy(
-            project = p.copy(audioTracks = tracks, durationMs = duration).syncSharedTimeline(),
+            project = p.copy(clips = restoredClips, audioTracks = tracks, durationMs = duration).syncSharedTimeline(),
             durationMs = duration,
             beatMarkersByTrackUri = byUri,
             beatMarkersMs = projectBeatMarkers(tracks, byUri),

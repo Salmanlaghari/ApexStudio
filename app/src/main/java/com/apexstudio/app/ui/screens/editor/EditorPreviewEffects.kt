@@ -57,3 +57,20 @@ internal fun editorPreviewStageAspectRatio(sourceAspectRatio: Float?, fallbackAs
 /** A restrained enlargement makes portrait footage easier to inspect without changing its frame geometry. */
 internal fun portraitPreviewScale(aspectRatio: Float?): Float =
     if (aspectRatio != null && aspectRatio.isFinite() && aspectRatio >= 0.1f && aspectRatio < 1f) 1.05f else 1f
+
+/** Pixel-independent size of a source-ratio preview stage fitted inside the available phone viewport. */
+internal data class PreviewStageSize(val width: Float, val height: Float)
+
+internal fun fittedPreviewStageSize(
+    maxWidth: Float,
+    maxHeight: Float,
+    aspectRatio: Float?,
+): PreviewStageSize? {
+    if (!maxWidth.isFinite() || !maxHeight.isFinite() || maxWidth <= 0f || maxHeight <= 0f) return null
+    val aspect = aspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f } ?: return null
+    return if (maxWidth / maxHeight > aspect) {
+        PreviewStageSize(maxHeight * aspect, maxHeight)
+    } else {
+        PreviewStageSize(maxWidth, maxWidth / aspect)
+    }
+}

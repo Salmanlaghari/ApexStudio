@@ -23,7 +23,14 @@ class FilterWorkspacePanelTest {
     private fun editor(source: MediaClip = clip) = EditorViewModel().also {
         it._state.value = it.state.value.copy(project = Project("p", "P", 3000L, clips = listOf(source)), selectedClipId = source.id)
     }
-    private fun showCard(tag: String) = compose.onNodeWithTag(tag).performScrollTo()
+    private fun showCard(tag: String) {
+        if (tag in setOf("filter-source-card", "filter-tuning-card", "filter-customize-card") &&
+            compose.onAllNodesWithText("Range & adjustments").fetchSemanticsNodes().isNotEmpty()
+        ) {
+            compose.onNodeWithTag("filter-details-toggle").performScrollTo().performClick()
+        }
+        compose.onNodeWithTag(tag).performScrollTo()
+    }
     private fun choose(id: String) {
         showCard("filter-presets-card")
         compose.onNodeWithTag("filter-preset-$id").performScrollTo().performClick()

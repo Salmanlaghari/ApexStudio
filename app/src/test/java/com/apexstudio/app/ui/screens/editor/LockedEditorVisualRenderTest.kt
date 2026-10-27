@@ -69,14 +69,14 @@ class LockedEditorVisualRenderTest {
             LockedEditorVisualFixture(geometry)
         }
 
-        // The restored portrait layout allocates a flexible preview, not a
-        // fixed 16:9 pane; the timeline receives the larger 1.2 weight.
+        // The portrait layout allocates the larger flexible pane to the
+        // source-ratio preview while keeping the timeline directly usable.
         val preview = requireNotNull(geometry.preview) { "Preview did not receive layout" }
         assertTrue("Flexible preview remains useful in portrait: $preview", preview.height > 100f)
 
         val timeline = requireNotNull(geometry.timeline) { "Timeline did not receive layout" }
-        assertTrue("Timeline should have a compact viewport, not a second title/header row", timeline.height in 180f..380f)
-        assertTrue("The restored 1.2 timeline weight gives it more portrait workspace than preview", timeline.height > preview.height)
+        assertTrue("Timeline should retain a compact, usable viewport", timeline.height in 100f..200f)
+        assertTrue("The source-ratio preview receives more portrait workspace", preview.height > timeline.height)
         assertTrue("Timeline should sit below the keyframe controls: timeline=$timeline keyframe=${geometry.keyframe}", timeline.top + 1f >= requireNotNull(geometry.keyframe).bottom)
 
         val dock = requireNotNull(geometry.primaryDock) { "Primary toolbar dock did not receive layout" }
@@ -175,7 +175,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(editorPreviewLayoutWeight(isTimelineFocused = false))
                 .padding(horizontal = 12.dp)
                 .onGloballyPositioned { geometry.preview = it.toRectPx() }
         ) {
@@ -210,7 +210,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .weight(1.2f)
+                .weight(timelineTrackLayoutWeight(isTimelineFocused = false))
                 .onGloballyPositioned { geometry.timeline = it.toRectPx() }
         ) {
             VideoTimeline(

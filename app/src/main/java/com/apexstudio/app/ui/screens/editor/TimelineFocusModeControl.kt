@@ -17,12 +17,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
-/** Keep the preview substantial in normal portrait editing; focus mode can expand the timeline. */
+/** Give the source-ratio preview room on phones; focus mode can still expand the timeline. */
 internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 0.001f else 1.15f
-/** Normal mode keeps layered tracks usable without letting them dominate the preview. */
+    if (isTimelineFocused) 0.001f else 2.25f
+/** Keep the timeline editable while reserving more height for portrait footage. */
 internal fun timelineTrackLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 3f else 1.2f
+    if (isTimelineFocused) 3f else 0.9f
 
 /**
  * Persistent, discoverable mode switch. Keeping it beside transport makes the

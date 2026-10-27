@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -58,7 +59,10 @@ fun ExportScreen(
     onExport: () -> Unit,
     vm: EditorViewModel = viewModel(
         key = projectId,
-        factory = EditorViewModelFactory(projectId = projectId)
+        factory = EditorViewModelFactory(
+            context = LocalContext.current.applicationContext,
+            projectId = projectId
+        )
     ),
     embedded: Boolean = false,
     onSettings: (() -> Unit)? = null

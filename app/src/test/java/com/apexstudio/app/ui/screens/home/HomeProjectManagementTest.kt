@@ -3,12 +3,17 @@ package com.apexstudio.app.ui.screens.home
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.Project
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +30,35 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class HomeProjectManagementTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun phoneHomeUsesShortHeroAndCompactProjectCard() {
+        val project = Project(id = "phone-project", name = "Phone project", durationMs = 12_000L)
+        compose.setContent {
+            Box(Modifier.requiredSize(375.dp, 830.dp)) {
+                ApexHomeContent(
+                    projects = listOf(project),
+                    savedProjectIds = emptySet(),
+                    searchOpen = false,
+                    searchText = "",
+                    showAllProjects = false,
+                    onSearchOpen = {},
+                    onSearchChange = {},
+                    onNotifications = {},
+                    onCreateVideo = {},
+                    onCreatePhoto = {},
+                    onOpenProject = {},
+                    onRenameProject = {},
+                    onDeleteProject = {},
+                    onShowAll = {},
+                    onExploreAiTools = {}
+                )
+            }
+        }
+
+        compose.onNodeWithTag("dashboard-new-project").assertIsDisplayed().assertHeightIsEqualTo(156.dp)
+        compose.onNodeWithTag("home-recent-project-phone-project").assertIsDisplayed().assertHeightIsEqualTo(74.dp)
+    }
 
     @Test
     fun projectsShortcutShowsCountAndRunsItsNavigationAction() {

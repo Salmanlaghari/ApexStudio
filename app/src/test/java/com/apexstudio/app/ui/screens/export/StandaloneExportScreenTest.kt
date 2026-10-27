@@ -17,6 +17,19 @@ import org.robolectric.annotation.Config
 class StandaloneExportScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun defaultStandaloneRouteInitializesTheRealExportEngine() {
+        compose.setContent {
+            ExportScreen(
+                projectId = "export-engine-context-regression",
+                onBack = {},
+                onExport = {}
+            )
+        }
+
+        compose.onNodeWithText("Engine unavailable").assertDoesNotExist()
+        compose.onNodeWithText("Export engine unavailable").assertDoesNotExist()
+    }
+
     @Test fun standaloneExportKeepsTheVerticalSettingsPage() {
         compose.setContent {
             ExportScreen(

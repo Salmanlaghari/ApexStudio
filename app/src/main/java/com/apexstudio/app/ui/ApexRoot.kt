@@ -39,6 +39,7 @@ internal fun apexContentTab(currentTab: String, showExportSettings: Boolean): St
 fun ApexRoot() {
     var currentTab by remember { mutableStateOf("home") }
     var projectId by remember { mutableStateOf<String?>(null) }
+    var editorEntryWorkspace by remember { mutableStateOf("edit") }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var showExportSettings by remember { mutableStateOf(false) }
     var packsOpenedFromHome by remember { mutableStateOf(false) }
@@ -69,18 +70,32 @@ fun ApexRoot() {
                         "home" -> HomeScreen(
                             onProjectOpen = { id ->
                                 projectId = id
+                                editorEntryWorkspace = "edit"
+                                currentTab = "edit"
+                            },
+                            onOpenAiTools = { id ->
+                                projectId = id
+                                editorEntryWorkspace = "ai"
                                 currentTab = "edit"
                             },
                             onOpenSettings = { overlay = Overlay.Settings }
                         )
                         "edit", "color", "audio" -> EditorScreen(
                             projectId = projectId ?: "p1",
-                            onBack = { currentTab = "home" },
+                            onBack = { editorEntryWorkspace = "edit"; currentTab = "home" },
                             onExport = { showExportSettings = true },
                             onColor = { currentTab = "color" },
                             onAudio = { currentTab = "audio" },
-                            entryWorkspace = apexContentTab(currentTab, showExportSettings),
-                            onCloseWorkspace = { showExportSettings = false; currentTab = "edit" }
+                            entryWorkspace = when {
+                                showExportSettings -> "export"
+                                currentTab == "color" || currentTab == "audio" -> currentTab
+                                else -> editorEntryWorkspace
+                            },
+                            onCloseWorkspace = {
+                                showExportSettings = false
+                                editorEntryWorkspace = "edit"
+                                currentTab = "edit"
+                            }
                         )
                         // Keep export as its own page. Leaving EditorScreen here disposes
                         // its preview/overlay players before the encoder starts, while the

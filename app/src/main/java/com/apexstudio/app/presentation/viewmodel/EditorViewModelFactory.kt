@@ -22,9 +22,11 @@ class EditorViewModelFactory(
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
-        val context = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? Context
+        val extrasContext = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? Context
+        val suppliedContext = extrasContext ?: context
+        val applicationContext = suppliedContext?.applicationContext ?: suppliedContext
         if (modelClass.isAssignableFrom(EditorViewModel::class.java)) {
-            return EditorViewModel(repo, context, projectId, extras.createSavedStateHandle()) as T
+            return EditorViewModel(repo, applicationContext, projectId, extras.createSavedStateHandle()) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

@@ -200,7 +200,13 @@ class EditorViewModel(
 
     internal val mediaPicker = context?.let { MediaPickerHelper(it) }
     internal val mediaAnalyzer = context?.let { MediaAnalyzer() }
-    internal val exportEngine = context?.let { ExportEngine(it) }
+    private val exportEngineInitialization = context?.let { suppliedContext ->
+        runCatching { ExportEngine(suppliedContext.applicationContext ?: suppliedContext) }
+    }
+    internal val exportEngine = exportEngineInitialization?.getOrNull()
+    private val exportEngineInitializationError = exportEngineInitialization
+        ?.exceptionOrNull()
+        ?.let { "Export engine initialization failed: ${it.message ?: it.javaClass.simpleName}" }
     internal val audioEngine = context?.let { AudioEngine(it) }
     internal val colorGradingEngine = ColorGradingEngine()
     internal val media3VideoTrimmer = context?.let { com.apexstudio.app.data.trim.Media3VideoTrimmer(it) }
@@ -209,6 +215,12 @@ class EditorViewModel(
     internal var mainPlayerRef: androidx.media3.exoplayer.ExoPlayer? = null
 
     init {
+        _export.update {
+            it.copy(
+                isExportEngineReady = exportEngine != null,
+                error = exportEngineInitializationError ?: it.error
+            )
+        }
         savedStateHandle?.let { handle ->
             viewModelScope.launch {
                 state.drop(1).collect { current ->
@@ -233,6 +245,7 @@ class EditorViewModel(
                 engineState.collect { st ->
                     _export.update {
                         it.copy(
+                            isExportEngineReady = exportEngine != null,
                             isExporting = st.isExporting,
                             progress = st.progress,
                             outputUri = st.outputUri,

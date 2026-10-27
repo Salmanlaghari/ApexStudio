@@ -95,8 +95,6 @@ fun TopAppBarSection(
         ) {
             Text("Edit project", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-            Text(title, color = EditorPalette.TextSecondary, fontSize = 10.sp,
-                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
         Box {
             Row(

@@ -108,6 +108,7 @@ class FxFilterPanelTest {
             FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, { closed = true })
         }
 
+        compose.onNodeWithTag("filter-details-toggle").performClick()
         compose.onNodeWithTag("filter-source-range").performScrollTo()
         compose.onNodeWithTag("filter-close").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(closed) }

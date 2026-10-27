@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -172,6 +173,8 @@ internal fun FilterWorkspacePanel(
     val background = EditorPalette.BgDeep
     val foreground = EditorPalette.TextPrimary
     val density = LocalDensity.current
+    val compactPhone = LocalConfiguration.current.screenWidthDp < 600
+    val panelMaxHeight = if (compactPhone) 256.dp else 300.dp
     val workspaceScroll = remember(originalClip.id, density) {
         ScrollState(initial = with(density) { 320.dp.roundToPx() })
     }
@@ -180,12 +183,12 @@ internal fun FilterWorkspacePanel(
         color = background,
         contentColor = foreground,
         shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-        modifier = Modifier.testTag("filter-workspace-panel").heightIn(max = 300.dp)
+        modifier = Modifier.testTag("filter-workspace-panel").heightIn(max = panelMaxHeight)
     ) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).padding(horizontal = 12.dp, vertical = if (compactPhone) 4.dp else 6.dp)) {
             // Pinned workspace title and close affordance.
-            Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Filters", fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().height(if (compactPhone) 34.dp else 38.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Filters", fontSize = if (compactPhone) 14.sp else 16.sp, modifier = Modifier.weight(1f))
                 IconButton(
                     onClick = { onPreviewClip(originalClip); onDismiss() },
                     modifier = Modifier.testTag("filter-close")
@@ -194,7 +197,7 @@ internal fun FilterWorkspacePanel(
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().horizontalScroll(workspaceScroll),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compactPhone) 6.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Card(
@@ -202,7 +205,8 @@ internal fun FilterWorkspacePanel(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(Modifier.fillMaxSize().padding(if (compactPhone) 8.dp else 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (compactPhone) 4.dp else 5.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Source range", fontSize = 13.sp, modifier = Modifier.weight(1f))
                             IconButton(onClick = {
@@ -278,7 +282,8 @@ internal fun FilterWorkspacePanel(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(Modifier.fillMaxSize().padding(if (compactPhone) 7.dp else 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (compactPhone) 4.dp else 6.dp)) {
                         Text("Looks", fontSize = 13.sp)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().testTag("filter-look-categories")) {
                             items(categories) { name ->
@@ -294,13 +299,13 @@ internal fun FilterWorkspacePanel(
                             items(categoryCatalog, key = { it.id }) { preset ->
                                 val selected = selectedId == preset.id
                                 Column(
-                                    Modifier.width(76.dp).clip(RoundedCornerShape(10.dp))
+                                    Modifier.width(if (compactPhone) 70.dp else 76.dp).clip(RoundedCornerShape(10.dp))
                                         .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgDeep)
                                         .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonPurple else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
                                         .testTag("filter-preset-${preset.id}")
                                         .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
                                         .semantics { contentDescription = "${preset.label}: ${preset.description}" }
-                                        .padding(horizontal = 6.dp, vertical = 7.dp),
+                                        .padding(horizontal = 5.dp, vertical = if (compactPhone) 4.dp else 7.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     val sample = filterSampleBitmaps[preset.id]
@@ -309,12 +314,12 @@ internal fun FilterWorkspacePanel(
                                             bitmap = sample,
                                             contentDescription = "${preset.label} sample preview",
                                             contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                                            modifier = Modifier.fillMaxWidth().height(if (compactPhone) 46.dp else 56.dp)
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .testTag("filter-sample-${preset.id}"),
                                         )
                                     } else {
-                                        Box(Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
+                                        Box(Modifier.fillMaxWidth().height(if (compactPhone) 46.dp else 56.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
                                             Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
                                         }
                                     }
@@ -331,7 +336,8 @@ internal fun FilterWorkspacePanel(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Column(Modifier.fillMaxSize().padding(if (compactPhone) 8.dp else 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("Tuning & actions", fontSize = 13.sp)
                         TextButton(onClick = {
                             selectedIndex = null
@@ -371,7 +377,8 @@ internal fun FilterWorkspacePanel(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Column(Modifier.fillMaxSize().padding(if (compactPhone) 8.dp else 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("Adjustments", fontSize = 13.sp)
                         TextButton(
                             onClick = { customizeExpanded = !customizeExpanded },

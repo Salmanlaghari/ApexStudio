@@ -82,7 +82,10 @@ fun EditorScreen(
     onCloseWorkspace: () -> Unit = {},
     vm: EditorViewModel = viewModel(
         key = projectId,
-        factory = EditorViewModelFactory(projectId = projectId)
+        factory = EditorViewModelFactory(
+            context = LocalContext.current.applicationContext,
+            projectId = projectId
+        )
     )
 ) {
     EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm, entryWorkspace, onCloseWorkspace)
@@ -104,6 +107,7 @@ private fun EditorScreenContent(
     var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
     var workspaceTarget by remember(projectId) { mutableStateOf<MediaClip?>(null) }
     var workspacePreview by remember(projectId) { mutableStateOf<MediaClip?>(null) }
+    var initialReferenceWorkspaceOpened by remember(projectId) { mutableStateOf(false) }
     val state = workspacePreviewState(savedState, workspacePreview)
     val isColorWorkspace = entryWorkspace == "color"
     val isExportWorkspace = entryWorkspace == "export"
@@ -120,12 +124,13 @@ private fun EditorScreenContent(
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
     LaunchedEffect(entryWorkspace) {
         if (entryWorkspace != "edit") {
+            initialReferenceWorkspaceOpened = true
             dismissWorkspace()
             if (vm.state.value.isFullscreenPreview) vm.toggleFullscreenPreview()
         }
         if (entryWorkspace == "audio") vm.openAudioMixer()
     }
-    BackHandler(enabled = entryWorkspace != "edit") {
+    BackHandler(enabled = entryWorkspace != "edit" && entryWorkspace != "ai") {
         if (entryWorkspace == "audio") vm.closeAudioMixer()
         onCloseWorkspace()
     }
@@ -162,6 +167,14 @@ private fun EditorScreenContent(
         ?.takeIf { it.type == ClipType.VIDEO }
     val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
+    LaunchedEffect(entryWorkspace) {
+        if (entryWorkspace == "ai") showAiPanel = true
+    }
+    val closeAiPanel: () -> Unit = {
+        showAiPanel = false
+        if (entryWorkspace == "ai") onCloseWorkspace()
+    }
+    BackHandler(enabled = entryWorkspace == "ai" && showAiPanel, onBack = closeAiPanel)
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
     var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
     var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
@@ -857,10 +870,27 @@ private fun EditorScreenContent(
         val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
         if (clip != null) {
             vm.setPlaying(false)
+            vm.selectClip(clip.id)
             workspaceTarget = clip
             workspacePreview = clip
         } else {
             android.widget.Toast.makeText(context, "Select a main-track project video first", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(projectId, savedState.project?.clips, entryWorkspace) {
+        if (initialReferenceWorkspaceOpened || entryWorkspace != "edit") return@LaunchedEffect
+        val project = savedState.project ?: return@LaunchedEffect
+        val clip = selectedWorkspaceVideo(project, savedState.selectedClipId)
+            ?: project.clips.firstOrNull {
+                it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+                    it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs
+            }
+        if (clip != null) {
+            vm.selectClip(clip.id)
+            workspaceTarget = clip
+            workspacePreview = clip
+            workspaceIsFilters = true
+            initialReferenceWorkspaceOpened = true
         }
     }
 
@@ -945,7 +975,7 @@ private fun EditorScreenContent(
             isCoverMode = isCoverMode,
             isTimelineFocusMode = isTimelineFocusMode,
             isFullscreenPreview = state.isFullscreenPreview,
-            onFullscreenToggle = { if (workspaceTarget == null) vm.toggleFullscreenPreview() },
+            onFullscreenToggle = { vm.toggleFullscreenPreview() },
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
             onOpenAddMediaMenu = { showAddMediaMenu = true },
@@ -960,7 +990,7 @@ private fun EditorScreenContent(
         }
             },
             timeline = {
-        if (editorChromeVisible(state.isFullscreenPreview) && workspaceTarget == null && !previewPlaybackSuspended) {
+        if (editorChromeVisible(state.isFullscreenPreview) && !previewPlaybackSuspended) {
             EditorTransportSection(
                 compactLandscape = false,
                 state = state,
@@ -1005,26 +1035,6 @@ private fun EditorScreenContent(
                 vm = vm, embedded = true
             )
         }
-        workspaceTarget?.let { captured ->
-            ClipEffectWorkspaceHost(
-                filters = workspaceIsFilters,
-                projectId = projectId,
-                originalClip = captured,
-                vm = vm,
-                isPlaying = savedState.isPlaying,
-                onPreviewClip = { workspacePreview = it },
-                onSeekSource = { sourceMs ->
-                    val clip = workspacePreview ?: captured
-                    exoPlayer?.seekTo(sourceMs)
-                    val outputMs = com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
-                        state.project?.clips.orEmpty(), clip, sourceMs
-                    )
-                    vm.setPlayerPosition(outputMs, forceStateSync = true)
-                },
-                onTogglePlayback = { vm.togglePlay() },
-                onDismiss = dismissWorkspace
-            )
-        }
         if (editorChromeVisible(state.isFullscreenPreview)) {
             // New contextual bottom toolbar — extracted to EditorBottomToolbarSection
             // to keep this composable under the JVM 64KB method limit.
@@ -1039,7 +1049,23 @@ private fun EditorScreenContent(
                 onChallenge = { showLocalChallenge = true },
                 onNext = onExport,
                 onColorWorkspace = onColor,
-                onBeforeToolAction = { if (entryWorkspace != "edit") onCloseWorkspace() },
+                referenceToolMode = workspaceTarget != null,
+                referenceActiveTool = if (workspaceTarget != null) {
+                    if (workspaceIsFilters) "Filters" else "Effects"
+                } else null,
+                onReferenceTrim = {
+                    val clip = mainPreviewClip ?: selectedWorkspaceVideo(state.project, state.selectedClipId)
+                    if (clip != null) {
+                        vm.selectClip(clip.id)
+                        vm.openTrimPanel()
+                    } else {
+                        android.widget.Toast.makeText(context, "Select a main-track video before trimming", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onBeforeToolAction = {
+                    if (workspaceTarget != null) dismissWorkspace()
+                    if (entryWorkspace != "edit" && entryWorkspace != "ai") onCloseWorkspace()
+                },
                 onAi = { showAiPanel = true },
                 onDraw = {
                     if (mainPreviewClip != null) {
@@ -1099,6 +1125,26 @@ private fun EditorScreenContent(
                 Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
             }
         }
+        workspaceTarget?.let { captured ->
+            ClipEffectWorkspaceHost(
+                filters = workspaceIsFilters,
+                projectId = projectId,
+                originalClip = captured,
+                vm = vm,
+                isPlaying = savedState.isPlaying,
+                onPreviewClip = { workspacePreview = it },
+                onSeekSource = { sourceMs ->
+                    val clip = workspacePreview ?: captured
+                    exoPlayer?.seekTo(sourceMs)
+                    val outputMs = com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                        state.project?.clips.orEmpty(), clip, sourceMs
+                    )
+                    vm.setPlayerPosition(outputMs, forceStateSync = true)
+                },
+                onTogglePlayback = { vm.togglePlay() },
+                onDismiss = dismissWorkspace
+            )
+        }
     }
 
     val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
@@ -1108,20 +1154,20 @@ private fun EditorScreenContent(
     quickPresetSection?.let { section ->
         QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
     }
-    if (showAiPanel) AiToolsOverlay(onClose = { showAiPanel = false }, onOpenLocalAnalysis = {
-        showAiPanel = false
+    if (showAiPanel) AiToolsOverlay(onClose = closeAiPanel, onOpenLocalAnalysis = {
+        closeAiPanel()
         showLocalAnalysis = true
     }, onOpenVideoPresets = {
-        showAiPanel = false
+        closeAiPanel()
         showVideoPresets = true
     }, onOpenVideoUpscale = {
-        showAiPanel = false
+        closeAiPanel()
         showVideoUpscale = true
     }, onOpenBackgroundReplace = {
-        showAiPanel = false
+        closeAiPanel()
         vm.openBackgroundPanel()
     }, onOpenCaptions = {
-        showAiPanel = false
+        closeAiPanel()
         vm.openCaptionsPanel()
     }, reportTarget = aiReportTarget, reportState = aiContentReportState,
         onSubmitReport = { reason ->

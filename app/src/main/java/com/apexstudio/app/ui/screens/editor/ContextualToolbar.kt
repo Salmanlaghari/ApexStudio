@@ -264,11 +264,17 @@ fun ContextualBottomToolbar(
     onMedia: () -> Unit = {},
     onOverlay: (() -> Unit)? = null,
     onColorWorkspace: () -> Unit = onAdjust,
-    onBeforeToolAction: () -> Unit = {}
+    onBeforeToolAction: () -> Unit = {},
+    onReferenceTrim: () -> Unit = onTrim,
+    referenceToolMode: Boolean = false,
+    referenceActiveTool: String? = null
 ) {
     var showOverlayChoices by remember { mutableStateOf(false) }
     var showToolbarNotes by remember { mutableStateOf(false) }
     var showMoreTools by remember { mutableStateOf(false) }
+    LaunchedEffect(referenceToolMode) {
+        if (referenceToolMode) showMoreTools = false
+    }
     val hasSelection = selectionKind != ToolbarSelectionKind.NONE
     val mainItems: List<CtxToolItem> = listOf(
         CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
@@ -286,6 +292,13 @@ fun ContextualBottomToolbar(
             tint = ApexPalette.TextPrimary,
             onClick = { showMoreTools = !showMoreTools }
         )
+    )
+    val referenceItems: List<CtxToolItem> = listOf(
+        CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonPurple, onClick = onReferenceTrim),
+        CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonPurple, onClick = onFilters),
+        CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.TextSecondary, onClick = onEffects),
+        CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextSecondary, onClick = onText),
+        CtxToolItem("Draw", Icons.Default.Brush, tint = ApexPalette.TextSecondary, onClick = onDraw)
     )
 
     // Supported tools formerly shown in the main scrolling row. Keep each wired
@@ -500,9 +513,9 @@ fun ContextualBottomToolbar(
         onBeforeToolAction()
         item.onClick()
     })
-    val showClipBar = hasSelection && !isPlaying
+    val showClipBar = hasSelection && !isPlaying && !referenceToolMode
     val clipPageItems = clipItems.map(::routed)
-    val toolsItems = mainItems.map(::routed)
+    val toolsItems = (if (referenceToolMode) referenceItems else mainItems).map(::routed)
     val moreItems = secondaryItems.map(::routed)
 
     if (showToolbarNotes) {
@@ -570,7 +583,7 @@ fun ContextualBottomToolbar(
             modifier = Modifier.testTag("editor_global_toolbar"),
             itemWidth = 38.dp,
             compact = true,
-            selectedLabel = when (selectionKind) {
+            selectedLabel = referenceActiveTool ?: when (selectionKind) {
                 ToolbarSelectionKind.TEXT -> "Text"
                 ToolbarSelectionKind.STICKER -> "Stickers"
                 ToolbarSelectionKind.AUDIO -> "Audio"
@@ -975,7 +988,10 @@ fun EditorBottomToolbarSection(
             )
         )
     },
-    onOverlay: (() -> Unit)? = null
+    onOverlay: (() -> Unit)? = null,
+    referenceToolMode: Boolean = false,
+    referenceActiveTool: String? = null,
+    onReferenceTrim: () -> Unit = { vm.openTrimPanel() }
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
@@ -1058,6 +1074,9 @@ fun EditorBottomToolbarSection(
         onOverlay = onOverlay,
         onColorWorkspace = onColorWorkspace,
         onBeforeToolAction = onBeforeToolAction,
+        onReferenceTrim = onReferenceTrim,
+        referenceToolMode = referenceToolMode,
+        referenceActiveTool = referenceActiveTool,
         onAdjust = { vm.openAdjustmentsPanel() },
         onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at

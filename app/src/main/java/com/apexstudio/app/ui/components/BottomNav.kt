@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -36,12 +37,13 @@ data class BottomNavItem(
 fun BottomNavBar(
     current: String,
     onSelect: (String) -> Unit,
-    items: List<BottomNavItem> = defaultNavItems(current)
+    items: List<BottomNavItem> = defaultNavItems(current),
+    referenceStyle: Boolean = false
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
+            .then(if (referenceStyle) Modifier.background(ApexPalette.BgDeep) else Modifier.background(
                 Brush.verticalGradient(
                     listOf(
                         Color.Transparent,
@@ -49,28 +51,30 @@ fun BottomNavBar(
                         ApexPalette.BgDeep
                     )
                 )
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            ))
+            .padding(horizontal = if (referenceStyle) 0.dp else 10.dp, vertical = if (referenceStyle) 2.dp else 8.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(ApexPalette.BgGlass)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(22.dp))
-                .padding(vertical = 8.dp, horizontal = 4.dp),
+                .testTag(if (referenceStyle) "bottom-nav-reference-style" else "bottom-nav-glass-style")
+                .then(if (referenceStyle) Modifier else Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(ApexPalette.BgGlass)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(22.dp)))
+                .padding(vertical = if (referenceStyle) 3.dp else 8.dp, horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             for (item in items) {
-                BottomNavCell(item, item.id == current, onSelect = { onSelect(item.id) })
+                BottomNavCell(item, item.id == current, referenceStyle, onSelect = { onSelect(item.id) })
             }
         }
     }
 }
 
 @Composable
-private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -> Unit) {
+private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, referenceStyle: Boolean, onSelect: () -> Unit) {
     val accent = item.selectedColor ?: ApexPalette.NeonCyan
     val tint by animateColorAsState(
         if (isActive) accent else ApexPalette.TextSecondary,
@@ -87,7 +91,7 @@ private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -
             contentAlignment = Alignment.Center,
             modifier = Modifier.size(36.dp)
         ) {
-            if (isActive) {
+            if (isActive && !referenceStyle) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -109,7 +113,7 @@ private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -
                         .border(1.dp, accent, RoundedCornerShape(50))
                 )
             }
-            Icon(item.icon, null, tint = tint, modifier = Modifier.size(20.dp))
+            Icon(item.icon, null, tint = tint, modifier = Modifier.size(if (referenceStyle) 23.dp else 20.dp))
         }
         Spacer(Modifier.height(2.dp))
         Text(

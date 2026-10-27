@@ -30,6 +30,19 @@ class EditorViewModelTest {
     private fun viewModel() = EditorViewModel()
 
     @Test
+    fun `application context initializes the real export engine`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val vm = EditorViewModel(context = context)
+
+        try {
+            assertTrue(vm.export.value.isExportEngineReady)
+            assertEquals(null, vm.export.value.error)
+        } finally {
+            vm.exportEngine?.release()
+        }
+    }
+
+    @Test
     fun `multi-select toggles ids and rejects ids absent from project`() {
         val clip = MediaClip("clip", "Clip", "file:///clip.mp4", 10_000L, trimEndMs = 10_000L)
         val vm = viewModel().also {

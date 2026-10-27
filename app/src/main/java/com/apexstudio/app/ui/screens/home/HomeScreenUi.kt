@@ -76,7 +76,8 @@ internal fun ApexHomeContent(
     onOpenProject: (Project) -> Unit,
     onRenameProject: (Project) -> Unit,
     onDeleteProject: (Project) -> Unit,
-    onShowAll: () -> Unit
+    onShowAll: () -> Unit,
+    onExploreAiTools: () -> Unit = onCreateVideo
 ) {
     val listState = rememberLazyListState()
     var showCreateChoices by remember { mutableStateOf(false) }
@@ -89,16 +90,19 @@ internal fun ApexHomeContent(
     }
     val visibleProjects = if (showAllProjects || searchText.isNotBlank()) filteredProjects else filteredProjects.take(3)
 
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(ApexPalette.BgBase)
+    ) {
+    val compactPhone = maxWidth < 600.dp
     LazyColumn(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .background(ApexPalette.BgBase)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+            .padding(horizontal = if (compactPhone) 12.dp else 24.dp),
+            contentPadding = PaddingValues(top = if (compactPhone) 5.dp else 14.dp, bottom = if (compactPhone) 8.dp else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compactPhone) 7.dp else 15.dp)
     ) {
         item {
             ApexHomeHeader(
@@ -129,7 +133,8 @@ internal fun ApexHomeContent(
         }
         item {
             CreativeWorkspaceHero(
-                onCreate = { showCreateChoices = true }
+                onCreate = { showCreateChoices = true },
+                compactPhone = compactPhone
             )
         }
         item {
@@ -138,7 +143,7 @@ internal fun ApexHomeContent(
                     Text(
                         if (searchText.isBlank()) "Recent Projects" else "Search results",
                         color = ApexPalette.TextPrimary,
-                        fontSize = 20.sp,
+                        fontSize = if (compactPhone) 17.sp else 20.sp,
                         fontWeight = FontWeight.Bold
                     )
                     if (searchText.isNotBlank()) Text("${filteredProjects.size} matching projects", color = ApexPalette.TextSecondary, fontSize = 12.sp)
@@ -159,6 +164,7 @@ internal fun ApexHomeContent(
                 HomeProjectCard(
                     project = project,
                     canManage = project.id in savedProjectIds,
+                    compactPhone = compactPhone,
                     onOpen = { onOpenProject(project) },
                     onRename = { onRenameProject(project) },
                     onDelete = { onDeleteProject(project) }
@@ -166,8 +172,9 @@ internal fun ApexHomeContent(
             }
         }
         item {
-            AiToolsBanner(onChooseVideo = onCreateVideo)
+            AiToolsBanner(compactPhone = compactPhone, onOpenAiTools = onExploreAiTools)
         }
+    }
     }
 
     if (showCreateChoices) {
@@ -204,7 +211,7 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        Canvas(Modifier.size(46.dp).testTag("apex-home-mark")) {
+        Canvas(Modifier.size(40.dp).testTag("apex-home-mark")) {
             val w = size.width
             val h = size.height
             val mark = Path().apply {
@@ -222,11 +229,11 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
                     withStyle(SpanStyle(color = ApexPalette.TextPrimary)) { append("Apex") }
                     withStyle(SpanStyle(color = ApexPalette.NeonPurple)) { append("Studio") }
                 },
-                fontSize = 22.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
-            Text("AI-POWERED VIDEO EDITOR", color = ApexPalette.TextTertiary, fontSize = 8.sp, letterSpacing = 2.sp, maxLines = 1)
+            Text("AI-POWERED VIDEO EDITOR", color = ApexPalette.TextTertiary, fontSize = 7.sp, letterSpacing = 1.7.sp, maxLines = 1)
         }
         HeaderAction(Icons.Default.Search, "Search projects", onSearch, "dashboard-search")
         HeaderAction(Icons.Default.NotificationsNone, "App notification settings", onNotifications, "dashboard-notifications")
@@ -237,19 +244,19 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
 private fun HeaderAction(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit, tag: String) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(40.dp).clip(CircleShape).testTag(tag)
+        modifier = Modifier.size(36.dp).clip(CircleShape).testTag(tag)
     ) {
         Icon(icon, contentDescription = description, tint = ApexPalette.TextPrimary, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
-private fun CreativeWorkspaceHero(onCreate: () -> Unit) {
+private fun CreativeWorkspaceHero(onCreate: () -> Unit, compactPhone: Boolean) {
     Box(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 224.dp)
-            .clip(RoundedCornerShape(24.dp))
+        modifier = Modifier.fillMaxWidth().height(if (compactPhone) 156.dp else 232.dp)
+            .clip(RoundedCornerShape(if (compactPhone) 20.dp else 24.dp))
             .background(Brush.linearGradient(listOf(Color(0xFF0D1D34), Color(0xFF251047), Color(0xFF07314B))))
-            .border(1.dp, Brush.linearGradient(listOf(Color(0xFF4C92FF), ApexPalette.NeonPurple, ApexPalette.NeonCyan)), RoundedCornerShape(24.dp))
+            .border(1.dp, Brush.linearGradient(listOf(Color(0xFF4C92FF), ApexPalette.NeonPurple, ApexPalette.NeonCyan)), RoundedCornerShape(if (compactPhone) 20.dp else 24.dp))
             .testTag("dashboard-new-project")
     ) {
         Image(
@@ -259,32 +266,36 @@ private fun CreativeWorkspaceHero(onCreate: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xE80A1931), Color(0x7D16163B), Color(0x4421345E)))))
-        Text("IDEAS\nEDIT\nENHANCE\nSHARE", color = Color.White.copy(alpha = .60f), fontSize = 7.sp, lineHeight = 14.sp,
-            letterSpacing = 1.4.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 16.dp))
+        Text("IDEAS\nEDIT\nENHANCE\nSHARE", color = Color.White.copy(alpha = .60f), fontSize = 7.sp, lineHeight = 12.sp,
+            letterSpacing = 1.4.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = if (compactPhone) 13.dp else 20.dp, end = 16.dp))
         Text("A HIGHER\nSTANDARD\nFOR CREATORS", color = Color.White.copy(alpha = .68f), fontSize = 7.sp,
-            lineHeight = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 18.dp))
+            lineHeight = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = if (compactPhone) 12.dp else 18.dp))
         Column(
-            modifier = Modifier.fillMaxWidth(.84f).padding(horizontal = 20.dp, vertical = 19.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            modifier = Modifier.fillMaxWidth(if (compactPhone) .90f else .84f)
+                .padding(horizontal = if (compactPhone) 12.dp else 20.dp, vertical = if (compactPhone) 10.dp else 19.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactPhone) 4.dp else 9.dp)
         ) {
-            Text("Your creative\nworkspace", color = Color.White, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Turn ideas into incredible videos\nwith the power of AI.", color = Color(0xFFC4D0F0), fontSize = 13.sp, lineHeight = 18.sp)
+            Text("Your creative\nworkspace", color = Color.White, fontSize = if (compactPhone) 21.sp else 27.sp,
+                lineHeight = if (compactPhone) 23.sp else 31.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Turn ideas into incredible videos\nwith the power of AI.", color = Color(0xFFC4D0F0),
+                fontSize = if (compactPhone) 10.sp else 13.sp, lineHeight = if (compactPhone) 12.sp else 18.sp)
             Row(
-                modifier = Modifier.padding(top = 5.dp).clip(RoundedCornerShape(30.dp))
+                modifier = Modifier.padding(top = if (compactPhone) 1.dp else 5.dp).clip(RoundedCornerShape(30.dp))
                     .background(Brush.horizontalGradient(listOf(Color(0xFFF0E7FF), Color(0xFFD9F8FF))))
                     .clickable(onClick = onCreate).testTag("home-create-project"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF17162B), modifier = Modifier.padding(start = 15.dp).size(23.dp))
-                Text("Create new project", color = Color(0xFF17162B), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 13.dp))
-                Text("→", color = Color(0xFF17162B), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 16.dp))
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF17162B), modifier = Modifier.padding(start = if (compactPhone) 10.dp else 15.dp).size(if (compactPhone) 17.dp else 23.dp))
+                Text("Create new project", color = Color(0xFF17162B), fontSize = if (compactPhone) 13.sp else 15.sp,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 7.dp, vertical = if (compactPhone) 7.dp else 13.dp))
+                Text("→", color = Color(0xFF17162B), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = if (compactPhone) 10.dp else 16.dp))
             }
         }
     }
 }
 
 @Composable
-private fun HomeProjectCard(project: Project, canManage: Boolean, onOpen: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
+private fun HomeProjectCard(project: Project, canManage: Boolean, compactPhone: Boolean, onOpen: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
     val context = LocalContext.current
     val clip = remember(project.clips) {
         project.clips.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
@@ -303,12 +314,13 @@ private fun HomeProjectCard(project: Project, canManage: Boolean, onOpen: () -> 
         else -> null
     }
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
-            .background(Color(0xFF141923)).border(1.dp, Color(0xFF252D3B), RoundedCornerShape(17.dp))
-            .clickable(onClick = onOpen).padding(10.dp).testTag("home-recent-project-${project.id}"),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(if (compactPhone) 14.dp else 17.dp))
+            .background(Color(0xFF141923)).border(1.dp, Color(0xFF252D3B), RoundedCornerShape(if (compactPhone) 14.dp else 17.dp))
+            .clickable(onClick = onOpen).padding(if (compactPhone) 8.dp else 10.dp).testTag("home-recent-project-${project.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.width(118.dp).height(70.dp).clip(RoundedCornerShape(11.dp)).background(ApexPalette.BgElevated), contentAlignment = Alignment.Center) {
+        Box(Modifier.width(if (compactPhone) 96.dp else 118.dp).height(if (compactPhone) 58.dp else 70.dp)
+            .clip(RoundedCornerShape(10.dp)).background(ApexPalette.BgElevated), contentAlignment = Alignment.Center) {
             when {
                 extractedFrame != null -> androidx.compose.foundation.Image(extractedFrame!!, contentDescription = "Preview of ${project.name}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 imageModel != null -> AsyncImage(model = imageModel, contentDescription = "Preview of ${project.name}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -323,12 +335,13 @@ private fun HomeProjectCard(project: Project, canManage: Boolean, onOpen: () -> 
             }
         }
         Spacer(Modifier.width(11.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(project.name, color = ApexPalette.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(project.name, color = ApexPalette.TextPrimary, fontSize = if (compactPhone) 12.sp else 14.sp,
+                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Schedule, contentDescription = null, tint = ApexPalette.TextTertiary, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(homeEditedLabel(project.lastEditedMs), color = ApexPalette.TextSecondary, fontSize = 10.sp, maxLines = 1)
+                Text(homeEditedLabel(project.lastEditedMs), color = ApexPalette.TextSecondary, fontSize = if (compactPhone) 9.sp else 10.sp, maxLines = 1)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -382,25 +395,27 @@ private fun HomeEmptyProjects(searching: Boolean) {
 }
 
 @Composable
-private fun AiToolsBanner(onChooseVideo: () -> Unit) {
+private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(19.dp))
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(if (compactPhone) 16.dp else 19.dp))
             .background(Brush.linearGradient(listOf(Color(0xFF171542), Color(0xFF24205B), Color(0xFF172E56))))
-            .border(1.dp, ApexPalette.NeonPurple.copy(alpha = .48f), RoundedCornerShape(19.dp)).padding(16.dp),
+            .border(1.dp, ApexPalette.NeonPurple.copy(alpha = .48f), RoundedCornerShape(if (compactPhone) 16.dp else 19.dp))
+            .padding(if (compactPhone) 10.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("✦  CREATE FASTER WITH AI", color = Color(0xFFB9B4FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text("Explore AI tools in your next edit", color = ApexPalette.TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
-            TextButton(onClick = onChooseVideo, contentPadding = PaddingValues(0.dp)) {
-                Text("Choose a video  →", color = ApexPalette.NeonCyan, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 3.dp else 5.dp)) {
+            Text("✦  CREATE FASTER WITH AI", color = Color(0xFFB9B4FF), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("Explore AI tools in your next edit", color = ApexPalette.TextPrimary, fontSize = if (compactPhone) 13.sp else 17.sp,
+                fontWeight = FontWeight.Bold, lineHeight = if (compactPhone) 16.sp else 20.sp)
+            TextButton(onClick = onOpenAiTools, contentPadding = PaddingValues(0.dp), modifier = Modifier.testTag("home-ai-tools-entry")) {
+                Text("Open AI tools  →", color = ApexPalette.NeonCyan, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             }
         }
-        Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(if (compactPhone) 72.dp else 92.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(62.dp).align(Alignment.CenterStart).graphicsLayer { rotationZ = -9f }.clip(RoundedCornerShape(12.dp)).background(Color(0xFF211A56)))
-            Box(Modifier.size(66.dp).align(Alignment.Center).graphicsLayer { rotationZ = -2f }.clip(RoundedCornerShape(12.dp)).background(Color(0xFF242D76)))
+            Box(Modifier.size(if (compactPhone) 52.dp else 66.dp).align(Alignment.Center).graphicsLayer { rotationZ = -2f }.clip(RoundedCornerShape(12.dp)).background(Color(0xFF242D76)))
             Image(painterResource(com.apexstudio.app.R.drawable.apex_home_mountain_hero), contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.width(58.dp).height(72.dp).align(Alignment.CenterEnd).graphicsLayer { rotationZ = 7f }
+                modifier = Modifier.width(if (compactPhone) 46.dp else 58.dp).height(if (compactPhone) 58.dp else 72.dp).align(Alignment.CenterEnd).graphicsLayer { rotationZ = 7f }
                     .clip(RoundedCornerShape(12.dp)).border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(12.dp)))
         }
     }

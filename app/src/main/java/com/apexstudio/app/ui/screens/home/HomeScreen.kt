@@ -57,6 +57,7 @@ import java.util.UUID
 @Composable
 fun HomeScreen(
     onProjectOpen: (String) -> Unit,
+    onOpenAiTools: (String) -> Unit = onProjectOpen,
     onOpenSettings: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
@@ -72,6 +73,7 @@ fun HomeScreen(
     var searchOpen by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var showAllProjects by remember { mutableStateOf(false) }
+    var openAiToolsAfterCreate by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
@@ -84,11 +86,13 @@ fun HomeScreen(
     }
 
     val mediaPicker = remember { MediaPickerHelper(context) }
-    mediaPicker.registerLaunchers()
+    mediaPicker.registerLaunchers(onCancelled = { openAiToolsAfterCreate = false })
 
     LaunchedEffect(Unit) {
         mediaPicker.pickedMedia.collect { metadataList ->
-            if (metadataList.isNotEmpty()) {
+            if (metadataList.isEmpty()) {
+                openAiToolsAfterCreate = false
+            } else {
                 val clips = metadataList.map { meta ->
                     MediaClip(
                         id = UUID.randomUUID().toString(),
@@ -107,7 +111,12 @@ fun HomeScreen(
 
                 projectRepo.saveProject(newProject)
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
-                onProjectOpen(newProject.id)
+                if (openAiToolsAfterCreate) {
+                    openAiToolsAfterCreate = false
+                    onOpenAiTools(newProject.id)
+                } else {
+                    onProjectOpen(newProject.id)
+                }
             }
         }
     }
@@ -141,6 +150,15 @@ fun HomeScreen(
         },
         onCreateVideo = { openEditorFor(ClipType.VIDEO) },
         onCreatePhoto = { openEditorFor(ClipType.IMAGE) },
+        onExploreAiTools = {
+            val existingProjectId = latestSavedVideoProjectId(projects, savedProjectIds)
+            if (existingProjectId != null) {
+                onOpenAiTools(existingProjectId)
+            } else {
+                openAiToolsAfterCreate = true
+                openEditorFor(ClipType.VIDEO)
+            }
+        },
         onOpenProject = { onProjectOpen(it.id) },
         onRenameProject = { project ->
             renameText = project.name
@@ -222,6 +240,16 @@ internal suspend fun resolveHomeProjects(
 } else {
     withContext(ioDispatcher) { loadFallback() }
 }
+
+/** Choose the most recently edited saved main-track video project for Home's AI entry. */
+internal fun latestSavedVideoProjectId(projects: List<Project>, savedProjectIds: Set<String>): String? =
+    projects.asSequence()
+        .filter { it.id in savedProjectIds }
+        .filter { project -> project.clips.any { clip ->
+            clip.type == ClipType.VIDEO && clip.trackIndex == 0 && clip.uri.isNotBlank()
+        } }
+        .maxByOrNull { it.lastEditedMs }
+        ?.id
 
 @Composable
 internal fun DashboardEditorEntries(

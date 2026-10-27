@@ -2,7 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -170,6 +171,10 @@ internal fun FilterWorkspacePanel(
     }
     val background = EditorPalette.BgDeep
     val foreground = EditorPalette.TextPrimary
+    val density = LocalDensity.current
+    val workspaceScroll = remember(originalClip.id, density) {
+        ScrollState(initial = with(density) { 320.dp.roundToPx() })
+    }
 
     Surface(
         color = background,
@@ -188,7 +193,7 @@ internal fun FilterWorkspacePanel(
             }
 
             Row(
-                Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()),
+                Modifier.weight(1f).fillMaxWidth().horizontalScroll(workspaceScroll),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -237,7 +242,7 @@ internal fun FilterWorkspacePanel(
                                         label = { Text("${preset?.label ?: indexed.value.id}  ${indexed.value.startMs}–${indexed.value.endMs}ms", maxLines = 1) },
                                         leadingIcon = { Box(Modifier.size(9.dp).clip(RoundedCornerShape(3.dp)).background(Color(preset?.swatchArgb ?: 0xFF8C91A0))) },
                                         colors = AssistChipDefaults.assistChipColors(
-                                            containerColor = if (selectedIndex == indexed.index) EditorPalette.BgElevated else EditorPalette.BgDeep,
+                                            containerColor = if (selectedIndex == indexed.index) EditorPalette.NeonPurple.copy(alpha = 0.16f) else EditorPalette.BgDeep,
                                             labelColor = foreground,
                                             leadingIconContentColor = foreground
                                         ),
@@ -278,7 +283,11 @@ internal fun FilterWorkspacePanel(
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().testTag("filter-look-categories")) {
                             items(categories) { name ->
                                 FilterChip(selected = category == name, onClick = { category = name },
-                                    label = { Text(name, fontSize = 10.sp) }, modifier = Modifier.testTag("filter-look-category-$name"))
+                                    label = { Text(name, fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = EditorPalette.NeonPurple.copy(alpha = 0.18f),
+                                        selectedLabelColor = EditorPalette.NeonPurple
+                                    ), modifier = Modifier.testTag("filter-look-category-$name"))
                             }
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -287,7 +296,7 @@ internal fun FilterWorkspacePanel(
                                 Column(
                                     Modifier.width(76.dp).clip(RoundedCornerShape(10.dp))
                                         .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgDeep)
-                                        .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonCyan else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
+                                        .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonPurple else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
                                         .testTag("filter-preset-${preset.id}")
                                         .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
                                         .semantics { contentDescription = "${preset.label}: ${preset.description}" }
@@ -300,12 +309,12 @@ internal fun FilterWorkspacePanel(
                                             bitmap = sample,
                                             contentDescription = "${preset.label} sample preview",
                                             contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxWidth().height(42.dp)
+                                            modifier = Modifier.fillMaxWidth().height(56.dp)
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .testTag("filter-sample-${preset.id}"),
                                         )
                                     } else {
-                                        Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
+                                        Box(Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
                                             Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
                                         }
                                     }
@@ -405,14 +414,15 @@ internal fun FilterWorkspacePanel(
             }
 
             // Pinned cancellation and commit actions remain visible while cards scroll.
-            Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { onPreviewClip(originalClip); onDismiss() }, modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                 Button(
                     onClick = {
                         if (enabled && state.playerError == null && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
                     },
                     enabled = enabled && dirty && state.playerError == null,
-                    modifier = Modifier.testTag("filter-apply")
+                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
+                    colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)
                 ) { Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Apply") }
             }
         }

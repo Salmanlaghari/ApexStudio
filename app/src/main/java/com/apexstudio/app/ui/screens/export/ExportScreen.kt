@@ -20,11 +20,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -44,7 +46,6 @@ import com.apexstudio.app.data.export.exportTargetBitrate
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
-import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
 import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +60,8 @@ fun ExportScreen(
         key = projectId,
         factory = EditorViewModelFactory(projectId = projectId)
     ),
-    embedded: Boolean = false
+    embedded: Boolean = false,
+    onSettings: (() -> Unit)? = null
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val editorState by vm.state.collectAsStateWithLifecycle()
@@ -96,6 +98,7 @@ fun ExportScreen(
         if (export.isExporting) vm.cancelCurrentExport() else onBack()
     }
     var shareError by remember { mutableStateOf<String?>(null) }
+    var advancedExpanded by rememberSaveable(projectId) { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val projectFilterPreset = remember(context, editorState.activeFilterId) {
         val filterId = editorState.activeFilterId
@@ -313,38 +316,25 @@ fun ExportScreen(
                 }
             }
         } else {
-        AppTopBar(
-            title = "Export",
-            subtitle = "ApexStudio • Export Settings",
-            onBack = { if (export.isExporting) vm.cancelCurrentExport() else onBack() },
-            onExport = if (!export.isExporting && canRequestVideoExport) requestVideoExport else null
-        )
-        GlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            cornerRadius = 16.dp,
-            backgroundColor = ApexPalette.BgGlassSoft,
-            borderColor = ApexPalette.NeonPurple.copy(alpha = 0.35f)
+        ExportBrandHeader(onSettings = onSettings)
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 82.dp)
+                .padding(horizontal = 12.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.horizontalGradient(listOf(ApexPalette.NeonPurple, Color(0xFF486DFF), ApexPalette.NeonCyan)))
+                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.IosShare, contentDescription = null, tint = ApexPalette.BgDeep)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.IosShare, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("EXPORT YOUR STORY", color = ApexPalette.NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${if (wholeProject) "Whole project" else "Selected clip"} • $selectedResolution • $selectedAspect • MP4",
-                        color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
+                    Text("Export video", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Render your creation and share it with the world", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, maxLines = 2)
                 }
             }
         }
@@ -355,6 +345,29 @@ fun ExportScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            ExportProjectPreviewCard(
+                project = editorState.project,
+                isExporting = export.isExporting,
+                progress = export.progress,
+                completed = export.outputUri != null && export.progress >= 1f
+            )
+            SectionLabel("EXPORT SETTINGS")
+            ExportPrimarySettingsRows(
+                resolution = selectedResolution,
+                frameRate = selectedFps.toInt(),
+                enabled = !export.isExporting,
+                onResolutionSelected = { value -> vm.updateExport { it.copy(resolution = value) } },
+                onFrameRateSelected = { value -> vm.updateExport { it.copy(frameRate = value) } }
+            )
+            TextButton(
+                onClick = { advancedExpanded = !advancedExpanded },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp).testTag("export-advanced-settings")
+            ) {
+                Icon(if (advancedExpanded) Icons.Default.ExpandLess else Icons.Default.Tune, contentDescription = null, tint = ApexPalette.NeonPurple, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (advancedExpanded) "Hide advanced settings" else "More export settings", color = ApexPalette.TextSecondary, fontSize = 11.sp)
+            }
+            if (advancedExpanded) {
             AudioExportWarning(export.warning)
             SectionLabel("VIDEO SCOPE")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -389,37 +402,6 @@ fun ExportScreen(
             // Do not present decorative transition cards as working export actions.
             Text("Transitions are edited on the timeline. Whole-project export currently supports hard cuts only.",
                 color = ApexPalette.TextSecondary, fontSize = 10.sp)
-
-            SectionLabel("RESOLUTION")
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 14.dp
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        for ((label, sub) in listOf(
-                            "720P" to "1280×720",
-                            "1080P" to "1920×1080",
-                            "1440P" to "2560×1440",
-                            "4K" to "3840×2160"
-                        )) {
-                            ResolutionPill(
-                                label = label,
-                                sub = sub,
-                                selected = selectedResolution == label,
-                                enabled = !export.isExporting,
-                                onClick = {
-                                    vm.updateExport { it.copy(resolution = label) }
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
 
             // Pro Phase 1: aspect ratio selector (16:9 / 9:16 / 1:1)
             SectionLabel("ASPECT RATIO")
@@ -754,6 +736,7 @@ fun ExportScreen(
                     }
                 }
             }
+            }
 
             if (export.outputUri != null) {
                 GlassCard(
@@ -794,7 +777,7 @@ fun ExportScreen(
                         }) {
                             Icon(Icons.Default.Share, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("Share / Next")
+                            Text("Share exported video")
                         }
                         Text("Shares the last completed export. Re-export after changing edits or settings. Nothing is published automatically.",
                             color = ApexPalette.TextSecondary, fontSize = 10.sp)
@@ -822,11 +805,11 @@ fun ExportScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 6.dp)
-                .height(44.dp)
+                .height(50.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(
                     Brush.horizontalGradient(
-                        listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                        listOf(ApexPalette.NeonPurple, Color(0xFF496CFF), ApexPalette.NeonCyan)
                     )
                 )
                 .clickable(enabled = export.isExporting || canRequestVideoExport, onClick = requestVideoExport),
@@ -837,7 +820,7 @@ fun ExportScreen(
                     if (export.isExporting) Icons.Default.Close
                     else Icons.Default.IosShare,
                     null,
-                    tint = ApexPalette.BgDeep,
+                    tint = Color.White,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(6.dp))
@@ -849,14 +832,15 @@ fun ExportScreen(
                     else if (!wholeProject && videoScope.baseClip == null) "Select a project clip to export"
                     else if (wholeProject && projectBlockReason != null) "Whole-project export unavailable for these edits"
                     else if (!wholeProject && selectedBlockReason != null && videoScope.baseClip != null) "Selected-clip export unavailable for these edits"
-                    else "Export ${if (wholeProject) "project • " else ""}$selectedResolution • $selectedAspect @ ${selectedFps.toInt()}fps",
-                    color = ApexPalette.BgDeep,
+                    else "Export now",
+                    color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp
                 )
             }
         }
 
+        if (advancedExpanded) {
         // Standalone audio export: AAC (.m4a) from the project's audio.
         Box(
             modifier = Modifier
@@ -893,6 +877,7 @@ fun ExportScreen(
             color = ApexPalette.TextSecondary,
             fontSize = 10.sp
         )
+        }
         }
     }
 }

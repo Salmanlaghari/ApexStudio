@@ -57,7 +57,7 @@ fun PlaybackControlBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.PlaybackBarHeight)
-            .background(Color.Black)
+            .background(EditorPalette.BgBase)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -110,8 +110,8 @@ private fun TransportIconButton(
             .size(width = 38.dp, height = 40.dp)
             .padding(2.dp)
             .clip(RoundedCornerShape(8.dp))
-            .then(if (prominent) Modifier.background(EditorPalette.NeonCyan)
-                .border(1.dp, EditorPalette.NeonCyan, RoundedCornerShape(8.dp)) else Modifier)
+            .then(if (prominent) Modifier.background(EditorPalette.NeonPurple)
+                .border(1.dp, EditorPalette.NeonPurple, RoundedCornerShape(8.dp)) else Modifier)
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -121,7 +121,7 @@ private fun TransportIconButton(
             contentDescription = null,
             tint = when {
                 !enabled -> EditorPalette.TextMuted
-                prominent -> EditorPalette.BgDeep
+                prominent -> EditorPalette.TextPrimary
                 else -> EditorPalette.TextPrimary
             },
             modifier = Modifier.size(if (prominent) 25.dp else 23.dp)

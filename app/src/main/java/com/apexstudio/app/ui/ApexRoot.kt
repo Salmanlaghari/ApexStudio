@@ -9,9 +9,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.apexstudio.app.ui.components.BottomNavBar
+import com.apexstudio.app.ui.components.BottomNavItem
+import com.apexstudio.app.ui.components.defaultNavItems
 import com.apexstudio.app.ui.components.NeonGradientBackground
 import com.apexstudio.app.camerakit.CameraKitDeliveryRoute
 import com.apexstudio.app.ui.screens.diagnostics.CrashDiagnosticsScreen
@@ -31,6 +41,7 @@ fun ApexRoot() {
     var projectId by remember { mutableStateOf<String?>(null) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var showExportSettings by remember { mutableStateOf(false) }
+    var packsOpenedFromHome by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -43,13 +54,16 @@ fun ApexRoot() {
                     is Overlay.Settings -> SettingsScreen(
                         onBack = { overlay = null },
                         onOpenDiagnostics = { overlay = Overlay.Diagnostics },
-                        onOpenPacks = { overlay = Overlay.Packs }
+                        onOpenPacks = { packsOpenedFromHome = false; overlay = Overlay.Packs }
                     )
                     is Overlay.Diagnostics -> CrashDiagnosticsScreen(
                         onBack = { overlay = null }
                     )
                     is Overlay.Packs -> PacksScreen(
-                        onBack = { overlay = Overlay.Settings }
+                        onBack = {
+                            overlay = if (packsOpenedFromHome) null else Overlay.Settings
+                            packsOpenedFromHome = false
+                        }
                     )
                     else -> when (apexContentTab(currentTab, showExportSettings)) {
                         "home" -> HomeScreen(
@@ -74,7 +88,8 @@ fun ApexRoot() {
                         "export" -> ExportScreen(
                             projectId = projectId ?: "p1",
                             onBack = { showExportSettings = false },
-                            onExport = { showExportSettings = false }
+                            onExport = { showExportSettings = false },
+                            onSettings = { overlay = Overlay.Settings }
                         )
                         "lenses" -> CameraKitDeliveryRoute(
                             onBack = { currentTab = "home" }
@@ -84,15 +99,43 @@ fun ApexRoot() {
             }
         }
 
-        if (!showExportSettings) {
-            if (overlay == null && currentTab !in setOf("export", "edit", "color", "audio")) {
-                BottomNavBar(
-                    current = currentTab,
-                    onSelect = { tab ->
-                        if (currentTab != tab) currentTab = tab
+        val navItems = when {
+            showExportSettings -> listOf(
+                BottomNavItem("home", "Home", Icons.Default.Home),
+                BottomNavItem("edit", "Edit", Icons.Default.Tune),
+                BottomNavItem("export", "Export", Icons.Default.IosShare, selectedColor = Color(0xFF9768FF)),
+                BottomNavItem("library", "Library", Icons.Default.VideoLibrary)
+            )
+            currentTab == "home" -> listOf(
+                BottomNavItem("home", "Projects", Icons.Default.Folder, selectedColor = Color(0xFF9768FF)),
+                BottomNavItem("templates", "Templates", Icons.Default.PlayArrow),
+                BottomNavItem("settings", "Settings", Icons.Default.Settings)
+            )
+            else -> defaultNavItems(currentTab)
+        }
+        if (overlay == null && (showExportSettings || currentTab !in setOf("export", "edit", "color", "audio"))) {
+            BottomNavBar(
+                current = if (showExportSettings) "export" else currentTab,
+                items = navItems,
+                onSelect = { tab ->
+                    when (tab) {
+                        "templates" -> { packsOpenedFromHome = true; overlay = Overlay.Packs }
+                        "settings" -> overlay = Overlay.Settings
+                        "export" -> {
+                            showExportSettings = true
+                            currentTab = "edit"
+                        }
+                        "library" -> {
+                            showExportSettings = false
+                            currentTab = "home"
+                        }
+                        else -> {
+                            showExportSettings = false
+                            currentTab = tab
+                        }
                     }
-                )
-            }
+                }
+            )
         }
     }
 }

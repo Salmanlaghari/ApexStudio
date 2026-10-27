@@ -3,6 +3,8 @@ package com.apexstudio.app.ui.screens.export
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import org.junit.Rule
 import org.junit.Test
@@ -25,9 +27,13 @@ class StandaloneExportScreenTest {
             )
         }
 
-        compose.onNodeWithText("ApexStudio • Export Settings").assertIsDisplayed()
-        compose.onNodeWithText("VIDEO SCOPE").assertIsDisplayed()
-        compose.onNodeWithText("RESOLUTION").assertIsDisplayed()
+        compose.onNodeWithText("Apex").assertIsDisplayed()
+        compose.onNodeWithText("Studio").assertIsDisplayed()
+        compose.onNodeWithText("AI VIDEO EDITOR").assertIsDisplayed()
+        compose.onNodeWithText("EXPORT SETTINGS").assertIsDisplayed()
+        compose.onNodeWithText("More export settings").performScrollTo().performClick()
+        compose.onNodeWithText("Hide advanced settings").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("VIDEO SCOPE").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("EXPORT SCOPE").assertDoesNotExist()
     }
 }

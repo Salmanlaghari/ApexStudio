@@ -69,85 +69,46 @@ fun TopAppBarSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.TopBarHeight)
-            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-            .background(EditorPalette.BgGlass)
-            .border(1.dp, EditorPalette.BorderGlass.copy(alpha = 0.8f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
             .padding(horizontal = EditorLayoutMetrics.TopBarHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .combinedClickable(
-                    role = Role.Button,
-                    onClick = { showBuildIdentity = true },
-                    onLongClick = onBack
-                )
-                .semantics {
-                    contentDescription = "ApexStudio build identity. Project ${projectId.ifBlank { title }}"
-                    customActions = listOf(CustomAccessibilityAction("Back") {
-                        onBack()
-                        true
-                    })
-                },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back to projects",
+            tint = EditorPalette.TextPrimary,
+            modifier = Modifier.size(25.dp).clickable(onClick = onBack, role = Role.Button)
+        )
+        Column(
+            modifier = Modifier.weight(1f).combinedClickable(
+                role = Role.Button,
+                onClick = { showBuildIdentity = true },
+                onLongClick = onBack
+            ).semantics {
+                contentDescription = "ApexStudio build identity. Project ${projectId.ifBlank { title }}"
+                customActions = listOf(CustomAccessibilityAction("Back") {
+                    onBack()
+                    true
+                })
+            },
+            verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back to projects",
-                tint = EditorPalette.TextPrimary,
-                modifier = Modifier.size(22.dp).clickable(onClick = onBack, role = Role.Button)
-            )
-            Spacer(Modifier.width(7.dp))
-            Column(modifier = Modifier.widthIn(max = 110.dp)) {
-                Text("ApexStudio", color = EditorPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-                Text("EDIT PROJECT • ${BuildIdentity.shortCommit}", color = EditorPalette.NeonCyan, fontSize = 8.sp,
-                    maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-            }
+            Text("Edit project", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
-
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(7.dp))
-                .background(EditorPalette.BgSurface)
-                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
-                .clickable(onClick = onToggleCoverMode, role = Role.Button)
-                .semantics { contentDescription = "Preview mode: ${if (isCoverMode) "Cover" else "Fit"}" }
-                .padding(horizontal = 7.dp, vertical = 5.dp)
-        ) {
-            Text(if (isCoverMode) "COVER" else "FIT", color = EditorPalette.TextPrimary,
-                fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-        }
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(EditorPalette.BgSurface)
-                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
-                .clickable(onClick = onFullscreenToggle, role = Role.Button)
-                .semantics { contentDescription = "Fullscreen preview" },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Fullscreen, contentDescription = null, tint = EditorPalette.TextPrimary,
-                modifier = Modifier.size(17.dp))
-        }
-
         Box {
             Row(
                 modifier = Modifier
-                    .height(30.dp)
-                    .widthIn(min = 72.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(8.dp))
+                    .height(36.dp)
+                    .widthIn(min = 76.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(EditorPalette.BgSurface)
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(11.dp))
                     .clickable(enabled = resolutionEnabled, onClick = { showResolutionDropdown = true }, role = Role.Button)
                     .semantics {
                         contentDescription = "Resolution: $resolution; preview ${if (isCoverMode) "cover" else "fit"}"
                     }
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -183,16 +144,15 @@ fun TopAppBarSection(
                 }
             }
         }
-
         Row(
             modifier = Modifier
-                .height(30.dp)
-                .widthIn(min = 78.dp)
-                .clip(RoundedCornerShape(9.dp))
+                .height(36.dp)
+                .widthIn(min = 82.dp)
+                .clip(RoundedCornerShape(11.dp))
                 .background(EditorPalette.GradientPrimary)
                 .clickable(enabled = exportEnabled, onClick = onExport, role = Role.Button)
                 .semantics { contentDescription = "Export" }
-                .padding(horizontal = 9.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {

@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.theme.ApexPalette
@@ -36,9 +37,9 @@ data class BottomNavItem(
 fun BottomNavBar(
     current: String,
     onSelect: (String) -> Unit,
-    items: List<BottomNavItem> = defaultNavItems(current)
+    items: List<BottomNavItem> = defaultNavItems(current),
+    referenceStyle: Boolean = false
 ) {
-    val referenceStyle = items.any { it.selectedColor != null }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -56,6 +57,7 @@ fun BottomNavBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag(if (referenceStyle) "bottom-nav-reference-style" else "bottom-nav-glass-style")
                 .then(if (referenceStyle) Modifier else Modifier
                     .clip(RoundedCornerShape(22.dp))
                     .background(ApexPalette.BgGlass)

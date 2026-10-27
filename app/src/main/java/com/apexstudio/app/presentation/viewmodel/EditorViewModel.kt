@@ -201,7 +201,7 @@ class EditorViewModel(
     internal val mediaPicker = context?.let { MediaPickerHelper(it) }
     internal val mediaAnalyzer = context?.let { MediaAnalyzer() }
     private val exportEngineInitialization = context?.let { suppliedContext ->
-        runCatching { ExportEngine(suppliedContext.applicationContext ?: suppliedContext) }
+        runCatching { ExportEngine(suppliedContext.applicationContext) }
     }
     internal val exportEngine = exportEngineInitialization?.getOrNull()
     private val exportEngineInitializationError = exportEngineInitialization
@@ -245,7 +245,6 @@ class EditorViewModel(
                 engineState.collect { st ->
                     _export.update {
                         it.copy(
-                            isExportEngineReady = exportEngine != null,
                             isExporting = st.isExporting,
                             progress = st.progress,
                             outputUri = st.outputUri,

@@ -132,6 +132,7 @@ fun ApexRoot() {
             BottomNavBar(
                 current = if (showExportSettings) "export" else currentTab,
                 items = navItems,
+                referenceStyle = currentTab == "home" || showExportSettings,
                 onSelect = { tab ->
                     when (tab) {
                         "templates" -> { packsOpenedFromHome = true; overlay = Overlay.Packs }

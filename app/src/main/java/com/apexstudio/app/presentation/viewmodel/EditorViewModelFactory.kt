@@ -24,7 +24,7 @@ class EditorViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
         val extrasContext = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? Context
         val suppliedContext = extrasContext ?: context
-        val applicationContext = suppliedContext?.applicationContext ?: suppliedContext
+        val applicationContext = suppliedContext?.applicationContext
         if (modelClass.isAssignableFrom(EditorViewModel::class.java)) {
             return EditorViewModel(repo, applicationContext, projectId, extras.createSavedStateHandle()) as T
         }

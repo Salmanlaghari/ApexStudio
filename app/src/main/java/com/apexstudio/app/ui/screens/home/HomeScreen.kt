@@ -107,7 +107,15 @@ fun HomeScreen(
                     )
                 }
                 val projectName = metadataList.first().name.substringBeforeLast('.')
-                val newProject = repo.createProject(name = projectName, clips = clips)
+                // Normal Add Video and AI Add Video share this project-creation path.
+                // Persist source geometry before the editor's player has decoded a frame.
+                val sourceAspect = metadataList.firstOrNull { it.type == ClipType.VIDEO }
+                    ?.sourceVideoAspectRatio
+                val newProject = repo.createProject(
+                    name = projectName,
+                    clips = clips,
+                    videoAspectRatio = sourceAspect
+                )
 
                 projectRepo.saveProject(newProject)
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")

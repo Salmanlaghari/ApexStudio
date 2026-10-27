@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.ProjectAspectRatio
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,8 +32,15 @@ data class MediaMetadata(
     val width: Int,
     val height: Int,
     val fps: Int,
-    val type: ClipType
-)
+    val type: ClipType,
+    val rotationDegrees: Int = 0
+) {
+    /** Early main-video geometry; the player probe can still correct legacy or rotated files. */
+    val sourceVideoAspectRatio: Float?
+        get() = if (type == ClipType.VIDEO) {
+            ProjectAspectRatio.fromDimensions(width, height, rotationDegrees)
+        } else null
+}
 
 class MediaPickerHelper(private val context: Context) {
 
@@ -167,6 +175,7 @@ class MediaPickerHelper(private val context: Context) {
             val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
             val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()?.toInt() ?: 30
             val name = getFileName(uri)
             retriever.release()
@@ -175,7 +184,7 @@ class MediaPickerHelper(private val context: Context) {
             // Still images carry no duration — give photo clips a
             // CapCut-style default still length so they occupy timeline.
             val safeDuration = if (type == ClipType.IMAGE && durationMs <= 0L) DEFAULT_IMAGE_DURATION_MS else durationMs
-            MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDuration, width = width, height = height, fps = fps, type = type)
+            MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDuration, width = width, height = height, fps = fps, type = type, rotationDegrees = rotation)
         } catch (e: Exception) {
             CrashMarker.clear(context)
             null
@@ -184,13 +193,15 @@ class MediaPickerHelper(private val context: Context) {
 
     private fun queryMediaStore(uri: Uri): MediaMetadata? {
         return try {
-            val proj = arrayOf(
+            val baseProjection = arrayOf(
                 MediaStore.MediaColumns.DISPLAY_NAME,
                 MediaStore.MediaColumns.MIME_TYPE,
                 MediaStore.MediaColumns.DURATION,
                 MediaStore.MediaColumns.WIDTH,
                 MediaStore.MediaColumns.HEIGHT
             )
+            val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
+            val proj = if (isVideo) baseProjection + MediaStore.Video.VideoColumns.ORIENTATION else baseProjection
             context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
                 if (c.moveToFirst()) {
                     val name = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: "media"
@@ -198,9 +209,11 @@ class MediaPickerHelper(private val context: Context) {
                     val dur = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION))
                     val w = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH))
                     val h = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT))
+                    val orientationColumn = c.getColumnIndex(MediaStore.Video.VideoColumns.ORIENTATION)
+                    val rotation = if (orientationColumn >= 0) c.getInt(orientationColumn) else 0
                     val type = classifyClipType(mime)
                     val safeDur = if (type == ClipType.IMAGE && dur <= 0L) DEFAULT_IMAGE_DURATION_MS else dur
-                    MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDur, width = w, height = h, fps = 30, type = type)
+                    MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDur, width = w, height = h, fps = 30, type = type, rotationDegrees = rotation)
                 } else {
                     null
                 }

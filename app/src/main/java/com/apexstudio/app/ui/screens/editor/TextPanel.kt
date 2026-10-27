@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -274,6 +275,7 @@ fun TextPanel(
                         .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
                         .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(8.dp))
                         .clickable { onAdd() }
+                        .testTag("text-add-overlay")
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -285,7 +287,7 @@ fun TextPanel(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            "Add",
+                            "Add text",
                             color = ApexPalette.NeonCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -472,7 +474,7 @@ fun TextPanel(
                         unfocusedContainerColor = ApexPalette.BgElevated,
                         cursorColor = ApexPalette.NeonCyan
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("text-content-field")
                 )
 
                 Spacer(Modifier.height(8.dp))

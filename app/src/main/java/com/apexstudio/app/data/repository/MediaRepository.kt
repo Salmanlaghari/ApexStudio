@@ -54,7 +54,7 @@ object MediaRepository {
         )
     ) + dynamicProjects
 
-    fun createProject(name: String, clips: List<MediaClip>): Project {
+    fun createProject(name: String, clips: List<MediaClip>, videoAspectRatio: Float? = null): Project {
         val id = "p${projectCounter++}"
         val durationMs = clips.maxOfOrNull { it.durationMs } ?: 0L
         val project = Project(
@@ -65,6 +65,7 @@ object MediaRepository {
             fps = 60,
             clips = clips,
             audioTracks = emptyList(),
+            videoAspectRatio = videoAspectRatio,
             timingModelVersion = Project.CURRENT_TIMING_MODEL_VERSION
         )
         dynamicProjects.add(project)

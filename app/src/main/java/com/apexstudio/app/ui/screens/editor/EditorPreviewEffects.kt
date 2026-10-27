@@ -48,11 +48,29 @@ internal fun composeTransformForPreview(
     animatedTransform: AnimatedTransform,
 ): AnimatedTransform = if (isPhotoClip) animatedTransform else AnimatedTransform.Identity
 
-/** Use the decoded source/crop ratio when available; otherwise keep the selected output frame. */
+/** Live decoded geometry wins; a persisted source ratio prevents a new portrait project flashing landscape. */
+internal fun editorPreviewStageAspectRatio(
+    sourceAspectRatio: Float?,
+    projectAspectRatio: Float?,
+    fallbackAspectRatio: Float,
+): Float = sourceAspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }
+    ?: projectAspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }
+    ?: fallbackAspectRatio.takeIf { it.isFinite() && it in 0.1f..10f }
+    ?: LOCKED_EDITOR_PREVIEW_ASPECT
+
+/** Backwards-compatible two-argument helper for callers without persisted project metadata. */
 internal fun editorPreviewStageAspectRatio(sourceAspectRatio: Float?, fallbackAspectRatio: Float): Float =
-    sourceAspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }
-        ?: fallbackAspectRatio.takeIf { it.isFinite() && it in 0.1f..10f }
-        ?: LOCKED_EDITOR_PREVIEW_ASPECT
+    editorPreviewStageAspectRatio(
+        sourceAspectRatio = sourceAspectRatio,
+        projectAspectRatio = null,
+        fallbackAspectRatio = fallbackAspectRatio
+    )
+
+/** Reserve fixed transport/timeline chrome so a landscape frame never leaves a dead spacer below it. */
+internal fun previewStageHeightBudget(availableHeight: Float, reservedHeight: Float): Float {
+    if (!availableHeight.isFinite() || !reservedHeight.isFinite()) return 0f
+    return (availableHeight - reservedHeight).coerceAtLeast(0f)
+}
 
 /** A restrained enlargement makes portrait footage easier to inspect without changing its frame geometry. */
 internal fun portraitPreviewScale(aspectRatio: Float?): Float =

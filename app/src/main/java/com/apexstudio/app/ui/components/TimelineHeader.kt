@@ -53,15 +53,15 @@ internal fun TimelineHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(4.dp, 14.dp).background(Color(0xFF39D9D0), RoundedCornerShape(2.dp)))
-            Column(
+            Row(
                 modifier = Modifier.weight(1f).padding(start = 8.dp),
-                verticalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("TIMELINE", color = Color(0xFFE7EDF6), fontSize = 11.sp,
+                Text("Timeline", color = Color(0xFFE7EDF6), fontSize = 15.sp,
                     fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(TimeFormat.msToShort(durationMs), color = Color(0xFF8C9AAF),
-                    fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
-                    modifier = Modifier.testTag("timeline-duration"))
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp).testTag("timeline-duration"))
             }
             if (headerKeyframeClip != null) {
                 val description = if (headerHasKeyframe) "Remove keyframe" else "Add keyframe"
@@ -105,19 +105,15 @@ internal fun TimelineHeader(
                     tint = if (multiSelectMode) Color(0xFF39D9D0) else Color(0xFF8C9AAF),
                     modifier = Modifier.size(20.dp))
             }
-            Row(
+            IconButton(
+                onClick = onAddMedia,
                 modifier = Modifier
-                    .height(36.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF39D9D0).copy(alpha = 0.12f))
-                    .clickable { onAddMedia() }
-                    .padding(horizontal = 9.dp)
-                    .testTag("timeline-header-add-media"),
-                verticalAlignment = Alignment.CenterVertically
+                    .testTag("timeline-header-add-media")
             ) {
-                Icon(Icons.Default.Add, "Add Clip", tint = Color(0xFF39D9D0), modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Add Clip", color = Color(0xFF39D9D0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.Add, "Add clip", tint = Color(0xFF39D9D0), modifier = Modifier.size(20.dp))
             }
         }
 }

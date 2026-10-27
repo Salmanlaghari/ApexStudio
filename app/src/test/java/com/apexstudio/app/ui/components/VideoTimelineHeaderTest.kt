@@ -49,7 +49,7 @@ class VideoTimelineHeaderTest {
         compose.onNodeWithTag("timeline-duration").assertExists()
         compose.onNodeWithTag("timeline-header").assertExists()
         compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
-        compose.onNodeWithText("Add Clip").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
         compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()

@@ -66,7 +66,7 @@ internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
 
 /** Screenshot-priority actions shown first in the selected-video scroll row. */
 internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
-    "Split", "Trim", "Speed", "Volume", "Keyframe"
+    "Split", "Trim", "Speed", "Volume", "Keyframe", "Animation"
 )
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
@@ -551,6 +551,8 @@ fun ContextualBottomToolbar(
                 surfaceColor = Color(0xFF151F2D),
                 modifier = Modifier.testTag("editor_clip_toolbar"),
                 itemWidth = 58.dp,
+                compact = selectionKind == ToolbarSelectionKind.VIDEO,
+                fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 6 else null,
                 leadingContent = {
                     Box(
                         modifier = Modifier.width(44.dp).fillMaxHeight().clickable {
@@ -606,6 +608,7 @@ private fun ToolbarBarRow(
     leadingContent: @Composable (RowScope.() -> Unit)? = null,
     itemWidth: androidx.compose.ui.unit.Dp = 66.dp,
     compact: Boolean = false,
+    fitVisibleCount: Int? = null,
     selectedLabel: String? = null,
     barHeight: androidx.compose.ui.unit.Dp = 46.dp
 ) {
@@ -616,7 +619,13 @@ private fun ToolbarBarRow(
             .background(Color.Black)
             .padding(horizontal = 4.dp)
     ) {
-        val targetWidth = if (compact) (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth) else itemWidth
+        val leadingWidth = if (leadingContent != null) 45.dp else 0.dp
+        val targetWidth = when {
+            fitVisibleCount != null -> ((maxWidth - leadingWidth).coerceAtLeast(0.dp) /
+                fitVisibleCount.coerceAtLeast(1).toFloat()).coerceAtMost(itemWidth)
+            compact -> (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth)
+            else -> itemWidth
+        }
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically

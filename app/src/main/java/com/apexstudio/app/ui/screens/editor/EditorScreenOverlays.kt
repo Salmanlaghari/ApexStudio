@@ -1352,24 +1352,39 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 )
         )
     }
-    val previewStageAspectRatio = editorPreviewStageAspectRatio(sourceVideoAspectRatio, compositionAspectRatio)
-    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio)
+    val projectAspectRatio = state.project?.videoAspectRatio
+    val previewStageAspectRatio = editorPreviewStageAspectRatio(
+        sourceAspectRatio = sourceVideoAspectRatio,
+        projectAspectRatio = projectAspectRatio,
+        fallbackAspectRatio = compositionAspectRatio
+    )
+    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio ?: projectAspectRatio)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            // Keep the preview/player subtree composed in focus mode while
-            // yielding essentially all available height to the timeline.
+            // In normal phone mode the stage wraps its source-ratio frame instead
+            // of consuming the whole remainder. That keeps 16:9 preview and the
+            // playback row adjacent; portrait footage uses only the height left
+            // after the compact timeline and transport chrome are reserved.
             .then(when {
                 isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
-                else -> Modifier.weight(editorPreviewLayoutWeight(isTimelineFocusMode))
+                isTimelineFocusMode -> Modifier.weight(editorPreviewLayoutWeight(true))
+                else -> Modifier
             })
             .background(ApexPalette.BgBase)
             .semantics { contentDescription = "Editor preview stage" },
         contentAlignment = Alignment.TopCenter
     ) {
+        val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
+            compactTimelineHeight(state) + 26.dp + 2.dp
+        val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight || isTimelineFocusMode) {
+            maxHeight.value
+        } else {
+            previewStageHeightBudget(maxHeight.value, reservedTimelineChrome.value).coerceAtLeast(1f)
+        }
         val stageSize = if (isFullscreenPreview) PreviewStageSize(maxWidth.value, maxHeight.value)
-            else fittedPreviewStageSize(maxWidth.value, maxHeight.value, previewStageAspectRatio)
-                ?: PreviewStageSize(maxWidth.value, maxHeight.value)
+            else fittedPreviewStageSize(maxWidth.value, stageHeightLimit, previewStageAspectRatio)
+                ?: PreviewStageSize(maxWidth.value, stageHeightLimit)
         Box(
             Modifier
                 .size(stageSize.width.dp, stageSize.height.dp)

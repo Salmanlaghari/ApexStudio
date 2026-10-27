@@ -13,6 +13,25 @@ import kotlinx.coroutines.withContext
 
 
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+
+internal fun EditorViewModel.applyDetectedProjectVideoAspectRatio(ratio: Float) {
+    if (!ratio.isFinite() || ratio !in 0.1f..10f) return
+    val needsInitialAspect = _state.value.project?.videoAspectRatio == null
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        if (project.videoAspectRatio == null) {
+            state.copy(project = project.copy(videoAspectRatio = ratio))
+        } else state
+    }
+    if (needsInitialAspect) {
+        _state.value.project?.videoAspectRatio
+            ?.let { aspect -> ProjectAspectRatio.exportPreset(aspect) }
+            ?.let { preset ->
+                _export.update { current -> current.copy(settings = current.settings.copy(aspectRatio = preset)) }
+            }
+    }
+}
+
 /**
  * Legacy overlay repair (Bug B): OVERLAY clips created before the
  * overlay-track system (or by a buggy build) can carry trackIndex 0
@@ -134,6 +153,12 @@ internal fun EditorViewModel.loadProject() {
             refreshLegacyClipFields = true,
             refreshLegacyAudioFields = true
         )
+
+        ProjectAspectRatio.exportPreset(updatedP.videoAspectRatio)?.let { preset ->
+            _export.update { current ->
+                current.copy(settings = current.settings.copy(aspectRatio = preset))
+            }
+        }
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
@@ -316,10 +341,11 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             if (isOverlayPick && created != null) {
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
-                val aspect = if (resolvedMeta.width > 0 && resolvedMeta.height > 0) {
-                    (resolvedMeta.width.toFloat() / resolvedMeta.height.toFloat())
-                        .coerceIn(0.1f, 10f)
-                } else 16f / 9f
+                val aspect = if (isImage) {
+                    ProjectAspectRatio.fromDimensions(resolvedMeta.width, resolvedMeta.height)
+                } else {
+                    resolvedMeta.sourceVideoAspectRatio
+                } ?: (16f / 9f)
                 // First free overlay layer (OVL1 = trackIndex 1, ...),
                 // or the explicitly requested layer from the V2 "+".
                 // Multi-pick spreads across consecutive free layers.
@@ -345,7 +371,19 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
         val updatedClips = existingClips + newClips
-        val updatedProject = s.project?.copy(clips = updatedClips)
+        val routedToOverlay = asOverlay || targetLayer != null
+        val hasExistingMainVideo = !replace && s.project?.clips.orEmpty().any {
+            it.type == ClipType.VIDEO && it.trackIndex == 0
+        }
+        val importedMainAspect = if (!routedToOverlay && (replace || !hasExistingMainVideo)) {
+            mediaList.firstOrNull { it.type == ClipType.VIDEO }?.sourceVideoAspectRatio
+        } else null
+        val projectAspect = when {
+            routedToOverlay -> s.project?.videoAspectRatio
+            replace -> importedMainAspect
+            else -> s.project?.videoAspectRatio ?: importedMainAspect
+        }
+        val updatedProject = s.project?.copy(clips = updatedClips, videoAspectRatio = projectAspect)
         // Unified duration (was MAX of raw durations -> playhead raced
         // on multi-clip timelines). A fresh clip always plays at 1x, so
         // drop any stale global speed left over from another clip.
@@ -391,6 +429,13 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 extraVideoLayers = if (targetLayer != null) it.extraVideoLayers - targetLayer else it.extraVideoLayers
             )
         }
+        if (importedMainAspect != null) {
+            ProjectAspectRatio.exportPreset(projectAspect)?.let { preset ->
+                _export.update { current ->
+                    current.copy(settings = current.settings.copy(aspectRatio = preset))
+                }
+            }
+        }
         persistProject()
 
         val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO } ?: updatedClips.firstOrNull()
@@ -417,12 +462,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 try {
                     val ratio = detectVideoAspectRatio(context!!, firstVideo.uri)
                     if (ratio != null && ratio > 0) {
-                        _state.update { st ->
-                            val proj = st.project
-                            if (proj != null && proj.videoAspectRatio == null) {
-                                st.copy(project = proj.copy(videoAspectRatio = ratio))
-                            } else st
-                        }
+                        applyDetectedProjectVideoAspectRatio(ratio)
                         persistProject()
                         Log.d("EditorViewModel", "Auto-detected video aspect ratio: $ratio")
                     }

@@ -13,6 +13,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,9 @@ class MainTimelineTrimGestureTest {
 
     @Test fun headGripUsesPhysicalDensity() = checkDensity(head = true)
     @Test fun tailGripUsesPhysicalDensity() = checkDensity(head = false)
+
+    @Test fun headGripCanLengthenTrimmedV1ClipTowardEarlierSourceFrames() = checkLengthening(head = true)
+    @Test fun tailGripCanLengthenTrimmedV1ClipTowardLaterSourceFrames() = checkLengthening(head = false)
 
     @Test fun speedRampedHeadGripUsesOutputTimeGeometry() {
         val ramped = rampedClip()
@@ -106,6 +110,37 @@ class MainTimelineTrimGestureTest {
         composeRule.runOnIdle {
             assertEquals(expected.first.toDouble(), requireNotNull(committed).first.toDouble(), 2.0)
             assertEquals(expected.second.toDouble(), requireNotNull(committed).second.toDouble(), 2.0)
+        }
+    }
+
+    private fun checkLengthening(head: Boolean) {
+        var committed: Pair<Long, Long>? = null
+        composeRule.setContent {
+            val configuration = LocalViewConfiguration.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(2f),
+                LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by configuration {
+                    override val touchSlop = 0f
+                },
+            ) {
+                VideoTimeline(
+                    clips = listOf(source), totalDurationMs = 4_000L, playheadMs = 0L,
+                    selectedClipId = source.id, onOpenSpeed = {}, onOpenTrim = {},
+                    onTrimClip = { _, start, end -> committed = start to end },
+                )
+            }
+        }
+
+        // At the production 54dp/s scale and density 2, 54px extends the
+        // source boundary by 500ms. Outward drags must increase V1 output length.
+        dragGrip(head = head, deltaPx = if (head) -54f else 54f)
+        composeRule.runOnIdle {
+            val (start, end) = requireNotNull(committed)
+            assertEquals(if (head) 500L else source.trimStartMs, start)
+            assertEquals(if (head) source.trimEndMs else 3_500L, end)
+            val extendedDuration = source.copy(trimStartMs = start, trimEndMs = end).effectiveDurationMs()
+            assertTrue("outward V1 edge drag must lengthen the clip", extendedDuration > source.effectiveDurationMs())
+            assertEquals(2_500.0, extendedDuration.toDouble(), 2.0)
         }
     }
 

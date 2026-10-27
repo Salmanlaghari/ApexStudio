@@ -1,5 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import android.content.Context
+import android.os.Looper
+import androidx.test.core.app.ApplicationProvider
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -8,11 +11,15 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.data.filter.GpuColorProfiles
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.StylisticEffectType
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -47,6 +54,63 @@ class TimelineRipplePreservationTest {
         assertEquals(4_000L, vm.offset("before"))
         assertEquals(0L, vm.offset("at"))
         assertEquals(7_000L, vm.offset("after"))
+    }
+
+    @Test
+    fun `V1 head and tail extensions commit larger clip and project durations`() {
+        val head = vm(video("head").copy(trimStartMs = 1_000L, trimEndMs = 3_000L))
+        head.trimClip("head", 500L, 3_000L)
+        val headProject = head.state.value.project!!
+        val headClip = headProject.clips.single()
+        assertEquals(500L, headClip.trimStartMs)
+        assertEquals(3_000L, headClip.trimEndMs)
+        assertEquals(2_500L, headClip.effectiveDurationMs())
+        assertEquals(2_500L, headProject.durationMs)
+        assertEquals(2_500L, head.state.value.durationMs)
+        assertTrue(head.state.value.canUndo)
+
+        val tail = vm(video("tail").copy(trimStartMs = 1_000L, trimEndMs = 3_000L))
+        tail.trimClip("tail", 1_000L, 3_500L)
+        val tailProject = tail.state.value.project!!
+        val tailClip = tailProject.clips.single()
+        assertEquals(1_000L, tailClip.trimStartMs)
+        assertEquals(3_500L, tailClip.trimEndMs)
+        assertEquals(2_500L, tailClip.effectiveDurationMs())
+        assertEquals(2_500L, tailProject.durationMs)
+        assertEquals(2_500L, tail.state.value.durationMs)
+        assertTrue(tail.state.value.canUndo)
+    }
+
+    @Test
+    fun `V1 outward trim autosaves both expanded source bounds and duration`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val editor = EditorViewModel(context = context)
+        val repository = requireNotNull(editor.projectRepository)
+        val projectId = "v1-trim-autosave-${System.nanoTime()}"
+        val initialClip = video("main").copy(trimStartMs = 1_000L, trimEndMs = 3_000L)
+        repository.deleteProject(projectId)
+        editor._state.update {
+            it.copy(
+                project = Project(projectId, "V1 trim autosave", 2_000L, clips = listOf(initialClip)),
+                durationMs = 2_000L,
+            )
+        }
+
+        // One committed trim combines both outward edges; the UI tests above
+        // exercise each grip independently before this repository assertion.
+        editor.trimClip("main", 500L, 3_500L)
+        shadowOf(Looper.getMainLooper()).idle()
+        val savedProject = withTimeout(10_000L) {
+            repository.loadAll().first { projects ->
+                projects.any { project ->
+                    val clip = project.clips.singleOrNull()
+                    project.id == projectId && project.durationMs == 3_000L &&
+                        clip != null && clip.trimStartMs == 500L && clip.trimEndMs == 3_500L
+                }
+            }.single { it.id == projectId }
+        }
+        assertEquals(3_000L, savedProject.clips.single().effectiveDurationMs())
+        repository.deleteProject(projectId)
     }
 
     @Test

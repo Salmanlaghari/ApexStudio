@@ -44,10 +44,10 @@ internal fun photoAiResultCanCommit(
     currentClip.type == ClipType.IMAGE && currentClip.uri == expectedSourceUri &&
     (expectedPhotoEditSettings == null || currentClip.photoEdit == expectedPhotoEditSettings)
 
-/** Run bundled ESPCN x3 on an imported still image and persist its lossless result for preview/export. */
+/** Enhance an imported photo and persist its result for preview/export. */
 fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
     val context = context?.applicationContext ?: run {
-        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Editor context is unavailable.")
+        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "The editor is not ready. Try again.")
         return
     }
     synchronized(this) {
@@ -55,7 +55,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
         val project = _state.value.project
         val clip = project?.clips?.firstOrNull { it.id == clipId }
         if (project == null || clip?.type != ClipType.IMAGE || clip.uri.isBlank()) {
-            _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Select an imported photo before using AI Upscale.")
+            _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Select a photo first.")
             return
         }
         val expectedProjectId = project.id
@@ -68,7 +68,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
             var resultFile: File? = null
             var committed = false
             publishPhotoAi(request) {
-                PhotoAiEnhanceUiState(processing = true, message = "Checking image size and bundled offline model…")
+                PhotoAiEnhanceUiState(processing = true, message = "Preparing your photo…")
             }
             try {
                 val dimensions = PhotoEditRenderer.readImageDimensions(context, expectedSourceUri)
@@ -87,7 +87,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
                         publishPhotoAi(request) {
                             it.copy(
                                 progress01 = progress.fraction.coerceIn(0f, 1f),
-                                message = "Upscaling photo with the bundled ESPCN model…"
+                                message = "Enhancing photo…"
                             )
                         }
                     }
@@ -138,7 +138,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
                         committed = true
                         _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(
                             progress01 = 1f,
-                            message = "Offline ESPCN x3 enhancement applied (output capped at 4.2 megapixels).",
+                            message = "Enhanced photo ready (output capped at 4.2 megapixels).",
                             outputUri = resultFile!!.toURI().toString()
                         )
                     }
@@ -148,7 +148,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
             } catch (failure: Exception) {
                 publishPhotoAi(request) {
                     PhotoAiEnhanceUiState(
-                        message = "Photo upscale unavailable: ${failure.message?.take(180) ?: failure.javaClass.simpleName}"
+                        message = "Couldn't enhance this photo. Try another image."
                     )
                 }
             } finally {
@@ -161,7 +161,7 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
                 if (photoAiEnhanceJob === request) {
                     photoAiEnhanceJob = null
                     if (!committed && request.isCancelled) {
-                        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Photo upscale cancelled.")
+                        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Photo enhancement cancelled.")
                     }
                 }
             }
@@ -174,10 +174,10 @@ fun EditorViewModel.applyPhotoAiUpscale(clipId: String) {
     }
 }
 
-/** Detect a face locally, then apply a single reviewable crop to the selected image. */
+/** Find a face, then apply a crop to the selected image. */
 fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
     val context = context?.applicationContext ?: run {
-        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Editor context is unavailable.")
+        _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "The editor is not ready. Try again.")
         return
     }
     synchronized(this) {
@@ -185,7 +185,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
         val project = _state.value.project
         val clip = project?.clips?.firstOrNull { it.id == clipId }
         if (project == null || clip?.type != ClipType.IMAGE || clip.uri.isBlank()) {
-            _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Select an imported photo before using Face crop.")
+            _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Select a photo first.")
             return
         }
         val expectedProjectId = project.id
@@ -197,7 +197,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
             var analysisBitmap: Bitmap? = null
             var committed = false
             publishPhotoAi(request) {
-                PhotoAiEnhanceUiState(processing = true, message = "Loading the bundled offline face model…")
+                PhotoAiEnhanceUiState(processing = true, message = "Finding a face…")
             }
             try {
                 val crop = withContext(Dispatchers.IO) {
@@ -237,7 +237,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
                                     expectedPhotoEditSettings = expectedSettings
                                 )) {
                                 _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(
-                                    message = "Face crop discarded because the project photo changed during analysis."
+                                    message = "The selected photo changed. Nothing was changed."
                                 )
                                 return@synchronized
                             }
@@ -253,7 +253,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
                             committed = true
                             _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(
                                 progress01 = 1f,
-                                message = "Face crop applied locally. Preview and export use the same crop."
+                                message = "Face crop applied. Preview and export use the same crop."
                             )
                         }
                     }
@@ -263,7 +263,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
             } catch (failure: Exception) {
                 publishPhotoAi(request) {
                     PhotoAiEnhanceUiState(
-                        message = "Face crop unavailable: ${failure.message?.take(180) ?: failure.javaClass.simpleName}"
+                        message = "Couldn't find a face in this photo. Try another image."
                     )
                 }
             } finally {
@@ -281,7 +281,7 @@ fun EditorViewModel.applyPhotoFaceCrop(clipId: String) {
         }
         photoAiEnhanceJob = request
         _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(
-            processing = true, message = "Preparing local face analysis…"
+            processing = true, message = "Finding a face…"
         )
         request.start()
     }
@@ -291,7 +291,7 @@ fun EditorViewModel.cancelPhotoAiEnhance() {
     val active = photoAiEnhanceJob
     photoAiEnhanceJob = null
     active?.cancel()
-    _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Photo AI action cancelled.")
+    _photoAiEnhanceUi.value = PhotoAiEnhanceUiState(message = "Photo change cancelled.")
 }
 
 private fun EditorViewModel.publishPhotoAi(

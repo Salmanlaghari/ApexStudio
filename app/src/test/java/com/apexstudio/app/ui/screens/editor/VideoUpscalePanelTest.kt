@@ -35,8 +35,8 @@ class VideoUpscalePanelTest {
             sourceDurationMs = 179_000L) } }
         compose.mainClock.advanceTimeBy(1000)
         compose.onNodeWithTag("video_upscale_duration_blocker").assertIsDisplayed()
-        compose.onNodeWithText("This 02:59 source is not supported", substring = true).assertExists()
-        compose.onNodeWithText("a shorter timeline trim does not bypass", substring = true).assertExists()
+        compose.onNodeWithText("This video is 02:59 long", substring = true).assertExists()
+        compose.onNodeWithText("a timeline trim will not shorten the source", substring = true).assertExists()
         compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
         compose.onNodeWithTag("cancel_project_video_upscale").assertDoesNotExist()
     }
@@ -60,12 +60,26 @@ class VideoUpscalePanelTest {
     @Test fun processingDisablesDuplicateRequestAndOffersActualCancellation() {
         var cancelled = 0
         compose.setContent { MaterialTheme { VideoUpscalePanel(true,
-            VideoUpscaleUiState(processing = true, progress01 = .5f, message = "Upscaling video frames…"),
+            VideoUpscaleUiState(processing = true, progress01 = .5f, message = "Enhancing video…"),
             onApply = { error("Must not start twice") }, onCancel = { cancelled++ }, onClose = {}) } }
         compose.mainClock.advanceTimeBy(1000)
         compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
         compose.onNodeWithTag("cancel_project_video_upscale").performScrollTo().assertIsEnabled()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(1, cancelled) }
+    }
+
+    @Test fun completedEnhancementSurfacesReviewActionBeforeLongDetails() {
+        var reviewed = 0
+        compose.setContent { MaterialTheme { VideoUpscalePanel(true,
+            VideoUpscaleUiState(progress01 = 1f, message = "Enhanced video ready.", outputUri = "file:///enhanced.mp4"),
+            onApply = { error("Completed output must not be processed again") }, onCancel = {}, onClose = { reviewed++ }) } }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithTag("video_upscale_result").assertIsDisplayed()
+        compose.onNodeWithText("Enhanced video ready").assertIsDisplayed()
+        compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
+        compose.onNodeWithTag("review_project_video_upscale").performScrollTo().assertIsEnabled()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.runOnIdle { assertEquals(1, reviewed) }
     }
 }

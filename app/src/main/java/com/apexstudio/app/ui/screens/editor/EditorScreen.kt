@@ -143,6 +143,7 @@ private fun EditorScreenContent(
     val scope = rememberCoroutineScope()
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
+    val mediaImportProgress by mediaPicker.importProgress.collectAsStateWithLifecycle()
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     val editorExportState by vm.export.collectAsStateWithLifecycle()
@@ -1038,6 +1039,8 @@ private fun EditorScreenContent(
             },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
+            mediaImportProgress = mediaImportProgress,
+            onCancelMediaImport = mediaPicker::cancelImport,
             fitAvailableHeight = !horizontalProjectLayout,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,

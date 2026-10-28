@@ -4,7 +4,7 @@ import com.apexstudio.app.ai.autoreframe.AutoCropSuggestion
 import com.apexstudio.app.ai.tflite.SceneCutSuggestion
 import com.apexstudio.app.ai.tflite.SmartTrimSuggestion
 
-/** Lifecycle/status for deterministic, on-device signal analysis (not learned AI inference). */
+/** Lifecycle/status for generated video-edit suggestions. */
 enum class LocalAnalysisStatus { IDLE, RUNNING, READY, CANCELLED, ERROR }
 
 /**
@@ -15,7 +15,7 @@ enum class LocalAnalysisStatus { IDLE, RUNNING, READY, CANCELLED, ERROR }
 data class LocalAnalysisUiState(
     val status: LocalAnalysisStatus = LocalAnalysisStatus.IDLE,
     val progress: Float = 0f,
-    val message: String = "Offline heuristic analysis (not learned-model inference)",
+    val message: String = "Select a video to find editing suggestions.",
     val clipId: String? = null,
     val sourceUri: String? = null,
     val sourceStartMs: Long? = null,

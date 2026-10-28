@@ -24,7 +24,7 @@ private fun EditorViewModel.invalidateStaleFaceTrackReview(snapshot: FaceTrackSo
     _faceTrackReview.value = review.copy(
         status = FaceTrackReviewStatus.CANCELLED,
         progress = 0f,
-        message = "The video source or project changed. Run offline face tracking again to review the current source.",
+        message = "The video changed. Run the review again to see current suggestions.",
         result = null,
         reviewedSampleTimestamps = emptySet(),
         error = null,
@@ -48,11 +48,11 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
         _faceTrackReview.value = FaceTrackReviewUiState(
             status = FaceTrackReviewStatus.ERROR,
             error = when {
-                clip == null -> "Select a video clip before running offline face tracking."
-                clip.type != ClipType.VIDEO -> "Offline face tracking requires a video clip."
+                clip == null -> "Select a video clip first."
+                clip.type != ClipType.VIDEO -> "Choose a video clip."
                 else -> "The editor context is unavailable."
             },
-            message = "Offline face tracking review could not start."
+            message = "Face-framing review could not start."
         )
         return
     }
@@ -67,8 +67,8 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
             sourceStartMs = startMs,
             sourceEndMs = endMs,
             sourceSnapshot = snapshot,
-            error = "The selected clip has no analyzable source duration.",
-            message = "Offline face tracking review could not start."
+            error = "This video has no usable duration.",
+            message = "Face-framing review could not start."
         )
         return
     }
@@ -78,7 +78,7 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
     _faceTrackReview.value = FaceTrackReviewUiState(
         status = FaceTrackReviewStatus.RUNNING,
         progress = 0f,
-        message = "Sampling local video frames and tracking detected faces…",
+        message = "Looking for faces in sample frames…",
         clipId = clip.id,
         sourceUri = clip.uri,
         sourceStartMs = startMs,
@@ -121,7 +121,7 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
                     _faceTrackReview.value = _faceTrackReview.value.copy(
                         status = FaceTrackReviewStatus.READY,
                         progress = 1f,
-                        message = "Offline analysis complete. Review sampled detections and crop suggestions; no edit was applied.",
+                        message = "Suggestions are ready. Review the sample frames; no edit has been applied.",
                         result = result,
                         reviewedSampleTimestamps = emptySet(),
                         error = null,
@@ -131,7 +131,7 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
         } catch (_: CancellationException) {
             if (faceTrackReviewToken === token) {
                 _faceTrackReview.update {
-                    it.copy(status = FaceTrackReviewStatus.CANCELLED, message = "Offline face tracking analysis cancelled.")
+                    it.copy(status = FaceTrackReviewStatus.CANCELLED, message = "Review cancelled.")
                 }
             }
         } catch (failure: Exception) {
@@ -140,8 +140,8 @@ fun EditorViewModel.startLocalFaceTrackReview(clipId: String? = null) {
                 else _faceTrackReview.update {
                     it.copy(
                         status = FaceTrackReviewStatus.ERROR,
-                        message = "Offline face tracking analysis failed.",
-                        error = failure.message ?: failure::class.java.simpleName,
+                        message = "Face-framing review failed.",
+                        error = "Could not read this video. Try another one.",
                         result = null,
                         reviewedSampleTimestamps = emptySet(),
                     )
@@ -166,7 +166,7 @@ fun EditorViewModel.cancelLocalFaceTrackReview() {
         if (it.status == FaceTrackReviewStatus.RUNNING) it.copy(
             status = FaceTrackReviewStatus.CANCELLED,
             progress = 0f,
-            message = "Offline face tracking analysis cancelled; partial samples were discarded.",
+            message = "Review cancelled. Incomplete suggestions were cleared.",
             result = null,
             reviewedSampleTimestamps = emptySet(),
             error = null,
@@ -227,7 +227,7 @@ fun EditorViewModel.setFaceReframeReviewTarget(target: FaceReframeReviewTarget):
         reframeTarget = target,
         result = result,
         reviewedSampleTimestamps = emptySet(),
-        message = if (review.isReady) "Reviewing ${target.label} crop candidates from the same sampled detections. No edit was applied."
+        message = if (review.isReady) "Reviewing ${target.label} suggestions. No edit has been applied."
             else review.message,
     )
     return true

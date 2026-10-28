@@ -38,18 +38,18 @@ internal fun PhotoAiEnhanceTab(
     onCancel: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Runs on this device with bundled models; no upload or runtime model download.", color = Color(0xFF9CA3AF), fontSize = 12.sp)
+        Text("Choose a tool to improve the selected photo.", color = Color(0xFF9CA3AF), fontSize = 12.sp)
         PhotoEnhanceAction("photo_ai_enhance_auto", "Auto enhance", "Balanced light, colour, clarity and sharpness", !adjustments.isDefault, onAutoEnhance)
         PhotoEnhanceAction(
             "photo_ai_enhance_upscale",
             "AI upscale",
-            "Bundled ESPCN x3 for low-resolution photos; output capped at 4.2 megapixels",
+            "Create a sharper 3× version; output is capped at 4.2 megapixels",
             settings.aiUpscaledImageUri != null,
             enabled = !aiState.processing,
             onClick = onUpscale
         )
-        PhotoEnhanceAction("photo_ai_enhance_denoise", "Denoise", "Local spatial denoise stage", adjustments.denoise > 0f, onDenoise)
-        PhotoEnhanceAction("photo_ai_enhance_sharpen", "Sharpen", "Local edge/detail stage", adjustments.sharpness > 0f, onSharpen)
+        PhotoEnhanceAction("photo_ai_enhance_denoise", "Denoise", "Reduce grain and image noise", adjustments.denoise > 0f, onDenoise)
+        PhotoEnhanceAction("photo_ai_enhance_sharpen", "Sharpen", "Bring out edge detail", adjustments.sharpness > 0f, onSharpen)
         PhotoEnhanceAction(
             "photo_ai_enhance_stabilize",
             "Stabilize",
@@ -61,7 +61,7 @@ internal fun PhotoAiEnhanceTab(
         PhotoEnhanceAction(
             "photo_ai_enhance_face_crop",
             "Face crop",
-            "Finds the largest face locally and applies a crop; no face leaves the photo unchanged",
+            "Finds a face and suggests a tighter crop; no face leaves the photo unchanged",
             active = false,
             enabled = !aiState.processing,
             onClick = onFaceCrop

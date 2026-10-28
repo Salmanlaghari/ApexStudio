@@ -77,8 +77,7 @@ object VideoUpscaleEngine {
         val clock = java.lang.String.format(java.util.Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
         val duration = if (durationMs % 1000L == 0L) clock else clock +
             java.lang.String.format(java.util.Locale.US, ".%03d", durationMs % 1000L)
-        return "This $duration source is not supported. ESPCN accepts source videos up to 00:30. " +
-            "No processing will start. The whole source is processed, so a shorter timeline trim does not bypass this limit; use a separately exported source of 00:30 or less."
+        return "This video is $duration long. Choose a source video of 00:30 or shorter; a timeline trim will not shorten the source."
     }
 
     /** Validates practical device bounds before allocating a model session or large frame buffers. */

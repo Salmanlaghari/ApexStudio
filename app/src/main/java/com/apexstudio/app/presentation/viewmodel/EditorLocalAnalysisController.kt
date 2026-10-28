@@ -28,8 +28,8 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
         _localAnalysis.value = LocalAnalysisUiState(
             status = LocalAnalysisStatus.ERROR,
             error = when {
-                clip == null -> "Select a video clip before running local analysis."
-                clip.type != ClipType.VIDEO -> "Offline scene analysis requires a video clip."
+                clip == null -> "Select a video clip first."
+                clip.type != ClipType.VIDEO -> "Choose a video clip."
                 else -> "The editor context is unavailable."
             }
         )
@@ -45,7 +45,7 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
             sourceUri = clip.uri,
             sourceStartMs = startMs,
             sourceEndMs = endMs,
-            error = "The selected clip has no analyzable source duration."
+            error = "This video has no usable duration."
         )
         return
     }
@@ -55,7 +55,7 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
     _localAnalysis.value = LocalAnalysisUiState(
         status = LocalAnalysisStatus.RUNNING,
         progress = 0f,
-        message = "Decoding video frames and calculating signal heuristics…",
+        message = "Finding edit suggestions…",
         clipId = clip.id,
         sourceUri = clip.uri,
         sourceStartMs = startMs,
@@ -87,7 +87,7 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
                 _localAnalysis.value = _localAnalysis.value.copy(
                     status = LocalAnalysisStatus.READY,
                     progress = 1f,
-                    message = "Analysis complete. Review each suggestion before applying it.",
+                    message = "Suggestions are ready. Review each one before applying it.",
                     sceneCuts = result.cuts,
                     smartTrims = result.smartTrims,
                     autoCrop = result.autoCrop,
@@ -98,12 +98,12 @@ fun EditorViewModel.startLocalAnalysis(clipId: String? = null) {
             }
         } catch (_: CancellationException) {
             if (localAnalysisToken === token) {
-                _localAnalysis.update { it.copy(status = LocalAnalysisStatus.CANCELLED, message = "Local analysis cancelled.") }
+                _localAnalysis.update { it.copy(status = LocalAnalysisStatus.CANCELLED, message = "Analysis cancelled.") }
             }
         } catch (failure: Exception) {
             if (localAnalysisToken === token && ensureLocalAnalysisCurrent()) {
                 _localAnalysis.update {
-                    it.copy(status = LocalAnalysisStatus.ERROR, message = "Local analysis failed.", error = failure.message ?: failure::class.java.simpleName)
+                    it.copy(status = LocalAnalysisStatus.ERROR, message = "Could not analyze this video.", error = "Try choosing a different video.")
                 }
             }
         } finally {
@@ -124,7 +124,7 @@ fun EditorViewModel.cancelLocalAnalysis() {
     _localAnalysis.update {
         if (it.status == LocalAnalysisStatus.RUNNING) it.copy(
             status = LocalAnalysisStatus.CANCELLED,
-            message = "Local analysis cancelled.",
+            message = "Analysis cancelled.",
             progress = 0f,
             sceneCuts = emptyList(),
             smartTrims = emptyList(),
@@ -163,7 +163,7 @@ fun EditorViewModel.applyLocalSceneCuts(): Boolean {
     if (!ensureLocalAnalysisCurrent()) return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
     if (!matchesAnalyzedWindow(clip, analysis)) {
-        return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
+        return staleLocalAnalysis("The video changed. Find suggestions again before applying.")
     }
     if (clip.type != ClipType.VIDEO) return false
     val complexClip = clip.speedMultiplier != 1f || clip.speedCurve != com.apexstudio.app.domain.model.SpeedCurve.LINEAR ||
@@ -225,7 +225,7 @@ fun EditorViewModel.applyLocalSuggestedTrim(suggestionId: String): Boolean {
     if (!ensureLocalAnalysisCurrent()) return false
     val suggestion = analysis.smartTrims.firstOrNull { it.id == suggestionId } ?: return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
-    if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
+    if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The video changed. Find suggestions again before applying.")
     if (suggestion.startMs < clip.trimStartMs || suggestion.endMs > clip.trimEndMs || suggestion.endMs - suggestion.startMs < 100L) return false
     trimClip(clip.id, suggestion.startMs, suggestion.endMs)
     clearLocalAnalysisAfterApply("Reviewed Smart Trim applied. Undo is available in the editor.")
@@ -239,7 +239,7 @@ fun EditorViewModel.applyLocalAutoCrop(): Boolean {
     if (!analysis.isReady || LOCAL_CROP_REVIEW_ID !in analysis.reviewedSuggestionIds) return false
     if (!ensureLocalAnalysisCurrent()) return false
     val clip = _state.value.project?.clips?.firstOrNull { it.id == analysis.clipId } ?: return staleLocalAnalysis("Analyzed clip no longer exists.")
-    if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The clip changed after analysis. Run local analysis again before applying.")
+    if (!matchesAnalyzedWindow(clip, analysis)) return staleLocalAnalysis("The video changed. Find suggestions again before applying.")
     pushUndo()
     updateClip(clip.id) {
         it.copy(videoCrop = VideoCropSettings(
@@ -295,8 +295,8 @@ private fun EditorViewModel.ensureLocalAnalysisCurrent(): Boolean {
     _localAnalysis.value = analysis.copy(
         status = LocalAnalysisStatus.CANCELLED,
         progress = 0f,
-        message = "The project, source or speed changed. Run local analysis again before previewing or applying.",
-        error = "The analyzed source changed or its identity is unavailable.",
+        message = "The video changed. Find suggestions again before reviewing or applying.",
+        error = "These suggestions are no longer current.",
         sceneCuts = emptyList(),
         smartTrims = emptyList(),
         autoCrop = null,

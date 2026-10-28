@@ -57,6 +57,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
+import com.apexstudio.app.data.picker.MediaImportProgress
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.AnimatedTransform
@@ -1342,11 +1343,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     drawingTool: com.apexstudio.app.domain.model.VideoDrawingTool = com.apexstudio.app.domain.model.VideoDrawingTool.BRUSH,
     drawingColorArgb: Long = 0xFFFF3B82L,
     drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH,
-    fitAvailableHeight: Boolean = false
+    fitAvailableHeight: Boolean = false,
+    mediaImportProgress: MediaImportProgress = MediaImportProgress.IDLE,
+    onCancelMediaImport: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exportState by vm.export.collectAsStateWithLifecycle()
+    val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()
+    val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
+    val faceReviewProgress by vm.faceTrackReview.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
     val mainPreviewClip = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
     val sourceVideoWidth = state.videoWidth.takeIf { it > 0 }
@@ -1732,6 +1738,37 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             SignaturePreviewOverlay(
                 signature = state.project?.signature,
                 modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        when {
+            mediaImportProgress.running -> PreviewProcessingOverlay(
+                title = "Preparing your media",
+                status = mediaImportProgress.text + if (mediaImportProgress.elapsedMs >= 1_000L) {
+                    " · ${mediaImportProgress.elapsedMs / 1_000L}s"
+                } else "",
+                progress = mediaImportProgress.total.takeIf { it > 0 }?.let { total ->
+                    mediaImportProgress.completed.toFloat() / total
+                }?.takeIf { mediaImportProgress.completed > 0 },
+                onCancel = onCancelMediaImport,
+            )
+            videoUpscaleProgress.processing -> PreviewProcessingOverlay(
+                title = "Enhancing video",
+                status = videoUpscaleProgress.message.ifBlank { "Preparing your video" },
+                progress = videoUpscaleProgress.progress01,
+                onCancel = vm::cancelExistingVideoUpscale,
+            )
+            faceReviewProgress.isRunning -> PreviewProcessingOverlay(
+                title = "Finding face framing suggestions",
+                status = "Reviewing video frames",
+                progress = faceReviewProgress.progress,
+                onCancel = vm::cancelLocalFaceTrackReview,
+            )
+            localAnalysisProgress.isRunning -> PreviewProcessingOverlay(
+                title = "Finding edit suggestions",
+                status = "Reviewing video",
+                progress = localAnalysisProgress.progress,
+                onCancel = vm::cancelLocalAnalysis,
             )
         }
 

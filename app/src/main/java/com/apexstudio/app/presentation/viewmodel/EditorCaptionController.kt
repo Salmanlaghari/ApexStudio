@@ -237,13 +237,13 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
     val timingMode = _captionUi.value.timingMode
     if (timingMode != CaptionTimingMode.PHRASE && language != "en") {
         _captionUi.value = _captionUi.value.copy(phase = CaptionPhase.FAILED,
-            message = "Select English for acoustic word timing. Other languages keep phrase timing.")
+            message = "Select English for word timing. Other languages keep phrase timing.")
         return
     }
     val snapshot = CaptionSourceSnapshot(project.id, clip)
     _captionUi.value = _captionUi.value.copy(
         phase = CaptionPhase.TRANSCRIBING, progress01 = 0f, segmentsAdded = 0,
-        message = "Checking offline AI model…", requestId = request,
+        message = "Preparing captions…", requestId = request,
     )
     captionJob = viewModelScope.launch {
         try {
@@ -253,11 +253,11 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
             if (!ready) {
                 updateCaptionRequest(request) { it.copy(
                     phase = CaptionPhase.NEED_DOWNLOAD,
-                    message = "Bundled Whisper is unavailable. No network request was made; legacy packs are optional.",
+                    message = "Additional caption support is needed. Download it to continue.",
                 ) }
                 return@launch
             }
-            updateCaptionRequest(request) { it.copy(message = "Listening… (on-device AI)") }
+            updateCaptionRequest(request) { it.copy(message = "Listening to your video…") }
             val segments = GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip) {
                 WhisperCaptionEngine.transcribe(
                     ctx.applicationContext, android.net.Uri.parse(clip.uri), language, clip.trimStartMs, clip.trimEndMs,
@@ -272,12 +272,12 @@ fun EditorViewModel.generateAutoCaptions(clipId: String) {
             if (_captionUi.value.requestId != request) return@launch
             if (segments == null) {
                 updateCaptionRequest(request) { it.copy(phase = CaptionPhase.FAILED,
-                    message = "Couldn't load the AI model or read this clip's audio.") }
+                    message = "Couldn't read this video's audio. Try another video.") }
                 return@launch
             }
             var karaokeWords: List<WordCue>? = null
             val finalSegments = if (timingMode != CaptionTimingMode.PHRASE && segments.isNotEmpty()) {
-                updateCaptionRequest(request) { it.copy(message = "Aligning English words offline…", progress01 = .65f) }
+                updateCaptionRequest(request) { it.copy(message = "Checking English word timing…", progress01 = .65f) }
                 val words = GlobalModerationEnforcement.withExistingProjectVideoCaptions(clip) {
                     EnglishWordAlignment.align(ctx.applicationContext, android.net.Uri.parse(clip.uri),
                         segments, clip.trimStartMs, clip.trimEndMs) { progress ->

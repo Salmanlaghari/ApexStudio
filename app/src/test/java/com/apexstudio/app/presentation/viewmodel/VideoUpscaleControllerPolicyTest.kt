@@ -30,11 +30,16 @@ class VideoUpscaleControllerPolicyTest {
         assertEquals(null, VideoUpscaleEngine.sourceDurationBlockReason(30_000L))
         assertTrue(VideoUpscaleEngine.sourceDurationBlockReason(30_001L)!!.contains("00:30.001"))
         val reason = VideoUpscaleEngine.sourceDurationBlockReason(179_000L)!!
-        assertTrue(reason.contains("02:59 source is not supported"))
-        assertTrue(reason.contains("up to 00:30"))
-        assertTrue(reason.contains("No processing will start"))
-        assertTrue(reason.contains("shorter timeline trim does not bypass"))
+        assertTrue(reason.contains("This video is 02:59 long"))
+        assertTrue(reason.contains("00:30 or shorter"))
+        assertTrue(reason.contains("timeline trim will not shorten the source"))
         assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 179_000L) }
+    }
+
+    @Test fun engineFailuresAreMappedToShortActionableMessages() {
+        assertTrue(videoUpscaleFailureMessage(IllegalArgumentException("AAC audio only")).contains("silent video or one with AAC"))
+        assertTrue(videoUpscaleFailureMessage(IllegalArgumentException("up to 30 frames per second")).contains("30 fps or less"))
+        assertTrue(videoUpscaleFailureMessage(IllegalStateException("native codec failure")).contains("Try another video"))
     }
 
     @Test fun selectedMainVideoCommitRequiresExactProjectAndClipSnapshot() {

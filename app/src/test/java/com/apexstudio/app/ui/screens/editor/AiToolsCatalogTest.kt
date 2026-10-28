@@ -14,55 +14,52 @@ class AiToolsCatalogTest {
         assertEquals(AiFeatureId.entries.size, cards.size)
         assertEquals(cards.size, cards.map { it.id }.distinct().size)
         assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
-        assertTrue(AI_PROTECTED_BLOCKER.contains("scoped existing-video editor actions"))
-        assertTrue(AI_PROTECTED_BLOCKER.contains("Other model inventory is not a processing control"))
-        assertTrue(AI_PROTECTED_BLOCKER.contains("Photo AI Enhance"))
-        assertFalse(AI_PROTECTED_BLOCKER.contains("all-category moderation"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("selected project media"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("Features shown as unavailable will not run"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("Review suggestions before applying"))
     }
 
-    @Test fun deterministicAnalysisIsNotFalselyLabelledAsLearnedAI() {
+    @Test fun suggestionsHavePlainLabelsAndNeutralAvailabilityStatus() {
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.AUTO_CROP, AiAvailability.READY, "Signal analysis"
         ))).single()
-        assertTrue(card.title.contains("not subject AI"))
-        assertTrue(card.detail.startsWith("Local backend detected"))
+        assertEquals("Crop suggestions", card.title)
+        assertEquals("Available", card.detail)
     }
 
-    @Test fun modelErrorsRemainVisible() {
+    @Test fun unavailableFeatureIsNotPresentedAsReadyOrRunable() {
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.SUBTITLES, AiAvailability.MODEL_MISSING, "Whisper files are missing"
         ))).single()
-        assertTrue(card.detail.contains("Whisper files are missing"))
+        assertEquals("Not available yet", card.detail)
         assertEquals(AI_PROTECTED_STATUS_LABEL, card.statusLabel)
-        assertTrue(card.unavailableReason.startsWith(
-            "Available in Text → Captions for an existing project video."
-        ))
-        assertTrue(card.unavailableReason.contains("model readiness and audio access are checked when run"))
+        assertTrue(card.unavailableReason.startsWith("Create captions from speech"))
+        assertFalse(card.unavailableReason.contains("Whisper"))
     }
 
     @Test fun upscaleSeparatesVideoEntryFromScopedPhotoEnhanceAction() {
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.ONNX_UPSCALING, AiAvailability.READY, "ESPCN locally available"
         ))).single()
-        assertTrue(card.unavailableReason.contains("Open AI Video Upscale"))
-        assertTrue(card.unavailableReason.contains("Photo AI Enhance"))
+        assertTrue(card.unavailableReason.contains("Open Video enhancement"))
+        assertTrue(card.unavailableReason.contains("Photo Enhance"))
         assertTrue(card.unavailableReason.contains("4.2 megapixels"))
     }
 
-    @Test fun unreviewedArtisticModelRemainsUnavailableForActualLicenseAndIntegrationReasons() {
+    @Test fun unreviewedArtisticStyleIsClearlyUnavailable() {
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.ONNX_STYLE_TRANSFER, AiAvailability.READY, "Model bytes present"
         ))).single()
-        assertTrue(card.unavailableReason.contains("license/provenance"))
-        assertTrue(card.unavailableReason.contains("full-video integration"))
+        assertTrue(card.unavailableReason.contains("not available yet"))
+        assertTrue(card.unavailableReason.contains("Standard filters"))
     }
 
     @Test fun liveCameraRemainsOutOfScopeAndReviewHasSeparateEntry() {
-        assertEquals("Open offline scene + face review", LOCAL_REVIEW_ACTION_LABEL)
+        assertEquals("Review video suggestions", LOCAL_REVIEW_ACTION_LABEL)
         val card = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.GESTURE_CONTROL, AiAvailability.READY, "Model bytes present"
         ))).single()
-        assertTrue(card.detail.contains("outside the existing-project-video scope"))
+        assertTrue(card.detail.contains("Live camera editing is not available here"))
     }
 
     @Test fun onlyExistingVideoWorkflowIdsHaveCardDestinations() {
@@ -80,8 +77,8 @@ class AiToolsCatalogTest {
         val reframe = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.FACE_AWARE_REFRAME, AiAvailability.READY, "Face model present"
         ))).single()
-        assertTrue(reframe.unavailableReason.contains("Still photos can use Face crop"))
-        assertTrue(reframe.unavailableReason.contains("video-track application remains review-restricted"))
-        assertTrue(AI_PROTECTED_BLOCKER.contains("no integrated, tested depth model"))
+        assertTrue(reframe.unavailableReason.contains("Review face-framing suggestions"))
+        assertTrue(reframe.unavailableReason.contains("not available yet"))
+        assertTrue(AI_PROTECTED_BLOCKER.contains("some actions are still restricted"))
     }
 }

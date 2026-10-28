@@ -48,14 +48,14 @@ class VideoTimelineHeaderTest {
         compose.onNodeWithText("Timeline").assertIsDisplayed()
         compose.onNodeWithTag("timeline-duration").assertExists()
         compose.onNodeWithTag("timeline-header").assertExists()
-        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add media").assertIsDisplayed()
         compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
         compose.onNodeWithText("Main video · V1", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Music (A1)").assertIsDisplayed()
         compose.onNodeWithText("♫").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
-        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Add media").assertIsDisplayed().performClick()
 
         compose.runOnIdle {
             assertEquals(listOf(ClipType.VIDEO), addedTypes)

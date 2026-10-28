@@ -70,6 +70,10 @@ internal fun editorPreviewStageAspectRatio(sourceAspectRatio: Float?, fallbackAs
         fallbackAspectRatio = fallbackAspectRatio
     )
 
+/** Select the denser mobile editor shell only for a clearly horizontal project composition. */
+internal fun usesHorizontalProjectLayout(aspectRatio: Float?): Boolean =
+    aspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }?.let { it > 1.1f } == true
+
 /** Reserve fixed transport/timeline chrome so a landscape frame never leaves a dead spacer below it. */
 internal fun previewStageHeightBudget(availableHeight: Float, reservedHeight: Float): Float {
     if (!availableHeight.isFinite() || !reservedHeight.isFinite()) return 0f

@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +59,7 @@ fun PlaybackControlBar(
             .fillMaxWidth()
             .height(EditorLayoutMetrics.PlaybackBarHeight)
             .background(EditorPalette.BgBase)
+            .testTag("editor-playback-controls")
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -158,7 +158,7 @@ class TimelineWorkspaceLayoutTest {
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
         assertEquals("V1 remains the fixed-height 52dp filmstrip lane", 52f, main.height, 1f)
-        assertEquals("The waveform remains a compact 12dp strip", 12f, waveform.height, 1f)
+        assertEquals("The separate source-audio lane is a readable 36dp waveform", 36f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
     }
 
@@ -192,7 +192,7 @@ class TimelineWorkspaceLayoutTest {
         composeRule.waitForIdle()
         composeRule.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
 
-        composeRule.onNodeWithContentDescription("Add clip").performClick()
+        composeRule.onNodeWithContentDescription("Add media").performClick()
 
         composeRule.runOnIdle {
             assertEquals(ClipType.VIDEO, requested)

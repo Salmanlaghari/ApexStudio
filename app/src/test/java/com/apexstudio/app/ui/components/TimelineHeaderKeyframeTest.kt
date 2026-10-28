@@ -157,6 +157,6 @@ class TimelineHeaderKeyframeTest {
         compose.onNodeWithTag("timeline-reveal-playhead").assertIsDisplayed()
         compose.onNodeWithTag("timeline-multiselect").assertIsDisplayed()
         compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add media").assertIsDisplayed()
     }
 }

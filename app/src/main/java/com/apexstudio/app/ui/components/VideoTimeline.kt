@@ -239,7 +239,7 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     // historical portrait timeline rows below.
     var height = TIMELINE_HEADER_HEIGHT_DP + TIMELINE_RULER_HEIGHT_DP
     if (hasMain) height += 10 + MAIN_VIDEO_LANE_HEIGHT_DP
-    if (hasWaveform) height += 10 + 12
+    if (hasWaveform) height += 10 + 36
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
         (if (originalAudioRows > 0) 1 else 0) +
@@ -388,18 +388,23 @@ private fun CompactTimelineHeader(
                 modifier = Modifier.size(19.dp),
             )
         }
-        IconButton(
-            onClick = onAddMedia,
+        Row(
             modifier = Modifier
-                .size(40.dp)
+                .height(40.dp)
+                .widthIn(min = 88.dp)
                 .shadow(4.dp, RoundedCornerShape(11.dp))
                 .clip(RoundedCornerShape(11.dp))
                 .background(Brush.linearGradient(listOf(Color(0xFF38DCCE), Color(0xFF796EEA))))
                 .border(1.dp, Color(0xFFA8FFF5).copy(alpha = 0.75f), RoundedCornerShape(11.dp))
-                .semantics { contentDescription = "Add clip" }
-                .testTag("timeline-header-add-media"),
+                .clickable(onClick = onAddMedia)
+                .semantics { contentDescription = "Add media" }
+                .testTag("timeline-header-add-media")
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFF5FFFF), modifier = Modifier.size(23.dp))
+            Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFF5FFFF), modifier = Modifier.size(21.dp))
+            Text("Add media", color = Color(0xFFF5FFFF), fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp), maxLines = 1)
         }
     }
 }
@@ -865,7 +870,7 @@ fun VideoTimeline(
         adjustmentsSummary(adjustments).isNotEmpty()
     val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty() &&
         originalVideoAudioTracks.isEmpty()
-    val waveformStripHeight = 12
+    val waveformStripHeight = 36
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
         .sumOf { overlayLayerHeight.value.toInt() + 10 }
     val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
@@ -1120,12 +1125,9 @@ fun VideoTimeline(
                                     }
                             )
 
-                            // Thin audio waveform strip directly under
-                            // V1 (first clip's audio only — that is what
-                            // state.audioWaveform holds). 12dp, pinned
-                            // with the header, spanning exactly the
-                            // first clip's duration. Multi-clip projects
-                            // get the strip under the first clip only.
+                            // Separate source-audio waveform lane directly under
+                            // V1; it uses decoded samples only, never synthetic
+                            // bars, and spans the first clip's duration.
                             if (showWaveformStrip) {
                                 Spacer(Modifier.height(10.dp))
                                 val firstClip = videoClips.first()
@@ -1135,8 +1137,9 @@ fun VideoTimeline(
                                 modifier = Modifier
                                         .width(stripWidthDp)
                                         .height(waveformStripHeight.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0xFF073A42))
+                                        .clip(RoundedCornerShape(7.dp))
+                                        .background(Color(0xFF20164C))
+                                        .border(1.dp, Color(0xFF765BDB).copy(alpha = 0.7f), RoundedCornerShape(7.dp))
                                         .semantics(mergeDescendants = true) { contentDescription = "Source audio waveform" }
                                 ) {
                                     AudioWaveformBars(

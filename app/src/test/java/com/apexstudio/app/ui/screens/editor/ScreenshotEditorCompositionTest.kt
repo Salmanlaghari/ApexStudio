@@ -66,7 +66,7 @@ class ScreenshotEditorCompositionTest {
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
         listOf("Animation", "Position", "Scale", "Rotation", "Opacity").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
         compose.onNodeWithTag("timeline-header").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add media").assertIsDisplayed()
         val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
         val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot

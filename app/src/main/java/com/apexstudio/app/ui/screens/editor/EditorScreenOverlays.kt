@@ -1788,6 +1788,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     onTimelineFocusModeChange: (Boolean) -> Unit = {},
     compactLandscape: Boolean = false,
     isFullscreenPreview: Boolean = false,
+    horizontalProjectLayout: Boolean = false,
 ) {
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
@@ -1826,14 +1827,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // No persistent property strip above the timeline. Keyframe/Animation stay
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
-    val compactTimelineHostHeight = if (isTimelineFocusMode) null else {
+    val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout) null else {
         compactTimelineHeight(state) + (if (compactLandscape) 44.dp else 26.dp) + 2.dp
     }
     CenteredTimelineWorkspace(
-        layoutWeight = timelineTrackLayoutWeight(isTimelineFocusMode),
+        layoutWeight = if (horizontalProjectLayout) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
         compactHeight = compactTimelineHostHeight
     ) {
-    Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (!horizontalProjectLayout) Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
         if (compactLandscape) {
             LandscapeTimelineControls(state, vm, seekPlayerAndState, Modifier.weight(1f))
         } else {
@@ -1854,7 +1855,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 
     // Reference mockup: thin horizontal scrub line above the timeline —
     // red played portion on a dark track. Purely a position mirror.
-    run {
+    if (!horizontalProjectLayout) run {
         val totalMs = state.durationMs.coerceAtLeast(1L)
         val frac = (state.playerPositionMs.toFloat() / totalMs).coerceIn(0f, 1f)
         Box(

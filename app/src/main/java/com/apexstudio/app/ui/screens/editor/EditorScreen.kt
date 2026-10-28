@@ -145,6 +145,16 @@ private fun EditorScreenContent(
     val mediaPicker = remember { MediaPickerHelper(context) }
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    val editorExportState by vm.export.collectAsStateWithLifecycle()
+    val sourceAspectForLayout = previewContentAspect(
+        videoWidth = state.videoWidth.takeIf { it > 0 } ?: exoPlayer?.videoSize?.width ?: 0,
+        videoHeight = state.videoHeight.takeIf { it > 0 } ?: exoPlayer?.videoSize?.height ?: 0,
+        pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f
+    )
+    val horizontalProjectLayout = usesHorizontalProjectLayout(
+        state.project?.videoAspectRatio ?: sourceAspectForLayout
+            ?: previewCompositionAspect(editorExportState.settings.aspectRatio)
+    )
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
@@ -886,8 +896,14 @@ private fun EditorScreenContent(
             android.widget.Toast.makeText(context, "Select a main-track project video first", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
-    LaunchedEffect(projectId, savedState.project?.clips, entryWorkspace) {
+    LaunchedEffect(projectId, savedState.project?.clips, entryWorkspace, horizontalProjectLayout) {
         if (initialReferenceWorkspaceOpened || entryWorkspace != "edit") return@LaunchedEffect
+        if (horizontalProjectLayout) {
+            // Landscape projects open directly into the dedicated editing shell;
+            // the legacy reference filter workspace would hide its two tool rows.
+            initialReferenceWorkspaceOpened = true
+            return@LaunchedEffect
+        }
         val project = savedState.project ?: return@LaunchedEffect
         val clip = selectedWorkspaceVideo(project, savedState.selectedClipId)
             ?: project.clips.firstOrNull {
@@ -974,6 +990,7 @@ private fun EditorScreenContent(
             // PR169/170's preview-first stacked shell is the editor default;
             // adaptive landscape remains available to explicit workspace hosts.
             landscape = false,
+            horizontalProjectMode = horizontalProjectLayout,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             preview = {
@@ -991,7 +1008,7 @@ private fun EditorScreenContent(
             onOpenAddMediaMenu = { showAddMediaMenu = true },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
-            fitAvailableHeight = true,
+            fitAvailableHeight = !horizontalProjectLayout,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,
@@ -1009,6 +1026,7 @@ private fun EditorScreenContent(
                 isTimelineFocusMode = isTimelineFocusMode,
                 onTimelineFocusModeChange = { isTimelineFocusMode = it },
                 isFullscreenPreview = state.isFullscreenPreview,
+                horizontalProjectLayout = horizontalProjectLayout,
                 // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
                 // set here and the picker launches immediately, so the pick
                 // can never be misrouted to V1 (the old bug: the ClipType was
@@ -1053,6 +1071,7 @@ private fun EditorScreenContent(
                 state = state,
                 vm = vm,
                 mediaPicker = mediaPicker,
+                horizontalProjectLayout = horizontalProjectLayout,
                 onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace(false) },
                 onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
                 onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
@@ -1097,11 +1116,15 @@ private fun EditorScreenContent(
                     }
                 },
                 onToggleKeyframe = {
-                    val clip = mainPreviewClip ?: selectedWorkspaceVideo(
+                    val selectedKeyframeClip = state.project?.clips?.firstOrNull {
+                        it.id == state.selectedClipId &&
+                            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
+                    }
+                    val clip = selectedKeyframeClip ?: mainPreviewClip ?: selectedWorkspaceVideo(
                         state.project, state.selectedClipId
                     )
                     if (clip != null) {
-                        vm.toggleKeyframeAtPlayhead()
+                        vm.toggleKeyframeAtPlayheadFor(clip.id)
                     } else {
                         android.widget.Toast.makeText(
                             context,

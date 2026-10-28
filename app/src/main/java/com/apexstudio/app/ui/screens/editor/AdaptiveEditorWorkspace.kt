@@ -28,6 +28,7 @@ import com.apexstudio.app.ui.theme.EditorPalette
 @Composable
 internal fun ColumnScope.AdaptiveEditorWorkspace(
     landscape: Boolean,
+    horizontalProjectMode: Boolean = false,
     focused: Boolean,
     fullscreen: Boolean,
     preview: @Composable ColumnScope.() -> Unit,
@@ -40,6 +41,17 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
             if (fullscreen) {
                 preview()
                 timeline()
+            } else if (horizontalProjectMode && !focused) {
+                Column(Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-workspace")) {
+                    Column(
+                        Modifier.fillMaxWidth().wrapContentHeight().testTag("horizontal-project-preview-pane"),
+                        content = preview
+                    )
+                    Column(
+                        Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-timeline-pane"),
+                        content = timeline
+                    )
+                }
             } else if (focused) {
                 Column(
                     Modifier.fillMaxWidth().weight(0.001f).testTag("portrait-preview-pane"),

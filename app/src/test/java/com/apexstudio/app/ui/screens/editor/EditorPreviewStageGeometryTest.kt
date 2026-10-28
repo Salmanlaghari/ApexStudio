@@ -42,4 +42,13 @@ class EditorPreviewStageGeometryTest {
         assertEquals(0f, previewStageHeightBudget(300f, 380f), 0.001f)
         assertEquals(0f, previewStageHeightBudget(Float.NaN, 10f), 0.001f)
     }
+
+    @Test
+    fun horizontalMobileShellIsChosenFromCompositionAspectNotDeviceOrientation() {
+        assertEquals(true, usesHorizontalProjectLayout(16f / 9f))
+        assertEquals(false, usesHorizontalProjectLayout(9f / 16f))
+        assertEquals(false, usesHorizontalProjectLayout(1f))
+        assertEquals(false, usesHorizontalProjectLayout(Float.NaN))
+        assertEquals(false, usesHorizontalProjectLayout(null))
+    }
 }

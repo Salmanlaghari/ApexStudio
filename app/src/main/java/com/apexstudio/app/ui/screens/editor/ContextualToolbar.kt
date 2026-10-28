@@ -558,6 +558,14 @@ fun ContextualBottomToolbar(
         ).map(::routed)
         else -> clipItems.map(::routed)
     }
+    val easyMoreItems = listOf(
+        CtxToolItem("AI tools", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
+        CtxToolItem("Captions", Icons.Default.Subtitles, tint = ApexPalette.NeonCyan, onClick = onCaptions),
+        CtxToolItem("Enhance", Icons.Default.HighQuality, tint = ApexPalette.NeonCyan, onClick = onEnhance),
+        CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, tint = ApexPalette.NeonPink, onClick = onBgRemover),
+        CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
+        CtxToolItem("History", Icons.Default.History, onClick = onHistory)
+    ).map(::routed) + moreItems
 
     if (showToolbarNotes) {
         AlertDialog(
@@ -619,7 +627,7 @@ fun ContextualBottomToolbar(
             )
             if (showMoreTools) {
                 ToolbarBarRow(
-                    items = moreItems,
+                    items = easyMoreItems,
                     surfaceColor = Color(0xFF111A28),
                     modifier = Modifier.testTag("mobile-editor-more-tools"),
                     itemWidth = 56.dp,

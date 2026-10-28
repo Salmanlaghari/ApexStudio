@@ -80,8 +80,7 @@ class CenteredTimelineWorkspaceTest {
         assertTrue("Normal timeline host stays close to populated track height", timelineHost.height in 100f..200f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
         assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertEquals("Only scrub line and compact header separate focus control from ruler",
-            focus.bottom + 2f + com.apexstudio.app.ui.components.TIMELINE_HEADER_HEIGHT_DP, ruler.top, 1f)
+        assertEquals("Only the slim transport-to-ruler spacer remains", focus.bottom + 2f, ruler.top, 1f)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

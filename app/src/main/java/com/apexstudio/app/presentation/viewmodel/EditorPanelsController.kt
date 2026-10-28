@@ -273,3 +273,109 @@ fun EditorViewModel.openMaskPanelTopLevel() {
     }
     openMaskPanel()
 }
+
+
+/** UI-only ownership key for the editor's mutually exclusive feature surfaces. */
+internal enum class EditorPanelKey(val stateBacked: Boolean = true) {
+    TRIM, GPU_FILTER, COLOR_GRADING, ADJUSTMENTS, FX, TRANSMISSION, TRANSITION,
+    TEXT, AUDIO_MIXER, CLIP_VOLUME, AUDIO_FADE, ROYALTY_MUSIC_DIALOG, SPEED, STICKER,
+    SIGNATURE, VOICE_RECORDER, AR_FILTER, COVER, CHROMA_KEY, MASK,
+    TEXT_MASK, OVERLAY_PROPERTIES, HELP, KEYFRAME, PHOTO_EDIT, EDIT_PACK, ADJUST_PACK,
+    COLOR_SCOPES, BG_REMOVER, BACKGROUND_REPLACE, AUTO_CLIP, MUSIC_LIBRARY, SFX_LIBRARY,
+    HISTORY_DRAFTS,
+    AI_TOOLS(false), VIDEO_PRESETS(false), VIDEO_UPSCALE(false), LOCAL_ANALYSIS(false),
+    CROP(false), VIDEO_DRAWING(false), QUICK_PRESETS(false), ADD_MEDIA_MENU(false),
+    ROYALTY_MUSIC_SHEET(false), LOCAL_CHALLENGE(false)
+}
+
+/** Open state-backed editor sheets, kept in visual priority order for first-frame arbitration. */
+internal fun EditorState.openEditorPanelKeys(): Set<EditorPanelKey> = buildSet {
+    if (trimPanelOpen) add(EditorPanelKey.TRIM)
+    if (gpuFilterPanelOpen) add(EditorPanelKey.GPU_FILTER)
+    if (filterPanelOpen || colorGradingLutPanelOpen) add(EditorPanelKey.COLOR_GRADING)
+    if (adjustmentsPanelOpen) add(EditorPanelKey.ADJUSTMENTS)
+    if (fxPanelOpen) add(EditorPanelKey.FX)
+    if (transmissionPanelOpen) add(EditorPanelKey.TRANSMISSION)
+    if (transitionPickerOpen) add(EditorPanelKey.TRANSITION)
+    if (textPanelOpen) add(EditorPanelKey.TEXT)
+    if (audioMixerOpen) add(EditorPanelKey.AUDIO_MIXER)
+    if (clipVolumeSheetOpen) add(EditorPanelKey.CLIP_VOLUME)
+    if (audioFadeSheetOpen) add(EditorPanelKey.AUDIO_FADE)
+    if (royaltyMusicDialogOpen) add(EditorPanelKey.ROYALTY_MUSIC_DIALOG)
+    if (speedPanelOpen) add(EditorPanelKey.SPEED)
+    if (stickerPanelOpen) add(EditorPanelKey.STICKER)
+    if (signaturePanelOpen) add(EditorPanelKey.SIGNATURE)
+    if (voiceRecorderOpen) add(EditorPanelKey.VOICE_RECORDER)
+    if (arFilterPanelOpen) add(EditorPanelKey.AR_FILTER)
+    if (coverPanelOpen) add(EditorPanelKey.COVER)
+    if (chromaKeyPanelOpen) add(EditorPanelKey.CHROMA_KEY)
+    if (maskPanelOpen) add(EditorPanelKey.MASK)
+    if (textMaskPanelOpen) add(EditorPanelKey.TEXT_MASK)
+    if (overlayPropsOpen) add(EditorPanelKey.OVERLAY_PROPERTIES)
+    if (helpDialogOpen) add(EditorPanelKey.HELP)
+    if (keyframePanelOpen) add(EditorPanelKey.KEYFRAME)
+    if (photoEditPanelOpen) add(EditorPanelKey.PHOTO_EDIT)
+    if (editPackPanelOpen) add(EditorPanelKey.EDIT_PACK)
+    if (adjustPackPanelOpen) add(EditorPanelKey.ADJUST_PACK)
+    if (colorScopesPanelOpen) add(EditorPanelKey.COLOR_SCOPES)
+    if (bgRemoverPanelOpen) add(EditorPanelKey.BG_REMOVER)
+    if (backgroundPanelOpen) add(EditorPanelKey.BACKGROUND_REPLACE)
+    if (autoClipPanelOpen) add(EditorPanelKey.AUTO_CLIP)
+    if (musicLibraryPanelOpen) add(EditorPanelKey.MUSIC_LIBRARY)
+    if (sfxLibraryPanelOpen) add(EditorPanelKey.SFX_LIBRARY)
+    if (historyDraftsPanelOpen) add(EditorPanelKey.HISTORY_DRAFTS)
+}
+
+/** Preserve the most recently opened tool; closing it must not resurrect an older sheet. */
+internal fun activeEditorPanelAfterStateChange(
+    previous: Set<EditorPanelKey>,
+    current: Set<EditorPanelKey>,
+    active: EditorPanelKey?
+): EditorPanelKey? {
+    val newlyOpened = current - previous
+    return newlyOpened.lastOrNull()
+        ?: if (active?.stateBacked == true && active !in current) null else active
+}
+
+/** Close all state-backed peers when another local or state-backed panel takes ownership. */
+internal fun EditorViewModel.keepOnlyEditorPanel(active: EditorPanelKey?) {
+    _state.update { state ->
+        state.copy(
+            trimPanelOpen = active == EditorPanelKey.TRIM && state.trimPanelOpen,
+            gpuFilterPanelOpen = active == EditorPanelKey.GPU_FILTER && state.gpuFilterPanelOpen,
+            filterPanelOpen = active == EditorPanelKey.COLOR_GRADING && state.filterPanelOpen,
+            colorGradingLutPanelOpen = active == EditorPanelKey.COLOR_GRADING && state.colorGradingLutPanelOpen,
+            adjustmentsPanelOpen = active == EditorPanelKey.ADJUSTMENTS && state.adjustmentsPanelOpen,
+            fxPanelOpen = active == EditorPanelKey.FX && state.fxPanelOpen,
+            transmissionPanelOpen = active == EditorPanelKey.TRANSMISSION && state.transmissionPanelOpen,
+            transitionPickerOpen = active == EditorPanelKey.TRANSITION && state.transitionPickerOpen,
+            textPanelOpen = active == EditorPanelKey.TEXT && state.textPanelOpen,
+            audioMixerOpen = active == EditorPanelKey.AUDIO_MIXER && state.audioMixerOpen,
+            clipVolumeSheetOpen = active == EditorPanelKey.CLIP_VOLUME && state.clipVolumeSheetOpen,
+            audioFadeSheetOpen = active == EditorPanelKey.AUDIO_FADE && state.audioFadeSheetOpen,
+            royaltyMusicDialogOpen = active == EditorPanelKey.ROYALTY_MUSIC_DIALOG && state.royaltyMusicDialogOpen,
+            speedPanelOpen = active == EditorPanelKey.SPEED && state.speedPanelOpen,
+            stickerPanelOpen = active == EditorPanelKey.STICKER && state.stickerPanelOpen,
+            signaturePanelOpen = active == EditorPanelKey.SIGNATURE && state.signaturePanelOpen,
+            voiceRecorderOpen = active == EditorPanelKey.VOICE_RECORDER && state.voiceRecorderOpen,
+            arFilterPanelOpen = active == EditorPanelKey.AR_FILTER && state.arFilterPanelOpen,
+            coverPanelOpen = active == EditorPanelKey.COVER && state.coverPanelOpen,
+            chromaKeyPanelOpen = active == EditorPanelKey.CHROMA_KEY && state.chromaKeyPanelOpen,
+            maskPanelOpen = active == EditorPanelKey.MASK && state.maskPanelOpen,
+            textMaskPanelOpen = active == EditorPanelKey.TEXT_MASK && state.textMaskPanelOpen,
+            overlayPropsOpen = active == EditorPanelKey.OVERLAY_PROPERTIES && state.overlayPropsOpen,
+            helpDialogOpen = active == EditorPanelKey.HELP && state.helpDialogOpen,
+            keyframePanelOpen = active == EditorPanelKey.KEYFRAME && state.keyframePanelOpen,
+            photoEditPanelOpen = active == EditorPanelKey.PHOTO_EDIT && state.photoEditPanelOpen,
+            editPackPanelOpen = active == EditorPanelKey.EDIT_PACK && state.editPackPanelOpen,
+            adjustPackPanelOpen = active == EditorPanelKey.ADJUST_PACK && state.adjustPackPanelOpen,
+            colorScopesPanelOpen = active == EditorPanelKey.COLOR_SCOPES && state.colorScopesPanelOpen,
+            bgRemoverPanelOpen = active == EditorPanelKey.BG_REMOVER && state.bgRemoverPanelOpen,
+            backgroundPanelOpen = active == EditorPanelKey.BACKGROUND_REPLACE && state.backgroundPanelOpen,
+            autoClipPanelOpen = active == EditorPanelKey.AUTO_CLIP && state.autoClipPanelOpen,
+            musicLibraryPanelOpen = active == EditorPanelKey.MUSIC_LIBRARY && state.musicLibraryPanelOpen,
+            sfxLibraryPanelOpen = active == EditorPanelKey.SFX_LIBRARY && state.sfxLibraryPanelOpen,
+            historyDraftsPanelOpen = active == EditorPanelKey.HISTORY_DRAFTS && state.historyDraftsPanelOpen
+        )
+    }
+}

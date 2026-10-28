@@ -1383,8 +1383,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // full remaining height. Standalone preview hosts can keep the
             // source-ratio budget below without subtracting timeline chrome twice.
             .then(when {
-                isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
-                isTimelineFocusMode -> Modifier.weight(editorPreviewLayoutWeight(true))
+                isFullscreenPreview -> Modifier.weight(1f)
+                fitAvailableHeight && !isTimelineFocusMode -> Modifier.weight(1f)
                 else -> Modifier
             })
             .background(ApexPalette.BgBase)
@@ -1393,7 +1393,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     ) {
         val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
             compactTimelineHeight(state) + 26.dp + 2.dp
-        val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight || isTimelineFocusMode) {
+        val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
             maxHeight.value
         } else {
             previewStageHeightBudget(maxHeight.value, reservedTimelineChrome.value).coerceAtLeast(1f)

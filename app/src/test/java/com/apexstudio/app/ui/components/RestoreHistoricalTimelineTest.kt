@@ -26,14 +26,13 @@ class RestoreHistoricalTimelineTest {
     @Test
     fun normalModeKeepsThePreviewProminentAndTimelineAvailable() {
         assertEquals(2.25f, editorPreviewLayoutWeight(isTimelineFocused = false), 0f)
+        assertEquals(2.25f, editorPreviewLayoutWeight(isTimelineFocused = true), 0f)
         assertEquals(0.9f, timelineTrackLayoutWeight(isTimelineFocused = false), 0f)
-        assertEquals(0.001f, editorPreviewLayoutWeight(isTimelineFocused = true), 0f)
         assertEquals(3f, timelineTrackLayoutWeight(isTimelineFocused = true), 0f)
     }
 
     @Test
     fun timelineKeepsHistoricalRulerV1AndSupportingLayerHeights() {
-        assertEquals(40, TIMELINE_HEADER_HEIGHT_DP)
         assertEquals(28, TIMELINE_RULER_HEIGHT_DP)
         assertEquals(60, OVERLAY_LAYER_HEIGHT_DP)
         assertEquals(52, OVERLAY_FILMSTRIP_HEIGHT_DP)
@@ -55,8 +54,8 @@ class RestoreHistoricalTimelineTest {
                 clips = listOf(clip("main"), clip("overlay", ClipType.OVERLAY, trackIndex = 1)),
             ),
         )
-        assertEquals(68.dp, compactTimelineHeight(empty))
-        assertEquals(130.dp, compactTimelineHeight(main))
-        assertEquals(210.dp, compactTimelineHeight(withOverlay))
+        assertEquals(28.dp, compactTimelineHeight(empty))
+        assertEquals(90.dp, compactTimelineHeight(main))
+        assertEquals(170.dp, compactTimelineHeight(withOverlay))
     }
 }

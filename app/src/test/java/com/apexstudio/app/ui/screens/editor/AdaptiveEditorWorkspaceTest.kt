@@ -23,7 +23,7 @@ class AdaptiveEditorWorkspaceTest {
         compose.setContent {
             Column(Modifier.requiredSize(if (landscape) 840.dp else 375.dp, 400.dp)) {
                 AdaptiveEditorWorkspace(landscape, focused = focused, fullscreen = fullscreen,
-                    preview = { Box(Modifier.fillMaxWidth().weight(1f).testTag("preview-content")) },
+                    preview = { Box(Modifier.fillMaxWidth().height(180.dp).testTag("preview-content")) },
                     timeline = {
                         if (focused) Box(Modifier.fillMaxSize().testTag("timeline-content"))
                         else Box(Modifier.fillMaxWidth().height(160.dp).testTag("timeline-content"))
@@ -67,12 +67,13 @@ class AdaptiveEditorWorkspaceTest {
         assertTrue("portrait panes should fill the available editor height", kotlin.math.abs(preview + timeline - workspace) < 2f)
     }
 
-    @Test fun focusedPortraitExpandsTimelineAndCollapsesPreview() {
+    @Test fun focusedPortraitExpandsTimelineWithoutCollapsingPreview() {
         render(false, focused = true)
         val preview = compose.onNodeWithTag("portrait-preview-pane").fetchSemanticsNode().boundsInRoot.height
         val timeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Focus mode should prioritize the timeline", timeline > preview)
-        assertTrue("Focus mode should give the timeline nearly all available height", timeline > 390f)
+        assertTrue("Focus mode must keep a useful preview visible", preview >= 180f)
+        assertTrue("The timeline expands into the remaining workspace", timeline > 200f && timeline < 390f)
     }
 
     @Test fun fullscreenDoesNotConsumeWidthForInspector() {

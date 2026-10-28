@@ -25,8 +25,7 @@ class VideoTimelineHeaderTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun addClipRemainsVisibleAndMainVideoAndMusicLaneRolesAreExplicit() {
-        val addedTypes = mutableListOf<ClipType>()
+    fun cleanTimelineStartsWithRulerAndKeepsMainVideoAndMusicLaneRoles() {
         val scrollState = ScrollState(0)
         compose.setContent {
             VideoTimeline(
@@ -37,7 +36,6 @@ class VideoTimelineHeaderTest {
                 audioTracks = listOf(AudioTrack(id = "music-1", name = "Track music", uri = "file:///music")),
                 totalDurationMs = 10_000L,
                 playheadMs = 0L,
-                onAddMedia = { addedTypes += it },
                 onOpenSpeed = {},
                 onOpenTrim = {},
                 scrollState = scrollState,
@@ -45,21 +43,23 @@ class VideoTimelineHeaderTest {
             )
         }
 
-        compose.onNodeWithText("Timeline").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-duration").assertExists()
-        compose.onNodeWithTag("timeline-header").assertExists()
-        compose.onNodeWithContentDescription("Add media").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
+        compose.onNodeWithText("Timeline").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-header-add-media").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add media").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add video media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add Clip").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        compose.onNodeWithText("Timeline options").assertDoesNotExist()
+        compose.onNodeWithText("Reveal playhead").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Main video · V1", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Music (A1)").assertIsDisplayed()
         compose.onNodeWithText("♫").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
-        compose.onNodeWithContentDescription("Add media").assertIsDisplayed().performClick()
-
-        compose.runOnIdle {
-            assertEquals(listOf(ClipType.VIDEO), addedTypes)
-        }
     }
     @Test
     fun multiSelectActionsAreReachableAtCompactWidthAndInvokeCallbacks() {

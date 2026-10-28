@@ -172,6 +172,11 @@ private fun EditorScreenContent(
     var overlayPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var showAddMediaMenu by remember { mutableStateOf(false) }
     var showRoyaltyFreeSheet by remember { mutableStateOf(false) }
+    var activeEditorPanel by remember(projectId) { mutableStateOf<EditorPanelKey?>(null) }
+    val activateLocalEditorPanel: (EditorPanelKey) -> Unit = { panel ->
+        activeEditorPanel = panel
+        vm.keepOnlyEditorPanel(null)
+    }
     // Main-video framing belongs to the clip, not a transient preview-only switch.
     // Existing photo controls keep their prior preview behavior.
     var nonVideoCoverMode by remember(projectId) { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
@@ -180,13 +185,19 @@ private fun EditorScreenContent(
     val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
     LaunchedEffect(entryWorkspace) {
-        if (entryWorkspace == "ai") showAiPanel = true
+        if (entryWorkspace == "ai") {
+            showAiPanel = true
+            activateLocalEditorPanel(EditorPanelKey.AI_TOOLS)
+        }
     }
     val closeAiPanel: () -> Unit = {
         showAiPanel = false
         if (entryWorkspace == "ai") onCloseWorkspace()
     }
-    BackHandler(enabled = entryWorkspace == "ai" && showAiPanel, onBack = closeAiPanel)
+    BackHandler(
+        enabled = entryWorkspace == "ai" && showAiPanel && activeEditorPanel == EditorPanelKey.AI_TOOLS,
+        onBack = closeAiPanel
+    )
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
     var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
     var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
@@ -201,6 +212,22 @@ private fun EditorScreenContent(
     var musicMoodFilter by remember { mutableStateOf<String?>(null) }
     // Phase 3: saved projects for History/Drafts panel.
     var savedProjects by remember { mutableStateOf<List<com.apexstudio.app.domain.model.Project>>(emptyList()) }
+
+    val stateEditorPanels = state.openEditorPanelKeys()
+    var previousStateEditorPanels by remember(projectId) { mutableStateOf(emptySet<EditorPanelKey>()) }
+    LaunchedEffect(stateEditorPanels) {
+        val newlyOpened = stateEditorPanels - previousStateEditorPanels
+        val selectedPanel = activeEditorPanelAfterStateChange(
+            previous = previousStateEditorPanels,
+            current = stateEditorPanels,
+            active = activeEditorPanel
+        )
+        activeEditorPanel = selectedPanel
+        if (newlyOpened.isNotEmpty() && selectedPanel != null) {
+            vm.keepOnlyEditorPanel(selectedPanel)
+        }
+        previousStateEditorPanels = stateEditorPanels
+    }
 
     // Phase 3: auto-save every 30s while a project is open.
     // LaunchedEffect is cancelled automatically when this composable leaves the
@@ -1005,7 +1032,10 @@ private fun EditorScreenContent(
             onFullscreenToggle = { vm.toggleFullscreenPreview() },
             currentSelectedClip = currentSelectedClip,
             seekPlayerAndState = seekPlayerAndState,
-            onOpenAddMediaMenu = { showAddMediaMenu = true },
+            onOpenAddMediaMenu = {
+                showAddMediaMenu = true
+                activateLocalEditorPanel(EditorPanelKey.ADD_MEDIA_MENU)
+            },
             overlayPlayer = overlayPlayer,
             overlayIsVideo = overlayIsVideo,
             fitAvailableHeight = !horizontalProjectLayout,
@@ -1048,6 +1078,7 @@ private fun EditorScreenContent(
                         vm.setPendingAddAsOverlay(false)
                         vm.setPendingAddAsAudio(false)
                         showAddMediaMenu = true
+                        activateLocalEditorPanel(EditorPanelKey.ADD_MEDIA_MENU)
                     }
                 }
             )
@@ -1073,10 +1104,19 @@ private fun EditorScreenContent(
                 mediaPicker = mediaPicker,
                 horizontalProjectLayout = horizontalProjectLayout,
                 onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace(false) },
-                onQuickEnhance = { quickPresetSection = QuickVideoPresetSection.ENHANCE },
-                onQuickTemplates = { quickPresetSection = QuickVideoPresetSection.TEMPLATES },
+                onQuickEnhance = {
+                    quickPresetSection = QuickVideoPresetSection.ENHANCE
+                    activateLocalEditorPanel(EditorPanelKey.QUICK_PRESETS)
+                },
+                onQuickTemplates = {
+                    quickPresetSection = QuickVideoPresetSection.TEMPLATES
+                    activateLocalEditorPanel(EditorPanelKey.QUICK_PRESETS)
+                },
                 onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace(false) },
-                onChallenge = { showLocalChallenge = true },
+                onChallenge = {
+                    showLocalChallenge = true
+                    activateLocalEditorPanel(EditorPanelKey.LOCAL_CHALLENGE)
+                },
                 onNext = onExport,
                 onColorWorkspace = onColor,
                 referenceToolMode = workspaceTarget != null,
@@ -1097,14 +1137,20 @@ private fun EditorScreenContent(
                     }
                 },
                 onBeforeToolAction = {
+                    activeEditorPanel = null
+                    vm.keepOnlyEditorPanel(null)
                     if (workspaceTarget != null) dismissWorkspace()
                     if (entryWorkspace != "edit" && entryWorkspace != "ai") onCloseWorkspace()
                 },
-                onAi = { showAiPanel = true },
+                onAi = {
+                    showAiPanel = true
+                    activateLocalEditorPanel(EditorPanelKey.AI_TOOLS)
+                },
                 onDraw = {
                     if (mainPreviewClip != null) {
                         isDrawingMode = !isDrawingMode
                         showVideoDrawingTools = isDrawingMode
+                        if (isDrawingMode) activateLocalEditorPanel(EditorPanelKey.VIDEO_DRAWING)
                     } else {
                         // Before: this did nothing silently when no clip was selected,
                         // which is exactly the "button doesn't work" users reported.
@@ -1154,7 +1200,10 @@ private fun EditorScreenContent(
                         ).show()
                     }
                 },
-                onCrop = { showCropPanel = true },
+                onCrop = {
+                    showCropPanel = true
+                    activateLocalEditorPanel(EditorPanelKey.CROP)
+                },
                 onDeviceAudio = importPhoneMusic,
                 onSignature = { vm.openSignaturePanel() }
             )
@@ -1189,19 +1238,24 @@ private fun EditorScreenContent(
     val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
         resolveAiContentReportTarget(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId)
     }
-    if (showLocalChallenge) LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
-    quickPresetSection?.let { section ->
+    if (showLocalChallenge && activeEditorPanel == EditorPanelKey.LOCAL_CHALLENGE) {
+        LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
+    }
+    if (activeEditorPanel == EditorPanelKey.QUICK_PRESETS) quickPresetSection?.let { section ->
         QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
     }
-    if (showAiPanel) AiToolsOverlay(onClose = closeAiPanel, onOpenLocalAnalysis = {
+    if (showAiPanel && activeEditorPanel == EditorPanelKey.AI_TOOLS) AiToolsOverlay(onClose = closeAiPanel, onOpenLocalAnalysis = {
         closeAiPanel()
         showLocalAnalysis = true
+        activateLocalEditorPanel(EditorPanelKey.LOCAL_ANALYSIS)
     }, onOpenVideoPresets = {
         closeAiPanel()
         showVideoPresets = true
+        activateLocalEditorPanel(EditorPanelKey.VIDEO_PRESETS)
     }, onOpenVideoUpscale = {
         closeAiPanel()
         showVideoUpscale = true
+        activateLocalEditorPanel(EditorPanelKey.VIDEO_UPSCALE)
     }, onOpenBackgroundReplace = {
         closeAiPanel()
         vm.openBackgroundPanel()
@@ -1215,10 +1269,18 @@ private fun EditorScreenContent(
                 projectId, current.project, current.selectedClipId, current.selectedTextOverlayId
             ), reason)
         }, onClearReportFeedback = vm::clearAiContentReportFeedback)
-    if (showVideoPresets) ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false },
-        onLearnedUpscale = { _, _ -> showVideoPresets = false; showVideoUpscale = true })
-    if (showVideoUpscale) VideoUpscaleOverlay(vm, onClose = { showVideoUpscale = false })
-    if (showLocalAnalysis) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
+    if (showVideoPresets && activeEditorPanel == EditorPanelKey.VIDEO_PRESETS) {
+        ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false },
+            onLearnedUpscale = { _, _ ->
+                showVideoPresets = false
+                showVideoUpscale = true
+                activateLocalEditorPanel(EditorPanelKey.VIDEO_UPSCALE)
+            })
+    }
+    if (showVideoUpscale && activeEditorPanel == EditorPanelKey.VIDEO_UPSCALE) {
+        VideoUpscaleOverlay(vm, onClose = { showVideoUpscale = false })
+    }
+    if (showLocalAnalysis && activeEditorPanel == EditorPanelKey.LOCAL_ANALYSIS) LocalAnalysisOverlay(vm = vm, onClose = { showLocalAnalysis = false },
         onPreviewSourceTime = { analyzedClipId, sourceMs ->
             val clips = vm.state.value.project?.clips.orEmpty()
             val analyzedClip = clips.firstOrNull { it.id == analyzedClipId }
@@ -1228,7 +1290,7 @@ private fun EditorScreenContent(
                 seekPlayerAndState(projectMs)
             }
         })
-    if (showCropPanel) {
+    if (showCropPanel && activeEditorPanel == EditorPanelKey.CROP) {
         Box(Modifier.fillMaxSize().clickable { showCropPanel = false }, contentAlignment = Alignment.BottomCenter) {
             Box(Modifier.fillMaxWidth().clickable(enabled = false) {}) {
                 CropToolsOverlay(state, vm, onClose = { showCropPanel = false })
@@ -1239,8 +1301,10 @@ private fun EditorScreenContent(
     // Modal overlays — each extracted to its own composable (see
     // EditorScreenOverlays.kt) to keep EditorScreen under the JVM 64KB
     // method limit. Pure extraction, behavior unchanged.
-    TrimPanelOverlay(state = state, vm = vm, exoPlayer = exoPlayer, onExport = onExport)
-    VideoDrawingToolsOverlay(
+    if (activeEditorPanel == EditorPanelKey.TRIM) {
+        TrimPanelOverlay(state = state, vm = vm, exoPlayer = exoPlayer, onExport = onExport)
+    }
+    if (activeEditorPanel == EditorPanelKey.VIDEO_DRAWING) VideoDrawingToolsOverlay(
         isOpen = showVideoDrawingTools,
         tool = drawingTool,
         colorArgb = drawingColorArgb,
@@ -1254,13 +1318,17 @@ private fun EditorScreenContent(
         onClear = { vm.clearVideoDrawings(mainPreviewClip?.id) },
         onClose = { showVideoDrawingTools = false }
     )
-    GpuFilterPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
-    ColorGradingPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
-    AdjustmentsPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.GPU_FILTER) {
+        GpuFilterPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
+    }
+    if (activeEditorPanel == EditorPanelKey.COLOR_GRADING) {
+        ColorGradingPanelOverlay(state = state, vm = vm, filterEngine = filterEngine)
+    }
+    if (activeEditorPanel == EditorPanelKey.ADJUSTMENTS) AdjustmentsPanelOverlay(state = state, vm = vm)
 
     // Photo-editing sheet (PR F): only for the selected IMAGE clip.
     val photoEditClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE }
-    if (state.photoEditPanelOpen && photoEditClip != null) {
+    if (activeEditorPanel == EditorPanelKey.PHOTO_EDIT && state.photoEditPanelOpen && photoEditClip != null) {
         PhotoEditSheet(
             photoEditClip = photoEditClip,
             tab = state.photoEditTab,
@@ -1268,45 +1336,53 @@ private fun EditorScreenContent(
         )
     }
 
-    FxPanelOverlay(state = state, vm = vm)
-    TransmissionTemplatesOverlay(state = state, vm = vm, templates = transmissionTemplates)
-    TransitionPickerOverlay(state = state, vm = vm)
-    TextPanelOverlay(state = state, vm = vm)
-    AudioMixerPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.FX) FxPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.TRANSMISSION) {
+        TransmissionTemplatesOverlay(state = state, vm = vm, templates = transmissionTemplates)
+    }
+    if (activeEditorPanel == EditorPanelKey.TRANSITION) TransitionPickerOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.TEXT) TextPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.AUDIO_MIXER) AudioMixerPanelOverlay(
         state = state,
         audioState = audioState,
         vm = vm,
         onImportLocalAudio = importPhoneMusic,
-        onOpenRoyaltyFreeSheet = { showRoyaltyFreeSheet = true },
+        onOpenRoyaltyFreeSheet = {
+            showRoyaltyFreeSheet = true
+            activateLocalEditorPanel(EditorPanelKey.ROYALTY_MUSIC_SHEET)
+        },
         // Phase 4: live visualizer needs the player audio session.
         audioSessionId = exoPlayer?.audioSessionId ?: 0
     )
 
     // Volume + Fade sheets — extracted to overlay composables to keep this
     // composable under the JVM 64KB method limit.
-    ClipVolumeSheetOverlay(state = state, vm = vm)
-    AudioFadeSheetOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.CLIP_VOLUME) ClipVolumeSheetOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.AUDIO_FADE) AudioFadeSheetOverlay(state = state, vm = vm)
 
-    RoyaltyMusicSheetOverlay(
-        showRoyaltyFreeSheet = showRoyaltyFreeSheet,
-        onCloseRoyaltyFreeSheet = { showRoyaltyFreeSheet = false },
-        state = state,
-        vm = vm,
-        onImportLocalAudio = importPhoneMusic
-    )
-    SpeedPanelOverlay(state = state, vm = vm)
-    StickerPanelOverlay(state = state, vm = vm)
-    SignaturePanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
-    VoiceRecorderOverlay(state = state, vm = vm)
-    ArFilterPanelOverlay(state = state, vm = vm)
-    CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
-    ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
-    MaskPanelOverlay(state = state, vm = vm)
-    TextMaskPanelOverlay(state = state, vm = vm)
-    OverlayPropertiesPanelOverlay(state = state, vm = vm)
-    HelpDialogOverlay(state = state, vm = vm)
-    KeyframePanelOverlay(state = state, vm = vm)
-    AddMediaMenuSheetOverlay(
+    if (activeEditorPanel == EditorPanelKey.ROYALTY_MUSIC_SHEET ||
+        activeEditorPanel == EditorPanelKey.ROYALTY_MUSIC_DIALOG) {
+        RoyaltyMusicSheetOverlay(
+            showRoyaltyFreeSheet = showRoyaltyFreeSheet && activeEditorPanel == EditorPanelKey.ROYALTY_MUSIC_SHEET,
+            onCloseRoyaltyFreeSheet = { showRoyaltyFreeSheet = false },
+            state = state,
+            vm = vm,
+            onImportLocalAudio = importPhoneMusic
+        )
+    }
+    if (activeEditorPanel == EditorPanelKey.SPEED) SpeedPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.STICKER) StickerPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.SIGNATURE) SignaturePanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
+    if (activeEditorPanel == EditorPanelKey.VOICE_RECORDER) VoiceRecorderOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.AR_FILTER) ArFilterPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.COVER) CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
+    if (activeEditorPanel == EditorPanelKey.CHROMA_KEY) ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
+    if (activeEditorPanel == EditorPanelKey.MASK) MaskPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.TEXT_MASK) TextMaskPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.OVERLAY_PROPERTIES) OverlayPropertiesPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.HELP) HelpDialogOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.KEYFRAME) KeyframePanelOverlay(state = state, vm = vm)
+    if (showAddMediaMenu && activeEditorPanel == EditorPanelKey.ADD_MEDIA_MENU) AddMediaMenuSheetOverlay(
         show = showAddMediaMenu,
         vm = vm,
         mediaPicker = mediaPicker,
@@ -1315,14 +1391,15 @@ private fun EditorScreenContent(
     )
 
     // ---- Phase 3 overlays ----
-    EditPackPanelOverlay(state = state, vm = vm, onOpenTimeActions = {
+    if (activeEditorPanel == EditorPanelKey.EDIT_PACK) EditPackPanelOverlay(state = state, vm = vm, onOpenTimeActions = {
         vm.closeEditPackPanel()
+        activeEditorPanel = null
         workspaceIsFilters = false
         openEffectsWorkspace(true)
     })
-    AdjustPackPanelOverlay(state = state, vm = vm)
-    ColorScopesPanelOverlay(state = state, vm = vm)
-    BgRemoverPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.ADJUST_PACK) AdjustPackPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.COLOR_SCOPES) ColorScopesPanelOverlay(state = state, vm = vm)
+    if (activeEditorPanel == EditorPanelKey.BG_REMOVER) BgRemoverPanelOverlay(
         state = state,
         vm = vm,
         onPickCustomBackground = {
@@ -1330,14 +1407,14 @@ private fun EditorScreenContent(
         }
     )
     // PR-G: per-clip Background replace (MediaPipe segmentation).
-    BackgroundReplacePanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.BACKGROUND_REPLACE) BackgroundReplacePanelOverlay(
         state = state,
         vm = vm,
         onPickBackgroundImage = {
             bgReplaceImagePickerLauncher.launch("image/*")
         }
     )
-    AutoClipPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.AUTO_CLIP) AutoClipPanelOverlay(
         state = state,
         vm = vm,
         onOpenMusicForMood = { mood ->
@@ -1345,7 +1422,7 @@ private fun EditorScreenContent(
             vm.openMusicLibraryPanel()
         }
     )
-    MusicLibraryPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.MUSIC_LIBRARY) MusicLibraryPanelOverlay(
         state = state,
         vm = vm,
         initialMood = musicMoodFilter,
@@ -1359,7 +1436,7 @@ private fun EditorScreenContent(
             musicMoodFilter = null
         }
     )
-    SfxLibraryPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.SFX_LIBRARY) SfxLibraryPanelOverlay(
         state = state,
         vm = vm,
         onAddEffect = { effect, filePath, durationMs, intensity ->
@@ -1373,7 +1450,7 @@ private fun EditorScreenContent(
             )
         }
     )
-    HistoryDraftsPanelOverlay(
+    if (activeEditorPanel == EditorPanelKey.HISTORY_DRAFTS) HistoryDraftsPanelOverlay(
         state = state,
         vm = vm,
         projects = savedProjects

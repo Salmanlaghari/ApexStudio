@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.getValue
@@ -30,31 +31,29 @@ class TimelineFocusModeControlTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun toggleIsDiscoverableAndChangesTheAvailableTimelineHeightWithoutRemovingEitherPane() {
+    fun toggleKeepsPreviewHeightStableAndGivesRemainingSpaceToTimeline() {
         compose.setContent {
             var isFocused by remember { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().height(600.dp)) {
-                Box(
-                    Modifier
-                        .weight(editorPreviewLayoutWeight(isFocused))
-                        .fillMaxWidth()
-                        .testTag("preview-pane")
+                AdaptiveEditorWorkspace(
+                    landscape = false,
+                    focused = isFocused,
+                    fullscreen = false,
+                    preview = { Box(Modifier.fillMaxWidth().height(180.dp).testTag("preview-pane")) },
+                    timeline = {
+                        if (isFocused) Box(Modifier.fillMaxSize().testTag("timeline-pane"))
+                        else Box(Modifier.fillMaxWidth().height(150.dp).testTag("timeline-pane"))
+                    },
+                    inspector = {}
                 )
                 TimelineFocusModeControl(
                     isFocused = isFocused,
                     onToggle = { isFocused = !isFocused }
                 )
-                Box(
-                    Modifier
-                        .weight(timelineTrackLayoutWeight(isFocused))
-                        .fillMaxWidth()
-                        .testTag("timeline-pane")
-                )
             }
         }
 
-        compose.onNodeWithContentDescription("Expand timeline to full height")
-            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Expand timeline to full height").assertIsDisplayed()
         val normalPreviewHeight = paneHeight("preview-pane")
         val normalTimelineHeight = paneHeight("timeline-pane")
         assertTrue("normal preview should have useful height", normalPreviewHeight > 100f)
@@ -63,15 +62,14 @@ class TimelineFocusModeControlTest {
 
         compose.onNodeWithContentDescription("Expand timeline to full height").performClick()
 
-        compose.onNodeWithContentDescription("Restore preview and normal timeline layout")
-            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Restore preview and normal timeline layout").assertIsDisplayed()
         compose.onNodeWithTag("preview-pane").assertExists()
         compose.onNodeWithTag("timeline-pane").assertExists()
         val focusedPreviewHeight = paneHeight("preview-pane")
         val focusedTimelineHeight = paneHeight("timeline-pane")
-        assertTrue("focus mode must collapse preview without disposing it", focusedPreviewHeight < 2f)
-        assertTrue("focus mode must allocate remaining height to timeline", focusedTimelineHeight > normalTimelineHeight)
-        assertTrue("focus mode must meaningfully grow timeline", focusedTimelineHeight > 500f)
+        assertEquals("focus mode preserves the preview frame height", normalPreviewHeight, focusedPreviewHeight, 1f)
+        assertTrue("focus mode allocates remaining height to timeline", focusedTimelineHeight > normalTimelineHeight)
+        assertTrue("focus mode meaningfully grows timeline", focusedTimelineHeight > 300f)
 
         compose.onNodeWithContentDescription("Restore preview and normal timeline layout").performClick()
         compose.onNodeWithContentDescription("Expand timeline to full height").assertIsDisplayed()

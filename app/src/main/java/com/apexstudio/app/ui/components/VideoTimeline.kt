@@ -237,7 +237,7 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
 
     // Keep this estimate in lockstep with the rendered header, ruler, and
     // historical portrait timeline rows below.
-    var height = TIMELINE_HEADER_HEIGHT_DP + TIMELINE_RULER_HEIGHT_DP
+    var height = TIMELINE_RULER_HEIGHT_DP
     if (hasMain) height += 10 + MAIN_VIDEO_LANE_HEIGHT_DP
     if (hasWaveform) height += 10 + 36
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
@@ -831,8 +831,6 @@ fun VideoTimeline(
             }
     }
 
-    var timelineOptionsExpanded by remember { mutableStateOf(false) }
-
     // Snap indicator: true when the playhead sits on (or within threshold of) a beat marker
     // while snap-to-beat is enabled — shown as a badge on the playhead.
     val snapThresholdMs = 200L
@@ -907,21 +905,6 @@ fun VideoTimeline(
         val viewportWidthDp = maxWidth
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
-        CompactTimelineHeader(
-            durationMs = safeDurationMs,
-            headerKeyframeClip = headerKeyframeClip,
-            playheadMs = safePlayheadMs,
-            onToggleKeyframe = onToggleKeyframeAtPlayhead,
-            onRevealPlayhead = {
-                coroutineScope.launch {
-                    val positionPx = with(density) { (playheadMsProvider() * msToDp).dp.toPx() }
-                    scrollState.scrollTo((positionPx - scrollState.viewportSize / 2f).roundToInt().coerceAtLeast(0))
-                }
-            },
-            multiSelectMode = multiSelectMode,
-            onToggleMultiSelect = onToggleMultiSelect,
-            onAddMedia = { onAddMedia(ClipType.VIDEO) },
-        )
         Box(Modifier.fillMaxWidth().weight(1f)) {
         // --- TIMELINE VIEWPORT WITH PINCH-TO-ZOOM GESTURE DETECTOR ---
         Box(
@@ -1062,7 +1045,6 @@ fun VideoTimeline(
                                 onClipBoundsMeasured = { idx, leftPx, widthPx ->
                                     clipLayoutBounds[idx] = Pair(leftPx, widthPx)
                                 },
-                                onAddClip = { onAddMedia(ClipType.VIDEO) },
                                 multiSelectMode = multiSelectMode,
                                 multiSelectedIds = selectedClipIds,
                                 onToggleMultiSelect = onToggleSelectedClip,
@@ -1485,93 +1467,6 @@ fun VideoTimeline(
             }
         }
     }
-            // Keep the primary add action and the editing utilities pinned to
-            // the ruler. The filmstrip can be panned far beyond its final clip,
-            // so an end-of-strip-only add button is otherwise unreachable.
-            Row(
-                // Do not clip this 20dp visual row: its children retain Android
-                // minimum touch targets outside the chrome, above the ruler.
-                modifier = Modifier.align(Alignment.TopEnd).zIndex(500f)
-                    .background(Color(0xFF10182A), RoundedCornerShape(bottomStart = 7.dp))
-                    .border(1.dp, Color(0xFF202A3D), RoundedCornerShape(bottomStart = 7.dp)),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier.size(28.dp, rulerHeight)
-                        .clickable { onAddMedia(ClipType.VIDEO) }
-                        .testTag("timeline-add-media"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add video media",
-                        tint = ApexPalette.NeonCyan, modifier = Modifier.size(17.dp))
-                }
-                Box(
-                    modifier = Modifier.size(28.dp, rulerHeight)
-                        .clickable { timelineOptionsExpanded = !timelineOptionsExpanded }
-                        .testTag("timeline-overflow"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Timeline options",
-                        tint = ApexPalette.NeonCyan, modifier = Modifier.size(18.dp))
-                }
-            }
-            // Render the compact menu in the timeline's own overlay rather
-            // than a Popup: the latter was clipped/omitted by the nested
-            // horizontally-scrolling viewport on device-sized hosts.
-            if (timelineOptionsExpanded) {
-                Column(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = rulerHeight)
-                        .zIndex(501f).widthIn(min = 176.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF10182A))
-                        .border(1.dp, Color(0xFF26364D), RoundedCornerShape(8.dp))
-                        .padding(vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            timelineOptionsExpanded = false
-                            coroutineScope.launch {
-                                val positionPx = with(density) { (playheadMsProvider() * msToDp).dp.toPx() }
-                                scrollState.scrollTo((positionPx - scrollState.viewportSize / 2f).roundToInt().coerceAtLeast(0))
-                            }
-                        }.testTag("timeline-reveal-playhead").padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) { Text("Reveal playhead", color = Color(0xFFE4EDF7), fontSize = 12.sp) }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            timelineOptionsExpanded = false
-                            onToggleMultiSelect()
-                        }.testTag("timeline-multiselect").padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) { Text(if (multiSelectMode) "Exit multi-select" else "Select multiple clips", color = Color(0xFFE4EDF7), fontSize = 12.sp) }
-                    TimelineToggleRow(
-                        label = "Magnetic snapping",
-                        enabled = magneticSnapping,
-                        testTag = "timeline-toggle-magnetic-snap"
-                    ) {
-                        timelineOptionsExpanded = false
-                        onToggleMagneticSnapping()
-                    }
-                    TimelineToggleRow(
-                        label = "Snap to beat",
-                        enabled = snapToBeat,
-                        testTag = "timeline-toggle-snap-beat"
-                    ) {
-                        timelineOptionsExpanded = false
-                        onToggleSnapToBeat()
-                    }
-                    TimelineToggleRow(
-                        label = "Ripple edit",
-                        enabled = rippleEditEnabled,
-                        testTag = "timeline-toggle-ripple"
-                    ) {
-                        timelineOptionsExpanded = false
-                        onToggleRippleEdit()
-                    }
-                }
-            }
-
-
 }
     }
     }
@@ -2745,7 +2640,6 @@ private fun TimelineVideoTrack(
     onSeekToKeyframe: ((Long) -> Unit)? = null,
     onSelectKeyframe: (clipId: String, timeMs: Long) -> Unit = { _, _ -> },
     onClipBoundsMeasured: (index: Int, leftPx: Float, widthPx: Float) -> Unit,
-    onAddClip: () -> Unit,
     multiSelectMode: Boolean = false,
     multiSelectedIds: Set<String> = emptySet(),
     onToggleMultiSelect: (String) -> Unit = {},
@@ -3210,25 +3104,6 @@ private fun TimelineVideoTrack(
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(2.dp))
                         .background(ApexPalette.NeonCyan)
-                )
-            }
-
-            // A restrained outlined add affordance sits at the true filmstrip end.
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF111A2B))
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
-                    .clickable(onClick = onAddClip)
-                    .testTag("timeline-add-at-end"),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Add Clip",
-                    tint = ApexPalette.NeonCyan,
-                    modifier = Modifier.size(20.dp)
                 )
             }
         }

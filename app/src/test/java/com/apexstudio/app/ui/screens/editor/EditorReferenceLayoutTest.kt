@@ -67,7 +67,7 @@ class EditorReferenceLayoutTest {
             compose.onNodeWithText(it).assertIsDisplayed()
         }
         compose.onNodeWithContentDescription("Play playback").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-header").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
         val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot

@@ -54,7 +54,7 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                 }
             } else if (focused) {
                 Column(
-                    Modifier.fillMaxWidth().weight(0.001f).testTag("portrait-preview-pane"),
+                    Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-preview-pane"),
                     content = preview
                 )
                 Column(

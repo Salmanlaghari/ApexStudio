@@ -66,7 +66,7 @@ class HorizontalEditorProjectLayoutTest {
     }
 
     @Test
-    fun horizontalCompositionUsesDistinctNoDeadPreviewShellAndTwoReadableToolRows() {
+    fun horizontalCompositionKeepsPreviewAndOnlyAccessiblePrimaryToolsOnCleanTimeline() {
         show(editor(16f / 9f))
 
         compose.onNodeWithTag("horizontal-project-workspace").assertIsDisplayed()
@@ -75,8 +75,13 @@ class HorizontalEditorProjectLayoutTest {
         compose.onNodeWithTag("portrait-preview-pane").assertDoesNotExist()
         compose.onNodeWithTag("editor-playback-controls").assertIsDisplayed()
         compose.onNodeWithTag("centered-timeline-workspace").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-header").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add media").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add media").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add video media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add Clip").assertDoesNotExist()
         compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Main video track").assertIsDisplayed()
         compose.onNodeWithContentDescription("Source audio waveform").assertIsDisplayed()
@@ -85,22 +90,20 @@ class HorizontalEditorProjectLayoutTest {
         val playback = compose.onNodeWithTag("editor-playback-controls").fetchSemanticsNode().boundsInRoot
         val timeline = compose.onNodeWithTag("centered-timeline-workspace").fetchSemanticsNode().boundsInRoot
         val editTools = compose.onNodeWithTag("mobile-editor-edit-tools").fetchSemanticsNode().boundsInRoot
-        val categories = compose.onNodeWithTag("mobile-editor-category-tools").fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue("Landscape preview should be full-width and 16:9, not stretched: $preview",
             preview.width >= root.width * 0.88f && kotlin.math.abs(preview.width / preview.height - 16f / 9f) < 0.12f)
         assertTrue("Playback must follow the preview without a large blank pane: preview=$preview playback=$playback",
             playback.top >= preview.bottom && playback.top - preview.bottom < 36f)
         assertTrue("Timeline card must follow playback: playback=$playback timeline=$timeline", timeline.top >= playback.bottom)
-        assertTrue("Both tool rows must stay inside the screen: edit=$editTools categories=$categories root=$root",
-            editTools.bottom <= categories.top && categories.bottom <= root.bottom)
+        assertTrue("The primary tool row must stay inside the screen: edit=$editTools root=$root",
+            editTools.bottom <= root.bottom)
 
-        listOf("Split", "Trim", "Speed", "Volume", "Keyframe", "Animation").forEach {
-            compose.onNodeWithText(it).assertIsDisplayed()
+        listOf("Trim", "Split", "Text", "Music", "More").forEach { label ->
+            compose.onNodeWithText(label).assertIsDisplayed()
+            compose.onNodeWithContentDescription(label).assertIsDisplayed()
         }
-        listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More").forEach {
-            compose.onNodeWithText(it).assertIsDisplayed()
-        }
+        compose.onNodeWithTag("mobile-editor-clip-options").assertDoesNotExist()
     }
 
     @Test

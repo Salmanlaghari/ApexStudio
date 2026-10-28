@@ -530,6 +530,35 @@ fun ContextualBottomToolbar(
         CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
     ).map(::routed)
 
+    // Easy mode keeps the first screen focused on the five actions most users
+    // need. Clip-specific controls appear only after a timeline clip is
+    // selected, while the complete advanced toolbox remains behind More.
+    val easyPrimaryItems = listOf(
+        CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+        CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+        CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
+        CtxToolItem("Music", Icons.Default.MusicNote, tint = ApexPalette.TextPrimary, onClick = onMusic),
+        CtxToolItem("More", Icons.Outlined.MoreHoriz, tint = ApexPalette.TextPrimary, onClick = { showMoreTools = !showMoreTools })
+    ).map(::routed)
+    val easyClipItems = when (selectionKind) {
+        ToolbarSelectionKind.VIDEO -> listOf(
+            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
+            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
+        ).map(::routed)
+        ToolbarSelectionKind.AUDIO -> listOf(
+            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem("Fade", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onFade),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
+        ).map(::routed)
+        else -> clipItems.map(::routed)
+    }
+
     if (showToolbarNotes) {
         AlertDialog(
             onDismissRequest = { showToolbarNotes = false },
@@ -553,13 +582,39 @@ fun ContextualBottomToolbar(
                 .padding(horizontal = 7.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            AnimatedVisibility(
+                visible = showClipBar,
+                enter = fadeIn(animationSpec = tween(180)) + slideInVertically(animationSpec = tween(180)) { it },
+                exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(animationSpec = tween(180)) { it }
+            ) {
+                ToolbarBarRow(
+                    items = easyClipItems,
+                    surfaceColor = Color(0xFF151F2D),
+                    modifier = Modifier.testTag("mobile-editor-clip-options"),
+                    itemWidth = 58.dp,
+                    fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 6 else null,
+                    barHeight = 64.dp,
+                    roundedSurface = true,
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier.width(42.dp).fillMaxHeight().clickable {
+                                onBeforeToolAction()
+                                onCollapse()
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Deselect", tint = ApexPalette.TextSecondary)
+                        }
+                    }
+                )
+            }
             ToolbarBarRow(
-                items = horizontalEditItems,
+                items = easyPrimaryItems,
                 surfaceColor = Color(0xFF101D2D),
                 modifier = Modifier.testTag("mobile-editor-edit-tools"),
-                itemWidth = 58.dp,
-                fitVisibleCount = 6,
-                barHeight = 64.dp,
+                itemWidth = 64.dp,
+                fitVisibleCount = 5,
+                barHeight = 70.dp,
                 roundedSurface = true
             )
             if (showMoreTools) {
@@ -572,16 +627,6 @@ fun ContextualBottomToolbar(
                     roundedSurface = true
                 )
             }
-            ToolbarBarRow(
-                items = toolsItems,
-                surfaceColor = Color(0xFF101722),
-                modifier = Modifier.testTag("mobile-editor-category-tools"),
-                itemWidth = 48.dp,
-                fitVisibleCount = 8,
-                compact = true,
-                barHeight = 66.dp,
-                roundedSurface = true
-            )
         }
     } else Column(
         modifier = modifier

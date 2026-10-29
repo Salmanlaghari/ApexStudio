@@ -170,7 +170,7 @@ fun BgRemoverPanel(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "ML Kit selfie segmentation • on-device",
+                        "Remove the background from your photo",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -343,7 +343,7 @@ fun BgRemoverPanel(
                     .padding(10.dp)
             ) {
                 Text(
-                    "✅ 100% on-device (ML Kit) — no internet, no uploads.",
+                    "No internet connection or upload is needed.",
                     color = Color(0xFF88CC88),
                     fontSize = 10.sp
                 )

@@ -6,6 +6,9 @@ import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -13,6 +16,26 @@ import kotlinx.coroutines.withContext
 
 
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+
+internal fun EditorViewModel.applyDetectedProjectVideoAspectRatio(ratio: Float) {
+    if (!ratio.isFinite() || ratio !in 0.1f..10f) return
+    val needsInitialAspect = _state.value.project?.videoAspectRatio
+        ?.takeIf { it.isFinite() && it in 0.1f..10f } == null
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        if (project.videoAspectRatio?.let { it.isFinite() && it in 0.1f..10f } != true) {
+            state.copy(project = project.copy(videoAspectRatio = ratio))
+        } else state
+    }
+    if (needsInitialAspect) {
+        _state.value.project?.videoAspectRatio
+            ?.let { aspect -> ProjectAspectRatio.exportPreset(aspect) }
+            ?.let { preset ->
+                _export.update { current -> current.copy(settings = current.settings.copy(aspectRatio = preset)) }
+            }
+    }
+}
+
 /**
  * Legacy overlay repair (Bug B): OVERLAY clips created before the
  * overlay-track system (or by a buggy build) can carry trackIndex 0
@@ -134,6 +157,12 @@ internal fun EditorViewModel.loadProject() {
             refreshLegacyClipFields = true,
             refreshLegacyAudioFields = true
         )
+
+        ProjectAspectRatio.exportPreset(updatedP.videoAspectRatio)?.let { preset ->
+            _export.update { current ->
+                current.copy(settings = current.settings.copy(aspectRatio = preset))
+            }
+        }
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
@@ -316,10 +345,11 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             if (isOverlayPick && created != null) {
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
-                val aspect = if (resolvedMeta.width > 0 && resolvedMeta.height > 0) {
-                    (resolvedMeta.width.toFloat() / resolvedMeta.height.toFloat())
-                        .coerceIn(0.1f, 10f)
-                } else 16f / 9f
+                val aspect = if (isImage) {
+                    ProjectAspectRatio.fromDimensions(resolvedMeta.width, resolvedMeta.height)
+                } else {
+                    resolvedMeta.sourceVideoAspectRatio
+                } ?: (16f / 9f)
                 // First free overlay layer (OVL1 = trackIndex 1, ...),
                 // or the explicitly requested layer from the V2 "+".
                 // Multi-pick spreads across consecutive free layers.
@@ -345,7 +375,19 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
 
         val updatedClips = existingClips + newClips
-        val updatedProject = s.project?.copy(clips = updatedClips)
+        val routedToOverlay = asOverlay || targetLayer != null
+        val hasExistingMainVideo = !replace && s.project?.clips.orEmpty().any {
+            it.type == ClipType.VIDEO && it.trackIndex == 0
+        }
+        val importedMainAspect = if (!routedToOverlay && (replace || !hasExistingMainVideo)) {
+            mediaList.firstOrNull { it.type == ClipType.VIDEO }?.sourceVideoAspectRatio
+        } else null
+        val projectAspect = when {
+            routedToOverlay -> s.project?.videoAspectRatio
+            replace -> importedMainAspect
+            else -> s.project?.videoAspectRatio ?: importedMainAspect
+        }
+        val updatedProject = s.project?.copy(clips = updatedClips, videoAspectRatio = projectAspect)
         // Unified duration (was MAX of raw durations -> playhead raced
         // on multi-clip timelines). A fresh clip always plays at 1x, so
         // drop any stale global speed left over from another clip.
@@ -391,6 +433,13 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 extraVideoLayers = if (targetLayer != null) it.extraVideoLayers - targetLayer else it.extraVideoLayers
             )
         }
+        if (importedMainAspect != null) {
+            ProjectAspectRatio.exportPreset(projectAspect)?.let { preset ->
+                _export.update { current ->
+                    current.copy(settings = current.settings.copy(aspectRatio = preset))
+                }
+            }
+        }
         persistProject()
 
         val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO } ?: updatedClips.firstOrNull()
@@ -411,18 +460,15 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                     Log.w("EditorViewModel", "Waveform analysis failed", e)
                 }
             }
-            // Auto-detect source video aspect ratio (16:9, 9:16, 1:1, 4:5, etc.)
-            // so preview + export match the source without manual setup.
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // Picker metadata already includes the source ratio for normal imports.
+            // Probe only when the persisted/import metadata is absent or invalid.
+            val hasValidImportedAspect = projectAspect
+                ?.let { it.isFinite() && it in 0.1f..10f } == true
+            if (!hasValidImportedAspect) viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val ratio = detectVideoAspectRatio(context!!, firstVideo.uri)
                     if (ratio != null && ratio > 0) {
-                        _state.update { st ->
-                            val proj = st.project
-                            if (proj != null && proj.videoAspectRatio == null) {
-                                st.copy(project = proj.copy(videoAspectRatio = ratio))
-                            } else st
-                        }
+                        applyDetectedProjectVideoAspectRatio(ratio)
                         persistProject()
                         Log.d("EditorViewModel", "Auto-detected video aspect ratio: $ratio")
                     }
@@ -462,7 +508,9 @@ private class ClipThumbStrip(
  * map cannot grow without limit.
  */
 private val clipThumbStrips =
-    com.apexstudio.editor.thumbnail.ThumbnailStripLru<String, ClipThumbStrip>(40)
+        com.apexstudio.editor.thumbnail.ThumbnailStripLru<String, ClipThumbStrip>(40)
+
+private val clipThumbJobs = java.util.WeakHashMap<EditorViewModel, MutableMap<String, Job>>()
 
 /**
  * Extract the thumbnail strip for [clip] off the main thread and mirror
@@ -470,10 +518,9 @@ private val clipThumbStrips =
  *
  * Bug 1 (timeline filmstrip blank after the first few seconds):
  * the frame count is now derived from THIS CLIP'S OWN DURATION —
- * `ThumbnailSequenceGenerator.sampleCount`, one frame per second
- * clamped to [8, 300] — where it used to be a hard-coded `count = 8`.
- * A 3-minute video therefore yields 180 frames covering 0..3:00 instead
- * of 8 frames, and the video layer stays filled for the whole clip.
+ * A small fixed strip (at most 24 frames) is sampled across the full clip
+ * duration, so long imports do not eagerly decode hundreds of frames while
+ * the video layer still stays covered end-to-end.
  *
  * Nothing here blocks the UI: the decode runs on `Dispatchers.IO`, the
  * result is served from the LRU when the same trim is loaded again, and
@@ -482,13 +529,13 @@ private val clipThumbStrips =
  */
 internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
     val ctx = context ?: return
-    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+    val owner = this
+    val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO, start = CoroutineStart.LAZY) {
         try {
             val playableUri = com.apexstudio.app.data.media.MediaUriResolver
                 .resolvePlayableUri(ctx, clip.uri).toString()
             val durationMs = (clip.trimEndMs - clip.trimStartMs).coerceAtLeast(1000L)
-            val frameCount = com.apexstudio.editor.thumbnail.ThumbnailSequenceGenerator
-                .sampleCount(durationMs)
+            val frameCount = VideoThumbnailExtractor.MAX_EAGER_THUMBS_PER_CLIP
             val storeKey = "${clip.id}|${clip.trimStartMs}|${clip.trimEndMs}|$frameCount"
             val cached = clipThumbStrips.peek(clip.id)
             if (cached == null || cached.storeKey != storeKey) {
@@ -511,9 +558,27 @@ internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
             _thumbnails.update {
                 clipThumbStrips.snapshot().mapValues { (_, entry) -> entry.frames }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("EditorViewModel", "Thumbnail extraction failed for ${clip.id}", e)
+        } finally {
+            val finishedJob = kotlinx.coroutines.currentCoroutineContext()[Job]
+            synchronized(clipThumbJobs) {
+                clipThumbJobs[owner]?.let { jobs ->
+                    if (jobs[clip.id] === finishedJob) {
+                        jobs.remove(clip.id)
+                    }
+                    if (jobs.isEmpty()) clipThumbJobs.remove(owner)
+                }
+            }
         }
+    }
+    synchronized(clipThumbJobs) {
+        val jobs = clipThumbJobs.getOrPut(owner) { mutableMapOf() }
+        jobs.remove(clip.id)?.cancel()
+        jobs[clip.id] = job
+        job.start()
     }
 }
 

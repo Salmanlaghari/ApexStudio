@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
 class QuickVideoPresetsOverlayTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun enhanceOffersRealOfflineUpscaleSeparatelyFromColorMatrices() {
+    @Test fun enhanceOffersClearVideoActionAndConciseTruthfulLimits() {
         val clip = MediaClip(
             id = "video", name = "Video", uri = "file:///video.mp4",
             durationMs = 10_000L, trimEndMs = 10_000L,
@@ -42,9 +42,10 @@ class QuickVideoPresetsOverlayTest {
         } }
 
         compose.onNodeWithTag("quick_enhance_espcn").assertExists().assertIsEnabled()
-        compose.onNodeWithText("Offline ESPCN x3 · licensed ONNX Model Zoo model.", substring = true).assertExists()
-        compose.onNodeWithText("Source limits: even dimensions up to 640×360 (360×640 portrait), 30 seconds, 30 fps, SDR, and silent video or one AAC track.", substring = true).assertExists()
-        compose.onNodeWithText("After success, preview and export use the same processed video file", substring = true).assertExists()
+        compose.onNodeWithText("Create a sharper 3× version of a video in your project", substring = true).assertExists()
+        compose.onNodeWithText("Works with videos up to 640×360 (portrait up to 360×640), 30 seconds and 30 fps.", substring = true).assertExists()
+        compose.onNodeWithText("Preview and export use the enhanced video; Undo restores the original.", substring = true).assertExists()
+        compose.onNodeWithText("Enhance video").assertExists()
     }
     @Test fun switchingProjectAndSelectionRetargetsTheOpenPresetPanel() {
         val first = MediaClip("one", "One", "file:///one.mp4", durationMs = 5000L, trimEndMs = 5000L)
@@ -187,7 +188,7 @@ class QuickVideoPresetsOverlayTest {
 
         compose.onNodeWithTag("quick_enhance_espcn").assertIsNotEnabled()
         compose.onNodeWithTag("quick_enhance_select_main_preview").assertExists().assertIsEnabled()
-        compose.onNodeWithText("Use main preview video: Main footage").assertExists()
+        compose.onNodeWithText("Use preview video: Main footage").assertExists()
         compose.runOnIdle {
             assertEquals(project, vm.state.value.project)
             assertEquals(pip.id, vm.state.value.selectedClipId)

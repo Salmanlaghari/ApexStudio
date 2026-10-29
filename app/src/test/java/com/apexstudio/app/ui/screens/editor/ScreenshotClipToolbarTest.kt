@@ -87,6 +87,21 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
+    @Config(qualifiers = "w375dp-h800dp-mdpi")
+    fun allSixScreenshotVideoActionsFitAtStandardPhoneWidth() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { Box(Modifier.width(375.dp)) { testToolbar(calls) } }
+
+        val bounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.map { label ->
+            composeRule.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        }
+        assertTrue("All six primary actions fit inside 375dp", bounds.last().right <= 375f)
+        assertTrue("Primary action items do not overlap", bounds.zipWithNext().all { (left, right) ->
+            left.right <= right.left
+        })
+    }
+
+    @Test
     fun `video-specific extras remain scrollable and More retains global tools`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls) }

@@ -162,7 +162,7 @@ fun BackgroundReplacePanel(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "MediaPipe person segmentation • on-device",
+                        "Keep the subject and change the background",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -421,7 +421,7 @@ fun BackgroundReplacePanel(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Processing runs on-device and may take a while for long clips — you can cancel anytime.",
+                        "Long clips can take a while. You can cancel at any time.",
                         color = ApexPalette.TextTertiary, fontSize = 10.sp
                     )
                 }

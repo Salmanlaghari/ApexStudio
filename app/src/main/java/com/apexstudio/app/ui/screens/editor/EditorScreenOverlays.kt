@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +57,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
+import com.apexstudio.app.data.picker.MediaImportProgress
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.AnimatedTransform
@@ -69,6 +71,7 @@ import com.apexstudio.app.presentation.state.keyframeAnchor
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.components.compactTimelineHeight
 import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
@@ -607,6 +610,18 @@ fun AudioMixerPanelOverlay(
     audioSessionId: Int = 0
 ) {
     if (!state.audioMixerOpen) return
+    val selectedOriginalVideo = state.project?.clips?.firstOrNull { clip ->
+        clip.id == state.selectedClipId && clip.trackIndex == 0 &&
+            clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+    }
+    val originalAudioAlreadyExtracted = selectedOriginalVideo?.let { clip ->
+        state.project?.audioTracks.orEmpty().any { it.sourceVideoClipId == clip.id }
+    } == true
+    val extractAudioUnavailableMessage = when {
+        selectedOriginalVideo == null -> "Select a main-track V1 video clip first."
+        originalAudioAlreadyExtracted -> "This clip already has an editable A0 audio track."
+        else -> null
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -622,6 +637,11 @@ fun AudioMixerPanelOverlay(
                 onAddTrack = { name, uri, kind -> vm.addAudioTrack(name, uri, kind) },
                 onImportLocalAudio = onImportLocalAudio,
                 onOpenRoyaltyFreeMusic = onOpenRoyaltyFreeSheet,
+                canExtractOriginalVideoAudio = selectedOriginalVideo != null && !originalAudioAlreadyExtracted,
+                originalVideoAudioUnavailableMessage = extractAudioUnavailableMessage,
+                onExtractOriginalVideoAudio = {
+                    selectedOriginalVideo?.let { vm.extractOriginalVideoAudio(it.id) }
+                },
                 onRemoveTrack = { vm.removeAudioTrack(it) },
                 // Volume fader: routes to the volume-keyframe upsert
                 // when the track has volume keyframes, else to the
@@ -934,6 +954,7 @@ fun ChromaKeyPanelOverlay(
     mediaPicker: MediaPickerHelper
 ) {
     if (!state.chromaKeyPanelOpen) return
+    val targetAvailable = state.selectedChromaKeyTarget() != null
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -948,7 +969,8 @@ fun ChromaKeyPanelOverlay(
                 onPickCustomBg = {
                     mediaPicker.pickSingleMedia.launch("image/*")
                 },
-                onClose = { vm.closeChromaKeyPanel() }
+                onClose = { vm.closeChromaKeyPanel() },
+                targetAvailable = targetAvailable
             )
         }
     }
@@ -1321,11 +1343,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     drawingTool: com.apexstudio.app.domain.model.VideoDrawingTool = com.apexstudio.app.domain.model.VideoDrawingTool.BRUSH,
     drawingColorArgb: Long = 0xFFFF3B82L,
     drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH,
-    fitAvailableHeight: Boolean = false
+    fitAvailableHeight: Boolean = false,
+    mediaImportProgress: MediaImportProgress = MediaImportProgress.IDLE,
+    onCancelMediaImport: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exportState by vm.export.collectAsStateWithLifecycle()
+    val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()
+    val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
+    val faceReviewProgress by vm.faceTrackReview.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
     val mainPreviewClip = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
     val sourceVideoWidth = state.videoWidth.takeIf { it > 0 }
@@ -1348,27 +1375,42 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 )
         )
     }
-    val previewStageAspectRatio = editorPreviewStageAspectRatio(sourceVideoAspectRatio, compositionAspectRatio)
-    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio)
+    val projectAspectRatio = state.project?.videoAspectRatio
+    val previewStageAspectRatio = editorPreviewStageAspectRatio(
+        sourceAspectRatio = sourceVideoAspectRatio,
+        projectAspectRatio = projectAspectRatio,
+        fallbackAspectRatio = compositionAspectRatio
+    )
+    val portraitScale = portraitPreviewScale(sourceVideoAspectRatio ?: projectAspectRatio)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            // Keep the preview/player subtree composed in focus mode while
-            // yielding essentially all available height to the timeline.
+            // When the parent already reserves timeline space, use this pane's
+            // full remaining height. Standalone preview hosts can keep the
+            // source-ratio budget below without subtracting timeline chrome twice.
             .then(when {
-                isFullscreenPreview || fitAvailableHeight -> Modifier.weight(1f)
-                else -> Modifier.weight(editorPreviewLayoutWeight(isTimelineFocusMode))
+                isFullscreenPreview -> Modifier.weight(1f)
+                fitAvailableHeight && !isTimelineFocusMode -> Modifier.weight(1f)
+                else -> Modifier
             })
             .background(ApexPalette.BgBase)
             .semantics { contentDescription = "Editor preview stage" },
         contentAlignment = Alignment.TopCenter
     ) {
+        val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
+            compactTimelineHeight(state) + 26.dp + 2.dp
+        val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
+            maxHeight.value
+        } else {
+            previewStageHeightBudget(maxHeight.value, reservedTimelineChrome.value).coerceAtLeast(1f)
+        }
         val stageSize = if (isFullscreenPreview) PreviewStageSize(maxWidth.value, maxHeight.value)
-            else fittedPreviewStageSize(maxWidth.value, maxHeight.value, previewStageAspectRatio)
-                ?: PreviewStageSize(maxWidth.value, maxHeight.value)
+            else fittedPreviewStageSize(maxWidth.value, stageHeightLimit, previewStageAspectRatio)
+                ?: PreviewStageSize(maxWidth.value, stageHeightLimit)
         Box(
             Modifier
                 .size(stageSize.width.dp, stageSize.height.dp)
+                .testTag("editor-preview-frame")
                 .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
                 .background(Color.Black)
                 .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
@@ -1583,6 +1625,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                     state.project?.clips.orEmpty(), clip, state.playerPositionMs
                 ).coerceAtLeast(0L)
             } ?: 0L,
+            projectTimeMs = state.playerPositionMs,
             durationMs = state.durationMs,
             // Shape mask (Mask tool) on the selected main clip, with
             // drag-to-move/resize while the mask panel is open.
@@ -1698,6 +1741,37 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             )
         }
 
+        when {
+            mediaImportProgress.running -> PreviewProcessingOverlay(
+                title = "Preparing your media",
+                status = mediaImportProgress.text + if (mediaImportProgress.elapsedMs >= 1_000L) {
+                    " · ${mediaImportProgress.elapsedMs / 1_000L}s"
+                } else "",
+                progress = mediaImportProgress.total.takeIf { it > 0 }?.let { total ->
+                    mediaImportProgress.completed.toFloat() / total
+                }?.takeIf { mediaImportProgress.completed > 0 },
+                onCancel = onCancelMediaImport,
+            )
+            videoUpscaleProgress.processing -> PreviewProcessingOverlay(
+                title = "Enhancing video",
+                status = videoUpscaleProgress.message.ifBlank { "Preparing your video" },
+                progress = videoUpscaleProgress.progress01,
+                onCancel = vm::cancelExistingVideoUpscale,
+            )
+            faceReviewProgress.isRunning -> PreviewProcessingOverlay(
+                title = "Finding face framing suggestions",
+                status = "Reviewing video frames",
+                progress = faceReviewProgress.progress,
+                onCancel = vm::cancelLocalFaceTrackReview,
+            )
+            localAnalysisProgress.isRunning -> PreviewProcessingOverlay(
+                title = "Finding edit suggestions",
+                status = "Reviewing video",
+                progress = localAnalysisProgress.progress,
+                onCancel = vm::cancelLocalAnalysis,
+            )
+        }
+
         val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }
         var stickerTrayDismissed by remember(state.project?.id, state.selectedStickerId, stickers.map { it.id }) {
             mutableStateOf(false)
@@ -1749,7 +1823,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     onOpenAddMediaMenu: (ClipType) -> Unit,
     isTimelineFocusMode: Boolean = false,
     onTimelineFocusModeChange: (Boolean) -> Unit = {},
-    compactLandscape: Boolean = false
+    compactLandscape: Boolean = false,
+    isFullscreenPreview: Boolean = false,
+    horizontalProjectLayout: Boolean = false,
 ) {
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
@@ -1788,10 +1864,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // No persistent property strip above the timeline. Keyframe/Animation stay
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
+    val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout) null else {
+        compactTimelineHeight(state) + (if (compactLandscape) 44.dp else 26.dp) + 2.dp
+    }
     CenteredTimelineWorkspace(
-        layoutWeight = timelineTrackLayoutWeight(isTimelineFocusMode)
+        layoutWeight = if (horizontalProjectLayout) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
+        compactHeight = compactTimelineHostHeight
     ) {
-    Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (!horizontalProjectLayout) Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
         if (compactLandscape) {
             LandscapeTimelineControls(state, vm, seekPlayerAndState, Modifier.weight(1f))
         } else {
@@ -1812,7 +1892,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 
     // Reference mockup: thin horizontal scrub line above the timeline —
     // red played portion on a dark track. Purely a position mirror.
-    run {
+    if (!horizontalProjectLayout) run {
         val totalMs = state.durationMs.coerceAtLeast(1L)
         val frac = (state.playerPositionMs.toFloat() / totalMs).coerceIn(0f, 1f)
         Box(
@@ -1919,6 +1999,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onSetTextOverlayRange = { ownerId, overlayId, start, end ->
             vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
         },
+        onSetStickerRange = { id, start, end -> vm.setStickerPropertyRange(id, start, end) },
         // Editing-assist modes. The logic already lived in
         // EditorAudioController but only landscape exposed one of the three;
         // the timeline overflow menu now reaches all of them.
@@ -1954,7 +2035,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 @Composable
 fun EditPackPanelOverlay(
     state: EditorState,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    onOpenTimeActions: () -> Unit = {},
 ) {
     if (!state.editPackPanelOpen) return
     Box(
@@ -1987,6 +2069,9 @@ fun EditPackPanelOverlay(
             val onApplyZoom: (String, Boolean) -> Unit = remember(clipId) {
                 { _, zoomIn -> clipId?.let { vm.applyEditPackZoom(it, zoomIn) } }
             }
+            val onOpenTimeActionsForClip: () -> Unit = remember(clipId, onOpenTimeActions) {
+                { if (clipId != null) onOpenTimeActions() }
+            }
             val onClose: () -> Unit = remember { { vm.closeEditPackPanel() } }
             EditPackPanel(
                 selectedClipName = selectedClip?.name,
@@ -1994,7 +2079,8 @@ fun EditPackPanelOverlay(
                 onApplyFreeze = onApplyFreeze,
                 onApplySplitScreen = onApplySplitScreen,
                 onApplyZoom = onApplyZoom,
-                onClose = onClose
+                onClose = onClose,
+                onOpenTimeActions = onOpenTimeActionsForClip,
             )
         }
     }

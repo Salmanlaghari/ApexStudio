@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -274,6 +275,7 @@ fun TextPanel(
                         .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
                         .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(8.dp))
                         .clickable { onAdd() }
+                        .testTag("text-add-overlay")
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -285,7 +287,7 @@ fun TextPanel(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            "Add",
+                            "Add text",
                             color = ApexPalette.NeonCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -472,7 +474,7 @@ fun TextPanel(
                         unfocusedContainerColor = ApexPalette.BgElevated,
                         cursorColor = ApexPalette.NeonCyan
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("text-content-field")
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -1461,8 +1463,7 @@ private fun pillOptions(): List<Pair<String, Long?>> = listOf(
 )
 
 /**
- * Offline multilingual phrase captions and opt-in English acoustic word timing.
- * Bundled weights need no first-run download; model errors never fabricate timings.
+ * Multilingual phrase captions and optional English word timing.
  */
 @Composable
 private fun AutoCaptionsTab(
@@ -1498,14 +1499,13 @@ private fun AutoCaptionsTab(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "Auto Captions (Offline AI)",
+                    "Auto captions",
                     color = ApexPalette.TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Whisper caption generation uses bundled on-device models. Urdu/Hindi use phrase " +
-                        "timing; English can use experimental acoustic word timing.",
+                    "Create editable captions from speech. Urdu and Hindi use phrase timing; English can use optional word timing.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 11.sp
                 )
@@ -1610,8 +1610,7 @@ private fun AutoCaptionsTab(
         }
         Text(
             if (captionUiState.language != "en") "Select English to enable measured word timing and karaoke."
-            else "Word mode shows one word at a time; Full-phrase karaoke keeps the original Whisper phrase and highlights the measured word. " +
-                "No artificial equal-split timing; unsupported text or low-confidence alignment fails without replacing captions.",
+            else "Word mode shows one word at a time. Full-phrase karaoke highlights each measured word. Some speech may not support word timing; captions stay unchanged if timing fails.",
             color = ApexPalette.TextSecondary, fontSize = 10.sp
         )
 
@@ -1939,14 +1938,13 @@ private fun WhisperPackDownloadCard(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            "AI Model Needed",
+            "Caption support needed",
             color = ApexPalette.TextPrimary,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
         Text(
-            "Auto-captions run 100% on-device with the Whisper AI model " +
-                "(~103MB in 3 parts, one-time download, works offline afterwards).",
+            "Download caption support once to create editable captions (~103 MB).",
             color = ApexPalette.TextSecondary,
             fontSize = 11.sp
         )
@@ -1965,7 +1963,7 @@ private fun WhisperPackDownloadCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Downloading model ${(fraction * 100).toInt()}%…",
+                        "Downloading caption support ${(fraction * 100).toInt()}%…",
                         color = ApexPalette.NeonCyan,
                         fontSize = 11.sp
                     )
@@ -1984,7 +1982,7 @@ private fun WhisperPackDownloadCard(
             }
             failed.isNotEmpty() -> {
                 Text(
-                    "Download failed: ${(failed.first().state as PackManager.PackState.Failed).reason}",
+                    "Download failed. Check your connection and try again.",
                     color = Color(0xFFFCA5A5),
                     fontSize = 11.sp
                 )
@@ -2012,7 +2010,7 @@ private fun WhisperPackDownloadCard(
                 ) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Download AI Model (~103MB)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Download caption support (~103 MB)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

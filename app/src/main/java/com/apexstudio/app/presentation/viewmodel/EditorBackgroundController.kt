@@ -87,10 +87,10 @@ fun EditorViewModel.cancelBackgroundReplace() {
     )
 }
 
-/** Compatibility action for older UI: prepare the bundled model locally without network access. */
+/** Compatibility action for older UI: check that background replacement is ready. */
 fun EditorViewModel.downloadBackgroundModel() {
     val ctx = context ?: return
-    val preparingMessage = "Preparing the bundled segmentation model offline…"
+    val preparingMessage = "Checking background replacement…"
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.PROCESSING,
         message = preparingMessage
@@ -100,11 +100,11 @@ fun EditorViewModel.downloadBackgroundModel() {
         val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
         _backgroundUi.update { current ->
             if (current.message != preparingMessage) current else if (ready) {
-                current.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Offline model ready.")
+                current.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Ready to replace the background.")
             } else {
                 current.copy(
                     phase = BackgroundPhase.FAILED, progress01 = 0f,
-                    message = "Bundled person-segmentation model is unavailable."
+                    message = "Background replacement isn't available right now."
                 )
             }
         }
@@ -122,21 +122,21 @@ fun EditorViewModel.applyBackgroundReplace(
 ) {
     val ctx = context ?: run {
         _backgroundUi.value = _backgroundUi.value.copy(
-            phase = BackgroundPhase.FAILED, message = "No context"
+            phase = BackgroundPhase.FAILED, message = "The editor isn't ready. Try again."
         )
         return
     }
     val project = _state.value.project
     val clip = project?.clips?.firstOrNull { it.id == clipId } ?: run {
         _backgroundUi.value = _backgroundUi.value.copy(
-            phase = BackgroundPhase.FAILED, message = "Clip not found"
+            phase = BackgroundPhase.FAILED, message = "Select a clip again."
         )
         return
     }
     if (clip.type != ClipType.VIDEO) {
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED,
-            message = "Background replace works on video clips."
+            message = "Select a video clip to replace its background."
         )
         return
     }
@@ -171,7 +171,7 @@ fun EditorViewModel.applyBackgroundReplace(
 
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.PROCESSING, progress01 = 0f,
-        message = "Checking AI model…"
+        message = "Preparing background replacement…"
     )
 
     // LAZY ensures backgroundJob is assigned before this coroutine can run.
@@ -183,7 +183,7 @@ fun EditorViewModel.applyBackgroundReplace(
             if (!ready) {
                 publishBackgroundState(requestJob) {
                     it.copy(phase = BackgroundPhase.FAILED,
-                        message = "Bundled person-segmentation model is unavailable.")
+                        message = "Background replacement isn't available right now.")
                 }
                 return@launch
             }
@@ -213,7 +213,7 @@ fun EditorViewModel.applyBackgroundReplace(
 
             publishBackgroundState(requestJob) {
                 it.copy(phase = BackgroundPhase.PROCESSING, progress01 = 0f,
-                    message = "Segmenting person… (on-device AI)")
+                    message = "Replacing background…")
             }
             val processed = GlobalModerationEnforcement.withExistingProjectVideoBackgroundReplacement(sourceUri) {
                 BackgroundReplaceEngine.process(

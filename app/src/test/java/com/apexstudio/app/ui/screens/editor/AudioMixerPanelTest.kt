@@ -143,6 +143,25 @@ class AudioMixerPanelTest {
         assertTrue(fitted)
         assertTrue(silenceRemoved)
     }
+
+    @Test
+    fun separateVideoAudioButtonRunsTheProvidedExtractionAction() {
+        var extracted = false
+        compose.setContent {
+            AudioMixerPanel(
+                state = AudioStudioState(),
+                muteOriginalVideo = false,
+                onMuteOriginal = {}, onAddTrack = { _, _, _ -> }, onRemoveTrack = {},
+                onVolume = { _, _ -> }, onMute = {}, onSolo = {}, onTrim = { _, _, _ -> },
+                onFadeIn = { _, _ -> }, onFadeOut = { _, _ -> }, onClose = {},
+                canExtractOriginalVideoAudio = true,
+                onExtractOriginalVideoAudio = { extracted = true },
+            )
+        }
+
+        compose.onNodeWithTag("audio-separate-video-audio").assertIsEnabled().performClick()
+        assertTrue(extracted)
+    }
 }
 
 @androidx.compose.runtime.Composable

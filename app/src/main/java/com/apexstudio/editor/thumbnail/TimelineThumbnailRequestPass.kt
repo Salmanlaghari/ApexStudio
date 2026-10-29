@@ -1,8 +1,8 @@
 package com.apexstudio.editor.thumbnail
 
 /** Per-pass decoder budget. Only a newly claimed visible decode needs fast polling. */
-internal class TimelineThumbnailRequestPass(
-    private val inFlightKeys: MutableSet<Pair<String, Long>>,
+internal class TimelineThumbnailRequestPass<K>(
+    private val inFlightKeys: MutableSet<Pair<K, Long>>,
     private val maxJobs: Int = 4,
 ) {
     var launched: Int = 0
@@ -12,7 +12,7 @@ internal class TimelineThumbnailRequestPass(
     val pollDelayMs: Long
         get() = if (visibleWorkDispatched) 40L else 400L
 
-    fun claim(key: Pair<String, Long>, cached: Boolean, visible: Boolean): Boolean {
+    fun claim(key: Pair<K, Long>, cached: Boolean, visible: Boolean): Boolean {
         if (cached || inFlightKeys.contains(key)) return false
         if (launched >= maxJobs || inFlightKeys.size >= maxJobs || !inFlightKeys.add(key)) return false
         launched++

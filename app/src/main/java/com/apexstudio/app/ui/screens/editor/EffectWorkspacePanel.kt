@@ -47,7 +47,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 
-private enum class WorkspaceCategory(val label: String) { VISUAL("Visual"), VFX("VFX"), SPLIT("Split screen"), TIME("Time") }
+internal enum class WorkspaceCategory(val label: String) { VISUAL("Visual"), VFX("VFX"), SPLIT("Split screen"), TIME("Actions") }
 
 /** Converts the live project playhead (or state fallback) to this clip's clamped source time. */
 internal fun sourceTimeAtProjectPlayhead(
@@ -74,6 +74,7 @@ internal fun EffectWorkspacePanel(
     onSeekSource: (Long) -> Unit,
     onTogglePlayback: () -> Unit,
     onDismiss: () -> Unit,
+    openTimeActions: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,7 +83,9 @@ internal fun EffectWorkspacePanel(
     val livePlayerPositionMs by vm.playerPositionFlow.collectAsStateWithLifecycle(
         initialValue = editorState.currentTimeMs,
     )
-    var category by remember { mutableStateOf(WorkspaceCategory.VISUAL) }
+    var category by remember(originalClip.id, openTimeActions) {
+        mutableStateOf(if (openTimeActions) WorkspaceCategory.TIME else WorkspaceCategory.VISUAL)
+    }
     var range by remember(originalClip) { mutableStateOf(WorkspaceRange.full(originalClip)) }
     var playbackRangeStart by remember(originalClip.id) { mutableStateOf<Long?>(null) }
     var heldEffectStart by remember { mutableStateOf<Long?>(null) }
@@ -241,8 +244,10 @@ internal fun EffectWorkspacePanel(
         Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
             // The title stays pinned while the workspace cards move horizontally.
             Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Effects", fontSize = 16.sp, modifier = Modifier.weight(1f))
-                Text("Source-timed preview", fontSize = 11.sp, color = EditorPalette.TextSecondary)
+                Text(if (category == WorkspaceCategory.TIME) "Motion actions" else "Effects",
+                    fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text(if (category == WorkspaceCategory.TIME) "Render & apply" else "Source-timed preview",
+                    fontSize = 11.sp, color = EditorPalette.TextSecondary)
             }
 
             Row(

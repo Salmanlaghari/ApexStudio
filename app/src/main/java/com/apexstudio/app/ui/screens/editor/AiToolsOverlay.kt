@@ -14,9 +14,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val AI_PROTECTED_BLOCKER =
-    "Whisper captions, English acoustic word timing, background compositing and sampled face review have scoped existing-video editor actions. Photo AI Enhance provides source-scoped ESPCN upscaling and local face crop for selected project images. Other model inventory is not a processing control. No prompts, arbitrary still-image AI, live camera AI, image/video generation, or depth-based 2D-to-3D conversion (no integrated, tested depth model)."
-internal const val AI_PROTECTED_STATUS_LABEL = "Backend information · not an editor action"
-internal const val LOCAL_REVIEW_ACTION_LABEL = "Open offline scene + face review"
+    "Available actions work with selected project media. Features shown as unavailable will not run. Review suggestions before applying them; some actions are still restricted."
+internal const val AI_PROTECTED_STATUS_LABEL = "Availability details"
+internal const val LOCAL_REVIEW_ACTION_LABEL = "Review video suggestions"
 
 /** Keep model readiness and end-to-end editor readiness separate. */
 internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCard> {
@@ -25,17 +25,17 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
         val title = when (name) {
             "SMART_TRIM" -> "Smart trim suggestions"
             "SCENE_ANALYSIS" -> "Scene detection"
-            "STYLE_ANALYSIS" -> "Local style analysis"
-            "AUTO_CROP" -> "Signal-based crop · not subject AI"
+            "STYLE_ANALYSIS" -> "Style suggestions"
+            "AUTO_CROP" -> "Crop suggestions"
             "FACE_AWARE_REFRAME" -> "Auto reframe · 9:16 / 1:1"
-            "SUBTITLES" -> "Whisper auto subtitles"
-            "WORD_TIMED_SUBTITLES" -> "Word-timed karaoke"
+            "SUBTITLES" -> "Auto captions"
+            "WORD_TIMED_SUBTITLES" -> "Word-timed captions"
             "BACKGROUND_REPLACE" -> "Background replacement"
-            "MEDIAPIPE_FACE" -> "Face detection & tracking"
-            "MEDIAPIPE_POSE" -> "Pose & skeleton overlay"
-            "MEDIAPIPE_HAND" -> "Hand & gesture control"
-            "ONNX_BACKGROUND_REMOVAL" -> "AI background removal"
-            "ONNX_UPSCALING" -> "AI upscale · ESPCN x3 backend"
+            "MEDIAPIPE_FACE" -> "Face suggestions"
+            "MEDIAPIPE_POSE" -> "Pose overlay"
+            "MEDIAPIPE_HAND" -> "Hand gestures"
+            "ONNX_BACKGROUND_REMOVAL" -> "Background removal"
+            "ONNX_UPSCALING" -> "Video enhancement"
             "ONNX_STYLE_TRANSFER" -> "Artistic style transfer"
             "CONTENT_MODERATION" -> "Content safety"
             else -> name.lowercase().split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
@@ -48,19 +48,19 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
             else -> "Smart editing"
         }
         // Inventory is informational. Real actions remain on the relevant video or photo editor panel.
-        val inventoryStatus = if (feature.isReady) "Local backend detected" else "Local backend unavailable"
+        val inventoryStatus = if (feature.isReady) "Available" else "Not available yet"
         val scopeNotice = if (feature.id == AiFeatureId.GESTURE_CONTROL || feature.id == AiFeatureId.MEDIAPIPE_HAND)
-            "Live camera/gesture editing is outside the existing-project-video scope. " else ""
-        AiToolCard(name, title, "$scopeNotice$inventoryStatus: ${feature.message}", group,
+            "Live camera editing is not available here. " else ""
+        AiToolCard(name, title, "$scopeNotice$inventoryStatus", group,
             statusLabel = AI_PROTECTED_STATUS_LABEL,
             unavailableReason = when (feature.id) {
-                AiFeatureId.SUBTITLES -> "Available in Text → Captions for an existing project video. Local Whisper recognizes speech and inserts editable phrase captions; model readiness and audio access are checked when run."
-                AiFeatureId.WORD_TIMED_SUBTITLES -> "Available as an opt-in English mode in Text → Captions for an existing project video. Unsupported or low-confidence alignment fails rather than inventing word times."
-                AiFeatureId.BACKGROUND_REPLACE -> "Available from the editor Background tool on an existing project video. Replacement images must already be in the project; segmentation and compositing run locally."
-                AiFeatureId.FACE_TRACKING -> "Available as sampled face review in Offline analysis. Dynamic crop tracks are supported by project export, but automatic video-track application remains review-restricted."
-                AiFeatureId.FACE_AWARE_REFRAME -> "Still photos can use Face crop in Photo AI Enhance. Sampled face candidates can be reviewed in Offline analysis; automatic video-track application remains review-restricted."
-                AiFeatureId.ONNX_UPSCALING -> "Open AI Video Upscale above for a supported selected video; selected still photos use AI upscale in Photo AI Enhance (output capped at 4.2 megapixels)."
-                AiFeatureId.ONNX_STYLE_TRANSFER -> "ML artistic filters remain unavailable: license/provenance review and full-video integration are incomplete. Fixed non-AI filters are available in Video tools."
+                AiFeatureId.SUBTITLES -> "Create captions from speech in Text → Captions for a video in your project."
+                AiFeatureId.WORD_TIMED_SUBTITLES -> "Optional English word timing is available in Text → Captions. Some speech may not support it."
+                AiFeatureId.BACKGROUND_REPLACE -> "Replace a video's background from the editor Background tool. Choose an image already in your project."
+                AiFeatureId.FACE_TRACKING -> "Review face-framing suggestions in Video suggestions. Applying automatic face crops to video is not available yet."
+                AiFeatureId.FACE_AWARE_REFRAME -> "Review face-framing suggestions in Video suggestions. Applying automatic face crops to video is not available yet."
+                AiFeatureId.ONNX_UPSCALING -> "Open Video enhancement above for a supported video. Photo Enhance works with selected still images (output capped at 4.2 megapixels)."
+                AiFeatureId.ONNX_STYLE_TRANSFER -> "Artistic style filters are not available yet. Standard filters are available in Video tools."
                 else -> AI_PROTECTED_BLOCKER
             })
     }
@@ -81,19 +81,19 @@ fun AiToolsOverlay(
 ) {
     val context = LocalContext.current.applicationContext
     var cards by remember { mutableStateOf(aiToolCards(AiFeatureId.entries.map { id ->
-        AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE, "Local pack inventory has not been checked yet.")
+        AiFeatureAvailability(id, AiAvailability.ENGINE_UNAVAILABLE, "Availability has not been checked yet.")
     })) }
     var showDownloads by remember { mutableStateOf(false) }
     var inventoryRevision by remember { mutableIntStateOf(0) }
-    var message by remember { mutableStateOf("Checking local model inventory for information only…") }
+    var message by remember { mutableStateOf("Checking which AI tools are available…") }
     LaunchedEffect(context, inventoryRevision) {
         try {
             cards = withContext(Dispatchers.IO) { aiToolCards(AiFeatureRegistry.all(context)) }
-            message = "Local model inventory checked for information only. No download starts here."
+            message = "Availability checked. Nothing has been started."
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            message = "Could not read the local model inventory. Your project is unchanged; processing will check its own model integrity."
+            message = "Could not check AI availability. Your project is unchanged."
         }
     }
     AiToolsPanel(tools = cards, message = message,

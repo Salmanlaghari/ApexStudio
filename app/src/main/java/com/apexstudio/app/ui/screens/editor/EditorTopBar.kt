@@ -73,12 +73,14 @@ fun TopAppBarSection(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Back to projects",
-            tint = EditorPalette.TextPrimary,
-            modifier = Modifier.size(25.dp).clickable(onClick = onBack, role = Role.Button)
-        )
+        Box(
+            modifier = Modifier.size(44.dp).clickable(onClick = onBack, role = Role.Button)
+                .semantics { contentDescription = "Back to projects" },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null,
+                tint = EditorPalette.TextPrimary, modifier = Modifier.size(25.dp))
+        }
         Column(
             modifier = Modifier.weight(1f).combinedClickable(
                 role = Role.Button,
@@ -99,8 +101,8 @@ fun TopAppBarSection(
         Box {
             Row(
                 modifier = Modifier
-                    .height(36.dp)
-                    .widthIn(min = 76.dp)
+                    .height(44.dp)
+                    .widthIn(min = 84.dp)
                     .clip(RoundedCornerShape(11.dp))
                     .background(EditorPalette.BgSurface)
                     .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(11.dp))
@@ -146,8 +148,8 @@ fun TopAppBarSection(
         }
         Row(
             modifier = Modifier
-                .height(36.dp)
-                .widthIn(min = 82.dp)
+                .height(44.dp)
+                .widthIn(min = 88.dp)
                 .clip(RoundedCornerShape(11.dp))
                 .background(EditorPalette.GradientPrimary)
                 .clickable(enabled = exportEnabled, onClick = onExport, role = Role.Button)

@@ -5,7 +5,10 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -19,7 +22,17 @@ object VideoThumbnailExtractor {
     private const val TAG = "VideoThumbnailExtractor"
     private const val THUMB_WIDTH = 120
     private const val THUMB_HEIGHT = 68
-    private const val MAX_THUMBS_PER_CLIP = 20
+    const val MAX_EAGER_THUMBS_PER_CLIP = 24
+
+    /** Evenly spaced interior timestamps, retaining the existing full-duration sampling math. */
+    internal fun thumbnailSampleTimes(durationMs: Long, count: Int): List<Long> {
+        val boundedCount = count.coerceIn(0, MAX_EAGER_THUMBS_PER_CLIP)
+        if (boundedCount == 0) return emptyList()
+        val duration = durationMs.coerceAtLeast(0L)
+        if (duration == 0L) return emptyList()
+        val interval = duration / (boundedCount + 1L)
+        return (1..boundedCount).map { it * interval }
+    }
 
     /**
      * Extract a single thumbnail at [timeMs] milliseconds into the video.
@@ -53,15 +66,14 @@ object VideoThumbnailExtractor {
         context: Context,
         videoUri: String,
         durationMs: Long,
-        count: Int = MAX_THUMBS_PER_CLIP
+        count: Int = MAX_EAGER_THUMBS_PER_CLIP
     ): List<Pair<Long, Bitmap>> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Pair<Long, Bitmap>>()
         try {
             withResourceRelease(MediaMetadataRetriever(), { it.release() }) { retriever ->
                 retriever.setDataSource(context, Uri.parse(videoUri))
-                val interval = durationMs / (count + 1)
-                for (i in 1..count) {
-                    val timeMs = i * interval
+                for (timeMs in thumbnailSampleTimes(durationMs, count)) {
+                    currentCoroutineContext().ensureActive()
                     try {
                         val bitmap = retriever.getFrameAtTime(
                             timeMs * 1000,
@@ -73,11 +85,15 @@ object VideoThumbnailExtractor {
                                 results.add(timeMs to resized)
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         // Skip failed frames
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract thumbnail strip from $videoUri", e)
         }

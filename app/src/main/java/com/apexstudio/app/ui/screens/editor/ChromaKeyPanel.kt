@@ -33,7 +33,8 @@ fun ChromaKeyPanel(
     onUpdate: (ChromaKeySettings) -> Unit,
     onPickCustomBg: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    targetAvailable: Boolean = true
 ) {
     val scrollState = rememberScrollState()
 
@@ -80,6 +81,15 @@ fun ChromaKeyPanel(
 
         Spacer(Modifier.height(12.dp))
 
+        if (!targetAvailable) {
+            Text(
+                "Select a video, image, or overlay clip on the timeline to use Chroma Key.",
+                color = ApexPalette.TextPrimary.copy(alpha = 0.72f),
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
         // Enable Toggle
         Row(
             modifier = Modifier
@@ -97,6 +107,7 @@ fun ChromaKeyPanel(
             Switch(
                 checked = settings.enabled,
                 onCheckedChange = { onUpdate(settings.copy(enabled = it)) },
+                enabled = targetAvailable,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = ApexPalette.NeonCyan,
                     checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.4f)
@@ -127,7 +138,7 @@ fun ChromaKeyPanel(
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSelected) color.copy(alpha = 0.25f) else Color(0xFF1E1E2C))
                             .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) color else Color.Transparent, RoundedCornerShape(8.dp))
-                            .clickable { onUpdate(settings.copy(keyColorArgb = argb)) }
+                            .clickable(enabled = targetAvailable) { onUpdate(settings.copy(keyColorArgb = argb)) }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -148,28 +159,32 @@ fun ChromaKeyPanel(
             SliderRow(
                 label = "Similarity / Tolerance",
                 value = settings.similarity,
-                onValueChange = { onUpdate(settings.copy(similarity = it)) }
+                onValueChange = { onUpdate(settings.copy(similarity = it)) },
+                enabled = targetAvailable
             )
 
             // Sliders: Smoothness
             SliderRow(
                 label = "Smoothness / Edge Feather",
                 value = settings.smoothness,
-                onValueChange = { onUpdate(settings.copy(smoothness = it)) }
+                onValueChange = { onUpdate(settings.copy(smoothness = it)) },
+                enabled = targetAvailable
             )
 
             // Sliders: Spill Suppression
             SliderRow(
                 label = "Spill Suppression",
                 value = settings.spillSuppression,
-                onValueChange = { onUpdate(settings.copy(spillSuppression = it)) }
+                onValueChange = { onUpdate(settings.copy(spillSuppression = it)) },
+                enabled = targetAvailable
             )
 
             // 3D Depth & Tilt
             SliderRow(
                 label = "3D Virtual Depth",
                 value = settings.depth3D,
-                onValueChange = { onUpdate(settings.copy(depth3D = it)) }
+                onValueChange = { onUpdate(settings.copy(depth3D = it)) },
+                enabled = targetAvailable
             )
 
             Spacer(Modifier.height(12.dp))
@@ -194,7 +209,7 @@ fun ChromaKeyPanel(
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.2f) else Color(0xFF1E1E2E))
                             .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) ApexPalette.NeonCyan else Color(0xFF2F2F44), RoundedCornerShape(8.dp))
-                            .clickable {
+                            .clickable(enabled = targetAvailable) {
                                 if (type == "custom") {
                                     onPickCustomBg()
                                     onUpdate(settings.copy(backgroundType = "custom"))
@@ -234,7 +249,8 @@ fun ChromaKeyPanel(
 private fun SliderRow(
     label: String,
     value: Float,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    enabled: Boolean = true
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
@@ -247,6 +263,7 @@ private fun SliderRow(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            enabled = enabled,
             valueRange = 0f..1f,
             colors = SliderDefaults.colors(
                 thumbColor = ApexPalette.NeonCyan,

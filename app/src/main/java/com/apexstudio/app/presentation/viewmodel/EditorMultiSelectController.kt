@@ -158,9 +158,7 @@ private fun EditorViewModel.applyGpuConfigToSelectedClips(config: GpuFilterConfi
     _state.update { state ->
         state.copy(
             project = project.copy(clips = updated),
-            activeGpuFilterConfig = config,
-            activeFilterId = config.filterPresetId,
-            filterIntensity = config.filterIntensity
+            activeGpuFilterConfig = config
         )
     }
     persistProject(refreshLegacyClipFields = true)

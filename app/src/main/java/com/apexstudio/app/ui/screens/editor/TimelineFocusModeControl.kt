@@ -17,9 +17,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
-/** Give the source-ratio preview room on phones; focus mode can still expand the timeline. */
-internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float =
-    if (isTimelineFocused) 0.001f else 2.25f
+/** The preview retains its source-ratio allocation; focus mode expands tracks around it. */
+@Suppress("UNUSED_PARAMETER")
+internal fun editorPreviewLayoutWeight(isTimelineFocused: Boolean): Float = 2.25f
+
 /** Keep the timeline editable while reserving more height for portrait footage. */
 internal fun timelineTrackLayoutWeight(isTimelineFocused: Boolean): Float =
     if (isTimelineFocused) 3f else 0.9f

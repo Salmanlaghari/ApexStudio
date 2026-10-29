@@ -2,8 +2,12 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import com.apexstudio.app.domain.model.TextOverlay
@@ -67,6 +71,34 @@ class TextPanelModerationTest {
         compose.runOnIdle {
             assertEquals(1, generateCalls)
             assertEquals(1, clearCalls)
+        }
+    }
+
+    @Test
+    fun addTextAndEditFieldInvokeTheirActualCallbacks() {
+        var addCalls = 0
+        val edits = mutableListOf<String>()
+        compose.setContent {
+            TextPanel(
+                overlays = listOf(TextOverlay(id = "title", text = "Editable title")),
+                selectedId = "title",
+                onAdd = { addCalls++ },
+                onSelect = {},
+                onTextChange = { edits += it },
+                onColorChange = {},
+                onBgChange = {},
+                onSizeChange = {},
+                onDelete = {},
+                onClose = {}
+            )
+        }
+
+        compose.onNodeWithTag("text-add-overlay").assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("text-content-field").performTextInput(" revised")
+        compose.runOnIdle {
+            assertEquals(1, addCalls)
+            org.junit.Assert.assertTrue(edits.last().contains("revised"))
         }
     }
 }

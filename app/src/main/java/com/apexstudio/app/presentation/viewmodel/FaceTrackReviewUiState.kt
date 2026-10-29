@@ -54,7 +54,7 @@ fun isFaceTrackSnapshotCurrent(snapshot: FaceTrackSourceSnapshot, project: Proje
     return snapshot.matches(activeProjectId, currentClip)
 }
 
-/** Lifecycle for local, sparse face-track analysis and review-only crop suggestions. */
+/** Lifecycle for sampled face-framing suggestions and review. */
 enum class FaceTrackReviewStatus { IDLE, RUNNING, READY, CANCELLED, ERROR }
 
 /** Review targets only: changing this never applies a crop track or alters the project canvas. */
@@ -71,7 +71,7 @@ enum class FaceReframeReviewTarget(val label: String, val aspectRatio: Float) {
 data class FaceTrackReviewUiState(
     val status: FaceTrackReviewStatus = FaceTrackReviewStatus.IDLE,
     val progress: Float = 0f,
-    val message: String = "Offline face tracking review is available for a selected video.",
+    val message: String = "Select a video to review face-framing suggestions.",
     val clipId: String? = null,
     val sourceUri: String? = null,
     val sourceStartMs: Long? = null,

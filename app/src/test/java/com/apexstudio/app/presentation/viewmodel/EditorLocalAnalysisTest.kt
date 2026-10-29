@@ -73,7 +73,7 @@ class EditorLocalAnalysisTest {
         vm._state.update { state -> state.copy(project = state.project!!.copy(
             clips = state.project!!.clips.map { it.copy(trimStartMs = 3_000L) })) }
         assertFalse(vm.applyLocalSceneCuts())
-        assertTrue(vm.localAnalysis.value.error!!.contains("changed"))
+        assertTrue(vm.localAnalysis.value.error!!.contains("no longer current"))
         assertTrue(vm.undoStack.isEmpty())
     }
 

@@ -66,7 +66,7 @@ internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
 
 /** Screenshot-priority actions shown first in the selected-video scroll row. */
 internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
-    "Split", "Trim", "Speed", "Volume", "Keyframe"
+    "Split", "Trim", "Speed", "Volume", "Keyframe", "Animation"
 )
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
@@ -267,7 +267,8 @@ fun ContextualBottomToolbar(
     onBeforeToolAction: () -> Unit = {},
     onReferenceTrim: () -> Unit = onTrim,
     referenceToolMode: Boolean = false,
-    referenceActiveTool: String? = null
+    referenceActiveTool: String? = null,
+    horizontalProjectLayout: Boolean = false
 ) {
     var showOverlayChoices by remember { mutableStateOf(false) }
     var showToolbarNotes by remember { mutableStateOf(false) }
@@ -517,6 +518,54 @@ fun ContextualBottomToolbar(
     val clipPageItems = clipItems.map(::routed)
     val toolsItems = (if (referenceToolMode) referenceItems else mainItems).map(::routed)
     val moreItems = secondaryItems.map(::routed)
+    val horizontalEditItems = listOf(
+        CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
+        CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),
+        CtxToolItem(if (isOverlaySelected) "Properties" else "Speed",
+            if (isOverlaySelected) Icons.Default.Tune else Icons.Default.Speed,
+            tint = ApexPalette.NeonCyan, onClick = if (isOverlaySelected) onOverlayProps else onSpeed),
+        CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan,
+            onClick = if (isOverlaySelected) onOverlayProps else onVolume),
+        CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
+        CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+    ).map(::routed)
+
+    // Easy mode keeps the first screen focused on the five actions most users
+    // need. Clip-specific controls appear only after a timeline clip is
+    // selected, while the complete advanced toolbox remains behind More.
+    val easyPrimaryItems = listOf(
+        CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+        CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+        CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
+        CtxToolItem("Music", Icons.Default.MusicNote, tint = ApexPalette.TextPrimary, onClick = onMusic),
+        CtxToolItem("More", Icons.Outlined.MoreHoriz, tint = ApexPalette.TextPrimary, onClick = { showMoreTools = !showMoreTools })
+    ).map(::routed)
+    val easyClipItems = when (selectionKind) {
+        ToolbarSelectionKind.VIDEO -> listOf(
+            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
+            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
+        ).map(::routed)
+        ToolbarSelectionKind.AUDIO -> listOf(
+            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
+            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem("Fade", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onFade),
+            CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
+        ).map(::routed)
+        else -> clipItems.map(::routed)
+    }
+    val easyMoreItems = listOf(
+        CtxToolItem("AI tools", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
+        CtxToolItem("Captions", Icons.Default.Subtitles, tint = ApexPalette.NeonCyan, onClick = onCaptions),
+        CtxToolItem("Enhance", Icons.Default.HighQuality, tint = ApexPalette.NeonCyan, onClick = onEnhance),
+        CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, tint = ApexPalette.NeonPink, onClick = onBgRemover),
+        CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
+        CtxToolItem("History", Icons.Default.History, onClick = onHistory)
+    ).map(::routed) + moreItems
 
     if (showToolbarNotes) {
         AlertDialog(
@@ -534,7 +583,60 @@ fun ContextualBottomToolbar(
         )
     }
 
-    Column(
+    if (horizontalProjectLayout && !referenceToolMode) {
+        Column(
+            modifier = modifier.fillMaxWidth()
+                .background(Color(0xFF090F1A))
+                .padding(horizontal = 7.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            AnimatedVisibility(
+                visible = showClipBar,
+                enter = fadeIn(animationSpec = tween(180)) + slideInVertically(animationSpec = tween(180)) { it },
+                exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(animationSpec = tween(180)) { it }
+            ) {
+                ToolbarBarRow(
+                    items = easyClipItems,
+                    surfaceColor = Color(0xFF151F2D),
+                    modifier = Modifier.testTag("mobile-editor-clip-options"),
+                    itemWidth = 58.dp,
+                    fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 6 else null,
+                    barHeight = 64.dp,
+                    roundedSurface = true,
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier.width(42.dp).fillMaxHeight().clickable {
+                                onBeforeToolAction()
+                                onCollapse()
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Deselect", tint = ApexPalette.TextSecondary)
+                        }
+                    }
+                )
+            }
+            ToolbarBarRow(
+                items = easyPrimaryItems,
+                surfaceColor = Color(0xFF101D2D),
+                modifier = Modifier.testTag("mobile-editor-edit-tools"),
+                itemWidth = 64.dp,
+                fitVisibleCount = 5,
+                barHeight = 70.dp,
+                roundedSurface = true
+            )
+            if (showMoreTools) {
+                ToolbarBarRow(
+                    items = easyMoreItems,
+                    surfaceColor = Color(0xFF111A28),
+                    modifier = Modifier.testTag("mobile-editor-more-tools"),
+                    itemWidth = 56.dp,
+                    barHeight = 64.dp,
+                    roundedSurface = true
+                )
+            }
+        }
+    } else Column(
         modifier = modifier
             .fillMaxWidth()
             .background(Color.Black)
@@ -551,6 +653,8 @@ fun ContextualBottomToolbar(
                 surfaceColor = Color(0xFF151F2D),
                 modifier = Modifier.testTag("editor_clip_toolbar"),
                 itemWidth = 58.dp,
+                compact = selectionKind == ToolbarSelectionKind.VIDEO,
+                fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 6 else null,
                 leadingContent = {
                     Box(
                         modifier = Modifier.width(44.dp).fillMaxHeight().clickable {
@@ -606,17 +710,27 @@ private fun ToolbarBarRow(
     leadingContent: @Composable (RowScope.() -> Unit)? = null,
     itemWidth: androidx.compose.ui.unit.Dp = 66.dp,
     compact: Boolean = false,
+    fitVisibleCount: Int? = null,
     selectedLabel: String? = null,
-    barHeight: androidx.compose.ui.unit.Dp = 46.dp
+    barHeight: androidx.compose.ui.unit.Dp = 46.dp,
+    roundedSurface: Boolean = false
 ) {
+    val rowShape = RoundedCornerShape(12.dp)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .height(barHeight)
-            .background(Color.Black)
+            .then(if (roundedSurface) Modifier.background(surfaceColor, rowShape)
+                .border(1.dp, Color(0xFF21415D), rowShape) else Modifier.background(Color.Black))
             .padding(horizontal = 4.dp)
     ) {
-        val targetWidth = if (compact) (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth) else itemWidth
+        val leadingWidth = if (leadingContent != null) 45.dp else 0.dp
+        val targetWidth = when {
+            fitVisibleCount != null -> ((maxWidth - leadingWidth).coerceAtLeast(0.dp) /
+                fitVisibleCount.coerceAtLeast(1).toFloat()).coerceAtMost(itemWidth)
+            compact -> (maxWidth / items.size.coerceAtLeast(1)).coerceAtLeast(itemWidth)
+            else -> itemWidth
+        }
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
@@ -958,6 +1072,7 @@ fun EditorBottomToolbarSection(
     state: EditorState,
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel,
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
+    horizontalProjectLayout: Boolean = false,
     onAi: () -> Unit = {},
     onDraw: () -> Unit = {},
     onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
@@ -1007,6 +1122,16 @@ fun EditorBottomToolbarSection(
     // hidden/locked.
     val selectedClip =
         state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    fun ensureMainVideoSelected(): String? {
+        val clips = state.project?.clips.orEmpty()
+        val target = clips.firstOrNull {
+            it.id == state.selectedClipId && it.trackIndex == 0 && it.type == ClipType.VIDEO
+        } ?: timelinePreviewClip(clips, vm.livePlayheadMs())?.takeIf {
+            it.trackIndex == 0 && it.type == ClipType.VIDEO
+        } ?: clips.firstOrNull { it.trackIndex == 0 && it.type == ClipType.VIDEO }
+        if (target != null && target.id != state.selectedClipId) vm.selectClip(target.id)
+        return target?.id
+    }
     val isLegacyAudioClipSelected = selectedClip?.type == ClipType.AUDIO || selectedClip?.type == ClipType.SFX
     val selectedOverlayLayer =
         selectedClip?.takeIf { it.type == ClipType.OVERLAY }?.trackIndex
@@ -1077,6 +1202,7 @@ fun EditorBottomToolbarSection(
         onReferenceTrim = onReferenceTrim,
         referenceToolMode = referenceToolMode,
         referenceActiveTool = referenceActiveTool,
+        horizontalProjectLayout = horizontalProjectLayout,
         onAdjust = { vm.openAdjustmentsPanel() },
         onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at
@@ -1171,9 +1297,23 @@ fun EditorBottomToolbarSection(
                 }
             }
         },
-        onSpeed = { vm.openSpeedPanel() },
-        onVolume = { vm.openClipVolumeSheet() },
-        onAnimation = { vm.openKeyframeAnimationPanel() },
+        onSpeed = {
+            if (state.selectedClipId == null) ensureMainVideoSelected()
+            vm.openSpeedPanel()
+        },
+        onVolume = {
+            when {
+                selectedAudioTrack != null -> vm.openAudioMixer()
+                else -> {
+                    if (state.selectedClipId == null) ensureMainVideoSelected()
+                    vm.openClipVolumeSheet()
+                }
+            }
+        },
+        onAnimation = {
+            if (state.selectedClipId == null) ensureMainVideoSelected()
+            vm.openKeyframeAnimationPanel()
+        },
         onDelete = {
             when (toolbarKind) {
                 ToolbarSelectionKind.VIDEO ->
@@ -1215,9 +1355,15 @@ fun EditorBottomToolbarSection(
         // Merged clip-bar actions (previously the timeline quick-actions row).
         onSplit = {
             if (selectedAudioTrack != null) vm.splitAudioTrack(selectedAudioTrack.id, vm.playerPositionFlow.value)
-            else state.selectedClipId?.let { vm.splitClip(it, vm.playerPositionFlow.value) }
+            else {
+                val clipId = state.selectedClipId ?: ensureMainVideoSelected()
+                clipId?.let { vm.splitClip(it, vm.livePlayheadMs()) }
+            }
         },
-        onTrim = { vm.openTrimPanel() },
+        onTrim = {
+            if (state.selectedClipId == null && selectedAudioTrack == null) ensureMainVideoSelected()
+            vm.openTrimPanel()
+        },
         onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
         onToggleKeyframe = onToggleKeyframe,

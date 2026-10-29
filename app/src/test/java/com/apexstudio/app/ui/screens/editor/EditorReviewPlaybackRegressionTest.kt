@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import com.apexstudio.app.data.media.TimelineThumbnailCacheKey
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
@@ -111,6 +112,24 @@ class EditorReviewPlaybackRegressionTest {
         vm._playerPosition.value = 5_050L
         vm.setPlaying(true)
         assertEquals(5_050L, vm.playerPositionFlow.value)
+    }
+
+    @Test fun previewSelectionAndFilmstripResolveTheSameClipAndSourceFrameAtThePlayhead() {
+        val positionMs = 5_500L
+        val preview = requireNotNull(timelinePreviewClip(clips, positionMs))
+        val selectedState = EditorState(
+            project = Project("p", "Project", 9_000L, clips = clips),
+            selectedClipId = preview.id,
+            durationMs = 9_000L,
+            playerPositionMs = positionMs,
+        )
+        val clipRelativeOutputMs = ClipTimeMapping.outputAtProjectTime(clips, preview, positionMs)
+        val thumbnail = TimelineThumbnailCacheKey.from(preview, clipRelativeOutputMs, 160, 90)
+
+        assertEquals("second", preview.id)
+        assertEquals(preview.id, selectedState.selectedClipId)
+        assertEquals(preview.uri, thumbnail.uri)
+        assertEquals(2_000L, thumbnail.sourceTimeMs)
     }
 
     @Test fun keyframeControlsRequireActiveSelectedVideoAndRespectBoundariesAndHiddenTracks() {

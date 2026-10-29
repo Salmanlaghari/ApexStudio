@@ -20,18 +20,20 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class AiToolsPanelTest {
     @get:Rule val compose = createComposeRule()
-    private val tool = AiToolCard("SMART_TRIM", "Smart trim suggestions", "Local backend detected: Signal analysis",
+    private val tool = AiToolCard("SMART_TRIM", "Smart trim suggestions", "Not available yet",
         "Smart editing", AI_PROTECTED_STATUS_LABEL, AI_PROTECTED_BLOCKER)
 
     @Test fun nonAiVideoToolsHaveSeparateEntryWithoutUnlockingProtectedAIOrCamera() {
         var opens = 0
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {},
-            onOpenVideoPresets = { opens++ }, reportTarget = null, reportState = AiContentReportUiState(),
+            onOpenVideoPresets = { opens++ }, onOpenVideoUpscale = {},
+            reportTarget = null, reportState = AiContentReportUiState(),
             onSubmitReport = {}, onClearReportFeedback = {}) } }
         compose.onNodeWithTag("open_project_video_presets").activateVisibleControl()
         compose.runOnIdle { assertEquals(1, opens) }
-        compose.onNodeWithText("Local editing tools").assertExists()
-        compose.onNodeWithText("Enhance, filters, templates + animated titles · not ML AI").assertExists()
+        compose.onNodeWithText("Editor tools").assertExists()
+        compose.onNodeWithText("Video effects & titles").assertExists()
+        compose.onNodeWithText("Enhance video").assertExists()
         compose.onNodeWithContentDescription("Camera gesture controls").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -40,7 +42,7 @@ class AiToolsPanelTest {
     @Test fun compactIconsHideFullDetailsUntilTappedAndNeverExposeProtectedSwitch() {
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "Inventory status", onClose = {}, reportTarget = null,
             reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
-        compose.onNodeWithText("Local editing tools").assertExists()
+        compose.onNodeWithText("Editor tools").assertExists()
         compose.onNodeWithText(tool.detail).assertDoesNotExist()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertDoesNotExist()
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
@@ -66,18 +68,15 @@ class AiToolsPanelTest {
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
         compose.onNodeWithText("AI processing availability").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
-        compose.onNodeWithText("not a blanket video exemption", substring = true).assertExists()
-        compose.onNodeWithText("No prompts or new media are generated", substring = true).assertExists()
-        compose.onNodeWithText("does not waive privacy or restricted-content policies", substring = true).assertExists()
-        compose.onNodeWithText("automatic video-track application remains review-restricted", substring = true).assertExists()
-        compose.onNodeWithText("Depth-based 2D-to-3D video conversion is not supported", substring = true).assertExists()
+        compose.onNodeWithText("Face-framing suggestions come from sample frames", substring = true).assertExists()
+        compose.onNodeWithText("Artistic style filters and 2D-to-3D video conversion are unavailable", substring = true).assertExists()
     }
 
     @Test fun downloadIconOpensExplicitModelChooserWithoutEnablingAI() {
         var requests = 0
         compose.setContent { MaterialTheme { AiToolsPanel(listOf(tool), "", onClose = {}, onOpenDownloads = { requests++ },
             reportTarget = null, reportState = AiContentReportUiState(), onSubmitReport = {}, onClearReportFeedback = {}) } }
-        compose.onNodeWithContentDescription("Download optional AI models").activateVisibleControl()
+        compose.onNodeWithContentDescription("Optional AI features").activateVisibleControl()
         compose.runOnIdle { assertEquals(1, requests) }
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).assertCountEquals(0)
     }

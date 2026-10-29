@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.util.Log
@@ -12,14 +13,23 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.ProjectAspectRatio
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -31,8 +41,50 @@ data class MediaMetadata(
     val width: Int,
     val height: Int,
     val fps: Int,
-    val type: ClipType
-)
+    val type: ClipType,
+    val rotationDegrees: Int = 0
+) {
+    /** Early main-video geometry; the player probe can still correct legacy or rotated files. */
+    val sourceVideoAspectRatio: Float?
+        get() = if (type == ClipType.VIDEO) {
+            ProjectAspectRatio.fromDimensions(width, height, rotationDegrees)
+        } else null
+}
+
+data class MediaImportProgress(
+    val running: Boolean = false,
+    val completed: Int = 0,
+    val total: Int = 0,
+    val elapsedMs: Long = 0L
+) {
+    val text: String
+        get() = if (running) "Importing media ($completed of $total)…" else ""
+
+    companion object {
+        val IDLE = MediaImportProgress()
+    }
+}
+
+/** Runs metadata extraction in input order while allowing at most two jobs at once. */
+internal suspend fun <T> extractMetadataBatch(
+    uris: List<Uri>,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    nowMs: () -> Long = { SystemClock.elapsedRealtime() },
+    onCompleted: (completed: Int, elapsedMs: Long) -> Unit = { _, _ -> },
+    extractor: suspend (Uri) -> T?
+): List<T> = coroutineScope {
+    if (uris.isEmpty()) return@coroutineScope emptyList()
+    val startedAt = nowMs()
+    val permits = Semaphore(2)
+    val completed = java.util.concurrent.atomic.AtomicInteger(0)
+    uris.map { uri ->
+        async(dispatcher) {
+            permits.withPermit { extractor(uri) }.also {
+                onCompleted(completed.incrementAndGet(), nowMs() - startedAt)
+            }
+        }
+    }.awaitAll().mapNotNull { it }
+}
 
 class MediaPickerHelper(private val context: Context) {
 
@@ -66,6 +118,10 @@ class MediaPickerHelper(private val context: Context) {
     private val _pickGeneration = MutableStateFlow(0L)
     val pickGeneration: StateFlow<Long> = _pickGeneration
 
+    private val _importProgress = MutableStateFlow(MediaImportProgress.IDLE)
+    val importProgress: StateFlow<MediaImportProgress> = _importProgress
+    private var importJob: Job? = null
+
     lateinit var pickMultipleMedia: ActivityResultLauncher<PickVisualMediaRequest>
     lateinit var pickSingleMedia: ActivityResultLauncher<String>
     // Phase E: dedicated audio launcher. Used when the user taps
@@ -78,20 +134,15 @@ class MediaPickerHelper(private val context: Context) {
 
     @Composable
     fun registerLaunchers(onCancelled: () -> Unit = {}) {
+        val ownerScope = rememberCoroutineScope()
         pickMultipleMedia = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia()
         ) { uris ->
             if (uris.isNullOrEmpty()) {
                 onCancelled()
             } else {
-                CoroutineScope(Dispatchers.IO).launch {
-                    val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
-                        .filter {
-                            it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
-                                    it.type == com.apexstudio.app.domain.model.ClipType.IMAGE
-                        }
-                    _pickedMedia.emit(metadataList)
-                    _pickGeneration.emit(_pickGeneration.value + 1)
+                launchImport(ownerScope, uris) {
+                    it.type == ClipType.VIDEO || it.type == ClipType.IMAGE
                 }
             }
         }
@@ -101,13 +152,7 @@ class MediaPickerHelper(private val context: Context) {
             if (uri == null) {
                 onCancelled()
             } else {
-                CoroutineScope(Dispatchers.IO).launch {
-                    val meta = extractMetadata(uri)
-                    if (meta != null) {
-                        _pickedMedia.emit(listOf(meta))
-                        _pickGeneration.emit(_pickGeneration.value + 1)
-                    }
-                }
+                launchImport(ownerScope, listOf(uri)) { true }
             }
         }
         // Phase E: audio-only picker. Reuses the same _pickedMedia flow
@@ -119,15 +164,45 @@ class MediaPickerHelper(private val context: Context) {
             if (uris.isNullOrEmpty()) {
                 onCancelled()
             } else {
-                CoroutineScope(Dispatchers.IO).launch {
-                    val metadataList = uris.mapNotNull { uri -> extractMetadata(uri) }
-                        .filter { it.type == com.apexstudio.app.domain.model.ClipType.AUDIO }
-                    _pickedMedia.emit(metadataList)
-                    _pickGeneration.emit(_pickGeneration.value + 1)
-                }
+                launchImport(ownerScope, uris) { it.type == ClipType.AUDIO }
             }
         }
     }
+
+    /** Cancels the active import; no partially extracted batch is emitted. */
+    fun cancelImport() {
+        importJob?.cancel()
+        importJob = null
+        _importProgress.value = MediaImportProgress.IDLE
+    }
+
+    private fun launchImport(
+        ownerScope: CoroutineScope,
+        uris: List<Uri>,
+        include: (MediaMetadata) -> Boolean
+    ) {
+        importJob?.cancel()
+        importJob = ownerScope.launch(Dispatchers.IO) {
+            val startedAt = SystemClock.elapsedRealtime()
+            _importProgress.value = MediaImportProgress(running = true, total = uris.size)
+            try {
+                val extracted = extractMetadataBatch(
+                    uris = uris,
+                    onCompleted = { completed, elapsed ->
+                        _importProgress.value = MediaImportProgress(true, completed, uris.size, elapsed)
+                    },
+                    extractor = { uri -> extractMetadata(uri) }
+                )
+                _pickedMedia.emit(extracted.filter(include))
+                _pickGeneration.emit(_pickGeneration.value + 1)
+            } finally {
+                _importProgress.value = MediaImportProgress(
+                    elapsedMs = SystemClock.elapsedRealtime() - startedAt
+                )
+            }
+        }
+    }
+
     private fun extractMetadata(uri: Uri): MediaMetadata? {
         return try {
             CrashMarker.mark(context, "MediaPickerHelper.extractMetadata: $uri")
@@ -167,6 +242,7 @@ class MediaPickerHelper(private val context: Context) {
             val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
             val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()?.toInt() ?: 30
             val name = getFileName(uri)
             retriever.release()
@@ -175,7 +251,7 @@ class MediaPickerHelper(private val context: Context) {
             // Still images carry no duration — give photo clips a
             // CapCut-style default still length so they occupy timeline.
             val safeDuration = if (type == ClipType.IMAGE && durationMs <= 0L) DEFAULT_IMAGE_DURATION_MS else durationMs
-            MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDuration, width = width, height = height, fps = fps, type = type)
+            MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDuration, width = width, height = height, fps = fps, type = type, rotationDegrees = rotation)
         } catch (e: Exception) {
             CrashMarker.clear(context)
             null
@@ -184,13 +260,15 @@ class MediaPickerHelper(private val context: Context) {
 
     private fun queryMediaStore(uri: Uri): MediaMetadata? {
         return try {
-            val proj = arrayOf(
+            val baseProjection = arrayOf(
                 MediaStore.MediaColumns.DISPLAY_NAME,
                 MediaStore.MediaColumns.MIME_TYPE,
                 MediaStore.MediaColumns.DURATION,
                 MediaStore.MediaColumns.WIDTH,
                 MediaStore.MediaColumns.HEIGHT
             )
+            val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
+            val proj = if (isVideo) baseProjection + MediaStore.Video.VideoColumns.ORIENTATION else baseProjection
             context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
                 if (c.moveToFirst()) {
                     val name = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: "media"
@@ -198,9 +276,11 @@ class MediaPickerHelper(private val context: Context) {
                     val dur = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION))
                     val w = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH))
                     val h = c.getInt(c.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT))
+                    val orientationColumn = c.getColumnIndex(MediaStore.Video.VideoColumns.ORIENTATION)
+                    val rotation = if (orientationColumn >= 0) c.getInt(orientationColumn) else 0
                     val type = classifyClipType(mime)
                     val safeDur = if (type == ClipType.IMAGE && dur <= 0L) DEFAULT_IMAGE_DURATION_MS else dur
-                    MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDur, width = w, height = h, fps = 30, type = type)
+                    MediaMetadata(uri = uri.toString(), name = name, durationMs = safeDur, width = w, height = h, fps = 30, type = type, rotationDegrees = rotation)
                 } else {
                     null
                 }

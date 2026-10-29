@@ -27,17 +27,19 @@ import com.apexstudio.app.domain.model.isActiveAtSourceTime
 class WorkspaceEffectGlEffect(
     private val effect: WorkspaceEffect,
     private val sourceTimeOffsetMs: Long = 0L,
-    private val frameIntensityProvider: ((Long) -> Float)? = null
+    private val frameIntensityProvider: ((Long) -> Float)? = null,
+    private val frameEffectProvider: ((Long) -> WorkspaceEffect?)? = null
 ) : GlEffect {
     init { require(sourceTimeOffsetMs >= 0L) }
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        WorkspaceShaderProgram(effect, sourceTimeOffsetMs, frameIntensityProvider, useHdr)
+        WorkspaceShaderProgram(effect, sourceTimeOffsetMs, frameIntensityProvider, frameEffectProvider, useHdr)
 
     @UnstableApi
     private class WorkspaceShaderProgram(
         private val effect: WorkspaceEffect,
         private val sourceTimeOffsetMs: Long,
         private val frameIntensityProvider: ((Long) -> Float)?,
+        private val frameEffectProvider: ((Long) -> WorkspaceEffect?)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
         private val program = try {
@@ -75,21 +77,23 @@ class WorkspaceEffectGlEffect(
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
                 val sourceTimeMs = sourceTimeMs(presentationTimeUs, sourceTimeOffsetMs)
-                val enabled = effect.isActiveAtSourceTime(sourceTimeMs)
+                val liveEffect = frameEffectProvider?.invoke(presentationTimeUs)
+                    ?.takeIf { it.id == effect.id } ?: effect
+                val enabled = liveEffect.isActiveAtSourceTime(sourceTimeMs)
                 program.use()
                 program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 program.setFloatUniform("uEnabled", if (enabled) 1f else 0f)
                 val animatedIntensity = frameIntensityProvider?.invoke(presentationTimeUs)
-                program.setFloatUniform("uIntensity", intensityForFrame(effect.intensity, animatedIntensity))
-                program.setFloatUniform("uExposure", effect.exposure.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f)
-                program.setFloatUniform("uContrast", effect.contrast.takeIf { it.isFinite() }?.coerceIn(0.5f, 1.5f) ?: 1f)
-                program.setFloatUniform("uSaturation", effect.saturation.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f)
-                program.setFloatUniform("uKind", kindFor(effect.id).toFloat())
-                val presetParameters = WorkspaceFilterPresetAdditions.find(effect.id)?.parameters
+                program.setFloatUniform("uIntensity", intensityForFrame(liveEffect.intensity, animatedIntensity))
+                program.setFloatUniform("uExposure", liveEffect.exposure.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f)
+                program.setFloatUniform("uContrast", liveEffect.contrast.takeIf { it.isFinite() }?.coerceIn(0.5f, 1.5f) ?: 1f)
+                program.setFloatUniform("uSaturation", liveEffect.saturation.takeIf { it.isFinite() }?.coerceIn(0f, 2f) ?: 1f)
+                program.setFloatUniform("uKind", kindFor(liveEffect.id).toFloat())
+                val presetParameters = WorkspaceFilterPresetAdditions.find(liveEffect.id)?.parameters
                 program.setFloatsUniform("uGain", presetParameters?.let { floatArrayOf(it.gainR, it.gainG, it.gainB) } ?: floatArrayOf(1f, 1f, 1f))
                 program.setFloatsUniform("uOffset", presetParameters?.let { floatArrayOf(it.offsetR, it.offsetG, it.offsetB) } ?: floatArrayOf(0f, 0f, 0f))
                 program.setFloatsUniform("uTone", presetParameters?.let { floatArrayOf(it.contrast, it.saturation, it.gamma) } ?: floatArrayOf(1f, 1f, 1f))
-                val elapsedMs = if (sourceTimeMs >= effect.startMs) sourceTimeMs - effect.startMs else 0L
+                val elapsedMs = if (sourceTimeMs >= liveEffect.startMs) sourceTimeMs - liveEffect.startMs else 0L
                 program.setFloatUniform("uElapsed", (elapsedMs.coerceAtMost(86_400_000L) / 1_000f))
                 program.setFloatsUniform("uTexel", floatArrayOf(1f / width, 1f / height))
                 program.setFloatUniform("uAspect", width.toFloat() / height.toFloat())
@@ -345,10 +349,19 @@ class WorkspaceEffectGlEffect(
         fun createEffects(
             effects: List<WorkspaceEffect>,
             sourceTimeOffsetMs: Long = 0L,
-            frameIntensityProvider: ((Long) -> Float)? = null
-        ): List<GlEffect> = effects
-            .filter { it.hasValidParameters() && it.intensity > 0f }
-            .map { WorkspaceEffectGlEffect(it, sourceTimeOffsetMs, frameIntensityProvider) }
+            frameIntensityProvider: ((Long) -> Float)? = null,
+            includeInactiveSlots: Boolean = false,
+            frameEffectProvider: ((Int, Long) -> WorkspaceEffect?)? = null
+        ): List<GlEffect> = effects.mapIndexedNotNull { index, effect ->
+            if (!effect.hasValidParameters() || (!includeInactiveSlots && effect.intensity <= 0f)) {
+                null
+            } else {
+                val provider: ((Long) -> WorkspaceEffect?)? = frameEffectProvider?.let { latest ->
+                    { timeUs: Long -> latest(index, timeUs) }
+                }
+                WorkspaceEffectGlEffect(effect, sourceTimeOffsetMs, frameIntensityProvider, provider)
+            }
+        }
 
         internal fun intensityForFrame(baseIntensity: Float, animatedIntensity: Float?): Float {
             val base = baseIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f

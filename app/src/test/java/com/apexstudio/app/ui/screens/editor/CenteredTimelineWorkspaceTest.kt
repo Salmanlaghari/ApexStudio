@@ -64,7 +64,7 @@ class CenteredTimelineWorkspaceTest {
         compose.setContent {
             val state by vm.state.collectAsState()
             Column(Modifier.requiredSize(375.dp, 750.dp).testTag("root")) {
-                Box(Modifier.fillMaxWidth().height(340.dp).testTag("preview"))
+                Box(Modifier.fillMaxWidth().weight(1f).testTag("preview"))
                 EditorTransportSection(state, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = {})
                 Box(Modifier.fillMaxWidth().height(64.dp).testTag("dock"))
             }
@@ -74,11 +74,13 @@ class CenteredTimelineWorkspaceTest {
         val focus = compose.onNodeWithContentDescription("Expand timeline to full height").fetchSemanticsNode().boundsInRoot
         val ruler = bounds("timeline-ruler")
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
-        assertEquals(340f, bounds("preview").height, 1f)
+        val preview = bounds("preview")
+        val timelineHost = bounds("centered-timeline-workspace")
+        assertTrue("Production preview uses remaining height above the bounded timeline", preview.height > 340f)
+        assertTrue("Normal timeline host stays close to populated track height", timelineHost.height in 100f..200f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
         assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertEquals("Only scrub line and compact header separate focus control from ruler",
-            focus.bottom + 2f + com.apexstudio.app.ui.components.TIMELINE_HEADER_HEIGHT_DP, ruler.top, 1f)
+        assertEquals("Only the slim transport-to-ruler spacer remains", focus.bottom + 2f, ruler.top, 1f)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

@@ -6,7 +6,7 @@ import com.apexstudio.app.domain.model.PhotoEditSettings
 import com.apexstudio.app.domain.model.SpeedPoint
 
 /** Only source-changing edits invalidate a filmstrip, not selection or PiP gestures. */
-internal data class TimelineThumbnailSourceKey(
+data class TimelineThumbnailSourceKey(
     val id: String,
     val uri: String,
     val type: ClipType,

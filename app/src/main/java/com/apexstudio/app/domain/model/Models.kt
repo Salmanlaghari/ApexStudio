@@ -1109,6 +1109,8 @@ data class AudioTrack(
      * decode unchanged. Voice recordings are stored as SFX.
      */
     val kind: Kind = Kind.MUSIC,
+    /** Main-track video clip whose embedded audio was detached into this track. */
+    val sourceVideoClipId: String? = null,
     /** Runtime-renderable recipe identity; null for imported and recorded audio. */
     val sfxEffectId: String? = null,
     /** Synthesis gain used to deterministically restore a cleared cached source. */
@@ -1542,6 +1544,31 @@ data class ExportSettings(
     val aspectRatio: String = "16:9", // "16:9" | "9:16" | "1:1"
     val bitrateMbps: Int = 0 // 0 = auto (resolution-based default)
 )
+
+/** Shared source-aspect validation for project creation, preview sizing and export defaults. */
+object ProjectAspectRatio {
+    fun fromDimensions(width: Int, height: Int, rotationDegrees: Int = 0): Float? {
+        if (width <= 0 || height <= 0) return null
+        val rotation = ((rotationDegrees % 360) + 360) % 360
+        val (displayWidth, displayHeight) = if (rotation == 90 || rotation == 270) {
+            height to width
+        } else {
+            width to height
+        }
+        val ratio = displayWidth.toFloat() / displayHeight.toFloat()
+        return ratio.takeIf { it.isFinite() && it in 0.1f..10f }
+    }
+
+    /** Map arbitrary source geometry to one of the editor's supported export presets. */
+    fun exportPreset(videoAspectRatio: Float?): String? {
+        val ratio = videoAspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f } ?: return null
+        return when {
+            ratio < 0.9f -> "9:16"
+            ratio > 1.1f -> "16:9"
+            else -> "1:1"
+        }
+    }
+}
 
 enum class ExportQuality(val label: String) {
     HIGH("High"), MEDIUM("Med"), LOW("Low")

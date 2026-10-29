@@ -4,7 +4,6 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -69,6 +68,9 @@ class TimelineWorkspaceLayoutTest {
         audioTracks: List<AudioTrack> = emptyList(),
         audioWaveform: FloatArray = FloatArray(0),
         selectedAudioTrackId: String? = null,
+        selectedClipId: String? = null,
+        startMultiSelectMode: Boolean = false,
+        startSelectedClipIds: Set<String> = emptySet(),
         playheadMs: Long = 0L,
         scrollState: ScrollState = androidx.compose.foundation.rememberScrollState(),
         textOverlays: List<TextOverlay> = emptyList(),
@@ -76,12 +78,13 @@ class TimelineWorkspaceLayoutTest {
         onDeleteClips: (Set<String>) -> Unit = {},
         onSelectAudioTrack: (String) -> Unit = {},
     ) {
-        val multiSelectMode = remember { mutableStateOf(false) }
-        val selectedClipIds = remember { mutableStateOf(emptySet<String>()) }
+        val multiSelectMode = remember { mutableStateOf(startMultiSelectMode) }
+        val selectedClipIds = remember { mutableStateOf(startSelectedClipIds) }
         Box(Modifier.requiredSize(widthDp.dp, heightDp.dp).testTag("timeline-test-root")) {
             VideoTimeline(
                 clips = clips,
                 audioTracks = audioTracks,
+                selectedClipId = selectedClipId,
                 selectedAudioTrackId = selectedAudioTrackId,
                 textOverlays = textOverlays,
                 audioWaveform = audioWaveform,
@@ -140,9 +143,9 @@ class TimelineWorkspaceLayoutTest {
             ),
         )
 
-        assertEquals(68.dp, compactTimelineHeight(empty)) // 40dp header + 28dp ruler
-        assertEquals(130.dp, compactTimelineHeight(singleMain))
-        assertEquals(210.dp, compactTimelineHeight(mainAndOverlay))
+        assertEquals(28.dp, compactTimelineHeight(empty)) // 28dp ruler; no duplicate title row
+        assertEquals(90.dp, compactTimelineHeight(singleMain))
+        assertEquals(170.dp, compactTimelineHeight(mainAndOverlay))
     }
 
     @Test
@@ -158,7 +161,7 @@ class TimelineWorkspaceLayoutTest {
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
         assertEquals("V1 remains the fixed-height 52dp filmstrip lane", 52f, main.height, 1f)
-        assertEquals("The waveform remains a compact 12dp strip", 12f, waveform.height, 1f)
+        assertEquals("The separate source-audio lane is a readable 36dp waveform", 36f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
     }
 
@@ -183,46 +186,38 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun headerAddActionRequestsVideoMedia() {
-        var requested: ClipType? = null
-        val scrubbed = mutableListOf<Long>()
-        var deselected = 0
-        val scrollState = ScrollState(0)
-        composeRule.setContent { workspace(onAddMedia = { requested = it }, onScrub = { scrubbed.add(it) }, onDeselect = { deselected++ }, scrollState = scrollState) }
+    fun cleanTimelineHasNoDuplicateHeaderOrInlineAddControl() {
+        composeRule.setContent { workspace() }
         composeRule.waitForIdle()
-        composeRule.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
 
-        composeRule.onNodeWithContentDescription("Add clip").performClick()
-
-        composeRule.runOnIdle {
-            assertEquals(ClipType.VIDEO, requested)
-            assertTrue("Add must not scrub the ruler underneath its touch target", scrubbed.isEmpty())
-            assertEquals("Add must not deselect the current layer", 0, deselected)
-        }
+        composeRule.onNodeWithText("Timeline").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-header").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-header-add-media").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Add media").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Add video media").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-add-media").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Add Clip").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("Main video track").assertExists()
     }
 
     @Test
-    fun restoredTimelineHeaderShowsActionsAndKeepsRowUtilitiesInOverflow() {
-        composeRule.setContent { workspace(widthDp = 320) }
+    fun selectedClipStillLeavesTimelineFreeOfPlusAndOverflowButtons() {
+        composeRule.setContent { workspace(widthDp = 320, selectedClipId = "main") }
+        composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Timeline").assertExists()
-        val header = composeRule.onNodeWithTag("timeline-header").fetchSemanticsNode().boundsInRoot
-        val title = composeRule.onNodeWithText("Timeline").fetchSemanticsNode().boundsInRoot
-        val duration = composeRule.onNodeWithTag("timeline-duration").fetchSemanticsNode().boundsInRoot
-        assertEquals("Timeline header uses the compact 40dp height", 40f, header.height, 1f)
-        assertTrue("Gradient title and duration share one header row", kotlin.math.abs(title.center.y - duration.center.y) < 1f)
-        composeRule.onNodeWithTag("timeline-duration").assertExists()
-        composeRule.onNodeWithTag("timeline-overflow").assertExists()
-        composeRule.onNodeWithTag("timeline-reveal-playhead").assertExists()
-        composeRule.onNodeWithTag("timeline-multiselect").assertExists()
-
-        composeRule.onNodeWithTag("timeline-overflow").performClick()
-        composeRule.onNodeWithText("Reveal playhead").assertExists()
-        composeRule.onNodeWithText("Select multiple clips").assertExists()
+        composeRule.onNodeWithTag("timeline-header").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-add-media").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Main video track").assertExists()
+        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertExists()
     }
 
     @Test
-    fun multiselectDescriptionTogglesAndBulkDeleteReceivesSelectedClipIds() {
+    fun bulkDeleteStillReceivesSelectedClipIdsInMultiSelectMode() {
         val deleted = mutableStateOf<Set<String>?>(null)
         composeRule.setContent {
             workspace(
@@ -230,12 +225,11 @@ class TimelineWorkspaceLayoutTest {
                     clip("main-a", durationMs = 2_000L),
                     clip("main-b", offsetMs = 2_000L, durationMs = 2_000L),
                 ),
+                startMultiSelectMode = true,
                 onDeleteClips = { deleted.value = it },
             )
         }
 
-        composeRule.onNodeWithTag("timeline-overflow").performClick()
-        composeRule.onNodeWithText("Select multiple clips").performClick()
         composeRule.onNodeWithText("0 selected").assertExists()
         composeRule.onNodeWithTag("timeline-clip-main-a", useUnmergedTree = true).performTouchInput { click() }
         composeRule.onNodeWithTag("timeline-clip-main-b", useUnmergedTree = true).performTouchInput { click() }
@@ -244,47 +238,20 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithText("Delete selected").performClick()
 
         composeRule.runOnIdle { assertEquals(setOf("main-a", "main-b"), deleted.value) }
-        composeRule.onNodeWithTag("timeline-overflow").performClick()
-        composeRule.onNodeWithText("Select multiple clips").assertExists()
     }
 
     @Test
-    fun revealPlayheadRecentersAVisiblePlayheadAfterManualHorizontalPan() {
-        val scrollState = ScrollState(0)
-        val playhead = mutableIntStateOf(0)
-        composeRule.setContent {
-            workspace(
-                playheadMs = playhead.intValue.toLong(),
-                scrollState = scrollState,
-            )
-        }
+    fun timelineNoLongerExposesOrphanedOverflowMenuActions() {
+        composeRule.setContent { workspace() }
         composeRule.waitForIdle()
 
-        // Put the playhead in the left portion of a scrolled viewport. It is
-        // still visible, so ordinary paused-playhead handling should not pan;
-        // the explicit reveal action should move it back to the viewport center.
-        composeRule.runOnIdle {
-            val density = composeRule.density.density
-            scrollState.dispatchRawDelta(1_000f)
-            val visiblePlayheadPx = scrollState.value + scrollState.viewportSize / 4
-            playhead.intValue = (visiblePlayheadPx / (54f * density) * 1_000f).toInt()
-        }
-        composeRule.waitForIdle()
-        val before = scrollState.value
-
-        composeRule.onNodeWithTag("timeline-overflow").performClick()
-        composeRule.onNodeWithContentDescription("Reveal playhead").performClick()
-        composeRule.waitForIdle()
-
-        composeRule.runOnIdle {
-            assertTrue("Reveal should adjust the manually panned timeline", scrollState.value < before)
-            val playheadPx = playhead.intValue * 0.054f * composeRule.density.density
-            val playheadInViewport = playheadPx - scrollState.value
-            assertTrue(
-                "Playhead should be recentered: viewport=${scrollState.viewportSize}, x=$playheadInViewport",
-                kotlin.math.abs(playheadInViewport - scrollState.viewportSize / 2f) < 3f,
-            )
-        }
+        composeRule.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline-reveal-playhead").assertDoesNotExist()
+        composeRule.onNodeWithText("Reveal playhead").assertDoesNotExist()
+        composeRule.onNodeWithText("Select multiple clips").assertDoesNotExist()
+        composeRule.onNodeWithText("Magnetic snapping").assertDoesNotExist()
+        composeRule.onNodeWithText("Snap to beat").assertDoesNotExist()
+        composeRule.onNodeWithText("Ripple edit").assertDoesNotExist()
     }
 
     @Test

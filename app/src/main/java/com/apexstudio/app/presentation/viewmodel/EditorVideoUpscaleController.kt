@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
-/** Progress for the existing-project-video-only ESPCN action. */
+/** Progress for the existing-project-video enhancement action. */
 data class VideoUpscaleUiState(
     val processing: Boolean = false,
     val progress01: Float = 0f,
@@ -44,19 +44,19 @@ fun EditorViewModel.applyExistingVideoUpscale(
     expectedClip: MediaClip
 ) {
     val context = context?.applicationContext ?: run {
-        _videoUpscaleUi.value = VideoUpscaleUiState(message = "Editor context is unavailable.")
+            _videoUpscaleUi.value = VideoUpscaleUiState(message = "The editor is not ready. Try again.")
         return
     }
     synchronized(this) {
         val project = _state.value.project
         val current = project?.clips?.firstOrNull { it.id == expectedClip.id }
         if (!videoUpscaleCanCommit(projectId, expectedClip, project?.id, _state.value.selectedClipId, current)) {
-            _videoUpscaleUi.value = VideoUpscaleUiState(message = "Select an unchanged main-track video before processing.")
+            _videoUpscaleUi.value = VideoUpscaleUiState(message = "Choose a video on the main track first.")
             return
         }
         if (expectedClip.uri.isBlank() || expectedClip.durationMs <= 0L || expectedClip.trimStartMs < 0L ||
             expectedClip.trimEndMs <= expectedClip.trimStartMs || expectedClip.trimEndMs > expectedClip.durationMs) {
-            _videoUpscaleUi.value = VideoUpscaleUiState(message = "The selected video has invalid source or trim metadata.")
+            _videoUpscaleUi.value = VideoUpscaleUiState(message = "This video cannot be opened. Choose another video.")
             return
         }
         VideoUpscaleEngine.sourceDurationBlockReason(expectedClip.durationMs)?.let { reason ->
@@ -70,7 +70,7 @@ fun EditorViewModel.applyExistingVideoUpscale(
         request = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             var rendered: File? = null
             var committed = false
-            publishVideoUpscale(request) { VideoUpscaleUiState(processing = true, message = "Preparing bounded offline ESPCN video processing…") }
+            publishVideoUpscale(request) { VideoUpscaleUiState(processing = true, message = "Preparing your video…") }
             try {
                 rendered = VideoUpscaleEngine.process(
                     context = context,
@@ -78,7 +78,7 @@ fun EditorViewModel.applyExistingVideoUpscale(
                     outputFile = output,
                     onProgress = { progress ->
                         publishVideoUpscale(request) {
-                            it.copy(progress01 = progress.coerceIn(0f, 1f), message = "Upscaling video frames…")
+                            it.copy(progress01 = progress.coerceIn(0f, 1f), message = "Enhancing video…")
                         }
                     },
                     allowPublish = {
@@ -98,7 +98,7 @@ fun EditorViewModel.applyExistingVideoUpscale(
                         val currentClip = currentProject?.clips?.firstOrNull { it.id == expectedClip.id }
                         if (videoUpscaleJob !== request || !request.isActive) return@synchronized
                         if (!videoUpscaleCanCommit(projectId, expectedClip, currentProject?.id, latest.selectedClipId, currentClip)) {
-                            _videoUpscaleUi.value = VideoUpscaleUiState(message = "Result discarded because the selected project video changed.")
+                            _videoUpscaleUi.value = VideoUpscaleUiState(message = "The selected video changed. Nothing was changed.")
                             return@synchronized
                         }
                         pushUndo()
@@ -106,7 +106,7 @@ fun EditorViewModel.applyExistingVideoUpscale(
                         committed = true
                         _videoUpscaleUi.value = VideoUpscaleUiState(
                             progress01 = 1f,
-                            message = "Video upscaled 3× with ESPCN (maximum output 1920×1080).",
+                            message = "Enhanced video ready.",
                             outputUri = rendered!!.toURI().toString()
                         )
                     }
@@ -115,7 +115,7 @@ fun EditorViewModel.applyExistingVideoUpscale(
                 throw cancelled
             } catch (failure: Exception) {
                 publishVideoUpscale(request) {
-                    VideoUpscaleUiState(message = "Video upscale failed: ${failure.message?.take(160) ?: failure.javaClass.simpleName}")
+                    VideoUpscaleUiState(message = videoUpscaleFailureMessage(failure))
                 }
             } finally {
                 if (!committed) {
@@ -125,13 +125,13 @@ fun EditorViewModel.applyExistingVideoUpscale(
                 if (videoUpscaleJob === request) {
                     videoUpscaleJob = null
                     if (!committed && request.isCancelled) {
-                        _videoUpscaleUi.value = VideoUpscaleUiState(message = "Video upscale cancelled.")
+                        _videoUpscaleUi.value = VideoUpscaleUiState(message = "Enhancement cancelled.")
                     }
                 }
             }
         }
         videoUpscaleJob = request
-        _videoUpscaleUi.value = VideoUpscaleUiState(processing = true, message = "Queued offline video upscale…")
+        _videoUpscaleUi.value = VideoUpscaleUiState(processing = true, message = "Starting enhancement…")
         request.start()
     }
 }
@@ -141,7 +141,21 @@ fun EditorViewModel.cancelExistingVideoUpscale() {
     val active = videoUpscaleJob
     videoUpscaleJob = null
     active?.cancel()
-    _videoUpscaleUi.value = VideoUpscaleUiState(message = "Video upscale cancelled.")
+    _videoUpscaleUi.value = VideoUpscaleUiState(message = "Enhancement cancelled.")
+}
+
+internal fun videoUpscaleFailureMessage(failure: Throwable): String {
+    val reason = failure.message.orEmpty().lowercase()
+    return when {
+        "audio" in reason || "aac" in reason -> "Choose a silent video or one with AAC audio."
+        "duration" in reason || "30 seconds" in reason -> "Choose a video that is 30 seconds or shorter."
+        "frame rate" in reason || "frames per second" in reason || "fps" in reason ->
+            "This video is too fast. Choose a video at 30 fps or less."
+        "640" in reason || "dimension" in reason || "resolution" in reason ->
+            "This video's size isn't supported. Choose up to 640×360 (portrait 360×640)."
+        "space" in reason || "storage" in reason -> "Free up storage space, then try again."
+        else -> "Couldn't enhance this video. Try another video."
+    }
 }
 
 private fun EditorViewModel.publishVideoUpscale(

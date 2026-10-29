@@ -63,24 +63,39 @@ internal fun VideoUpscalePanel(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = ApexPalette.BgSurface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("AI Video Upscale · ESPCN x3", style = MaterialTheme.typography.titleLarge)
-            if (!eligible && !progress.processing) Text("Choose an unchanged main-track video to process. Selecting it does not start processing.")
+            Text("Video enhancement", style = MaterialTheme.typography.titleLarge)
+            if (!eligible && !progress.processing) Text("Choose a video on the main track. Processing starts only when you tap Enhance.")
             if (!eligible && !progress.processing && onChooseMainVideo != null) {
                 TextButton(onClick = onChooseMainVideo, modifier = Modifier.testTag("choose_main_video_upscale")) {
-                    Text("Use main preview video: ${mainVideoName.orEmpty()}")
+                    Text("Use preview video: ${mainVideoName.orEmpty()}")
                 }
             }
             durationBlockReason?.let { Text(it, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag("video_upscale_duration_blocker")) }
-            Text("Learned, on-device luma upscaling of an existing project video. Not generative AI, not 4K restoration. No prompt or image input.")
-            Text("Source: up to 640×360 (or 360×640), even dimensions, at most 30 seconds and 30 fps. Output: 3× each edge, up to 1920×1080 (or portrait equivalent). SDR video, silent or one AAC audio track only. Audio past the processed video end is trimmed; because AAC packets are indivisible, the final audio may stop up to one packet early. Codec, storage and model integrity are checked before processing.",
+            if (progress.outputUri != null) {
+                Card(modifier = Modifier.fillMaxWidth().testTag("video_upscale_result")) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Enhanced video ready", style = MaterialTheme.typography.titleMedium)
+                        Text("Preview the new version. Undo can restore the original.",
+                            style = MaterialTheme.typography.bodyMedium)
+                        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().testTag("review_project_video_upscale")) {
+                            Text("Review video")
+                        }
+                    }
+                }
+            }
+            Text("Create a sharper 3× version of this video. Preview and export will use it after processing; the original stays available with Undo.")
+            Text("Works with videos up to 640×360 (portrait up to 360×640), 30 seconds and 30 fps. Output is up to 1080p (portrait equivalent). Audio must be silent or AAC.",
                 style = MaterialTheme.typography.bodySmall)
-            Text("Processing the whole source may be slow. Source audio stays synchronized and the selected project trim is preserved. After success preview and export read the same processed video. Undo restores the original clip.",
+            Text("The whole source is enhanced, so shortening its timeline trim does not bypass the 30-second limit. Processing can take a little while.",
                 style = MaterialTheme.typography.bodySmall)
-            if (progress.processing) LinearProgressIndicator(progress = { progress.progress01 }, modifier = Modifier.fillMaxWidth())
-            if (progress.message.isNotBlank()) Text(progress.message, modifier = Modifier.testTag("video_upscale_status"))
-            Button(onClick = onApply, enabled = eligible && durationBlockReason == null && !progress.processing,
-                modifier = Modifier.fillMaxWidth().testTag("apply_project_video_upscale")) { Text("Upscale selected video 3×") }
+            if (progress.processing) {
+                Text(progress.message.ifBlank { "Enhancing video…" }, modifier = Modifier.testTag("video_upscale_status"))
+            } else if (progress.outputUri == null && progress.message.isNotBlank()) {
+                Text(progress.message, modifier = Modifier.testTag("video_upscale_status"))
+            }
+            Button(onClick = onApply, enabled = eligible && durationBlockReason == null && !progress.processing && progress.outputUri == null,
+                modifier = Modifier.fillMaxWidth().testTag("apply_project_video_upscale")) { Text("Enhance video") }
             if (progress.processing) OutlinedButton(onClick = onCancel,
                 modifier = Modifier.fillMaxWidth().testTag("cancel_project_video_upscale")) { Text("Cancel processing") }
             TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Close") }

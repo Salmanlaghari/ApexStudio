@@ -76,6 +76,76 @@ class PipOverlayCanvasTest {
     }
 
     @Test
+    fun laterOverlayUsesProjectPlayheadTimeInsteadOfMainClipLocalZero() {
+        val later = overlay().copy(
+            timelineOffsetMs = 2_000L,
+            trimStartMs = 0L,
+            trimEndMs = 2_000L,
+        )
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(later),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 2_500L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(later.id to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-image-${later.id}", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun imageOverlayIsVisibleOnlyInsideItsHalfOpenProjectTimeInterval() {
+        val later = overlay().copy(
+            timelineOffsetMs = 2_000L,
+            trimStartMs = 1_000L,
+            trimEndMs = 3_500L,
+        )
+        val playhead = mutableStateOf(1_999L)
+        val imageTag = "pip-overlay-image-${later.id}"
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(later),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = playhead.value,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(later.id to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(imageTag, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { playhead.value = 2_000L }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(imageTag, useUnmergedTree = true).assertIsDisplayed()
+        composeRule.runOnIdle { playhead.value = 4_499L }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(imageTag, useUnmergedTree = true).assertIsDisplayed()
+        composeRule.runOnIdle { playhead.value = 4_500L }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(imageTag, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
     fun videoOverlayMountsTheDedicatedPlayerViewInThePipCanvas() {
         composeRule.setContent {
             val context = LocalContext.current

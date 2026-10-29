@@ -28,6 +28,7 @@ import com.apexstudio.app.ui.theme.EditorPalette
 @Composable
 internal fun ColumnScope.AdaptiveEditorWorkspace(
     landscape: Boolean,
+    horizontalProjectMode: Boolean = false,
     focused: Boolean,
     fullscreen: Boolean,
     preview: @Composable ColumnScope.() -> Unit,
@@ -37,8 +38,39 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
     var inspectorOpen by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth().weight(1f).testTag("adaptive-editor-workspace")) {
         if (!landscape || fullscreen) {
-            preview()
-            timeline()
+            if (fullscreen) {
+                preview()
+                timeline()
+            } else if (horizontalProjectMode && !focused) {
+                Column(Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-workspace")) {
+                    Column(
+                        Modifier.fillMaxWidth().wrapContentHeight().testTag("horizontal-project-preview-pane"),
+                        content = preview
+                    )
+                    Column(
+                        Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-timeline-pane"),
+                        content = timeline
+                    )
+                }
+            } else if (focused) {
+                Column(
+                    Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-preview-pane"),
+                    content = preview
+                )
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).testTag("portrait-timeline-pane"),
+                    content = timeline
+                )
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane"),
+                    content = preview
+                )
+                Column(
+                    Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-timeline-pane"),
+                    content = timeline
+                )
+            }
         } else {
             Row(Modifier.fillMaxWidth().weight(if (focused) .001f else .48f).testTag("landscape-preview-row")) {
                 Column(Modifier.weight(1f).fillMaxHeight().testTag("landscape-preview"), content = preview)

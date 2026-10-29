@@ -19,12 +19,15 @@ import org.robolectric.annotation.Config
 class AdaptiveEditorWorkspaceTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun render(landscape: Boolean, fullscreen: Boolean = false) {
+    private fun render(landscape: Boolean, fullscreen: Boolean = false, focused: Boolean = false) {
         compose.setContent {
             Column(Modifier.requiredSize(if (landscape) 840.dp else 375.dp, 400.dp)) {
-                AdaptiveEditorWorkspace(landscape, focused = false, fullscreen = fullscreen,
-                    preview = { Box(Modifier.fillMaxWidth().weight(1f).testTag("preview-content")) },
-                    timeline = { Box(Modifier.fillMaxWidth().weight(1f).testTag("timeline-content")) },
+                AdaptiveEditorWorkspace(landscape, focused = focused, fullscreen = fullscreen,
+                    preview = { Box(Modifier.fillMaxWidth().height(180.dp).testTag("preview-content")) },
+                    timeline = {
+                        if (focused) Box(Modifier.fillMaxSize().testTag("timeline-content"))
+                        else Box(Modifier.fillMaxWidth().height(160.dp).testTag("timeline-content"))
+                    },
                     inspector = { Text("Real properties") })
             }
         }
@@ -51,6 +54,26 @@ class AdaptiveEditorWorkspaceTest {
         compose.onNodeWithTag("preview-content").assertIsDisplayed()
         compose.onNodeWithTag("timeline-content").assertIsDisplayed()
         compose.onNodeWithTag("landscape-inspector").assertDoesNotExist()
+    }
+
+    @Test fun portraitPreviewUsesRemainingHeightWithContentBoundedTimeline() {
+        render(false)
+        val workspace = compose.onNodeWithTag("adaptive-editor-workspace").fetchSemanticsNode().boundsInRoot.height
+        val preview = compose.onNodeWithTag("portrait-preview-pane").fetchSemanticsNode().boundsInRoot.height
+        val timeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot.height
+        assertTrue(preview > 0f)
+        assertEquals(160f, timeline, 1f)
+        assertTrue("Normal portrait preview should be larger than the row-bounded timeline", preview > timeline)
+        assertTrue("portrait panes should fill the available editor height", kotlin.math.abs(preview + timeline - workspace) < 2f)
+    }
+
+    @Test fun focusedPortraitExpandsTimelineWithoutCollapsingPreview() {
+        render(false, focused = true)
+        val preview = compose.onNodeWithTag("portrait-preview-pane").fetchSemanticsNode().boundsInRoot.height
+        val timeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot.height
+        assertTrue("Focus mode should prioritize the timeline", timeline > preview)
+        assertTrue("Focus mode must keep a useful preview visible", preview >= 180f)
+        assertTrue("The timeline expands into the remaining workspace", timeline > 200f && timeline < 390f)
     }
 
     @Test fun fullscreenDoesNotConsumeWidthForInspector() {

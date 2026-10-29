@@ -28,6 +28,7 @@ import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.components.VideoTimeline
 import com.apexstudio.app.ui.theme.EditorPalette
+import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
 import com.github.takahirom.roborazzi.RoborazziComposeOptions
 import com.github.takahirom.roborazzi.RoborazziComposeSizeOption
 import com.github.takahirom.roborazzi.RoborazziOptions
@@ -154,7 +155,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
         kind = AudioTrack.Kind.MUSIC
     )
     val filmstrip = (0L..8_000L step 1_000L).associate { timeMs ->
-        (clip.id to timeMs) to testFilmstripBitmap(timeMs)
+        (TimelineThumbnailSourceKey.from(clip) to timeMs) to testFilmstripBitmap(timeMs)
     }
 
     Column(

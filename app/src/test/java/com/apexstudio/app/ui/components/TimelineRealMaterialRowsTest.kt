@@ -36,7 +36,7 @@ class TimelineRealMaterialRowsTest {
         )
 
         assertEquals(emptyMap<Int, List<MediaClip>>(), TimelineLayerContentIndex.from(state.project!!.clips).videoByLayer)
-        assertEquals(68.dp, compactTimelineHeight(state))
+        assertEquals(28.dp, compactTimelineHeight(state))
     }
 
     @Test
@@ -51,7 +51,7 @@ class TimelineRealMaterialRowsTest {
 
         assertEquals(listOf(0, 3, 9), index.videoByLayer.keys.toList())
         // V1 image + two distinct populated supporting layers (V4 and clamped V10).
-        assertEquals(280.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
+        assertEquals(240.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
     }
 
     @Test
@@ -64,7 +64,7 @@ class TimelineRealMaterialRowsTest {
         val index = TimelineLayerContentIndex.from(clips)
 
         assertEquals(listOf(3, 9), index.videoByLayer.keys.toList())
-        assertEquals(218.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
+        assertEquals(178.dp, compactTimelineHeight(stateWithClips(*clips.toTypedArray())))
     }
 
     @Test
@@ -91,7 +91,7 @@ class TimelineRealMaterialRowsTest {
         composeRule.setContent { timeline(audioTracks = listOf(sfx)) }
 
         composeRule.onNodeWithContentDescription("Main video track").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Voice and sound effects").assertExists()
+        composeRule.onNodeWithContentDescription("Voice and sound effects (A2)").assertExists()
         composeRule.onNodeWithTag("timeline-audio-track-sfx-track", useUnmergedTree = true).assertExists()
     }
 

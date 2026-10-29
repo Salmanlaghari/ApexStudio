@@ -55,7 +55,7 @@ class ScreenshotEditorCompositionTest {
         }
     }
 
-    @Test fun selectedVideoHasOnlyCompactHeaderKeyframeAndNoPropertiesStrip() {
+    @Test fun selectedVideoKeepsCleanTimelineAndNoPropertiesStrip() {
         val vm = editor()
         compose.setContent {
             val state by vm.state.collectAsState()
@@ -65,39 +65,40 @@ class ScreenshotEditorCompositionTest {
         }
         compose.onNodeWithText("00:00 / 02:59").assertIsDisplayed()
         listOf("Animation", "Position", "Scale", "Rotation", "Opacity").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
-        compose.onNodeWithTag("timeline-header").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
-        val keyframe = compose.onNodeWithContentDescription("Add keyframe").fetchSemanticsNode().boundsInRoot
-        val header = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add media").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add video media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-media").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-overflow").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add Clip").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add keyframe").assertDoesNotExist()
+        val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
-        assertTrue("Compact keyframe belongs to the existing timeline header", keyframe.bottom <= header.top && header.top - keyframe.top <= 44f)
+        assertTrue("The ruler stays directly above the video track", ruler.bottom <= track.top && track.top - ruler.bottom < 12f)
         assertEquals("No identity/eye gutter at 00:00", 0f, track.left, 1f)
         assertEquals("V1 filmstrip uses the compact visual height", 52f, track.height, 1f)
-        compose.onNodeWithContentDescription("Add keyframe").performClick()
-        compose.runOnIdle {
-            assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size)
-            assertEquals(0L, vm.state.value.project!!.clips.single().keyframes.keyframes.single().timeMs)
-            assertEquals(clip.uri, vm.state.value.project!!.clips.single().uri)
-        }
     }
 
-    @Test fun timelineAddClipRequestsRealVideoImportAndDoesNotCreateFakeMedia() {
+    @Test fun mainToolbarMediaFlowRemainsAvailableAfterRemovingTimelineAddAction() {
         val vm = editor()
-        val shortClip = clip.copy(durationMs = 4_000L, trimEndMs = 4_000L)
-        vm._state.value = vm.state.value.copy(
-            project = vm.state.value.project!!.copy(clips = listOf(shortClip), durationMs = 4_000L),
-            durationMs = 4_000L
-        )
-        var requested: com.apexstudio.app.domain.model.ClipType? = null
+        var mediaRequested = 0
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         compose.setContent {
-            Column(Modifier.requiredSize(375.dp, 400.dp)) {
-                EditorTransportSection(vm.state.value, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = { requested = it })
-            }
+            EditorBottomToolbarSection(vm.state.value, vm, picker, onMedia = { mediaRequested++ })
         }
-        compose.onNodeWithContentDescription("Add video media").performClick()
-        compose.runOnIdle {
-            assertEquals(com.apexstudio.app.domain.model.ClipType.VIDEO, requested)
-            assertEquals(listOf(shortClip), vm.state.value.project!!.clips)
+        compose.onNodeWithText("Media").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, mediaRequested) }
+    }
+
+    @Test fun mainToolbarMoreFlowRemainsAvailableForAdditionalTools() {
+        val vm = editor()
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        compose.setContent {
+            EditorBottomToolbarSection(vm.state.value, vm, picker)
         }
+
+        compose.onNodeWithText("More").assertIsDisplayed().performClick()
+        compose.onNodeWithText("SFX").assertIsDisplayed()
     }
 }

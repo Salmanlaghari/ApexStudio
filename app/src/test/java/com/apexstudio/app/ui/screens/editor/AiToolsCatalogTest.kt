@@ -73,12 +73,12 @@ class AiToolsCatalogTest {
             .forEach { assertNull("$it must not be routed to a fake action", aiToolActionForId(it)) }
     }
 
-    @Test fun faceReframeExplainsScopedStillPhotoActionAndRestrictedVideoAction() {
+    @Test fun faceReframeExplainsItsReviewedSelectedVideoActionAndExportSupport() {
         val reframe = aiToolCards(listOf(AiFeatureAvailability(
             AiFeatureId.FACE_AWARE_REFRAME, AiAvailability.READY, "Face model present"
         ))).single()
-        assertTrue(reframe.unavailableReason.contains("Review face-framing suggestions"))
-        assertTrue(reframe.unavailableReason.contains("not available yet"))
+        assertTrue(reframe.unavailableReason.contains("Review every sampled frame"))
+        assertTrue(reframe.unavailableReason.contains("selected-clip and whole-project export"))
         assertTrue(AI_PROTECTED_BLOCKER.contains("some actions are still restricted"))
     }
 }

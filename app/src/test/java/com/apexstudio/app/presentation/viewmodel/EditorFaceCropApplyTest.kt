@@ -8,6 +8,8 @@ import com.apexstudio.app.ai.mediapipe.FaceDetection
 import com.apexstudio.app.ai.mediapipe.NormalizedBox
 import com.apexstudio.app.ai.mediapipe.TrackedFace
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,13 +39,35 @@ class EditorFaceCropApplyTest {
         }
     }
 
-    @Test fun reviewMarksDoNotEnableRestrictedVideoFaceReframeOrMutateHistory() {
+    @Test fun everyReviewedSampleAppliesOneSourceTimeTrackAndCreatesOneUndoStep() {
         val vm = editor()
-        val before = vm.state.value.project
+        val before = vm.state.value.project!!
+        assertTrue(vm.applyReviewedFaceCropTrack())
+        val updated = vm.state.value.project!!.clips.single()
+        val track = updated.faceCropTrack!!
+        assertEquals(listOf(1_000L, 2_000L), track.keyframes.map { it.sourceTimestampMs })
+        assertEquals(9f / 16f, track.outputAspectRatio, .0001f)
+        assertEquals(VideoCropSettings(), updated.videoCrop)
+        assertEquals(1, vm.undoStack.size)
+        assertEquals(before.clips.single(), vm.undoStack.single().single())
+        assertTrue(vm.faceTrackReview.value.message.contains("applied"))
+    }
+
+    @Test fun appliedTrackPassesWholeProjectExportPreflight() {
+        val vm = editor()
+        assertTrue(vm.applyReviewedFaceCropTrack())
+        assertNull(projectCompositionUnsupportedReason(
+            projectMainExportClips(vm.state.value), ExportEngine.ExportConfig()
+        ))
+    }
+
+    @Test fun reviewedTrackCannotBeAppliedAfterSelectionChanges() {
+        val vm = editor()
+        vm._state.value = vm.state.value.copy(selectedClipId = "another-clip")
         assertFalse(vm.applyReviewedFaceCropTrack())
-        assertEquals(before, vm.state.value.project)
+        assertNull(vm.state.value.project!!.clips.single().faceCropTrack)
         assertTrue(vm.undoStack.isEmpty())
-        assertTrue(vm.faceTrackReview.value.error!!.contains("Automatic video face-track application remains restricted"))
+        assertTrue(vm.faceTrackReview.value.error!!.contains("Select the reviewed video again"))
     }
 
     @Test fun everyMeasuredSampleMustBeReviewed() {

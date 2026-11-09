@@ -16,12 +16,11 @@ import com.apexstudio.app.data.filter.StylisticEffectType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import java.io.File
@@ -117,8 +116,10 @@ class TimelineRipplePreservationTest {
         assertTrue(tail.state.value.canUndo)
     }
 
+    // DataStore work completes on a real dispatcher; a virtual runTest timeout can
+    // expire before the ViewModel's asynchronous autosave emits the saved snapshot.
     @Test
-    fun `V1 outward trim autosaves both expanded source bounds and duration`() = runTest {
+    fun `V1 outward trim autosaves both expanded source bounds and duration`() = runBlocking {
         val context = isolatedDataStoreContext()
         val projectId = "v1-trim-autosave-${System.nanoTime()}"
         val repository = com.apexstudio.app.data.repository.ProjectRepository(context)
@@ -135,7 +136,6 @@ class TimelineRipplePreservationTest {
             // One committed trim combines both outward edges; the UI tests above
             // exercise each grip independently before this repository assertion.
             loadedEditor.trimClip("main", 500L, 3_500L)
-            runCurrent()
             shadowOf(Looper.getMainLooper()).idle()
             val savedProject = withContext(Dispatchers.Default.limitedParallelism(1)) {
                 withTimeout(10_000L) {

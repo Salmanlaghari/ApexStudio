@@ -59,7 +59,7 @@ class RuntimeEditAcceptanceInstrumentedTest {
         var previewB: Bitmap? = null
         val engine = ExportEngine(context)
         try {
-            instrumentation.context.assets.open("premium_editor/runtime_color_chart.mp4").use { input ->
+            instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
             }
             FilterManifest.initialize(context)

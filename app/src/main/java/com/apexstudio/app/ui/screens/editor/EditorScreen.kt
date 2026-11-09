@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +36,7 @@ import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.picker.PreviewStartupLatency
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -140,6 +142,7 @@ private fun EditorScreenContent(
     val audioState by vm.audio.collectAsStateWithLifecycle()
     val transmissionTemplates by vm.transmissionTemplates.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val currentProjectId by rememberUpdatedState(projectId)
     val scope = rememberCoroutineScope()
     CrashMarker.mark(context, "EditorScreen: composable start")
     val mediaPicker = remember { MediaPickerHelper(context) }
@@ -392,6 +395,13 @@ private fun EditorScreenContent(
                     }
                 }
                 override fun onRenderedFirstFrame() {
+                    PreviewStartupLatency.recordFirstFrame(
+                        projectId = currentProjectId,
+                        mediaId = player.currentMediaItem?.mediaId,
+                        renderedAtElapsedRealtimeMs = SystemClock.elapsedRealtime()
+                    )?.let { latencyMs ->
+                        Log.i("PreviewStartupLatency", "selection_to_first_rendered_video_frame_ms=$latencyMs")
+                    }
                     vm.recordPreviewFrameRendered()
                 }
                 override fun onPlayerError(error: PlaybackException) {
@@ -423,6 +433,10 @@ private fun EditorScreenContent(
         } catch (e: Exception) {
             exoPlayer = null
         }
+    }
+
+    DisposableEffect(projectId) {
+        onDispose { PreviewStartupLatency.clear(projectId) }
     }
 
     DisposableEffect(Unit) {

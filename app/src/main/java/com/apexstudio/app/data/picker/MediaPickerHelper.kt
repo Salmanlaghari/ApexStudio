@@ -42,7 +42,9 @@ data class MediaMetadata(
     val height: Int,
     val fps: Int,
     val type: ClipType,
-    val rotationDegrees: Int = 0
+    val rotationDegrees: Int = 0,
+    /** Monotonic timestamp when the picker returned this selection; transient import metadata only. */
+    val selectionResultElapsedRealtimeMs: Long? = null
 ) {
     /** Early main-video geometry; the player probe can still correct legacy or rotated files. */
     val sourceVideoAspectRatio: Float?
@@ -141,7 +143,7 @@ class MediaPickerHelper(private val context: Context) {
             if (uris.isNullOrEmpty()) {
                 onCancelled()
             } else {
-                launchImport(ownerScope, uris) {
+                launchImport(ownerScope, uris, SystemClock.elapsedRealtime()) {
                     it.type == ClipType.VIDEO || it.type == ClipType.IMAGE
                 }
             }
@@ -152,7 +154,7 @@ class MediaPickerHelper(private val context: Context) {
             if (uri == null) {
                 onCancelled()
             } else {
-                launchImport(ownerScope, listOf(uri)) { true }
+                launchImport(ownerScope, listOf(uri), SystemClock.elapsedRealtime()) { true }
             }
         }
         // Phase E: audio-only picker. Reuses the same _pickedMedia flow
@@ -164,7 +166,7 @@ class MediaPickerHelper(private val context: Context) {
             if (uris.isNullOrEmpty()) {
                 onCancelled()
             } else {
-                launchImport(ownerScope, uris) { it.type == ClipType.AUDIO }
+                launchImport(ownerScope, uris, SystemClock.elapsedRealtime()) { it.type == ClipType.AUDIO }
             }
         }
     }
@@ -179,6 +181,7 @@ class MediaPickerHelper(private val context: Context) {
     private fun launchImport(
         ownerScope: CoroutineScope,
         uris: List<Uri>,
+        selectionResultElapsedRealtimeMs: Long,
         include: (MediaMetadata) -> Boolean
     ) {
         importJob?.cancel()
@@ -193,7 +196,11 @@ class MediaPickerHelper(private val context: Context) {
                     },
                     extractor = { uri -> extractMetadata(uri) }
                 )
-                _pickedMedia.emit(extracted.filter(include))
+                _pickedMedia.emit(
+                    extracted.filter(include).map {
+                        it.copy(selectionResultElapsedRealtimeMs = selectionResultElapsedRealtimeMs)
+                    }
+                )
                 _pickGeneration.emit(_pickGeneration.value + 1)
             } finally {
                 _importProgress.value = MediaImportProgress(

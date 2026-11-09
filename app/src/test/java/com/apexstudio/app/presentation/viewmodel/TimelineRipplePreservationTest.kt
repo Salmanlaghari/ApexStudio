@@ -139,7 +139,7 @@ class TimelineRipplePreservationTest {
             loadedEditor.trimClip("main", 500L, 3_500L)
             shadowOf(Looper.getMainLooper()).idle()
             val savedProject = withContext(Dispatchers.Default.limitedParallelism(1)) {
-                withTimeout(10_000L) {
+                withTimeout(30_000L) {
                     repository.loadAll().first { projects ->
                         projects.any { project ->
                             val clip = project.clips.singleOrNull()

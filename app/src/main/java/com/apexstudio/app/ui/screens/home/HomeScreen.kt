@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.picker.PreviewStartupLatency
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.ClipType
@@ -93,8 +94,8 @@ fun HomeScreen(
             if (metadataList.isEmpty()) {
                 openAiToolsAfterCreate = false
             } else {
-                val clips = metadataList.map { meta ->
-                    MediaClip(
+                val pickedClips = metadataList.map { meta ->
+                    meta to MediaClip(
                         id = UUID.randomUUID().toString(),
                         name = meta.name,
                         uri = meta.uri,
@@ -106,11 +107,12 @@ fun HomeScreen(
                         type = meta.type
                     )
                 }
+                val clips = pickedClips.map { it.second }
+                val firstSelectedVideo = pickedClips.firstOrNull { it.first.type == ClipType.VIDEO }
                 val projectName = metadataList.first().name.substringBeforeLast('.')
                 // Normal Add Video and AI Add Video share this project-creation path.
                 // Persist source geometry before the editor's player has decoded a frame.
-                val sourceAspect = metadataList.firstOrNull { it.type == ClipType.VIDEO }
-                    ?.sourceVideoAspectRatio
+                val sourceAspect = firstSelectedVideo?.first?.sourceVideoAspectRatio
                 val newProject = repo.createProject(
                     name = projectName,
                     clips = clips,
@@ -118,6 +120,11 @@ fun HomeScreen(
                 )
 
                 projectRepo.saveProject(newProject)
+                val selectionTimeMs = firstSelectedVideo?.first?.selectionResultElapsedRealtimeMs
+                val firstVideoClip = firstSelectedVideo?.second
+                if (selectionTimeMs != null && firstVideoClip != null) {
+                    PreviewStartupLatency.begin(newProject.id, firstVideoClip.id, selectionTimeMs)
+                }
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
                 if (openAiToolsAfterCreate) {
                     openAiToolsAfterCreate = false

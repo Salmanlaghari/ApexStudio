@@ -2,10 +2,12 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
+import com.apexstudio.app.domain.model.MaskKeyframe
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPoint
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.resolveMaskAt
 import kotlinx.coroutines.flow.update
 import kotlin.math.abs
 
@@ -34,12 +36,56 @@ fun EditorViewModel.updateClipMask(
 fun EditorViewModel.clearClipMask(clipId: String) = setClipMask(clipId, null)
 
 /** Drag the mask centre (persist=false during the gesture, true on release). */
-fun EditorViewModel.setMaskCenter(clipId: String, x: Float, y: Float, persist: Boolean = true) =
-    updateClipMask(clipId, persist = persist) { it.withCenter(x, y) }
+fun EditorViewModel.setMaskCenter(
+    clipId: String,
+    x: Float,
+    y: Float,
+    persist: Boolean = true,
+    atMs: Long? = null
+) = updateClipMask(clipId, persist = persist) {
+    it.updateMaskGeometryAt(atMs ?: livePlayheadMs()) { mask -> mask.withCenter(x, y) }
+}
 
 /** Resize the mask (persist=false during the gesture, true on release). */
-fun EditorViewModel.setMaskSize(clipId: String, sx: Float, sy: Float, persist: Boolean = true) =
-    updateClipMask(clipId, persist = persist) { it.withSize(sx, sy) }
+fun EditorViewModel.setMaskSize(
+    clipId: String,
+    sx: Float,
+    sy: Float,
+    persist: Boolean = true,
+    atMs: Long? = null
+) = updateClipMask(clipId, persist = persist) {
+    it.updateMaskGeometryAt(atMs ?: livePlayheadMs()) { mask -> mask.withSize(sx, sy) }
+}
+
+/**
+ * Static masks edit their base geometry. An animated mask edits its resolved value
+ * at the playhead, preserving surrounding keys and pinning other resolved properties.
+ */
+private fun VideoMask.updateMaskGeometryAt(
+    playheadMs: Long,
+    transform: (VideoMask) -> VideoMask
+): VideoMask {
+    if (maskKeyframes.isEmpty()) return transform(this).copy(presetId = null)
+    val timeMs = playheadMs.coerceAtLeast(0L)
+    val changed = transform(resolveMaskAt(timeMs))
+    val existing = maskKeyframes.firstOrNull { it.timeMs == timeMs }
+    val key = MaskKeyframe(
+        id = existing?.id ?: "mask-$timeMs",
+        timeMs = timeMs,
+        centerX = changed.centerX,
+        centerY = changed.centerY,
+        sizeX = changed.sizeX,
+        sizeY = changed.sizeY,
+        rotationDeg = changed.rotationDeg,
+        feather = changed.feather,
+        opacity = changed.opacity,
+        invert = changed.invert
+    )
+    return copy(
+        maskKeyframes = (maskKeyframes.filterNot { it.timeMs == timeMs } + key).sortedBy { it.timeMs },
+        presetId = null
+    )
+}
 
 /**
  * Capture a pen region from frame-normalized points. [MaskModel.capturePen]

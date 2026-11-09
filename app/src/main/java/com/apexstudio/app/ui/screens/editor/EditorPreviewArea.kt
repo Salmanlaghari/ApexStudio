@@ -218,20 +218,51 @@ fun VideoPreviewArea(
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
                 )
-                player.setVideoEffects(
-                    mergeEditorPreviewEffects(geometryAndWorkspaceEffects, viralHdrEffects + editorGradeEffects)
+                val previewEffects = mergeEditorPreviewEffects(
+                    geometryAndWorkspaceEffects,
+                    viralHdrEffects + editorGradeEffects
                 )
-                if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
+                if (player.playbackState == androidx.media3.common.Player.STATE_IDLE && player.mediaItemCount > 0) {
+                    player.setVideoEffects(previewEffects)
+                    player.prepare()
+                }
                 // A same-position seek may reuse a rendered buffer; re-prepare the
-                // retained source time to get a newly decoded frame through the graph.
-                // This branch is paused-only, so editing effects never auto-plays.
+                // retained source time through a freshly installed effect graph.
+                // Wait for Media3's actual rendered-frame callback before returning,
+                // so a paused edit cannot leave the old surface buffer visible.
                 else if (!player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY) {
                     val retainedPositionMs = player.currentPosition.coerceAtLeast(0L)
                     player.stop()
                     player.seekTo(retainedPositionMs)
-                    player.prepare()
+                    player.setVideoEffects(previewEffects)
+                    val renderedFrame = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    val frameListener = object : androidx.media3.common.Player.Listener {
+                        override fun onRenderedFirstFrame() {
+                            renderedFrame.complete(Unit)
+                        }
+
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            renderedFrame.completeExceptionally(error)
+                        }
+                    }
+                    player.addListener(frameListener)
+                    try {
+                        player.prepare()
+                        val rendered = kotlinx.coroutines.withTimeoutOrNull(10_000L) {
+                            renderedFrame.await()
+                        }
+                        if (rendered == null) {
+                            throw IllegalStateException("Timed out waiting for the updated paused preview frame.")
+                        }
+                    } finally {
+                        player.removeListener(frameListener)
+                    }
+                } else {
+                    player.setVideoEffects(previewEffects)
                 }
             } else player.setVideoEffects(emptyList())
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             onEffectPreviewFailure(error.message ?: "This device cannot preview this video effect.")
         }

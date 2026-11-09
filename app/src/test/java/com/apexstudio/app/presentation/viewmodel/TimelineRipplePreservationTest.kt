@@ -116,10 +116,11 @@ class TimelineRipplePreservationTest {
         assertTrue(tail.state.value.canUndo)
     }
 
-    // DataStore work completes on a real dispatcher; a virtual runTest timeout can
-    // expire before the ViewModel's asynchronous autosave emits the saved snapshot.
+    // DataStore work completes on a real dispatcher; this integration test uses
+    // a non-test Main so runBlocking does not strand the ViewModel autosave.
     @Test
     fun `V1 outward trim autosaves both expanded source bounds and duration`() = runBlocking {
+        Dispatchers.setMain(Dispatchers.Unconfined)
         val context = isolatedDataStoreContext()
         val projectId = "v1-trim-autosave-${System.nanoTime()}"
         val repository = com.apexstudio.app.data.repository.ProjectRepository(context)

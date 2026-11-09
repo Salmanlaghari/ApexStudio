@@ -209,7 +209,7 @@ fun AiToolsPanel(
         title = { Text("AI processing availability") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(AI_PROTECTED_BLOCKER)
-            Text("Face-framing suggestions come from sample frames and may miss quick movement. Review is available, but applying automatic face crops to video is not available yet.")
+            Text("Face-framing suggestions use sampled frames and may miss quick movement. Review every sample before applying; the crop is local to the selected main-track video and is included in its preview and export.")
             Text("Artistic style filters and 2D-to-3D video conversion are unavailable. A feature shown as unavailable cannot be started here.")
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         } },

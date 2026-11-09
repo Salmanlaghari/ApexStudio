@@ -61,7 +61,7 @@ object GlobalModerationEnforcement {
         ProtectedAiAction.FACE_TRACK_REVIEW ->
             "Sampled local face review is available only for a selected existing project video; it does not apply edits."
         ProtectedAiAction.FACE_AWARE_REFRAME ->
-            "Still-photo face crop is available from Photo AI Enhance for an existing project image. Automatic video face-track application remains restricted to its reviewed editor workflow."
+            "Video face reframe is available only for a selected main-track project video after every sampled frame is reviewed; still-photo face crop remains in Photo AI Enhance."
         ProtectedAiAction.BACKGROUND_REPLACEMENT ->
             "Background compositing is available only from the editor for a selected existing project video; replacement images must already be in the project."
         ProtectedAiAction.ONNX_STYLE_TRANSFER ->
@@ -101,6 +101,25 @@ object GlobalModerationEnforcement {
         require(clip.type == ClipType.VIDEO && clip.uri.isNotBlank()) { "Face review requires an existing project video." }
         val scope = ExistingVideoScope(clip.uri, setOf(ProtectedAiAction.FACE_TRACK_REVIEW))
         return withContext(existingVideoScope.asContextElement(scope)) { process() }
+    }
+
+    /**
+     * Scope only the final apply step after the editor has verified that the current main-track
+     * video's measured samples were all explicitly reviewed. This does not authorize inference,
+     * another source, overlays, or any other protected action.
+     */
+    internal fun <T> withReviewedExistingProjectVideoFaceReframe(clip: MediaClip, process: () -> T): T {
+        require(clip.type == ClipType.VIDEO && clip.trackIndex == 0 && clip.uri.isNotBlank()) {
+            "Reviewed face reframe requires an existing main-track project video."
+        }
+        val previous = existingVideoScope.get()
+        val scope = ExistingVideoScope(clip.uri, setOf(ProtectedAiAction.FACE_AWARE_REFRAME))
+        existingVideoScope.set(scope)
+        return try {
+            process()
+        } finally {
+            if (previous == null) existingVideoScope.remove() else existingVideoScope.set(previous)
+        }
     }
 
     /** Caller must validate the target video and any replacement image against the active project. */

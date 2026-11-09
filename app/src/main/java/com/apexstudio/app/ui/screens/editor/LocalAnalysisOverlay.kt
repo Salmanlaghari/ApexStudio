@@ -17,7 +17,7 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import java.util.Locale
 
-/** Review-first video suggestions; face framing remains review-only until application is available. */
+/** Review-first video suggestions; applying a face reframe requires every sampled frame to be reviewed. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocalAnalysisOverlay(
@@ -71,6 +71,8 @@ fun LocalAnalysisOverlay(
             FaceReviewResultsBlock(
                 faceReview = faceReview,
                 sourceIsCurrent = faceReviewSourceCurrent,
+                project = editor.project,
+                selectedClipId = editor.selectedClipId,
                 vm = vm,
                 onPreviewSourceTime = onPreviewSourceTime,
             )
@@ -191,6 +193,8 @@ fun LocalAnalysisOverlay(
 private fun FaceReviewResultsBlock(
     faceReview: FaceTrackReviewUiState,
     sourceIsCurrent: Boolean,
+    project: Project?,
+    selectedClipId: String?,
     vm: EditorViewModel,
     onPreviewSourceTime: (String, Long) -> Unit,
 ) {
@@ -204,13 +208,21 @@ private fun FaceReviewResultsBlock(
     if (faceReview.isReady && sourceIsCurrent) {
         val result = faceReview.result
         if (result != null) {
+            val targetClip = faceReview.clipId?.let { id -> project?.clips?.firstOrNull { it.id == id } }
+            val everySampleReviewed = result.samples.isNotEmpty() && result.samples.all {
+                it.timestampMs in faceReview.reviewedSampleTimestamps
+            }
+            val hasDetectedFace = result.samples.any { it.faces.isNotEmpty() && it.reframe.faceFound }
+            val canApply = selectedClipId == faceReview.clipId &&
+                targetClip != null && targetClip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
+                targetClip.trackIndex == 0 && everySampleReviewed && hasDetectedFace
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("face_review_results")) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Face suggestions ready", style = MaterialTheme.typography.titleMedium)
                     Text("${result.samples.size} sample frames. Brief faces or movement may be missed.",
                         modifier = Modifier.testTag("face_review_results_summary"),
                         color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("Review only. Applying automatic face framing to video is not available yet.",
+                    Text("Review every sampled frame. The applied dynamic crop updates the preview and is included in selected-clip and whole-project export; Undo restores the previous framing.",
                         style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
                     Text("Reviewed ${faceReview.reviewedSampleTimestamps.size} of ${result.samples.size} frames.",
                         style = MaterialTheme.typography.labelMedium)
@@ -236,6 +248,19 @@ private fun FaceReviewResultsBlock(
                                 )
                             }
                         }
+                    }
+                    Button(
+                        onClick = { vm.applyReviewedFaceCropTrack() },
+                        enabled = sourceIsCurrent && canApply,
+                        modifier = Modifier.fillMaxWidth().testTag("apply_reviewed_face_reframe"),
+                    ) { Text("Apply reviewed reframe") }
+                    if (!hasDetectedFace) {
+                        Text("A detected face is required; fallback crops from no-face samples cannot be applied as face tracking.",
+                            style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
+                    }
+                    if (faceReview.message.contains("applied", ignoreCase = true)) {
+                        Text(faceReview.message, style = MaterialTheme.typography.bodySmall,
+                            color = ApexPalette.TextSecondary)
                     }
                 }
             }

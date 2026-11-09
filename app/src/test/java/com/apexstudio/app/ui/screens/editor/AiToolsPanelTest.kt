@@ -68,7 +68,7 @@ class AiToolsPanelTest {
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
         compose.onNodeWithText("AI processing availability").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
-        compose.onNodeWithText("Face-framing suggestions come from sample frames", substring = true).assertExists()
+        compose.onNodeWithText("Face-framing suggestions use sampled frames", substring = true).assertExists()
         compose.onNodeWithText("Artistic style filters and 2D-to-3D video conversion are unavailable", substring = true).assertExists()
     }
 

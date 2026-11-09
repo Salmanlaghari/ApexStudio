@@ -57,8 +57,8 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
                 AiFeatureId.SUBTITLES -> "Create captions from speech in Text → Captions for a video in your project."
                 AiFeatureId.WORD_TIMED_SUBTITLES -> "Optional English word timing is available in Text → Captions. Some speech may not support it."
                 AiFeatureId.BACKGROUND_REPLACE -> "Replace a video's background from the editor Background tool. Choose an image already in your project."
-                AiFeatureId.FACE_TRACKING -> "Review face-framing suggestions in Video suggestions. Applying automatic face crops to video is not available yet."
-                AiFeatureId.FACE_AWARE_REFRAME -> "Review face-framing suggestions in Video suggestions. Applying automatic face crops to video is not available yet."
+                AiFeatureId.FACE_TRACKING -> "Review every sampled frame in Video suggestions, then apply the dynamic crop to the selected main-track video."
+                AiFeatureId.FACE_AWARE_REFRAME -> "Review every sampled frame in Video suggestions, then apply the dynamic crop; it follows the video into selected-clip and whole-project export."
                 AiFeatureId.ONNX_UPSCALING -> "Open Video enhancement above for a supported video. Photo Enhance works with selected still images (output capped at 4.2 megapixels)."
                 AiFeatureId.ONNX_STYLE_TRANSFER -> "Artistic style filters are not available yet. Standard filters are available in Video tools."
                 else -> AI_PROTECTED_BLOCKER

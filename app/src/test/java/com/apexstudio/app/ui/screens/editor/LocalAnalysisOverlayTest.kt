@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -27,7 +28,7 @@ import org.robolectric.annotation.Config
 class LocalAnalysisOverlayTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun completedFaceSuggestionsAreVisibleWithSimpleLimitsAndNoAutomaticEdit() {
+    @Test fun noFaceSuggestionsAreVisibleButCannotBeAppliedAsFaceTracking() {
         val clip = MediaClip("clip", "sample.mp4", "file:///sample.mp4", 12_000L, trimEndMs = 12_000L)
         val project = Project("project", "Project", 12_000L, clips = listOf(clip))
         val result = FaceTrackAnalysisResult(
@@ -60,7 +61,9 @@ class LocalAnalysisOverlayTest {
         compose.onNodeWithTag("face_review_results").assertIsDisplayed()
         compose.onNodeWithText("Face suggestions ready").assertIsDisplayed()
         compose.onNodeWithTag("face_review_results_summary").assertIsDisplayed()
-        compose.onNodeWithText("Review only. Applying automatic face framing to video is not available yet.").assertExists()
+        compose.onNodeWithText("Review every sampled frame.", substring = true).assertExists()
+        compose.onNodeWithTag("apply_reviewed_face_reframe").assertIsNotEnabled()
+        compose.onNodeWithText("A detected face is required", substring = true).assertExists()
         compose.onNodeWithText("Offline analysis", substring = true).assertDoesNotExist()
         compose.onNodeWithText("On-device", substring = true).assertDoesNotExist()
         compose.runOnIdle {

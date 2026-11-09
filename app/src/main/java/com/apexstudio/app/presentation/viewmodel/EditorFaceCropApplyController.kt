@@ -7,7 +7,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.VideoCropSettings
 import kotlinx.coroutines.flow.update
 
-/** Review is necessary but never sufficient to authorize model-derived output. */
+/** Apply only a current, source-bound crop track after every measured sample was explicitly reviewed. */
 fun EditorViewModel.applyReviewedFaceCropTrack(): Boolean {
     val review = _faceTrackReview.value
     val snapshot = review.sourceSnapshot ?: return false
@@ -18,6 +18,10 @@ fun EditorViewModel.applyReviewedFaceCropTrack(): Boolean {
         return false
     }
     val clip = _state.value.project?.clips?.firstOrNull { it.id == snapshot.clipId } ?: return false
+    if (_state.value.selectedClipId != clip.id) {
+        _faceTrackReview.update { it.copy(error = "Select the reviewed video again before applying its face reframe.") }
+        return false
+    }
     if (clip.type != ClipType.VIDEO || clip.trackIndex != 0) {
         _faceTrackReview.update { it.copy(error = "Face reframe currently requires a main-track video, not a photo or overlay.") }
         return false
@@ -29,22 +33,22 @@ fun EditorViewModel.applyReviewedFaceCropTrack(): Boolean {
         return false
     }
     try {
-        // This remains denied until reviewed global moderation exists. Neither review marks,
-        // trusted-looking JSON nor a caller-supplied Boolean can authorize a protected action.
-        GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME)
+        // Review marks are checked above against the current source snapshot before entering this
+        // narrowly scoped capability. The scope is source-bound and authorizes no other AI action.
+        val track = GlobalModerationEnforcement.withReviewedExistingProjectVideoFaceReframe(clip) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, clip.uri)
+            result.toPersistedCropTrack(review.reframeTarget.aspectRatio)
+        }
+        if (clip.faceCropTrack == track) return false
+        pushUndo()
+        updateClip(clip.id) { it.copy(faceCropTrack = track, videoCrop = VideoCropSettings()) }
     } catch (blocked: AiModelUnavailableException) {
         _faceTrackReview.update { it.copy(error = blocked.message) }
         return false
-    }
-    val track = try {
-        result.toPersistedCropTrack(review.reframeTarget.aspectRatio)
     } catch (_: IllegalArgumentException) {
         _faceTrackReview.update { it.copy(error = "Measured crop geometry is invalid. Run face analysis again.") }
         return false
     }
-    if (clip.faceCropTrack == track) return false
-    pushUndo()
-    updateClip(clip.id) { it.copy(faceCropTrack = track, videoCrop = VideoCropSettings()) }
     _faceTrackReview.update { it.copy(message = "Reviewed source-time crop track applied. Undo is available.", error = null) }
     return true
 }

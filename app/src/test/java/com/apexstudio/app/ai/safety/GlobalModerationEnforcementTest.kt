@@ -133,6 +133,39 @@ class GlobalModerationEnforcementTest {
         assertDenied(ProtectedAiAction.FACE_TRACK_REVIEW)
     }
 
+    @Test fun reviewedVideoReframeScopeIsExactAndRestoredWithoutUnlockingOtherActions() {
+        val clip = MediaClip("video", "Video", "file:///project/video.mp4", 10_000L,
+            trimEndMs = 10_000L, type = ClipType.VIDEO)
+        GlobalModerationEnforcement.withReviewedExistingProjectVideoFaceReframe(clip) {
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, clip.uri)
+            GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME)
+            assertDenied(ProtectedAiAction.FACE_TRACK_REVIEW)
+            assertDenied(ProtectedAiAction.ONNX_STYLE_TRANSFER)
+            try {
+                GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, "file:///other.mp4")
+                throw AssertionError("A different source must remain outside the reviewed scope")
+            } catch (_: AiModelUnavailableException) { }
+
+            val unrelatedThreadFailure = AtomicReference<Throwable?>()
+            Thread {
+                try {
+                    GlobalModerationEnforcement.requireApproved(ProtectedAiAction.FACE_AWARE_REFRAME, clip.uri)
+                } catch (failure: Throwable) {
+                    unrelatedThreadFailure.set(failure)
+                }
+            }.apply { start(); join() }
+            assertTrue(unrelatedThreadFailure.get() is AiModelUnavailableException)
+        }
+        assertDenied(ProtectedAiAction.FACE_AWARE_REFRAME)
+        listOf(clip.copy(type = ClipType.IMAGE), clip.copy(trackIndex = 1), clip.copy(uri = ""))
+            .forEach { invalid ->
+                try {
+                    GlobalModerationEnforcement.withReviewedExistingProjectVideoFaceReframe(invalid) { }
+                    throw AssertionError("Only a main-track existing video may be reframed")
+                } catch (_: IllegalArgumentException) { }
+            }
+    }
+
     @Test fun faceCropRunsOnlyForTheExactExistingProjectImageInsidePhotoScope(): Unit = runBlocking {
         val image = MediaClip("photo", "Photo", "content://project/photo", 3_000L,
             trimEndMs = 3_000L, type = ClipType.IMAGE)

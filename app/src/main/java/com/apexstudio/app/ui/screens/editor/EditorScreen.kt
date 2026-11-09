@@ -338,6 +338,9 @@ private fun EditorScreenContent(
                         } else vm.setPlaying(false)
                     }
                 }
+                override fun onRenderedFirstFrame() {
+                    vm.recordPreviewFrameRendered()
+                }
                 override fun onPlayerError(error: PlaybackException) {
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
                     Log.e("EditorScreen", "ExoPlayer playback warning: $errorMsg", error)

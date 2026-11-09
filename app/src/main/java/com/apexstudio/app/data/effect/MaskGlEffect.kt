@@ -12,6 +12,7 @@ import androidx.media3.effect.GlShaderProgram
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
+import com.apexstudio.app.domain.model.resolveMaskAt
 
 /**
  * Media3 [GlEffect] that applies a [VideoMask] (CapCut-style Mask tool)
@@ -40,6 +41,18 @@ class MaskGlEffect private constructor(
 
         // Must match GLSL: uniform float uPolyX[32] / uPolyY[32].
         private const val POLY_POINTS = 32
+
+        internal fun resolveMaskAtFrame(
+            mask: VideoMask,
+            presentationTimeUs: Long,
+            maskTimeMsProvider: (() -> Long)? = null,
+            timeMsAtPresentationTimeUs: ((Long) -> Long)? = null
+        ): VideoMask {
+            val timeMs = (maskTimeMsProvider?.invoke()
+                ?: timeMsAtPresentationTimeUs?.invoke(presentationTimeUs)
+                ?: presentationTimeUs / 1_000L).coerceAtLeast(0L)
+            return mask.resolveMaskAt(timeMs)
+        }
 
         /**
          * Build the effect for [mask], or null when there is nothing

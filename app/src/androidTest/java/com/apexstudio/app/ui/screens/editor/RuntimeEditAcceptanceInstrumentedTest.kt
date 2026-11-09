@@ -151,12 +151,16 @@ class RuntimeEditAcceptanceInstrumentedTest {
                 val baseline = awaitPreview(device, context.packageName, File(diagnostics, "ungraded.png")) {
                     saturatedPixelCount(it) > 300
                 }
+                val frameGenerationBeforeFilter = vm.previewFrameGeneration.value
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(filterIntensity = .85f) }
+                awaitRenderedPreviewFrame(vm, frameGenerationBeforeFilter, 15_000L)
                 val filtered = awaitPreview(device, context.packageName, File(diagnostics, "filter-only.png")) {
                     changedPixelCount(baseline, it) > 50
                 }
                 assertTrue("Paused LUT must change actual preview pixels", changedPixelCount(baseline, filtered) > 50)
+                val frameGenerationBeforeFx = vm.previewFrameGeneration.value
                 instrumentation.runOnMainSync { vm._state.value = vm.state.value.copy(fxIntensity = .8f) }
+                awaitRenderedPreviewFrame(vm, frameGenerationBeforeFx, 15_000L)
                 val withFx = awaitPreview(device, context.packageName, File(diagnostics, "filter-and-fx.png")) {
                     changedPixelCount(filtered, it) > 50
                 }
@@ -173,6 +177,7 @@ class RuntimeEditAcceptanceInstrumentedTest {
                 withFx.recycle()
 
                 // Change the visible mask geometry and intensities with transport paused.
+                val frameGenerationBeforeMask = vm.previewFrameGeneration.value
                 instrumentation.runOnMainSync {
                     val current = vm.state.value
                     val currentProject = requireNotNull(current.project)
@@ -182,6 +187,7 @@ class RuntimeEditAcceptanceInstrumentedTest {
                         project = currentProject.copy(clips = listOf(clip.copy(mask = editedMask)))
                     )
                 }
+                awaitRenderedPreviewFrame(vm, frameGenerationBeforeMask, 15_000L)
                 device.waitForIdle(750L)
                 Thread.sleep(350L)
                 previewB = awaitPreview(device, context.packageName, screenshotB) {
@@ -279,6 +285,18 @@ class RuntimeEditAcceptanceInstrumentedTest {
             Thread.sleep(50L)
         }
         throw AssertionError("Preview transport did not advance past $afterMs ms; last=${vm.state.value.playerPositionMs}, error=${vm.state.value.playerError}")
+    }
+
+    private fun awaitRenderedPreviewFrame(vm: EditorViewModel, afterGeneration: Long, timeoutMs: Long) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (vm.previewFrameGeneration.value > afterGeneration) return
+            Thread.sleep(25L)
+        }
+        throw AssertionError(
+            "Paused preview did not render a new frame after the effect edit; " +
+                "generation=${vm.previewFrameGeneration.value}, error=${vm.state.value.playerError}"
+        )
     }
 
     private fun awaitPreview(device: UiDevice, packageName: String, destination: File, predicate: (Bitmap) -> Boolean): Bitmap {

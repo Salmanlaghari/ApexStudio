@@ -26,6 +26,11 @@ import kotlinx.serialization.json.Json
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPoint
 import com.apexstudio.app.domain.model.MaskShape
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.VideoFitMode
+import androidx.media3.common.util.Size
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 
 class ProjectCompositionExportTest {
     private fun clip(
@@ -58,6 +63,34 @@ class ProjectCompositionExportTest {
             )
         )
     )
+
+    @Test
+    fun `project export transform honors each restored clip fit mode`() {
+        val project = Project(
+            id = "fit-parity",
+            name = "Fit parity",
+            durationMs = 2_000L,
+            clips = listOf(
+                clip("cover").copy(videoFitMode = VideoFitMode.COVER),
+                clip("fit").copy(videoFitMode = VideoFitMode.FIT)
+            )
+        )
+        val jsonFormat = Json { encodeDefaults = true }
+        val json = jsonFormat.encodeToString(Project.serializer(), project)
+        val restoredClips = jsonFormat.decodeFromString<Project>(json).clips
+
+        val cover = projectItemOutputSizeTransformation(restoredClips[0], 1280, 720)
+        val fit = projectItemOutputSizeTransformation(restoredClips[1], 1280, 720)
+        assertEquals(Size(1280, 720), cover.configure(720, 1280))
+        assertEquals(Size(1280, 720), fit.configure(720, 1280))
+
+        val coverMatrix = cover.getGlMatrixArray(0L)
+        assertEquals(1f, coverMatrix[0], 0f)
+        assertEquals((16f / 9f) / (9f / 16f), coverMatrix[5], 0.0001f)
+        val fitMatrix = fit.getGlMatrixArray(0L)
+        assertEquals((9f / 16f) / (16f / 9f), fitMatrix[0], 0.0001f)
+        assertEquals(1f, fitMatrix[5], 0f)
+    }
 
     @Test
     fun `valid per clip face crop tracks are exported but ambiguous crops fail closed`() {

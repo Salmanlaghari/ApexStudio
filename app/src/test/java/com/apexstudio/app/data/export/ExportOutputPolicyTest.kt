@@ -3,6 +3,7 @@ package com.apexstudio.app.data.export
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.GlMatrixTransformation
+import com.apexstudio.app.domain.model.VideoFitMode
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -46,6 +47,26 @@ class ExportOutputPolicyTest {
         val matrix = effect.getGlMatrixArray(0)
         assertTrue(matrix[0] > 1f)
         assertEquals(1f, matrix[5], 0f)
+    }
+
+    @Test fun `selected export output matrix follows the configured Fit or Cover mode`() {
+        fun outputMatrix(mode: VideoFitMode): FloatArray {
+            val transform = selectedVideoOutputEffects(ExportEngine.ExportConfig(
+                resolution = "720p",
+                aspectRatio = "16:9",
+                videoFitMode = mode
+            )).first() as GlMatrixTransformation
+            transform.configure(720, 1280)
+            return transform.getGlMatrixArray(0L)
+        }
+
+        val fit = outputMatrix(VideoFitMode.FIT)
+        assertEquals((9f / 16f) / (16f / 9f), fit[0], 0.0001f)
+        assertEquals(1f, fit[5], 0f)
+
+        val cover = outputMatrix(VideoFitMode.COVER)
+        assertEquals(1f, cover[0], 0f)
+        assertEquals((16f / 9f) / (9f / 16f), cover[5], 0.0001f)
     }
 
     @Test fun `drawing canvas follows the post crop viewport aspect`() {

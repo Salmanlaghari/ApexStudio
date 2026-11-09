@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
@@ -44,14 +45,15 @@ class ExportScreenCancelTest {
         vm._export.value = vm.export.value.copy(isExportEngineReady = true)
         compose.setContent { ExportScreen(projectId = "p1", onBack = {}, onExport = {}, vm = vm) }
 
-        compose.onNodeWithText("Export 1080P • 16:9 @ 60fps").assertIsDisplayed()
+        compose.onNodeWithText("Export now").assertIsDisplayed()
         compose.onNodeWithText("Export Complete").assertDoesNotExist()
-        compose.onNodeWithText("4K").performScrollTo().performClick()
+        compose.onNodeWithTag("export-resolution-setting").performScrollTo().performClick()
+        compose.onNodeWithText("4K").performClick()
         compose.runOnIdle {
             assertEquals("4K", vm.state.value.selectedResolution)
             assertEquals("4K", vm.export.value.settings.resolution)
         }
-        compose.onNodeWithText("Export 4K • 16:9 @ 60fps").assertIsDisplayed()
+        compose.onNodeWithText("Export now").assertIsDisplayed()
     }
 
     @Test fun editorHeaderResolutionSelectionUpdatesExportSettings() {
@@ -86,7 +88,7 @@ class ExportScreenCancelTest {
         vm._export.value = vm.export.value.copy(isExportEngineReady = true)
         var navigationOnlyCalls = 0
         compose.setContent { ExportScreen(projectId = "p", onBack = {}, onExport = { navigationOnlyCalls++ }, vm = vm) }
-        compose.onNodeWithContentDescription("Export").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("Export now").performClick()
         compose.runOnIdle {
             assertEquals(0, navigationOnlyCalls)
             // The real controller rejects the deliberately uninitialized test engine.

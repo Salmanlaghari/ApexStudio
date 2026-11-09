@@ -15,12 +15,13 @@ import com.apexstudio.app.data.text.TextFontRegistry
 fun rememberTextFontFamily(
     fontKey: String?,
     isBold: Boolean,
-    isItalic: Boolean
+    isItalic: Boolean,
+    fontWeight: Int? = null
 ): FontFamily {
     val context = LocalContext.current
-    return remember(fontKey, isBold, isItalic) {
+    return remember(fontKey, isBold, isItalic, fontWeight) {
         TextFontRegistry.init(context)
-        val typeface = TextFontRegistry.resolve(fontKey, isBold, isItalic)
+        val typeface = TextFontRegistry.resolve(fontKey, isBold, isItalic, fontWeight)
         FontFamily(typeface)
     }
 }

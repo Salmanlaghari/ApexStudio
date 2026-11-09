@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.data.captions.WhisperCaptionEngine
+import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.ai.subtitles.EnglishWordAlignment
 import com.apexstudio.app.ai.subtitles.TimingPrecision
 import com.apexstudio.app.ai.subtitles.WordCue
@@ -34,6 +35,21 @@ data class CaptionUiState(
 
 enum class CaptionTimingMode { PHRASE, ENGLISH_WORDS, ENGLISH_KARAOKE }
 enum class CaptionPhase { IDLE, NEED_DOWNLOAD, TRANSCRIBING, DONE, FAILED }
+
+/** Apply one of the five supported looks to the entire generated caption track. */
+fun EditorViewModel.setCaptionStyle(clipId: String, styleId: String) {
+    val style = CaptionStyles.find(styleId) ?: return
+    val clip = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val captions = clip.textOverlays.filter { it.presetId == "caption_auto" }
+    if (captions.isEmpty()) return
+    if (captions.all { style.applyTo(it) == it }) return
+    pushUndo()
+    updateClip(clipId) { current ->
+        current.copy(textOverlays = current.textOverlays.map { overlay ->
+            if (overlay.presetId == "caption_auto") style.applyTo(overlay) else overlay
+        })
+    }
+}
 
 /** Only this request may publish. Flow.update also protects native-worker progress callbacks. */
 internal fun EditorViewModel.updateCaptionRequest(id: String, transform: (CaptionUiState) -> CaptionUiState) {
@@ -185,14 +201,17 @@ internal fun EditorViewModel.applyCaptionResult(
     val project = _state.value.project ?: return null
     val current = project.clips.firstOrNull { it.id == snapshot.clip.id } ?: return null
     if (!snapshot.matches(project.id, current)) return null
+    val style = current.textOverlays.firstOrNull { it.presetId == "caption_auto" }
+        ?.captionStyleId?.let(CaptionStyles::find) ?: CaptionStyles.presets.first()
     val overlays = karaokeWords?.let { karaokeCaptionOverlaysFor(current, segments, it) }
         ?: captionOverlaysFor(current, segments)
     if (overlays.isEmpty()) return 0
+    val styledOverlays = overlays.map(style::applyTo)
     pushUndo()
     updateClip(current.id) { c ->
-        c.copy(textOverlays = c.textOverlays.filter { it.presetId != "caption_auto" } + overlays)
+        c.copy(textOverlays = c.textOverlays.filter { it.presetId != "caption_auto" } + styledOverlays)
     }
-    return overlays.size
+    return styledOverlays.size
 }
 
 fun EditorViewModel.generateAutoCaptions(clipId: String) {

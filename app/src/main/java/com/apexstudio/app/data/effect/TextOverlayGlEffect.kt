@@ -93,7 +93,9 @@ class TextOverlayGlEffect(
                 width = width,
                 height = height,
                 states = states,
-                masks = masks
+                masks = masks,
+                timeMs = timeMs,
+                captionTrackOverlays = overlays
             )
             val newTexture = intArrayOf(0)
             try {

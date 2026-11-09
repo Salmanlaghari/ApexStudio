@@ -3,8 +3,14 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.TextOverlay
+import com.apexstudio.app.domain.model.StickerOverlay
+import com.apexstudio.app.data.filter.GpuColorProfiles
+import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.StylisticEffectType
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -113,4 +119,62 @@ class TimelineRipplePreservationTest {
         vm.deleteClip("edit")
         assertEquals(12_000L, vm.offset("other"))
     }
+
+
+    @Test
+    fun `bulk delete ripples overlays and one undo restores selection targets`() {
+        val vm = vm(video("first"), video("second"), overlay("at", 20_000L))
+        vm._state.update { it.copy(selectedClipIds = setOf("second"), multiSelectMode = true) }
+        vm.deleteSelectedClips()
+        assertEquals(10_000L, vm.offset("at"))
+        assertEquals(listOf("first", "at"), vm.state.value.project!!.clips.map { it.id })
+        vm.undo()
+        assertEquals(listOf("first", "second", "at"), vm.state.value.project!!.clips.map { it.id })
+    }
+
+    @Test
+    fun `bulk duplicate appends V1 copies, ripples once, and regenerates child ids`() {
+        val source = video("source").copy(
+            speedMultiplier = 2f,
+            textOverlays = listOf(TextOverlay(id = "title")),
+            stickers = listOf(StickerOverlay(id = "sticker"))
+        )
+        val vm = vm(source, video("tail"), overlay("downstream", 20_000L))
+        vm._state.update { it.copy(selectedClipIds = setOf("source"), multiSelectMode = true) }
+        vm.duplicateSelectedClips()
+        val clips = vm.state.value.project!!.clips
+        val copy = clips.last { it.id != "source" && it.id != "tail" && it.id != "downstream" }
+        assertEquals(25_000L, clips.first { it.id == "downstream" }.timelineOffsetMs)
+        assertEquals(source.effectiveDurationMs(), copy.effectiveDurationMs())
+        assertEquals(setOf("title"), source.textOverlays.map { it.id }.toSet())
+        assertEquals(setOf("sticker"), source.stickers.map { it.id }.toSet())
+        assertTrue(copy.textOverlays.map { it.id }.none { it == "title" })
+        assertTrue(copy.stickers.map { it.id }.none { it == "sticker" })
+        vm.undo()
+        assertEquals(3, vm.state.value.project!!.clips.size)
+    }
+
+    @Test
+    fun `bulk speed filter and LUT persist as one selection action each`() {
+        val vm = vm(video("one"), video("two"))
+        vm._state.update { it.copy(selectedClipIds = setOf("one", "two"), multiSelectMode = true) }
+        vm.applySpeedToSelectedClips(1.5f)
+        assertTrue(vm.state.value.project!!.clips.all { it.speedMultiplier == 1.5f && it.speedPoints.isEmpty() })
+        val filter = GpuFilterConfig(stylisticEffect = StylisticEffectType.SEPIA)
+        vm.applyFilterToSelectedClips(filter)
+        assertTrue(vm.state.value.project!!.clips.all { it.gpuFilterConfig == filter })
+        vm.applyLutToSelectedClips(GpuColorProfiles.CINEMATIC.id, 0.7f)
+        assertTrue(vm.state.value.project!!.clips.all { it.gpuFilterConfig.activeProfileId == GpuColorProfiles.CINEMATIC.id })
+    }
+    @Test
+    fun `grouped selection keeps clips together during reorder`() {
+        val vm = vm(video("a"), video("b"), video("tail"))
+        vm._state.update { it.copy(selectedClipIds = setOf("a", "b"), multiSelectMode = true) }
+        assertTrue(vm.groupSelectedClips())
+        val groupIds = vm.state.value.project!!.clips.filter { it.id == "a" || it.id == "b" }.map { it.groupId }.toSet()
+        assertEquals(1, groupIds.size)
+        vm.reorderClips(0, 2)
+        assertEquals(listOf("tail", "a", "b"), vm.state.value.project!!.clips.map { it.id })
+    }
+
 }

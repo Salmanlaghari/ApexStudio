@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.presentation.state.EditorState
 
 /**
@@ -18,7 +19,10 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     if (state.activeArFilterId != null) {
         return "Whole-project export does not yet render AR filters. Use selected-clip export to keep that edit."
     }
-    if (!state.cropRect.isFullFrame() || !state.activeGpuFilterConfig.isDefault) {
+    val gpuFilterSupported = state.activeGpuFilterConfig.isDefault ||
+        (OneTapLooks.isValidRenderConfig(state.activeGpuFilterConfig) &&
+            project.clips.any { it.gpuFilterConfig == state.activeGpuFilterConfig })
+    if (!state.cropRect.isFullFrame() || !gpuFilterSupported) {
         return "Whole-project export does not yet render GPU filters or crop. Use selected-clip export to keep those edits."
     }
     if (project.stickers.isNotEmpty()) {

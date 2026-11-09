@@ -88,7 +88,7 @@ fun EditorViewModel.applyRangeTimeRender(
             canRedo = false
         )
     }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
     return RangeTimeApplyResult.Applied(plan)
 }
 

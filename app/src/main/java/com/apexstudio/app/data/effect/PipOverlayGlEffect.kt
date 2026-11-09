@@ -718,7 +718,7 @@ class PipOverlayGlEffect(
             uniform float uPipAngle; // radians, clockwise-positive
             uniform float uPipOpacity;
             uniform float uPipEnabled;
-            uniform float uPipBlend;       // 0 normal, 1 screen, 2 multiply, 3 overlay
+            uniform float uPipBlend;       // 0 normal, 1 screen, 2 multiply, 3 overlay, 4 soft light
             uniform float uPipBorderWidth; // fraction of box width, 0 = no border
             uniform vec3 uPipBorderColor;
             uniform float uPipShadow;      // 0..1 drop-shadow strength
@@ -772,6 +772,14 @@ class PipOverlayGlEffect(
                 vec3 r1 = 2.0 * base * blend;
                 vec3 r2 = 1.0 - 2.0 * (1.0 - base) * (1.0 - blend);
                 return mix(r2, r1, step(base, vec3(0.5)));
+            }
+
+            vec3 blendSoftLight(vec3 base, vec3 blend) {
+                vec3 curve = ((16.0 * base - 12.0) * base + 4.0) * base;
+                vec3 d = mix(sqrt(max(base, vec3(0.0))), curve, step(base, vec3(0.25)));
+                vec3 low = base - (1.0 - 2.0 * blend) * base * (1.0 - base);
+                vec3 high = base + (2.0 * blend - 1.0) * (d - base);
+                return mix(low, high, step(vec3(0.5), blend));
             }
 
             // Soft rectangular shadow factor for a point in the box's
@@ -851,8 +859,10 @@ class PipOverlayGlEffect(
                             blended = 1.0 - (1.0 - pip.rgb) * (1.0 - video.rgb);
                         } else if (uPipBlend < 2.5) {
                             blended = pip.rgb * video.rgb;
-                        } else {
+                        } else if (uPipBlend < 3.5) {
                             blended = blendOverlay(video.rgb, pip.rgb);
+                        } else {
+                            blended = blendSoftLight(video.rgb, pip.rgb);
                         }
                         vec3 outRgb = blended * a + video.rgb * (1.0 - a);
                         outColor = vec4(outRgb, video.a);

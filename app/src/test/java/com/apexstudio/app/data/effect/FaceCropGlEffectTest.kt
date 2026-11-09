@@ -40,6 +40,17 @@ class FaceCropGlEffectTest {
         assertEquals(9_000L, config.sourceTimestampMs(Long.MAX_VALUE))
     }
 
+    @Test fun laterCompositionItemsUseTheirOwnLocalEffectClockBeforeAddingSourceTrim() {
+        val itemConfig = FaceCropRenderConfig(
+            track = track,
+            trimStartMs = 5_000L,
+            trimEndMs = 9_000L
+        ).exportConfig()
+        assertEquals(5_000L, itemConfig.sourceTimestampMs(0L))
+        assertEquals(6_000L, itemConfig.sourceTimestampMs(1_000_000L))
+        assertEquals(9_000L, itemConfig.sourceTimestampMs(20_000_000L))
+    }
+
     @Test fun exportSourceClockNeverAppliesConstantOrRampedSpeedTwice() {
         val base = clip()
         val variants = listOf(base, base.copy(speedMultiplier = 2f), base.copy(speedMultiplier = .5f),

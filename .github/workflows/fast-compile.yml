@@ -1,0 +1,119 @@
+name: Fast compile check
+
+# Quick feedback loop for Kotlin changes.
+#
+# The full Android CI Build job runs lint, unit tests, shader regression,
+# instrumentation compilation and a complete APK + AAB build — ~15 minutes even
+# with a warm cache. When the only question is "does this compile?", that is far
+# too slow to iterate on.
+#
+# This workflow answers exactly one question — does `:app` type-check — in about
+# 3 minutes, and reports EVERY compiler error as its own annotation so all of
+# them can be fixed in one pass instead of one round-trip per error.
+#
+# Trigger: push to a branch named `compile/**`, or run manually.
+
+on:
+  push:
+    branches: [ 'compile/**' ]
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
+
+jobs:
+  compile:
+    name: Type-check :app (debug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Cache Gradle and Android dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android/build-cache
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest ndk;28.2.13676358 cmake;3.22.1'
+
+      - name: Accept SDK licenses
+        run: |
+          mkdir -p $ANDROID_HOME/licenses
+          cat <<EOF > $ANDROID_HOME/licenses/android-sdk-license
+          24333f8a63b6825ea9c5514f83c2829b004d1fee
+          d56f5187479451eabf01fb78af6dfcb131a6481e
+          8933bad161af4178b1185d1a37fbf41ea5269c55
+          EOF
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      - name: Ensure Gradle wrapper is executable
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
+          fi
+          chmod +x gradlew
+
+      # --continue keeps going after the first failing module so one run
+      # surfaces every error instead of just the earliest one.
+      - name: Type-check Kotlin (main + unit test sources)
+        id: typecheck
+        run: |
+          set -o pipefail
+          ./gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin \
+            --continue --no-daemon 2>&1 | tee gradle-compile.log
+          echo "exit=${PIPESTATUS[0]}"
+
+      # One annotation per compiler error. GitHub accepts many annotations per
+      # step, so a run with 12 errors produces 12 fixable lines rather than a
+      # truncated blob.
+      - name: Report every compiler error
+        if: always()
+        run: |
+          if [ ! -f gradle-compile.log ]; then
+            echo "::error::gradle-compile.log was not produced"
+            exit 0
+          fi
+          {
+            grep -E '^e: ' gradle-compile.log || true
+          } | sed 's/^e: //' | sort -u | head -60 > compile-errors.txt
+          if [ ! -s compile-errors.txt ]; then
+            echo "No compiler errors reported."
+            exit 0
+          fi
+          while IFS= read -r line; do
+            echo "::error::$line"
+          done < compile-errors.txt
+
+      - name: Upload compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log-${{ github.run_id }}
+          path: gradle-compile.log
+          if-no-files-found: ignore
+          retention-days: 7

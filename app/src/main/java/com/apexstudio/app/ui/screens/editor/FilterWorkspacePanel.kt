@@ -2,9 +2,10 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,14 +22,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apexstudio.app.data.effect.WorkspaceFilterThumbnailGenerator
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
@@ -39,6 +45,8 @@ import com.apexstudio.app.presentation.viewmodel.applyWorkspaceEffects
 import com.apexstudio.app.presentation.viewmodel.setPlaying
 import com.apexstudio.app.presentation.viewmodel.setPlayerError
 import com.apexstudio.app.ui.theme.EditorPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** A compact, local-only color-look workspace. Drafts are preview-only until the single Apply boundary. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,7 +62,38 @@ internal fun FilterWorkspacePanel(
     onDismiss: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val catalog = WorkspaceFilterPresets.all
+    var filterSampleBitmaps by remember(originalClip.id) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    val filterSampleSourceMs = remember(originalClip.id) {
+        sourceTimeAtProjectPlayhead(
+            clips = state.project?.clips.orEmpty(),
+            clip = originalClip,
+            liveProjectTimeMs = null,
+            fallbackProjectTimeMs = state.currentTimeMs,
+        )
+    }
+    LaunchedEffect(originalClip.id, filterSampleSourceMs) {
+        val sampleFrame = withContext(Dispatchers.IO) {
+            runCatching {
+                if (originalClip.uri.isBlank()) null else {
+                    val playable = com.apexstudio.app.data.media.MediaUriResolver
+                        .resolvePlayableUri(context, originalClip.uri)
+                    val missingLocalFile = playable.scheme == "file" &&
+                        !java.io.File(playable.path.orEmpty()).isFile
+                    if (missingLocalFile) null else {
+                        com.apexstudio.app.data.media.VideoThumbnailExtractor
+                            .extractFrame(context, playable.toString(), filterSampleSourceMs)
+                    }
+                }
+            }.getOrNull()
+        }
+        filterSampleBitmaps = WorkspaceFilterThumbnailGenerator.generate(
+            context = context,
+            source = sampleFrame,
+            presetIds = catalog.map { it.id },
+        )
+    }
     val firstExisting = remember(originalClip) { originalClip.workspaceEffects.indexOfFirst { it.id in WorkspaceEffectPresets.filterIds }.takeIf { it >= 0 } }
     var effects by remember(originalClip) { mutableStateOf(originalClip.workspaceEffects) }
     var selectedIndex by remember(originalClip) { mutableStateOf(firstExisting) }
@@ -132,6 +171,10 @@ internal fun FilterWorkspacePanel(
     }
     val background = EditorPalette.BgDeep
     val foreground = EditorPalette.TextPrimary
+    val density = LocalDensity.current
+    val workspaceScroll = remember(originalClip.id, density) {
+        ScrollState(initial = with(density) { 320.dp.roundToPx() })
+    }
 
     Surface(
         color = background,
@@ -150,7 +193,7 @@ internal fun FilterWorkspacePanel(
             }
 
             Row(
-                Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()),
+                Modifier.weight(1f).fillMaxWidth().horizontalScroll(workspaceScroll),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -199,7 +242,7 @@ internal fun FilterWorkspacePanel(
                                         label = { Text("${preset?.label ?: indexed.value.id}  ${indexed.value.startMs}–${indexed.value.endMs}ms", maxLines = 1) },
                                         leadingIcon = { Box(Modifier.size(9.dp).clip(RoundedCornerShape(3.dp)).background(Color(preset?.swatchArgb ?: 0xFF8C91A0))) },
                                         colors = AssistChipDefaults.assistChipColors(
-                                            containerColor = if (selectedIndex == indexed.index) EditorPalette.BgElevated else EditorPalette.BgDeep,
+                                            containerColor = if (selectedIndex == indexed.index) EditorPalette.NeonPurple.copy(alpha = 0.16f) else EditorPalette.BgDeep,
                                             labelColor = foreground,
                                             leadingIconContentColor = foreground
                                         ),
@@ -240,7 +283,11 @@ internal fun FilterWorkspacePanel(
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().testTag("filter-look-categories")) {
                             items(categories) { name ->
                                 FilterChip(selected = category == name, onClick = { category = name },
-                                    label = { Text(name, fontSize = 10.sp) }, modifier = Modifier.testTag("filter-look-category-$name"))
+                                    label = { Text(name, fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = EditorPalette.NeonPurple.copy(alpha = 0.18f),
+                                        selectedLabelColor = EditorPalette.NeonPurple
+                                    ), modifier = Modifier.testTag("filter-look-category-$name"))
                             }
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -249,15 +296,27 @@ internal fun FilterWorkspacePanel(
                                 Column(
                                     Modifier.width(76.dp).clip(RoundedCornerShape(10.dp))
                                         .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgDeep)
-                                        .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonCyan else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
+                                        .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonPurple else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
                                         .testTag("filter-preset-${preset.id}")
                                         .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
                                         .semantics { contentDescription = "${preset.label}: ${preset.description}" }
                                         .padding(horizontal = 6.dp, vertical = 7.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Box(Modifier.fillMaxWidth().height(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
-                                        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                                    val sample = filterSampleBitmaps[preset.id]
+                                    if (sample != null) {
+                                        Image(
+                                            bitmap = sample,
+                                            contentDescription = "${preset.label} sample preview",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .testTag("filter-sample-${preset.id}"),
+                                        )
+                                    } else {
+                                        Box(Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(6.dp)).background(Color(preset.swatchArgb))) {
+                                            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                                        }
                                     }
                                     Text(preset.label, color = foreground, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -355,14 +414,15 @@ internal fun FilterWorkspacePanel(
             }
 
             // Pinned cancellation and commit actions remain visible while cards scroll.
-            Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { onPreviewClip(originalClip); onDismiss() }, modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                 Button(
                     onClick = {
                         if (enabled && state.playerError == null && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
                     },
                     enabled = enabled && dirty && state.playerError == null,
-                    modifier = Modifier.testTag("filter-apply")
+                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
+                    colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)
                 ) { Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Apply") }
             }
         }

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.timeline.withCurrentTimelineAuthority
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -55,16 +56,16 @@ class ProjectRepository(private val context: Context) {
 
     /** Insert or replace a project (matched by id). */
     suspend fun saveProject(project: Project) {
+        val normalizedProject = project.withCurrentTimelineAuthority()
         context.projectDataStore.edit { prefs ->
             val current = decode(prefs[key]).toMutableList()
-            val idx = current.indexOfFirst { it.id == project.id }
+            val idx = current.indexOfFirst { it.id == normalizedProject.id }
             if (idx >= 0) {
-                // Preserve the existing marker. In particular, an auto-save of
-                // a legacy project must not silently label its old timeline as
-                // migrated while leaving absolute overlay/music offsets alone.
-                current[idx] = project.copy(timingModelVersion = current[idx].timingModelVersion)
+                // The typed-timeline schema migrates independently from legacy
+                // composition timing semantics; keep the existing timing marker.
+                current[idx] = normalizedProject.copy(timingModelVersion = current[idx].timingModelVersion)
             } else {
-                current.add(project.copy(timingModelVersion = Project.CURRENT_TIMING_MODEL_VERSION))
+                current.add(normalizedProject.copy(timingModelVersion = Project.CURRENT_TIMING_MODEL_VERSION))
             }
             prefs[key] = json.encodeToString(serializer, current)
         }
@@ -79,11 +80,13 @@ class ProjectRepository(private val context: Context) {
         }
     }
 
-    private fun decode(raw: String?): List<Project> = if (raw.isNullOrEmpty()) {
+    internal fun decode(raw: String?): List<Project> = if (raw.isNullOrEmpty()) {
         emptyList()
     } else {
         try {
-            json.decodeFromString(serializer, raw)
+            json.decodeFromString(serializer, raw).map { project ->
+                runCatching { project.withCurrentTimelineAuthority() }.getOrDefault(project)
+            }
         } catch (e: Exception) {
             // Treat a corrupt blob as empty — a single bad write
             // shouldn't brick the whole project list. The next save

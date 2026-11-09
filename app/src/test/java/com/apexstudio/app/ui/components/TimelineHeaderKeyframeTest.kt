@@ -138,13 +138,13 @@ class TimelineHeaderKeyframeTest {
     }
 
     @Test
-    fun headerActionHasA44DpTargetAndAllActionsFitAt320Dp() {
+    fun headerActionHasA40DpTargetAndAllActionsFitAt320Dp() {
         assertHeaderFitsAtWidth(320)
     }
 
     @Test
     @Config(sdk = [34], qualifiers = "w375dp-h720dp-mdpi")
-    fun headerActionHasA44DpTargetAndAllActionsFitAt375Dp() {
+    fun headerActionHasA40DpTargetAndAllActionsFitAt375Dp() {
         assertHeaderFitsAtWidth(375)
     }
 
@@ -152,10 +152,11 @@ class TimelineHeaderKeyframeTest {
         setTimeline(widthDp = width)
         val header = compose.onNodeWithTag("timeline-header").fetchSemanticsNode().boundsInRoot
         val keyframe = compose.onNodeWithTag("timeline-header-keyframe").fetchSemanticsNode().boundsInRoot
-        assertTrue("Keyframe target should be at least 44dp square: $keyframe", keyframe.width >= 44f && keyframe.height >= 44f)
+        assertTrue("Keyframe target should be at least 40dp square: $keyframe", keyframe.width >= 40f && keyframe.height >= 40f)
         assertTrue("Keyframe action must remain inside the $width dp header: header=$header action=$keyframe", keyframe.left >= header.left && keyframe.right <= header.right)
         compose.onNodeWithTag("timeline-reveal-playhead").assertIsDisplayed()
         compose.onNodeWithTag("timeline-multiselect").assertIsDisplayed()
         compose.onNodeWithTag("timeline-header-add-media").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
     }
 }

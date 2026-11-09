@@ -45,12 +45,14 @@ class VideoTimelineHeaderTest {
             )
         }
 
-        compose.onNodeWithText("TIMELINE").assertIsDisplayed()
+        compose.onNodeWithText("Timeline").assertIsDisplayed()
         compose.onNodeWithTag("timeline-duration").assertExists()
-        compose.onNodeWithText("Add Clip").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertExists()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed()
+        compose.onNodeWithText("Add Clip").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
-        compose.onNodeWithContentDescription("Add video media").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Add clip").assertIsDisplayed().performClick()
         compose.onNodeWithText("Video").assertIsDisplayed()
         compose.onNodeWithText("Music").assertIsDisplayed()
         compose.onNodeWithText("V1").assertDoesNotExist()
@@ -61,4 +63,24 @@ class VideoTimelineHeaderTest {
             assertEquals(listOf(ClipType.VIDEO), addedTypes)
         }
     }
+    @Test
+    fun multiSelectActionsAreReachableAtCompactWidthAndInvokeCallbacks() {
+        var duplicated = false
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(MediaClip("main", "Main", "file:///main.mp4", 10_000L, trimEndMs = 10_000L)),
+                totalDurationMs = 10_000L,
+                playheadMs = 0L,
+                multiSelectMode = true,
+                selectedClipIds = setOf("main"),
+                onDuplicateSelectedClips = { duplicated = true },
+                onOpenSpeed = {}, onOpenTrim = {},
+                scrollState = ScrollState(0), modifier = Modifier.fillMaxSize()
+            )
+        }
+        compose.onNodeWithTag("timeline-multiselect-actions").performClick()
+        compose.onNodeWithTag("timeline-action-duplicate").performClick()
+        compose.runOnIdle { assertEquals(true, duplicated) }
+    }
+
 }

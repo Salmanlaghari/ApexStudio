@@ -4,6 +4,7 @@ import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ExportResolution
@@ -13,6 +14,7 @@ import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import kotlinx.coroutines.flow.update
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 internal fun projectMainExportClips(state: EditorState): List<MediaClip> =
     state.project?.clips.orEmpty().filter {
         it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
@@ -22,7 +24,8 @@ internal fun buildProjectExportConfig(
     state: EditorState,
     audio: AudioStudioState,
     settings: ExportSettings,
-    filterPreset: FilterPreset? = null
+    filterPreset: FilterPreset? = null,
+    includeSharedVideoClips: Boolean = true
 ): ExportEngine.ExportConfig = ExportEngine.ExportConfig(
     resolution = ExportResolution.canonical(settings.resolution),
     fps = settings.frameRate,
@@ -31,13 +34,22 @@ internal fun buildProjectExportConfig(
     bitrateMbps = settings.bitrateMbps,
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
+    signature = state.project?.signature,
     videoDrawings = state.project?.videoDrawings.orEmpty(),
+    sharedVideoClips = if (includeSharedVideoClips) {
+        state.project?.let { project ->
+            project.clips.mapNotNull { clip ->
+                project.sharedVideoClip(clip.id)?.let { clip.id to it }
+            }.toMap()
+        }.orEmpty()
+    } else emptyMap(),
     adjustments = state.adjustments,
     fxPreset = FxPreset.byId(state.activeFxId),
     fxIntensity = state.fxIntensity,
     fxSpeed = state.fxSpeed,
     pitchSemitones = audio.pitchSemitones,
     volume = if (audio.isMuted) 0f else audio.volume,
+    globalAudioVolume = if (audio.isMuted) 0f else audio.volume,
     reverbEnabled = audio.reverbEnabled,
     reverbPreset = audio.reverbPreset,
     echoEnabled = audio.echoEnabled,
@@ -53,16 +65,22 @@ internal fun wholeProjectExportUnsupportedReason(
     audio: AudioStudioState,
     settings: ExportSettings,
     filterPreset: FilterPreset? = null
-): String? = projectVisualScopeUnsupportedReason(state)
-    ?: if (state.activeFilterId != null && filterPreset == null) {
+): String? {
+    val activeFilterMirrorsViralHdr =
+        OneTapLooks.isValidRenderConfig(state.activeGpuFilterConfig) &&
+            state.activeFilterId == state.activeGpuFilterConfig.filterPresetId
+    return projectVisualScopeUnsupportedReason(state)
+    ?: if (state.activeFilterId != null && !activeFilterMirrorsViralHdr && filterPreset == null) {
         "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
     } else if (state.activeFxId != null && FxPreset.byId(state.activeFxId) == null) {
         "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
     } else {
         projectCompositionUnsupportedReason(
-            projectMainExportClips(state), buildProjectExportConfig(state, audio, settings, filterPreset)
+            projectMainExportClips(state),
+            buildProjectExportConfig(state, audio, settings, filterPreset, includeSharedVideoClips = false)
         )
     }
+}
 
 /** Explicit opt-in; the selected-clip route and its visuals remain unchanged. */
 fun EditorViewModel.startWholeProjectExport() {
@@ -70,7 +88,10 @@ fun EditorViewModel.startWholeProjectExport() {
     val snapshot = _state.value
     val audioSnapshot = _audio.value
     val settings = _export.value.settings
-    val filterPreset = if (snapshot.activeFilterId != null && context != null) {
+    val activeFilterMirrorsViralHdr =
+        OneTapLooks.isValidRenderConfig(snapshot.activeGpuFilterConfig) &&
+            snapshot.activeFilterId == snapshot.activeGpuFilterConfig.filterPresetId
+    val filterPreset = if (!activeFilterMirrorsViralHdr && snapshot.activeFilterId != null && context != null) {
         try {
             com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
                 .firstOrNull { it.id == snapshot.activeFilterId }

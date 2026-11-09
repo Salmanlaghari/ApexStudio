@@ -130,5 +130,5 @@ fun EditorViewModel.trimOverlayClip(
         )
     }
     updatedDuration?.let { duration -> _playerPosition.update { it.coerceAtMost(duration) } }
-    persistProject()
+    persistProject(refreshLegacyClipFields = true)
 }

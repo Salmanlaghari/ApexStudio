@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 /**
  * Legacy overlay repair (Bug B): OVERLAY clips created before the
  * overlay-track system (or by a buggy build) can carry trackIndex 0
@@ -43,6 +44,26 @@ internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaCli
 internal fun withImportedMainVideoFitDefault(clip: MediaClip): MediaClip =
     if (clip.type == ClipType.VIDEO) clip.copy(videoFitMode = VideoFitMode.COVER) else clip
 
+/** Recreates a cached procedural SFX source when a saved audio track is loaded. */
+internal fun recoverCachedSfxTrack(context: android.content.Context, track: AudioTrack): AudioTrack {
+    val effectId = track.sfxEffectId ?: return track
+    val effect = com.apexstudio.app.data.audio.sfx.SfxLibrary.find(effectId) ?: return track
+    return try {
+        val durationMs = track.sourceDurationMs.takeIf { it > 0L } ?: effect.defaultDurationMs
+        val source = com.apexstudio.app.data.audio.sfx.SfxWavCache.getOrCreate(
+            context, effectId, durationMs, track.sfxIntensity
+        )
+        track.copy(
+            uri = source.absolutePath,
+            sourceDurationMs = durationMs,
+            trimEndMs = track.trimEndMs.takeIf { it > 0L } ?: durationMs
+        )
+    } catch (error: Exception) {
+        Log.w("EditorViewModel", "Could not restore cached SFX '${track.name}'", error)
+        track
+    }
+}
+
 
 internal fun EditorViewModel.loadProject() {
     viewModelScope.launch {
@@ -52,7 +73,16 @@ internal fun EditorViewModel.loadProject() {
         val projects = projectRepository?.loadAll()?.first() ?: repo.loadProjects()
         val p = resolveEditorProject(projects, projectId)
         if (p == null) {
-            _state.update { it.copy(project = null, durationMs = 0L) }
+            _state.update {
+                it.copy(
+                    project = null,
+                    durationMs = 0L,
+                    beatMarkersMs = emptyList(),
+                    beatMarkersByTrackUri = emptyMap(),
+                    beatSourceTrackId = null,
+                    beatsAnalyzing = false
+                )
+            }
             return@launch
         }
 
@@ -62,6 +92,13 @@ internal fun EditorViewModel.loadProject() {
             } catch (_: Exception) { null }
         }
         val ctx = context
+        val recoveredAudioTracks = if (ctx == null) {
+            p.audioTracks
+        } else {
+            withContext(Dispatchers.IO) {
+                p.audioTracks.map { track -> recoverCachedSfxTrack(ctx, track) }
+            }
+        }
         val validClips = p.clips.map { clip ->
             if (ctx != null) {
                 val resolvedUri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(ctx, clip.uri).toString()
@@ -88,17 +125,36 @@ internal fun EditorViewModel.loadProject() {
         } else normalizeOverlayTrackIndices(validClips)
         val updatedP = p.copy(
             clips = effectiveClips,
-            durationMs = computeTimelineDurationMs(effectiveClips, p.audioTracks)
+            audioTracks = recoveredAudioTracks,
+            durationMs = computeTimelineDurationMs(effectiveClips, recoveredAudioTracks),
+            hiddenVideoLayers = p.hiddenVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet(),
+            lockedVideoLayers = p.lockedVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet()
+        ).syncSharedTimeline(
+            importLegacyAnimation = true,
+            refreshLegacyClipFields = true,
+            refreshLegacyAudioFields = true
         )
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
         _state.update {
+            val validSelectedClipIds = it.selectedClipIds.intersect(updatedP.clips.map { clip -> clip.id }.toSet())
             it.copy(
                 project = updatedP,
                 durationMs = updatedP.durationMs,
+                hiddenVideoLayers = updatedP.hiddenVideoLayers,
+                lockedVideoLayers = updatedP.lockedVideoLayers,
                 canUndo = false, canRedo = false,
                 selectedClipId = it.selectedClipId ?: firstClipId,
+                selectedClipIds = validSelectedClipIds,
+                multiSelectMode = it.multiSelectMode && validSelectedClipIds.isNotEmpty(),
+                // Beat detections are transient and URI-specific; the loaded project can resolve media differently.
+                // Clear stale results and let the user rerun Beats for tracks they want analyzed.
+                beatMarkersMs = emptyList(),
+                beatMarkersByTrackUri = emptyMap(),
+                beatSourceTrackId = null,
+                beatsAnalyzing = false,
+                snapToBeat = false,
                 // Loading a project establishes its initial playhead; it
                 // must not start playback before the user presses Play.
                 isPlaying = false
@@ -465,11 +521,21 @@ internal fun EditorViewModel.loadClipThumbnails(clip: MediaClip) {
 fun EditorViewModel.flushProject() = persistProject()
 
 
-internal fun EditorViewModel.persistProject() {
+internal fun EditorViewModel.persistProject(
+    importLegacyAnimation: Boolean = false,
+    refreshLegacyClipFields: Boolean = false,
+    refreshLegacyTextStickerFields: Boolean = false,
+    refreshLegacyDrawingClipIds: Set<String> = emptySet()
+) {
     val snapshot = _state.value.project ?: return
     val repo = projectRepository ?: return
     // Phase 3: stamp edit time so History sorts correctly.
-    val stamped = snapshot.copy(lastEditedMs = System.currentTimeMillis())
+    val stamped = snapshot.syncSharedTimeline(
+        importLegacyAnimation = importLegacyAnimation,
+        refreshLegacyClipFields = refreshLegacyClipFields,
+        refreshLegacyTextStickerFields = refreshLegacyTextStickerFields,
+        refreshLegacyDrawingClipIds = refreshLegacyDrawingClipIds
+    ).copy(lastEditedMs = System.currentTimeMillis())
     if (stamped != snapshot) {
         _state.update { it.copy(project = stamped) }
     }
@@ -490,7 +556,7 @@ internal fun EditorViewModel.persistProject() {
 fun EditorViewModel.saveDraft(name: String? = null) {
     val snapshot = _state.value.project ?: return
     val repo = projectRepository ?: return
-    val draft = snapshot.copy(
+    val draft = snapshot.syncSharedTimeline().copy(
         name = name?.takeIf { it.isNotBlank() } ?: snapshot.name,
         isDraft = true,
         lastEditedMs = System.currentTimeMillis()
@@ -547,7 +613,10 @@ fun EditorViewModel.deleteSavedProject(projectId: String) {
 /** Phase 3: opens a saved project/draft in the editor. */
 fun EditorViewModel.openSavedProject(project: com.apexstudio.app.domain.model.Project) {
     _state.update {
-        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)))
+        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)).syncSharedTimeline(
+            importLegacyAnimation = true,
+            refreshLegacyClipFields = true
+        ))
     }
     persistProject()
 }

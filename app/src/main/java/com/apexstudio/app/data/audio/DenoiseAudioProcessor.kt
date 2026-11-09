@@ -16,8 +16,8 @@ import java.nio.ByteOrder
  *   [DenoiseRenderersFactory], whose audio sink runs one SHARED
  *   instance of this processor. Toggling Clean Voice just flips that
  *   instance's [denoiseSettings] (see below) —
- *   no player rebuild, no seek. (Media3 1.5.0 has no
- *   `Player.setAudioEffects`; the sink is the only supported hook.)
+ *   no player rebuild, no seek. (ExoPlayer has no
+ *   `Player.setAudioEffects`; the sink is the supported hook.)
  * - Export: `Effects(buildExportAudioProcessors(...))` in ExportEngine
  *   (Transformer), where a fresh instance of this processor sits first
  *   in the chain so it sees the original audio before pitch / volume /

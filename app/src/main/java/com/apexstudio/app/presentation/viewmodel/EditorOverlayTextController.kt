@@ -4,8 +4,15 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import com.apexstudio.app.data.export.ProjectTextOverlayTimeline
 import kotlinx.coroutines.flow.update
+import com.apexstudio.app.domain.model.timeline.addAnimationKeyframeAt
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
+import com.apexstudio.app.domain.model.timeline.moveAnimationKeyframe
+import com.apexstudio.app.domain.model.timeline.removeAnimationKeyframeAt
 
 
+import com.apexstudio.app.domain.model.timeline.sharedStickerItem
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.domain.model.timeline.updateSharedStickerItem
 // Phase D: PiP overlay preview. setOverlayTransform persists the
 // (x, y, scale, opacity) tuple so a pinch-zoom doesn't get clobbered
 // by unrelated state recompositions. setOverlayClip registers /
@@ -55,7 +62,7 @@ fun EditorViewModel.addStickerOverlay(symbolOrUri: String, category: String, nam
         val updatedStickers = proj.stickers + newSticker
         st.copy(project = proj.copy(stickers = updatedStickers))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -132,7 +139,9 @@ fun EditorViewModel.updateTextOverlay(
                 })
             } else clip
         }
-        if (found) state.copy(project = project.copy(clips = updatedClips)) else state
+        if (found) state.copy(
+            project = project.copy(clips = updatedClips).syncSharedTimeline(refreshLegacyAnimation = true)
+        ) else state
     }
     if (persist && found) persistProject()
 }
@@ -232,7 +241,7 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
             owner.copy(textOverlays = owner.textOverlays + copies)
         }), selectedTextOverlayId = newId)
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.applyTextPreset(clipId: String, overlayId: String, preset: com.apexstudio.app.data.text.TextPreset) =
@@ -270,7 +279,7 @@ fun EditorViewModel.removeTextOverlay(clipId: String, overlayId: String) {
             })
         }), selectedTextOverlayId = state.selectedTextOverlayId.takeUnless { it == overlayId })
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.selectSticker(id: String?) {
@@ -387,7 +396,7 @@ fun EditorViewModel.updateTextOverlayProjectRange(
         }
         current.copy(project = currentProject.copy(clips = updatedClips))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -399,7 +408,7 @@ fun EditorViewModel.updateStickerTiming(stickerId: String, startMs: Long, endMs:
         }
         s.copy(project = p.copy(stickers = updated))
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 
@@ -429,7 +438,7 @@ fun EditorViewModel.updateSticker(
                         })
                     } else clip
                 }
-            )
+            ).syncSharedTimeline(refreshLegacyAnimation = true)
         )
     }
     if (persist) persistProject()
@@ -455,31 +464,20 @@ fun EditorViewModel.setStickerSizeScale(stickerId: String, scale: Float, persist
  * only that keyframe's offset.
  */
 fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) {
-    val sticker = _state.value.project?.stickers?.firstOrNull { it.id == stickerId } ?: return
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline(importLegacyAnimation = true)
+    val item = project.sharedStickerItem(stickerId) ?: return
     val playheadMs = livePlayheadMs()
-    val existingKf = sticker.keyframes.keyframes.firstOrNull {
-        kotlin.math.abs(it.timeMs - playheadMs) <= 150L
+    val existingTime = item.animationKeyframeTimes().firstOrNull { time ->
+        val delta = time - playheadMs
+        delta in -150L..150L
     }
-    if (existingKf != null) {
-        updateSticker(stickerId) { st ->
-            st.copy(keyframes = KeyframeTrack(st.keyframes.keyframes.filter { it.id != existingKf.id }))
-        }
-    } else {
-        val t = sticker.effectiveTransformAt(playheadMs)
-        val kf = Keyframe(
-            id = java.util.UUID.randomUUID().toString(),
-            timeMs = playheadMs,
-            translateX = t.translateX,
-            translateY = t.translateY,
-            scale = t.scale,
-            rotationDeg = t.rotationDeg,
-            opacity = t.opacity
-        )
-        updateSticker(stickerId) { st ->
-            val without = st.keyframes.keyframes.filter { it.timeMs != playheadMs }
-            st.copy(keyframes = KeyframeTrack(without + kf).sorted())
-        }
-    }
+    val updatedItem = if (existingTime != null) item.removeAnimationKeyframeAt(existingTime)
+        else item.addAnimationKeyframeAt(playheadMs)
+    pushUndo()
+    val updatedProject = project.updateSharedStickerItem(stickerId) { updatedItem }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
+    persistProject()
 }
 
 /**
@@ -487,15 +485,17 @@ fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) {
  * drag on the timeline sticker lane).
  */
 fun EditorViewModel.moveStickerKeyframe(stickerId: String, keyframeId: String, newTimeMs: Long) {
-    updateSticker(stickerId) { st ->
-        st.copy(
-            keyframes = KeyframeTrack(
-                st.keyframes.keyframes.map {
-                    if (it.id == keyframeId) it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) else it
-                }
-            ).sorted()
-        )
+    val original = _state.value.project ?: return
+    val project = original.syncSharedTimeline(importLegacyAnimation = true)
+    val legacy = (project.stickers + project.clips.flatMap { it.stickers })
+        .firstOrNull { it.id == stickerId } ?: return
+    val oldTime = legacy.keyframes.keyframes.firstOrNull { it.id == keyframeId }?.timeMs ?: return
+    pushUndo()
+    val updatedProject = project.updateSharedStickerItem(stickerId) {
+        it.moveAnimationKeyframe(oldTime, newTimeMs.coerceAtLeast(0L))
     }
+    _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
+    persistProject()
 }
 
 // ---- Text mask + mask keyframes (Text Reveal template) ----
@@ -665,7 +665,7 @@ fun EditorViewModel.applyTextRevealTemplate() {
             selectedTextOverlayId = text.id
         )
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 /** Duration of the Text Reveal template effect (matches the ~2s Reel). */
@@ -692,7 +692,7 @@ fun EditorViewModel.removeSticker(stickerId: String) {
         )
         if (s.selectedStickerId == stickerId) cleared.copy(selectedStickerId = null) else cleared
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }
 
 fun EditorViewModel.setStickerCrop(
@@ -730,5 +730,5 @@ fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: S
             stickerPanelOpen = false
         )
     }
-    persistProject()
+    persistProject(refreshLegacyTextStickerFields = true)
 }

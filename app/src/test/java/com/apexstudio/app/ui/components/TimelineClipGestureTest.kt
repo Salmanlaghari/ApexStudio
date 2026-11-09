@@ -49,7 +49,7 @@ class TimelineClipGestureTest {
         selectedClipId: String?,
         clips: List<MediaClip> = listOf(clip("clip-a")),
         onSelectClip: (String) -> Unit = {},
-        onReorderClips: (Int, Int) -> Unit = { _, _ -> },
+        onReorderClips: (List<String>) -> Unit = {},
         onMoveClipOffset: (String, Long) -> Unit = { _, _ -> },
         scrollState: ScrollState? = null,
         onOpenSpeed: () -> Unit = {},
@@ -115,16 +115,12 @@ class TimelineClipGestureTest {
 
     @Test
     fun selectedClipDirectDragReordersWithoutOpeningLongPressMenu() {
-        var reorderedFrom: Int? = null
-        var reorderedTo: Int? = null
+        var reorderedIds: List<String>? = null
         composeRule.setContent {
             timeline(
                 selectedClipId = "clip-a",
                 clips = listOf(clip("clip-a"), clip("clip-b")),
-                onReorderClips = { from, to ->
-                    reorderedFrom = from
-                    reorderedTo = to
-                },
+                onReorderClips = { ids -> reorderedIds = ids },
             )
         }
 
@@ -141,8 +137,7 @@ class TimelineClipGestureTest {
         composeRule.waitForIdle()
 
         composeRule.runOnIdle {
-            assertEquals("first=$firstBounds next=$nextBounds distance=$distancePx", 0, reorderedFrom)
-            assertEquals(1, reorderedTo)
+            assertEquals("first=$firstBounds next=$nextBounds distance=$distancePx", listOf("clip-b", "clip-a"), reorderedIds)
         }
         composeRule.onNodeWithText("Speed").assertDoesNotExist()
         composeRule.onNodeWithText("Trim").assertDoesNotExist()

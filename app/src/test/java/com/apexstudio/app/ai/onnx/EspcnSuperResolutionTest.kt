@@ -48,6 +48,21 @@ class EspcnSuperResolutionTest {
         }
     }
 
+    @Test fun photoInputPlannerPreservesAspectAndCapsOutputWithoutDownscalingLargePhotosSilently() {
+        val (width, height) = EspcnSuperResolutionAdapter.boundedInputDimensions(1280, 720)
+        val (outWidth, outHeight) = EspcnSuperResolutionAdapter.outputDimensions(width, height)
+        assertTrue(width <= 1280 && height <= 720)
+        assertTrue(outWidth.toLong() * outHeight <= EspcnSuperResolutionAdapter.OUTPUT_PIXEL_LIMIT)
+        assertEquals(width.toFloat() / height, outWidth.toFloat() / outHeight, 0.002f)
+        assertTrue(outWidth.toLong() * outHeight > 1280L * 720L)
+        try {
+            EspcnSuperResolutionAdapter.boundedInputDimensions(2048, 2048)
+            fail("A photo already at the safe output-pixel cap must not be presented as an upscale")
+        } catch (blocked: IllegalArgumentException) {
+            assertTrue(blocked.message.orEmpty().contains("already too large to upscale safely"))
+        }
+    }
+
     @Test fun arbitraryModelFileNeverBecomesReadyFromFilenameOrShape() = runBlocking {
         val model = File.createTempFile("fake-super-resolution", ".onnx")
         try {
@@ -58,7 +73,7 @@ class EspcnSuperResolutionTest {
         } finally { model.delete() }
     }
 
-    @Test fun standaloneUpscaleDeniesBeforeModelReadOrProgressOutsideVideoScope() = runBlocking {
+    @Test fun standaloneUpscaleDeniesBeforeModelReadOrProgressOutsideApprovedProjectScopes() = runBlocking {
         val model = File.createTempFile("fake-super-resolution", ".onnx")
         val image = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         var progress = false
@@ -69,7 +84,7 @@ class EspcnSuperResolutionTest {
                 adapter.upscale(image) { progress = true }
                 fail("Standalone still-image upscaling must remain unavailable")
             } catch (blocked: AiModelUnavailableException) {
-                assertTrue(blocked.message!!.contains("Standalone still-image inference is unavailable"))
+                assertTrue(blocked.message!!.contains("available only from Photo AI Enhance"))
             }
             assertFalse(progress)
             assertFalse(image.isRecycled)
@@ -91,7 +106,7 @@ class EspcnSuperResolutionTest {
                 adapter.upscale(image) { progress = true }
                 fail("Standalone ONNX still-image upscaling must remain unavailable")
             } catch (blocked: AiModelUnavailableException) {
-                assertTrue(blocked.message.orEmpty().contains("Standalone still-image inference is unavailable"))
+                assertTrue(blocked.message.orEmpty().contains("available only from Photo AI Enhance"))
             }
             assertFalse(progress)
             assertFalse(image.isRecycled)

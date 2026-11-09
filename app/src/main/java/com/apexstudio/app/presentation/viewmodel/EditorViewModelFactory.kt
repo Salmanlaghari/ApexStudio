@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.createSavedStateHandle
 import com.apexstudio.app.data.repository.MediaRepository
 
 class EditorViewModelFactory(
@@ -23,7 +24,7 @@ class EditorViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
         val context = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? Context
         if (modelClass.isAssignableFrom(EditorViewModel::class.java)) {
-            return EditorViewModel(repo, context, projectId) as T
+            return EditorViewModel(repo, context, projectId, extras.createSavedStateHandle()) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

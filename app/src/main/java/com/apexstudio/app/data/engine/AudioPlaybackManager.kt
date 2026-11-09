@@ -53,6 +53,12 @@ internal object AudioPlaybackMix {
         val cleanVolume = if (keyedVolume.isFinite()) keyedVolume.coerceIn(0f, 1f) else 0f
         return (cleanVolume * envelope).coerceIn(0f, 1f)
     }
+
+    /** Linear left/right gains preserve the center mix level and match export pan behavior. */
+    fun stereoGainsAt(track: AudioTrack, timelinePositionMs: Long): Pair<Float, Float> {
+        val pan = track.panAt(timelinePositionMs).takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
+        return (1f - pan.coerceAtLeast(0f)) to (1f + pan.coerceAtMost(0f))
+    }
 }
 
 /**
@@ -130,7 +136,8 @@ class AudioPlaybackManager(private val context: Context) {
             player?.let { p ->
                 // Sync runs at ~250ms cadence, so preview envelope changes
                 // follow that cadence; export remains sample-accurate.
-                p.setVolume(volume, volume)
+                val (panLeft, panRight) = AudioPlaybackMix.stereoGainsAt(track, positionMs)
+                p.setVolume(volume * panLeft, volume * panRight)
 
                 if (sourcePositionMs != null && enabled) {
                     if (abs(p.currentPosition - sourcePositionMs) > 80) {
@@ -155,7 +162,8 @@ class AudioPlaybackManager(private val context: Context) {
             val track = tracksById[id] ?: continue
             val volume = AudioPlaybackMix.volumeAt(track, positionMs, lastTracks)
             val enabled = AudioPlaybackMix.isEnabled(track, lastTracks)
-            player.setVolume(volume, volume)
+            val (panLeft, panRight) = AudioPlaybackMix.stereoGainsAt(track, positionMs)
+            player.setVolume(volume * panLeft, volume * panRight)
             val sourcePositionMs = AudioPlaybackPosition.sourcePositionMs(track, positionMs)
             if (sourcePositionMs == null || !enabled) {
                 if (player.isPlaying) player.pause()

@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ApexExportRouteTest {
-    @Test fun `export replaces editor color and audio content instead of adding a second screen`() {
+    @Test fun `export selects its own content destination instead of the embedded editor workspace`() {
         for (tab in listOf("edit", "color", "audio", "home")) {
             assertEquals("export", apexContentTab(tab, true))
             assertEquals(tab, apexContentTab(tab, false))

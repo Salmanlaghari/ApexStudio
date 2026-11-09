@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.export
 
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.EditedMediaItem
 import org.junit.Assert.*
@@ -30,7 +31,7 @@ class StandaloneAudioCompositionTest {
         assertEquals(2, result.sequences.size)
         assertSame(first, result.sequences[0].editedMediaItems.single())
         assertSame(music, result.sequences[1].editedMediaItems.single())
-        assertTrue(result.forceAudioTrack)
+        assertTrue(result.sequences.all { C.TRACK_TYPE_AUDIO in it.trackTypes })
     }
 
     @Test

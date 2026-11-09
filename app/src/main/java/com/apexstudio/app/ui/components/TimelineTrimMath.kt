@@ -84,6 +84,62 @@ internal fun timelineTrimEndForOutputDeltaMs(
     return closestBoundary(low, if (low > minEnd) low - 1L else low, target, ::outputDuration)
 }
 
+/** Convert an 8 dp hit radius into milliseconds, with safe bounds for invalid or extreme scales. */
+internal fun beatSnapThresholdMs(msToDp: Float, density: Float): Long {
+    val pixelsPerMs = msToDp * density
+    if (!msToDp.isFinite() || !density.isFinite() || !pixelsPerMs.isFinite() || pixelsPerMs <= 0f) {
+        return 1L
+    }
+    return (8f / pixelsPerMs).coerceIn(1f, MAX_BEAT_SNAP_THRESHOLD_MS.toFloat()).roundToLong()
+}
+
+internal fun snapToBeatTime(
+    timeMs: Long,
+    beatsMs: List<Long>,
+    enabled: Boolean,
+    thresholdMs: Long
+): Long {
+    if (!enabled || thresholdMs < 0L) return timeMs
+    var closest = timeMs
+    var closestDistance = thresholdMs
+    var found = false
+    for (beatMs in beatsMs) {
+        if (beatMs < 0L) continue
+        val distance = absoluteTimeDistance(beatMs, timeMs)
+        if (distance <= closestDistance && (!found || distance < closestDistance || beatMs < closest)) {
+            closest = beatMs
+            closestDistance = distance
+            found = true
+        }
+    }
+    return if (found) closest else timeMs
+}
+
+/**
+ * Snap a video tail in project time, then invert the speed curve to the source
+ * trim boundary using the same output-duration math as a manual trim drag.
+ */
+internal fun snapVideoTrimEndToBeat(
+    clip: MediaClip,
+    trimStartMs: Long,
+    requestedEndMs: Long,
+    timelineStartMs: Long,
+    beatMarkersMs: List<Long>,
+    enabled: Boolean,
+    thresholdMs: Long
+): Long {
+    if (!enabled || beatMarkersMs.isEmpty()) return requestedEndMs
+    val baseClip = clip.copy(trimStartMs = trimStartMs)
+    val requestedClip = baseClip.copy(trimEndMs = requestedEndMs)
+    val rawTimelineEnd = addSaturated(timelineStartMs, requestedClip.effectiveDurationMs())
+    val snappedTimelineEnd = snapToBeatTime(rawTimelineEnd, beatMarkersMs, enabled, thresholdMs)
+    if (snappedTimelineEnd == rawTimelineEnd) return requestedEndMs
+
+    val targetDurationMs = subtractSaturated(snappedTimelineEnd, timelineStartMs)
+    val outputDeltaMs = subtractSaturated(targetDurationMs, baseClip.effectiveDurationMs())
+    return timelineTrimEndForOutputDeltaMs(baseClip, outputDeltaMs)
+}
+
 /** Avoid choosing an arbitrary edge of a rounded output-duration plateau at constant speed. */
 private fun constantMainSourceDelta(clip: MediaClip, outputDeltaMs: Long): Long? {
     if (clip.type != ClipType.VIDEO || clip.trackIndex != 0 ||
@@ -105,6 +161,11 @@ private inline fun closestBoundary(
 private fun absoluteDifference(a: Long, b: Long): Long =
     if (a >= b) a - b else b - a
 
+private fun absoluteTimeDistance(a: Long, b: Long): Long {
+    val distance = if (a >= b) a - b else b - a
+    return if (distance < 0L) Long.MAX_VALUE else distance
+}
+
 private fun addSaturated(a: Long, b: Long): Long = when {
     b > 0L && a > Long.MAX_VALUE - b -> Long.MAX_VALUE
     b < 0L && a < Long.MIN_VALUE - b -> Long.MIN_VALUE
@@ -116,3 +177,5 @@ private fun subtractSaturated(a: Long, b: Long): Long = when {
     b > 0L && a < Long.MIN_VALUE + b -> Long.MIN_VALUE
     else -> a - b
 }
+
+private const val MAX_BEAT_SNAP_THRESHOLD_MS = 5_000L

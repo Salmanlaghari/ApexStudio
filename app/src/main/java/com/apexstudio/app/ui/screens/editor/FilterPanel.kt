@@ -38,7 +38,7 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * Bottom-sheet style filter panel: 7 category chips at the top, a
+ * Bottom-sheet style filter panel: category chips at the top, a
  * horizontal list of filter chips per category below, and an
  * intensity slider at the bottom. Shows "Original" as the first
  * chip in every category so the user can always snap back to the

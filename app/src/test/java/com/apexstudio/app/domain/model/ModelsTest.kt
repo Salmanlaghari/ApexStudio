@@ -84,6 +84,15 @@ class ModelsTest {
     }
 
     @Test
+    fun `MediaClip persists chroma settings independently per clip`() {
+        val settings = ChromaKeySettings(enabled = true, keyColorArgb = 0xFF0000FF)
+        val clip = MediaClip("keyed", "Keyed", "file:///keyed.mp4", 1_000L, trimEndMs = 1_000L,
+            chromaKeySettings = settings)
+        assertEquals(settings, clip.chromaKeySettings)
+        assertEquals(null, MediaClip("plain", "Plain", "file:///plain.mp4", 1_000L, trimEndMs = 1_000L).chromaKeySettings)
+    }
+
+    @Test
     fun `ClipTransition defaults are valid`() {
         val transition = ClipTransition(
             fromClipId = "clip1",

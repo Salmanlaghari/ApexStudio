@@ -84,6 +84,7 @@ fun ScreenWordingObjects(
                 containerHeight = screenH,
                 currentTimeMs = captionTimeMs,
                 isPlaying = isPlaying,
+                captionTrackOverlays = textOverlays,
                 onSelect = { onSelectTextOverlay?.invoke(overlay.id) },
                 onPositionChange = { newX, newY ->
                     val dx = newX - overlay.x

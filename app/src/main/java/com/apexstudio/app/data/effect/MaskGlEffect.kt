@@ -12,7 +12,6 @@ import androidx.media3.effect.GlShaderProgram
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.VideoMask
-import com.apexstudio.app.domain.model.resolveMaskAt
 
 /**
  * Media3 [GlEffect] that applies a [VideoMask] (CapCut-style Mask tool)
@@ -29,12 +28,11 @@ import com.apexstudio.app.domain.model.resolveMaskAt
 @UnstableApi
 class MaskGlEffect private constructor(
     private val mask: VideoMask,
-    private val maskTimeMsProvider: (() -> Long)?,
-    private val timeMsAtPresentationTimeUs: ((Long) -> Long)?
+    private val maskAtPresentationTimeUs: (Long) -> VideoMask = { mask }
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: android.content.Context, useHdr: Boolean): GlShaderProgram {
-        return MaskShaderProgram(mask, maskTimeMsProvider, timeMsAtPresentationTimeUs, useHdr)
+        return MaskShaderProgram(mask, maskAtPresentationTimeUs, useHdr)
     }
 
     companion object {
@@ -50,36 +48,25 @@ class MaskGlEffect private constructor(
          */
         fun fromMask(
             mask: VideoMask?,
-            maskTimeMsProvider: (() -> Long)? = null,
-            timeMsAtPresentationTimeUs: ((Long) -> Long)? = null
+            maskAtPresentationTimeUs: ((Long) -> VideoMask)? = null
         ): MaskGlEffect? {
             if (mask == null || !mask.enabled) return null
-            // An animated mask may have a transparent base value while its
-            // keyframes become visible later; do not prune that live effect.
-            val animated = mask.maskKeyframes.isNotEmpty()
-            if (mask.opacity <= 0.001f && !animated) return null
+            require(MaskModel.isAvailable(mask.shape)) {
+                MaskModel.BLUR_FACES_UNAVAILABLE_REASON
+            }
+            if (mask.shape == MaskShape.DRAW) {
+                require(MaskModel.outline(mask.shape, mask.drawPoints).size >= 4) {
+                    "Pen mask requires at least three distinct finite points before export"
+                }
+            }
+            if (mask.opacity <= 0.001f && mask.maskKeyframes.isEmpty()) return null
             // Full-size non-inverted rect/ellipse with full opacity is a
             // no-op. LINEAR is excluded: its wipe position (centerX) still
             // cuts the frame even at full size, so it must reach the shader.
             val coversAll = mask.sizeX >= 0.999f && mask.sizeY >= 0.999f &&
                     !mask.invert && mask.shape != MaskShape.LINEAR
-            if (coversAll && mask.opacity >= 0.999f && !animated) return null
-            return MaskGlEffect(mask, maskTimeMsProvider, timeMsAtPresentationTimeUs)
-        }
-
-        /** Resolve the geometry for one decoded frame; exposed for JVM tests. */
-        internal fun resolveMaskAtFrame(
-            mask: VideoMask,
-            presentationTimeUs: Long,
-            maskTimeMsProvider: (() -> Long)? = null,
-            timeMsAtPresentationTimeUs: ((Long) -> Long)? = null
-        ): VideoMask {
-            if (mask.maskKeyframes.isEmpty()) return mask
-            val timeMs = (maskTimeMsProvider?.invoke()
-                ?: timeMsAtPresentationTimeUs?.invoke(presentationTimeUs)
-                ?: (presentationTimeUs / 1_000L))
-                .coerceAtLeast(0L)
-            return mask.resolveMaskAt(timeMs)
+            if (coversAll && mask.opacity >= 0.999f && mask.maskKeyframes.isEmpty()) return null
+            return MaskGlEffect(mask, maskAtPresentationTimeUs ?: { mask })
         }
 
         private val VERTEX_SHADER = """
@@ -118,8 +105,9 @@ class MaskGlEffect private constructor(
             uniform float uAspect;   // frame width / height
             uniform float uShape;    // see contract above
             uniform float uRotation; // clockwise radians, y-down frame
-            // Uploaded with GLES glUniform1fv after the common uniform bind:
-            // Media3 GlProgram's cached float storage holds only 16 values.
+            // Two float arrays rather than one vec2[]: GlProgram only sets
+            // float arrays with glUniform1fv, and mixing in a vec2 array
+            // would make the whole call a GL_INVALID_OPERATION.
             uniform float uPolyX[32]; // polygon x, shape space
             uniform float uPolyY[32]; // polygon y, shape space
             uniform float uPolyN;     // incl. the closing duplicate
@@ -246,18 +234,13 @@ class MaskGlEffect private constructor(
 
     @UnstableApi
     private class MaskShaderProgram(
-        private val mask: VideoMask,
-        private val maskTimeMsProvider: (() -> Long)?,
-        private val timeMsAtPresentationTimeUs: ((Long) -> Long)?,
+        mask: VideoMask,
+        private val maskAtPresentationTimeUs: (Long) -> VideoMask,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
         private val glProgram: GlProgram
         private var aspect: Float = 16f / 9f
-        private val polyX = FloatArray(POLY_POINTS)
-        private val polyY = FloatArray(POLY_POINTS)
-        private var polyXLocation = -1
-        private var polyYLocation = -1
 
         init {
             glProgram = try {
@@ -279,27 +262,40 @@ class MaskGlEffect private constructor(
             )
             glProgram.setFloatsUniform("uTexTransformationMatrix", texMatrix)
 
+            setMaskUniforms(mask)
+        }
+
+        private fun setMaskUniforms(mask: VideoMask) {
             // Single source of truth: MaskShape.shaderId pins 0 rect,
             // 1 ellipse, 2 horizontal, 3 circle, 4 heart, 5 star,
             // 6 triangle, 7 mirror, 8 pen, 9 blur faces, so reordering
             // the enum can never silently remap an exported mask.
             val shapeId = mask.shape.shaderId
+            glProgram.setFloatsUniform("uCenter", floatArrayOf(mask.centerX, mask.centerY))
+            glProgram.setFloatsUniform("uSize", floatArrayOf(mask.sizeX, mask.sizeY))
+            glProgram.setFloatUniform("uFeather", mask.feather.coerceIn(0f, 1f))
+            glProgram.setFloatUniform("uInvert", if (mask.invert) 1f else 0f)
+            glProgram.setFloatUniform("uOpacity", mask.opacity.coerceIn(0f, 1f))
             glProgram.setFloatUniform("uShape", shapeId)
 
             // Bug 4's ten-mode contract travels alongside the shape id.
             // The polygon batches are MaskModel.outline() - literally the
             // points MaskPreviewOverlay stroked into its Path this frame -
             // so preview and export cannot disagree about the region.
-            setAnimatedUniforms(mask)
+            glProgram.setFloatUniform(
+                "uRotation",
+                Math.toRadians(mask.rotationDeg.toDouble()).toFloat()
+            )
             val polyPoints = MaskModel.outline(mask.shape, mask.drawPoints)
             val polyCount = minOf(polyPoints.size, POLY_POINTS)
+            val polyX = FloatArray(POLY_POINTS)
+            val polyY = FloatArray(POLY_POINTS)
             for (i in 0 until polyCount) {
                 polyX[i] = polyPoints[i].x
                 polyY[i] = polyPoints[i].y
             }
-            // Keep array values outside GlProgram: its cache is limited to mat4 (16 floats).
-            polyXLocation = glProgram.getUniformLocation("uPolyX[0]")
-            polyYLocation = glProgram.getUniformLocation("uPolyY[0]")
+            glProgram.setFloatsUniform("uPolyX", polyX)
+            glProgram.setFloatsUniform("uPolyY", polyY)
             glProgram.setFloatUniform("uPolyN", polyCount.toFloat())
             glProgram.setFloatUniform("uAspect", aspect)
         }
@@ -317,12 +313,12 @@ class MaskGlEffect private constructor(
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
                 glProgram.use()
-                setAnimatedUniforms(resolveMaskAtFrame(mask, presentationTimeUs, maskTimeMsProvider, timeMsAtPresentationTimeUs))
+                // Media3 invokes this for every output frame. Resolve the mask
+                // on that clock and refresh every animated uniform, not only
+                // geometry, so feather/invert/opacity/rotation cannot lag.
+                setMaskUniforms(maskAtPresentationTimeUs(presentationTimeUs))
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.bindAttributesAndUniforms()
-                GLES20.glUniform1fv(polyXLocation, POLY_POINTS, polyX, 0)
-                GLES20.glUniform1fv(polyYLocation, POLY_POINTS, polyY, 0)
-                GlUtil.checkGlError()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
                 throw VideoFrameProcessingException(e, presentationTimeUs)
@@ -330,28 +326,7 @@ class MaskGlEffect private constructor(
         }
 
         override fun release() {
-            try {
-                super.release()
-            } finally {
-                // The base class owns the texture pool, not this linked shader program.
-                try {
-                    glProgram.delete()
-                } catch (e: GlUtil.GlException) {
-                    throw VideoFrameProcessingException(e)
-                }
-            }
-        }
-
-        private fun setAnimatedUniforms(frameMask: VideoMask) {
-            glProgram.setFloatsUniform("uCenter", floatArrayOf(frameMask.centerX, frameMask.centerY))
-            glProgram.setFloatsUniform("uSize", floatArrayOf(frameMask.sizeX, frameMask.sizeY))
-            glProgram.setFloatUniform("uFeather", frameMask.feather.coerceIn(0f, 1f))
-            glProgram.setFloatUniform("uInvert", if (frameMask.invert) 1f else 0f)
-            glProgram.setFloatUniform("uOpacity", frameMask.opacity.coerceIn(0f, 1f))
-            glProgram.setFloatUniform(
-                "uRotation",
-                Math.toRadians(frameMask.rotationDeg.toDouble()).toFloat()
-            )
+            super.release()
         }
     }
 }

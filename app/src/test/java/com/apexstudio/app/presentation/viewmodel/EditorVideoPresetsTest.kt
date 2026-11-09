@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.StylisticEffectType
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
@@ -56,6 +57,22 @@ class EditorVideoPresetsTest {
         assertEquals(template.id, first.presetId)
         assertNotEquals(first.id, second.id)
         assertEquals(first.text, second.text)
+    }
+
+    @Test
+    fun `Viral HDR selection is one undoable edit and survives clip serialization`() {
+        val vm = editor()
+        val before = vm.state.value.project!!
+
+        vm.applyGpuFilterProfilePreset(OneTapLooks.VIRAL_HDR_ID)
+
+        assertEquals(1, vm.undoStack.size)
+        assertEquals(before, vm.undoStack.single().project)
+        val updated = vm.state.value.project!!.clips.first()
+        assertEquals(OneTapLooks.VIRAL_HDR.applyWithIntensity(1f), updated.gpuFilterConfig)
+        val restored = Json.decodeFromString<MediaClip>(Json.encodeToString(updated))
+        assertEquals("viral_hdr", restored.gpuFilterConfig.activeProfileId)
+        assertEquals(updated.gpuFilterConfig, restored.gpuFilterConfig)
     }
 
     @Test

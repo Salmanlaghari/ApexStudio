@@ -24,7 +24,7 @@ class Media3EngineTest {
 
     @Test
     fun testGetVersionReturnsMedia3Version() {
-        assertEquals("1.5.0", engine.getVersion())
+        assertEquals("1.11.1", engine.getVersion())
     }
 
     @Test

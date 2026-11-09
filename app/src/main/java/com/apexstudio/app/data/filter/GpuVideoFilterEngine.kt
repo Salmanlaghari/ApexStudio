@@ -13,100 +13,10 @@ import jp.co.cyberagent.android.gpuimage.GPUImage
 import jp.co.cyberagent.android.gpuimage.filter.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 
-/**
- * Supported Stylistic Effects powered by CyberAgent GPUImage.
- */
-@Serializable
-enum class StylisticEffectType(
-    val title: String,
-    val description: String,
-    val category: String,
-    val defaultParam: Float = 0.5f,
-    val paramName: String = "Intensity"
-) {
-    NONE("Original", "No stylistic effect applied", "Basic"),
-    VIGNETTE("Vignette", "Soft cinema border shading focusing attention to center", "Cinematic", 0.75f, "Border Depth"),
-    HALFTONE("Halftone Print", "Classic retro comic & newspaper dot matrix pattern", "Artistic", 0.4f, "Dot Density"),
-    TOON("Cel Cartoon", "Stylized animation contours with quantized color bands", "Artistic", 0.5f, "Threshold"),
-    SMOOTH_TOON("Smooth Anime", "Smooth cel-shaded anime look with softened edges", "Artistic", 0.5f, "Quantization"),
-    SKETCH("Pencil Sketch", "Hand-drawn monochrome pencil illustration lineart", "Artistic", 0.8f, "Line Weight"),
-    PIXELATION("8-Bit Pixel", "Retro arcade game pixel grid aesthetic", "Retro", 0.35f, "Pixel Size"),
-    EMBOSS("Metallic Emboss", "Tactile 3D metallic stamped surface relief", "Stylistic", 0.5f, "Relief Depth"),
-    SWIRL("Vortex Swirl", "Gravitational optical vortex spiral distortion", "Distortion", 0.5f, "Twist Angle"),
-    BULGE("Fish-Eye Bulge", "Wide-angle curved glass lens perspective", "Distortion", 0.6f, "Curvature"),
-    GLASS_SPHERE("Crystal Ball", "Optical refractive crystal sphere inversion", "Distortion", 0.5f, "Refraction"),
-    KUWAHARA("Oil Painting", "Impressionistic painterly brush stroke smoothing", "Artistic", 0.5f, "Brush Radius"),
-    POSTERIZE("Pop Art Poster", "Bold Pop-art color separation and tonal reduction", "Artistic", 0.4f, "Color Bands"),
-    CROSSHATCH("Crosshatch", "Finely etched pen-and-ink crosshatched shading", "Artistic", 0.4f, "Hatch Spacing"),
-    SOLARIZE("Solarize", "Experimental Sabattier photographic tone reversal", "Stylistic", 0.5f, "Threshold"),
-    GAUSSIAN_BLUR("Dreamy Blur", "Soft atmospheric bloom and ethereal glow", "Cinematic", 0.5f, "Blur Radius"),
-    SHARPEN("Crisp Clarity", "Ultra-high definition edge clarity and texture", "Cinematic", 0.6f, "Sharpness"),
-    SEPIA("Antique Sepia", "Warm golden 19th-century vintage photograph", "Retro", 0.8f, "Warmth"),
-    INVERT("Color Negative", "Striking reversed chromatic optical negative", "Stylistic", 1.0f, "Inversion")
-}
-
-/**
- * Complete GPUImage filter configuration combining 3D LUT grading,
- * parametric color adjustments, and artistic stylistic effects.
- */
-@Serializable
-data class GpuFilterConfig(
-    val filterPresetId: String? = null,
-    val filterIntensity: Float = 1.0f,
-    val stylisticEffect: StylisticEffectType = StylisticEffectType.NONE,
-    val stylisticIntensity: Float = 1.0f,
-    val effectParam: Float = 0.5f,
-    // Color Grading Parameters
-    val brightness: Float = 0f,        // -1.0 .. 1.0
-    val contrast: Float = 1.0f,        // 0.0 .. 2.0
-    val saturation: Float = 1.0f,      // 0.0 .. 2.0
-    val temperature: Float = 5000f,    // 2000K .. 8000K
-    val tint: Float = 0f,              // -100.0 .. 100.0
-    val exposure: Float = 0f,          // -2.0 .. 2.0
-    val gamma: Float = 1.0f,           // 0.2 .. 3.0
-    val highlights: Float = 1.0f,      // 0.0 .. 1.0
-    val shadows: Float = 0f,           // 0.0 .. 1.0
-    val vibrance: Float = 0f,          // -1.0 .. 1.0
-    // Video Adjustments v2 (photo-editor parity). All default to
-    // "no change" so existing saved configs keep working.
-    val lightness: Float = 0f,         // -1.0 .. 1.0 (midtone lift)
-    val whites: Float = 0f,            // -1.0 .. 1.0 (white-point expand/compress)
-    val blacks: Float = 0f,            // -1.0 .. 1.0 (black-point crush/lift)
-    val hue: Float = 0f,               // -180.0 .. 180.0 degrees
-    val vignette: Float = 0f,          // 0.0 .. 1.0 (parametric border shading)
-    val grain: Float = 0f,             // 0.0 .. 1.0 (film grain)
-    val clarity: Float = 0f,           // -1.0 .. 1.0 (midtone contrast)
-    val denoise: Float = 0f,           // 0.0 .. 1.0 (edge-preserving smooth)
-    val sharpness: Float = 0f,         // 0.0 .. 1.0 (parametric sharpen)
-    val activeProfileId: String? = null,
-    val profileIntensity: Float = 1.0f
-) {
-    val isDefault: Boolean
-        get() = activeProfileId == null &&
-                filterPresetId == null &&
-                stylisticEffect == StylisticEffectType.NONE &&
-                brightness == 0f &&
-                contrast == 1.0f &&
-                saturation == 1.0f &&
-                temperature == 5000f &&
-                tint == 0f &&
-                exposure == 0f &&
-                gamma == 1.0f &&
-                highlights == 1.0f &&
-                shadows == 0f &&
-                vibrance == 0f &&
-                lightness == 0f &&
-                whites == 0f &&
-                blacks == 0f &&
-                hue == 0f &&
-                vignette == 0f &&
-                grain == 0f &&
-                clarity == 0f &&
-                denoise == 0f &&
-                sharpness == 0f
-}
+/** Compatibility aliases; the persisted models live in domain.model. */
+typealias StylisticEffectType = com.apexstudio.app.domain.model.StylisticEffectType
+typealias GpuFilterConfig = com.apexstudio.app.domain.model.GpuFilterConfig
 
 /**
  * High-performance Video Filtering Engine utilizing [jp.co.cyberagent.android.gpuimage.GPUImage]

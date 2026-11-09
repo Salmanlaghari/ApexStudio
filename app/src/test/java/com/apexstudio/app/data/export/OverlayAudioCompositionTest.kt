@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import com.apexstudio.app.domain.model.SpeedPoint
 import org.junit.Assert.assertEquals
@@ -61,7 +62,7 @@ class OverlayAudioCompositionTest {
         assertEquals(2, sequenceItems.size)
         assertEquals(1_100_000L, sequenceItems.first().durationUs)
         assertSame(placed.item, sequenceItems.last())
-        assertTrue(composition.forceAudioTrack)
+        assertTrue(composition.sequences.all { C.TRACK_TYPE_AUDIO in it.trackTypes })
     }
 
     @Test

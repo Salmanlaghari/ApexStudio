@@ -31,6 +31,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
+import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.data.picker.MediaPickerHelper
@@ -38,6 +39,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -51,6 +53,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 /** Editing target may be any layer; do not confuse it with the V1 media source. */
 internal fun resolveEditorSelectionClip(clips: List<MediaClip>, selectedClipId: String?): MediaClip? =
     if (selectedClipId != null) clips.firstOrNull { it.id == selectedClipId } else clips.firstOrNull()
@@ -275,6 +278,12 @@ private fun EditorScreenContent(
             .collect { (metadataList, _) ->
                 if (metadataList.isNotEmpty()) {
                     val s = vm.state.value
+                    if (s.signaturePanelOpen) {
+                        vm.updateSignature { signature ->
+                            signature.copy(logoUri = Uri.parse(metadataList.first().uri))
+                        }
+                        return@collect
+                    }
                     when {
                         // CapCut-style Replace flow: swap the selected clip/track
                         // media instead of adding new media to the timeline.
@@ -298,11 +307,11 @@ private fun EditorScreenContent(
             return@LaunchedEffect
         }
         try {
-            // Install an effect-capable playback graph at renderer creation time.
-            // Media3 1.5.0's default video sink throws UnsupportedOperationException
-            // from setVideoEffects; dynamic effects must be backed by this graph.
+            // The RenderersFactory wires the shared denoise processor
+            // into the player's audio sink (the supported hook for custom
+            // AudioProcessor instances; Player has no setAudioEffects API).
             val renderersFactory =
-                EffectPreviewRenderersFactory(context) {
+                com.apexstudio.app.data.audio.DenoiseRenderersFactory(context) {
                     denoiseProcessor
                 }
             val player = ExoPlayer.Builder(context, renderersFactory).build()
@@ -339,11 +348,7 @@ private fun EditorScreenContent(
                     }
                     try {
                         player.prepare()
-                        // The listener lives for the player's lifetime, so the Compose
-                        // `state` captured when it was installed may predate the error.
-                        // Read the current VM value to avoid leaving a recovered player
-                        // paused after a transient runtime decoder/load error.
-                        if (vm.state.value.isPlaying) {
+                        if (state.isPlaying) {
                             player.play()
                         }
                     } catch (ex: Exception) {
@@ -534,37 +539,68 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
+    val previewGpuFilterConfig = mainPreviewClip
+        ?.takeIf { it.type == ClipType.VIDEO }
+        ?.gpuFilterConfig
+        ?: com.apexstudio.app.domain.model.GpuFilterConfig()
+    val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
 
     val currentEffects = remember(
         activePreset,
+        previewGpuFilterConfig,
+        state.gpuFilterCompareMode,
+        state.lutCompareMode,
         state.filterIntensity,
         activeFx,
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
-        state.lutCompareMode,
-        state.lutCompareSplitPosition,
-        selectedKeyframes
+        selectedKeyframes,
+        sharedPreviewClip
     ) {
         buildList<androidx.media3.common.Effect> {
-            // Preview comparison is performed on the decoded frame by the
-            // same LUT shader as export; no Compose color approximation.
-            if (activePreset != null && state.filterIntensity > 0f) {
+            // Match project export's per-clip LUT/adjustment stages when the
+            // config is entirely representable by Media3. Keep profile-only
+            // and GPU-only stylists on their explicit Compose fallback path.
+            if (!state.gpuFilterCompareMode && gpuFilterConfigUsesMedia3(previewGpuFilterConfig) &&
+                !previewGpuFilterConfig.isDefault
+            ) {
+                previewGpuFilterConfig.filterPresetId
+                    ?.let { com.apexstudio.app.data.filter.FilterManifest.presetById(it) }
+                    ?.let { preset ->
+                        add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                            context, preset, previewGpuFilterConfig.filterIntensity
+                        ))
+                    }
+                val perClipAdjustments = previewGpuFilterConfig.toProjectExportAdjustments()
+                if (!perClipAdjustments.isDefault) {
+                    add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(perClipAdjustments))
+                }
+            }
+            val hasSharedFilterKeys = sharedPreviewClip?.filterKeyframes?.isNotEmpty() == true ||
+                sharedPreviewClip?.lutKeyframes?.isNotEmpty() == true
+            if (!state.lutCompareMode && activePreset != null &&
+                (state.filterIntensity > 0f || hasSharedFilterKeys)
+            ) {
                 add(
                     com.apexstudio.app.data.filter.LutFilterGlEffect(
                         context, activePreset, state.filterIntensity,
                         intensityProvider = { state.filterIntensity },
-                        comparisonMode = if (state.lutCompareMode) {
-                            com.apexstudio.app.data.filter.LutComparisonMode.SPLIT
-                        } else {
-                            com.apexstudio.app.data.filter.LutComparisonMode.AFTER
-                        },
-                        splitPosition = state.lutCompareSplitPosition
+                        presentationTimeIntensityProvider = sharedPreviewClip?.let { typed ->
+                            { timeUs ->
+                                val projectMs = mainPreviewClip?.let { clip ->
+                                    com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                                        state.project?.clips.orEmpty(), clip, timeUs / 1_000L
+                                    )
+                                } ?: timeUs / 1_000L
+                                state.filterIntensity * typed.filterIntensityAt(projectMs) * typed.lutIntensityAt(projectMs)
+                            }
+                        }
                     )
                 )
             }
-            if (!state.adjustments.isDefault) {
+            if (!state.lutCompareMode && !state.adjustments.isDefault) {
                 val adjustMatrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
                     filterId = null,
                     intensity = 0f,
@@ -578,7 +614,7 @@ private fun EditorScreenContent(
             // as a color matrix, so they run in the live GL shader below.
             // Base = all-default VideoAdjustments so the matrix-covered
             // knobs don't double-apply; only the v2 providers are live.
-            run {
+            if (!state.lutCompareMode) run {
                 val v2 = state.adjustments
                 if (v2.hasNonMatrixAdjustments) {
                     add(
@@ -608,25 +644,26 @@ private fun EditorScreenContent(
                     )
                 )
             }
-            if (selectedKeyframes != null && !selectedKeyframes.isEmpty()) {
+            val hasSharedAnimation = sharedPreviewClip?.let {
+                it.animationKeyframeTimes().isNotEmpty()
+            } == true
+            if ((selectedKeyframes != null && !selectedKeyframes.isEmpty()) || hasSharedAnimation) {
                 val trackRef = arrayOf(selectedKeyframes)
                 add(
                     com.apexstudio.app.data.animation.KeyframeAnimationEffect(
-                        trackProvider = { trackRef[0] },
+                        trackProvider = { trackRef[0] ?: com.apexstudio.app.domain.model.KeyframeTrack() },
                         timeMsAtPresentationTimeUs = { timeUs ->
                             mainPreviewClip?.let { clip ->
                                 com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
                                     state.project?.clips.orEmpty(), clip, timeUs / 1_000L)
                             } ?: timeUs / 1_000L
-                        }
+                        },
+                        sharedVideoClipProvider = { sharedPreviewClip }
                     ).buildEffects().first()
                 )
             }
         }
     }
-
-    // Actual video filter/adjustment/FX and keyframe rendering runs in the
-    // effect-capable Media3 graph. Compose remains the photo grading path.
 
     val audioPlaybackManager = remember { com.apexstudio.app.data.engine.AudioPlaybackManager(context) }
     DisposableEffect(Unit) {
@@ -812,6 +849,10 @@ private fun EditorScreenContent(
         isTimelineFocusMode = false
     }
 
+    BackHandler(enabled = state.musicLibraryPanelOpen || state.sfxLibraryPanelOpen) {
+        if (state.sfxLibraryPanelOpen) vm.closeSfxLibraryPanel() else vm.closeMusicLibraryPanel()
+    }
+
     val openEffectsWorkspace: () -> Unit = {
         val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
         if (clip != null) {
@@ -828,7 +869,7 @@ private fun EditorScreenContent(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .background(Color.Black)
+            .background(ApexPalette.BgBase)
     ) {
         if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
@@ -1004,10 +1045,54 @@ private fun EditorScreenContent(
                     if (mainPreviewClip != null) {
                         isDrawingMode = !isDrawingMode
                         showVideoDrawingTools = isDrawingMode
+                    } else {
+                        // Before: this did nothing silently when no clip was selected,
+                        // which is exactly the "button doesn't work" users reported.
+                        android.widget.Toast.makeText(
+                            context,
+                            "Draw: select a video clip on the timeline first",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                onToggleKeyframe = {
+                    val clip = mainPreviewClip ?: selectedWorkspaceVideo(
+                        state.project, state.selectedClipId
+                    )
+                    if (clip != null) {
+                        vm.toggleKeyframeAtPlayhead()
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Keyframe: select a clip first, then move the playhead",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                onOverlay = {
+                    if ((state.project?.clips?.any {
+                        it.type == ClipType.VIDEO || it.type == ClipType.IMAGE
+                    } == true)) {
+                        vm.setPendingAddAsOverlay(true)
+                        vm.setPendingAddAsAudio(false)
+                        prepareMainMediaPickerLaunch(vm)
+                        mediaPicker.pickMultipleMedia.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts
+                                    .PickVisualMedia.ImageAndVideo
+                            )
+                        )
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Overlay: add a video/image first, then add overlay on top",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 onCrop = { showCropPanel = true },
-                onDeviceAudio = importPhoneMusic
+                onDeviceAudio = importPhoneMusic,
+                onSignature = { vm.openSignaturePanel() }
             )
             if (localAudioImporting) {
                 androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -1126,6 +1211,7 @@ private fun EditorScreenContent(
     )
     SpeedPanelOverlay(state = state, vm = vm)
     StickerPanelOverlay(state = state, vm = vm)
+    SignaturePanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
     VoiceRecorderOverlay(state = state, vm = vm)
     ArFilterPanelOverlay(state = state, vm = vm)
     CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
@@ -1184,6 +1270,20 @@ private fun EditorScreenContent(
             musicMoodFilter = null
         }
     )
+    SfxLibraryPanelOverlay(
+        state = state,
+        vm = vm,
+        onAddEffect = { effect, filePath, durationMs, intensity ->
+            vm.addAudioTrack(
+                name = effect.displayName,
+                uri = filePath,
+                kind = AudioTrack.Kind.SFX,
+                sourceDurationMs = durationMs,
+                sfxEffectId = effect.id,
+                sfxIntensity = intensity
+            )
+        }
+    )
     HistoryDraftsPanelOverlay(
         state = state,
         vm = vm,
@@ -1202,6 +1302,7 @@ private fun PhotoEditSheet(
     tab: com.apexstudio.app.presentation.state.PhotoEditTab,
     vm: com.apexstudio.app.presentation.viewmodel.EditorViewModel
 ) {
+    val photoAiState by vm.photoAiEnhanceUi.collectAsStateWithLifecycle()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1229,6 +1330,14 @@ private fun PhotoEditSheet(
                 onFlipV = { vm.togglePhotoFlipVertical(photoEditClip.id) },
                 onKenBurns = { vm.setPhotoKenBurns(photoEditClip.id, it) },
                 onCanvasChange = { canvas -> vm.setPhotoCanvas(photoEditClip.id, canvas) },
+                onAutoEnhance = { vm.applyPhotoAutoEnhance(photoEditClip.id) },
+                onDenoise = { vm.applyPhotoDenoise(photoEditClip.id) },
+                onSharpen = { vm.applyPhotoSharpen(photoEditClip.id) },
+                onPhotoUpscale = { vm.applyPhotoAiUpscale(photoEditClip.id) },
+                onFaceCrop = { vm.applyPhotoFaceCrop(photoEditClip.id) },
+                onStabilize = { enabled -> vm.setPhotoStabilize(photoEditClip.id, enabled) },
+                photoAiState = photoAiState,
+                onCancelPhotoAi = { vm.cancelPhotoAiEnhance() },
                 onResetAll = { vm.resetPhotoEdits(photoEditClip.id) },
                 onClose = { vm.closePhotoEditPanel() }
             )

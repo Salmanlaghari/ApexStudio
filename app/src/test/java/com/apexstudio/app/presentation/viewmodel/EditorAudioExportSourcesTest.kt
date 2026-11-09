@@ -72,6 +72,35 @@ class EditorAudioExportSourcesTest {
     }
 
     @Test
+    fun `procedural SFX uses the ordinary file-backed export source with placement and fades`() {
+        val effect = AudioTrack(
+            id = "effect",
+            name = "Cinematic Hit",
+            uri = "/cache/sfx/cinematic_hit_1200.wav",
+            trimStartMs = 100L,
+            trimEndMs = 1_200L,
+            sourceDurationMs = 1_200L,
+            startTimeMs = 3_400L,
+            fadeInMs = 80L,
+            fadeOutMs = 250L,
+            kind = AudioTrack.Kind.SFX,
+            sfxEffectId = "cinematic_hit",
+            sfxIntensity = 0.8f
+        )
+
+        val source = buildAudioExportSources(emptyList(), listOf(effect)).single()
+
+        assertEquals(effect.uri, source.uri)
+        assertEquals(effect.trimStartMs, source.trimStartMs)
+        assertEquals(effect.trimEndMs, source.trimEndMs)
+        assertEquals(effect.startTimeMs, source.timelinePositionMs)
+        assertEquals(effect.fadeInMs, source.trackFadeInMs)
+        assertEquals(effect.fadeOutMs, source.trackFadeOutMs)
+        assertEquals(1f, source.sourceGain)
+        assertEquals(effect.volume, source.trackVolume!!)
+    }
+
+    @Test
     fun `music and voiceover fade and absolute keyframe configuration survive mapping`() {
         val keyframes = listOf(
             VolumeKeyframe("start", 900L, 0.2f),

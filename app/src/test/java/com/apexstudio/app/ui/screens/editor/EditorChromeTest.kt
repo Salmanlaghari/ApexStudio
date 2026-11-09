@@ -34,15 +34,17 @@ class EditorChromeTest {
         compose.runOnIdle { assertEquals(1, backCount) }
     }
 
-    @Test fun logoTapOpensBuildIdentityAndHeaderKeepsPreviewModeWithoutProjectTitleBar() {
+    @Test fun brandTapOpensBuildIdentityAndHeaderMatchesReferenceWithoutProjectTitle() {
         compose.setContent { TopAppBarSection(title = "A long project name that must not become a title bar") }
         compose.onNodeWithContentDescription("ApexStudio build identity. Project A long project name that must not become a title bar")
             .performClick()
         compose.onNodeWithText("Installed build").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithContentDescription("Preview mode: Fit").assertIsDisplayed()
+        compose.onNodeWithText("Edit project").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resolution: 1080P; preview fit").assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         compose.onNodeWithText("1080P").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("A long project name that must not become a title bar").fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun resolutionMenuRetainsResolutionAndPreviewFitActionsAndExportIsReal() {

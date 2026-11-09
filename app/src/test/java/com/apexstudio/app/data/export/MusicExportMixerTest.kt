@@ -96,6 +96,23 @@ class MusicExportMixerTest {
     }
 
     @Test
+    fun `procedural SFX remains enabled in the existing video audio mixer`() {
+        val sfx = AudioTrack(
+            id = "effect",
+            name = "Whoosh",
+            uri = "/cache/sfx/whoosh_650.wav",
+            startTimeMs = 2_500L,
+            trimEndMs = 650L,
+            sourceDurationMs = 650L,
+            kind = AudioTrack.Kind.SFX,
+            sfxEffectId = "whoosh"
+        )
+
+        assertEquals(listOf(sfx), selectEnabledMusicTracks(listOf(sfx)))
+        assertEquals(emptyList<AudioTrack>(), selectEnabledMusicTracks(listOf(sfx.copy(isMuted = true))))
+    }
+
+    @Test
     fun `timeline milliseconds map to frames without multiplication overflow`() {
         assertEquals(0L, ExportAudioTimelineMapping.millisToFrames(-1L, 44_100))
         assertEquals(44_100L, ExportAudioTimelineMapping.millisToFrames(1_000L, 44_100))

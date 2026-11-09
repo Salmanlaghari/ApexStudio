@@ -14,6 +14,10 @@ import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.SpeedCurveMath
 import com.apexstudio.app.domain.model.SpeedPoint
 
+import com.apexstudio.app.domain.model.timeline.VideoClip as SharedVideoClip
+import com.apexstudio.app.domain.model.timeline.animationAt
+import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
+
 /** One keyframe state sampled on the frame presentation-time clock. */
 internal data class KeyframeAnimationSample(
     val timeMs: Long,
@@ -30,25 +34,32 @@ internal data class KeyframeAnimationSample(
 class KeyframeAnimationEffect(
     private val trackProvider: () -> KeyframeTrack,
     /** Converts an effect timestamp into the project-global keyframe clock. */
-    private val timeMsAtPresentationTimeUs: (Long) -> Long = { it.coerceAtLeast(0L) / 1_000L }
+    private val timeMsAtPresentationTimeUs: (Long) -> Long = { it.coerceAtLeast(0L) / 1_000L },
+    /** Canonical typed source; when present it takes precedence over the legacy render adapter. */
+    private val sharedVideoClipProvider: (() -> SharedVideoClip?)? = null
 ) {
     fun buildEffects(): List<androidx.media3.common.Effect> {
         val track = trackProvider()
-        return if (track.isEmpty()) emptyList() else listOf(KeyframeGlEffect(track, timeMsAtPresentationTimeUs))
+        val sharedClip = sharedVideoClipProvider?.invoke()
+        val hasSharedKeys = sharedClip?.animationKeyframeTimes()?.isNotEmpty() == true
+        return if (!hasSharedKeys && track.isEmpty()) emptyList()
+        else listOf(KeyframeGlEffect(track, sharedClip.takeIf { hasSharedKeys }, timeMsAtPresentationTimeUs))
     }
 
     @UnstableApi
     private class KeyframeGlEffect(
         private val track: KeyframeTrack,
+        private val sharedClip: SharedVideoClip?,
         private val timeMsAtPresentationTimeUs: (Long) -> Long
     ) : GlEffect {
         override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-            KeyframeShaderProgram(track, timeMsAtPresentationTimeUs, useHdr)
+            KeyframeShaderProgram(track, sharedClip, timeMsAtPresentationTimeUs, useHdr)
     }
 
     @UnstableApi
     private class KeyframeShaderProgram(
         private val track: KeyframeTrack,
+        private val sharedClip: SharedVideoClip?,
         private val timeMsAtPresentationTimeUs: (Long) -> Long,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
@@ -76,7 +87,7 @@ class KeyframeAnimationEffect(
         }
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
-            val sample = sampleAtPresentationTimeUs(track, presentationTimeUs, timeMsAtPresentationTimeUs)
+            val sample = sampleForPlayback(track, sharedClip, presentationTimeUs, timeMsAtPresentationTimeUs)
             try {
                 android.opengl.GLES20.glClearColor(0f, 0f, 0f, 1f)
                 android.opengl.GLES20.glClear(android.opengl.GLES20.GL_COLOR_BUFFER_BIT)
@@ -125,6 +136,57 @@ class KeyframeAnimationEffect(
                 transform = track.interpolateAt(timeMs),
                 saturation = track.saturationFactorAt(timeMs)
             )
+        }
+
+        /** Sample typed shared timeline values directly at each rendered frame. */
+        internal fun sampleSharedAtPresentationTimeUs(
+            clip: SharedVideoClip,
+            presentationTimeUs: Long,
+            timeMsAtPresentationTimeUs: (Long) -> Long = { it.coerceAtLeast(0L) / 1_000L }
+        ): KeyframeAnimationSample {
+            val timeMs = timeMsAtPresentationTimeUs(presentationTimeUs)
+            val value = clip.animationAt(timeMs)
+            return KeyframeAnimationSample(
+                timeMs = timeMs,
+                transform = AnimatedTransform(
+                    translateX = value.position.x,
+                    translateY = value.position.y,
+                    scale = value.scale,
+                    rotationDeg = value.rotationDeg,
+                    opacity = value.opacity,
+                    volume = value.volume,
+                    effectIntensity = value.effectIntensity,
+                    filterIntensity = value.filterIntensity,
+                    saturation = value.saturation
+                ),
+                saturation = value.saturation
+            )
+        }
+
+        /**
+         * The typed timeline supports only linear/smooth/ease-in/ease-out.
+         * Keep its evaluator for those legacy-compatible shapes, but use the
+         * same KeyframeTrack path in preview and export for custom Bezier,
+         * ease-in-out, hold, spring, and overshoot curves.
+         */
+        internal fun sampleForPlayback(
+            track: KeyframeTrack,
+            sharedClip: SharedVideoClip?,
+            presentationTimeUs: Long,
+            timeMsAtPresentationTimeUs: (Long) -> Long = { it.coerceAtLeast(0L) / 1_000L }
+        ): KeyframeAnimationSample {
+            val legacyOnlyCurve = track.keyframes.any { keyframe ->
+                keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.EASE_IN_OUT ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.BEZIER ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.HOLD ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.SPRING ||
+                    keyframe.curve == com.apexstudio.app.domain.model.KeyframeCurve.OVERSHOOT
+            }
+            return if (sharedClip != null && !legacyOnlyCurve) {
+                sampleSharedAtPresentationTimeUs(sharedClip, presentationTimeUs, timeMsAtPresentationTimeUs)
+            } else {
+                sampleAtPresentationTimeUs(track, presentationTimeUs, timeMsAtPresentationTimeUs)
+            }
         }
 
         /** Saturation matrix in OpenGL column-major order; alpha is multiplied separately. */

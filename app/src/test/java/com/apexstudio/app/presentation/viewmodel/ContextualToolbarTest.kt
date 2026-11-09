@@ -86,7 +86,7 @@ class ContextualToolbarTest {
         assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
         assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
             "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
-            "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
+            "SFX", "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
         )))
     }
 
@@ -327,7 +327,14 @@ class ContextualToolbarTest {
     @Test
     fun `replaceAudioTrackMedia swaps uri and resets trims`() {
         val vm = EditorViewModel()
-        val track = audioTrack().copy(volume = 0.5f, trimStartMs = 1000L, trimEndMs = 5000L)
+        val track = audioTrack().copy(
+            volume = 0.5f,
+            trimStartMs = 1000L,
+            trimEndMs = 5000L,
+            kind = AudioTrack.Kind.SFX,
+            sfxEffectId = "whoosh",
+            sfxIntensity = 0.6f
+        )
         vm._state.update {
             it.copy(project = Project(id = "p", name = "p", durationMs = 10_000L, audioTracks = listOf(track)))
         }
@@ -347,40 +354,50 @@ class ContextualToolbarTest {
         assertEquals(0L, replaced.trimStartMs)
         assertEquals(12_000L, replaced.trimEndMs)
         assertEquals(0.5f, replaced.volume, 0.001f) // volume preserved
+        assertNull(replaced.sfxEffectId)
+        assertEquals(1f, replaced.sfxIntensity, 0.001f)
         assertTrue(vm.state.value.beatMarkersMs.isEmpty()) // stale beats dropped
     }
 
-    // --- Beat grid (pure function) ---
-
     @Test
-    fun `computeBeatGrid finds steady beats in synthetic envelope`() {
-        // 120 BPM over 8 seconds: onset spikes every 500ms.
-        val durationMs = 8000L
-        val n = 800
-        val envelope = FloatArray(n) { 0.1f }
-        var t = 250L
-        while (t < durationMs) {
-            val idx = (t * n / durationMs).toInt().coerceIn(0, n - 1)
-            envelope[idx] = 1.0f
-            t += 500L
-        }
-        val beats = computeBeatGrid(envelope, durationMs)
-        assertTrue("expected beats, got $beats", beats.size >= 10)
-        // Beats should be roughly 500ms apart.
-        val intervals = beats.zipWithNext { a, b -> b - a }
-        val avgInterval = intervals.average()
-        assertTrue("avg interval $avgInterval should be near 500ms", avgInterval in 350.0..650.0)
+    fun `projectBeatMarkers maps source onsets through a half-open trim and timeline placement`() {
+        val track = AudioTrack(
+            id = "music",
+            name = "Track",
+            uri = "file:///music.wav",
+            trimStartMs = 100L,
+            trimEndMs = 1_000L,
+            startTimeMs = 1_200L,
+            sourceDurationMs = 1_000L
+        )
+
+        val projected = projectBeatMarkers(
+            tracks = listOf(track),
+            sourceMarkersByUri = mapOf(track.uri to listOf(50L, 100L, 350L, 1_000L))
+        )
+
+        // The 1,000 ms onset is exactly at the exclusive source trim end and is intentionally omitted.
+        assertEquals(listOf(1_200L, 1_450L), projected)
     }
 
     @Test
-    fun `computeBeatGrid returns empty for flat envelope`() {
-        val beats = computeBeatGrid(FloatArray(800) { 0.1f }, 8000L)
-        assertTrue(beats.isEmpty())
-    }
+    fun `projectBeatMarkers keeps simultaneous beats from separate tracks`() {
+        val first = audioTrack().copy(
+            uri = "file:///first.wav",
+            trimStartMs = 0L,
+            trimEndMs = 1_000L,
+            startTimeMs = 500L
+        )
+        val second = first.copy(id = "track2", uri = "file:///second.wav")
 
-    @Test
-    fun `computeBeatGrid handles degenerate input`() {
-        assertTrue(computeBeatGrid(FloatArray(0), 8000L).isEmpty())
-        assertTrue(computeBeatGrid(FloatArray(800) { 0.5f }, 0L).isEmpty())
+        val projected = projectBeatMarkers(
+            tracks = listOf(first, second),
+            sourceMarkersByUri = mapOf(
+                first.uri to listOf(100L),
+                second.uri to listOf(100L)
+            )
+        )
+
+        assertEquals(listOf(600L, 600L), projected)
     }
 }

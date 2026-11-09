@@ -14,10 +14,12 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -47,6 +49,7 @@ import com.apexstudio.app.domain.model.PhotoCropRect
 import com.apexstudio.app.domain.model.PhotoEditSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Live preview for an IMAGE timeline clip with its photo edits applied.
@@ -72,33 +75,56 @@ fun PhotoClipPreview(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val effectivePhotoUri = PhotoEditRenderer.resolveSourceUri(context, uri, settings)
+    val latestPhotoUri by rememberUpdatedState(effectivePhotoUri)
 
-    // Raw decoded photo (EXIF applied, downscaled for preview).
-    var rawBitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
+    // Raw decoded photo/AI result (EXIF applied, downscaled for preview).
+    // Keep the holder stable across URI changes so the previous native bitmap remains owned until
+    // its render coroutine has stopped using it.
+    val rawBitmapState = remember { mutableStateOf<Bitmap?>(null) }
+    var rawBitmap by rawBitmapState
     // Whether the load attempt for this uri has finished (success or
     // failure). While false the preview is still loading; once true
     // with rawBitmap == null the image failed to decode and the UI
     // shows a visible retry affordance — never a silent black
     // preview (a failed load used to render as an empty black box
     // with no way to recover short of re-picking the clip).
-    var loadFinished by remember(uri) { mutableStateOf(false) }
+    var loadFinished by remember(effectivePhotoUri) { mutableStateOf(false) }
     var retryNonce by remember { mutableStateOf(0) }
     // Edited bitmap (declared early so the uri effect can check it).
-    var edited by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(uri, retryNonce) {
-        val old = rawBitmap
+    val editedBitmapState = remember { mutableStateOf<Bitmap?>(null) }
+    var edited by editedBitmapState
+    val activeRenderSources = remember { mutableSetOf<Bitmap>() }
+    val disposed = remember { AtomicBoolean(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed.set(true)
+            val raw = rawBitmapState.value
+            val output = editedBitmapState.value
+            listOfNotNull(raw, output).distinct().forEach { bitmap ->
+                if (bitmap !in activeRenderSources) {
+                    try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+    LaunchedEffect(effectivePhotoUri, retryNonce) {
+        val requestedUri = effectivePhotoUri
         loadFinished = false
-        val fresh = PhotoEditRenderer.loadBitmap(context, uri, maxDim = 1280)
+        val oldRaw = rawBitmap
+        rawBitmap = null
+        if (oldRaw != null && oldRaw !== edited && oldRaw !in activeRenderSources) {
+            try { if (!oldRaw.isRecycled) oldRaw.recycle() } catch (_: Exception) {}
+        }
+        val fresh = PhotoEditRenderer.loadBitmap(context, requestedUri, maxDim = 1280)
+        if (disposed.get() || requestedUri != latestPhotoUri) {
+            try { if (fresh != null && !fresh.isRecycled) fresh.recycle() } catch (_: Exception) {}
+            return@LaunchedEffect
+        }
         rawBitmap = fresh
         loadFinished = true
         if (fresh == null) {
-            android.util.Log.w("PhotoClipPreview", "Image failed to load: $uri (tap retry to reload)")
-        }
-        // Recycle the superseded raw only if the pipeline isn't still
-        // reading it (it isn't — this effect runs before the pipeline
-        // effect sees the new value) and it isn't the displayed frame.
-        if (old != null && old != fresh && old != edited) {
-            try { if (!old.isRecycled) old.recycle() } catch (_: Exception) {}
+            android.util.Log.w("PhotoClipPreview", "Image failed to load: $requestedUri (tap retry to reload)")
         }
     }
 
@@ -125,37 +151,49 @@ fun PhotoClipPreview(
     val activeLut = lutTexture.takeIf { lutFilterId == settings.filterId && settings.filterId != null }
     LaunchedEffect(rawBitmap, effectiveSettings, activeLut) {
         val src = rawBitmap
-        if (src == null) {
-            val oldEdited = edited
-            edited = null
-            try { if (oldEdited != null && !oldEdited.isRecycled) oldEdited.recycle() } catch (_: Exception) {}
-        } else {
-            val next = withContext(Dispatchers.Default) {
-                try {
-                    PhotoEditRenderer.applyEdits(src, effectiveSettings, activeLut)
-                } catch (e: Exception) {
-                    null
+        try {
+            if (src == null) {
+                val oldEdited = edited
+                edited = null
+                if (oldEdited != null && oldEdited !in activeRenderSources) {
+                    try { if (!oldEdited.isRecycled) oldEdited.recycle() } catch (_: Exception) {}
+                }
+            } else {
+                activeRenderSources.add(src)
+                val next = withContext(Dispatchers.Default) {
+                    try {
+                        PhotoEditRenderer.applyEdits(src, effectiveSettings, activeLut)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                // Re-read current raw: if uri changed mid-processing, src is stale.
+                val currentRaw = rawBitmap
+                if (currentRaw == src) {
+                    val oldEdited = edited
+                    edited = next
+                    // Recycle the previous edited frame if it isn't the src
+                    // (applyEdits may return src unchanged when no edits apply)
+                    // and isn't the new frame.
+                    try {
+                        if (oldEdited != null && oldEdited != next && oldEdited != src &&
+                            !oldEdited.isRecycled
+                        ) oldEdited.recycle()
+                    } catch (_: Exception) {}
+                } else {
+                    // Stale: drop the result; the render coroutine's finally block owns src.
+                    try { if (next != null && next != src && !next.isRecycled) next.recycle() } catch (_: Exception) {}
                 }
             }
-            // Re-read current raw: if uri changed mid-processing, src is stale.
-            val currentRaw = rawBitmap
-            if (currentRaw == src) {
-                val oldEdited = edited
-                edited = next
-                // Recycle the previous edited frame if it isn't the src
-                // (applyEdits may return src unchanged when no edits apply)
-                // and isn't the new frame.
-                try {
-                    if (oldEdited != null && oldEdited != next && oldEdited != src &&
-                        !oldEdited.isRecycled
-                    ) oldEdited.recycle()
-                } catch (_: Exception) {}
-            } else {
-                // Stale: drop the result. Never recycle src here — it may be
-                // the bitmap the Canvas is still drawing (edited == src when
-                // no edits were applied). The uri-change effect above owns
-                // recycling superseded raws.
-                try { if (next != null && next != src && !next.isRecycled) next.recycle() } catch (_: Exception) {}
+        } finally {
+            // Retire old sources only after their renderer exits; disposal and a later source change
+            // both make the active source stale and transfer cleanup ownership here.
+            if (src != null) {
+                activeRenderSources.remove(src)
+                if (disposed.get() || rawBitmap !== src) {
+                    if (edited === src) edited = null
+                    try { if (!src.isRecycled) src.recycle() } catch (_: Exception) {}
+                }
             }
         }
     }

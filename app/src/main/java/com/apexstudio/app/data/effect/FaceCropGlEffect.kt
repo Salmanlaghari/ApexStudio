@@ -133,6 +133,8 @@ data class FaceCropRenderConfig(
         if (ptsAreSourceAbsolute) return ptsMs
         // The effect precedes speed changes. Inverting a speed curve here would apply speed twice.
         val maxOffset = if (trimEndMs > trimStartMs) trimEndMs - trimStartMs else Long.MAX_VALUE - trimStartMs
+        // Effects attached to an EditedMediaItem use that item's clock; the sequence placement is
+        // applied outside this effect. Add only the clip's source trim to the item-local timestamp.
         return trimStartMs + ptsMs.coerceAtMost(maxOffset)
     }
 

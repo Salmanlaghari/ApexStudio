@@ -1,6 +1,8 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.domain.model.timeline.applyLegacyAudioTrackChanges
+import com.apexstudio.app.domain.model.timeline.AudioTrack as SharedAudioTrack
 import kotlinx.coroutines.flow.update
 
 /** Pure placement math shared by the timeline controller and regression tests. */
@@ -88,15 +90,23 @@ private fun EditorViewModel.updateAudioPlacement(
     var updatedTracks: List<AudioTrack>? = null
     _state.update { state ->
         val project = state.project ?: return@update state
-        if (project.audioTracks.none { it.id == trackId }) return@update state
-        val tracks = project.audioTracks.map { if (it.id == trackId) transform(it) else it }
+        val before = project.audioTracks.firstOrNull { it.id == trackId } ?: return@update state
+        val after = transform(before)
+        val tracks = project.audioTracks.map { if (it.id == trackId) after else it }
         updatedTracks = tracks
         val clipDuration = computeTimelineDurationMs(project.clips, emptyList())
         val audioDuration = tracks.maxOfOrNull { it.projectEndMs() } ?: 0L
         val duration = maxOf(clipDuration, audioDuration).coerceAtLeast(1_000L)
+        val typed = project.timeline.tracks.filterIsInstance<SharedAudioTrack>()
+            .firstOrNull { it.id == "shared-audio-$trackId" }
+        val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(before, after, it) }
+        val timeline = if (updatedTyped == null) project.timeline else project.timeline.copy(
+            tracks = project.timeline.tracks.map { if (it.id == updatedTyped.id) updatedTyped else it }
+        )
         state.copy(
-            project = project.copy(audioTracks = tracks, durationMs = duration),
+            project = project.copy(audioTracks = tracks, durationMs = duration, timeline = timeline),
             durationMs = duration,
+            beatMarkersMs = projectBeatMarkers(tracks, state.beatMarkersByTrackUri),
             playerPositionMs = state.playerPositionMs.coerceAtMost(duration),
             currentTimeMs = state.currentTimeMs.coerceAtMost(duration)
         )

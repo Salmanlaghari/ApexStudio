@@ -2,6 +2,7 @@ package com.apexstudio.app.data.filter
 
 import android.util.Log
 import kotlinx.serialization.Serializable
+import com.apexstudio.app.domain.model.VideoAdjustments
 
 /**
  * Pre-configured GPUImage Color Profile definition.
@@ -38,11 +39,88 @@ data class GpuColorProfile(
             highlights = 1.0f + (config.highlights - 1.0f) * clamped,
             shadows = config.shadows * clamped,
             vibrance = config.vibrance * clamped,
+            lightness = config.lightness * clamped,
+            whites = config.whites * clamped,
+            blacks = config.blacks * clamped,
+            hue = config.hue * clamped,
+            vignette = config.vignette * clamped,
+            grain = config.grain * clamped,
+            clarity = config.clarity * clamped,
+            denoise = config.denoise * clamped,
+            sharpness = config.sharpness * clamped,
             activeProfileId = id,
             profileIntensity = clamped
         )
     }
 }
+
+/** Featured one-tap recipe, stored independently from the existing profile grid. */
+object OneTapLooks {
+    const val VIRAL_HDR_ID = "viral_hdr"
+
+    val VIRAL_HDR = GpuColorProfile(
+        id = VIRAL_HDR_ID,
+        name = "Viral HDR",
+        category = "One-Tap Looks",
+        description = "Punchy HDR color with deep saturation, local clarity, and mild sharpening",
+        iconEmoji = "V",
+        gradientColors = listOf(0xFF212121, 0xFFFF3D00),
+        config = GpuFilterConfig(
+            filterPresetId = "hdr_punch",
+            filterIntensity = 0.85f,
+            saturation = 1.35f,
+            vibrance = 0.35f,
+            contrast = 1.12f,
+            clarity = 0.45f,
+            sharpness = 0.35f,
+            highlights = 0.85f,
+            shadows = 0.05f,
+            activeProfileId = VIRAL_HDR_ID
+        )
+    )
+
+    val ALL: List<GpuColorProfile> = listOf(VIRAL_HDR)
+
+    fun isValidRenderConfig(config: GpuFilterConfig): Boolean =
+        config.activeProfileId == VIRAL_HDR_ID &&
+            config.filterPresetId == "hdr_punch" &&
+            config.profileIntensity.isFinite() && config.profileIntensity in 0f..1f &&
+            config.filterIntensity.isFinite() && config.filterIntensity in 0f..1f &&
+            config.contrast.isFinite() && config.contrast in 0.1f..2.5f &&
+            config.saturation.isFinite() && config.saturation in 0f..2.5f &&
+            config.vibrance.isFinite() && config.vibrance in -1f..1f &&
+            config.clarity.isFinite() && config.clarity in -1f..1f &&
+            config.sharpness.isFinite() && config.sharpness in 0f..1f &&
+            config.highlights.isFinite() && config.highlights in 0f..1f &&
+            config.shadows.isFinite() && config.shadows in 0f..1f &&
+            config.stylisticEffect == StylisticEffectType.NONE &&
+            config.brightness == 0f && config.temperature == 5000f && config.tint == 0f &&
+            config.exposure == 0f && config.gamma == 1f && config.lightness == 0f &&
+            config.whites == 0f && config.blacks == 0f && config.hue == 0f &&
+            config.vignette == 0f && config.grain == 0f && config.denoise == 0f
+}
+
+/** Convert GPU-filter baselines to the shared Media3/export adjustment baselines. */
+fun GpuFilterConfig.toVideoAdjustments(): VideoAdjustments = VideoAdjustments(
+    brightness = brightness,
+    contrast = contrast,
+    saturation = saturation,
+    exposure = exposure,
+    highlights = highlights - 1f,
+    shadows = shadows,
+    temperature = (temperature - 5000f) / 3000f,
+    tint = tint / 100f,
+    lightness = lightness,
+    whites = whites,
+    blacks = blacks,
+    hue = hue,
+    vignette = vignette,
+    grain = grain,
+    clarity = clarity,
+    denoise = denoise,
+    sharpness = sharpness,
+    vibrance = vibrance
+)
 
 /**
  * Curated collection of pre-configured GPUImage Color Profiles,
@@ -456,5 +534,5 @@ object GpuColorProfiles {
     }
 
     fun findById(id: String?): GpuColorProfile? =
-        ALL_WITH_DOWNLOADED.firstOrNull { it.id == id }
+        ALL_WITH_DOWNLOADED.firstOrNull { it.id == id } ?: OneTapLooks.ALL.firstOrNull { it.id == id }
 }

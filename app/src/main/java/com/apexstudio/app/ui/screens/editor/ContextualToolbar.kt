@@ -71,10 +71,10 @@ internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
 internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
-    "Music", "Enhance", "Color", "Templates", "Canvas",
+    "Music", "SFX", "Enhance", "Color", "Templates", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
-    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Info"
+    "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
 )
 
 fun resolveToolbarSelection(state: EditorState): ToolbarSelectionKind {
@@ -183,8 +183,10 @@ fun ContextualBottomToolbar(
     onPhotoRotate: () -> Unit,
     // Phase 3 tools
     onMusic: () -> Unit,
+    onSfxLibrary: () -> Unit = {},
     onAutoClip: () -> Unit,
     onHistory: () -> Unit,
+    onSignature: () -> Unit = {},
     onEditPack: () -> Unit,
     onScopes: () -> Unit,
     onBgRemover: () -> Unit,
@@ -242,6 +244,8 @@ fun ContextualBottomToolbar(
     // sidebar pills. Toggles the selected track's isMuted.
     onToggleTrackMute: () -> Unit,
     isTrackMuted: Boolean = false,
+    onToggleTrackSolo: () -> Unit = {},
+    isTrackSolo: Boolean = false,
     modifier: Modifier = Modifier,
     // New top-level entry points. Defaults preserve existing callers until
     // EditorScreen supplies its app-specific panel / media-picker routes.
@@ -258,6 +262,7 @@ fun ContextualBottomToolbar(
     onNext: () -> Unit = {},
     // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
     onMedia: () -> Unit = {},
+    onOverlay: (() -> Unit)? = null,
     onColorWorkspace: () -> Unit = onAdjust,
     onBeforeToolAction: () -> Unit = {}
 ) {
@@ -269,7 +274,10 @@ fun ContextualBottomToolbar(
         CtxToolItem("Media", Icons.Outlined.VideoLibrary, tint = ApexPalette.TextPrimary, onClick = onMedia),
         CtxToolItem("Audio", Icons.Outlined.MusicNote, tint = ApexPalette.TextPrimary, onClick = onDeviceAudio),
         CtxToolItem("Text", Icons.Outlined.Title, tint = ApexPalette.TextPrimary, onClick = onText),
-        CtxToolItem("Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary, onClick = { showOverlayChoices = true }),
+        CtxToolItem(
+            "Overlay", Icons.Outlined.Collections, tint = ApexPalette.TextPrimary,
+            onClick = { if (onOverlay != null) onOverlay() else showOverlayChoices = true }
+        ),
         CtxToolItem("Stickers", Icons.Outlined.SentimentSatisfiedAlt, tint = ApexPalette.TextPrimary, onClick = onStickers),
         CtxToolItem("FX", Icons.Outlined.AutoAwesome, tint = ApexPalette.TextPrimary, onClick = onEffects),
         CtxToolItem("Filters", Icons.Outlined.FilterNone, tint = ApexPalette.TextPrimary, onClick = onFilters),
@@ -284,6 +292,7 @@ fun ContextualBottomToolbar(
     // to its existing route; nothing is represented by a placeholder action.
     val secondaryItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
+            CtxToolItem("SFX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary),
             CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
             CtxToolItem("Color", Icons.Default.Palette, onClick = onColorWorkspace),
             CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
@@ -320,6 +329,7 @@ fun ContextualBottomToolbar(
             CtxToolItem("Audio Mix", Icons.Default.GraphicEq, onClick = onAudioMix),
             CtxToolItem("Voiceover", Icons.Default.Mic, onClick = onRecord),
             CtxToolItem("History", Icons.Default.History, onClick = onHistory),
+            CtxToolItem("Signature", Icons.Default.Verified, onClick = onSignature),
             CtxToolItem("Info", Icons.Outlined.Info, onClick = { showToolbarNotes = true }, contentDescription = "Editing and export notes")
     )
     check(mainItems.map { it.label } == CONTEXTUAL_PRIMARY_TOOL_ORDER)
@@ -428,6 +438,7 @@ fun ContextualBottomToolbar(
             }
             add(CtxToolItem("Audio Mix", Icons.Default.LibraryMusic, onClick = onAudioMix))
             add(CtxToolItem("Royalty Music", Icons.Default.MusicNote, onClick = onRoyaltyMusic))
+            add(CtxToolItem("Sound FX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary))
             add(CtxToolItem("Device Music", Icons.Default.LibraryMusic, onClick = onDeviceAudio))
             add(CtxToolItem("Record", Icons.Default.Mic, onClick = onRecord))
             if (!isLegacyAudioClipSelected) {
@@ -436,6 +447,12 @@ fun ContextualBottomToolbar(
                     if (isTrackMuted) "Unmute" else "Mute",
                     if (isTrackMuted) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
                     onClick = onToggleTrackMute
+                ))
+                add(CtxToolItem(
+                    if (isTrackSolo) "Unsolo" else "Solo",
+                    Icons.Default.GraphicEq,
+                    if (isTrackSolo) ApexPalette.NeonCyan else Color(0xFF9CA3AF),
+                    onClick = onToggleTrackSolo
                 ))
             }
             add(CtxToolItem("Delete", Icons.Default.DeleteOutline, ApexPalette.NeonPink, onDelete))
@@ -930,6 +947,7 @@ fun EditorBottomToolbarSection(
     mediaPicker: com.apexstudio.app.data.picker.MediaPickerHelper,
     onAi: () -> Unit = {},
     onDraw: () -> Unit = {},
+    onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
     onDeviceAudio: () -> Unit = {
         vm.setPendingAddAsOverlay(false)
         vm.setPendingAddAsAudio(true)
@@ -946,6 +964,7 @@ fun EditorBottomToolbarSection(
     onChallenge: () -> Unit = { vm.openTextPanel() },
     onNext: () -> Unit = {},
     onColorWorkspace: () -> Unit = { vm.openColorGradingLutPanel() },
+    onSignature: () -> Unit = { vm.openSignaturePanel() },
     onBeforeToolAction: () -> Unit = {},
     // Main-timeline media picker; EditorScreen may override when it owns the route.
     onMedia: () -> Unit = {
@@ -955,7 +974,8 @@ fun EditorBottomToolbarSection(
                 androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
             )
         )
-    }
+    },
+    onOverlay: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val toolbarKind = resolveToolbarSelection(state)
@@ -1015,6 +1035,10 @@ fun EditorBottomToolbarSection(
             selectedAudioTrack?.let { vm.toggleAudioTrackMute(it.id) }
         },
         isTrackMuted = selectedAudioTrack?.isMuted == true,
+        onToggleTrackSolo = {
+            selectedAudioTrack?.let { vm.toggleAudioTrackSolo(it.id) }
+        },
+        isTrackSolo = selectedAudioTrack?.isSolo == true,
         onText = { vm.openTextPanel() },
         onDraw = onDraw,
         onEffects = onEffectsWorkspace,
@@ -1031,6 +1055,7 @@ fun EditorBottomToolbarSection(
         onChallenge = onChallenge,
         onNext = onNext,
         onMedia = onMedia,
+        onOverlay = onOverlay,
         onColorWorkspace = onColorWorkspace,
         onBeforeToolAction = onBeforeToolAction,
         onAdjust = { vm.openAdjustmentsPanel() },
@@ -1067,8 +1092,10 @@ fun EditorBottomToolbarSection(
         }?.type == ClipType.OVERLAY,
         // Phase 3 tools.
         onMusic = { vm.openMusicLibraryPanel() },
+        onSfxLibrary = { vm.openSfxLibraryPanel() },
         onAutoClip = { vm.openAutoClipPanel() },
         onHistory = { vm.openHistoryDraftsPanel() },
+        onSignature = onSignature,
         onEditPack = { vm.openEditPackPanel() },
         onScopes = { vm.openColorScopesPanel() },
         onBgRemover = { vm.openBgRemoverPanel() },
@@ -1174,7 +1201,7 @@ fun EditorBottomToolbarSection(
         onTrim = { vm.openTrimPanel() },
         onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
-        onToggleKeyframe = { vm.toggleKeyframeAtPlayhead() },
+        onToggleKeyframe = onToggleKeyframe,
         onAudioMix = { vm.openAudioMixer() },
         onRecord = { vm.openVoiceRecorder() },
         onRoyaltyMusic = { vm.openRoyaltyMusicDialog() },

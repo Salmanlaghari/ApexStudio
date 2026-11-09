@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,8 @@ class TimelineWorkspaceLayoutTest {
         onDeleteClips: (Set<String>) -> Unit = {},
         onSelectAudioTrack: (String) -> Unit = {},
     ) {
+        val multiSelectMode = remember { mutableStateOf(false) }
+        val selectedClipIds = remember { mutableStateOf(emptySet<String>()) }
         Box(Modifier.requiredSize(widthDp.dp, heightDp.dp).testTag("timeline-test-root")) {
             VideoTimeline(
                 clips = clips,
@@ -84,6 +87,20 @@ class TimelineWorkspaceLayoutTest {
                 audioWaveform = audioWaveform,
                 totalDurationMs = 120_000L,
                 playheadMs = playheadMs,
+                multiSelectMode = multiSelectMode.value,
+                selectedClipIds = selectedClipIds.value,
+                onToggleMultiSelect = {
+                    multiSelectMode.value = !multiSelectMode.value
+                    if (!multiSelectMode.value) selectedClipIds.value = emptySet()
+                },
+                onToggleSelectedClip = { id ->
+                    selectedClipIds.value = if (id in selectedClipIds.value) selectedClipIds.value - id
+                    else selectedClipIds.value + id
+                },
+                onClearMultiSelection = {
+                    multiSelectMode.value = false
+                    selectedClipIds.value = emptySet()
+                },
                 onOpenSpeed = {},
                 onOpenTrim = {},
                 onAddMedia = onAddMedia,
@@ -99,14 +116,14 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun mainVideoLaneStaysFixedAt64DpRegardlessOfViewportAndSupportingRows() {
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
-        assertEquals(64.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
-        assertEquals(64.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
+    fun mainVideoLaneStaysFixedAt52DpRegardlessOfViewportAndSupportingRows() {
+        assertEquals(52.dp, mainVideoLaneHeight(720f, hasMainVideo = true))
+        assertEquals(52.dp, mainVideoLaneHeight(720f, hasMainVideo = true, supportingLanesHeightDp = 720f))
+        assertEquals(52.dp, mainVideoLaneHeight(720f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(52.dp, mainVideoLaneHeight(400f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(52.dp, mainVideoLaneHeight(300f, hasMainVideo = true, hasWaveformStrip = true))
+        assertEquals(52.dp, mainVideoLaneHeight(400f, hasMainVideo = true, supportingLanesHeightDp = 70f, hasWaveformStrip = true))
+        assertEquals(52.dp, mainVideoLaneHeight(200f, hasMainVideo = true))
         assertEquals(0.dp, mainVideoLaneHeight(720f, hasMainVideo = false))
     }
 
@@ -123,9 +140,9 @@ class TimelineWorkspaceLayoutTest {
             ),
         )
 
-        assertEquals(80.dp, compactTimelineHeight(empty)) // restored 44dp header + 36dp ruler
-        assertEquals(154.dp, compactTimelineHeight(singleMain))
-        assertEquals(234.dp, compactTimelineHeight(mainAndOverlay))
+        assertEquals(68.dp, compactTimelineHeight(empty)) // 40dp header + 28dp ruler
+        assertEquals(130.dp, compactTimelineHeight(singleMain))
+        assertEquals(210.dp, compactTimelineHeight(mainAndOverlay))
     }
 
     @Test
@@ -140,7 +157,7 @@ class TimelineWorkspaceLayoutTest {
         val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
-        assertEquals("V1 remains the fixed-height historical filmstrip lane", 64f, main.height, 1f)
+        assertEquals("V1 remains the fixed-height 52dp filmstrip lane", 52f, main.height, 1f)
         assertEquals("The waveform remains a compact 12dp strip", 12f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
     }
@@ -159,7 +176,7 @@ class TimelineWorkspaceLayoutTest {
         val main = composeRule.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         composeRule.onNodeWithContentDescription("Source audio waveform").assertExists()
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
-        assertEquals("V1 retains its historical filmstrip height beside its supporting row", 64f, main.height, 1f)
+        assertEquals("V1 retains its fixed 52dp filmstrip height beside its supporting row", 52f, main.height, 1f)
         val overlay = composeRule.onNodeWithContentDescription("V2 overlay").fetchSemanticsNode().boundsInRoot
         assertEquals("Populated overlay layers retain the historical 60dp row height", 60f, overlay.height, 1f)
         composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true).assertExists()
@@ -175,7 +192,7 @@ class TimelineWorkspaceLayoutTest {
         composeRule.waitForIdle()
         composeRule.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
 
-        composeRule.onNodeWithContentDescription("Add video media").performClick()
+        composeRule.onNodeWithContentDescription("Add clip").performClick()
 
         composeRule.runOnIdle {
             assertEquals(ClipType.VIDEO, requested)
@@ -188,7 +205,12 @@ class TimelineWorkspaceLayoutTest {
     fun restoredTimelineHeaderShowsActionsAndKeepsRowUtilitiesInOverflow() {
         composeRule.setContent { workspace(widthDp = 320) }
 
-        composeRule.onNodeWithText("TIMELINE").assertExists()
+        composeRule.onNodeWithText("Timeline").assertExists()
+        val header = composeRule.onNodeWithTag("timeline-header").fetchSemanticsNode().boundsInRoot
+        val title = composeRule.onNodeWithText("Timeline").fetchSemanticsNode().boundsInRoot
+        val duration = composeRule.onNodeWithTag("timeline-duration").fetchSemanticsNode().boundsInRoot
+        assertEquals("Timeline header uses the compact 40dp height", 40f, header.height, 1f)
+        assertTrue("Gradient title and duration share one header row", kotlin.math.abs(title.center.y - duration.center.y) < 1f)
         composeRule.onNodeWithTag("timeline-duration").assertExists()
         composeRule.onNodeWithTag("timeline-overflow").assertExists()
         composeRule.onNodeWithTag("timeline-reveal-playhead").assertExists()
@@ -218,10 +240,10 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithTag("timeline-clip-main-a", useUnmergedTree = true).performTouchInput { click() }
         composeRule.onNodeWithTag("timeline-clip-main-b", useUnmergedTree = true).performTouchInput { click() }
         composeRule.onNodeWithText("2 selected").assertExists()
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithTag("timeline-multiselect-actions").performClick()
+        composeRule.onNodeWithText("Delete selected").performClick()
 
         composeRule.runOnIdle { assertEquals(setOf("main-a", "main-b"), deleted.value) }
-        composeRule.onNodeWithText("Done").performClick()
         composeRule.onNodeWithTag("timeline-overflow").performClick()
         composeRule.onNodeWithText("Select multiple clips").assertExists()
     }
@@ -292,7 +314,7 @@ class TimelineWorkspaceLayoutTest {
         // is clipped by the viewport, so its reported horizontal center is
         // not a scrolling position. The clip tag is the actual content item.
         assertEquals(clipBefore.center.x - 30f, clipAfter.center.x, 3f)
-        assertEquals("V1 semantics stay bounded to the historical filmstrip row", 64f, railAfter.height, 1f)
+        assertEquals("V1 semantics stay bounded to the fixed 52dp filmstrip row", 52f, railAfter.height, 1f)
         assertTrue(
             "Accessible V1 row should contain its actual clip: row=$railAfter clip=$clipAfter",
             clipAfter.center.y in railAfter.top..railAfter.bottom,
@@ -384,6 +406,9 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
             click(Offset(x, center.y))
         }
+        // The ruler also recognizes double-tap-to-fit, so single-tap seek is
+        // delivered after the double-tap timeout has ruled out a second tap.
+        composeRule.mainClock.advanceTimeBy(400L)
         composeRule.runOnIdle { assertTrue("108dp at 54dp/s must seek 2s: $scrubbedMs", kotlin.math.abs(scrubbedMs - 2_000L) <= 2L) }
     }
 
@@ -396,7 +421,7 @@ class TimelineWorkspaceLayoutTest {
             .fetchSemanticsNode().boundsInRoot
         val main = composeRule.onNodeWithContentDescription("Main video track")
             .fetchSemanticsNode().boundsInRoot
-        assertEquals("Ruler keeps its historical 36dp height", 36f, ruler.height, 1f)
+        assertEquals("Ruler uses the compact 28dp height", 28f, ruler.height, 1f)
         assertEquals("Ruler and V1 share the same 00:00 origin", ruler.left, main.left, 0.5f)
     }
 

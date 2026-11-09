@@ -1,10 +1,15 @@
 package com.apexstudio.app.data.export
 
+import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import com.apexstudio.app.data.audio.DenoiseAudioProcessor
+import com.apexstudio.app.data.audio.SharedVideoClipAudioProcessor
+import com.apexstudio.app.domain.model.timeline.Curve
+import com.apexstudio.app.domain.model.timeline.Keyframe
+import com.apexstudio.app.domain.model.timeline.VideoClip
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +55,60 @@ class VideoExportAudioProcessorsTest {
     fun `finite gain is bounded and clips only at PCM output range`() {
         assertEquals(listOf(0, 0), process(1, -2f, shortArrayOf(20_000, -20_000)))
         assertEquals(listOf(32_767, -32_768), process(1, 9f, shortArrayOf(20_000, -20_000)))
+    }
+
+    @Test
+    fun `typed animation uses one per-frame processor and applies global gain once`() {
+        val clip = VideoClip(
+            uri = Uri.parse("file:///typed.mp4"),
+            inMs = 0L,
+            outMs = 1_000L,
+            volume = 0.5f,
+            volumeKeyframes = listOf(
+                Keyframe(0L, 0.5f, Curve.LINEAR),
+                Keyframe(1_000L, 1f, Curve.LINEAR)
+            )
+        )
+        val processors = ExportEngine(RuntimeEnvironment.getApplication()).buildVideoExportAudioProcessors(
+            ExportEngine.ExportConfig(
+                volume = 0.25f,
+                globalAudioVolume = 0.5f,
+                sharedVideoClip = clip
+            )
+        )
+        assertEquals(1, processors.size)
+        val processor = processors.single()
+        assertTrue(processor is SharedVideoClipAudioProcessor)
+        try {
+            processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+            val input = ByteBuffer.allocateDirect(501 * 2).order(ByteOrder.LITTLE_ENDIAN)
+            repeat(501) { input.putShort(10_000) }
+            input.flip()
+            processor.queueInput(input)
+            val output = processor.output.order(ByteOrder.LITTLE_ENDIAN)
+            var lastSample = 0
+            while (output.hasRemaining()) lastSample = output.short.toInt()
+            // 500ms: clip volume .75 * global gain .5 = .375.
+            assertEquals(3_750, lastSample)
+        } finally {
+            processor.reset()
+        }
+    }
+
+    @Test
+    fun `typed clip with no audio keys stays on the legacy scalar processor`() {
+        val clip = VideoClip(
+            uri = Uri.parse("file:///typed.mp4"),
+            inMs = 0L,
+            outMs = 1_000L,
+            volume = 0.5f
+        )
+        val processors = ExportEngine(RuntimeEnvironment.getApplication()).buildVideoExportAudioProcessors(
+            ExportEngine.ExportConfig(volume = 0.5f, sharedVideoClip = clip)
+        )
+        assertEquals(1, processors.size)
+        assertFalse(processors.single() is SharedVideoClipAudioProcessor)
+        processors.forEach { it.reset() }
     }
 
     @Test

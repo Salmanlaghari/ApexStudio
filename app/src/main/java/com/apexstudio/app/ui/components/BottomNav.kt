@@ -28,7 +28,8 @@ data class BottomNavItem(
     val id: String,
     val label: String,
     val icon: ImageVector,
-    val active: Boolean = false
+    val active: Boolean = false,
+    val selectedColor: Color? = null
 )
 
 @Composable
@@ -70,8 +71,9 @@ fun BottomNavBar(
 
 @Composable
 private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -> Unit) {
+    val accent = item.selectedColor ?: ApexPalette.NeonCyan
     val tint by animateColorAsState(
-        if (isActive) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+        if (isActive) accent else ApexPalette.TextSecondary,
         label = "nav-tint"
     )
     Column(
@@ -93,8 +95,8 @@ private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    ApexPalette.NeonCyan.copy(alpha = 0.35f),
-                                    ApexPalette.NeonCyan.copy(alpha = 0.0f)
+                                    accent.copy(alpha = 0.35f),
+                                    accent.copy(alpha = 0.0f)
                                 )
                             )
                         )
@@ -103,8 +105,8 @@ private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -
                     modifier = Modifier
                         .size(30.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
-                        .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(50))
+                        .background(accent.copy(alpha = 0.18f))
+                        .border(1.dp, accent, RoundedCornerShape(50))
                 )
             }
             Icon(item.icon, null, tint = tint, modifier = Modifier.size(20.dp))
@@ -116,6 +118,10 @@ private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, onSelect: () -
             style = MaterialTheme.typography.labelSmall,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium
         )
+        if (isActive && item.selectedColor != null) {
+            Spacer(Modifier.height(4.dp))
+            Box(Modifier.width(42.dp).height(2.dp).clip(RoundedCornerShape(50)).background(accent))
+        }
     }
 }
 

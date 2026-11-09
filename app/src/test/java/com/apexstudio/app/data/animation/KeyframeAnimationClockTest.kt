@@ -88,4 +88,19 @@ class KeyframeAnimationClockTest {
         assertEquals(itemStartMs + expectedOutputOffsetMs, clock.projectTimeMs(localPtsUs))
         assertNotEquals(itemStartMs + expectedOutputOffsetMs, clock.projectTimeMs(10_000_000L))
     }
+
+    @Test
+    fun `mask clock subtracts sequence placement to produce clip output local time`() {
+        val itemStartMs = 8_000L
+        val clock = KeyframeAnimationClock(
+            trimStartMs = 1_000L,
+            trimEndMs = 5_000L,
+            timelineStartMs = itemStartMs,
+            clipSpeed = 2f,
+            speedPoints = emptyList()
+        )
+        val localPtsUs = itemLocalPresentationTimeUs(9_000_000L, itemStartMs)
+        val projectMs = clock.projectTimeMs(localPtsUs)
+        assertEquals(500L, projectMs - itemStartMs)
+    }
 }

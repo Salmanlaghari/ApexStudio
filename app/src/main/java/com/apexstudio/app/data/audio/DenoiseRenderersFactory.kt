@@ -10,8 +10,8 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
  * [DefaultRenderersFactory] that injects the shared [DenoiseAudioProcessor]
  * into the preview player's audio chain.
  *
- * Why a factory instead of `Player.setAudioEffects(...)`: Media3 1.5.0 has
- * no `setAudioEffects` (and `AudioProcessor` does not extend `Effect`), so
+ * Why a factory instead of `Player.setAudioEffects(...)`: ExoPlayer has
+ * no `setAudioEffects` API (and `AudioProcessor` does not extend `Effect`), so
  * the only supported way to attach a custom [androidx.media3.common.audio.AudioProcessor]
  * to ExoPlayer playback is through the [AudioSink] the renderers are built
  * with. [DefaultRenderersFactory.buildAudioSink] is `protected`, so this

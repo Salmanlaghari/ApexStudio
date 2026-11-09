@@ -40,7 +40,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '8.11.1'
 
       - name: Cache Gradle and Android dependencies
         uses: actions/cache@v4
@@ -71,7 +71,7 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: |
           if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
           fi
           chmod +x gradlew
 
@@ -87,6 +87,7 @@ jobs:
       - name: Verify offline AI model integrity
         run: |
           python3 scripts/verify-ai-models.py
+          python3 scripts/verify-free-ai-policy.py --report
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
           python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
 
@@ -100,11 +101,25 @@ jobs:
 
       - name: Full JVM regression suite
         run: |
-          ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon
+          set -o pipefail
+          ./gradlew :buildSrc:test :app:testDebugUnitTest :feature:camerakit:testDebugUnitTest --no-daemon 2>&1 | tee gradle-debug.log
           python3 -m unittest discover -s scripts/tests -p 'test_apk_provenance.py'
           python3 -m unittest discover -s scripts/tests -p 'test_native_alignment.py'
           python3 -m unittest discover -s scripts/tests -p 'test_range_time_encoder.py'
 
+
+      - name: Publish build error digest
+        if: failure()
+        run: |
+          LOG=gradle-debug.log
+          if [ -f "$LOG" ]; then
+            { grep -E "^e: |Execution failed|What went wrong" -A4 "$LOG" | head -30; \
+               grep -E "FAILED$" -A4 "$LOG" | head -30; } \
+              | awk '{ printf "%s ~ ", $0 }' > digest.txt
+            echo "::error::$(cat digest.txt | cut -c1-3000)"
+          else
+            echo "::error::gradle log gradle-debug.log not found"
+          fi
       - name: Compile Android instrumentation tests
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
       - name: Build lean arm64 debug APK and feature bundle
@@ -192,7 +207,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '8.11.1'
 
       - name: Cache Gradle and Android dependencies
         uses: actions/cache@v4
@@ -223,7 +238,7 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: |
           if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
           fi
           chmod +x gradlew
 
@@ -247,8 +262,23 @@ jobs:
           KEYSTORE_PATH: ${{ github.workspace }}/ci-release.keystore
           STORE_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ env.CI_KEYSTORE_PASSWORD }}
-        run: ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee gradle-release.log
 
+
+      - name: Publish build error digest
+        if: failure()
+        run: |
+          LOG=gradle-release.log
+          if [ -f "$LOG" ]; then
+            { grep -E "^e: |Execution failed|What went wrong" -A4 "$LOG" | head -30; \
+               grep -E "FAILED$" -A4 "$LOG" | head -30; } \
+              | awk '{ printf "%s ~ ", $0 }' > digest.txt
+            echo "::error::$(cat digest.txt | cut -c1-3000)"
+          else
+            echo "::error::gradle log gradle-release.log not found"
+          fi
       - name: Check release native alignment (static only, all bundle modules)
         run: |
           python3 scripts/native-alignment.py app/build/outputs/apk/release/app-release.apk --output native-alignment-release-apk.json

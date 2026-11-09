@@ -166,6 +166,19 @@ class RestoredEditorInstrumentedTest {
                 assertTrue("Global dock must remain below the timeline", timeline.visibleBounds.bottom <= dock.visibleBounds.top)
                 assertTrue("Dock must be reachable within the portrait display", dock.visibleBounds.bottom <= device.displayHeight)
 
+                val stage = device.findObject(By.desc("Editor preview stage"))
+                assertNotNull("Full-width bounded preview stage is missing", stage)
+                val stageBounds = stage.visibleBounds
+                val dp = context.resources.displayMetrics.density
+                assertTrue("Preview stage must reach both screen edges: $stageBounds",
+                    stageBounds.width() >= device.displayWidth - 2 * dp)
+                assertTrue("Preview must start immediately under the app bar: $stageBounds",
+                    stageBounds.top >= topBar.visibleBounds.bottom &&
+                        stageBounds.top - topBar.visibleBounds.bottom <= 12 * dp)
+                assertTrue("Preview must extend to the playback row: $stageBounds",
+                    stageBounds.bottom <= play.visibleBounds.top &&
+                        play.visibleBounds.top - stageBounds.bottom <= 12 * dp)
+
                 // The real PlayerView may be wrapped by the platform's accessibility tree.
                 val preview = device.findObjects(By.clazz(TextureView::class.java.name))
                     .firstOrNull { it.visibleBounds.width() > 0 && it.visibleBounds.height() > 0 }

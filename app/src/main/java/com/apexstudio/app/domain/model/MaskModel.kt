@@ -33,6 +33,52 @@ data class MaskPoint(val x: Float, val y: Float)
  */
 object MaskModel {
 
+    /** Blur Faces has no face-region renderer in the mask pipeline yet. */
+    const val BLUR_FACES_UNAVAILABLE_REASON =
+        "Blur Faces is unavailable until face-region detection is wired to preview and export."
+
+    fun isAvailable(shape: MaskShape): Boolean = shape != MaskShape.BLUR_FACE
+
+    /** A normalized, non-empty pen capture ready to be stored on [VideoMask]. */
+    data class PenCapture(
+        val centerX: Float,
+        val centerY: Float,
+        val sizeX: Float,
+        val sizeY: Float,
+        val points: List<MaskPoint>
+    )
+
+    /**
+     * Convert frame-normalized pointer samples (0..1, top-left origin) into
+     * shape-space points.  It refuses bad dimensions, non-finite samples, and
+     * degenerate paths so callers cannot persist a pen mask that later exports
+     * as an empty polygon.
+     */
+    fun capturePen(points: List<MaskPoint>, frameWidth: Float, frameHeight: Float): PenCapture {
+        require(frameWidth.isFinite() && frameWidth > 0f) { "Pen capture requires a positive frame width" }
+        require(frameHeight.isFinite() && frameHeight > 0f) { "Pen capture requires a positive frame height" }
+        val framePoints = points.filter { it.x.isFinite() && it.y.isFinite() }
+        require(framePoints.size >= 3) { "Pen mask requires at least three finite points" }
+        require(framePoints.all { it.x in 0f..1f && it.y in 0f..1f }) {
+            "Pen capture points must be normalized to the frame"
+        }
+        val minX = framePoints.minOf { it.x }
+        val maxX = framePoints.maxOf { it.x }
+        val minY = framePoints.minOf { it.y }
+        val maxY = framePoints.maxOf { it.y }
+        val width = (maxX - minX).coerceAtLeast(1e-4f)
+        val height = (maxY - minY).coerceAtLeast(1e-4f)
+        val centerX = (minX + maxX) * 0.5f
+        val centerY = (minY + maxY) * 0.5f
+        val shapePoints = framePoints.map {
+            MaskPoint(((it.x - centerX) / (width * 0.5f)).coerceIn(-1f, 1f),
+                ((it.y - centerY) / (height * 0.5f)).coerceIn(-1f, 1f))
+        }
+        val outline = drawOutline(shapePoints)
+        require(outline.isNotEmpty()) { "Pen capture did not form a non-empty polygon" }
+        return PenCapture(centerX, centerY, width, height, shapePoints)
+    }
+
     /**
      * Complete centered geometry for a newly selected shape. This is
      * intentionally independent of the previous mask so stale dimensions,

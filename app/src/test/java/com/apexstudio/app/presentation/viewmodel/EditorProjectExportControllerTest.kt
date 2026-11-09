@@ -7,7 +7,12 @@ import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class EditorProjectExportControllerTest {
     private val first = MediaClip("first", "First", "file:///first.mp4", 5000, trimEndMs = 5000)
     private val second = first.copy(id = "second", uri = "file:///second.mp4", speedMultiplier = 2f)

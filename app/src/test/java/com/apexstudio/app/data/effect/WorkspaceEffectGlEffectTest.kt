@@ -21,6 +21,12 @@ class WorkspaceEffectGlEffectTest {
         assertEquals(Long.MAX_VALUE, WorkspaceEffectGlEffect.sourceTimeMs(Long.MAX_VALUE, Long.MAX_VALUE))
     }
 
+    @Test fun typedEffectIntensityScalesEveryFrameAndDefaultsToOneWhenUnkeyed() {
+        assertEquals(0.4f, WorkspaceEffectGlEffect.intensityForFrame(0.8f, 0.5f), 0f)
+        assertEquals(0.8f, WorkspaceEffectGlEffect.intensityForFrame(0.8f, null), 0f)
+        assertEquals(0f, WorkspaceEffectGlEffect.intensityForFrame(Float.NaN, 0.5f), 0f)
+    }
+
     @Test
     fun sourceWindowIsInclusiveAtStartAndExclusiveAtEnd() {
         val effect = WorkspaceEffect(WorkspaceEffectPresets.MONO, startMs = 1_250L, endMs = 2_000L)

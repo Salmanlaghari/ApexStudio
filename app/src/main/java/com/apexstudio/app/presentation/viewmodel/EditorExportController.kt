@@ -122,7 +122,6 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
 
     val selectedGpuFilterConfig = selected?.gpuFilterConfig
         ?: com.apexstudio.app.data.filter.GpuFilterConfig()
@@ -137,7 +136,23 @@ fun EditorViewModel.startExport(
             Log.w("EditorViewModel", "Failed to load filter manifest for export", e)
         }
     }
+    // Match preview resolution, including user-imported LUTs that are not in the manifest.
+    if (filterPreset == null) {
+        filterPreset = s.customImportedLuts.firstOrNull { it.id == s.activeFilterId }
+    }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
+    val unavailableVisual = selectedVisualEffectUnavailableReason(
+        activeFilterId = s.activeFilterId,
+        filterIntensity = s.filterIntensity,
+        filterPresetAvailable = filterPreset != null,
+        activeFxId = s.activeFxId,
+        fxIntensity = s.fxIntensity
+    )
+    if (unavailableVisual != null) {
+        _export.update { it.copy(isExporting = false, error = unavailableVisual, outputUri = null, warning = null) }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value

@@ -149,6 +149,13 @@ class EditorViewModel(
     internal val _playerPosition = MutableStateFlow(0L)
     val playerPositionFlow: StateFlow<Long> = _playerPosition.asStateFlow()
 
+    /** Count main-preview frames confirmed rendered by ExoPlayer's listener. */
+    private val _previewFrameGeneration = MutableStateFlow(0L)
+    internal val previewFrameGeneration: StateFlow<Long> = _previewFrameGeneration.asStateFlow()
+    internal fun recordPreviewFrameRendered() {
+        _previewFrameGeneration.update { it + 1L }
+    }
+
     /** Current live playhead (ms) — the authoritative "now" for user actions (split / trim / keyframe). */
     internal fun livePlayheadMs(): Long = _playerPosition.value
 

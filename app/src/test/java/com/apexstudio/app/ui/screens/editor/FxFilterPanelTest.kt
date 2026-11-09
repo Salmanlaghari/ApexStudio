@@ -35,6 +35,17 @@ class FxFilterPanelTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun `only time-driven FX previews require the wall-clock ticker`() {
+        assertTrue(fxPreviewUsesWallClock("hue_cycle"))
+        assertTrue(fxPreviewUsesWallClock("pulse_beat"))
+        assertTrue(fxPreviewUsesWallClock("gradient_sweep"))
+        assertTrue(fxPreviewUsesWallClock("light_leak_sweep"))
+        assertTrue(!fxPreviewUsesWallClock("vignette"))
+        assertTrue(!fxPreviewUsesWallClock("film_grain"))
+        assertTrue(!fxPreviewUsesWallClock("creator_neon_aurora"))
+    }
+
+    @Test
     fun `fx category and preset remain selectable with Close pinned`() {
         var selectedFx: String? = null
         var closed = false

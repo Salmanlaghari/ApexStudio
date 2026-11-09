@@ -13,6 +13,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import kotlin.random.Random
 
+/** Only these previews read the speed-scaled wall clock; other FX use their own animation progress. */
+private val WALL_CLOCK_FX_IDS = setOf(
+    "hue_cycle", "pulse_beat", "gradient_sweep", "light_leak_sweep"
+)
+internal fun fxPreviewUsesWallClock(fxId: String): Boolean = fxId in WALL_CLOCK_FX_IDS
+
 /**
  * Live Compose visual FX overlay rendered directly on top of the ExoPlayer
  * preview surface in [VideoPreviewArea].
@@ -53,16 +59,18 @@ fun FxPreviewOverlay(
     // Read the latest speed inside the running ticker so slider drags take
     // effect without restarting the coroutine.
     val currentSpeed by rememberUpdatedState(clampedSpeed)
-    LaunchedEffect(isPlaying) {
-        val start = System.nanoTime()
-        var last = 0f
-        while (true) {
-            val elapsed = (System.nanoTime() - start) / 1_000_000_000f
-            // Advance by wall-clock delta scaled by speed; wrap at 1h.
-            val delta = (elapsed - last).coerceAtLeast(0f)
-            last = elapsed
-            tSec = (tSec + delta * currentSpeed) % 3600f
-            kotlinx.coroutines.delay(50)
+    if (fxPreviewUsesWallClock(fxId)) {
+        LaunchedEffect(fxId, isPlaying) {
+            val start = System.nanoTime()
+            var last = 0f
+            while (true) {
+                val elapsed = (System.nanoTime() - start) / 1_000_000_000f
+                // Advance by wall-clock delta scaled by speed; wrap at 1h.
+                val delta = (elapsed - last).coerceAtLeast(0f)
+                last = elapsed
+                tSec = (tSec + delta * currentSpeed) % 3600f
+                kotlinx.coroutines.delay(50)
+            }
         }
     }
 

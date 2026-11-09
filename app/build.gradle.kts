@@ -166,7 +166,31 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      if (System.getenv("CI") == "true") {
+        all { test ->
+          test.addTestListener(object : org.gradle.api.tasks.testing.TestListener {
+            override fun beforeSuite(suite: org.gradle.api.tasks.testing.TestDescriptor) = Unit
+            override fun afterSuite(
+              suite: org.gradle.api.tasks.testing.TestDescriptor,
+              result: org.gradle.api.tasks.testing.TestResult
+            ) = Unit
+            override fun beforeTest(testDescriptor: org.gradle.api.tasks.testing.TestDescriptor) {
+              println("CI_TEST_STARTED ${testDescriptor.className}.${testDescriptor.name}")
+            }
+            override fun afterTest(
+              testDescriptor: org.gradle.api.tasks.testing.TestDescriptor,
+              result: org.gradle.api.tasks.testing.TestResult
+            ) {
+              println("CI_TEST_FINISHED ${testDescriptor.className}.${testDescriptor.name} ${result.resultType}")
+            }
+          })
+        }
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

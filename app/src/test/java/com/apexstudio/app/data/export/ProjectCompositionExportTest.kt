@@ -75,8 +75,9 @@ class ProjectCompositionExportTest {
                 clip("fit").copy(videoFitMode = VideoFitMode.FIT)
             )
         )
-        val json = Json { encodeDefaults = true }.encodeToString(Project.serializer(), project)
-        val restoredClips = Json.decodeFromString<Project>(json).clips
+        val jsonFormat = Json { encodeDefaults = true }
+        val json = jsonFormat.encodeToString(Project.serializer(), project)
+        val restoredClips = jsonFormat.decodeFromString<Project>(json).clips
 
         val cover = projectItemOutputSizeTransformation(restoredClips[0], 1280, 720)
         val fit = projectItemOutputSizeTransformation(restoredClips[1], 1280, 720)

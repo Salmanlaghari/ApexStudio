@@ -5,60 +5,26 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Log
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.data.audio.AudioTimelineMath
 import kotlin.math.abs
 
 /** Converts a project playhead position to the corresponding source-media position. */
 internal object AudioPlaybackPosition {
-    fun sourcePositionMs(track: AudioTrack, timelinePositionMs: Long): Long? {
-        val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
-        val sourceStartMs = track.trimStartMs.coerceAtLeast(0L)
-        val sourceEndMs = minOf(track.trimEndMs, track.sourceEndMs).coerceAtLeast(0L)
-        // Compare ordered, non-negative endpoints before subtraction to avoid malformed-data overflow.
-        if (sourceEndMs <= sourceStartMs || timelinePositionMs < timelineStartMs) return null
-        val sourceLengthMs = sourceEndMs - sourceStartMs
-
-        val elapsedMs = timelinePositionMs - timelineStartMs
-        if (elapsedMs >= sourceLengthMs) return null
-        return sourceStartMs + elapsedMs
-    }
+    fun sourcePositionMs(track: AudioTrack, timelinePositionMs: Long): Long? =
+        AudioTimelineMath.sourcePositionMs(track, timelinePositionMs)
 }
 
 /** Pure gain calculation for the MediaPlayer preview path. */
 internal object AudioPlaybackMix {
     fun isEnabled(track: AudioTrack, tracks: List<AudioTrack>): Boolean =
-        !track.isMuted && (tracks.none { it.isSolo } || track.isSolo)
+        AudioTimelineMath.isEnabled(track, tracks)
 
-    fun volumeAt(track: AudioTrack, timelinePositionMs: Long, tracks: List<AudioTrack>): Float {
-        if (!isEnabled(track, tracks)) return 0f
-        if (AudioPlaybackPosition.sourcePositionMs(track, timelinePositionMs) == null) return 0f
-
-        val timelineStartMs = track.startTimeMs.coerceAtLeast(0L)
-        val sourceStartMs = track.trimStartMs.coerceAtLeast(0L)
-        val sourceEndMs = minOf(track.trimEndMs, track.sourceEndMs).coerceAtLeast(0L)
-        val playDurationMs = sourceEndMs - sourceStartMs
-        val elapsedMs = timelinePositionMs - timelineStartMs
-        val remainingMs = playDurationMs - elapsedMs
-
-        var envelope = 1f
-        if (track.fadeInMs > 0L && elapsedMs < track.fadeInMs) {
-            envelope = minOf(envelope, elapsedMs.toDouble().div(track.fadeInMs).toFloat())
-        }
-        if (track.fadeOutMs > 0L && remainingMs < track.fadeOutMs) {
-            envelope = minOf(envelope, remainingMs.coerceAtLeast(0L).toDouble().div(track.fadeOutMs).toFloat())
-        }
-
-        // Keyframes are absolute project-timeline values; edge fades are local
-        // to the placed, trimmed playback window and multiply that volume.
-        val keyedVolume = track.volumeAt(timelinePositionMs)
-        val cleanVolume = if (keyedVolume.isFinite()) keyedVolume.coerceIn(0f, 1f) else 0f
-        return (cleanVolume * envelope).coerceIn(0f, 1f)
-    }
+    fun volumeAt(track: AudioTrack, timelinePositionMs: Long, tracks: List<AudioTrack>): Float =
+        AudioTimelineMath.playbackVolumeAt(track, timelinePositionMs, tracks)
 
     /** Linear left/right gains preserve the center mix level and match export pan behavior. */
-    fun stereoGainsAt(track: AudioTrack, timelinePositionMs: Long): Pair<Float, Float> {
-        val pan = track.panAt(timelinePositionMs).takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
-        return (1f - pan.coerceAtLeast(0f)) to (1f + pan.coerceAtMost(0f))
-    }
+    fun stereoGainsAt(track: AudioTrack, timelinePositionMs: Long): Pair<Float, Float> =
+        AudioTimelineMath.stereoGainsAt(track, timelinePositionMs)
 }
 
 /**

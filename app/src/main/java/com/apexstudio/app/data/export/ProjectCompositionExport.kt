@@ -275,6 +275,17 @@ internal class ProjectOutputSizeTransformation(
     )
 }
 
+/** Builds the project export's per-item framing transform from that clip's persisted placement. */
+internal fun projectItemOutputSizeTransformation(
+    clip: MediaClip,
+    outputWidth: Int,
+    outputHeight: Int
+): ProjectOutputSizeTransformation = ProjectOutputSizeTransformation(
+    outputWidth = outputWidth,
+    outputHeight = outputHeight,
+    fitMode = clip.videoFitMode
+)
+
 /** GL normalized-coordinate scales for placing an aspect-ratio source in a fixed output frame. */
 internal fun compositionFitScales(
     sourceAspect: Float,

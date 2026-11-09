@@ -497,7 +497,7 @@ class ExportEngine(private val context: Context) {
                                     }
                                 }
                             ))
-                            add(ProjectOutputSizeTransformation(outputWidth, outputHeight, clip.videoFitMode))
+                            add(projectItemOutputSizeTransformation(clip, outputWidth, outputHeight))
                             // Per-clip GPU filter/LUT state is intentionally resolved inside
                             // this item's effect graph. A default config contributes no stage;
                             // another clip's state can therefore never bleed into this item.

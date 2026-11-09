@@ -8,7 +8,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
-import com.apexstudio.app.data.engine.AudioPlaybackMix
+import com.apexstudio.app.data.audio.AudioTimelineMath
 import com.apexstudio.app.domain.model.AudioTrack
 import java.io.File
 import java.io.RandomAccessFile
@@ -18,7 +18,7 @@ import kotlin.math.floor
 import kotlin.math.min
 
 internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack> =
-    tracks.filter { AudioPlaybackMix.isEnabled(it, tracks) }
+    tracks.filter { AudioTimelineMath.isEnabled(it, tracks) }
 
 /**
  * Mixes timeline music tracks into an exported video file.
@@ -147,15 +147,13 @@ object MusicExportMixer {
         try {
             for (t in enabledTracks) {
                 checkCancelled()
-                val sourceTrim = ExportAudioTimelineMapping.sourceTrim(
-                    t.trimStartMs, t.trimEndMs, SAMPLE_RATE
-                )
-                if (sourceTrim.frameCount <= 0L) {
+                val placement = AudioTimelineMath.placement(t, SAMPLE_RATE)
+                if (placement == null || placement.playFrames <= 0L) {
                     skipped++
                     continue
                 }
                 val decoder = try {
-                    TrackDecoder.openUri(context, t.uri, sourceTrim.startMs)
+                    TrackDecoder.openUri(context, t.uri, placement.sourceWindow.startMs)
                 } catch (e: Exception) {
                     Log.w(TAG, "Skipping undecodable music track: ${t.name}", e)
                     null
@@ -164,15 +162,12 @@ object MusicExportMixer {
                     skipped++
                     continue
                 }
-                val startFrame = ExportAudioTimelineMapping.millisToFrames(
-                    t.startTimeMs, SAMPLE_RATE
-                )
-                if (startFrame >= durationCapFrames) {
+                if (placement.startFrame >= durationCapFrames) {
                     decoder.release()
                     skipped++
                     continue
                 }
-                placed.add(PlacedTrack(t, decoder, startFrame, sourceTrim.frameCount))
+                placed.add(PlacedTrack(t, decoder, placement.startFrame, placement.playFrames))
             }
 
             if (placed.isEmpty()) {
@@ -261,29 +256,21 @@ object MusicExportMixer {
                         val sortedPanKfs = sortedPanKfsByTrack[trackIdx]
                         for (i in 0 until n) {
                             val g = s0 + i
-                            val env = fadeEnvelope(
+                            val env = AudioTimelineMath.fadeEnvelopeAtFrame(
                                 g - p.startFrame, p.playFrames,
-                                p.track.fadeInMs, p.track.fadeOutMs
+                                p.track.fadeInMs, p.track.fadeOutMs, SAMPLE_RATE
                             )
+                            val timelineMs = AudioTimelineMath.frameTimeMs(g, SAMPLE_RATE)
                             // Volume keyframes: interpolated absolute
                             // volume at this frame's timeline time
                             // (sample-accurate; no keyframes = scalar
                             // volume, muted = 0 — same as before).
                             val kfVol = if (p.track.isMuted) 0f else
-                                com.apexstudio.app.domain.model.AudioTrack
-                                    .interpolateVolumeKeyframes(
-                                        sortedVolumeKfs,
-                                        p.track.volume,
-                                        (g * 1000L) / SAMPLE_RATE
-                                    ).coerceIn(0f, 1f)
+                                AudioTimelineMath.volumeAt(p.track, timelineMs, sortedVolumeKfs)
                             val v = kfVol * env
-                            val panValue = AudioTrack.interpolatePanKeyframes(
-                                sortedPanKfs,
-                                p.track.pan,
-                                (g * 1000L) / SAMPLE_RATE
-                            ).takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
-                            val panLeft = 1f - panValue.coerceAtLeast(0f)
-                            val panRight = 1f + panValue.coerceAtMost(0f)
+                            val (panLeft, panRight) = AudioTimelineMath.stereoGainsAt(
+                                p.track, timelineMs, sortedPanKfs
+                            )
                             val idx = ((g - w0) * 2).toInt()
                             mix[idx] += tmp[i * 2] * v * panLeft
                             mix[idx + 1] += tmp[i * 2 + 1] * v * panRight
@@ -538,25 +525,9 @@ object MusicExportMixer {
         playFrames: Long,
         fadeInMs: Long,
         fadeOutMs: Long
-    ): Float {
-        if (playFrames <= 0L) return 0f
-        // Durations come from persisted project data; multiplying arbitrary
-        // Long milliseconds by the sample rate can wrap and silently disable
-        // a fade. Use the same saturating conversion as timeline placement.
-        val fadeInFrames = ExportAudioTimelineMapping.millisToFrames(fadeInMs, SAMPLE_RATE)
-        val fadeOutFrames = ExportAudioTimelineMapping.millisToFrames(fadeOutMs, SAMPLE_RATE)
-        var e = 1f
-        if (fadeInFrames > 0 && posFrames < fadeInFrames) {
-            e = min(e, posFrames.toFloat() / fadeInFrames)
-        }
-        if (fadeOutFrames > 0) {
-            val remaining = playFrames - posFrames
-            if (remaining < fadeOutFrames) {
-                e = min(e, remaining.coerceAtLeast(0L).toFloat() / fadeOutFrames)
-            }
-        }
-        return e.coerceIn(0f, 1f)
-    }
+    ): Float = AudioTimelineMath.fadeEnvelopeAtFrame(
+        posFrames, playFrames, fadeInMs, fadeOutMs, SAMPLE_RATE
+    )
 
     /**
      * Decodes one audio track to stereo 44.1 kHz float frames.

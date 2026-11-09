@@ -10,20 +10,8 @@ internal object ExportAudioTimelineMapping {
     private const val SPEED_CHANGE_INTERVAL_US = 10_000L
 
     /** Converts a non-negative millisecond position to frames, saturating on overflow. */
-    fun millisToFrames(millis: Long, sampleRate: Int): Long {
-        require(sampleRate > 0) { "sampleRate must be positive" }
-        val ms = millis.coerceAtLeast(0L)
-        val wholeSeconds = ms / 1_000L
-        val remainingMs = ms % 1_000L
-        if (wholeSeconds > Long.MAX_VALUE / sampleRate) return Long.MAX_VALUE
-        val wholeFrames = wholeSeconds * sampleRate
-        val fractionalFrames = (remainingMs * sampleRate) / 1_000L
-        return if (wholeFrames > Long.MAX_VALUE - fractionalFrames) {
-            Long.MAX_VALUE
-        } else {
-            wholeFrames + fractionalFrames
-        }
-    }
+    fun millisToFrames(millis: Long, sampleRate: Int): Long =
+        com.apexstudio.app.data.audio.AudioTimelineMath.millisToFrames(millis, sampleRate)
 
     /** Converts a non-negative millisecond source position to microseconds without wrapping. */
     fun millisToMicros(millis: Long): Long {
@@ -56,11 +44,8 @@ internal object ExportAudioTimelineMapping {
     }
 
     /** Half-open end of a placed PCM span, including saturated retained durations. */
-    fun endFrame(startFrame: Long, frameCount: Long): Long {
-        val start = startFrame.coerceAtLeast(0L)
-        val count = frameCount.coerceAtLeast(0L)
-        return if (start > Long.MAX_VALUE - count) Long.MAX_VALUE else start + count
-    }
+    fun endFrame(startFrame: Long, frameCount: Long): Long =
+        com.apexstudio.app.data.audio.AudioTimelineMath.endFrame(startFrame, frameCount)
 
     /**
      * Next 10 ms source-time boundary for a variable-speed audio processor,

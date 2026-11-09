@@ -393,9 +393,12 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         }
         persistProject()
 
-        val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO } ?: updatedClips.firstOrNull()
+        // Adding an image/audio clip does not change the main video's waveform;
+        // avoid starting a redundant MediaCodec decode for the existing video.
+        val mainVideoWasAdded = newClips.any { it.type == ClipType.VIDEO }
+        val firstVideo = updatedClips.firstOrNull { it.type == ClipType.VIDEO }
         // Asynchronously analyze audio waveform in background without blocking video preview
-        if (firstVideo != null && context != null) {
+        if (mainVideoWasAdded && firstVideo != null && context != null) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val wf = mediaAnalyzer?.analyzeAudioWaveform(

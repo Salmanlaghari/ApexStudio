@@ -32,13 +32,15 @@ class EditorViewModelTest {
     @Test
     fun `application context initializes the real export engine`() {
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = androidx.lifecycle.ViewModelStore()
         val vm = EditorViewModel(context = context)
+        store.put("context-export-engine", vm)
 
         try {
             assertTrue(vm.export.value.isExportEngineReady)
             assertEquals(null, vm.export.value.error)
         } finally {
-            vm.exportEngine?.release()
+            store.clear()
         }
     }
 

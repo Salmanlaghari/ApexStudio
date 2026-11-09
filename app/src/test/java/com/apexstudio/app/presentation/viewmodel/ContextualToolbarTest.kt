@@ -260,6 +260,7 @@ class ContextualToolbarTest {
     fun `fresh Media pick clears canceled replace so production add route preserves existing clip`() {
         val mainDispatcher = UnconfinedTestDispatcher()
         Dispatchers.setMain(mainDispatcher)
+        val store = androidx.lifecycle.ViewModelStore()
         try {
             val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
             val original = videoClip().copy(uri = "file:///original.mp4")
@@ -268,6 +269,7 @@ class ContextualToolbarTest {
                 com.apexstudio.app.data.repository.ProjectRepository(context).saveProject(project)
             }
             val vm = EditorViewModel(context = context, projectId = project.id)
+            store.put("fresh-media-regression", vm)
             kotlinx.coroutines.runBlocking {
                 kotlinx.coroutines.withTimeout(10_000L) {
                     vm.state.first { it.project?.id == project.id }
@@ -297,6 +299,7 @@ class ContextualToolbarTest {
             assertEquals(original.uri, clips.first { it.id == original.id }.uri)
             assertTrue(clips.any { it.uri == picked.uri && it.id != original.id })
         } finally {
+            store.clear()
             Dispatchers.resetMain()
         }
     }

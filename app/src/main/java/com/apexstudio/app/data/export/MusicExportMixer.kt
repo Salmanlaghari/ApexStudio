@@ -457,67 +457,72 @@ object MusicExportMixer {
         outputVideo: File,
         checkCancelled: () -> Unit
     ) {
-        val vEx = MediaExtractor()
-        vEx.setDataSource(inputVideo.absolutePath)
-        vEx.selectTrack(videoTrackIdx)
+        withExportResource(
+            acquire = { MediaExtractor() },
+            cleanup = { extractor -> runCatching { extractor.release() } }
+        ) { vEx ->
+            vEx.setDataSource(inputVideo.absolutePath)
+            vEx.selectTrack(videoTrackIdx)
 
-        val muxer = MediaMuxer(outputVideo.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        try {
-            val vOut = muxer.addTrack(videoFormat)
-            val aOut = muxer.addTrack(audioFormat)
-            muxer.start()
+            withExportResource(
+                acquire = {
+                    MediaMuxer(outputVideo.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                },
+                cleanup = { muxer -> runCatching { muxer.release() } }
+            ) { muxer ->
+                val vOut = muxer.addTrack(videoFormat)
+                val aOut = muxer.addTrack(audioFormat)
+                muxer.start()
 
-            // Size the sample buffer from the track's max input size when
-            // declared — 4K keyframes can exceed a small fixed buffer — but
-            // cap it: extractors can report absurd values that would OOM.
-            val maxInputSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-            } else 0
-            val vBuf = ByteBuffer.allocate(
-                maxOf(8 * 1024 * 1024, min(maxInputSize, 64 * 1024 * 1024))
-            )
-            val vInfo = MediaCodec.BufferInfo()
-            var audioIdx = 0
+                // Size the sample buffer from the track's max input size when
+                // declared — 4K keyframes can exceed a small fixed buffer — but
+                // cap it: extractors can report absurd values that would OOM.
+                val maxInputSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                } else 0
+                val vBuf = ByteBuffer.allocate(
+                    maxOf(8 * 1024 * 1024, min(maxInputSize, 64 * 1024 * 1024))
+                )
+                val vInfo = MediaCodec.BufferInfo()
+                var audioIdx = 0
 
-            fun readVideo(): Boolean {
-                val n = vEx.readSampleData(vBuf, 0)
-                if (n < 0) return false
-                vInfo.set(0, n, vEx.sampleTime, vEx.sampleFlags)
-                vEx.advance()
-                return true
-            }
-
-            fun writeVideo() {
-                vBuf.position(vInfo.offset)
-                vBuf.limit(vInfo.offset + vInfo.size)
-                muxer.writeSampleData(vOut, vBuf, vInfo)
-            }
-
-            fun writeAudio(f: EncodedFrame) {
-                val buf = ByteBuffer.wrap(f.data)
-                val bi = MediaCodec.BufferInfo()
-                bi.set(0, f.data.size, f.ptsUs, f.flags)
-                muxer.writeSampleData(aOut, buf, bi)
-            }
-
-            var videoAvail = readVideo()
-            while (videoAvail || audioIdx < audioFrames.size) {
-                checkCancelled()
-                val a = audioFrames.getOrNull(audioIdx)
-                if (videoAvail && (a == null || vInfo.presentationTimeUs <= a.ptsUs)) {
-                    writeVideo()
-                    videoAvail = readVideo()
-                } else if (a != null) {
-                    writeAudio(a)
-                    audioIdx++
-                } else {
-                    break
+                fun readVideo(): Boolean {
+                    val n = vEx.readSampleData(vBuf, 0)
+                    if (n < 0) return false
+                    vInfo.set(0, n, vEx.sampleTime, vEx.sampleFlags)
+                    vEx.advance()
+                    return true
                 }
+
+                fun writeVideo() {
+                    vBuf.position(vInfo.offset)
+                    vBuf.limit(vInfo.offset + vInfo.size)
+                    muxer.writeSampleData(vOut, vBuf, vInfo)
+                }
+
+                fun writeAudio(f: EncodedFrame) {
+                    val buf = ByteBuffer.wrap(f.data)
+                    val bi = MediaCodec.BufferInfo()
+                    bi.set(0, f.data.size, f.ptsUs, f.flags)
+                    muxer.writeSampleData(aOut, buf, bi)
+                }
+
+                var videoAvail = readVideo()
+                while (videoAvail || audioIdx < audioFrames.size) {
+                    checkCancelled()
+                    val a = audioFrames.getOrNull(audioIdx)
+                    if (videoAvail && (a == null || vInfo.presentationTimeUs <= a.ptsUs)) {
+                        writeVideo()
+                        videoAvail = readVideo()
+                    } else if (a != null) {
+                        writeAudio(a)
+                        audioIdx++
+                    } else {
+                        break
+                    }
+                }
+                muxer.stop()
             }
-            muxer.stop()
-        } finally {
-            runCatching { muxer.release() }
-            runCatching { vEx.release() }
         }
     }
 
@@ -596,29 +601,22 @@ object MusicExportMixer {
             /** Opens the first audio track of a path / file:// / content:// URI. */
             fun openUri(context: Context, uri: String, sourceStartMs: Long): TrackDecoder {
                 val ex = MediaExtractor()
-                try {
-                    val clean = uri.removePrefix("file://")
-                    if (clean.startsWith("content://")) {
-                        ex.setDataSource(context, Uri.parse(clean), null)
-                    } else {
-                        ex.setDataSource(clean)
-                    }
-                } catch (e: Exception) {
-                    ex.release()
-                    throw e
-                }
-                var audioIdx = -1
-                for (i in 0 until ex.trackCount) {
-                    val mime = ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME)
-                    if (mime != null && mime.startsWith("audio/")) {
-                        audioIdx = i
-                        break
-                    }
-                }
-                if (audioIdx == -1) {
-                    ex.release()
-                    throw IllegalArgumentException("No audio track in $uri")
-                }
+                val audioIdx = prepareWithCleanup(
+                    resource = ex,
+                    prepare = { extractor ->
+                        val clean = uri.removePrefix("file://")
+                        if (clean.startsWith("content://")) {
+                            extractor.setDataSource(context, Uri.parse(clean), null)
+                        } else {
+                            extractor.setDataSource(clean)
+                        }
+                        (0 until extractor.trackCount).firstOrNull { index ->
+                            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                                ?.startsWith("audio/") == true
+                        } ?: throw IllegalArgumentException("No audio track in $uri")
+                    },
+                    cleanup = { extractor -> runCatching { extractor.release() } }
+                )
                 return openSelected(ex, audioIdx, ExportAudioTimelineMapping.millisToMicros(sourceStartMs))
             }
 

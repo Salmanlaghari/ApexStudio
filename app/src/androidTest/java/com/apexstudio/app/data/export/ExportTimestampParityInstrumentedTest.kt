@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,7 +26,7 @@ import kotlin.math.abs
 @UnstableApi
 class ExportTimestampParityInstrumentedTest {
     @Test
-    fun selectedAndProjectExportsPreserveVfrTimingWithinRequestedFpsCap() = runBlocking {
+    fun selectedAndProjectExportsPreserveVfrTimingWithinRequestedAverageFrameRate() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val engine = ExportEngine(context)
@@ -55,6 +56,13 @@ class ExportTimestampParityInstrumentedTest {
                 it >= trimStartMs * 1_000L && it < trimEndMs * 1_000L
             }
             assertTrue("Trimmed VFR interval must contain multiple source timestamp anchors", sourceAnchorsUs.size >= 4)
+            // FrameDropEffect targets average cadence and may discard frames from short local bursts.
+            // Keep the first visible sample and source landmarks separated by at least one target interval.
+            val targetIntervalUs = 1_000_000L / fps
+            val sparseSourceAnchorUs = sourceAnchorsUs.filterIndexed { index, sourceTimeUs ->
+                index == 0 || sourceTimeUs - sourceAnchorsUs[index - 1] > targetIntervalUs
+            }
+            assertTrue("Trimmed VFR interval must retain landmarks across its long gaps", sparseSourceAnchorUs.size >= 3)
 
             val selectedConfig = ExportEngine.ExportConfig(
                 resolution = "720p",
@@ -71,11 +79,13 @@ class ExportTimestampParityInstrumentedTest {
                 label = "selected export",
                 output = readVideoTrack(selectedOutput!!),
                 expectedDurationUs = (trimEndMs - trimStartMs) * 1_000L,
-                expectedSourceAnchorsUs = sourceAnchorsUs.map { it - trimStartMs * 1_000L },
+                expectedSourceAnchorsUs = sparseSourceAnchorUs.mapIndexed { index, sourceTimeUs ->
+                    if (index == 0) 0L else sourceTimeUs - trimStartMs * 1_000L
+                },
                 requestedFps = fps
             )
 
-            val sourceDurationMs = sourceTrack.durationUs / 1_000L
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
             assertTrue("Fixture duration must extend beyond the trim", sourceDurationMs > trimEndMs)
             val clips = (0..1).map { index ->
                 MediaClip(
@@ -99,9 +109,11 @@ class ExportTimestampParityInstrumentedTest {
             val projectResult = awaitTerminalState(engine)
             assertNull("Whole-project export must complete: ${projectResult.error}", projectResult.error)
             projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
-            val expectedProjectAnchorsUs = plan.entries.flatMap { entry ->
-                sourceAnchorsUs.map { sourceTimeUs ->
-                    entry.timelineStartMs * 1_000L + sourceTimeUs - entry.sourceStartMs * 1_000L
+            val expectedProjectAnchorsUs = plan.entries.flatMapIndexed { entryIndex, entry ->
+                sparseSourceAnchorUs.mapIndexed { anchorIndex, sourceTimeUs ->
+                    val relativeToClipStartUs = sourceTimeUs - trimStartMs * 1_000L
+                    entry.timelineStartMs * 1_000L +
+                        if (entryIndex == 0 && anchorIndex == 0) 0L else relativeToClipStartUs
                 }
             }
             assertOutputTiming(
@@ -139,28 +151,45 @@ class ExportTimestampParityInstrumentedTest {
         assertFalse("$label must contain video samples", timestamps.isEmpty())
         assertFalse("$label must not contain negative PTS", timestamps.any { it < 0L })
         assertEquals("$label must not contain duplicate presentation timestamps", timestamps.size, timestamps.distinct().size)
+        val movieDurationUs = output.movieDurationUs
+        assertTrue(
+            "$label must report a positive movie duration; video track=${output.videoTrackDurationUs}us; " +
+                "audio track=${output.audioDurationUs}us; track durations=${output.trackDurations}; " +
+                "video PTS=${timestamps.joinToString()}",
+            movieDurationUs != null && movieDurationUs > 0L
+        )
+        val measuredDurationUs = movieDurationUs ?: 0L
         val targetIntervalUs = 1_000_000.0 / requestedFps
-        val minimumAllowedIntervalUs = (targetIntervalUs * 0.90).toLong()
-        timestamps.zipWithNext().forEach { (before, after) ->
-            assertTrue(
-                "$label exceeded the $requestedFps-fps cap: adjacent PTS gap was ${after - before}us",
-                after - before >= minimumAllowedIntervalUs
-            )
-        }
+        // Media3's default FrameDropEffect targets an average frame rate, not a minimum gap between
+        // every pair of PTS. A VFR source can therefore keep a short local burst when the following
+        // source gap is long. Bound total cadence over the output duration, allowing one boundary frame.
+        assertTrue("$label must report a positive movie duration", measuredDurationUs > 0L)
+        val outputIntervals = timestamps.size - 1L
+        val maximumIntervalsAtTargetCadence =
+            (requestedFps.toLong() * measuredDurationUs + 999_999L) / 1_000_000L
+        assertTrue(
+            "$label averaged too many video intervals for the requested $requestedFps-fps target: " +
+                "$outputIntervals intervals over ${measuredDurationUs}us (maximum $maximumIntervalsAtTargetCadence " +
+                "after one-frame boundary tolerance; video track ${output.videoTrackDurationUs}us)",
+            outputIntervals <= maximumIntervalsAtTargetCadence
+        )
 
         val durationToleranceUs = 150_000L
         assertTrue(
-            "$label duration ${output.durationUs}us must stay within ${durationToleranceUs}us of planned $expectedDurationUs us",
-            abs(output.durationUs - expectedDurationUs) <= durationToleranceUs
+            "$label movie duration ${measuredDurationUs}us must stay within ${durationToleranceUs}us of planned " +
+                "$expectedDurationUs us; video track duration=${output.videoTrackDurationUs}us; " +
+                "audio track duration=${output.audioDurationUs}us; track durations=${output.trackDurations}; " +
+                "encoded video PTS=${timestamps.joinToString()}",
+            abs(measuredDurationUs - expectedDurationUs) <= durationToleranceUs
         )
-        // Frame dropping at the requested cap may discard individual source samples. Each retained
-        // temporal anchor should still land within half an output frame of its expected trim- and
-        // sequence-relative time; project anchors are checked in both clip segments.
-        val anchorToleranceUs = (targetIntervalUs / 2.0).toLong() + 5_000L
+        // Media3 normalizes only the first muxed video sample to PTS zero when audio is present.
+        // Later samples remain relative to the trim start; FrameDropEffect may discard burst frames.
+        val anchorToleranceUs = targetIntervalUs.toLong() + 5_000L
         expectedSourceAnchorsUs.forEach { expectedUs ->
             val nearestDistanceUs = timestamps.minOf { abs(it - expectedUs) }
             assertTrue(
-                "$label lost or shifted source timestamp anchor $expectedUs us; nearest output PTS is $nearestDistanceUs us away",
+                "$label lost or shifted source timestamp anchor $expectedUs us; nearest output PTS is $nearestDistanceUs us away; " +
+                    "encoded video PTS=${timestamps.joinToString()}",
                 nearestDistanceUs <= anchorToleranceUs
             )
         }
@@ -180,13 +209,28 @@ class ExportTimestampParityInstrumentedTest {
 
     private fun readVideoTrack(file: File): VideoTrack {
         val extractor = MediaExtractor()
+        var audioDurationUs: Long? = null
+        var trackDurations = ""
+        var videoTrackDurationUs = 0L
+        var presentationTimes: List<Long> = emptyList()
         try {
             extractor.setDataSource(file.absolutePath)
+            val durations = mutableListOf<String>()
+            for (trackIndex in 0 until extractor.trackCount) {
+                val trackFormat = extractor.getTrackFormat(trackIndex)
+                val mime = trackFormat.getString(MediaFormat.KEY_MIME).orEmpty()
+                val trackDurationUs = if (trackFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                    trackFormat.getLong(MediaFormat.KEY_DURATION)
+                } else null
+                durations += "$mime=${trackDurationUs ?: "unset"}"
+                if (mime.startsWith("audio/")) audioDurationUs = trackDurationUs
+            }
+            trackDurations = durations.joinToString()
             val index = (0 until extractor.trackCount).firstOrNull {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
             } ?: error("${file.name} has no video track")
             val format = extractor.getTrackFormat(index)
-            val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+            videoTrackDurationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 format.getLong(MediaFormat.KEY_DURATION)
             } else 0L
             extractor.selectTrack(index)
@@ -195,17 +239,35 @@ class ExportTimestampParityInstrumentedTest {
                 timestamps += extractor.sampleTime
                 if (!extractor.advance()) break
             }
-            val presentationTimes = timestamps.sorted()
-            val gaps = presentationTimes.zipWithNext { first, second -> second - first }
-            return VideoTrack(durationUs, presentationTimes, gaps.maxOrNull() ?: 0L)
+            presentationTimes = timestamps.sorted()
         } finally {
             extractor.release()
         }
+        val retriever = MediaMetadataRetriever()
+        val movieDurationUs = try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()?.times(1_000L)
+        } finally {
+            retriever.release()
+        }
+        val gaps = presentationTimes.zipWithNext { first, second -> second - first }
+        return VideoTrack(
+            videoTrackDurationUs,
+            presentationTimes,
+            gaps.maxOrNull() ?: 0L,
+            movieDurationUs,
+            audioDurationUs,
+            trackDurations
+        )
     }
 
     private data class VideoTrack(
-        val durationUs: Long,
+        val videoTrackDurationUs: Long,
         val presentationTimesUs: List<Long>,
-        val maxGapUs: Long
+        val maxGapUs: Long,
+        val movieDurationUs: Long?,
+        val audioDurationUs: Long?,
+        val trackDurations: String
     )
 }

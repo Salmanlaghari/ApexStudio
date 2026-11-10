@@ -53,8 +53,9 @@ internal fun exportVideoEncoderSettings(config: ExportEngine.ExportConfig): Vide
 /**
  * Run after source geometry/speed/animation but before PiP and foreground overlays.
  * A fixed output size avoids accidentally encoding a 4K source for a 720p request.
- * FrameDropEffect caps real video frames; EditedMediaItem.setFrameRate alone is
- * only a hint for sources without a frame rate (for example still images).
+ * FrameDropEffect lowers the average real-video frame rate toward the target; it
+ * does not enforce a minimum PTS gap for every pair in a VFR source. The accompanying
+ * EditedMediaItem.setFrameRate remains only a hint for sources without a frame rate.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun selectedVideoOutputEffects(config: ExportEngine.ExportConfig): List<Effect> {

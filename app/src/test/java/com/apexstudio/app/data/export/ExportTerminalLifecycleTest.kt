@@ -87,9 +87,39 @@ class ExportTerminalLifecycleTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(engine.exportState.value.isExporting)
         assertNotNull(engine.exportState.value.error)
+        assertEquals(failure.message, engine.exportState.value.error)
         activate(engine)
         assertTrue(engine.exportState.value.isExporting)
         engine.release()
+    }
+
+    @Test fun `unsupported source decoder format gives an actionable export message`() {
+        val engine = ExportEngine(context)
+        val active = activate(engine)
+        val failure = ExportException.createForCodec(
+            IllegalArgumentException("Unsupported AV1 profile"),
+            ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            ExportException.CodecInfo("test-decoder", true, true, "video/av01")
+        )
+        listeners(active).sendEvent(0) { it.onError(composition(), ExportResult.Builder().build(), failure) }
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(UNSUPPORTED_VIDEO_FORMAT_EXPORT_MESSAGE, engine.exportState.value.error)
+        engine.release()
+    }
+
+    @Test fun `project export maps unsupported source format but preserves unrelated failures`() {
+        val unsupported = ExportException.createForCodec(
+            IllegalArgumentException("Unsupported AV1 profile"),
+            ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            ExportException.CodecInfo("test-decoder", true, true, "video/av01")
+        )
+        val mapped = videoExportFailureForProject(unsupported)
+        assertEquals(UNSUPPORTED_VIDEO_FORMAT_EXPORT_MESSAGE, mapped.message)
+        assertSame(unsupported, mapped.cause)
+
+        val unrelated = ExportException.createForUnexpected(IllegalStateException("codec failed"))
+        assertSame(unrelated, videoExportFailureForProject(unrelated))
+        assertEquals(unrelated.message, videoExportFailureMessage(unrelated))
     }
 
     @Test fun `cancelled old completion cannot finish or detach replacement export`() {

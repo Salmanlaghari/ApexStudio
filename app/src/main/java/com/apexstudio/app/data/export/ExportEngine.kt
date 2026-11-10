@@ -844,7 +844,7 @@ class ExportEngine(private val context: Context) {
                                 "message=${exportException.message} frames=${exportResult.videoFrameCount} durationMs=${exportResult.durationMs}"
                         )
                         if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
-                            continuation.resumeWith(Result.failure(exportException))
+                            continuation.resumeWith(Result.failure(videoExportFailureForProject(exportException)))
                         }
                     }
                 }
@@ -1934,7 +1934,7 @@ class ExportEngine(private val context: Context) {
                     _exportState.value = ExportProgressState(
                         isExporting = false,
                         progress = 0f,
-                        error = exportException.message ?: "Export failed"
+                        error = videoExportFailureMessage(exportException)
                     )
                 }
             }

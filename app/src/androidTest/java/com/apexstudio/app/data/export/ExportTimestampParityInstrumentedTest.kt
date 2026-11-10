@@ -55,6 +55,9 @@ class ExportTimestampParityInstrumentedTest {
                 it >= trimStartMs * 1_000L && it < trimEndMs * 1_000L
             }
             assertTrue("Trimmed VFR interval must contain multiple source timestamp anchors", sourceAnchorsUs.size >= 4)
+            // Media3's muxer rebases the first encoded video sample to PTS 0; use the
+            // first visible source sample as the anchor origin, not the trim boundary.
+            val firstSourceAnchorUs = sourceAnchorsUs.first()
 
             val selectedConfig = ExportEngine.ExportConfig(
                 resolution = "720p",
@@ -71,7 +74,7 @@ class ExportTimestampParityInstrumentedTest {
                 label = "selected export",
                 output = readVideoTrack(selectedOutput!!),
                 expectedDurationUs = (trimEndMs - trimStartMs) * 1_000L,
-                expectedSourceAnchorsUs = sourceAnchorsUs.map { it - trimStartMs * 1_000L },
+                expectedSourceAnchorsUs = sourceAnchorsUs.map { it - firstSourceAnchorUs },
                 requestedFps = fps
             )
 
@@ -101,7 +104,7 @@ class ExportTimestampParityInstrumentedTest {
             projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
             val expectedProjectAnchorsUs = plan.entries.flatMap { entry ->
                 sourceAnchorsUs.map { sourceTimeUs ->
-                    entry.timelineStartMs * 1_000L + sourceTimeUs - entry.sourceStartMs * 1_000L
+                    entry.timelineStartMs * 1_000L + sourceTimeUs - firstSourceAnchorUs
                 }
             }
             assertOutputTiming(
@@ -160,14 +163,15 @@ class ExportTimestampParityInstrumentedTest {
                 "$expectedDurationUs us; encoded video PTS=${timestamps.joinToString()}",
             abs(output.durationUs - expectedDurationUs) <= durationToleranceUs
         )
-        // Frame dropping at the requested average rate may discard individual source samples. Each
-        // temporal anchor should still land within half an output frame of its expected trim- and
-        // sequence-relative time; project anchors are checked in both clip segments.
-        val anchorToleranceUs = (targetIntervalUs / 2.0).toLong() + 5_000L
+        // Frame dropping at the requested average rate may discard a source sample; its nearest
+        // retained neighbor may be one output interval away. Long-gap anchors remain checked in
+        // both clip segments, relative to the first visible frame in each clip.
+        val anchorToleranceUs = targetIntervalUs.toLong() + 5_000L
         expectedSourceAnchorsUs.forEach { expectedUs ->
             val nearestDistanceUs = timestamps.minOf { abs(it - expectedUs) }
             assertTrue(
-                "$label lost or shifted source timestamp anchor $expectedUs us; nearest output PTS is $nearestDistanceUs us away",
+                "$label lost or shifted source timestamp anchor $expectedUs us; nearest output PTS is $nearestDistanceUs us away; " +
+                    "encoded video PTS=${timestamps.joinToString()}",
                 nearestDistanceUs <= anchorToleranceUs
             )
         }

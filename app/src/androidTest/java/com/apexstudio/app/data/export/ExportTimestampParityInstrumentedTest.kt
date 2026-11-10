@@ -25,7 +25,7 @@ import kotlin.math.abs
 @UnstableApi
 class ExportTimestampParityInstrumentedTest {
     @Test
-    fun selectedAndProjectExportsPreserveVfrTimingWithinRequestedFpsCap() = runBlocking {
+    fun selectedAndProjectExportsPreserveVfrTimingWithinRequestedAverageFrameRate() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val engine = ExportEngine(context)
@@ -140,20 +140,26 @@ class ExportTimestampParityInstrumentedTest {
         assertFalse("$label must not contain negative PTS", timestamps.any { it < 0L })
         assertEquals("$label must not contain duplicate presentation timestamps", timestamps.size, timestamps.distinct().size)
         val targetIntervalUs = 1_000_000.0 / requestedFps
-        val minimumAllowedIntervalUs = (targetIntervalUs * 0.90).toLong()
-        timestamps.zipWithNext().forEach { (before, after) ->
-            assertTrue(
-                "$label exceeded the $requestedFps-fps cap: adjacent PTS gap was ${after - before}us",
-                after - before >= minimumAllowedIntervalUs
-            )
-        }
+        // Media3's default FrameDropEffect targets an average frame rate, not a minimum gap between
+        // every pair of PTS. A VFR source can therefore keep a short local burst when the following
+        // source gap is long. Bound total cadence over the output duration, allowing one boundary frame.
+        assertTrue("$label must report a positive video duration", output.durationUs > 0L)
+        val outputIntervals = timestamps.size - 1L
+        val maximumIntervalsAtTargetCadence =
+            (requestedFps.toLong() * output.durationUs + 999_999L) / 1_000_000L
+        assertTrue(
+            "$label averaged too many video intervals for the requested $requestedFps-fps target: " +
+                "$outputIntervals intervals over ${output.durationUs}us (maximum $maximumIntervalsAtTargetCadence " +
+                "after one-frame boundary tolerance)",
+            outputIntervals <= maximumIntervalsAtTargetCadence
+        )
 
         val durationToleranceUs = 150_000L
         assertTrue(
             "$label duration ${output.durationUs}us must stay within ${durationToleranceUs}us of planned $expectedDurationUs us",
             abs(output.durationUs - expectedDurationUs) <= durationToleranceUs
         )
-        // Frame dropping at the requested cap may discard individual source samples. Each retained
+        // Frame dropping at the requested average rate may discard individual source samples. Each
         // temporal anchor should still land within half an output frame of its expected trim- and
         // sequence-relative time; project anchors are checked in both clip segments.
         val anchorToleranceUs = (targetIntervalUs / 2.0).toLong() + 5_000L

@@ -113,7 +113,9 @@ class ProjectExportPreflightTest {
         val muted = first.copy(id = "muted", name = "Muted", uri = "file:///muted.m4a", isMuted = true)
         val withAudio = state.copy(project = state.project!!.copy(audioTracks = listOf(first, second, muted)))
 
-        val config = buildProjectExportConfig(withAudio, AudioStudioState(), ExportSettings())
+        val config = buildProjectExportConfig(
+            withAudio, AudioStudioState(), ExportSettings(), includeSharedVideoClips = false
+        )
         assertEquals(listOf(first, second), config.musicMixTracks)
         assertTrue(config.overlayAudioSources.isEmpty())
         assertNull(wholeProjectExportUnsupportedReason(withAudio, AudioStudioState(), ExportSettings()))

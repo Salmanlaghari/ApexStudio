@@ -155,10 +155,12 @@ private fun EditorScreenContent(
         videoHeight = state.videoHeight.takeIf { it > 0 } ?: exoPlayer?.videoSize?.height ?: 0,
         pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f
     )
-    val horizontalProjectLayout = usesHorizontalProjectLayout(
-        state.project?.videoAspectRatio ?: sourceAspectForLayout
-            ?: previewCompositionAspect(editorExportState.settings.aspectRatio)
+    val editorLayoutAspectRatio = editorPreviewStageAspectRatio(
+        sourceAspectRatio = sourceAspectForLayout,
+        projectAspectRatio = state.project?.videoAspectRatio,
+        fallbackAspectRatio = previewCompositionAspect(editorExportState.settings.aspectRatio),
     )
+    val horizontalProjectLayout = usesHorizontalProjectLayout(editorLayoutAspectRatio)
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }

@@ -11,6 +11,7 @@ class EditorLayoutMetricsTest {
         assertEquals(10.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
         assertEquals(52.dp, EditorLayoutMetrics.PlaybackBarHeight)
         assertEquals(48.dp, EditorLayoutMetrics.TimelineActionHeight)
+        assertEquals(40.dp, EditorLayoutMetrics.TimelineToolbarHeight)
     }
 
     @Test

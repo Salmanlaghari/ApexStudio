@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.data.filter.LutFilterEngine
@@ -1324,6 +1325,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     state: EditorState,
     vm: EditorViewModel,
     exoPlayer: ExoPlayer?,
+    previewPlayer: Player? = exoPlayer,
+    isTransitionPreview: Boolean = false,
     isCoverMode: Boolean,
     isTimelineFocusMode: Boolean = false,
     isFullscreenPreview: Boolean = false,
@@ -1354,17 +1357,29 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
     val faceReviewProgress by vm.faceTrackReview.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
-    val mainPreviewClip = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+    val transitionPlan = remember(state.project?.clips, state.project?.transitions) {
+        com.apexstudio.app.data.export.ProjectTransitionTimeline.build(
+            state.project?.clips.orEmpty(), state.project?.transitions.orEmpty()
+        )
+    }
+    val mainPreviewClip = transitionPlan.entryAt(state.playerPositionMs)?.clip
+        ?: timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
     val sourceVideoWidth = state.videoWidth.takeIf { it > 0 }
+        ?: previewPlayer?.videoSize?.width?.takeIf { it > 0 }
         ?: exoPlayer?.videoSize?.width?.takeIf { it > 0 }
         ?: 0
     val sourceVideoHeight = state.videoHeight.takeIf { it > 0 }
+        ?: previewPlayer?.videoSize?.height?.takeIf { it > 0 }
         ?: exoPlayer?.videoSize?.height?.takeIf { it > 0 }
         ?: 0
-    val sourcePixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio
+    val sourcePixelAspect = previewPlayer?.videoSize?.pixelWidthHeightRatio
+        ?.takeIf { it.isFinite() && it > 0f }
+        ?: exoPlayer?.videoSize?.pixelWidthHeightRatio
         ?.takeIf { it.isFinite() && it > 0f }
         ?: 1f
-    val sourceVideoAspectRatio = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.let { clip ->
+    val sourceVideoAspectRatio = if (isTransitionPreview) {
+        state.project?.videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
+    } else mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.let { clip ->
         previewContentAspect(
             videoWidth = sourceVideoWidth,
             videoHeight = sourceVideoHeight,
@@ -1538,11 +1553,15 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             }
         }
 
-        val stickers = (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
-        val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
-        val faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip)
-        val workspaceEffectIntensityProvider = remember(state.project, mainPreviewClip?.id) {
-            val clip = mainPreviewClip
+    val stickers = if (isTransitionPreview) emptyList() else
+        (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
+    val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
+        .let { owners -> if (isTransitionPreview) owners.filter { it?.type == ClipType.OVERLAY } else owners }
+    val faceCropConfig = if (isTransitionPreview) null else
+        com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(mainPreviewClip)
+    val workspaceEffectIntensityProvider = remember(state.project, mainPreviewClip?.id, isTransitionPreview) {
+        if (isTransitionPreview) return@remember null
+        val clip = mainPreviewClip
             val typed = clip?.let { state.project?.sharedVideoClip(it.id) }
                 ?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }
             if (clip == null || typed == null) null else { presentationTimeUs: Long ->
@@ -1559,6 +1578,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             selectionFileLabel = null,
             showFrame = false,
             exoPlayer = exoPlayer,
+            previewPlayer = previewPlayer,
             videoWidth = sourceVideoWidth,
             videoHeight = sourceVideoHeight,
             drawingLayers = state.project?.videoDrawings.orEmpty(),
@@ -1568,14 +1588,16 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             drawingColorArgb = drawingColorArgb,
             drawingBrushWidth = drawingBrushWidth,
             onDrawingLayerChange = vm::updateVideoDrawingLayer,
-            videoCrop = mainPreviewClip?.videoCrop,
+            videoCrop = if (isTransitionPreview) null else mainPreviewClip?.videoCrop,
             faceCropConfig = faceCropConfig,
-            projectVideoEffectId = mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
-            workspaceEffects = mainPreviewClip?.workspaceEffects.orEmpty(),
+            projectVideoEffectId = if (isTransitionPreview) null else
+                mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.projectVideoEffectId,
+            workspaceEffects = if (isTransitionPreview) emptyList() else mainPreviewClip?.workspaceEffects.orEmpty(),
             workspaceEffectIntensityProvider = workspaceEffectIntensityProvider,
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             compositionAspectRatio = previewStageAspectRatio,
-            chromaKeySettings = state.chromaKeySettings,
+            chromaKeySettings = if (isTransitionPreview) com.apexstudio.app.domain.model.ChromaKeySettings()
+                else state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,
             overlayPlayer = overlayPlayer,
@@ -1597,29 +1619,30 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 vm.upsertOverlayKeyframe(id, timeMs, x, y, scale, rotation, opacity, persist)
             },
             isCoverMode = isCoverMode,
-            adjustments = state.adjustments,
-            activeFilterId = state.activeFilterId,
-            filterIntensity = state.filterIntensity,
-            gpuFilterConfig = mainPreviewClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
-            gpuFilterCompareMode = state.gpuFilterCompareMode,
+            adjustments = if (isTransitionPreview) com.apexstudio.app.domain.model.VideoAdjustments() else state.adjustments,
+            activeFilterId = if (isTransitionPreview) null else state.activeFilterId,
+            filterIntensity = if (isTransitionPreview) 0f else state.filterIntensity,
+            gpuFilterConfig = if (isTransitionPreview) com.apexstudio.app.domain.model.GpuFilterConfig()
+                else mainPreviewClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
+            gpuFilterCompareMode = if (isTransitionPreview) false else state.gpuFilterCompareMode,
             gpuFilterSplitPosition = state.gpuFilterSplitPosition,
-            lutCompareMode = state.lutCompareMode,
+            lutCompareMode = if (isTransitionPreview) false else state.lutCompareMode,
             lutCompareSplitPosition = state.lutCompareSplitPosition,
-            activeArFilterId = state.activeArFilterId,
-            arFilterIntensity = state.arFilterIntensity,
-            arFilterCustomText = state.arFilterCustomText,
+            activeArFilterId = if (isTransitionPreview) null else state.activeArFilterId,
+            arFilterIntensity = if (isTransitionPreview) 0f else state.arFilterIntensity,
+            arFilterCustomText = if (isTransitionPreview) "" else state.arFilterCustomText,
             playerError = state.playerError,
-            activeFxId = state.activeFxId,
-            fxIntensity = state.fxIntensity,
+            activeFxId = if (isTransitionPreview) null else state.activeFxId,
+            fxIntensity = if (isTransitionPreview) 0f else state.fxIntensity,
             fxSpeed = state.fxSpeed,
             isPlaying = state.isPlaying,
-            animatedTransform = animatedTransform,
+            animatedTransform = if (isTransitionPreview) AnimatedTransform.Identity else animatedTransform,
             // CapCut-style V1 pinch-to-zoom (stable lambda: the VM
             // reads the current selection + playhead on each event).
             onPinchZoom = remember(vm) { { zoom: Float -> vm.pinchZoomSelectedClip(zoom) } },
             // Per-clip saturation keyframes: factor from the
             // selected clip's track at the playhead (1f = no pins).
-            keyframedSaturationFactor = animatedTransform.saturation ?: 1f,
+            keyframedSaturationFactor = if (isTransitionPreview) 1f else animatedTransform.saturation ?: 1f,
             currentTimeMs = mainPreviewClip?.let { clip ->
                 com.apexstudio.app.domain.model.ClipTimeMapping.outputAtProjectTime(
                     state.project?.clips.orEmpty(), clip, state.playerPositionMs
@@ -1632,8 +1655,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             // Overlay (V2 PiP) clips preview their mask as a hard clip on
             // the PiP box itself, so the main-frame scrim is restricted to
             // non-overlay clips.
-            mask = mainPreviewClip?.mask,
-            maskEditMode = state.maskPanelOpen && currentSelectedClip?.id == mainPreviewClip?.id,
+            mask = if (isTransitionPreview) null else mainPreviewClip?.mask,
+            maskEditMode = !isTransitionPreview && state.maskPanelOpen && currentSelectedClip?.id == mainPreviewClip?.id,
             onMaskCenterLive = { x, y ->
                 currentSelectedClip?.id?.let { vm.setMaskCenter(it, x, y, persist = false) }
             },

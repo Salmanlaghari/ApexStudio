@@ -28,6 +28,7 @@ import com.apexstudio.app.domain.model.MaskPoint
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.ClipTransition
 import androidx.media3.common.util.Size
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -424,5 +425,62 @@ class ProjectCompositionExportTest {
             .copy(drawPoints = listOf(MaskPoint(0f, 0f), MaskPoint(1f, 1f))))
         assertTrue(projectCompositionUnsupportedReason(listOf(invalidPen), ExportEngine.ExportConfig())!!
             .contains("invalid pen mask geometry"))
+    }
+
+    @Test
+    fun `whole project export accepts real adjacent clip transitions`() {
+        val transition = ClipTransition(
+            id = "cut-a-b",
+            fromClipId = "v1",
+            toClipId = "v2",
+            type = "cross_dissolve",
+            durationMs = 500L
+        )
+
+        assertNull(projectCompositionUnsupportedReason(
+            listOf(clip("v1"), clip("v2")),
+            ExportEngine.ExportConfig(clipTransitions = listOf(transition))
+        ))
+    }
+
+    @Test
+    fun `whole project export rejects non adjacent unsupported duplicate and invalid transitions`() {
+        fun reason(transition: ClipTransition) = projectCompositionUnsupportedReason(
+            listOf(clip("v1"), clip("v2"), clip("v3")),
+            ExportEngine.ExportConfig(clipTransitions = listOf(transition))
+        )
+
+        assertTrue(reason(ClipTransition(
+            id = "non-adjacent", fromClipId = "v1", toClipId = "v3", durationMs = 500L
+        ))!!.contains("adjacent"))
+        assertTrue(reason(ClipTransition(
+            id = "unsupported", fromClipId = "v1", toClipId = "v2", type = "pack_custom", durationMs = 500L
+        ))!!.contains("unsupported transition type"))
+        assertTrue(reason(ClipTransition(
+            id = "invalid-duration", fromClipId = "v1", toClipId = "v2", durationMs = 0L
+        ))!!.contains("invalid duration"))
+        val duplicate = ClipTransition(id = "duplicate", fromClipId = "v1", toClipId = "v2", durationMs = 250L)
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip("v1"), clip("v2")),
+            ExportEngine.ExportConfig(clipTransitions = listOf(duplicate, duplicate.copy(id = "duplicate-2")))
+        )!!.contains("duplicate transition"))
+    }
+
+    @Test
+    fun `whole project export rejects transitions clamped to zero overlap`() {
+        val tinyA = clip("tiny-a").copy(durationMs = 1L, trimStartMs = 0L, trimEndMs = 1L)
+        val tinyB = clip("tiny-b").copy(durationMs = 1L, trimStartMs = 0L, trimEndMs = 1L)
+        val transition = ClipTransition(
+            id = "tiny-a-b",
+            fromClipId = tinyA.id,
+            toClipId = tinyB.id,
+            durationMs = 500L
+        )
+
+        val reason = projectCompositionUnsupportedReason(
+            listOf(tinyA, tinyB), ExportEngine.ExportConfig(clipTransitions = listOf(transition))
+        )
+
+        assertTrue(reason!!.contains("cannot produce a visible overlap"))
     }
 }

@@ -273,6 +273,8 @@ class ExportEngine(private val context: Context) {
          */
         val transitionGlId: String? = null,
         val transitionDurationMs: Long = 500L,
+        /** Adjacent main-track transitions for whole-project composition. */
+        val clipTransitions: List<com.apexstudio.app.domain.model.ClipTransition> = emptyList(),
         val textOverlays: List<TextOverlay> = emptyList(),
         /** Project branding is appended after every other visual composition layer. */
         val signature: Signature? = null,
@@ -442,7 +444,7 @@ class ExportEngine(private val context: Context) {
                     partialFile = partial
                     if (!partial.delete()) throw IllegalStateException("Cannot prepare project export output")
 
-                    val plan = ProjectCompositionTimeline.build(clips)
+                    val plan = ProjectTransitionTimeline.build(clips, config.clipTransitions)
                     if (plan.entries.size != clips.size || plan.durationMs <= 0L) {
                         throw IllegalStateException("Project composition could not include every video clip")
                     }
@@ -664,8 +666,79 @@ class ExportEngine(private val context: Context) {
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
-                    val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
-                    val composition = Composition.Builder(sequence).build()
+                    val composition = if (plan.transitions.isEmpty()) {
+                        Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items)).build()
+                    } else {
+                        val videoSequences = plan.entries.mapIndexed { index, entry ->
+                            val startMs = entry.timelineStartMs.coerceAtLeast(0L)
+                            val gapUs = if (startMs > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE
+                                else startMs * 1_000L
+                            EditedMediaItemSequence.Builder(
+                                setOf(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                            )
+                                .addGap(gapUs)
+                                .addItem(items[index])
+                                .build()
+                        }
+                        val audioSequence = if (plan.audioSegments.isEmpty()) null else {
+                            val builder = EditedMediaItemSequence.Builder(
+                                setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+                            )
+                            var cursorMs = 0L
+                            plan.audioSegments.forEach { segment ->
+                                if (segment.timelineStartMs > cursorMs) {
+                                    val gapMs = segment.timelineStartMs - cursorMs
+                                    val gapUs = if (gapMs > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE
+                                        else gapMs * 1_000L
+                                    builder.addGap(gapUs)
+                                }
+                                val clip = segment.clip
+                                val itemConfig = config.copy(
+                                    trimStartMs = segment.sourceStartMs,
+                                    trimEndMs = segment.sourceEndMs,
+                                    keyframeTimelineStartMs = segment.timelineStartMs,
+                                    clipSpeed = clip.speedMultiplier,
+                                    speedPoints = clip.speedPoints,
+                                    keyframes = clip.keyframes,
+                                    sharedVideoClip = config.sharedVideoClips[clip.id],
+                                    volume = (config.volume * clip.volume).coerceIn(0f, 2f),
+                                    denoiseEnabled = config.denoiseEnabled || clip.denoiseEnabled,
+                                    denoiseStrength = if (clip.denoiseEnabled) clip.denoiseStrength else config.denoiseStrength
+                                )
+                                val speedPair = buildSpeedProvider(itemConfig)?.let {
+                                    Effects.createExperimentalSpeedChangingEffect(it)
+                                }
+                                val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
+                                val mediaItem = MediaItem.Builder()
+                                    .setUri(Uri.parse(clip.uri))
+                                    .setMediaId("${clip.id}_transition_audio")
+                                    .setClippingConfiguration(
+                                        MediaItem.ClippingConfiguration.Builder()
+                                            .setStartPositionMs(segment.sourceStartMs)
+                                            .setEndPositionMs(segment.sourceEndMs)
+                                            .build()
+                                    )
+                                    .build()
+                                builder.addItem(
+                                    EditedMediaItem.Builder(mediaItem)
+                                        .setEffects(Effects(audioProcessors, emptyList()))
+                                        .build()
+                                )
+                                cursorMs = segment.timelineEndMs
+                            }
+                            builder.build()
+                        }
+                        val sequences = videoSequences + listOfNotNull(audioSequence)
+                        Composition.Builder(sequences)
+                            .setVideoCompositorSettings(
+                                ProjectTransitionCompositorSettings(plan, outputWidth, outputHeight)
+                            )
+                            .setEffects(Effects(
+                                emptyList(),
+                                listOf(com.apexstudio.app.data.gl.PackedTransitionGlEffect(plan))
+                            ))
+                            .build()
+                    }
                     diagnostics.stage("project_preparation_completed", "durationMs=${plan.durationMs}")
                     publishProjectStage(run, ExportProgressStage.VIDEO_RENDER, diagnostics)
                     val renderResult = renderProjectComposition(composition, config, partial, run, diagnostics)

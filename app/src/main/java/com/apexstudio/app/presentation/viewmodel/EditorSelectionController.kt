@@ -138,7 +138,7 @@ fun EditorViewModel.replaceClipMedia(clipId: String, meta: MediaMetadata) {
                 thumbnail = null
             )
         }
-        val maxDuration = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
+        val maxDuration = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
         s.copy(
             project = p.copy(clips = updated),
             durationMs = maxDuration,

@@ -65,21 +65,23 @@ class ProjectExportPreflightTest {
         )) assertNotNull(projectVisualScopeUnsupportedReason(edited))
     }
 
-    @Test fun `project transitions and stickers cannot be silently dropped`() {
-        assertNotNull(projectVisualScopeUnsupportedReason(state.copy(project = state.project!!.copy(
-            lastTransitionType = "fade"))))
+    @Test fun `stickers cannot be silently dropped from whole project export`() {
         assertNotNull(projectVisualScopeUnsupportedReason(state.copy(project = state.project!!.copy(
             stickers = listOf(StickerOverlay())))))
     }
 
-    @Test fun `persisted junction blocks export without legacy transition label or false fallback advice`() {
+    @Test fun `supported persisted junction reaches whole project composition export`() {
+        val next = video.copy(id = "next", name = "Next")
         val saved = state.copy(project = state.project!!.copy(
-            transitions = listOf(ClipTransition(fromClipId = "v", toClipId = "next")),
+            clips = listOf(video, next),
+            transitions = listOf(ClipTransition(
+                fromClipId = "v", toClipId = "next", type = "cross_dissolve", durationMs = 500L
+            )),
             lastTransitionType = null
         ))
-        val reason = projectVisualScopeUnsupportedReason(saved)!!
-        assertTrue(reason.contains("Selected-clip export also does not render"))
-        assertFalse(reason.contains("Use selected-clip export to keep"))
+
+        assertNull(projectVisualScopeUnsupportedReason(saved))
+        assertNull(wholeProjectExportUnsupportedReason(saved, AudioStudioState(), ExportSettings()))
     }
 
     @Test fun `visible overlay blocks composition but hidden overlay stays hidden`() {

@@ -22,6 +22,7 @@ import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParam
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
 import com.apexstudio.app.data.color.hasValidRenderParameters
+import com.apexstudio.app.data.gl.PackedTransitionGlEffect
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
 internal fun monotonicProjectExportProgress(previous: Float, reported: Float): Float {
@@ -123,6 +124,29 @@ internal fun projectCompositionUnsupportedReason(
         if (!clip.photoEdit.isDefault) return "Video clip '${clip.name}' has photo-only edits."
     }
 
+    if (config.clipTransitions.isNotEmpty()) {
+        val clipIndexById = clips.mapIndexed { index, clip -> clip.id to index }.toMap()
+        val seenPairs = mutableSetOf<Pair<String, String>>()
+        for (transition in config.clipTransitions) {
+            val pair = transition.fromClipId to transition.toClipId
+            if (!seenPairs.add(pair)) return "Project export found a duplicate transition between adjacent clips."
+            val fromIndex = clipIndexById[transition.fromClipId]
+            val toIndex = clipIndexById[transition.toClipId]
+            if (fromIndex == null || toIndex == null || toIndex != fromIndex + 1) {
+                return "Project transition '${transition.id}' does not join adjacent main-track clips."
+            }
+            if (transition.durationMs !in 1L..10_000L) {
+                return "Project transition '${transition.id}' has an invalid duration."
+            }
+            if (!PackedTransitionGlEffect.supportsTransitionType(transition.type)) {
+                return "Project transition '${transition.id}' uses an unsupported transition type '${transition.type}'."
+            }
+            if (ProjectTransitionTimeline.plannedDurationMs(clips, transition) <= 0L) {
+                return "Project transition '${transition.id}' cannot produce a visible overlap with these clips."
+            }
+        }
+    }
+
     val supportedResolutions = setOf("720p", "1080p", "1440p", "4k", "2160p")
     if (config.resolution.lowercase() !in supportedResolutions) {
         return "Project export does not support resolution '${config.resolution}'."
@@ -159,7 +183,7 @@ internal fun projectCompositionUnsupportedReason(
     if (config.arFilterId != null || config.arFilterIntensity != 0f || config.arFilterCustomText.isNotEmpty()) {
         return "Project export does not support AR filters."
     }
-    if (config.transitionType != null || config.transitionGlId != null) return "Project export does not support transitions."
+    if (config.transitionType != null || config.transitionGlId != null) return "Project export does not support export-wide transitions."
     if (config.textOverlays.isNotEmpty() || config.stickers.isNotEmpty()) return "Project export does not support export-wide captions or stickers; attach them to a video clip."
     if (config.workspaceEffects.isNotEmpty()) return "Project export does not support export-wide ranged filters; attach them to a video clip."
     if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {

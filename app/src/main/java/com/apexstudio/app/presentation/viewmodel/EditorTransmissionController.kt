@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
@@ -173,7 +174,24 @@ fun EditorViewModel.closeTransitionPicker() {
  * Apply or update a transition between [fromClipId] and [toClipId].
  */
 fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: String, durationMs: Long = 500L) {
+    if (type == "none") {
+        removeTransition(fromClipId, toClipId)
+        return
+    }
+    if (!com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(type) ||
+        durationMs !in 100L..2_000L
+    ) return
     val proj = _state.value.project ?: return
+    val mainClips = proj.clips.filter {
+        it.trackIndex == 0 && (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
+    }
+    val fromIndex = mainClips.indexOfFirst { it.id == fromClipId }
+    val toIndex = mainClips.indexOfFirst { it.id == toClipId }
+    if (fromIndex < 0 || toIndex != fromIndex + 1 ||
+        mainClips[fromIndex].type != com.apexstudio.app.domain.model.ClipType.VIDEO ||
+        mainClips[toIndex].type != com.apexstudio.app.domain.model.ClipType.VIDEO
+    ) return
     val existing = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
     val newTransition = ClipTransition(
         fromClipId = fromClipId,
@@ -181,8 +199,12 @@ fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: 
         type = type,
         durationMs = durationMs
     )
+    if (ProjectTransitionTimeline.plannedDurationMs(proj.clips, newTransition) <= 0L) return
+    pushUndo()
     val updatedTransitions = existing + newTransition
+    val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, updatedTransitions)
     val updatedProject = proj.copy(
+        durationMs = newDuration,
         transitions = updatedTransitions,
         lastTransitionType = type,
         lastTransitionDurationMs = durationMs
@@ -190,6 +212,7 @@ fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: 
     _state.update {
         it.copy(
             project = updatedProject,
+            durationMs = newDuration,
             lastTransitionType = type,
             lastTransitionDurationMs = durationMs
         )
@@ -203,11 +226,34 @@ fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: 
  */
 fun EditorViewModel.applyTransitionToAll(type: String, durationMs: Long = 500L) {
     val proj = _state.value.project ?: return
-    val clips = proj.clips
+    if (type == "none") {
+        if (proj.transitions.isNotEmpty()) {
+            pushUndo()
+            val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, emptyList())
+            _state.update {
+                it.copy(
+                    project = proj.copy(durationMs = newDuration, transitions = emptyList()),
+                    durationMs = newDuration
+                )
+            }
+            persistProject()
+        }
+        return
+    }
+    if (!com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(type) ||
+        durationMs !in 100L..2_000L
+    ) return
+    val clips = proj.clips.filter {
+        it.trackIndex == 0 && (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
+    }
     if (clips.size < 2) return
 
     val newTransitions = mutableListOf<ClipTransition>()
     for (i in 0 until clips.size - 1) {
+        if (clips[i].type != com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            clips[i + 1].type != com.apexstudio.app.domain.model.ClipType.VIDEO
+        ) continue
         newTransitions.add(
             ClipTransition(
                 fromClipId = clips[i].id,
@@ -217,14 +263,21 @@ fun EditorViewModel.applyTransitionToAll(type: String, durationMs: Long = 500L) 
             )
         )
     }
+    val plannedTransitions = ProjectTransitionTimeline.build(proj.clips, newTransitions)
+        .transitions.map { it.transition }
+    if (plannedTransitions.isEmpty()) return
+    pushUndo()
+    val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, plannedTransitions)
     val updatedProject = proj.copy(
-        transitions = newTransitions,
+        durationMs = newDuration,
+        transitions = plannedTransitions,
         lastTransitionType = type,
         lastTransitionDurationMs = durationMs
     )
     _state.update {
         it.copy(
             project = updatedProject,
+            durationMs = newDuration,
             lastTransitionType = type,
             lastTransitionDurationMs = durationMs
         )
@@ -239,8 +292,11 @@ fun EditorViewModel.applyTransitionToAll(type: String, durationMs: Long = 500L) 
 fun EditorViewModel.removeTransition(fromClipId: String, toClipId: String) {
     val proj = _state.value.project ?: return
     val updatedTransitions = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
-    val updatedProject = proj.copy(transitions = updatedTransitions)
-    _state.update { it.copy(project = updatedProject) }
+    if (updatedTransitions.size == proj.transitions.size) return
+    pushUndo()
+    val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, updatedTransitions)
+    val updatedProject = proj.copy(durationMs = newDuration, transitions = updatedTransitions)
+    _state.update { it.copy(project = updatedProject, durationMs = newDuration) }
     persistProject()
 }
 

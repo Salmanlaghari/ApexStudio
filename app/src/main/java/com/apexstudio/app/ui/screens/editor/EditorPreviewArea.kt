@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.VideoCropSettings
@@ -53,6 +54,7 @@ internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 16f / 9f
 @Composable
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
+    previewPlayer: Player? = exoPlayer,
     chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     // PiP overlay clips (V2 track). Rendered by the interactive
     // PipOverlayCanvas: tap to select, drag to move, pinch to
@@ -273,10 +275,10 @@ fun VideoPreviewArea(
         else -> previewContentAspect(
             videoWidth = videoWidth,
             videoHeight = videoHeight,
-            pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
+            pixelAspect = previewPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
             effectOutputAspect = faceCropConfig?.track?.outputAspectRatio
                 ?: videoCropOutputAspect(videoWidth, videoHeight,
-                    exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f, videoCrop)
+                    previewPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f, videoCrop)
         )
     }
     // Photo crop handles and dynamic face output force FIT regardless of COVER.
@@ -343,7 +345,7 @@ fun VideoPreviewArea(
                     isCoverMode = isCoverMode,
                     onImageAspectRatioChange = { photoAspectRatio = it }
                 )
-            } else if (exoPlayer != null) {
+            } else if (previewPlayer != null) {
                 AndroidView(
                     factory = { ctx ->
                         val pv = android.view.LayoutInflater.from(ctx)
@@ -351,11 +353,11 @@ fun VideoPreviewArea(
                         pv.apply {
                             useController = false
                             resizeMode = currentResizeMode
-                            player = exoPlayer
+                            player = previewPlayer
                         }
                     },
                     update = { view ->
-                        view.player = exoPlayer
+                        view.player = previewPlayer
                         view.resizeMode = currentResizeMode
                     },
                     modifier = Modifier.fillMaxSize()

@@ -37,6 +37,8 @@ internal fun workspacePreviewState(
     val project = saved.project ?: return saved
     if (draft == null || project.clips.none { it.id == draft.id }) return saved
     val clips = project.clips.map { if (it.id == draft.id) draft else it }
-    val duration = com.apexstudio.app.presentation.viewmodel.computeTimelineDurationMs(clips, project.audioTracks)
+    val duration = com.apexstudio.app.presentation.viewmodel.computeTimelineDurationMs(
+        clips, project.audioTracks, project.transitions
+    )
     return saved.copy(project = project.copy(clips = clips, durationMs = duration), durationMs = duration)
 }

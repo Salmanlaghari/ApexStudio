@@ -149,7 +149,7 @@ internal fun EditorViewModel.loadProject() {
         val updatedP = p.copy(
             clips = effectiveClips,
             audioTracks = recoveredAudioTracks,
-            durationMs = computeTimelineDurationMs(effectiveClips, recoveredAudioTracks),
+            durationMs = computeTimelineDurationMs(effectiveClips, recoveredAudioTracks, p.transitions),
             hiddenVideoLayers = p.hiddenVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet(),
             lockedVideoLayers = p.lockedVideoLayers.filter { it in 0 until MAX_VIDEO_LAYERS }.toSet()
         ).syncSharedTimeline(
@@ -391,7 +391,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         // Unified duration (was MAX of raw durations -> playhead raced
         // on multi-clip timelines). A fresh clip always plays at 1x, so
         // drop any stale global speed left over from another clip.
-        val maxDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
+        val maxDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
 
         // Immediate state update so video preview loads in 0ms without delay
         // Undo: adding clips is undoable — snapshot BEFORE the mutation.

@@ -84,12 +84,38 @@ fun TransitionPickerSheet(
     var durationMs by remember(currentTransition) {
         mutableStateOf(currentTransition?.durationMs ?: 500L)
     }
+    val isVideoToVideoBoundary = fromClip?.type == ClipType.VIDEO && toClip?.type == ClipType.VIDEO
+    val selectedTransitionCanOverlap = remember(fromClip?.id, toClip?.id, durationMs) {
+        val from = fromClip
+        val to = toClip
+        if (from?.type != ClipType.VIDEO || to?.type != ClipType.VIDEO) {
+            false
+        } else {
+            com.apexstudio.app.data.export.ProjectTransitionTimeline.plannedDurationMs(
+                listOf(from, to),
+                com.apexstudio.app.domain.model.ClipTransition(
+                    fromClipId = from.id,
+                    toClipId = to.id,
+                    durationMs = durationMs
+                )
+            ) > 0L
+        }
+    }
+    val canApplySelectedTransition = selectedTypeId == "none" ||
+        (isVideoToVideoBoundary &&
+            selectedTransitionCanOverlap &&
+            com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(selectedTypeId))
     var activeCategory by remember {
         mutableStateOf(TransitionCategory.ALL)
     }
 
     val selectedDef = remember(selectedTypeId, packsReady, glProReady) {
-        TransitionLibrary.getById(selectedTypeId) ?: TransitionLibrary.allTransitions().first()
+        TransitionLibrary.getById(selectedTypeId)
+            ?.takeIf { com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.id) }
+            ?: TransitionLibrary.allTransitions().firstOrNull {
+                com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.id)
+            }
+            ?: TransitionLibrary.allTransitions().first()
     }
 
     // Animation progress for the live transition previewer (0f -> 1f loop)
@@ -156,8 +182,8 @@ fun TransitionPickerSheet(
                     modifier = Modifier.padding(top = 2.dp)
                 )
                 Text(
-                    "Panel preview only: boundary transitions are not rendered in main timeline playback or whole-project export. Apply saves the choice, but that export route stays blocked until the transition is removed.",
-                    color = ApexPalette.Warning,
+                    "This transition plays across the A/B clip boundary in the timeline and is included in whole-project export.",
+                    color = ApexPalette.TextSecondary,
                     fontSize = 10.sp,
                     modifier = Modifier.widthIn(max = 280.dp).padding(top = 4.dp)
                 )
@@ -259,7 +285,9 @@ fun TransitionPickerSheet(
 
         // Transition Grid
         val displayedTransitions = remember(activeCategory, packsReady, glProReady) {
-            TransitionLibrary.getByCategory(activeCategory)
+            TransitionLibrary.getByCategory(activeCategory).filter {
+                com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.id)
+            }
         }
 
         LazyRow(
@@ -458,6 +486,22 @@ fun TransitionPickerSheet(
 
         Spacer(Modifier.height(16.dp))
 
+        if (!isVideoToVideoBoundary && selectedTypeId != "none") {
+            Text(
+                "Transitions currently apply only between adjacent video clips.",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        } else if (isVideoToVideoBoundary && selectedTypeId != "none" && !selectedTransitionCanOverlap) {
+            Text(
+                "These clips are too short for a visible overlap at this duration.",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
         // Bottom Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -479,6 +523,8 @@ fun TransitionPickerSheet(
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = ApexPalette.NeonCyan
                 ),
+                enabled = selectedTypeId == "none" ||
+                    com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(selectedTypeId),
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp)
@@ -507,6 +553,7 @@ fun TransitionPickerSheet(
                     containerColor = ApexPalette.NeonCyan,
                     contentColor = Color.Black
                 ),
+                enabled = canApplySelectedTransition,
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp)

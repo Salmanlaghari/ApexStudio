@@ -120,7 +120,7 @@ fun EditorViewModel.trimOverlayClip(
                     .coerceAtLeast(0L)
             )
         }
-        val duration = computeTimelineDurationMs(clips, project.audioTracks)
+        val duration = computeTimelineDurationMs(clips, project.audioTracks, project.transitions)
         updatedDuration = duration
         state.copy(
             project = project.copy(clips = clips, durationMs = duration),

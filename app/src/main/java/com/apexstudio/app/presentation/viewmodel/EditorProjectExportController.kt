@@ -36,6 +36,7 @@ internal fun buildProjectExportConfig(
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
     signature = state.project?.signature,
+    clipTransitions = state.project?.transitions.orEmpty(),
     videoDrawings = state.project?.videoDrawings.orEmpty(),
     sharedVideoClips = if (includeSharedVideoClips) {
         state.project?.let { project ->

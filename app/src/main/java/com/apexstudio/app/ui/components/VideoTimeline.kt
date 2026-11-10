@@ -2670,15 +2670,17 @@ private fun TimelineVideoTrack(
     val density = LocalDensity.current.density
     var contextMenuClipId by remember { mutableStateOf<String?>(null) }
     // Timeline-global start offset for each V1 clip (keyframes are timeline-global).
-    val clipTimelineStarts = remember(videoClips) {
-        val starts = mutableListOf<Long>()
-        var acc = 0L
-        videoClips.forEach { c ->
-            starts.add(acc)
-            // Speed-ramped clips occupy their OUTPUT length.
-            acc += c.effectiveDurationMs()
+    val transitionPlan = remember(videoClips, transitions) {
+        com.apexstudio.app.data.export.ProjectTransitionTimeline.build(videoClips, transitions)
+    }
+    val clipTimelineStarts = remember(transitionPlan, videoClips) {
+        val startsById = transitionPlan.entries.associate { it.clip.id to it.timelineStartMs }
+        var fallbackCursor = 0L
+        videoClips.map { clip ->
+            val start = startsById[clip.id] ?: fallbackCursor
+            fallbackCursor = maxOf(fallbackCursor, start + clip.effectiveDurationMs())
+            start
         }
-        starts
     }
 
     // CapCut-style flat filmstrip: no border, radius or padding —
@@ -2688,11 +2690,6 @@ private fun TimelineVideoTrack(
         modifier = modifier
             .background(Color(0xFF0B1220))
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
             videoClips.forEachIndexed { index, clip ->
                 val isSelected = clip.id == selectedClipId
                 val isBeingDragged = clip.id == draggingClipId
@@ -2711,11 +2708,13 @@ private fun TimelineVideoTrack(
                     clip.effectiveDurationMs().coerceAtLeast(500L)
                 }
                 val clipWidth = maxOf((clipDur * msToDp).dp, 64.dp)
+                val clipStartDp = (clipTimelineStarts.getOrElse(index) { 0L } * msToDp).dp
 
                 // Drop target indicator before this clip
                 if (draggingClipId != null && targetDropIndex == index && targetDropIndex != videoClips.indexOfFirst { it.id == draggingClipId }) {
                     Box(
                         modifier = Modifier
+                            .offset(x = clipStartDp)
                             .width(4.dp)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(2.dp))
@@ -2726,6 +2725,7 @@ private fun TimelineVideoTrack(
                 // Video Clip Item with Drag-and-Drop gestures
                 Box(
                     modifier = Modifier
+                        .offset(x = clipStartDp)
                         .width(clipWidth)
                         .fillMaxHeight()
                         .testTag("timeline-clip-${clip.id}")
@@ -3089,9 +3089,22 @@ private fun TimelineVideoTrack(
                     val junctionTransition = transitions.firstOrNull {
                         it.fromClipId == clip.id && it.toClipId == nextClip.id
                     }
+                    val plannedTransition = transitionPlan.transitions.firstOrNull {
+                        it.from.clip.id == clip.id && it.to.clip.id == nextClip.id
+                    }
+                    val junctionTimeMs = plannedTransition?.let { it.startMs + it.durationMs / 2L }
+                        ?: transitionPlan.entries.firstOrNull { it.clip.id == clip.id }?.timelineEndMs
+                        ?: (clipTimelineStarts.getOrElse(index) { 0L } + clipDur)
+                    val badgeWidthDp = if (junctionTransition != null) 38.dp else 26.dp
                     TimelineTransitionJunctionBadge(
                         transition = junctionTransition,
-                        onClick = { onOpenTransition(clip.id, nextClip.id) }
+                        enabled = clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
+                            nextClip.type == com.apexstudio.app.domain.model.ClipType.VIDEO,
+                        onClick = { onOpenTransition(clip.id, nextClip.id) },
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .offset(x = (junctionTimeMs * msToDp).dp - badgeWidthDp / 2)
+                            .zIndex(10f)
                     )
                 }
             }
@@ -3100,13 +3113,13 @@ private fun TimelineVideoTrack(
             if (draggingClipId != null && targetDropIndex >= videoClips.size) {
                 Box(
                     modifier = Modifier
+                        .offset(x = (transitionPlan.durationMs * msToDp).dp)
                         .width(4.dp)
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(2.dp))
                         .background(ApexPalette.NeonCyan)
                 )
             }
-        }
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 3.dp).zIndex(5f)) {
             TimelineLaneIdentity("Main video · V1", ApexPalette.NeonCyan)
         }
@@ -4117,6 +4130,7 @@ private fun TimelineZoomHud(
 private fun TimelineTransitionJunctionBadge(
     transition: ClipTransition?,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val hasTransition = transition != null
@@ -4133,6 +4147,7 @@ private fun TimelineTransitionJunctionBadge(
                 width = if (hasTransition) 38.dp else 26.dp,
                 height = if (hasTransition) 30.dp else 26.dp
             )
+            .graphicsLayer { alpha = if (enabled) 1f else 0.42f }
             .clip(RoundedCornerShape(6.dp))
             .background(
                 if (hasTransition) Color(0xFFF1EDFA)
@@ -4143,7 +4158,7 @@ private fun TimelineTransitionJunctionBadge(
                 color = if (hasTransition) Color(0xFF007F76) else Color(0xFFCBD5E1),
                 shape = RoundedCornerShape(6.dp)
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {

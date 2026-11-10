@@ -50,7 +50,7 @@ fun EditorViewModel.addVoiceOverTrack(uri: String, durationMs: Long, name: Strin
         // Duration uses the playable span (trimEnd - trimStart), not the
         // source out-point. Keep the project's persisted duration in sync
         // with the editor mirror so reopening the draft retains the same end.
-        val duration = computeTimelineDurationMs(currentProject.clips, updatedTracks)
+        val duration = computeTimelineDurationMs(currentProject.clips, updatedTracks, currentProject.transitions)
         st.copy(
             project = currentProject.copy(audioTracks = updatedTracks, durationMs = duration),
             durationMs = duration,

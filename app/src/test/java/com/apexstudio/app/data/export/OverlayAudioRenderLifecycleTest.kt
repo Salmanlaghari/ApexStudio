@@ -63,6 +63,24 @@ class OverlayAudioRenderLifecycleTest {
         assertEquals(1, cancellations)
     }
 
+    @Test fun `selected export caps overlay audio sources at the long rendered video boundary`() {
+        val fourHoursMs = 4L * 60 * 60 * 1_000L
+        val sources = listOf(
+            ExportEngine.AudioExportSource(uri = "file:///start.m4a", timelinePositionMs = 0L),
+            ExportEngine.AudioExportSource(uri = "file:///inside.m4a", timelinePositionMs = fourHoursMs - 1L),
+            ExportEngine.AudioExportSource(uri = "file:///at-end.m4a", timelinePositionMs = fourHoursMs),
+            ExportEngine.AudioExportSource(uri = "file:///after.m4a", timelinePositionMs = fourHoursMs + 1L)
+        )
+
+        val bounded = selectOverlayAudioWithinDuration(sources, fourHoursMs)
+        assertEquals(sources.take(2), bounded.sources)
+        assertEquals(2, bounded.omittedCount)
+
+        val unknownDuration = selectOverlayAudioWithinDuration(sources, null)
+        assertEquals(sources, unknownDuration.sources)
+        assertEquals(0, unknownDuration.omittedCount)
+    }
+
     @Test fun `mixer cancellation occurs before opening any file or native codec`() {
         val expected = CancellationException("owner cancelled")
         try {

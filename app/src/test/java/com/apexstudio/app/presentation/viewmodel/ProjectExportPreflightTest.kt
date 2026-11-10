@@ -83,10 +83,40 @@ class ProjectExportPreflightTest {
     }
 
     @Test fun `visible overlay blocks composition but hidden overlay stays hidden`() {
-        val overlay = video.copy(id = "pip", type = ClipType.OVERLAY, trackIndex = 1)
+        val overlay = video.copy(id = "pip", type = ClipType.OVERLAY, trackIndex = 1, overlayVolume = 0.75f)
         val withOverlay = state.copy(project = state.project!!.copy(clips = listOf(video, overlay)))
         assertNotNull(projectVisualScopeUnsupportedReason(withOverlay))
         assertNull(projectVisualScopeUnsupportedReason(withOverlay.copy(hiddenVideoLayers = setOf(1))))
+
+        // Selected-video export maps PiP audio, while whole-project export refuses
+        // the unsupported visible composition before its main-track filter can drop it.
+        assertEquals(listOf(video), projectMainExportClips(withOverlay))
+        assertEquals(listOf(overlay.uri), buildOverlayAudioExportSources(withOverlay.project!!.clips).map { it.uri })
+        assertTrue(wholeProjectExportUnsupportedReason(
+            withOverlay, AudioStudioState(), ExportSettings()
+        )!!.contains("cannot render visible PiP"))
+        assertNull(wholeProjectExportUnsupportedReason(
+            withOverlay.copy(hiddenVideoLayers = setOf(1)), AudioStudioState(), ExportSettings()
+        ))
+    }
+
+    @Test fun `whole-project config passes all enabled project music tracks to postmix`() {
+        val first = AudioTrack(
+            id = "music-1", name = "Music 1", uri = "file:///music-1.m4a",
+            trimEndMs = 30_000L, sourceDurationMs = 30_000L
+        )
+        val second = AudioTrack(
+            id = "voice-2", name = "Voice 2", uri = "file:///voice-2.m4a",
+            trimEndMs = 12_000L, sourceDurationMs = 12_000L, startTimeMs = 8_000L,
+            kind = AudioTrack.Kind.SFX
+        )
+        val muted = first.copy(id = "muted", name = "Muted", uri = "file:///muted.m4a", isMuted = true)
+        val withAudio = state.copy(project = state.project!!.copy(audioTracks = listOf(first, second, muted)))
+
+        val config = buildProjectExportConfig(withAudio, AudioStudioState(), ExportSettings())
+        assertEquals(listOf(first, second), config.musicMixTracks)
+        assertTrue(config.overlayAudioSources.isEmpty())
+        assertNull(wholeProjectExportUnsupportedReason(withAudio, AudioStudioState(), ExportSettings()))
     }
 
     @Test fun `restored non-main photo and video cannot be filtered out before export preflight`() {

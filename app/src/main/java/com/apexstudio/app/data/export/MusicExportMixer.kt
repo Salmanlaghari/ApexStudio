@@ -12,6 +12,13 @@ import com.apexstudio.app.data.audio.AudioTimelineMath
 import com.apexstudio.app.domain.model.AudioTrack
 import java.io.File
 import java.io.RandomAccessFile
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.EOFException
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.floor
@@ -19,6 +26,66 @@ import kotlin.math.min
 
 internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack> =
     tracks.filter { AudioTimelineMath.isEnabled(it, tracks) }
+
+internal fun mixDurationFrames(videoDurationUs: Long, sampleRate: Int): Long? {
+    if (videoDurationUs <= 0L) return null
+    require(sampleRate > 0) { "Sample rate must be positive" }
+    return ((videoDurationUs.toDouble() / 1_000_000.0) * sampleRate).toLong()
+}
+
+internal fun mixDurationFitsWav(videoDurationUs: Long, sampleRate: Int, maxFrames: Long): Boolean =
+    mixDurationFrames(videoDurationUs, sampleRate)?.let { it <= maxFrames } ?: true
+
+internal data class EncodedAudioSample(val data: ByteArray, val ptsUs: Long, val flags: Int)
+
+/** Temporary-file backed AAC samples; only one sample payload is resident while muxing. */
+internal class EncodedAudioSampleSpool(val file: File) : AutoCloseable {
+    private var output: DataOutputStream? = DataOutputStream(BufferedOutputStream(FileOutputStream(file)))
+    private var input: DataInputStream? = null
+
+    var sampleCount: Int = 0
+        private set
+
+    fun append(sample: EncodedAudioSample) {
+        require(sample.data.isNotEmpty()) { "Encoded audio samples must not be empty" }
+        val sink = checkNotNull(output) { "AAC sample spool is already closed for writing" }
+        sink.writeInt(sample.data.size)
+        sink.writeLong(sample.ptsUs)
+        sink.writeInt(sample.flags)
+        sink.write(sample.data)
+        sampleCount = Math.addExact(sampleCount, 1)
+    }
+
+    fun finishWriting() {
+        output?.flush()
+        output?.close()
+        output = null
+    }
+
+    fun readNext(): EncodedAudioSample? {
+        finishWriting()
+        val source = input ?: DataInputStream(BufferedInputStream(FileInputStream(file))).also { input = it }
+        val size = try {
+            source.readInt()
+        } catch (_: EOFException) {
+            return null
+        }
+        require(size > 0) { "Invalid encoded audio sample size" }
+        val ptsUs = source.readLong()
+        val flags = source.readInt()
+        val data = ByteArray(size)
+        source.readFully(data)
+        return EncodedAudioSample(data, ptsUs, flags)
+    }
+
+    override fun close() {
+        runCatching { output?.close() }
+        runCatching { input?.close() }
+        output = null
+        input = null
+        file.delete()
+    }
+}
 
 /**
  * Mixes timeline music tracks into an exported video file.
@@ -33,7 +100,7 @@ internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack
  * Pipeline (all streaming, bounded memory):
  *  1. Decode every source to stereo 44.1 kHz float and mix window-by-window
  *     into a temporary PCM WAV (capped at the video duration).
- *  2. Transcode the WAV to AAC, collecting encoded frames in memory.
+ *  2. Transcode the WAV to a temporary AAC-sample spool on disk.
  *  3. Mux: video track copied from the input + the mixed AAC track,
  *     interleaved by presentation timestamp.
  *
@@ -53,7 +120,7 @@ object MusicExportMixer {
      * Max stereo 44.1 kHz frames addressable in a 32-bit WAV:
      * (2^31 - 1 - 36 header bytes) / 4 bytes per frame ≈ 3.4 hours.
      */
-    private const val MAX_WAV_FRAMES = (Int.MAX_VALUE - 36) / (CHANNELS * 2)
+    internal const val MAX_WAV_FRAMES = (Int.MAX_VALUE - 36) / (CHANNELS * 2)
 
     data class MixResult(
         val outputFile: File,
@@ -72,13 +139,7 @@ object MusicExportMixer {
 
     private data class EncodedAudio(
         val format: MediaFormat,
-        val frames: List<EncodedFrame>
-    )
-
-    private data class EncodedFrame(
-        val data: ByteArray,
-        val ptsUs: Long,
-        val flags: Int
+        val frames: EncodedAudioSampleSpool
     )
 
     fun mixMusicIntoVideo(
@@ -124,15 +185,10 @@ object MusicExportMixer {
         // Bail before burning decode/mix CPU on a mix that could never fit
         // in the 32-bit WAV intermediate (only checkable when the video
         // duration is known; otherwise the mix stops at source exhaustion).
-        if (videoDurationUs > 0) {
-            val durationCapFrames = ((videoDurationUs / 1_000_000.0) * SAMPLE_RATE).toLong()
-            require(durationCapFrames <= MAX_WAV_FRAMES) {
-                "Music mix too long for the WAV intermediate (~3.4h max)"
-            }
+        require(mixDurationFitsWav(videoDurationUs, SAMPLE_RATE, MAX_WAV_FRAMES)) {
+            "Music mix too long for the WAV intermediate (~3.4h max)"
         }
-        val durationCapFrames = if (videoDurationUs > 0) {
-            ((videoDurationUs / 1_000_000.0) * SAMPLE_RATE).toLong()
-        } else Long.MAX_VALUE
+        val durationCapFrames = mixDurationFrames(videoDurationUs, SAMPLE_RATE) ?: Long.MAX_VALUE
 
         // ---- 2. Open source decoders ----------------------------------------
         val original: TrackDecoder? = if (inputAudioTrackIdx != -1) {
@@ -188,10 +244,15 @@ object MusicExportMixer {
 
             // ---- 3. Mix to a temporary WAV ----------------------------------
             val wavFile = File.createTempFile("apex_mix_", ".wav", outputVideo.parentFile)
+            var encodedAudio: EncodedAudio? = null
             try {
                 renderMixWav(original, placed, durationCapFrames, wavFile, checkCancelled)
                 // ---- 4. WAV -> AAC ------------------------------------------
                 val encoded = transcodeWavToAac(wavFile, checkCancelled)
+                encodedAudio = encoded
+                if (wavFile.exists() && !wavFile.delete()) {
+                    Log.w(TAG, "Could not delete PCM mix before muxing")
+                }
                 // ---- 5. Mux video copy + mixed AAC --------------------------
                 muxVideoWithAudio(
                     inputVideo, videoTrackIdx, vFormat,
@@ -199,6 +260,7 @@ object MusicExportMixer {
                 )
             } finally {
                 wavFile.delete()
+                encodedAudio?.frames?.close()
             }
             return MixResult(outputVideo, placed.size, skipped)
         } finally {
@@ -358,8 +420,13 @@ object MusicExportMixer {
             },
             cleanup = { it.release() }
         )
+        var frameSpoolForCleanup: EncodedAudioSampleSpool? = null
+        var handedOff = false
         try {
-            val frames = mutableListOf<EncodedFrame>()
+            val frameSpool = EncodedAudioSampleSpool(
+                File.createTempFile("apex_aac_", ".frames", wavFile.parentFile)
+            )
+            frameSpoolForCleanup = frameSpool
             var outFormat: MediaFormat? = null
             val info = MediaCodec.BufferInfo()
             // Derive every PTS from cumulative frames, avoiding per-chunk drift.
@@ -408,8 +475,8 @@ object MusicExportMixer {
                                 if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
                                     info.size > 0
                                 ) {
-                                    frames.add(
-                                        EncodedFrame(
+                                    frameSpool.append(
+                                        EncodedAudioSample(
                                             copyEncodedOutput(
                                                 encoder.getOutputBuffer(outIdx), info.offset, info.size
                                             ),
@@ -436,9 +503,12 @@ object MusicExportMixer {
             // The encoder's actual format contains codec-specific AAC data.
             // A requested input format is not a valid substitute for it.
             val fmt = checkNotNull(outFormat) { "AAC encoder produced no output format" }
-            check(frames.isNotEmpty()) { "AAC encoder produced no audio samples" }
-            return EncodedAudio(fmt, frames)
+            check(frameSpool.sampleCount > 0) { "AAC encoder produced no audio samples" }
+            frameSpool.finishWriting()
+            handedOff = true
+            return EncodedAudio(fmt, frameSpool)
         } finally {
+            if (!handedOff) frameSpoolForCleanup?.close()
             runCatching { encoder.stop() }
             runCatching { encoder.release() }
         }
@@ -452,7 +522,7 @@ object MusicExportMixer {
         inputVideo: File,
         videoTrackIdx: Int,
         videoFormat: MediaFormat,
-        audioFrames: List<EncodedFrame>,
+        audioFrames: EncodedAudioSampleSpool,
         audioFormat: MediaFormat,
         outputVideo: File,
         checkCancelled: () -> Unit
@@ -484,8 +554,6 @@ object MusicExportMixer {
                     maxOf(8 * 1024 * 1024, min(maxInputSize, 64 * 1024 * 1024))
                 )
                 val vInfo = MediaCodec.BufferInfo()
-                var audioIdx = 0
-
                 fun readVideo(): Boolean {
                     val n = vEx.readSampleData(vBuf, 0)
                     if (n < 0) return false
@@ -500,7 +568,7 @@ object MusicExportMixer {
                     muxer.writeSampleData(vOut, vBuf, vInfo)
                 }
 
-                fun writeAudio(f: EncodedFrame) {
+                fun writeAudio(f: EncodedAudioSample) {
                     val buf = ByteBuffer.wrap(f.data)
                     val bi = MediaCodec.BufferInfo()
                     bi.set(0, f.data.size, f.ptsUs, f.flags)
@@ -508,15 +576,16 @@ object MusicExportMixer {
                 }
 
                 var videoAvail = readVideo()
-                while (videoAvail || audioIdx < audioFrames.size) {
+                var audioSample = audioFrames.readNext()
+                while (videoAvail || audioSample != null) {
                     checkCancelled()
-                    val a = audioFrames.getOrNull(audioIdx)
+                    val a = audioSample
                     if (videoAvail && (a == null || vInfo.presentationTimeUs <= a.ptsUs)) {
                         writeVideo()
                         videoAvail = readVideo()
                     } else if (a != null) {
                         writeAudio(a)
-                        audioIdx++
+                        audioSample = audioFrames.readNext()
                     } else {
                         break
                     }

@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -20,6 +22,50 @@ import java.util.concurrent.CancellationException
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MusicExportMixerTest {
+
+    @Test
+    fun `long AAC output is spooled and replayed one sample at a time`() {
+        val directory = java.nio.file.Files.createTempDirectory("apex-aac-spool-").toFile()
+        val file = File(directory, "samples.bin")
+        val count = 50_000
+        try {
+            EncodedAudioSampleSpool(file).use { spool ->
+                repeat(count) { index ->
+                    spool.append(EncodedAudioSample(
+                        data = byteArrayOf(index.toByte(), (index ushr 8).toByte()),
+                        ptsUs = index * 23_219L,
+                        flags = index and 1
+                    ))
+                }
+                assertEquals(count, spool.sampleCount)
+                spool.finishWriting()
+                assertTrue("AAC payloads must be persisted, not retained in an in-memory list", file.length() > count * 2L)
+
+                repeat(count) { index ->
+                    val sample = spool.readNext()!!
+                    assertArrayEquals(byteArrayOf(index.toByte(), (index ushr 8).toByte()), sample.data)
+                    assertEquals(index * 23_219L, sample.ptsUs)
+                    assertEquals(index and 1, sample.flags)
+                }
+                assertNull(spool.readNext())
+            }
+            assertFalse("temporary AAC spool is deleted after use", file.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `known long mixes are accepted only within the WAV intermediate frame limit`() {
+        val sampleRate = 44_100
+        val maxFrames = MusicExportMixer.MAX_WAV_FRAMES.toLong()
+        val withinLimitUs = maxFrames * 1_000_000L / sampleRate
+
+        assertTrue(mixDurationFitsWav(withinLimitUs, sampleRate, maxFrames))
+        assertFalse(mixDurationFitsWav(withinLimitUs + 1_000_000L, sampleRate, maxFrames))
+        assertNull(mixDurationFrames(0L, sampleRate))
+        assertTrue(mixDurationFitsWav(0L, sampleRate, maxFrames))
+    }
 
     @Test
     fun `audio track enumeration failure releases its extractor before retry`() {
@@ -208,6 +254,22 @@ class MusicExportMixerTest {
 
         // A muted solo silences non-solo tracks too; no track should then be mixed.
         assertEquals(emptyList<AudioTrack>(), selectEnabledMusicTracks(listOf(nonSolo, solo.copy(isMuted = true))))
+    }
+
+    @Test
+    fun `multiple enabled music and voice tracks remain separate mixer sources`() {
+        val music = AudioTrack(
+            id = "music", name = "Music", uri = "file:///music.m4a",
+            trimEndMs = 60_000L, sourceDurationMs = 60_000L
+        )
+        val voice = AudioTrack(
+            id = "voice", name = "Voice", uri = "file:///voice.m4a",
+            trimEndMs = 8_000L, sourceDurationMs = 8_000L, startTimeMs = 3_000L,
+            kind = AudioTrack.Kind.SFX
+        )
+        val muted = music.copy(id = "muted", name = "Muted", uri = "file:///muted.m4a", isMuted = true)
+
+        assertEquals(listOf(music, voice), selectEnabledMusicTracks(listOf(music, voice, muted)))
     }
 
     @Test

@@ -60,6 +60,8 @@ def dex_contains_message_field() -> bool:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             in_target_class = False
             found_field = False

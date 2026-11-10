@@ -77,6 +77,18 @@
 -keep class com.google.mediapipe.** { *; }
 -dontwarn com.google.mediapipe.**
 
+# MediaPipe tasks-core uses Flogger to find the logging caller by walking a
+# Throwable stack for FluentLogger. R8 can rename or inline that stack anchor,
+# causing Graph.<clinit> to throw "no caller found on the stack" at startup.
+-keep class com.google.common.flogger.FluentLogger { *; }
+
+# MediaPipe's native graph code reads generated protobuf-lite fields outside
+# Java bytecode. Keep only fields on generated messages, not the protobuf
+# runtime's unrelated classes or methods.
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
+
 # Phase 4: Lottie (reflection on model classes)
 -keep class com.airbnb.lottie.** { *; }
 -dontwarn com.airbnb.lottie.**

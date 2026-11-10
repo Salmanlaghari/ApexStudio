@@ -73,7 +73,7 @@ fun EditorViewModel.autoCutSelectedClips(): Boolean {
     val appendedDurationMs = generatedClips.sumOf { it.effectiveDurationMs() }
     val clipsWithRippledOverlays = rippleOverlays(project.clips, sequenceStartMs, appendedDurationMs)
     val updatedClips = clipsWithRippledOverlays + generatedClips
-    val duration = computeTimelineDurationMs(updatedClips, project.audioTracks)
+    val duration = computeTimelineDurationMs(updatedClips, project.audioTracks, project.transitions)
     _state.update { current ->
         val currentProject = current.project ?: return@update current
         current.copy(

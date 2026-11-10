@@ -107,7 +107,7 @@ fun EditorViewModel.applyCaptionFillerRemoval() {
         }
     }
 
-    val newDuration = com.apexstudio.app.presentation.viewmodel.computeTimelineDurationMs(newClips, project.audioTracks)
+    val newDuration = com.apexstudio.app.presentation.viewmodel.computeTimelineDurationMs(newClips, project.audioTracks, project.transitions)
     val oldPlayhead = livePlayheadMs()
     val newPlayhead = mapAfterCuts(oldPlayhead, normalizedCuts).coerceIn(0L, newDuration)
     pushUndo()

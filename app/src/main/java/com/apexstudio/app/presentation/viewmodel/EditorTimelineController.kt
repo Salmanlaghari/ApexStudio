@@ -266,7 +266,7 @@ fun EditorViewModel.refreshTimelineDuration() {
     var newDurationMs: Long? = null
     _state.update { s ->
         val clips = s.project?.clips ?: return@update s
-        val newDuration = computeTimelineDurationMs(clips, s.project?.audioTracks ?: emptyList())
+        val newDuration = computeTimelineDurationMs(clips, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
         newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
         s.copy(
@@ -734,7 +734,10 @@ fun EditorViewModel.moveClipLeft(clipId: String) {
         val updated = p.clips.toMutableList()
         val item = updated.removeAt(index)
         updated.add(index - 1, item)
-        s.copy(project = p.copy(clips = updated))
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, p.transitions)
+        val duration = computeTimelineDurationMs(updated, p.audioTracks, transitions)
+        s.copy(project = p.copy(clips = updated, transitions = transitions, durationMs = duration), durationMs = duration)
     }
     persistProject(refreshLegacyClipFields = true)
 }
@@ -749,7 +752,10 @@ fun EditorViewModel.moveClipRight(clipId: String) {
         val updated = p.clips.toMutableList()
         val item = updated.removeAt(index)
         updated.add(index + 1, item)
-        s.copy(project = p.copy(clips = updated))
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, p.transitions)
+        val duration = computeTimelineDurationMs(updated, p.audioTracks, transitions)
+        s.copy(project = p.copy(clips = updated, transitions = transitions, durationMs = duration), durationMs = duration)
     }
     persistProject(refreshLegacyClipFields = true)
 }
@@ -775,7 +781,14 @@ fun EditorViewModel.reorderMainVideoClips(orderedIds: List<String>) {
             }
         }
         var index = 0
-        s.copy(project = p.copy(clips = p.clips.map { if (isMainTrack(it)) normalized[index++] else it }))
+        val updatedClips = p.clips.map { if (isMainTrack(it)) normalized[index++] else it }
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updatedClips, p.transitions)
+        val duration = computeTimelineDurationMs(updatedClips, p.audioTracks, transitions)
+        s.copy(
+            project = p.copy(clips = updatedClips, transitions = transitions, durationMs = duration),
+            durationMs = duration
+        )
     }
     persistProject(refreshLegacyClipFields = true)
 }
@@ -1004,7 +1017,7 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 )
             } else c
         }
-        val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
+        val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
         newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
         s.copy(
@@ -1125,7 +1138,7 @@ fun EditorViewModel.trimClipWithMedia3Transformer(
                         _state.update { s ->
                             val p = s.project ?: return@update s
                             val updatedClips = p.clips + newClip
-                            val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
+                            val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
                             s.copy(
                             project = p.copy(clips = updatedClips, durationMs = newDuration),
                             durationMs = newDuration
@@ -1234,9 +1247,11 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
                 updatedClips.add(clip)
             }
         }
-        val newDur = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList())
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updatedClips, p.transitions)
+        val newDur = computeTimelineDurationMs(updatedClips, p.audioTracks, transitions)
         s.copy(
-            project = p.copy(clips = updatedClips, durationMs = newDur),
+            project = p.copy(clips = updatedClips, transitions = transitions, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newClip.id,
             selectedOverlayClipId = if (isOverlay) newClip.id else s.selectedOverlayClipId,
@@ -1276,7 +1291,7 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             rippleOverlays(p.clips, p.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }, extra)
         } else p.clips
         val updated = rippled + newClip
-        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
+        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
         s.copy(
             project = p.copy(clips = updated, durationMs = newDur),
             durationMs = newDur,
@@ -1323,9 +1338,11 @@ fun EditorViewModel.deleteClip(clipId: String) {
         } else p.clips
         val updated = rippled.filterNot { it.id == clipId }
         val newSelected = if (s.selectedClipId == clipId) updated.firstOrNull()?.id else s.selectedClipId
-        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, p.transitions)
+        val newDur = computeTimelineDurationMs(updated, p.audioTracks, transitions)
         s.copy(
-            project = p.copy(clips = updated, durationMs = newDur),
+            project = p.copy(clips = updated, transitions = transitions, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newSelected,
             // Phase D: deleting the active overlay clip clears the
@@ -1366,7 +1383,13 @@ fun EditorViewModel.moveClipToTrack(clipId: String, newType: ClipType, newTrackI
             if (it.id == clipId) it.copy(type = newType, trackIndex = newTrackIndex)
             else it
         }
-        s.copy(project = p.copy(clips = updated))
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, p.transitions)
+        val duration = computeTimelineDurationMs(updated, p.audioTracks, transitions)
+        s.copy(
+            project = p.copy(clips = updated, transitions = transitions, durationMs = duration),
+            durationMs = duration
+        )
     }
     persistProject(importLegacyAnimation = true, refreshLegacyClipFields = true)
 }
@@ -1398,7 +1421,7 @@ fun EditorViewModel.addClipToTrack(type: ClipType, trackIndex: Int) {
         _state.update { s ->
             val p = s.project ?: return@update s
             val updated = p.clips + newClip
-            val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList())
+            val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
             s.copy(
                 project = p.copy(clips = updated, durationMs = newDur),
                 durationMs = newDur,
@@ -1656,7 +1679,13 @@ fun EditorViewModel.moveClipToVideoLayer(clipId: String, layer: Int) {
             }
             clip.copy(trackIndex = l, type = newType)
         }
-        s.copy(project = p.copy(clips = updated))
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, p.transitions)
+        val duration = computeTimelineDurationMs(updated, p.audioTracks, transitions)
+        s.copy(
+            project = p.copy(clips = updated, transitions = transitions, durationMs = duration),
+            durationMs = duration
+        )
     }
     persistProject()
 }
@@ -1697,16 +1726,11 @@ fun EditorViewModel.addEmptyVideoLayer(): Int {
  */
 fun computeTimelineDurationMs(
     clips: List<com.apexstudio.app.domain.model.MediaClip>,
-    audioTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList()
+    audioTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
+    transitions: List<com.apexstudio.app.domain.model.ClipTransition> = emptyList()
 ): Long {
-    val v1SequentialMs = clips
-        .filter {
-            it.trackIndex == 0 &&
-                (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
-                 it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
-        }
-        // A speed-ramped clip occupies its OUTPUT length on the timeline.
-        .sumOf { it.effectiveDurationMs() }
+    val v1SequentialMs = com.apexstudio.app.data.export.ProjectTransitionTimeline
+        .build(clips, transitions).durationMs
     val overlayMaxEndMs = clips
         .filter { it.trackIndex != 0 }
         .maxOfOrNull { it.timelineOffsetMs + it.effectiveDurationMs() }

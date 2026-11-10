@@ -29,9 +29,11 @@ fun EditorViewModel.deleteSelectedClips(): Boolean {
                 rippleOverlays(clips, v1StartBefore(clips, clip.id), -clip.effectiveDurationMs())
             }
         val updated = rippled.filterNot { it.id in ids }
-        val duration = computeTimelineDurationMs(updated, current.audioTracks)
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updated, current.transitions)
+        val duration = computeTimelineDurationMs(updated, current.audioTracks, transitions)
         state.copy(
-            project = current.copy(clips = updated, durationMs = duration),
+            project = current.copy(clips = updated, transitions = transitions, durationMs = duration),
             durationMs = duration,
             selectedClipIds = emptySet(),
             multiSelectMode = false,
@@ -88,7 +90,7 @@ fun EditorViewModel.duplicateSelectedClips(): Boolean {
             )
         }
         val updated = rippled + copies
-        val duration = computeTimelineDurationMs(updated, current.audioTracks)
+        val duration = computeTimelineDurationMs(updated, current.audioTracks, current.transitions)
         state.copy(
             project = current.copy(clips = updated, durationMs = duration),
             durationMs = duration,
@@ -132,7 +134,7 @@ fun EditorViewModel.applySpeedToSelectedClips(multiplier: Float): Boolean {
     }
     if (updated == project.clips) return false
     pushUndo()
-    val duration = computeTimelineDurationMs(updated, project.audioTracks)
+    val duration = computeTimelineDurationMs(updated, project.audioTracks, project.transitions)
     _state.update { it.copy(project = project.copy(clips = updated, durationMs = duration), durationMs = duration, playbackSpeed = speed) }
     persistProject(refreshLegacyClipFields = true)
     return true

@@ -335,7 +335,7 @@ fun EditorViewModel.addAudioTrack(
     _state.update { s ->
         val p = s.project ?: return@update s
         val updatedTracks = p.audioTracks + track
-        val newDuration = computeTimelineDurationMs(p.clips, updatedTracks)
+        val newDuration = computeTimelineDurationMs(p.clips, updatedTracks, p.transitions)
         s.copy(
             project = p.copy(audioTracks = updatedTracks, durationMs = newDuration).syncSharedTimeline(),
             durationMs = newDuration,
@@ -414,7 +414,7 @@ fun EditorViewModel.extractOriginalVideoAudio(clipId: String) {
             val clips = project.clips.map { clip ->
                 if (clip.id == clipId) plan.mutedSourceClip else clip
             }
-            val duration = computeTimelineDurationMs(clips, tracks)
+            val duration = computeTimelineDurationMs(clips, tracks, project.transitions)
             addedTrack = plan.track
             nextDuration = duration
             editorState.copy(
@@ -459,7 +459,7 @@ fun EditorViewModel.removeAudioTrack(trackId: String) {
                 clip.copy(volume = if (removed.isMuted) 0f else removed.volume.coerceIn(0f, 1f))
             } else clip
         }
-        val duration = computeTimelineDurationMs(restoredClips, tracks)
+        val duration = computeTimelineDurationMs(restoredClips, tracks, p.transitions)
         remainingTracks = tracks
         remainingDuration = duration
         s.copy(

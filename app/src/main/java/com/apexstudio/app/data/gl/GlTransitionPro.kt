@@ -76,15 +76,7 @@ object GlTransitionManifest {
                     if (name.isBlank()) continue
                     val type = p.optString("type", "float").lowercase()
                     val d = p.opt("default")
-                    val defaults = when (d) {
-                        is Number -> listOf(d.toFloat())
-                        is JSONArray -> (0 until d.length()).mapNotNull {
-                            d.optDouble(it, Double.NaN).takeIf { !it.isNaN() }?.toFloat()
-                        }
-                        is Boolean -> listOf(if (d) 1f else 0f)
-                        else -> listOf(0f)
-                    }
-                    params += GlTransitionParam(name, type, defaults.ifEmpty { listOf(0f) })
+                    params += GlTransitionParam(name, type, parseDefaults(d, type))
                 }
             }
             out += GlTransitionInfo(
@@ -96,6 +88,32 @@ object GlTransitionManifest {
         }
         return out.sortedBy { it.name.lowercase() }
     }
+
+    private fun parseDefaults(value: Any?, type: String): List<Float> {
+        val values = when (value) {
+            is Number -> listOf(value.toFloat())
+            is JSONArray -> (0 until value.length()).mapNotNull { index ->
+                value.optDouble(index, Double.NaN).takeIf { it.isFinite() }?.toFloat()
+            }
+            is Boolean -> listOf(if (value) 1f else 0f)
+            is String -> NUMBER_PATTERN.findAll(value).mapNotNull { it.value.toFloatOrNull() }.toList()
+            else -> emptyList()
+        }
+        val components = when (type) {
+            "vec2", "ivec2" -> 2
+            "vec3" -> 3
+            "vec4" -> 4
+            else -> 1
+        }
+        if (values.isEmpty()) return List(components) { 0f }
+        if (values.size == 1 && components > 1) return List(components) { values.first() }
+        return values.take(components).let { parsed ->
+            if (parsed.size >= components) parsed
+            else parsed + List(components - parsed.size) { parsed.last() }
+        }
+    }
+
+    private val NUMBER_PATTERN = Regex("(?<![A-Za-z_])[-+]?(?:\\d*\\.?\\d+)(?:[eE][-+]?\\d+)?(?![A-Za-z_])")
 }
 
 /**
@@ -150,6 +168,8 @@ class GlTransitionAdapterEffect(
 
         private val glProgram: GlProgram
         private val blackTexId: Int
+        private val displacementTexture: Int
+        private val lumaTexture: Int
         private var aspectRatio: Float = 16f / 9f
 
         init {
@@ -178,22 +198,12 @@ class GlTransitionAdapterEffect(
                 1, 1, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, black
             )
             blackTexId = tex[0]
-            // Manifest defaults for every declared param (best effort —
-            // a missing uniform is skipped, never fatal).
-            for (p in params) {
-                try {
-                    when (p.type) {
-                        "int", "bool" ->
-                            glProgram.setIntUniform(p.name, p.default.firstOrNull()?.toInt() ?: 0)
-                        "vec2", "vec3", "vec4" ->
-                            glProgram.setFloatsUniform(p.name, p.default.toFloatArray())
-                        else ->
-                            glProgram.setFloatUniform(p.name, p.default.firstOrNull() ?: 0f)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "param ${p.name}: ${e.message}")
-                }
-            }
+            displacementTexture = TransitionGlSupport.createDisplacementTexture()
+            lumaTexture = TransitionGlSupport.createLumaTexture()
+            glProgram.use()
+            TransitionGlSupport.bindManifestParameters(
+                glProgram, params, displacementTexture, lumaTexture, firstTextureUnit = 2
+            )
         }
 
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
@@ -212,6 +222,9 @@ class GlTransitionAdapterEffect(
                 } else 1f
                 glProgram.setFloatsUniformIfPresent("uProgress", floatArrayOf(progress))
                 glProgram.setFloatsUniformIfPresent("uRatio", floatArrayOf(aspectRatio))
+                TransitionGlSupport.bindManifestParameters(
+                    glProgram, params, displacementTexture, lumaTexture, firstTextureUnit = 2
+                )
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
@@ -225,6 +238,8 @@ class GlTransitionAdapterEffect(
                 GLES20.glDeleteTextures(1, intArrayOf(blackTexId), 0)
             } catch (_: Exception) {
             }
+            TransitionGlSupport.deleteTexture(displacementTexture)
+            TransitionGlSupport.deleteTexture(lumaTexture)
         }
 
         companion object {

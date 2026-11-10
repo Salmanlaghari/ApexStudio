@@ -28,9 +28,6 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     if (project.stickers.isNotEmpty()) {
         return "Whole-project export does not yet render project stickers. Use selected-clip export to keep those edits."
     }
-    if (project.transitions.isNotEmpty() || project.lastTransitionType != null || state.lastTransitionType != null) {
-        return "Whole-project export uses hard cuts, not boundary transitions. Selected-clip export also does not render clip-junction transitions. Remove the saved transition choice before whole-project export."
-    }
     if (project.clips.any {
             it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
         }) {

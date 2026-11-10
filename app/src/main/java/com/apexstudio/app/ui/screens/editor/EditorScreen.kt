@@ -30,6 +30,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.transformer.CompositionPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.export.toProjectExportAdjustments
@@ -41,6 +42,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.VideoFitMode
+import com.apexstudio.app.domain.model.resolveMaskAt
 import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -149,6 +151,9 @@ private fun EditorScreenContent(
     val mediaImportProgress by mediaPicker.importProgress.collectAsStateWithLifecycle()
     val filterEngine = remember { LutFilterEngine(context) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var transitionPreviewPlayer by remember(projectId) { mutableStateOf<CompositionPlayer?>(null) }
+    var transitionPreviewReady by remember(projectId) { mutableStateOf(false) }
+    var transitionPreviewFailed by remember(projectId) { mutableStateOf(false) }
     val editorExportState by vm.export.collectAsStateWithLifecycle()
     val sourceAspectForLayout = previewContentAspect(
         videoWidth = state.videoWidth.takeIf { it > 0 } ?: exoPlayer?.videoSize?.width ?: 0,
@@ -186,7 +191,13 @@ private fun EditorScreenContent(
     // Main-video framing belongs to the clip, not a transient preview-only switch.
     // Existing photo controls keep their prior preview behavior.
     var nonVideoCoverMode by remember(projectId) { mutableStateOf(DEFAULT_PREVIEW_COVER_MODE) }
-    val framingVideo = timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+    val projectTransitionPlan = remember(state.project?.clips, state.project?.transitions) {
+        com.apexstudio.app.data.export.ProjectTransitionTimeline.build(
+            state.project?.clips.orEmpty(), state.project?.transitions.orEmpty()
+        )
+    }
+    val framingVideo = (projectTransitionPlan.entryAt(state.playerPositionMs)?.clip
+        ?: timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs))
         ?.takeIf { it.type == ClipType.VIDEO }
     val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
@@ -474,9 +485,8 @@ private fun EditorScreenContent(
     }
     // Overlay selection is an editing target, not a new source for the
     // background/V1 preview player (which has its own dedicated PiP player).
-    val mainPreviewClip = remember(state.project?.clips, state.playerPositionMs) {
-        timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
-    }
+    val mainPreviewClip = projectTransitionPlan.entryAt(state.playerPositionMs)?.clip
+        ?: timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
 
     // Overlay media-kind probe — SINGLE source of truth for every
     // consumer (the player binding below, photoClip + PiP canvas in
@@ -507,7 +517,10 @@ private fun EditorScreenContent(
             }
         }
     }
-    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.uri, mainPreviewClip?.trimStartMs, mainPreviewClip?.trimEndMs) {
+    LaunchedEffect(
+        exoPlayer, mainPreviewClip?.id, mainPreviewClip?.uri, mainPreviewClip?.trimStartMs,
+        mainPreviewClip?.trimEndMs, projectTransitionPlan, transitionPreviewReady
+    ) {
         val player = exoPlayer ?: return@LaunchedEffect
         val clip = mainPreviewClip
         if (clip == null) {
@@ -553,7 +566,8 @@ private fun EditorScreenContent(
                 // Rebinding after a cross-clip seek must retain the requested
                 // project position, not jump back to the source trim head.
                 bindEditorPreviewItem(player, mediaItem, clip, state.project?.clips.orEmpty(),
-                    vm.playerPositionFlow.value, state.isPlaying)
+                    vm.playerPositionFlow.value, state.isPlaying && !transitionPreviewReady,
+                    projectTransitionPlan)
             } catch (e: Exception) {
                 Log.e("EditorScreen", "player.prepare() failed", e)
             }
@@ -743,6 +757,256 @@ private fun EditorScreenContent(
         }
     }
 
+    val transitionPreviewEffectsByClipId = remember(
+        projectTransitionPlan,
+        state.project?.clips,
+        state.project?.videoAspectRatio,
+        activePreset,
+        activeFx,
+        state.filterIntensity,
+        state.adjustments,
+        state.fxIntensity,
+        state.fxSpeed,
+        state.chromaKeySettings,
+        state.gpuFilterCompareMode,
+        state.lutCompareMode
+    ) {
+        val clips = state.project?.clips.orEmpty()
+        val aspect = state.project?.videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+        projectTransitionPlan.entries.associate { entry ->
+            val clip = entry.clip
+            val shared = state.project?.sharedVideoClip(clip.id)
+            val clipGpuConfig = clip.gpuFilterConfig
+            val projectTimeAtPresentationTimeUs: (Long) -> Long = { presentationTimeUs ->
+                val itemLocalUs = com.apexstudio.app.data.animation.itemLocalPresentationTimeUs(
+                    presentationTimeUs, entry.timelineStartMs
+                )
+                val localOutputMs = (itemLocalUs / 1_000L).coerceIn(0L, entry.durationMs)
+                val sourceTimeMs = entry.sourceTimeAtOutputOffset(localOutputMs)
+                projectTransitionPlan.projectTimeAtSourceTime(clips, clip, sourceTimeMs)
+                    ?: (entry.timelineStartMs + localOutputMs)
+            }
+            val effects = buildList<androidx.media3.common.Effect> {
+                clip.faceCropTrack?.let { track ->
+                    val config = com.apexstudio.app.data.effect.FaceCropRenderConfig(
+                        track = track,
+                        trimStartMs = entry.sourceStartMs,
+                        trimEndMs = entry.sourceEndMs
+                    )
+                    add(com.apexstudio.app.data.effect.FaceCropGlEffect.forPreview(config.previewConfig()))
+                }
+                clip.videoCrop.takeUnless { it.isFullFrame }
+                    ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
+                    ?.let(::add)
+                com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(state.chromaKeySettings)
+                    ?.let(::add)
+                com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
+                    ?.let(::add)
+                addAll(com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(
+                    clip.workspaceEffects,
+                    entry.sourceStartMs,
+                    shared?.takeIf { it.effectIntensityKeyframes.isNotEmpty() }?.let { typed ->
+                        { timeUs -> typed.effectIntensityAt(projectTimeAtPresentationTimeUs(timeUs)) }
+                    }
+                ))
+                if (!state.gpuFilterCompareMode && gpuFilterConfigUsesMedia3(clipGpuConfig) &&
+                    !clipGpuConfig.isDefault
+                ) {
+                    clipGpuConfig.filterPresetId
+                        ?.let { com.apexstudio.app.data.filter.FilterManifest.presetById(it) }
+                        ?.let { preset ->
+                            add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                                context, preset, clipGpuConfig.filterIntensity
+                            ))
+                        }
+                    val perClipAdjustments = clipGpuConfig.toProjectExportAdjustments()
+                    if (!perClipAdjustments.isDefault) {
+                        add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(perClipAdjustments))
+                    }
+                }
+                if (!state.lutCompareMode && activePreset != null) {
+                    add(com.apexstudio.app.data.filter.LutFilterGlEffect(
+                        context,
+                        activePreset,
+                        intensityProvider = { globalFilterIntensity.get() },
+                        presentationTimeIntensityProvider = shared?.let { typed ->
+                            { timeUs ->
+                                globalFilterIntensity.get() * typed.filterIntensityAt(
+                                    projectTimeAtPresentationTimeUs(timeUs)
+                                ) * typed.lutIntensityAt(projectTimeAtPresentationTimeUs(timeUs))
+                            }
+                        }
+                    ))
+                }
+                if (!state.lutCompareMode && !state.adjustments.isDefault) {
+                    val matrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
+                        filterId = null, intensity = 0f, adjustments = state.adjustments
+                    )
+                    add(com.apexstudio.app.data.filter.ColorMatrixGlEffect(matrix))
+                    if (state.adjustments.hasNonMatrixAdjustments) {
+                        add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                            adjustments = com.apexstudio.app.domain.model.VideoAdjustments(),
+                            highlightsProvider = { state.adjustments.highlights },
+                            shadowsProvider = { state.adjustments.shadows },
+                            sharpnessProvider = { state.adjustments.sharpness },
+                            fadeProvider = { state.adjustments.fade },
+                            vignetteProvider = { state.adjustments.vignette },
+                            grainProvider = { state.adjustments.grain },
+                            lightnessProvider = { state.adjustments.lightness },
+                            whitesProvider = { state.adjustments.whites },
+                            blacksProvider = { state.adjustments.blacks },
+                            hueProvider = { state.adjustments.hue },
+                            vibranceProvider = { state.adjustments.vibrance },
+                            clarityProvider = { state.adjustments.clarity },
+                            denoiseProvider = { state.adjustments.denoise }
+                        ))
+                    }
+                }
+                if (activeFx != null && state.fxIntensity > 0f) {
+                    add(com.apexstudio.app.data.fx.FxGlEffect(activeFx, state.fxIntensity, state.fxSpeed))
+                }
+                if (!clip.keyframes.isEmpty() || shared?.animationKeyframeTimes()?.isNotEmpty() == true) {
+                    add(com.apexstudio.app.data.animation.KeyframeAnimationEffect(
+                        trackProvider = { clip.keyframes },
+                        timeMsAtPresentationTimeUs = projectTimeAtPresentationTimeUs,
+                        sharedVideoClipProvider = { shared }
+                    ).buildEffects().first())
+                }
+                com.apexstudio.app.data.effect.MaskGlEffect.fromMask(
+                    clip.mask,
+                    clip.mask?.let { mask ->
+                        { timeUs ->
+                            val projectMs = projectTimeAtPresentationTimeUs(timeUs)
+                            mask.resolveMaskAt((projectMs - entry.timelineStartMs).coerceAtLeast(0L))
+                        }
+                    }
+                )?.let(::add)
+                val captions = clip.textOverlays.filter { it.text.isNotBlank() }
+                if (captions.isNotEmpty()) {
+                    add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))
+                }
+                clip.stickers.forEach { sticker ->
+                    if (sticker.isPngSticker()) {
+                        add(com.apexstudio.app.data.effect.StickerGlEffect(context, sticker, aspect))
+                    } else {
+                        add(com.apexstudio.app.data.effect.TextOverlayGlEffect(
+                            context,
+                            com.apexstudio.app.data.export.projectEmojiStickerAsTextOverlay(sticker),
+                            aspect
+                        ))
+                    }
+                }
+            }
+            clip.id to effects
+        }
+    }
+
+    val transitionPreviewEffectsRepresentable = projectTransitionPlan.entries.all { entry ->
+        val clip = entry.clip
+        clip.speedMultiplier == 1f && clip.speedPoints.isEmpty() &&
+            (clip.gpuFilterConfig.isDefault || gpuFilterConfigUsesMedia3(clip.gpuFilterConfig))
+    }
+    val transitionPreviewEligible = projectTransitionPlan.transitions.isNotEmpty() &&
+        projectTransitionPlan.entries.all { it.clip.type == ClipType.VIDEO } &&
+        transitionPreviewEffectsRepresentable &&
+        !state.gpuFilterCompareMode && !state.lutCompareMode &&
+        state.activeArFilterId == null && state.coverText.isBlank() &&
+        state.project?.signature == null && state.project?.stickers.orEmpty().isEmpty() &&
+        state.project?.videoDrawings.orEmpty().isEmpty() &&
+        projectTransitionPlan.transitions.all {
+            com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.transition.type)
+        }
+    LaunchedEffect(projectId, previewPlaybackSuspended, transitionPreviewEligible) {
+        if (previewPlaybackSuspended || !transitionPreviewEligible) {
+            transitionPreviewPlayer = null
+            transitionPreviewReady = false
+            transitionPreviewFailed = false
+        } else if (transitionPreviewPlayer == null && !transitionPreviewFailed) {
+            try {
+                val player = com.apexstudio.app.data.export.createProjectTransitionPreviewPlayer(context)
+                player.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (transitionPreviewPlayer !== player) return
+                        if (playbackState == Player.STATE_READY) transitionPreviewReady = true
+                        if (playbackState == Player.STATE_ENDED &&
+                            vm.state.value.durationMs <= projectTransitionPlan.durationMs
+                        ) vm.setPlaying(false)
+                    }
+
+                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                        if (transitionPreviewPlayer === player) vm.setVideoSize(videoSize.width, videoSize.height)
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        if (transitionPreviewPlayer !== player) return
+                        Log.e("EditorScreen", "Transition preview failed; using source player", error)
+                        transitionPreviewReady = false
+                        transitionPreviewFailed = true
+                        transitionPreviewPlayer = null
+                        vm.setPlayerError("Transition preview is unavailable on this device; export still renders the transition.")
+                    }
+                })
+                transitionPreviewPlayer = player
+                transitionPreviewReady = false
+                transitionPreviewFailed = false
+            } catch (error: Exception) {
+                Log.e("EditorScreen", "Transition preview player init failed", error)
+                transitionPreviewPlayer = null
+                transitionPreviewReady = false
+                transitionPreviewFailed = true
+            }
+        }
+    }
+
+    LaunchedEffect(
+        transitionPreviewPlayer,
+        transitionPreviewEligible,
+        projectTransitionPlan,
+        state.project?.clips,
+        state.project?.videoAspectRatio,
+        transitionPreviewEffectsByClipId
+    ) {
+        val player = transitionPreviewPlayer ?: return@LaunchedEffect
+        if (!transitionPreviewEligible || previewPlaybackSuspended) return@LaunchedEffect
+        try {
+            transitionPreviewReady = false
+            player.pause()
+            val aspect = state.project?.videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+            val outputWidth = 960
+            val outputHeight = (outputWidth / aspect).toInt().coerceIn(240, 2_160)
+            val composition = com.apexstudio.app.data.export.buildProjectTransitionPreviewComposition(
+                context = context,
+                plan = projectTransitionPlan,
+                outputWidth = outputWidth,
+                outputHeight = outputHeight,
+                previewEffectsByClipId = transitionPreviewEffectsByClipId
+            )
+            player.setComposition(composition)
+            player.prepare()
+            val lastFrameMs = (projectTransitionPlan.durationMs - 1L).coerceAtLeast(0L)
+            player.seekTo(state.playerPositionMs.coerceIn(0L, lastFrameMs))
+            if (state.isPlaying) player.play() else player.pause()
+        } catch (error: Exception) {
+            Log.e("EditorScreen", "Transition preview composition failed; using source player", error)
+            transitionPreviewReady = false
+            transitionPreviewFailed = true
+            transitionPreviewPlayer = null
+            vm.setPlayerError("Transition preview is unavailable on this device; export still renders the transition.")
+        }
+    }
+
+    val activePreviewPlayer: Player? = if (transitionPreviewReady) transitionPreviewPlayer else exoPlayer
+
+    DisposableEffect(transitionPreviewPlayer) {
+        val player = transitionPreviewPlayer
+        onDispose {
+            if (player != null) runCatching {
+                player.pause()
+                player.release()
+            }
+        }
+    }
+
     val audioPlaybackManager = remember { com.apexstudio.app.data.engine.AudioPlaybackManager(context) }
     DisposableEffect(Unit) {
         onDispose {
@@ -750,12 +1014,33 @@ private fun EditorScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks, mainPreviewClip?.id) {
+    LaunchedEffect(exoPlayer, state.isPlaying, state.project?.audioTracks, mainPreviewClip?.id,
+        transitionPreviewReady, projectTransitionPlan) {
         val tracks = state.project?.audioTracks ?: emptyList()
         audioPlaybackManager.sync(state.isPlaying, vm.playerPositionFlow.value, tracks)
         val player = exoPlayer ?: return@LaunchedEffect
+        if (transitionPreviewReady) {
+            player.pause()
+            return@LaunchedEffect
+        }
         if (state.isPlaying) {
-            resumeEditorPreview(player, state.project?.clips.orEmpty(), vm.playerPositionFlow.value)
+            resumeEditorPreview(
+                player,
+                state.project?.clips.orEmpty(),
+                vm.playerPositionFlow.value,
+                projectTransitionPlan
+            )
+        } else {
+            player.pause()
+        }
+    }
+
+    LaunchedEffect(transitionPreviewPlayer, transitionPreviewReady, state.isPlaying) {
+        val player = transitionPreviewPlayer ?: return@LaunchedEffect
+        if (!transitionPreviewReady) {
+            player.pause()
+        } else if (state.isPlaying) {
+            player.play()
         } else {
             player.pause()
         }
@@ -778,6 +1063,9 @@ private fun EditorScreenContent(
         state.isPlaying,
         state.durationMs,
         state.playbackSpeed,
+        transitionPreviewPlayer,
+        transitionPreviewReady,
+        projectTransitionPlan,
         // Restart when the selected clip's curve changes so the loop
         // always reads the current points (not a stale snapshot).
         mainPreviewClip?.speedPoints,
@@ -804,18 +1092,21 @@ private fun EditorScreenContent(
                     ?.takeIf { it.hasSpeedCurve() }
                 // A cross-clip seek updates the project clock before the new
                 // media item is bound. Never overwrite it with the old source.
-                if (timedClip != null && (player?.currentMediaItem?.mediaId != timedClip.id ||
-                        timelinePreviewClip(state.project?.clips.orEmpty(), vm.playerPositionFlow.value)?.id != timedClip.id)) {
+                if (!transitionPreviewReady && timedClip != null &&
+                    (player?.currentMediaItem?.mediaId != timedClip.id ||
+                        (projectTransitionPlan.entryAt(vm.playerPositionFlow.value)?.clip
+                            ?: timelinePreviewClip(state.project?.clips.orEmpty(), vm.playerPositionFlow.value))?.id != timedClip.id)) {
                     delay(33)
                     continue
                 }
-                val mainEnd = state.project?.clips.orEmpty().filter {
-                    it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
-                }.sumOf { it.effectiveDurationMs().coerceAtLeast(0L) }
+                val mainEnd = projectTransitionPlan.durationMs
                 val inProjectTail = vm.playerPositionFlow.value >= mainEnd && totalDur > mainEnd
-                val newPos = if (inProjectTail) {
+                val newPos = if (transitionPreviewReady && transitionPreviewPlayer != null && !inProjectTail) {
+                    transitionPreviewPlayer!!.currentPosition.coerceAtLeast(0L)
+                } else if (inProjectTail) {
                     // V1 is finished, but placed audio/overlays can keep the
                     // project alive. Do not read a frozen/ended source clock.
+                    transitionPreviewPlayer?.pause()
                     if (player?.playWhenReady == true) {
                         player.pause()
                         timedClip?.let { player.seekTo((it.trimEndMs - 1L).coerceAtLeast(it.trimStartMs)) }
@@ -848,8 +1139,8 @@ private fun EditorScreenContent(
                             }
                         }
                         val clips = state.project?.clips ?: emptyList()
-                        com.apexstudio.app.domain.model.ClipTimeMapping
-                            .projectAtSourceTime(clips, curveClip, rawPos)
+                        projectTransitionPlan.projectTimeAtSourceTime(clips, curveClip, rawPos)
+                            ?: com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(clips, curveClip, rawPos)
                     } else {
                         // Curve cleared mid-playback: hand the rate back
                         // to the constant-speed LaunchedEffect.
@@ -865,11 +1156,11 @@ private fun EditorScreenContent(
                             }
                             lastCurveSpeedApplied = null
                         }
-                        if (timedClip != null) {
-                            com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
-                                state.project?.clips ?: emptyList(), timedClip, rawPos
-                            )
-                        } else rawPos
+                        projectTransitionPlan.projectTimeAtSourceTime(
+                            state.project?.clips ?: emptyList(), timedClip, rawPos
+                        ) ?: com.apexstudio.app.domain.model.ClipTimeMapping.projectAtSourceTime(
+                            state.project?.clips ?: emptyList(), timedClip, rawPos
+                        )
                     }
                 } else {
                     // Player-less playback (photo clips): extrapolate from
@@ -885,7 +1176,8 @@ private fun EditorScreenContent(
                     lastAudioSyncAt = now
                     lastAudioSyncPos = totalDur
                 } else {
-                    val crossedBoundary = timelinePreviewClip(state.project?.clips.orEmpty(), newPos)?.id != mainPreviewClip?.id
+                    val crossedBoundary = (projectTransitionPlan.entryAt(newPos)?.clip
+                        ?: timelinePreviewClip(state.project?.clips.orEmpty(), newPos))?.id != mainPreviewClip?.id
                     vm.setPlayerPosition(newPos, forceStateSync = crossedBoundary)
                     // Drift-correction only: sync audio when 250ms elapsed
                     // or the position jumped (seek/loop), never every tick.
@@ -904,19 +1196,24 @@ private fun EditorScreenContent(
     }
 
     val seekPlayerAndState: (Long) -> Unit = remember(
-        exoPlayer, state.durationMs, audioPlaybackManager,
+        exoPlayer, transitionPreviewPlayer, transitionPreviewReady, state.durationMs, audioPlaybackManager,
         mainPreviewClip?.id, mainPreviewClip?.speedPoints,
         mainPreviewClip?.speedMultiplier,
-        state.project?.clips
+        state.project?.clips, projectTransitionPlan
     ) {
         { targetMs ->
             val clamped = targetMs.coerceIn(0L, state.durationMs.coerceAtLeast(1L))
             val clips = state.project?.clips.orEmpty()
-            val targetClip = timelinePreviewClip(clips, clamped)
+            val targetClip = projectTransitionPlan.entryAt(clamped)?.clip ?: timelinePreviewClip(clips, clamped)
             // Same-source seek is immediate; cross-source seeks are completed
             // by the binding effect using the exact requested project time.
-            if (targetClip?.type == ClipType.VIDEO && exoPlayer?.currentMediaItem?.mediaId == targetClip.id) {
-                exoPlayer?.seekTo(com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(clips, targetClip, clamped))
+            if (transitionPreviewReady) {
+                transitionPreviewPlayer?.seekTo(clamped)
+            } else if (targetClip?.type == ClipType.VIDEO && exoPlayer?.currentMediaItem?.mediaId == targetClip.id) {
+                exoPlayer?.seekTo(
+                    projectTransitionPlan.sourceTimeAt(clamped)
+                        ?: com.apexstudio.app.domain.model.ClipTimeMapping.sourceAtProjectTime(clips, targetClip, clamped)
+                )
             }
             audioPlaybackManager.seekTo(clamped)
             vm.seekTo(clamped)
@@ -1046,6 +1343,8 @@ private fun EditorScreenContent(
             state = state,
             vm = vm,
             exoPlayer = exoPlayer,
+            previewPlayer = activePreviewPlayer,
+            isTransitionPreview = transitionPreviewReady,
             isCoverMode = isCoverMode,
             isTimelineFocusMode = isTimelineFocusMode,
             isFullscreenPreview = state.isFullscreenPreview,

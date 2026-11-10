@@ -94,7 +94,7 @@ private fun EditorViewModel.updateAudioPlacement(
         val after = transform(before)
         val tracks = project.audioTracks.map { if (it.id == trackId) after else it }
         updatedTracks = tracks
-        val clipDuration = computeTimelineDurationMs(project.clips, emptyList())
+        val clipDuration = computeTimelineDurationMs(project.clips, emptyList(), project.transitions)
         val audioDuration = tracks.maxOfOrNull { it.projectEndMs() } ?: 0L
         val duration = maxOf(clipDuration, audioDuration).coerceAtLeast(1_000L)
         val typed = project.timeline.tracks.filterIsInstance<SharedAudioTrack>()

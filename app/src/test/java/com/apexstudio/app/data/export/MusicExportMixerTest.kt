@@ -64,7 +64,9 @@ class MusicExportMixerTest {
         assertTrue(mixDurationFitsWav(withinLimitUs, sampleRate, maxFrames))
         assertFalse(mixDurationFitsWav(withinLimitUs + 1_000_000L, sampleRate, maxFrames))
         assertNull(mixDurationFrames(0L, sampleRate))
+        assertNull(mixDurationFrames(-1L, sampleRate))
         assertTrue(mixDurationFitsWav(0L, sampleRate, maxFrames))
+        assertTrue(mixDurationFitsWav(-1L, sampleRate, maxFrames))
     }
 
     @Test

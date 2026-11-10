@@ -185,7 +185,7 @@ object MusicExportMixer {
         // Bail before burning decode/mix CPU on a mix that could never fit
         // in the 32-bit WAV intermediate (only checkable when the video
         // duration is known; otherwise the mix stops at source exhaustion).
-        require(mixDurationFitsWav(videoDurationUs, SAMPLE_RATE, MAX_WAV_FRAMES)) {
+        require(mixDurationFitsWav(videoDurationUs, SAMPLE_RATE, MAX_WAV_FRAMES.toLong())) {
             "Music mix too long for the WAV intermediate (~3.4h max)"
         }
         val durationCapFrames = mixDurationFrames(videoDurationUs, SAMPLE_RATE) ?: Long.MAX_VALUE

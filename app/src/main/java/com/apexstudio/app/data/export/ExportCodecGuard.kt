@@ -19,6 +19,51 @@ internal inline fun <T> setupWithCleanup(
     }
 }
 
+/** Keeps an acquired resource alive after successful preparation, but releases it if preparation fails. */
+internal inline fun <T, R> prepareWithCleanup(
+    resource: T,
+    prepare: (T) -> R,
+    cleanup: (T) -> Unit
+): R {
+    try {
+        return prepare(resource)
+    } catch (failure: Throwable) {
+        try {
+            cleanup(resource)
+        } catch (cleanupFailure: Throwable) {
+            failure.addSuppressed(cleanupFailure)
+        }
+        throw failure
+    }
+}
+
+/** Releases a native handle on every exit, including nested acquisition failure and cancellation. */
+internal inline fun <T, R> withExportResource(
+    acquire: () -> T,
+    cleanup: (T) -> Unit,
+    block: (T) -> R
+): R {
+    val resource = acquire()
+    var primaryFailure: Throwable? = null
+    try {
+        return block(resource)
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
+    } finally {
+        val priorFailure = primaryFailure
+        if (priorFailure == null) {
+            cleanup(resource)
+        } else {
+            try {
+                cleanup(resource)
+            } catch (cleanupFailure: Throwable) {
+                priorFailure.addSuppressed(cleanupFailure)
+            }
+        }
+    }
+}
+
 /** Monotonic no-progress timeout for codec input/output loops. */
 internal class ExportCodecWatchdog(
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,

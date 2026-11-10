@@ -3,12 +3,14 @@ package com.apexstudio.app.data.export
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import com.apexstudio.app.domain.model.AudioTrack
 import java.io.File
+import java.util.concurrent.CancellationException
 
 /**
  * Unit tests for the pure helpers in [MusicExportMixer].
@@ -18,6 +20,78 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MusicExportMixerTest {
+
+    @Test
+    fun `audio track enumeration failure releases its extractor before retry`() {
+        val extractor = Any()
+        val enumerationFailure = IllegalStateException("track format unavailable")
+        var releases = 0
+
+        val failure = runCatching {
+            prepareWithCleanup(
+                resource = extractor,
+                prepare = { throw enumerationFailure },
+                cleanup = { releases++ }
+            )
+        }.exceptionOrNull()
+
+        assertSame(enumerationFailure, failure)
+        assertEquals(1, releases)
+
+        repeat(2) {
+            withExportResource(
+                acquire = { Any() },
+                cleanup = { releases++ }
+            ) { /* next export owns an independent extractor */ }
+        }
+        assertEquals("failed preparation and both retries release their handles", 3, releases)
+    }
+
+    @Test
+    fun `muxer construction failure releases the already-open video extractor`() {
+        var extractorReleases = 0
+        var muxerReleases = 0
+        val muxerFailure = IllegalStateException("cannot open mux output")
+
+        val failure = runCatching {
+            withExportResource(
+                acquire = { "video extractor" },
+                cleanup = { extractorReleases++ }
+            ) {
+                withExportResource(
+                    acquire = { throw muxerFailure },
+                    cleanup = { muxerReleases++ }
+                ) { /* unreachable */ }
+            }
+        }.exceptionOrNull()
+
+        assertSame(muxerFailure, failure)
+        assertEquals(1, extractorReleases)
+        assertEquals(0, muxerReleases)
+    }
+
+    @Test
+    fun `cancellation while muxing releases both native handles`() {
+        var extractorReleases = 0
+        var muxerReleases = 0
+        val cancellation = CancellationException("export cancelled")
+
+        val failure = runCatching {
+            withExportResource(
+                acquire = { "video extractor" },
+                cleanup = { extractorReleases++ }
+            ) {
+                withExportResource(
+                    acquire = { "muxer" },
+                    cleanup = { muxerReleases++ }
+                ) { throw cancellation }
+            }
+        }.exceptionOrNull()
+
+        assertSame(cancellation, failure)
+        assertEquals(1, extractorReleases)
+        assertEquals(1, muxerReleases)
+    }
 
     @Test
     fun `undecodable original audio preserves the input instead of muxing music only`() {

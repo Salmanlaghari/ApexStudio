@@ -33,6 +33,37 @@ class ExportSizeEstimationTest {
         assertEquals(13_000_000L, estimateVideoPayloadBytes(projectDurationMs, 8_000_000))
     }
 
+    @Test fun longHighBitrateExportIsBlockedWhenFreeSpaceCannotHoldPayloadAndHeadroom() {
+        val estimate = estimateExportPayload(180_000L, 100_000_000, audioExpected = false)!!
+        val availableBytes = estimate.videoBytes + 64L * 1024L * 1024L - 1L
+
+        val result = preflightExportStorage(estimate, availableBytes)
+
+        assertTrue(result is ExportStoragePreflightResult.Insufficient)
+        val insufficient = result as ExportStoragePreflightResult.Insufficient
+        assertTrue(insufficient.requiredBytes > insufficient.availableBytes)
+    }
+
+    @Test fun exportWithEnoughFreeSpacePassesStoragePreflight() {
+        val estimate = estimateExportPayload(180_000L, 24_000_000, audioExpected = true)!!
+        val headroomBytes = maxOf(64L * 1024L * 1024L, estimate.videoBytes / 10L)
+        val availableBytes = estimate.videoBytes + headroomBytes
+
+        assertEquals(
+            ExportStoragePreflightResult.Enough(availableBytes, availableBytes),
+            preflightExportStorage(estimate, availableBytes)
+        )
+    }
+
+    @Test fun unknownEstimateOrStorageReadingDoesNotInventARequiredSize() {
+        assertEquals(ExportStoragePreflightResult.Unknown, preflightExportStorage(null, 1_000L))
+        assertEquals(ExportStoragePreflightResult.Unknown, preflightExportStorage(null, null))
+        assertEquals(
+            ExportStoragePreflightResult.Unknown,
+            preflightExportStorage(estimateExportPayload(0L, 24_000_000, audioExpected = false), 1_000L)
+        )
+    }
+
     @Test fun unknownAudioBitrateNeverBecomesAFalseTotalAndKnownAudioScales() {
         val unknownAudio = estimateExportPayload(1_000L, 8_000_000, audioExpected = true)
         assertEquals(1_000_000L, unknownAudio?.videoBytes)

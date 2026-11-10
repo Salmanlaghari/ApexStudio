@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -160,7 +161,9 @@ class ExportTimestampParityInstrumentedTest {
         val durationToleranceUs = 150_000L
         assertTrue(
             "$label duration ${output.durationUs}us must stay within ${durationToleranceUs}us of planned " +
-                "$expectedDurationUs us; encoded video PTS=${timestamps.joinToString()}",
+                "$expectedDurationUs us; movie duration=${output.movieDurationUs}us; " +
+                "audio track duration=${output.audioDurationUs}us; track durations=${output.trackDurations}; " +
+                "encoded video PTS=${timestamps.joinToString()}",
             abs(output.durationUs - expectedDurationUs) <= durationToleranceUs
         )
         // Frame dropping at the requested average rate may discard a source sample; its nearest
@@ -191,13 +194,28 @@ class ExportTimestampParityInstrumentedTest {
 
     private fun readVideoTrack(file: File): VideoTrack {
         val extractor = MediaExtractor()
+        var audioDurationUs: Long? = null
+        var trackDurations = ""
+        var durationUs = 0L
+        var presentationTimes: List<Long> = emptyList()
         try {
             extractor.setDataSource(file.absolutePath)
+            val durations = mutableListOf<String>()
+            for (trackIndex in 0 until extractor.trackCount) {
+                val trackFormat = extractor.getTrackFormat(trackIndex)
+                val mime = trackFormat.getString(MediaFormat.KEY_MIME).orEmpty()
+                val trackDurationUs = if (trackFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                    trackFormat.getLong(MediaFormat.KEY_DURATION)
+                } else null
+                durations += "$mime=${trackDurationUs ?: "unset"}"
+                if (mime.startsWith("audio/")) audioDurationUs = trackDurationUs
+            }
+            trackDurations = durations.joinToString()
             val index = (0 until extractor.trackCount).firstOrNull {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
             } ?: error("${file.name} has no video track")
             val format = extractor.getTrackFormat(index)
-            val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+            durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 format.getLong(MediaFormat.KEY_DURATION)
             } else 0L
             extractor.selectTrack(index)
@@ -206,17 +224,35 @@ class ExportTimestampParityInstrumentedTest {
                 timestamps += extractor.sampleTime
                 if (!extractor.advance()) break
             }
-            val presentationTimes = timestamps.sorted()
-            val gaps = presentationTimes.zipWithNext { first, second -> second - first }
-            return VideoTrack(durationUs, presentationTimes, gaps.maxOrNull() ?: 0L)
+            presentationTimes = timestamps.sorted()
         } finally {
             extractor.release()
         }
+        val retriever = MediaMetadataRetriever()
+        val movieDurationUs = try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()?.times(1_000L)
+        } finally {
+            retriever.release()
+        }
+        val gaps = presentationTimes.zipWithNext { first, second -> second - first }
+        return VideoTrack(
+            durationUs,
+            presentationTimes,
+            gaps.maxOrNull() ?: 0L,
+            movieDurationUs,
+            audioDurationUs,
+            trackDurations
+        )
     }
 
     private data class VideoTrack(
         val durationUs: Long,
         val presentationTimesUs: List<Long>,
-        val maxGapUs: Long
+        val maxGapUs: Long,
+        val movieDurationUs: Long?,
+        val audioDurationUs: Long?,
+        val trackDurations: String
     )
 }

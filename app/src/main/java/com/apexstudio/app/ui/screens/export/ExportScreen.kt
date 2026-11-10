@@ -146,10 +146,19 @@ fun ExportScreen(
     val requestVideoExport: () -> Unit = {
         if (export.isExporting) vm.cancelCurrentExport()
         else if (canRequestVideoExport) {
-            if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
-                resolution = selectedResolution, fps = selectedFps.toInt(), quality = selectedQuality,
-                aspectRatio = selectedAspect, bitrateMbps = selectedBitrateMbps
-            )
+            vm.setExportError(null)
+            when (val preflight = preflightExportStorage(payloadEstimate, availableExportStorageBytes(context))) {
+                is ExportStoragePreflightResult.Insufficient -> vm.setExportError(
+                    "Not enough free storage for this export. Estimated payload plus safety margin: " +
+                        "${formatByteCount(preflight.requiredBytes)}; available: " +
+                        "${formatByteCount(preflight.availableBytes)}. Choose a lower bitrate/resolution " +
+                        "or free storage, then retry."
+                )
+                else -> if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
+                    resolution = selectedResolution, fps = selectedFps.toInt(), quality = selectedQuality,
+                    aspectRatio = selectedAspect, bitrateMbps = selectedBitrateMbps
+                )
+                }
         }
     }
     // A new URI gets a fresh state immediately; never display the previous file's bytes while reading it.

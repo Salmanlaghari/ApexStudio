@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.export
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.provider.OpenableColumns
 import java.io.File
 import kotlin.math.floor
@@ -35,6 +36,48 @@ internal fun estimateExportPayload(
     }
     return ExportPayloadEstimate(videoBytes, audioBytes, totalBytes)
 }
+
+internal sealed interface ExportStoragePreflightResult {
+    data object Unknown : ExportStoragePreflightResult
+    data class Enough(val requiredBytes: Long, val availableBytes: Long) : ExportStoragePreflightResult
+    data class Insufficient(val requiredBytes: Long, val availableBytes: Long) : ExportStoragePreflightResult
+}
+
+/** Require the estimated payload plus headroom before starting a long video render. */
+internal fun preflightExportStorage(
+    estimate: ExportPayloadEstimate?,
+    availableBytes: Long?
+): ExportStoragePreflightResult {
+    if (estimate == null || availableBytes == null || availableBytes < 0L) {
+        return ExportStoragePreflightResult.Unknown
+    }
+    // If audio size is not configured, keep the known video estimate and retain
+    // headroom for audio/container overhead rather than treating unknown as zero.
+    val payloadBytes = (estimate.totalPayloadBytes ?: estimate.videoBytes).coerceAtLeast(0L)
+    val headroomBytes = maxOf(MIN_EXPORT_STORAGE_HEADROOM_BYTES, payloadBytes / 10L)
+    val requiredBytes = if (payloadBytes > Long.MAX_VALUE - headroomBytes) {
+        Long.MAX_VALUE
+    } else {
+        payloadBytes + headroomBytes
+    }
+    return if (availableBytes < requiredBytes) {
+        ExportStoragePreflightResult.Insufficient(requiredBytes, availableBytes)
+    } else {
+        ExportStoragePreflightResult.Enough(requiredBytes, availableBytes)
+    }
+}
+
+/** App-private export files live on this volume; null means the storage reading was unavailable. */
+internal fun availableExportStorageBytes(context: Context): Long? {
+    return try {
+        val directory = context.getExternalFilesDir(null) ?: return null
+        StatFs(directory.absolutePath).availableBytes.takeIf { it >= 0L }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private const val MIN_EXPORT_STORAGE_HEADROOM_BYTES = 64L * 1024L * 1024L
 
 internal fun formatByteCount(bytes: Long): String {
     if (bytes < 0L) return "Unavailable"

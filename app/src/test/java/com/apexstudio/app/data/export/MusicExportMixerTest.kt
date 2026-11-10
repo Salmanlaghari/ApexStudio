@@ -70,6 +70,45 @@ class MusicExportMixerTest {
     }
 
     @Test
+    fun `music mix storage estimate covers WAV spool mux output and reserve`() {
+        assertEquals(
+            13_300_034L,
+            estimateMusicMixRequiredBytes(
+                videoDurationUs = 10_000_000L,
+                sampleRate = 44_100,
+                inputVideoBytes = 10_000_000L,
+                aacBitrate = 128_000
+            )
+        )
+    }
+
+    @Test
+    fun `unknown duration has no fabricated music mix storage estimate`() {
+        assertNull(estimateMusicMixRequiredBytes(0L, 44_100, 10_000L, 128_000))
+        assertNull(estimateMusicMixRequiredBytes(-1L, 44_100, 10_000L, 128_000))
+    }
+
+    @Test
+    fun `music mix storage arithmetic saturates instead of wrapping`() {
+        assertEquals(
+            Long.MAX_VALUE,
+            estimateMusicMixRequiredBytes(Long.MAX_VALUE, 44_100, Long.MAX_VALUE, 128_000)
+        )
+    }
+
+    @Test
+    fun `music mix storage preflight rejects shortages and accepts exact capacity`() {
+        val requiredBytes = 2_000_000L
+        val failure = runCatching {
+            requireMusicMixStorageAvailable(requiredBytes - 1L, requiredBytes)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(failure?.message.orEmpty().contains("Free up storage and try again"))
+        requireMusicMixStorageAvailable(requiredBytes, requiredBytes)
+    }
+
+    @Test
     fun `audio track enumeration failure releases its extractor before retry`() {
         val extractor = Any()
         val enumerationFailure = IllegalStateException("track format unavailable")

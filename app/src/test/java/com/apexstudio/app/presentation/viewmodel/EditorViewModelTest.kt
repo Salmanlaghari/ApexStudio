@@ -267,4 +267,25 @@ class EditorViewModelTest {
         vm.undo()
         assertEquals(originalKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
     }
+
+    @Test
+    fun `transition application refuses a boundary whose overlap is clamped to zero`() {
+        val first = MediaClip(
+            "tiny-a", "Tiny A", "file:///tiny-a.mp4", 1L, trimStartMs = 0L, trimEndMs = 1L
+        )
+        val second = MediaClip(
+            "tiny-b", "Tiny B", "file:///tiny-b.mp4", 1L, trimStartMs = 0L, trimEndMs = 1L
+        )
+        val vm = viewModel().also {
+            it._state.value = it.state.value.copy(
+                project = Project("project", "Project", 2L, clips = listOf(first, second)),
+                durationMs = 2L
+            )
+        }
+
+        vm.applyTransition(first.id, second.id, "cross_dissolve", 500L)
+
+        assertTrue(vm.state.value.project!!.transitions.isEmpty())
+        assertTrue(vm.undoStack.isEmpty())
+    }
 }

@@ -63,6 +63,28 @@ class PackedTransitionShaderSourceTest {
     }
 
     @Test
+    fun `lexer ignores quoted literals numeric literals and continued preprocessor directives`() {
+        val injected = """#define UNUSED_SAMPLE texture(uFrom, uv) \
++ texture(uTo, uv)
+#define UNUSED_LABEL "texture(uFrom, uv)"
+const float numeric = 1e-3 + .25 + 10u;
+const char* label = "texture(uFrom, uv)";
+vec4 transition(vec2 uv) {"""
+        val source = shader().replace("vec4 transition(vec2 uv) {", injected)
+
+        val rewritten = PackedTransitionShaderSource.rewrite(source)
+
+        assertNotNull(rewritten)
+        assertTrue(rewritten!!.contains("#define UNUSED_SAMPLE texture(uFrom, uv)"))
+        assertTrue(rewritten.contains("+ texture(uTo, uv)"))
+        assertTrue(rewritten.contains("#define UNUSED_LABEL \"texture(uFrom, uv)\""))
+        assertTrue(rewritten.contains("const float numeric = 1e-3 + .25 + 10u;"))
+        assertTrue(rewritten.contains("const char* label = \"texture(uFrom, uv)\";"))
+        assertTrue(rewritten.contains("texture(uPacked, packedFrom(uv))"))
+        assertTrue(rewritten.contains("texture(uPacked, packedTo(uv))"))
+    }
+
+    @Test
     fun `unsupported active sampler use is rejected`() {
         val source = shader().replace(
             "return mix(getFromColor(uv), getToColor(uv), uProgress);",
@@ -82,6 +104,11 @@ class PackedTransitionShaderSourceTest {
         assertNotNull("Transition assets directory is required for this test", assetRoot)
         val shaders = assetRoot!!.listFiles { file -> file.extension == "glsl" }.orEmpty()
         assertTrue("Expected the 100-plus bundled transition shaders", shaders.size >= 100)
+        val manifestIds = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"")
+            .findAll(File(assetRoot, "manifest.json").readText())
+            .map { it.groupValues[1] }
+            .toSet()
+        assertEquals(manifestIds, BundledPackedTransitionIds.all)
 
         val unsupported = shaders.filter { PackedTransitionShaderSource.rewrite(it.readText()) == null }
         assertTrue(

@@ -71,6 +71,9 @@ vec2 packedTo(vec2 uv) {
 
     private data class Token(val text: String, val start: Int, val end: Int)
     private data class Replacement(val start: Int, val end: Int, val text: String)
+    private val NUMBER_LITERAL = Regex(
+        """^(?:0[xX][0-9A-Fa-f]+(?:\.[0-9A-Fa-f]*)?(?:[pP][+-]?\d+)?|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)[fFuU]*"""
+    )
 
     private fun declarationRange(tokens: List<Token>, index: Int, sampler: String): Pair<Int, Int>? {
         if (index + 3 >= tokens.size) return null
@@ -136,25 +139,78 @@ vec2 packedTo(vec2 uv) {
         return result.toString()
     }
 
+    private fun skipPreprocessorDirective(source: String, start: Int): Int {
+        var lineStart = start
+        while (lineStart < source.length) {
+            val newline = source.indexOf('\n', lineStart)
+            val lineEnd = if (newline < 0) source.length else newline
+            var lastContent = lineEnd - 1
+            if (lastContent >= lineStart && source[lastContent] == '\r') lastContent--
+            val continues = lastContent >= lineStart && source[lastContent] == '\\'
+            if (newline < 0) return source.length
+            lineStart = newline + 1
+            if (!continues) return lineStart
+        }
+        return source.length
+    }
+
+    private fun skipQuotedLiteral(source: String, start: Int, quote: Char): Int {
+        var index = start + 1
+        while (index < source.length) {
+            when (source[index]) {
+                quote -> return index + 1
+                '\\' -> {
+                    if (index + 1 < source.length && source[index + 1] != '\n') index += 2
+                    else return index
+                }
+                '\n' -> return index
+                else -> index++
+            }
+        }
+        return index
+    }
+
     private fun lex(source: String): List<Token> {
         val tokens = ArrayList<Token>()
         var index = 0
+        var lineHasCode = false
         while (index < source.length) {
             val character = source[index]
-            if (character.isWhitespace()) {
+            if (character == '\n') {
+                lineHasCode = false
+                index++
+            } else if (character.isWhitespace()) {
                 index++
             } else if (character == '/' && index + 1 < source.length && source[index + 1] == '/') {
                 index = source.indexOf('\n', index + 2).let { if (it < 0) source.length else it + 1 }
+                lineHasCode = false
             } else if (character == '/' && index + 1 < source.length && source[index + 1] == '*') {
                 val end = source.indexOf("*/", index + 2)
-                index = if (end < 0) source.length else end + 2
+                val afterComment = if (end < 0) source.length else end + 2
+                for (commentIndex in index until afterComment) {
+                    if (source[commentIndex] == '\n') lineHasCode = false
+                }
+                index = afterComment
+            } else if (character == '#' && !lineHasCode) {
+                index = skipPreprocessorDirective(source, index)
+                lineHasCode = false
+            } else if (character == '"' || character == '\'') {
+                lineHasCode = true
+                index = skipQuotedLiteral(source, index, character)
+            } else if (character.isDigit() ||
+                (character == '.' && index + 1 < source.length && source[index + 1].isDigit())
+            ) {
+                lineHasCode = true
+                index = NUMBER_LITERAL.matchAt(source, index)?.range?.last?.plus(1) ?: index + 1
             } else if (character.isLetter() || character == '_') {
                 val start = index++
                 while (index < source.length && (source[index].isLetterOrDigit() || source[index] == '_')) index++
                 tokens += Token(source.substring(start, index), start, index)
+                lineHasCode = true
             } else {
                 tokens += Token(character.toString(), index, index + 1)
                 index++
+                lineHasCode = true
             }
         }
         return tokens

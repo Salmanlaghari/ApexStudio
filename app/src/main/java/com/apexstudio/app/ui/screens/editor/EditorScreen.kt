@@ -988,6 +988,7 @@ private fun EditorScreenContent(
             if (state.isPlaying) player.play() else player.pause()
         } catch (error: Exception) {
             Log.e("EditorScreen", "Transition preview composition failed; using source player", error)
+            runCatching { player.release() }
             transitionPreviewReady = false
             transitionPreviewFailed = true
             transitionPreviewPlayer = null

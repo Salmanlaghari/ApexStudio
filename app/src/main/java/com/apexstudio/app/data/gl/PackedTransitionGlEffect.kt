@@ -241,7 +241,6 @@ private class PackedTransitionProgram(
         programCache[glId] = ProgramEntry(program, info.params)
         while (programCache.size > MAX_CACHED_PROGRAMS) {
             val eldest = programCache.entries.iterator().next()
-            if (eldest.key == glId && programCache.size == 1) break
             eldest.value.program.delete()
             programCache.remove(eldest.key)
         }

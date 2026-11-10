@@ -85,8 +85,25 @@ fun TransitionPickerSheet(
         mutableStateOf(currentTransition?.durationMs ?: 500L)
     }
     val isVideoToVideoBoundary = fromClip?.type == ClipType.VIDEO && toClip?.type == ClipType.VIDEO
+    val selectedTransitionCanOverlap = remember(fromClip?.id, toClip?.id, durationMs) {
+        val from = fromClip
+        val to = toClip
+        if (from?.type != ClipType.VIDEO || to?.type != ClipType.VIDEO) {
+            false
+        } else {
+            com.apexstudio.app.data.export.ProjectTransitionTimeline.plannedDurationMs(
+                listOf(from, to),
+                com.apexstudio.app.domain.model.ClipTransition(
+                    fromClipId = from.id,
+                    toClipId = to.id,
+                    durationMs = durationMs
+                )
+            ) > 0L
+        }
+    }
     val canApplySelectedTransition = selectedTypeId == "none" ||
         (isVideoToVideoBoundary &&
+            selectedTransitionCanOverlap &&
             com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(selectedTypeId))
     var activeCategory by remember {
         mutableStateOf(TransitionCategory.ALL)
@@ -472,6 +489,13 @@ fun TransitionPickerSheet(
         if (!isVideoToVideoBoundary && selectedTypeId != "none") {
             Text(
                 "Transitions currently apply only between adjacent video clips.",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        } else if (isVideoToVideoBoundary && selectedTypeId != "none" && !selectedTransitionCanOverlap) {
+            Text(
+                "These clips are too short for a visible overlap at this duration.",
                 color = Color(0xFF94A3B8),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 8.dp)

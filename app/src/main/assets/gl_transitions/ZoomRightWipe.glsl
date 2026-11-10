@@ -1,5 +1,5 @@
 #version 300 es
-// ZoomRigthWipe - ported from gl-transitions (https://github.com/gl-transitions/gl-transitions), MIT licensed.
+// ZoomRightWipe - ported from gl-transitions (https://github.com/gl-transitions/gl-transitions), MIT licensed.
 // Original author(s): Handk
 // Adapted for Android GLSL ES 3.00 (fragment shader).
 precision highp float;

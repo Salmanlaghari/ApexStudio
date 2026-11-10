@@ -196,6 +196,13 @@ internal object ProjectTransitionTimeline {
         return Plan(entries, plannedTransitions, audioSegments, duration)
     }
 
+    /** Returns the rendered overlap duration, or zero when the requested boundary cannot overlap. */
+    fun plannedDurationMs(clips: List<MediaClip>, transition: ClipTransition): Long =
+        build(clips, listOf(transition)).transitions.firstOrNull {
+            it.transition.fromClipId == transition.fromClipId &&
+                it.transition.toClipId == transition.toClipId
+        }?.durationMs ?: 0L
+
     /** Drops only transition references made stale by clip-order/type edits. */
     fun normalizeTransitions(clips: List<MediaClip>, transitions: List<ClipTransition>): List<ClipTransition> {
         val main = clips.filter {

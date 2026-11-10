@@ -64,7 +64,7 @@ internal object BundledPackedTransitionIds {
         "WaterDrop",
         "ZoomInCircles",
         "ZoomLeftWipe",
-        "ZoomRigthWipe",
+        "ZoomRightWipe",
         "angular",
         "burn",
         "burn0",

@@ -465,4 +465,22 @@ class ProjectCompositionExportTest {
             ExportEngine.ExportConfig(clipTransitions = listOf(duplicate, duplicate.copy(id = "duplicate-2")))
         )!!.contains("duplicate transition"))
     }
+
+    @Test
+    fun `whole project export rejects transitions clamped to zero overlap`() {
+        val tinyA = clip("tiny-a").copy(durationMs = 1L, trimStartMs = 0L, trimEndMs = 1L)
+        val tinyB = clip("tiny-b").copy(durationMs = 1L, trimStartMs = 0L, trimEndMs = 1L)
+        val transition = ClipTransition(
+            id = "tiny-a-b",
+            fromClipId = tinyA.id,
+            toClipId = tinyB.id,
+            durationMs = 500L
+        )
+
+        val reason = projectCompositionUnsupportedReason(
+            listOf(tinyA, tinyB), ExportEngine.ExportConfig(clipTransitions = listOf(transition))
+        )
+
+        assertTrue(reason!!.contains("cannot produce a visible overlap"))
+    }
 }

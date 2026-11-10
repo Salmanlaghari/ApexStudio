@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.viewModelScope
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
@@ -191,7 +192,6 @@ fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: 
         mainClips[fromIndex].type != com.apexstudio.app.domain.model.ClipType.VIDEO ||
         mainClips[toIndex].type != com.apexstudio.app.domain.model.ClipType.VIDEO
     ) return
-    pushUndo()
     val existing = proj.transitions.filterNot { it.fromClipId == fromClipId && it.toClipId == toClipId }
     val newTransition = ClipTransition(
         fromClipId = fromClipId,
@@ -199,6 +199,8 @@ fun EditorViewModel.applyTransition(fromClipId: String, toClipId: String, type: 
         type = type,
         durationMs = durationMs
     )
+    if (ProjectTransitionTimeline.plannedDurationMs(proj.clips, newTransition) <= 0L) return
+    pushUndo()
     val updatedTransitions = existing + newTransition
     val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, updatedTransitions)
     val updatedProject = proj.copy(
@@ -247,7 +249,6 @@ fun EditorViewModel.applyTransitionToAll(type: String, durationMs: Long = 500L) 
     }
     if (clips.size < 2) return
 
-    pushUndo()
     val newTransitions = mutableListOf<ClipTransition>()
     for (i in 0 until clips.size - 1) {
         if (clips[i].type != com.apexstudio.app.domain.model.ClipType.VIDEO ||
@@ -262,10 +263,14 @@ fun EditorViewModel.applyTransitionToAll(type: String, durationMs: Long = 500L) 
             )
         )
     }
-    val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, newTransitions)
+    val plannedTransitions = ProjectTransitionTimeline.build(proj.clips, newTransitions)
+        .transitions.map { it.transition }
+    if (plannedTransitions.isEmpty()) return
+    pushUndo()
+    val newDuration = computeTimelineDurationMs(proj.clips, proj.audioTracks, plannedTransitions)
     val updatedProject = proj.copy(
         durationMs = newDuration,
-        transitions = newTransitions,
+        transitions = plannedTransitions,
         lastTransitionType = type,
         lastTransitionDurationMs = durationMs
     )

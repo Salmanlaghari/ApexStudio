@@ -122,6 +122,18 @@ class ProjectTransitionTimelineTest {
     }
 
     @Test
+    fun `planned duration is zero when the clip halves clamp a transition to zero`() {
+        val clips = listOf(
+            video("a", trimEnd = 1L, duration = 1L),
+            video("b", trimEnd = 1L, duration = 1L)
+        )
+        val requested = transition("a", "b", 100L)
+
+        assertEquals(0L, ProjectTransitionTimeline.plannedDurationMs(clips, requested))
+        assertTrue(ProjectTransitionTimeline.build(clips, listOf(requested)).transitions.isEmpty())
+    }
+
+    @Test
     fun `adjacent transitions leave middle clip windows non-overlapping`() {
         val plan = ProjectTransitionTimeline.build(
             listOf(video("a"), video("b"), video("c")),

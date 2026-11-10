@@ -141,6 +141,9 @@ internal fun projectCompositionUnsupportedReason(
             if (!PackedTransitionGlEffect.supportsTransitionType(transition.type)) {
                 return "Project transition '${transition.id}' uses an unsupported transition type '${transition.type}'."
             }
+            if (ProjectTransitionTimeline.plannedDurationMs(clips, transition) <= 0L) {
+                return "Project transition '${transition.id}' cannot produce a visible overlap with these clips."
+            }
         }
     }
 

@@ -1,0 +1,78 @@
+package com.apexstudio.app.domain.model
+
+/** Additional authored recipes for the shared per-pixel preview/export shader. */
+internal object WorkspaceEffectPresetExpansion {
+    data class Recipe(
+        val id: String,
+        val label: String,
+        val group: String,
+        val description: String,
+        val swatch: Long,
+        val gainR: Float,
+        val gainG: Float,
+        val gainB: Float,
+        val offsetR: Float,
+        val offsetG: Float,
+        val offsetB: Float,
+        val contrast: Float,
+        val saturation: Float,
+        val gamma: Float,
+    )
+
+    val recipes = listOf(
+        Recipe("peach_portrait", "Peach Portrait", "Portrait", "Soft peach warmth with gentle contrast", 0xFFE5B59B, 1.08f, 1.00f, .92f, .035f, .020f, .012f, .91f, .82f, .96f),
+        Recipe("portrait_glow", "Portrait Glow", "Portrait", "Bright skin-friendly warmth and lifted shadows", 0xFFF0C9AB, 1.09f, 1.03f, .95f, .060f, .044f, .034f, .84f, .78f, .93f),
+        Recipe("golden_skin", "Golden Skin", "Portrait", "Golden highlights with natural muted color", 0xFFD8A875, 1.12f, 1.04f, .89f, .028f, .014f, -.004f, 1.02f, .88f, .95f),
+        Recipe("soft_olive_portrait", "Soft Olive", "Portrait", "Quiet olive shadows and warm mids", 0xFFA8A17B, 1.01f, 1.05f, .88f, .042f, .034f, .014f, .89f, .69f, 1.01f),
+        Recipe("rose_portrait", "Rose Portrait", "Portrait", "Rosy mids with soft highlight roll-off", 0xFFD7959C, 1.08f, .96f, 1.01f, .038f, .020f, .034f, .88f, .83f, .98f),
+        Recipe("porcelain_cool", "Cool Porcelain", "Portrait", "Clean cool balance and low saturation", 0xFFB3C3D4, .94f, 1.00f, 1.09f, .040f, .046f, .067f, .86f, .64f, 1.00f),
+        Recipe("amber_portrait", "Amber Portrait", "Portrait", "Warm amber highlights and deeper shadows", 0xFFC38B5B, 1.14f, 1.03f, .84f, .024f, .012f, -.016f, 1.08f, .86f, 1.05f),
+        Recipe("studio_cream", "Studio Cream", "Portrait", "Creamy neutral tone with soft contrast", 0xFFE0CCB4, 1.04f, 1.01f, .96f, .055f, .049f, .036f, .82f, .72f, .95f),
+        Recipe("natural_skin", "Natural Skin", "Portrait", "Balanced skin warmth without a strong cast", 0xFFCCA58A, 1.04f, 1.00f, .94f, .018f, .014f, .012f, .96f, .91f, .99f),
+        Recipe("sunset_portrait", "Sunset Portrait", "Portrait", "Sunset coral highlights and dusky shadows", 0xFFE19473, 1.13f, .97f, .92f, .028f, .002f, .008f, 1.04f, 1.02f, 1.01f),
+
+        Recipe("blue_hour", "Blue Hour", "Night", "Cobalt shadows and clear cool highlights", 0xFF557BAA, .86f, .95f, 1.16f, -.010f, .002f, .032f, 1.15f, .78f, 1.12f),
+        Recipe("neon_cyan", "Neon Cyan", "Night", "Electric cyan-blue contrast for night scenes", 0xFF35BBD1, .80f, 1.06f, 1.18f, -.016f, .022f, .040f, 1.25f, 1.22f, 1.04f),
+        Recipe("violet_night", "Violet Night", "Night", "Violet-magenta shadows with cool blues", 0xFF8060B8, 1.01f, .86f, 1.18f, .004f, -.014f, .034f, 1.18f, 1.06f, 1.10f),
+        Recipe("night_vision", "Night Vision", "Night", "Muted green monochrome night look", 0xFF71956E, .88f, 1.12f, .86f, .014f, .025f, .006f, 1.10f, .68f, 1.12f),
+        Recipe("deep_navy", "Deep Navy", "Night", "Dense navy shadows with restrained color", 0xFF3E537E, .83f, .91f, 1.14f, -.024f, -.014f, .020f, 1.29f, .58f, 1.16f),
+        Recipe("ultraviolet", "Ultraviolet", "Night", "Purple-blue cast with vivid color separation", 0xFF7952C8, 1.04f, .82f, 1.22f, .012f, -.023f, .040f, 1.16f, 1.30f, 1.02f),
+        Recipe("electric_lime", "Electric Lime", "Night", "Acid green accent for stylized city scenes", 0xFF9EB84D, .94f, 1.17f, .78f, .006f, .028f, -.012f, 1.20f, 1.24f, 1.03f),
+        Recipe("red_afterdark", "Red Afterdark", "Night", "Crimson reds and deep low-key contrast", 0xFF9A3E4D, 1.18f, .84f, .89f, .024f, -.020f, -.012f, 1.28f, .96f, 1.13f),
+        Recipe("moonlight", "Moonlight", "Night", "Silver-blue night color with lifted black detail", 0xFF879BB3, .91f, .99f, 1.10f, .030f, .036f, .055f, .92f, .59f, 1.08f),
+        Recipe("city_glow", "City Glow", "Night", "Warm streetlight highlights over cool shadows", 0xFFD28B62, 1.13f, .96f, 1.03f, .016f, -.006f, .018f, 1.12f, .97f, 1.06f),
+
+        Recipe("sahara", "Sahara", "Travel", "Sunlit ochre warmth and dusty mids", 0xFFC49A5D, 1.13f, 1.04f, .84f, .024f, .011f, -.018f, 1.08f, .88f, .98f),
+        Recipe("oceanic", "Oceanic", "Travel", "Deep ocean teal with clear blue highlights", 0xFF4E9DB1, .85f, 1.08f, 1.15f, -.012f, .022f, .038f, 1.09f, 1.10f, .97f),
+        Recipe("alpine_clear", "Alpine Clear", "Travel", "Crisp mountain air with cool whites", 0xFF88ACBB, .92f, 1.02f, 1.10f, .016f, .030f, .042f, 1.12f, .90f, .95f),
+        Recipe("tropical", "Tropical", "Travel", "Vivid tropical greens and aqua water", 0xFF49B98D, .91f, 1.13f, 1.03f, .002f, .021f, .018f, 1.08f, 1.24f, .96f),
+        Recipe("coastline", "Coastline", "Travel", "Pastel coastal blue with warm sand", 0xFF84B9C6, .98f, 1.04f, 1.08f, .045f, .041f, .052f, .87f, .83f, .97f),
+        Recipe("redwood", "Redwood", "Travel", "Rich forest greens and red-brown earth", 0xFF8D7957, 1.08f, 1.05f, .84f, .008f, .016f, -.010f, 1.12f, .93f, 1.07f),
+        Recipe("safari", "Safari", "Travel", "Earthy savanna gold with natural greens", 0xFFB89B59, 1.10f, 1.06f, .82f, .020f, .019f, -.016f, 1.04f, .97f, 1.03f),
+        Recipe("glacier", "Glacier", "Travel", "Glacial cyan shadows and clean highlights", 0xFF73B3C3, .88f, 1.05f, 1.15f, .008f, .027f, .041f, 1.14f, .95f, .96f),
+        Recipe("island", "Island", "Travel", "Warm sand, bright aqua and playful color", 0xFFE0A873, 1.12f, 1.03f, .94f, .028f, .015f, .022f, 1.01f, 1.18f, .94f),
+        Recipe("morning_haze", "Morning Haze", "Travel", "Soft pale light with muted blue-green tone", 0xFFA8C3B4, .96f, 1.03f, 1.05f, .060f, .067f, .069f, .79f, .62f, 1.00f),
+
+        Recipe("shadow_play", "Shadow Play", "Drama", "Deep contrast with cool shadow detail", 0xFF536578, .88f, .96f, 1.08f, -.020f, -.008f, .014f, 1.31f, .65f, 1.15f),
+        Recipe("noir_ember", "Noir Ember", "Drama", "Charcoal monochrome with ember warmth", 0xFF97725B, 1.10f, .97f, .84f, .004f, -.008f, -.024f, 1.36f, .42f, 1.08f),
+        Recipe("steel_noir", "Steel Noir", "Drama", "Cool steel monochrome and dense contrast", 0xFF788894, .90f, .98f, 1.08f, -.014f, -.010f, .012f, 1.32f, .25f, 1.10f),
+        Recipe("crimson_fade", "Crimson Fade", "Drama", "Dark crimson mids with lifted blacks", 0xFF995F66, 1.12f, .89f, .94f, .048f, .020f, .025f, 1.10f, .78f, 1.12f),
+        Recipe("silver_fog", "Silver Fog", "Drama", "Soft silver grayscale with atmospheric lift", 0xFFAEB6BD, .98f, 1.00f, 1.05f, .060f, .063f, .069f, .81f, .17f, 1.02f),
+        Recipe("dark_amber", "Dark Amber", "Drama", "Low-key amber light with heavy contrast", 0xFF8C6239, 1.15f, .98f, .79f, -.018f, -.022f, -.038f, 1.27f, .79f, 1.18f),
+        Recipe("midnight_cinema", "Midnight Cinema", "Drama", "Cinematic teal-black shadows and warm mids", 0xFF426B77, .87f, 1.03f, 1.06f, -.026f, .002f, .014f, 1.21f, .71f, 1.17f),
+        Recipe("blue_drama", "Blue Drama", "Drama", "Bold blue shadows and high-contrast whites", 0xFF527BB4, .81f, .94f, 1.18f, -.012f, -.014f, .026f, 1.34f, .80f, 1.08f),
+        Recipe("desaturated_drama", "Desaturated Drama", "Drama", "Reduced color with controlled dark contrast", 0xFF8B8D92, 1.00f, 1.00f, 1.02f, -.006f, -.004f, .002f, 1.24f, .36f, 1.07f),
+        Recipe("deep_film", "Deep Film", "Drama", "Dense filmic color with lifted shadow floor", 0xFF6E5E54, 1.06f, .97f, .91f, .027f, .018f, .010f, 1.18f, .72f, 1.14f),
+
+        Recipe("candy_pop", "Candy Pop", "Color", "Bright candy colors with lively saturation", 0xFFDF72B4, 1.04f, .92f, 1.10f, .020f, .004f, .034f, 1.08f, 1.34f, .92f),
+        Recipe("coral_crush", "Coral Crush", "Color", "Punchy coral-red and warm highlight balance", 0xFFE77E69, 1.15f, .96f, .95f, .024f, .002f, .010f, 1.10f, 1.30f, .96f),
+        Recipe("greenhouse", "Greenhouse", "Color", "Fresh leafy green with lifted highlights", 0xFF70A66B, .91f, 1.15f, .92f, .023f, .040f, .018f, .98f, 1.11f, .93f),
+        Recipe("lemonade", "Lemonade", "Color", "Sunny lemon-yellow lift and bright mids", 0xFFE1C75D, 1.10f, 1.09f, .81f, .040f, .030f, .002f, .91f, 1.07f, .92f),
+        Recipe("ruby", "Ruby", "Color", "Rich ruby reds with crisp dark tones", 0xFFB74259, 1.18f, .87f, .92f, .018f, -.017f, .004f, 1.16f, 1.21f, 1.03f),
+        Recipe("cyan_pop", "Cyan Pop", "Color", "Bright cyan highlights with deeper blues", 0xFF4BBED0, .82f, 1.08f, 1.15f, .010f, .023f, .044f, 1.07f, 1.23f, .93f),
+        Recipe("orchid", "Orchid", "Color", "Vivid orchid violet and soft pink highlights", 0xFFAD6EBD, 1.05f, .88f, 1.14f, .026f, -.004f, .034f, 1.00f, 1.27f, .98f),
+        Recipe("tangerine", "Tangerine", "Color", "Bright tangerine warmth with clean whites", 0xFFEA9855, 1.16f, 1.02f, .85f, .025f, .008f, -.006f, 1.04f, 1.22f, .94f),
+        Recipe("cherry_soda", "Cherry Soda", "Color", "Playful cherry red and cool violet balance", 0xFFD35B76, 1.16f, .90f, 1.04f, .022f, .001f, .021f, 1.06f, 1.29f, .97f),
+        Recipe("mint_pop", "Mint Pop", "Color", "Mint green highlights with crisp cool color", 0xFF64C5A5, .88f, 1.14f, 1.02f, .012f, .033f, .030f, 1.09f, 1.20f, .94f),
+    )
+}

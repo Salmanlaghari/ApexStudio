@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -35,11 +36,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apexstudio.app.data.engine.RangeTimeOperation
 import com.apexstudio.app.data.engine.RangeTimeRenderer
 import com.apexstudio.app.data.engine.RangeTimeRenderResult
+import com.apexstudio.app.data.effect.WorkspaceFilterThumbnailGenerator
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.SourceRangeMs
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
+import com.apexstudio.app.domain.model.WorkspaceFilterPresets
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette
 import kotlinx.coroutines.CancellationException
@@ -47,7 +50,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 
-internal enum class WorkspaceCategory(val label: String) { VISUAL("Visual"), VFX("VFX"), SPLIT("Split screen"), TIME("Actions") }
+internal enum class WorkspaceCategory(val label: String) {
+    VISUAL("Visual"), VFX("VFX"), SPLIT("Split screen"), TIME("Actions"), TRANSITIONS("Transitions")
+}
+
+private data class WorkspacePresetChoice(val id: String, val label: String, val description: String)
 
 /** Converts the live project playhead (or state fallback) to this clip's clamped source time. */
 internal fun sourceTimeAtProjectPlayhead(
@@ -79,6 +86,13 @@ internal fun EffectWorkspacePanel(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val thumbnails by vm.thumbnails.collectAsStateWithLifecycle()
+    var filterSamples by remember(originalClip.id) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    val filterSampleSource = thumbnails[originalClip.id]?.firstOrNull()?.second
+    LaunchedEffect(originalClip.id, filterSampleSource) {
+        filterSamples = WorkspaceFilterThumbnailGenerator.generate(
+            context, filterSampleSource, WorkspaceFilterPresets.all.map { it.id }
+        )
+    }
     val editorState by vm.state.collectAsStateWithLifecycle()
     val livePlayerPositionMs by vm.playerPositionFlow.collectAsStateWithLifecycle(
         initialValue = editorState.currentTimeMs,
@@ -235,23 +249,51 @@ internal fun EffectWorkspacePanel(
 
     val background = EditorPalette.BgDeep
     val foreground = EditorPalette.TextPrimary
+    val visualPresets = remember {
+        listOf(
+            WorkspacePresetChoice(WorkspaceEffectPresets.MONO, "Monochrome", "Black-and-white tonal treatment"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.WARM, "Warm", "Warm highlights and softer color"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.PIXELATE, "Pixelate", "Blocky pixel mosaic"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.CARTOON, "Cartoon", "Posterized color with drawn edges"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.BUBBLE, "Bubble", "Animated glass-lens bubbles"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.HEARTS, "Hearts", "Animated heart overlays"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.HEARTBEAT, "Pulse", "Animated heartbeat color pulse"),
+            WorkspacePresetChoice(WorkspaceEffectPresets.ICE, "Ice", "Cool frost and ice highlights"),
+        ) + WorkspaceFilterPresets.all.map { WorkspacePresetChoice(it.id, it.label, it.description) }
+    }
+    val mainTrackClips = editorState.project?.clips.orEmpty().filter {
+        it.trackIndex == 0 && (it.type == com.apexstudio.app.domain.model.ClipType.VIDEO ||
+            it.type == com.apexstudio.app.domain.model.ClipType.IMAGE)
+    }
+    val selectedMainIndex = mainTrackClips.indexOfFirst { it.id == originalClip.id }
+    val nextMainClip = mainTrackClips.getOrNull(selectedMainIndex + 1).takeIf { selectedMainIndex >= 0 }
+    val galleryStartPx = ((292f + 10f) * context.resources.displayMetrics.density).toInt()
+    val effectGalleryScroll = rememberScrollState(initial = galleryStartPx)
     Surface(
         color = background,
         contentColor = foreground,
         shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-        modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(max = 230.dp).testTag("workspace-panel")
     ) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 230.dp).padding(horizontal = 12.dp, vertical = 4.dp)) {
             // The title stays pinned while the workspace cards move horizontally.
-            Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (category == WorkspaceCategory.TIME) "Motion actions" else "Effects",
+            Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(when (category) {
+                    WorkspaceCategory.TIME -> "Motion actions"
+                    WorkspaceCategory.TRANSITIONS -> "Transitions"
+                    else -> "Effects · ${WorkspaceEffectPresets.all.size}"
+                },
                     fontSize = 16.sp, modifier = Modifier.weight(1f))
-                Text(if (category == WorkspaceCategory.TIME) "Render & apply" else "Source-timed preview",
+                Text(when (category) {
+                    WorkspaceCategory.TIME -> "Render & apply"
+                    WorkspaceCategory.TRANSITIONS -> "123 preview-only styles"
+                    else -> "100+ real looks · preview + export"
+                },
                     fontSize = 11.sp, color = EditorPalette.TextSecondary)
             }
 
             Row(
-                Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()),
+                Modifier.weight(1f).fillMaxWidth().horizontalScroll(effectGalleryScroll),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -322,28 +364,29 @@ internal fun EffectWorkspacePanel(
                         Text("Presets", fontSize = 13.sp)
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             WorkspaceCategory.entries.forEach { item ->
+                                val categoryLabel = when (item) {
+                                    WorkspaceCategory.VISUAL -> "Visual ${visualPresets.size}"
+                                    WorkspaceCategory.VFX -> "VFX 5"
+                    WorkspaceCategory.SPLIT -> "Split screen"
+                                    WorkspaceCategory.TIME -> "Actions"
+                                    WorkspaceCategory.TRANSITIONS -> "Transition preview"
+                                }
                                 FilterChip(
                                     selected = category == item,
                                     onClick = { if (!busy) category = item },
-                                    label = { Text(item.label, color = foreground, fontSize = 10.sp, maxLines = 1) },
+                                    label = { Text(categoryLabel, color = foreground, fontSize = 10.sp, maxLines = 1) },
                                     modifier = Modifier.testTag("workspace-category-${item.name}")
                                 )
                             }
                         }
                         when (category) {
                             WorkspaceCategory.VISUAL -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                items(listOf(
-                                    WorkspaceEffectPresets.MONO to "Monochrome",
-                                    WorkspaceEffectPresets.WARM to "Warm",
-                                    WorkspaceEffectPresets.PIXELATE to "Pixelate",
-                                    WorkspaceEffectPresets.CARTOON to "Cartoon",
-                                    WorkspaceEffectPresets.BUBBLE to "Bubble",
-                                    WorkspaceEffectPresets.HEARTS to "Hearts",
-                                    WorkspaceEffectPresets.HEARTBEAT to "Pulse",
-                                    WorkspaceEffectPresets.ICE to "Ice"
-                                )) { (id, label) ->
-                                    WorkspacePresetCard(label, WorkspaceEffectPresets.label(id), visualId == id, !busy,
-                                        onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
+                                items(visualPresets, key = { it.id }) { preset ->
+                                    WorkspacePresetCard(preset.label, preset.description, visualId == preset.id, !busy,
+                                        sampleImage = filterSamples[preset.id],
+                                        onHoldStart = { startHeldEffect(preset.id) }, onHoldEnd = ::finishHeldEffect) {
+                                        selectVisual(preset.id)
+                                    }
                                 }
                             }
                             WorkspaceCategory.VFX -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -367,6 +410,28 @@ internal fun EffectWorkspacePanel(
                             WorkspaceCategory.TIME -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                                 items(listOf(RangeTimeOperation.SLOW to "Slow 0.5×", RangeTimeOperation.REPEAT to "Repeat ×2", RangeTimeOperation.REVERSE to "Reverse")) { (operation, label) ->
                                     WorkspacePresetCard(label, "Render selected range: $label", timeOperation == operation, !busy) { renderTime(operation) }
+                                }
+                            }
+                            WorkspaceCategory.TRANSITIONS -> {
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center) {
+                                    if (nextMainClip == null) {
+                                        Text("Add another main-track clip after this one to create a transition.",
+                                            fontSize = 11.sp, color = EditorPalette.TextSecondary)
+                                    } else {
+                                        Text("${originalClip.name}  →  ${nextMainClip.name}",
+                                            fontSize = 10.sp, color = EditorPalette.TextSecondary, maxLines = 1)
+                                        Button(onClick = {
+                                            vm.setPlaying(false)
+                                            onPreviewClip(originalClip)
+                                            onDismiss()
+                                            vm.openTransitionPicker(originalClip.id, nextMainClip.id)
+                                        }, modifier = Modifier.height(36.dp).testTag("workspace-open-transitions")) {
+                                            Text("Open preview-only picker", fontSize = 12.sp)
+                                        }
+                                        Text("Existing styles preview in this panel only; clip-boundary effects are not rendered in the main timeline or whole-project export.",
+                                            fontSize = 9.sp, color = EditorPalette.Warning, maxLines = 2)
+                                    }
                                 }
                             }
                         }
@@ -398,6 +463,7 @@ internal fun EffectWorkspacePanel(
                             WorkspaceCategory.SPLIT -> "Repeats the same source in side-by-side tiles; not multi-camera composition."
                             WorkspaceCategory.VFX -> "Source-video GLSL processing with the same range, strength and renderer in preview and export. Not generated media."
                             WorkspaceCategory.VISUAL -> "Tap a preset for the selected range, or hold a preset during playback and release to mark its range. Procedural GLSL, not AI."
+                            WorkspaceCategory.TRANSITIONS -> "Transitions are chosen at clip junctions. The transition picker discloses current playback/export limits."
                         }, fontSize = 10.sp, lineHeight = 13.sp, color = EditorPalette.TextSecondary)
                         editorState.playerError?.let { Text("Preview unavailable: $it. Apply is disabled; cancel or choose another preset.", color = EditorPalette.Warning, fontSize = 10.sp) }
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -429,6 +495,7 @@ internal fun EffectWorkspacePanel(
 
 @Composable
 private fun WorkspacePresetCard(label: String, description: String, selected: Boolean, enabled: Boolean,
+    sampleImage: ImageBitmap? = null,
     onHoldStart: (() -> Unit)? = null, onHoldEnd: ((Boolean) -> Unit)? = null, onClick: () -> Unit) {
     val currentClick by rememberUpdatedState(onClick)
     val currentStart by rememberUpdatedState(onHoldStart)
@@ -453,9 +520,15 @@ private fun WorkspacePresetCard(label: String, description: String, selected: Bo
         .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgSurface)
         .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonCyan else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
         .then(interaction)
-        .semantics(mergeDescendants = true) { contentDescription = description }.padding(vertical = 10.dp),
+        .semantics(mergeDescendants = true) { contentDescription = description }.padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.MovieFilter, contentDescription = null, tint = EditorPalette.TextPrimary, modifier = Modifier.size(24.dp))
-        Text(label, color = EditorPalette.TextPrimary, fontSize = 12.sp, maxLines = 1)
+        if (sampleImage != null) {
+            Image(sampleImage, contentDescription = "$label sample preview", contentScale = ContentScale.Crop,
+                modifier = Modifier.width(76.dp).height(42.dp).clip(RoundedCornerShape(6.dp))
+                    .testTag("workspace-effect-sample-$label"))
+        } else {
+            Icon(Icons.Default.MovieFilter, contentDescription = null, tint = EditorPalette.TextPrimary, modifier = Modifier.size(24.dp))
+        }
+        Text(label, color = EditorPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)
     }
 }

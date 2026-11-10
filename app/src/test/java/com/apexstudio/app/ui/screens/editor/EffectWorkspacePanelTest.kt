@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.setPlayerError
 import com.apexstudio.app.presentation.viewmodel.setPlayerPosition
@@ -184,6 +185,32 @@ class EffectWorkspacePanelTest {
         compose.onNodeWithTag("workspace-category-TIME").assertIsSelected()
         compose.onNodeWithText("Slow 0.5×").assertExists()
         compose.onNodeWithText("Motion actions").assertExists()
+    }
+
+    @Test fun `compact effects drawer advertises 100 plus looks and opens transition picker`() {
+        val vm = editor()
+        val next = clip.copy(id = "next", name = "Next", uri = "file:///next.mp4")
+        vm._state.value = vm.state.value.copy(
+            project = vm.state.value.project!!.copy(clips = listOf(clip, next))
+        )
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
+            }
+        }
+
+        compose.onNodeWithText("Effects · ${WorkspaceEffectPresets.all.size}").assertExists()
+        compose.onNodeWithTag("workspace-panel").assertHeightIsEqualTo(230.dp)
+        assertTrue(WorkspaceEffectPresets.all.size >= 100)
+        showPresets()
+        compose.onNodeWithTag("workspace-category-TRANSITIONS")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("workspace-open-transitions").performClick()
+        compose.runOnIdle {
+            assertTrue(vm.state.value.transitionPickerOpen)
+            assertEquals(clip.id, vm.state.value.transitionPickerFromClipId)
+            assertEquals(next.id, vm.state.value.transitionPickerToClipId)
+        }
     }
 
 }

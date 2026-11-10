@@ -17,7 +17,6 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
-import androidx.media3.transformer.VideoEncoderSettings
 import androidx.compose.ui.graphics.toArgb
 import com.apexstudio.app.data.ar.ArFaceGlEffect
 import com.apexstudio.app.data.ar.ArFilterCatalog
@@ -813,9 +812,7 @@ class ExportEngine(private val context: Context) {
             }
             if (!continuation.isActive || !isCurrentProjectRun(run)) return@suspendCancellableCoroutine
             try {
-                val encoderSettings = VideoEncoderSettings.Builder()
-                    .setBitrate(exportTargetBitrate(config))
-                    .build()
+                val encoderSettings = exportVideoEncoderSettings(config)
                 val encoderFactory = DefaultEncoderFactory.Builder(context)
                     .setRequestedVideoEncoderSettings(encoderSettings)
                     .setEnableFallback(false) // Never silently change the owner's requested output settings.
@@ -1746,9 +1743,7 @@ class ExportEngine(private val context: Context) {
     ): Transformer {
         // Let Media3 negotiate a supported H.264 profile/level instead of forcing
         // AVC High Level 5.1 even for 720p or an HEVC input container.
-        val encoderSettings = VideoEncoderSettings.Builder()
-            .setBitrate(exportTargetBitrate(config))
-            .build()
+        val encoderSettings = exportVideoEncoderSettings(config)
 
         val encoderFactory = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(encoderSettings)

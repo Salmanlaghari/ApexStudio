@@ -1788,18 +1788,22 @@ class ExportEngine(private val context: Context) {
                     "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount} outputBytes=${outputFile.length()}"
                 )
                 val outputValidation = CoroutineScope(Dispatchers.IO).async {
-                    check(exportResult.durationMs > 0L) { "Transformer completed without a positive output duration" }
-                    val validationContext = currentCoroutineContext()
-                    val durationCorrection = Mp4VideoTailDurationNormalizer.normalize(
-                        outputFile,
-                        exportResult.durationMs
-                    ) { validationContext.ensureActive() }
+                    val durationCorrection = if (
+                        exportResult.durationMs > 0L && outputFile.isFile && outputFile.length() > 0L
+                    ) {
+                        val validationContext = currentCoroutineContext()
+                        Mp4VideoTailDurationNormalizer.normalize(
+                            outputFile,
+                            exportResult.durationMs
+                        ) { validationContext.ensureActive() }
+                    } else null
                     diagnostics?.stage(
                         "selected_video_duration_finalized",
-                        "applied=${durationCorrection.changed} videoBeforeUs=${durationCorrection.sourceVideoDurationUs} " +
-                            "videoAfterUs=${durationCorrection.outputVideoDurationUs} targetMs=${exportResult.durationMs} " +
-                            "lastVideoPtsUs=${durationCorrection.lastVideoPresentationTimeUs} " +
-                            "samplesCopied=${durationCorrection.copiedSampleCount}"
+                        durationCorrection?.let {
+                            "applied=${it.changed} videoBeforeUs=${it.sourceVideoDurationUs} " +
+                                "videoAfterUs=${it.outputVideoDurationUs} targetMs=${exportResult.durationMs} " +
+                                "lastVideoPtsUs=${it.lastVideoPresentationTimeUs} samplesCopied=${it.copiedSampleCount}"
+                        } ?: "applied=false skipped=synthetic_or_unusable_output targetMs=${exportResult.durationMs}"
                     )
                     validateEncodedOutput(
                         outputFile, config.fps, exportResult.videoFrameCount,

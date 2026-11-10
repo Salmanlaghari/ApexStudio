@@ -91,7 +91,8 @@ class WorkspaceEffectGlEffectTest {
 
     @Test
     fun originalKindsStayStableAndAllAddedLooksAndVfxHaveShaderBranches() {
-        assertEquals(50, WorkspaceFilterPresetAdditions.entries.size)
+        assertEquals(100, WorkspaceFilterPresetAdditions.entries.size)
+        assertTrue(WorkspaceEffectPresets.all.size >= 100)
         assertTrue(WorkspaceFilterPresetAdditions.entries.all { entry ->
             entry.preset.id in WorkspaceEffectPresets.all && entry.preset.id in WorkspaceEffectPresets.filterIds &&
                 WorkspaceEffectGlEffect.kindFor(entry.preset.id) == 22

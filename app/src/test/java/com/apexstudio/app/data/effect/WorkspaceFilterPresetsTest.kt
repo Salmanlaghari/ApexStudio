@@ -11,13 +11,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WorkspaceFilterPresetsTest {
-    @Test fun `catalog preserves twelve looks and adds fifty distinct supported recipes`() {
+    @Test fun `catalog preserves twelve looks and adds one hundred distinct supported recipes`() {
         val original = listOf("soft_warm", "cool", "faded", "amber", "rose", "mint", "teal_orange",
             "crisp", "matte", "bw_contrast", "sepia", "lavender").map { "filter_$it" }.toSet()
-        assertEquals(50, WorkspaceFilterPresetAdditions.entries.size)
-        assertEquals(50, WorkspaceFilterPresetAdditions.entries.map { it.parameters }.distinct().size)
-        assertEquals(62, WorkspaceFilterPresets.all.size)
-        assertEquals(62, WorkspaceFilterPresets.all.map { it.id }.distinct().size)
+        assertEquals(100, WorkspaceFilterPresetAdditions.entries.size)
+        assertEquals(100, WorkspaceFilterPresetAdditions.entries.map { it.parameters }.distinct().size)
+        assertEquals(112, WorkspaceFilterPresets.all.size)
+        assertEquals(112, WorkspaceFilterPresets.all.map { it.id }.distinct().size)
         assertEquals(original, WorkspaceFilterPresets.all.map { it.id }.filter { it !in WorkspaceFilterPresetAdditions.ids }.toSet())
         assertTrue(WorkspaceFilterPresets.all.all {
             it.id in WorkspaceEffectPresets.all && it.id in WorkspaceEffectPresets.filterIds && it.description.isNotBlank()

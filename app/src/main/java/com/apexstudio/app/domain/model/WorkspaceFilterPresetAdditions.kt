@@ -66,7 +66,13 @@ object WorkspaceFilterPresetAdditions {
         look("alpine_fog", "Alpine Fog", "Nature", "Cool, low-chroma lifted haze", 0xFFADBEC4, Parameters(.95f, 1.02f, 1.08f, .066f, .073f, .081f, .78f, .43f, 1.02f)),
         look("autumn_maple", "Autumn Maple", "Nature", "Rich red-gold foliage color", 0xFFCB9552, Parameters(1.16f, 1.03f, .81f, .018f, .004f, -.018f, 1.16f, 1.23f, 1.02f)),
         look("moonlit_meadow", "Moonlit Meadow", "Nature", "Muted blue-green night color", 0xFF5E8D98, Parameters(.86f, 1.02f, 1.12f, -.010f, .008f, .024f, 1.10f, .54f, 1.18f))
-    )
+    ) + WorkspaceEffectPresetExpansion.recipes.map { recipe ->
+        look(recipe.id, recipe.label, recipe.group, recipe.description, recipe.swatch, Parameters(
+            recipe.gainR, recipe.gainG, recipe.gainB,
+            recipe.offsetR, recipe.offsetG, recipe.offsetB,
+            recipe.contrast, recipe.saturation, recipe.gamma
+        ))
+    }
 
     private fun look(id: String, label: String, group: String, description: String, swatch: Long, parameters: Parameters) =
         Entry(WorkspaceFilterPreset("filter_$id", label, description, swatch), group, parameters)

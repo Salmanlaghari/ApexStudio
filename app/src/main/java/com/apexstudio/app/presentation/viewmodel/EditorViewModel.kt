@@ -254,6 +254,7 @@ class EditorViewModel(
                         it.copy(
                             isExporting = st.isExporting,
                             progress = st.progress,
+                            stage = st.stage,
                             outputUri = st.outputUri,
                             error = st.error,
                             warning = st.warning

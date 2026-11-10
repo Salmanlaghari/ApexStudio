@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.OneTapLooks
@@ -110,6 +111,6 @@ fun EditorViewModel.startWholeProjectExport() {
     }
     val clips = projectMainExportClips(snapshot)
     val config = buildProjectExportConfig(snapshot, audioSnapshot, settings, filterPreset)
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null, warning = null) }
+    _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.PREPARING, error = null, outputUri = null, warning = null) }
     engine.startProjectExport(clips, config)
 }

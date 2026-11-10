@@ -20,6 +20,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import java.util.concurrent.TimeUnit
 import java.io.File
 
 /** Exercises production listener ownership without pretending to run native phone codecs. */
@@ -51,12 +52,24 @@ class ExportTerminalLifecycleTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
+    private fun awaitExportFinished(engine: ExportEngine) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (engine.exportState.value.isExporting && System.nanoTime() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(5)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
     @Test fun `completion retires renderer and permits a second export without leaving screen`() {
         val engine = ExportEngine(context)
         val first = activate(engine)
+        assertEquals(ExportProgressStage.VIDEO_RENDER, engine.exportState.value.stage)
         complete(first)
+        awaitExportFinished(engine)
         assertFalse(engine.exportState.value.isExporting)
         assertEquals(1f, engine.exportState.value.progress, 0f)
+        assertEquals(ExportProgressStage.COMPLETE, engine.exportState.value.stage)
         val second = activate(engine)
         assertTrue(engine.exportState.value.isExporting)
         assertFalse(engine.finishTransformerRun(first))

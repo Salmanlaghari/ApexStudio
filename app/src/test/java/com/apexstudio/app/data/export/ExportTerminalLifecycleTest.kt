@@ -116,10 +116,57 @@ class ExportTerminalLifecycleTest {
         val mapped = videoExportFailureForProject(unsupported)
         assertEquals(UNSUPPORTED_VIDEO_FORMAT_EXPORT_MESSAGE, mapped.message)
         assertSame(unsupported, mapped.cause)
+        assertSame(unsupported, mapped.sourceException)
+        assertEquals(unsupported.errorCode, mapped.errorCode)
+        assertEquals(unsupported.errorCodeName, mapped.errorCodeName)
 
         val unrelated = ExportException.createForUnexpected(IllegalStateException("codec failed"))
-        assertSame(unrelated, videoExportFailureForProject(unrelated))
+        val mappedUnrelated = videoExportFailureForProject(unrelated)
+        assertSame(unrelated, mappedUnrelated.cause)
+        assertEquals(unrelated.errorCode, mappedUnrelated.errorCode)
+        assertEquals(unrelated.errorCodeName, mappedUnrelated.errorCodeName)
+        assertEquals(unrelated.message, mappedUnrelated.message)
         assertEquals(unrelated.message, videoExportFailureMessage(unrelated))
+    }
+
+    @Test fun `project export route resolves mapped guidance at the failure surface`() {
+        // The route under test: Transformer onError in renderProjectComposition resumes
+        // with videoExportFailureForProject(...), and the startProjectExport catch then
+        // publishes projectExportFailureMessage(failure) as the visible error. Driving a
+        // real Transformer needs native codecs, which Robolectric does not have, so this
+        // exercises the exact producer -> resolver chain the route is built from.
+        val unsupported = ExportException.createForCodec(
+            IllegalArgumentException("Unsupported AV1 profile"),
+            ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            ExportException.CodecInfo("test-decoder", true, true, "video/av01")
+        )
+        val routeFailure = videoExportFailureForProject(unsupported)
+        assertEquals(
+            UNSUPPORTED_VIDEO_FORMAT_EXPORT_MESSAGE,
+            projectExportFailureMessage(routeFailure)
+        )
+
+        val timeout = ExportException.createForAssetLoader(
+            IllegalStateException("Muxer error"),
+            ExportException.ERROR_CODE_MUXING_TIMEOUT
+        )
+        assertEquals(
+            VIDEO_EXPORT_MUXING_TIMEOUT_MESSAGE,
+            projectExportFailureMessage(videoExportFailureForProject(timeout))
+        )
+
+        // A wrapper whose own message is missing must still surface the mapped
+        // guidance from its cause instead of collapsing to the generic fallback.
+        val wrapped = IllegalStateException(null as String?, routeFailure)
+        assertEquals(
+            UNSUPPORTED_VIDEO_FORMAT_EXPORT_MESSAGE,
+            projectExportFailureMessage(wrapped)
+        )
+
+        // Unrelated project failures keep their own message, and a failure with no
+        // message anywhere keeps the generic project fallback.
+        assertEquals("music mix failed", projectExportFailureMessage(IllegalStateException("music mix failed")))
+        assertEquals("Project export failed", projectExportFailureMessage(IllegalStateException()))
     }
 
     @Test fun `muxing timeout explains long video-frame gaps for selected and project exports`() {
@@ -132,6 +179,8 @@ class ExportTerminalLifecycleTest {
         val projectFailure = videoExportFailureForProject(timeout)
         assertEquals(VIDEO_EXPORT_MUXING_TIMEOUT_MESSAGE, projectFailure.message)
         assertSame(timeout, projectFailure.cause)
+        assertEquals(timeout.errorCode, projectFailure.errorCode)
+        assertEquals(timeout.errorCodeName, projectFailure.errorCodeName)
     }
 
     @Test fun `cancelled old completion cannot finish or detach replacement export`() {

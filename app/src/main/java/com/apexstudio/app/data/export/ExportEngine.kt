@@ -425,6 +425,7 @@ class ExportEngine(private val context: Context) {
             projectExportJob = CoroutineScope(Dispatchers.IO).launch {
                 var partialFile: File? = null
                 var mixedFile: File? = null
+                var durationCappedFile: File? = null
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 try {
                     diagnostics.phase(ExportProgressStage.PREPARING.diagnosticName)
@@ -693,6 +694,41 @@ class ExportEngine(private val context: Context) {
                     publishProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
+                    val durationToleranceMs = 150L
+                    val movieDurationBeforeTrimMs = mediaDurationMs(finishedFile)
+                    diagnostics.stage(
+                        "project_movie_duration_checked",
+                        "movieDurationMs=$movieDurationBeforeTrimMs plannedDurationMs=${plan.durationMs}"
+                    )
+                    if (movieDurationBeforeTrimMs > plan.durationMs + durationToleranceMs) {
+                        val correctedFile = File.createTempFile("apex_project_duration_", ".mp4", outputDir)
+                        durationCappedFile = correctedFile
+                        if (!correctedFile.delete()) {
+                            throw IllegalStateException("Cannot prepare project duration correction output")
+                        }
+                        val trimResult = trimProjectOutputWithEditList(
+                            inputFile = finishedFile,
+                            outputFile = correctedFile,
+                            targetDurationMs = plan.durationMs,
+                            run = run,
+                            diagnostics = diagnostics
+                        )
+                        currentCoroutineContext().ensureActive()
+                        val movieDurationAfterTrimMs = mediaDurationMs(correctedFile)
+                        diagnostics.stage(
+                            "project_duration_trim_verified",
+                            "beforeMs=$movieDurationBeforeTrimMs afterMs=$movieDurationAfterTrimMs " +
+                                "plannedMs=${plan.durationMs} transformerDurationMs=${trimResult.durationMs}"
+                        )
+                        check(
+                            movieDurationAfterTrimMs > 0L &&
+                                kotlin.math.abs(movieDurationAfterTrimMs - plan.durationMs) <= durationToleranceMs
+                        ) {
+                            "Project export duration correction did not match the planned ${plan.durationMs}ms " +
+                                "timeline (movie duration ${movieDurationAfterTrimMs}ms)"
+                        }
+                        finishedFile = correctedFile
+                    }
                     if (destination.exists() && !destination.delete()) {
                         throw IllegalStateException("Cannot replace existing project export")
                     }
@@ -736,12 +772,111 @@ class ExportEngine(private val context: Context) {
                 } finally {
                     partialFile?.let { if (it.exists()) it.delete() }
                     mixedFile?.let { if (it.exists()) it.delete() }
+                    durationCappedFile?.let { if (it.exists()) it.delete() }
                     synchronized(projectRunLock) {
                         if (projectRun === run) {
                             projectRun = null
                             projectExportJob = null
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Caps a rendered project's container duration without re-encoding its frames.
+     * MediaMuxer can infer the last VFR sample's duration from a preceding sparse gap;
+     * a single-asset edit-list trim restores the intended project timeline endpoint.
+     */
+    private suspend fun trimProjectOutputWithEditList(
+        inputFile: File,
+        outputFile: File,
+        targetDurationMs: Long,
+        run: ProjectExportRun,
+        diagnostics: ExportDiagnosticTrace
+    ): ExportResult = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine { continuation ->
+            val settled = AtomicBoolean(false)
+            var active: Transformer? = null
+            continuation.invokeOnCancellation {
+                run.cancelled.set(true)
+                mainHandler.post {
+                    active?.let { renderer ->
+                        try { renderer.cancel() } catch (_: Exception) {}
+                        if (transformer === renderer) transformer = null
+                    }
+                    if (outputFile.exists()) outputFile.delete()
+                }
+            }
+            if (!continuation.isActive || !isCurrentProjectRun(run)) {
+                return@suspendCancellableCoroutine
+            }
+            try {
+                val input = MediaItem.Builder()
+                    .setUri(Uri.fromFile(inputFile))
+                    .setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(0L)
+                            .setEndPositionMs(targetDurationMs)
+                            .build()
+                    )
+                    .build()
+                val editedItem = EditedMediaItem.Builder(input).build()
+                val composition = Composition.Builder(
+                    EditedMediaItemSequence.withAudioAndVideoFrom(listOf(editedItem))
+                ).build()
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
+                        diagnostics.stage(
+                            "project_duration_edit_list_trim_completed",
+                            "durationMs=${exportResult.durationMs} bytes=${outputFile.length()}"
+                        )
+                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
+                            continuation.resumeWith(Result.success(exportResult))
+                        }
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
+                        diagnostics.stage(
+                            "project_duration_edit_list_trim_failed",
+                            "errorCode=${exportException.errorCodeName} message=${exportException.message}"
+                        )
+                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
+                            continuation.resumeWith(
+                                Result.failure(
+                                    IllegalStateException(
+                                        "Could not cap project export to its planned timeline duration",
+                                        exportException
+                                    )
+                                )
+                            )
+                        }
+                    }
+                }
+                val renderer = Transformer.Builder(context)
+                    .setLooper(Looper.getMainLooper())
+                    .experimentalSetMp4EditListTrimEnabled(true)
+                    .addListener(listener)
+                    .build()
+                active = renderer
+                transformer = renderer
+                renderer.start(composition, outputFile.absolutePath)
+                diagnostics.stage("project_duration_edit_list_trim_started", "targetDurationMs=$targetDurationMs")
+            } catch (failure: Exception) {
+                active?.let { renderer ->
+                    try { renderer.cancel() } catch (_: Exception) {}
+                    if (transformer === renderer) transformer = null
+                }
+                if (outputFile.exists()) outputFile.delete()
+                if (settled.compareAndSet(false, true) && continuation.isActive) {
+                    continuation.resumeWith(Result.failure(failure))
                 }
             }
         }

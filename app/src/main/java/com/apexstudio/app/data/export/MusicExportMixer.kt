@@ -7,6 +7,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import android.os.StatFs
 import android.util.Log
 import com.apexstudio.app.data.audio.AudioTimelineMath
 import com.apexstudio.app.domain.model.AudioTrack
@@ -35,6 +36,60 @@ internal fun mixDurationFrames(videoDurationUs: Long, sampleRate: Int): Long? {
 
 internal fun mixDurationFitsWav(videoDurationUs: Long, sampleRate: Int, maxFrames: Long): Boolean =
     mixDurationFrames(videoDurationUs, sampleRate)?.let { it <= maxFrames } ?: true
+
+/** Estimate extra disk needed while the input video remains beside the mix artifacts. */
+internal fun estimateMusicMixRequiredBytes(
+    videoDurationUs: Long,
+    sampleRate: Int,
+    inputVideoBytes: Long,
+    aacBitrate: Int
+): Long? {
+    val frames = mixDurationFrames(videoDurationUs, sampleRate) ?: return null
+    require(inputVideoBytes >= 0L) { "Input video size must not be negative" }
+    require(aacBitrate > 0) { "AAC bitrate must be positive" }
+
+    val wavBytes = saturatedAdd(44L, saturatedMultiply(frames, 4L))
+    val aacBytes = saturatedCeilMultiplyDivide(videoDurationUs, aacBitrate.toLong(), 8_000_000L)
+    val encodedSamples = ceilDivide(frames, 1024L)
+    val spoolBytes = saturatedAdd(aacBytes, saturatedMultiply(encodedSamples, 16L))
+    // The muxed video track is copied bit-for-bit; input size is a conservative
+    // proxy for it, with the newly encoded AAC track added separately.
+    val muxBytes = saturatedAdd(inputVideoBytes, aacBytes)
+    val unreservedBytes = saturatedAdd(wavBytes, saturatedAdd(spoolBytes, muxBytes))
+    return saturatedAdd(unreservedBytes, ceilDivide(unreservedBytes, 10L))
+}
+
+internal fun requireMusicMixStorageAvailable(availableBytes: Long, requiredBytes: Long) {
+    require(availableBytes >= 0L) { "Available storage must not be negative" }
+    require(requiredBytes >= 0L) { "Required storage must not be negative" }
+    if (availableBytes < requiredBytes) {
+        val mib = 1024L * 1024L
+        throw IllegalStateException(
+            "Not enough free storage to mix timeline audio (need about ${ceilDivide(requiredBytes, mib)} MiB; " +
+                "${availableBytes / mib} MiB available). Free up storage and try again."
+        )
+    }
+}
+
+private fun ceilDivide(value: Long, divisor: Long): Long =
+    value / divisor + if (value % divisor == 0L) 0L else 1L
+
+private fun saturatedAdd(left: Long, right: Long): Long =
+    if (left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
+
+private fun saturatedMultiply(left: Long, right: Long): Long =
+    if (left == 0L || right == 0L) 0L
+    else if (left > Long.MAX_VALUE / right) Long.MAX_VALUE
+    else left * right
+
+private fun saturatedCeilMultiplyDivide(value: Long, multiplier: Long, divisor: Long): Long {
+    val whole = value / divisor
+    val remainder = value % divisor
+    return saturatedAdd(
+        saturatedMultiply(whole, multiplier),
+        ceilDivide(saturatedMultiply(remainder, multiplier), divisor)
+    )
+}
 
 internal data class EncodedAudioSample(val data: ByteArray, val ptsUs: Long, val flags: Int)
 
@@ -151,7 +206,10 @@ object MusicExportMixer {
     ): MixResult {
         checkCancelled()
         require(inputVideo.exists()) { "Input video missing: ${inputVideo.absolutePath}" }
-        outputVideo.parentFile?.mkdirs()
+        val outputDirectory = requireNotNull(outputVideo.absoluteFile.parentFile)
+        if (!outputDirectory.exists() && !outputDirectory.mkdirs()) {
+            throw IllegalStateException("Cannot create music mix temporary directory")
+        }
         val enabledTracks = selectEnabledMusicTracks(tracks)
         if (enabledTracks.isEmpty()) {
             inputVideo.copyTo(outputVideo, overwrite = true)
@@ -187,6 +245,17 @@ object MusicExportMixer {
         // duration is known; otherwise the mix stops at source exhaustion).
         require(mixDurationFitsWav(videoDurationUs, SAMPLE_RATE, MAX_WAV_FRAMES.toLong())) {
             "Music mix too long for the WAV intermediate (~3.4h max)"
+        }
+        estimateMusicMixRequiredBytes(
+            videoDurationUs = videoDurationUs,
+            sampleRate = SAMPLE_RATE,
+            inputVideoBytes = inputVideo.length(),
+            aacBitrate = AAC_BITRATE
+        )?.let { requiredBytes ->
+            requireMusicMixStorageAvailable(
+                availableBytes = StatFs(outputDirectory.absolutePath).availableBytes,
+                requiredBytes = requiredBytes
+            )
         }
         val durationCapFrames = mixDurationFrames(videoDurationUs, SAMPLE_RATE) ?: Long.MAX_VALUE
 
@@ -243,7 +312,7 @@ object MusicExportMixer {
             }
 
             // ---- 3. Mix to a temporary WAV ----------------------------------
-            val wavFile = File.createTempFile("apex_mix_", ".wav", outputVideo.parentFile)
+            val wavFile = File.createTempFile("apex_mix_", ".wav", outputDirectory)
             var encodedAudio: EncodedAudio? = null
             try {
                 renderMixWav(original, placed, durationCapFrames, wavFile, checkCancelled)

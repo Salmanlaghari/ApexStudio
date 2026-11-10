@@ -354,6 +354,8 @@ jobs:
           set -o pipefail
           ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee gradle-release.log
 
+      - name: Verify MediaPipe R8 keep rules in minified output
+        run: python3 scripts/verify-mediapipe-r8-rules.py
 
       - name: Publish build error digest
         if: failure()

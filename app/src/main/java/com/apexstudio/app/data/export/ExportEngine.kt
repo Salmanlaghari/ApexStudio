@@ -1823,7 +1823,7 @@ class ExportEngine(private val context: Context) {
                         videoValidationWarning = listOfNotNull(videoValidationWarning, mixedOutputWarning)
                             .distinct().joinToString(" ").ifBlank { null }
                         if (!outputFile.delete()) Log.w(TAG, "Could not delete intermediate export file")
-                        val mixWarning = AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
+                        val mixWarning = result.warning ?: AudioMixExportNotice.forSkippedTracks(result.skippedTracks)
                         publishPostMixState(owner, ExportProgressState(
                                 isExporting = false, progress = 1f,
                                 outputUri = Uri.fromFile(mixedFile).toString(),

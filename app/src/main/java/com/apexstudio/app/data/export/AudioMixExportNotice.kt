@@ -3,6 +3,7 @@ package com.apexstudio.app.data.export
 /** A usable video is not proof that every requested audio source was included. */
 internal object AudioMixExportNotice {
     const val MIX_FAILED = "Video saved, but the added audio could not be mixed. The saved video does not include the requested added audio. Retry the export before sharing."
+    const val ORIGINAL_AUDIO_PRESERVED = "Video saved with its original audio, but the added audio was not mixed because the original audio could not be decoded. Retry before sharing."
 
     fun forSkippedTracks(skippedTracks: Int): String? = when {
         skippedTracks <= 0 -> null

@@ -1,12 +1,14 @@
 package com.apexstudio.app.data.export
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import com.apexstudio.app.domain.model.AudioTrack
+import java.io.File
 
 /**
  * Unit tests for the pure helpers in [MusicExportMixer].
@@ -16,6 +18,45 @@ import com.apexstudio.app.domain.model.AudioTrack
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MusicExportMixerTest {
+
+    @Test
+    fun `undecodable original audio preserves the input instead of muxing music only`() {
+        val directory = java.nio.file.Files.createTempDirectory("apex-audio-fallback-").toFile()
+        val inputVideo = File(directory, "input.mp4")
+        val outputVideo = File(directory, "mixed.mp4")
+        val originalBytes = byteArrayOf(0, 1, 2, 3, 4, 5)
+        try {
+            inputVideo.writeBytes(originalBytes)
+            val result = requireNotNull(MusicExportMixer.preserveOriginalVideoWhenAudioCannotBeDecoded(
+                inputVideo = inputVideo,
+                outputVideo = outputVideo,
+                inputHasAudioTrack = true,
+                originalAudioDecoded = false,
+                requestedTrackCount = 2
+            ))
+
+            assertArrayEquals("The original container must be copied without re-muxing", originalBytes, outputVideo.readBytes())
+            assertEquals(0, result.mixedTracks)
+            assertEquals(2, result.skippedTracks)
+            assertEquals(AudioMixExportNotice.ORIGINAL_AUDIO_PRESERVED, result.warning)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `original audio fallback is not used when the input has no audio or decoding succeeded`() {
+        val inputVideo = File("/not-used-input.mp4")
+        val outputVideo = File("/not-used-output.mp4")
+        assertNull(MusicExportMixer.preserveOriginalVideoWhenAudioCannotBeDecoded(
+            inputVideo, outputVideo, inputHasAudioTrack = false,
+            originalAudioDecoded = false, requestedTrackCount = 1
+        ))
+        assertNull(MusicExportMixer.preserveOriginalVideoWhenAudioCannotBeDecoded(
+            inputVideo, outputVideo, inputHasAudioTrack = true,
+            originalAudioDecoded = true, requestedTrackCount = 1
+        ))
+    }
 
     private fun env(
         posMs: Long,

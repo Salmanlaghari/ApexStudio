@@ -21,6 +21,11 @@ class AudioMixExportNoticeTest {
         assertFalse(AudioMixExportNotice.MIX_FAILED.contains("file://"))
     }
 
+    @Test fun originalAudioDecodeFallbackDisclosesPreservedOriginalAndMissingAddedAudio() {
+        assertTrue(AudioMixExportNotice.ORIGINAL_AUDIO_PRESERVED.contains("with its original audio"))
+        assertTrue(AudioMixExportNotice.ORIGINAL_AUDIO_PRESERVED.contains("added audio was not mixed"))
+    }
+
     @Test fun warningPreservesUsableOutputAndIsNotAFatalError() {
         val engine = ExportEngine.ExportProgressState(
             progress = 1f, outputUri = "file:///saved.mp4", warning = AudioMixExportNotice.MIX_FAILED

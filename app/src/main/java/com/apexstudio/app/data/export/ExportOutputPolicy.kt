@@ -4,6 +4,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.FrameDropEffect
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.effect.AspectCropTransformation
 
@@ -34,6 +35,20 @@ internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
     val frameRateFactor = (effectiveExportFrameRate(config.fps) / 60f).coerceIn(1f, 2f)
     return (base * qualityFactor * frameRateFactor).toInt().coerceIn(1_000_000, 100_000_000)
 }
+
+/**
+ * Media3 1.11.x can stall muxing when continuous audio crosses a long video-sample gap.
+ * Repeat the last image during gaps so the video track continues advancing; this is a
+ * best-effort encoder request and the timeout policy still explains unsupported devices.
+ */
+internal const val EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US = 100_000L
+
+/** Encoder settings shared by selected-video and sequential project exports. */
+internal fun exportVideoEncoderSettings(config: ExportEngine.ExportConfig): VideoEncoderSettings =
+    VideoEncoderSettings.Builder()
+        .setBitrate(exportTargetBitrate(config))
+        .setRepeatPreviousFrameIntervalUs(EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US)
+        .build()
 
 /**
  * Run after source geometry/speed/animation but before PiP and foreground overlays.

@@ -101,4 +101,13 @@ class ExportOutputPolicyTest {
         assertEquals(24, effectiveExportFrameRate(0))
         assertEquals(120, effectiveExportFrameRate(240))
     }
+
+    @Test fun `selected and project encoder settings repeat frames across long source gaps`() {
+        val config = ExportEngine.ExportConfig(resolution = "720p", fps = 30, bitrateMbps = 8)
+        val settings = exportVideoEncoderSettings(config)
+
+        assertEquals(8_000_000, settings.bitrate)
+        assertEquals(EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US, settings.repeatPreviousFrameIntervalUs)
+        assertEquals(100_000L, settings.repeatPreviousFrameIntervalUs)
+    }
 }

@@ -122,6 +122,18 @@ class ExportTerminalLifecycleTest {
         assertEquals(unrelated.message, videoExportFailureMessage(unrelated))
     }
 
+    @Test fun `muxing timeout explains long video-frame gaps for selected and project exports`() {
+        val timeout = ExportException.createForAssetLoader(
+            IllegalStateException("Muxer error"),
+            ExportException.ERROR_CODE_MUXING_TIMEOUT
+        )
+
+        assertEquals(VIDEO_EXPORT_MUXING_TIMEOUT_MESSAGE, videoExportFailureMessage(timeout))
+        val projectFailure = videoExportFailureForProject(timeout)
+        assertEquals(VIDEO_EXPORT_MUXING_TIMEOUT_MESSAGE, projectFailure.message)
+        assertSame(timeout, projectFailure.cause)
+    }
+
     @Test fun `cancelled old completion cannot finish or detach replacement export`() {
         val engine = ExportEngine(context)
         val first = activate(engine)

@@ -425,7 +425,6 @@ class ExportEngine(private val context: Context) {
             projectExportJob = CoroutineScope(Dispatchers.IO).launch {
                 var partialFile: File? = null
                 var mixedFile: File? = null
-                var durationCappedFile: File? = null
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 try {
                     diagnostics.phase(ExportProgressStage.PREPARING.diagnosticName)
@@ -695,39 +694,33 @@ class ExportEngine(private val context: Context) {
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
                     val durationToleranceMs = 150L
-                    val movieDurationBeforeTrimMs = mediaDurationMs(finishedFile)
+                    val movieDurationBeforeCorrectionMs = mediaDurationMs(finishedFile)
                     diagnostics.stage(
-                        "project_movie_duration_checked",
-                        "movieDurationMs=$movieDurationBeforeTrimMs plannedDurationMs=${plan.durationMs}"
+                        "project_movie_duration_before_correction",
+                        "movieDurationMs=$movieDurationBeforeCorrectionMs plannedDurationMs=${plan.durationMs}"
                     )
-                    if (movieDurationBeforeTrimMs > plan.durationMs + durationToleranceMs) {
-                        val correctedFile = File.createTempFile("apex_project_duration_", ".mp4", outputDir)
-                        durationCappedFile = correctedFile
-                        if (!correctedFile.delete()) {
-                            throw IllegalStateException("Cannot prepare project duration correction output")
-                        }
-                        val trimResult = trimProjectOutputWithEditList(
-                            inputFile = finishedFile,
-                            outputFile = correctedFile,
-                            targetDurationMs = plan.durationMs,
-                            run = run,
-                            diagnostics = diagnostics
-                        )
-                        currentCoroutineContext().ensureActive()
-                        val movieDurationAfterTrimMs = mediaDurationMs(correctedFile)
-                        diagnostics.stage(
-                            "project_duration_trim_verified",
-                            "beforeMs=$movieDurationBeforeTrimMs afterMs=$movieDurationAfterTrimMs " +
-                                "plannedMs=${plan.durationMs} transformerDurationMs=${trimResult.durationMs}"
-                        )
-                        check(
-                            movieDurationAfterTrimMs > 0L &&
-                                kotlin.math.abs(movieDurationAfterTrimMs - plan.durationMs) <= durationToleranceMs
-                        ) {
-                            "Project export duration correction did not match the planned ${plan.durationMs}ms " +
-                                "timeline (movie duration ${movieDurationAfterTrimMs}ms)"
-                        }
-                        finishedFile = correctedFile
+                    val projectContext = currentCoroutineContext()
+                    val durationCorrection = Mp4VideoTailDurationNormalizer.normalize(
+                        finishedFile,
+                        plan.durationMs
+                    ) { projectContext.ensureActive() }
+                    projectContext.ensureActive()
+                    check(!run.cancelled.get()) { "Project export was cancelled" }
+                    val movieDurationAfterCorrectionMs = mediaDurationMs(finishedFile)
+                    diagnostics.stage(
+                        "project_video_duration_finalized",
+                        "applied=${durationCorrection.changed} videoBeforeUs=${durationCorrection.sourceVideoDurationUs} " +
+                            "videoAfterUs=${durationCorrection.outputVideoDurationUs} plannedMs=${plan.durationMs} " +
+                            "lastVideoPtsUs=${durationCorrection.lastVideoPresentationTimeUs} " +
+                            "samplesCopied=${durationCorrection.copiedSampleCount} " +
+                            "movieBeforeMs=$movieDurationBeforeCorrectionMs movieAfterMs=$movieDurationAfterCorrectionMs"
+                    )
+                    check(
+                        movieDurationAfterCorrectionMs > 0L &&
+                            kotlin.math.abs(movieDurationAfterCorrectionMs - plan.durationMs) <= durationToleranceMs
+                    ) {
+                        "Project export duration correction did not match the planned ${plan.durationMs}ms " +
+                            "timeline (movie duration ${movieDurationAfterCorrectionMs}ms)"
                     }
                     if (destination.exists() && !destination.delete()) {
                         throw IllegalStateException("Cannot replace existing project export")
@@ -772,111 +765,12 @@ class ExportEngine(private val context: Context) {
                 } finally {
                     partialFile?.let { if (it.exists()) it.delete() }
                     mixedFile?.let { if (it.exists()) it.delete() }
-                    durationCappedFile?.let { if (it.exists()) it.delete() }
                     synchronized(projectRunLock) {
                         if (projectRun === run) {
                             projectRun = null
                             projectExportJob = null
                         }
                     }
-                }
-            }
-        }
-    }
-
-    /**
-     * Caps a rendered project's container duration without re-encoding its frames.
-     * MediaMuxer can infer the last VFR sample's duration from a preceding sparse gap;
-     * a single-asset edit-list trim restores the intended project timeline endpoint.
-     */
-    private suspend fun trimProjectOutputWithEditList(
-        inputFile: File,
-        outputFile: File,
-        targetDurationMs: Long,
-        run: ProjectExportRun,
-        diagnostics: ExportDiagnosticTrace
-    ): ExportResult = withContext(Dispatchers.Main.immediate) {
-        suspendCancellableCoroutine { continuation ->
-            val settled = AtomicBoolean(false)
-            var active: Transformer? = null
-            continuation.invokeOnCancellation {
-                run.cancelled.set(true)
-                mainHandler.post {
-                    active?.let { renderer ->
-                        try { renderer.cancel() } catch (_: Exception) {}
-                        if (transformer === renderer) transformer = null
-                    }
-                    if (outputFile.exists()) outputFile.delete()
-                }
-            }
-            if (!continuation.isActive || !isCurrentProjectRun(run)) {
-                return@suspendCancellableCoroutine
-            }
-            try {
-                val input = MediaItem.Builder()
-                    .setUri(Uri.fromFile(inputFile))
-                    .setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionMs(0L)
-                            .setEndPositionMs(targetDurationMs)
-                            .build()
-                    )
-                    .build()
-                val editedItem = EditedMediaItem.Builder(input).build()
-                val composition = Composition.Builder(
-                    EditedMediaItemSequence.withAudioAndVideoFrom(listOf(editedItem))
-                ).build()
-                val listener = object : Transformer.Listener {
-                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                        if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
-                        diagnostics.stage(
-                            "project_duration_edit_list_trim_completed",
-                            "durationMs=${exportResult.durationMs} bytes=${outputFile.length()}"
-                        )
-                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
-                            continuation.resumeWith(Result.success(exportResult))
-                        }
-                    }
-
-                    override fun onError(
-                        composition: Composition,
-                        exportResult: ExportResult,
-                        exportException: ExportException
-                    ) {
-                        if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
-                        diagnostics.stage(
-                            "project_duration_edit_list_trim_failed",
-                            "errorCode=${exportException.errorCodeName} message=${exportException.message}"
-                        )
-                        if (settled.compareAndSet(false, true) && !run.cancelled.get()) {
-                            continuation.resumeWith(
-                                Result.failure(
-                                    IllegalStateException(
-                                        "Could not cap project export to its planned timeline duration",
-                                        exportException
-                                    )
-                                )
-                            )
-                        }
-                    }
-                }
-                val renderer = Transformer.Builder(context)
-                    .setLooper(Looper.getMainLooper())
-                    .experimentalSetMp4EditListTrimEnabled(true)
-                    .addListener(listener)
-                    .build()
-                active = renderer
-                transformer = renderer
-                renderer.start(composition, outputFile.absolutePath)
-                diagnostics.stage("project_duration_edit_list_trim_started", "targetDurationMs=$targetDurationMs")
-            } catch (failure: Exception) {
-                active?.let { renderer ->
-                    try { renderer.cancel() } catch (_: Exception) {}
-                    if (transformer === renderer) transformer = null
-                }
-                if (outputFile.exists()) outputFile.delete()
-                if (settled.compareAndSet(false, true) && continuation.isActive) {
-                    continuation.resumeWith(Result.failure(failure))
                 }
             }
         }
@@ -1894,6 +1788,19 @@ class ExportEngine(private val context: Context) {
                     "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount} outputBytes=${outputFile.length()}"
                 )
                 val outputValidation = CoroutineScope(Dispatchers.IO).async {
+                    check(exportResult.durationMs > 0L) { "Transformer completed without a positive output duration" }
+                    val validationContext = currentCoroutineContext()
+                    val durationCorrection = Mp4VideoTailDurationNormalizer.normalize(
+                        outputFile,
+                        exportResult.durationMs
+                    ) { validationContext.ensureActive() }
+                    diagnostics?.stage(
+                        "selected_video_duration_finalized",
+                        "applied=${durationCorrection.changed} videoBeforeUs=${durationCorrection.sourceVideoDurationUs} " +
+                            "videoAfterUs=${durationCorrection.outputVideoDurationUs} targetMs=${exportResult.durationMs} " +
+                            "lastVideoPtsUs=${durationCorrection.lastVideoPresentationTimeUs} " +
+                            "samplesCopied=${durationCorrection.copiedSampleCount}"
+                    )
                     validateEncodedOutput(
                         outputFile, config.fps, exportResult.videoFrameCount,
                         exportResult.durationMs, diagnostics
@@ -1903,7 +1810,22 @@ class ExportEngine(private val context: Context) {
                     val outputUri = Uri.fromFile(outputFile).toString()
                     publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                     CoroutineScope(Dispatchers.IO).launch {
-                        val validationWarning = outputValidation.await()
+                        val validationWarning = try {
+                            outputValidation.await()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            diagnostics?.failPhase("video_duration_finalization_failed=true")
+                            diagnostics?.stage("video_duration_finalization_failed", "failure=${failure.javaClass.simpleName}")
+                            if (outputFile.exists()) outputFile.delete()
+                            mainHandler.post {
+                                if (nonProjectRun !== run) return@post
+                                _exportState.value = ExportProgressState(
+                                    error = failure.message ?: "Could not finalize exported video duration"
+                                )
+                            }
+                            return@launch
+                        }
                         diagnostics?.phase(null)
                         diagnostics?.stage("export_completed")
                         mainHandler.post {
@@ -1926,9 +1848,21 @@ class ExportEngine(private val context: Context) {
                 publishNonProjectStage(run, ExportProgressStage.AUDIO_PREPARATION, diagnostics, 0.97f)
                 postMixJob?.cancel()
                 postMixJob = CoroutineScope(Dispatchers.IO).launch {
-                    var videoValidationWarning = outputValidation.await()
                     val mixContext = currentCoroutineContext()
                     val owner = mixContext.job
+                    var videoValidationWarning = try {
+                        outputValidation.await()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        diagnostics?.failPhase("video_duration_finalization_failed=true")
+                        diagnostics?.stage("video_duration_finalization_failed", "failure=${failure.javaClass.simpleName}")
+                        if (outputFile.exists()) outputFile.delete()
+                        publishPostMixState(owner, ExportProgressState(
+                            error = failure.message ?: "Could not finalize exported video duration"
+                        ))
+                        return@launch
+                    }
                     val mixedFile = File(outputFile.parentFile, outputFile.nameWithoutExtension + "_music.mp4")
                     var preparedOverlay: File? = null
                     var overlayWarning: String? = null
@@ -2007,6 +1941,17 @@ class ExportEngine(private val context: Context) {
                         )
                         publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                         Log.i(TAG, "Audio mix done: ${result.mixedTracks} mixed, ${result.skippedTracks} skipped")
+                        val mixedDurationCorrection = Mp4VideoTailDurationNormalizer.normalize(
+                            mixedFile,
+                            exportResult.durationMs
+                        ) { mixContext.ensureActive() }
+                        diagnostics?.stage(
+                            "post_mix_video_duration_finalized",
+                            "applied=${mixedDurationCorrection.changed} videoBeforeUs=${mixedDurationCorrection.sourceVideoDurationUs} " +
+                                "videoAfterUs=${mixedDurationCorrection.outputVideoDurationUs} targetMs=${exportResult.durationMs} " +
+                                "lastVideoPtsUs=${mixedDurationCorrection.lastVideoPresentationTimeUs} " +
+                                "samplesCopied=${mixedDurationCorrection.copiedSampleCount}"
+                        )
                         val mixedOutputWarning = validateEncodedOutput(
                             mixedFile, config.fps, exportResult.videoFrameCount,
                             exportResult.durationMs, diagnostics

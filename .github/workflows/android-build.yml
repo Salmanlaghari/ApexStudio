@@ -19,6 +19,94 @@ env:
   JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
 
 jobs:
+  vfr-instrumentation:
+    name: Run VFR export regression (Android emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    # This test needs neither API credential. Keep the shared build secrets out
+    # of the job that invokes the third-party emulator action.
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx3g"
+      SNAP_CAMERA_KIT_TOKEN: ""
+      JAMENDO_CLIENT_ID: ""
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 cmdline-tools;latest ndk;28.2.13676358 cmake;3.22.1'
+
+      - name: Accept SDK licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          cat <<EOF > "$ANDROID_HOME/licenses/android-sdk-license"
+          24333f8a63b6825ea9c5514f83c2829b004d1fee
+          d56f5187479451eabf01fb78af6dfcb131a6481e
+          8933bad161af4178b1185d1a37fbf41ea5269c55
+          EOF
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      - name: Ensure Gradle wrapper is executable
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1 --distribution-type bin
+          fi
+          chmod +x gradlew
+
+      - name: Generate debug keystore if missing
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run timestamp parity test on API 35 emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
+
+      - name: Upload instrumentation test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vfr-instrumentation-results-${{ github.run_id }}
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore
+          retention-days: 7
+
   build:
     name: Build APK (Debug)
     runs-on: ubuntu-latest

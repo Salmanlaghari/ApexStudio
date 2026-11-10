@@ -163,6 +163,17 @@ class TimelineTemplateManager(private val context: Context) {
      * Guarantees frame-accurate trimming, filter grading, transitions, and audio sync.
      */
     fun mapTemplateToComposition(template: TimelineTemplate): Composition {
+        template.clips.forEach { clip ->
+            val clipName = clip.name.ifBlank { clip.id }
+            val filter = template.filters.firstOrNull { it.clipId == clip.id }
+            if (filter != null && filter.intensity > 0f && FilterManifest.presetById(filter.filterId) == null) {
+                throw IllegalArgumentException(
+                    "Template '${template.name}' uses unsupported LUT '${filter.filterId}' on clip '$clipName'; " +
+                        "choose a supported filter or remove it before exporting."
+                )
+            }
+        }
+
         val editedItems = mutableListOf<EditedMediaItem>()
 
         template.clips.forEachIndexed { index, clip ->

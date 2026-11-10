@@ -16,10 +16,9 @@ import org.robolectric.annotation.Config
  * Guards the LUT ids referenced by `assets/transmission_templates.json`.
  *
  * Templates are graded at runtime through [FilterManifest.presetById] -- the
- * static registry scanned from `assets/luts/[*].cube`. A template whose
- * `filterId` does not resolve there silently loses its signature grade when
- * applied (see `TimelineTemplateManager.mapTemplateToComposition`), so every
- * id referenced by the catalog must exist in the scanned registry.
+ * static registry scanned from `assets/luts/[*].cube`. Template export now
+ * rejects an unresolved active filter instead of silently dropping its grade;
+ * the bundled catalog should still reference only presets in the registry.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -46,7 +45,7 @@ class TransmissionTemplateLutTest {
         }
 
         assertTrue(
-            "Templates referencing unknown LUTs (grade silently dropped at apply time): $unresolved",
+            "Templates referencing unknown LUTs (unavailable for export): $unresolved",
             unresolved.isEmpty()
         )
     }
@@ -89,5 +88,37 @@ class TransmissionTemplateLutTest {
             "Expected the full template catalog, got ${result.templates.size}",
             result.templates.isNotEmpty()
         )
+    }
+
+    @Test
+    fun `template export rejects an unsupported active LUT with an actionable error`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FilterManifest.initialize(context)
+        val template = TimelineTemplate(
+            id = "unknown-lut",
+            name = "Unknown LUT test",
+            clips = listOf(TemplateClip(
+                id = "clip-1",
+                name = "Sunset shot",
+                uri = "file:///missing-test-video.mp4",
+                durationMs = 1_000L
+            )),
+            filters = listOf(TemplateFilter(
+                clipId = "clip-1",
+                filterId = "not-in-the-lut-manifest",
+                intensity = 0.8f
+            ))
+        )
+
+        val failure = runCatching {
+            TimelineTemplateManager(context).mapTemplateToComposition(template)
+        }.exceptionOrNull()
+
+        assertNotNull("Unsupported template LUT must stop composition creation", failure)
+        assertTrue("Failure should be an actionable validation error", failure is IllegalArgumentException)
+        val message = failure?.message.orEmpty()
+        assertTrue(message.contains("not-in-the-lut-manifest"))
+        assertTrue(message.contains("Sunset shot"))
+        assertTrue(message.contains("choose a supported filter or remove it"))
     }
 }

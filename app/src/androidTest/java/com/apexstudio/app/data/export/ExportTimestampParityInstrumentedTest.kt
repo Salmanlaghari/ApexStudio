@@ -156,7 +156,8 @@ class ExportTimestampParityInstrumentedTest {
 
         val durationToleranceUs = 150_000L
         assertTrue(
-            "$label duration ${output.durationUs}us must stay within ${durationToleranceUs}us of planned $expectedDurationUs us",
+            "$label duration ${output.durationUs}us must stay within ${durationToleranceUs}us of planned " +
+                "$expectedDurationUs us; encoded video PTS=${timestamps.joinToString()}",
             abs(output.durationUs - expectedDurationUs) <= durationToleranceUs
         )
         // Frame dropping at the requested average rate may discard individual source samples. Each

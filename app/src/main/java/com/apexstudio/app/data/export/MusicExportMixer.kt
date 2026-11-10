@@ -38,7 +38,8 @@ internal fun selectEnabledMusicTracks(tracks: List<AudioTrack>): List<AudioTrack
  *     interleaved by presentation timestamp.
  *
  * Must be called on a background thread (blocking MediaCodec I/O).
- * Tracks that cannot be decoded are skipped — never fail the whole export.
+ * Unreadable added tracks are skipped. If the input's existing audio cannot be
+ * decoded, preserve the input instead of replacing it with an incomplete mix.
  */
 object MusicExportMixer {
 
@@ -57,7 +58,8 @@ object MusicExportMixer {
     data class MixResult(
         val outputFile: File,
         val mixedTracks: Int,
-        val skippedTracks: Int
+        val skippedTracks: Int,
+        val warning: String? = null
     )
 
     private class PlacedTrack(
@@ -137,10 +139,18 @@ object MusicExportMixer {
             try {
                 TrackDecoder.open(inputVideo.absolutePath, inputAudioTrackIdx)
             } catch (e: Exception) {
-                Log.w(TAG, "Original audio not decodable, mixing music only", e)
+                Log.w(TAG, "Original audio not decodable; preserving input and skipping added audio mix", e)
                 null
             }
         } else null
+
+        preserveOriginalVideoWhenAudioCannotBeDecoded(
+            inputVideo = inputVideo,
+            outputVideo = outputVideo,
+            inputHasAudioTrack = inputAudioTrackIdx != -1,
+            originalAudioDecoded = original != null,
+            requestedTrackCount = enabledTracks.size
+        )?.let { return it }
 
         val placed = mutableListOf<PlacedTrack>()
         var skipped = 0
@@ -528,6 +538,25 @@ object MusicExportMixer {
     ): Float = AudioTimelineMath.fadeEnvelopeAtFrame(
         posFrames, playFrames, fadeInMs, fadeOutMs, SAMPLE_RATE
     )
+
+    /** Keeps source audio intact rather than muxing an incomplete added-audio mix. */
+    internal fun preserveOriginalVideoWhenAudioCannotBeDecoded(
+        inputVideo: File,
+        outputVideo: File,
+        inputHasAudioTrack: Boolean,
+        originalAudioDecoded: Boolean,
+        requestedTrackCount: Int
+    ): MixResult? {
+        if (!inputHasAudioTrack || originalAudioDecoded) return null
+        outputVideo.parentFile?.mkdirs()
+        inputVideo.copyTo(outputVideo, overwrite = true)
+        return MixResult(
+            outputFile = outputVideo,
+            mixedTracks = 0,
+            skippedTracks = requestedTrackCount,
+            warning = AudioMixExportNotice.ORIGINAL_AUDIO_PRESERVED
+        )
+    }
 
     /**
      * Decodes one audio track to stereo 44.1 kHz float frames.

@@ -724,12 +724,19 @@ class ExportEngine(private val context: Context) {
                     throw cancelled
                 } catch (failure: Exception) {
                     diagnostics.failPhase("failure=${failure.javaClass.simpleName}")
-                    diagnostics.stage("project_export_failed", "failure=${failure.javaClass.simpleName}")
+                    diagnostics.stage(
+                        "project_export_failed",
+                        "failure=${failure.javaClass.simpleName}" + when (failure) {
+                            is ProjectExportException -> " errorCode=${failure.errorCodeName}"
+                            is ExportException -> " errorCode=${failure.errorCodeName}"
+                            else -> ""
+                        }
+                    )
                     Log.e(TAG, "startProjectExport failed", failure)
                     withContext(Dispatchers.Main.immediate) {
                         if (isCurrentProjectRun(run) && !run.cancelled.get()) {
                             _exportState.value = ExportProgressState(
-                                error = failure.message ?: "Project export failed"
+                                error = projectExportFailureMessage(failure)
                             )
                         }
                     }

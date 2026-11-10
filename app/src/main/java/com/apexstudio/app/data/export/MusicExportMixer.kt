@@ -202,9 +202,11 @@ object MusicExportMixer {
         inputVideo: File,
         tracks: List<AudioTrack>,
         outputVideo: File,
+        onStage: (ExportProgressStage) -> Unit = {},
         checkCancelled: () -> Unit = {}
     ): MixResult {
         checkCancelled()
+        onStage(ExportProgressStage.AUDIO_PREPARATION)
         require(inputVideo.exists()) { "Input video missing: ${inputVideo.absolutePath}" }
         val outputDirectory = requireNotNull(outputVideo.absoluteFile.parentFile)
         if (!outputDirectory.exists() && !outputDirectory.mkdirs()) {
@@ -315,6 +317,7 @@ object MusicExportMixer {
             val wavFile = File.createTempFile("apex_mix_", ".wav", outputDirectory)
             var encodedAudio: EncodedAudio? = null
             try {
+                onStage(ExportProgressStage.AUDIO_MIX)
                 renderMixWav(original, placed, durationCapFrames, wavFile, checkCancelled)
                 // ---- 4. WAV -> AAC ------------------------------------------
                 val encoded = transcodeWavToAac(wavFile, checkCancelled)
@@ -323,6 +326,7 @@ object MusicExportMixer {
                     Log.w(TAG, "Could not delete PCM mix before muxing")
                 }
                 // ---- 5. Mux video copy + mixed AAC --------------------------
+                onStage(ExportProgressStage.MUX)
                 muxVideoWithAudio(
                     inputVideo, videoTrackIdx, vFormat,
                     encoded.frames, encoded.format, outputVideo, checkCancelled

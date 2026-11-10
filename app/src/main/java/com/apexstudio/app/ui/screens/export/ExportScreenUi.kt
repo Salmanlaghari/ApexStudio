@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
@@ -46,7 +47,8 @@ internal fun ExportProjectPreviewCard(
     project: Project?,
     isExporting: Boolean,
     progress: Float,
-    completed: Boolean
+    completed: Boolean,
+    stage: ExportProgressStage? = null
 ) {
     val context = LocalContext.current
     val clip = remember(project?.clips) {
@@ -110,7 +112,7 @@ internal fun ExportProjectPreviewCard(
                 Text(
                     when {
                         completed -> "Export complete"
-                        isExporting -> "Rendering your video"
+                        isExporting -> stage?.label ?: "Rendering your video"
                         else -> "Ready to export"
                     },
                     color = if (completed || isExporting) ApexPalette.NeonCyan else ApexPalette.TextTertiary,

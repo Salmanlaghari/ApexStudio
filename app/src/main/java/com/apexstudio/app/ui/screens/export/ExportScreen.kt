@@ -260,7 +260,7 @@ fun ExportScreen(
                             GaugeArc(progress = if (export.isExporting || export.outputUri != null) export.progress else 0f, modifier = Modifier.size(42.dp))
                             Spacer(Modifier.width(8.dp))
                             Column {
-                                Text(exportProgressLabel(export.isExporting, export.progress) ?: "Estimated video payload", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+                                Text(exportProgressLabel(export.isExporting, export.progress, export.stage) ?: "Estimated video payload", color = ApexPalette.TextSecondary, fontSize = 9.sp)
                                 Text(if (export.outputUri != null) when (val measured = measuredOutputSize) {
                                     is ActualOutputSize.Measured -> formatByteCount(measured.bytes)
                                     is ActualOutputSize.Unavailable -> measured.reason
@@ -353,7 +353,8 @@ fun ExportScreen(
                 project = editorState.project,
                 isExporting = export.isExporting,
                 progress = export.progress,
-                completed = export.outputUri != null && export.progress >= 1f
+                completed = export.outputUri != null && export.progress >= 1f,
+                stage = export.stage
             )
             SectionLabel("EXPORT SETTINGS")
             ExportPrimarySettingsRows(
@@ -605,7 +606,7 @@ fun ExportScreen(
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                exportProgressLabel(export.isExporting, export.progress)
+                                exportProgressLabel(export.isExporting, export.progress, export.stage)
                                     ?: if (export.outputUri != null && export.progress >= 1f) "Actual last-export file size"
                                     else "Estimated video payload (not total file size)",
                                 color = ApexPalette.TextTertiary,

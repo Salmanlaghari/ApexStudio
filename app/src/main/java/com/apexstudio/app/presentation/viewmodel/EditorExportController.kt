@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
@@ -122,7 +123,7 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
+    _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.PREPARING, error = null, outputUri = null) }
 
     val selectedGpuFilterConfig = selected?.gpuFilterConfig
         ?: com.apexstudio.app.data.filter.GpuFilterConfig()
@@ -345,7 +346,7 @@ fun EditorViewModel.startAudioExport(
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
+    _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.AUDIO_MIX, error = null, outputUri = null) }
 
     val audioSt = _audio.value
     // project.audioTracks is canonical; audio-studio's cached track list can lag.
@@ -419,7 +420,7 @@ fun EditorViewModel.startPhotoExport(
     val config = buildPhotoExportConfig(snapshot, clip, resolution, fps, quality, aspectRatio, bitrateMbps)
     val run = Any()
     photoExportRun = run
-    _export.update { it.copy(isExporting = true, progress = 0f, error = null, outputUri = null) }
+    _export.update { it.copy(isExporting = true, progress = 0f, stage = null, error = null, outputUri = null) }
 
     photoExportJob = viewModelScope.launch(Dispatchers.IO) {
         var tempVideo: File? = null

@@ -1,5 +1,6 @@
 package com.apexstudio.app.presentation.state
 
+import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.domain.model.*
 
 /** Timeline scale bounds: approximately 5 ms/px at max and 2000 ms/px at min (54 dp/s base). */
@@ -337,6 +338,7 @@ enum class PhotoEditTab(val label: String) {
 data class ExportState(
     val isExporting: Boolean = false,
     val progress: Float = 0f,
+    val stage: ExportProgressStage? = null,
     val settings: ExportSettings = ExportSettings(),
     val outputUri: String? = null,
     val error: String? = null,

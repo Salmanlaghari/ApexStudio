@@ -8,5 +8,5 @@ fun EditorViewModel.cancelCurrentExport() {
     photoExportJob?.cancel()
     photoExportJob = null
     exportEngine?.cancelExport()
-    _export.update { it.copy(isExporting = false, progress = 0f, error = null, outputUri = null, warning = null) }
+    _export.update { it.copy(isExporting = false, progress = 0f, stage = null, error = null, outputUri = null, warning = null) }
 }

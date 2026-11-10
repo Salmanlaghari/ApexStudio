@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.export
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -74,5 +75,17 @@ class VideoExportScopeTest {
         assertEquals("Preparing export…", exportProgressLabel(isExporting = true, progress = Float.NaN))
         assertEquals("Exporting…", exportProgressLabel(isExporting = true, progress = 0.01f))
         assertNull(exportProgressLabel(isExporting = false, progress = 0f))
+    }
+
+    @Test fun exportStatusUsesTheCurrentRenderAudioMuxAndFinalizationPhase() {
+        listOf(
+            ExportProgressStage.VIDEO_RENDER,
+            ExportProgressStage.AUDIO_PREPARATION,
+            ExportProgressStage.AUDIO_MIX,
+            ExportProgressStage.MUX,
+            ExportProgressStage.FINALIZATION
+        ).forEach { stage ->
+            assertEquals(stage.label, exportProgressLabel(true, 0.97f, stage))
+        }
     }
 }

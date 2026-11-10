@@ -43,4 +43,38 @@ class ExportDiagnosticTraceTest {
         assertTrue(events[0].contains("percent=0"))
         assertTrue(events[1].contains("percent=90"))
     }
+
+    @Test
+    fun `phase transitions delimit render audio mux and finalization`() {
+        val events = mutableListOf<String>()
+        val trace = ExportDiagnosticTrace(emit = events::add, clockMs = { 0L })
+
+        trace.phase("video_render")
+        trace.phase("audio_preparation")
+        trace.phase("audio_mix")
+        trace.phase("mux")
+        trace.phase("finalization")
+        trace.phase(null)
+
+        assertEquals(
+            listOf(
+                "video_render_started", "video_render_completed", "audio_preparation_started",
+                "audio_preparation_completed", "audio_mix_started", "audio_mix_completed",
+                "mux_started", "mux_completed", "finalization_started", "finalization_completed"
+            ),
+            events.map { it.substringAfter("stage=").substringBefore(' ') }
+        )
+    }
+
+    @Test
+    fun `failed phase is recorded as failed rather than completed`() {
+        val events = mutableListOf<String>()
+        val trace = ExportDiagnosticTrace(emit = events::add, clockMs = { 0L })
+
+        trace.phase("mux")
+        trace.failPhase("failure=IOException")
+
+        assertTrue(events[1].contains("stage=mux_failed failure=IOException"))
+        assertEquals(2, events.size)
+    }
 }

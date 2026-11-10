@@ -52,7 +52,7 @@ class HorizontalEditorProjectLayoutTest {
         }
     }
 
-    private fun show(vm: EditorViewModel) {
+    private fun show(vm: EditorViewModel, entryWorkspace: String = "edit") {
         compose.setContent {
             EditorScreen(
                 projectId = "layout-project",
@@ -61,6 +61,7 @@ class HorizontalEditorProjectLayoutTest {
                 onColor = {},
                 onAudio = {},
                 vm = vm,
+                entryWorkspace = entryWorkspace,
             )
         }
     }
@@ -115,5 +116,36 @@ class HorizontalEditorProjectLayoutTest {
         compose.onNodeWithTag("portrait-timeline-pane").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Portrait video keeps its tall preview frame: $preview", preview.height > preview.width)
+    }
+
+    @Test
+    fun decodedLandscapeSourceWinsOverSavedPortraitAspectOnNormalEditorEntry() {
+        val vm = editor(9f / 16f)
+        show(vm)
+        compose.waitForIdle()
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(videoWidth = 1920, videoHeight = 1080) }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("horizontal-project-workspace").assertIsDisplayed()
+        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        assertTrue("Decoded landscape source keeps a wide preview despite saved portrait output: $preview",
+            preview.width > preview.height)
+    }
+
+    @Test
+    fun decodedPortraitSourceWinsOverSavedLandscapeAspectOnAiWorkspaceEntry() {
+        val vm = editor(16f / 9f)
+        show(vm, entryWorkspace = "ai")
+        compose.waitForIdle()
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(videoWidth = 1080, videoHeight = 1920) }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("horizontal-project-workspace").assertDoesNotExist()
+        compose.onNodeWithTag("portrait-preview-pane").assertIsDisplayed()
+        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        assertTrue("Decoded portrait source keeps a tall preview despite saved landscape output: $preview",
+            preview.height > preview.width)
     }
 }

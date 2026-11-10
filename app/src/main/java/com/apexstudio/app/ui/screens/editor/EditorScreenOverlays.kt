@@ -1398,7 +1398,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         contentAlignment = Alignment.TopCenter
     ) {
         val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
-            compactTimelineHeight(state) + 26.dp + 2.dp
+            compactTimelineHeight(state) + EditorLayoutMetrics.TimelineToolbarHeight + 2.dp
         val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
             maxHeight.value
         } else {
@@ -1865,50 +1865,47 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout) null else {
-        compactTimelineHeight(state) + (if (compactLandscape) 44.dp else 26.dp) + 2.dp
+        compactTimelineHeight(state) +
+            (if (compactLandscape) 44.dp else EditorLayoutMetrics.TimelineToolbarHeight) + 2.dp
     }
     CenteredTimelineWorkspace(
         layoutWeight = if (horizontalProjectLayout) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
         compactHeight = compactTimelineHostHeight
     ) {
-    if (!horizontalProjectLayout) Row(Modifier.fillMaxWidth().height(if (compactLandscape) 44.dp else 26.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (compactLandscape) {
-            LandscapeTimelineControls(state, vm, seekPlayerAndState, Modifier.weight(1f))
+        if (compactLandscape && !horizontalProjectLayout) {
+            Row(
+                Modifier.fillMaxWidth().height(44.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LandscapeTimelineControls(state, vm, seekPlayerAndState, Modifier.weight(1f))
+                Row(
+                    modifier = Modifier.height(34.dp)
+                        .clickable(role = Role.Button) { onTimelineFocusModeChange(!isTimelineFocusMode) }
+                        .semantics {
+                            contentDescription = if (isTimelineFocusMode) {
+                                "Restore preview and normal timeline layout"
+                            } else {
+                                "Expand timeline to full height"
+                            }
+                        }
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (isTimelineFocusMode) "Show preview" else "Timeline", fontSize = 11.sp, color = ApexPalette.TextSecondary)
+                    Icon(if (isTimelineFocusMode) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null,
+                        tint = ApexPalette.TextSecondary, modifier = Modifier.padding(start = 2.dp).size(14.dp))
+                }
+            }
         } else {
-            Spacer(Modifier.weight(1f))
-        }
-        Row(
-            modifier = Modifier.height(26.dp).clickable(role = Role.Button) { onTimelineFocusModeChange(!isTimelineFocusMode) }
-                .semantics {
-                contentDescription = if (isTimelineFocusMode) "Restore preview and normal timeline layout" else "Expand timeline to full height"
-                }.padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(if (isTimelineFocusMode) "Show preview" else "Timeline", fontSize = 11.sp, color = ApexPalette.TextSecondary)
-            Icon(if (isTimelineFocusMode) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null,
-                tint = ApexPalette.TextSecondary, modifier = Modifier.padding(start = 2.dp).size(14.dp))
-        }
-    }
-
-    // Reference mockup: thin horizontal scrub line above the timeline —
-    // red played portion on a dark track. Purely a position mirror.
-    if (!horizontalProjectLayout) run {
-        val totalMs = state.durationMs.coerceAtLeast(1L)
-        val frac = (state.playerPositionMs.toFloat() / totalMs).coerceIn(0f, 1f)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp)
-                .background(Color(0xFF2A2A2A))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(frac)
-                    .height(2.dp)
-                    .background(Color(0xFFFF3B30))
+            ProfessionalTimelineToolbar(
+                state = state,
+                focused = isTimelineFocusMode,
+                onToggleFocus = { onTimelineFocusModeChange(!isTimelineFocusMode) },
+                onToggleSnapping = { vm.toggleMagneticSnapping() },
+                onZoomOut = { vm.setTimelineZoom(state.timelineZoom / 1.5f) },
+                onZoomIn = { vm.setTimelineZoom(state.timelineZoom * 1.5f) },
             )
         }
-    }
 
 
     // The timeline area is just the timeline: the Adjust chips row

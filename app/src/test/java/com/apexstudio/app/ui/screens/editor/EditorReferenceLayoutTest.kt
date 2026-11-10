@@ -48,7 +48,7 @@ class EditorReferenceLayoutTest {
 
         compose.setContent {
             expectedTimelineHeightPx = with(LocalDensity.current) {
-                (compactTimelineHeight(vm.state.value) + 26.dp + 2.dp).toPx()
+                (compactTimelineHeight(vm.state.value) + EditorLayoutMetrics.TimelineToolbarHeight + 2.dp).toPx()
             }
             EditorScreen(
                 projectId = "reference-project",

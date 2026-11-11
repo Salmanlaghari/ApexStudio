@@ -41,6 +41,13 @@ class TimelineWorkspaceLayoutTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    @Test
+    fun identityRailAdaptsToNarrowViewportsWithoutChangingStandardPhoneWidth() {
+        assertEquals(48f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
+        assertEquals(60f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
+        assertEquals(88f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
+    }
+
     private fun clip(
         id: String,
         type: ClipType = ClipType.VIDEO,

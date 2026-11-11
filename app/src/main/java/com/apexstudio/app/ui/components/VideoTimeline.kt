@@ -270,7 +270,11 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
     )
 
 /** Fixed lane identity gutter; the time canvas starts after this rail. */
-private val TIMELINE_IDENTITY_RAIL_WIDTH = 88.dp
+private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 88.dp
+private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 48.dp
+
+internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
+    minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.3f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
 
 @Composable
 private fun FixedTimelineIdentityRail(
@@ -285,13 +289,14 @@ private fun FixedTimelineIdentityRail(
     originalAudioRows: Int,
     musicRows: Int,
     voiceRows: Int,
+    railWidth: Dp,
     railScrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     val railSurface = Color(0xF2172230)
     Column(
         modifier = modifier
-            .width(TIMELINE_IDENTITY_RAIL_WIDTH)
+            .width(railWidth)
             .fillMaxHeight()
             .background(railSurface)
             .border(1.dp, Color(0xFF33445D))
@@ -349,6 +354,7 @@ private fun TimelineLaneIdentity(label: String, accent: Color) {
         fontSize = 8.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xE6101A2B))
@@ -962,11 +968,9 @@ fun VideoTimeline(
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // No left sidebar: the timeline canvas uses the FULL screen
-    // width. The old sidebar pills (V1 / OVL1 / FX / A1 / A2 +
-    // buttons) are gone; hide/lock/mute now live in the contextual
-    // bar of the selected clip/track. Pure-black viewport below the
-    // restored title/action header, with no identity gutter.
+    // The fixed identity rail remains visible while the time canvas uses
+    // the remaining width. It contracts on narrow screens to keep clip
+    // thumbnails and trim grips within the interactive viewport.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
             .background(EditorPalette.BgBase)
@@ -974,7 +978,8 @@ fun VideoTimeline(
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
-        val viewportWidthDp = (maxWidth - TIMELINE_IDENTITY_RAIL_WIDTH).coerceAtLeast(1.dp)
+        val identityRailWidth = timelineIdentityRailWidthForViewport(maxWidth)
+        val viewportWidthDp = (maxWidth - identityRailWidth).coerceAtLeast(1.dp)
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1044,7 +1049,7 @@ fun VideoTimeline(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = TIMELINE_IDENTITY_RAIL_WIDTH)
+                        .padding(start = identityRailWidth)
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
                         .scrollable(
@@ -1218,7 +1223,7 @@ fun VideoTimeline(
                     modifier = Modifier
                         .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
-                        .padding(start = TIMELINE_IDENTITY_RAIL_WIDTH)
+                        .padding(start = identityRailWidth)
                         .background(EditorPalette.BgSurface)
                         .horizontalScroll(scrollState)
                         .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
@@ -1447,6 +1452,7 @@ fun VideoTimeline(
                 originalAudioRows = originalVideoAudioTracks.size,
                 musicRows = musicTracks.size,
                 voiceRows = voiceTracks.size,
+                railWidth = identityRailWidth,
                 railScrollState = vScrollState,
                 modifier = Modifier.align(Alignment.TopStart),
             )
@@ -1467,7 +1473,7 @@ fun VideoTimeline(
                     // scrollState.value here would recompose the whole
                     // timeline on every scroll frame.
                     scrollOffsetPx = { scrollState.value.toFloat() },
-                    modifier = Modifier.offset(x = TIMELINE_IDENTITY_RAIL_WIDTH)
+                    modifier = Modifier.offset(x = identityRailWidth)
                 )
             }
             // NOTE: the canvas Box stays open — the Zoom HUD + multi-select

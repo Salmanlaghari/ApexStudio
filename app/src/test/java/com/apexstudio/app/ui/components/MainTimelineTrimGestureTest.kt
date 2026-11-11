@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import com.apexstudio.app.domain.model.ClipType
@@ -32,7 +33,9 @@ class MainTimelineTrimGestureTest {
     )
 
     private fun dragGrip(head: Boolean, deltaPx: Float) {
-        composeRule.onNodeWithTag("timeline-trim-${if (head) "start" else "end"}-main", true)
+        val tag = "timeline-trim-${if (head) "start" else "end"}-main"
+        val grip = composeRule.onNodeWithTag(tag, true)
+        grip
             .performTouchInput {
                 down(center)
                 moveBy(Offset(deltaPx / 2f, 0f))
@@ -40,6 +43,15 @@ class MainTimelineTrimGestureTest {
                 up()
             }
         composeRule.waitForIdle()
+    }
+
+    private fun gripDebugInfo(head: Boolean): String {
+        val tag = "timeline-trim-${if (head) "start" else "end"}-main"
+        val grip = composeRule.onNodeWithTag(tag, true).fetchSemanticsNode()
+        val rootBounds = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
+        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        return "$tag bounds=${grip.boundsInRoot} size=${grip.size} root=$rootBounds rail=$railBounds"
     }
 
     @Test fun headGripUsesPhysicalDensity() = checkDensity(head = true)
@@ -107,9 +119,10 @@ class MainTimelineTrimGestureTest {
         // Do not use boundsInRoot width: semantics clips it to the visible scroll viewport.
         dragGrip(head, 54f * if (head) 1f else -1f)
         val expected = if (head) 1_500L to 3_000L else 1_000L to 2_500L
+        val range = committed ?: throw AssertionError("No trim callback: ${gripDebugInfo(head)}")
         composeRule.runOnIdle {
-            assertEquals(expected.first.toDouble(), requireNotNull(committed).first.toDouble(), 2.0)
-            assertEquals(expected.second.toDouble(), requireNotNull(committed).second.toDouble(), 2.0)
+            assertEquals(expected.first.toDouble(), range.first.toDouble(), 2.0)
+            assertEquals(expected.second.toDouble(), range.second.toDouble(), 2.0)
         }
     }
 
@@ -134,8 +147,8 @@ class MainTimelineTrimGestureTest {
         // At the production 54dp/s scale and density 2, 54px extends the
         // source boundary by 500ms. Outward drags must increase V1 output length.
         dragGrip(head = head, deltaPx = if (head) -54f else 54f)
+        val (start, end) = committed ?: throw AssertionError("No trim callback: ${gripDebugInfo(head)}")
         composeRule.runOnIdle {
-            val (start, end) = requireNotNull(committed)
             assertEquals(if (head) 500L else source.trimStartMs, start)
             assertEquals(if (head) source.trimEndMs else 3_500L, end)
             val extendedDuration = source.copy(trimStartMs = start, trimEndMs = end).effectiveDurationMs()

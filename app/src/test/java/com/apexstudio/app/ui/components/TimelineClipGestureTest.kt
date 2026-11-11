@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.swipe
 import com.apexstudio.app.domain.model.ClipType
@@ -249,18 +250,23 @@ class TimelineClipGestureTest {
             }
         }
 
-        composeRule.onNodeWithTag(
+        val grip = composeRule.onNodeWithTag(
             "timeline-overlay-trim-${if (head) "start" else "end"}-${overlay.id}",
             useUnmergedTree = true,
-        ).performTouchInput {
+        )
+        val gripBounds = grip.fetchSemanticsNode().boundsInRoot
+        grip.performTouchInput {
             down(center)
             moveBy(Offset(54f, 0f)) // 500 output ms at 2x density.
             up()
         }
         composeRule.waitForIdle()
 
+        val (start, end) = committed ?: throw AssertionError(
+            "No overlay trim callback: bounds=$gripBounds root=${composeRule.onRoot().fetchSemanticsNode().boundsInRoot} " +
+                "rail=${composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot}"
+        )
         composeRule.runOnIdle {
-            val (start, end) = requireNotNull(committed)
             val changed = overlay.copy(trimStartMs = start, trimEndMs = end)
             val outputDelta = if (head) {
                 overlay.effectiveDurationMs() - changed.effectiveDurationMs()
